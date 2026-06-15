@@ -1,0 +1,20 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "UserClient",
+      "tag": "pack"
+    },
+    {
+      "type": "interfaces",
+      "name": "UserServer",
+      "tag": "pack"
+    },
+    {
+      "type": "interfaces",
+      "name": "UnsafeUserServer",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

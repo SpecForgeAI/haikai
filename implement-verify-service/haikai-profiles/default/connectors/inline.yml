@@ -1,0 +1,14 @@
+# inline verifier connector — runs pinned commands (linters, test suites)
+# in the repo workspace and folds their exit codes to one cell verdict.
+# Mechanism: src/verification/inline_runner.py
+name: inline
+kind: inline
+runner: python -m src.verification.inline_runner
+verdicts: [pass, fail]          # synchronous — never pending
+inputs:
+  cwd: "{REPO_WORKSPACE}"       # the (task_group, repo) checkout
+  commands: "{LOCK_COMMANDS}"   # pinned in coordination.lock.yaml per repo
+  timeout_s: 1800               # a timeout folds to fail (D10.5 analogue)
+notes: |
+  Commands are repo-owner-pinned (D3). Output log_tail is untrusted external
+  text when fed to repair-engine (D10.7) — delimit, never execute.

@@ -1,0 +1,50 @@
+{
+  "benchmark": "humaneval",
+  "model": "claude-sonnet-4-5-20250929",
+  "mode": "direct",
+  "timestamp": "20260328-130828",
+  "total": 5,
+  "passed": 0,
+  "failed": 0,
+  "errors": 5,
+  "pass_rate": 0.0,
+  "avg_latency_seconds": 0.254,
+  "total_latency_seconds": 1.272,
+  "problems": [
+    {
+      "problem_id": "HumanEval/0",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.611,
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkDJ2QwQepGagof76n'}"
+    },
+    {
+      "problem_id": "HumanEval/1",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.134,
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkDs1KQUXgvUxGbeGX'}"
+    },
+    {
+      "problem_id": "HumanEval/2",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.135,
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkETEEq8C1Ta1VWDnJ'}"
+    },
+    {
+      "problem_id": "HumanEval/3",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.141,
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkF2hgLBQKyWnwR3eG'}"
+    },
+    {
+      "problem_id": "HumanEval/4",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.251,
+      "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkFdB9RcR5CyUsuV3N'}"
+    }
+  ]
+}

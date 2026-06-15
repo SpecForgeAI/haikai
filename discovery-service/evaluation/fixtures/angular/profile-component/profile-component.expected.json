@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "ProfileComponent",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

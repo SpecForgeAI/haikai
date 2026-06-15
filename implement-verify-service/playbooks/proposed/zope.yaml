@@ -1,0 +1,37 @@
+name: zope
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - "from OFS"
+    - "import ZPublisher"
+    - "from Zope2"
+  files_match:
+    - "src/**/*.zcml"
+  manifest_contains:
+    - {file: pyproject.toml, substring: 'name = "Zope"'}
+
+extract:
+  - id: zope_published_method_conventions
+    query: method_decls
+    file_filter: all
+    file_extensions: [".py"]
+    name_pattern: '^(index_html|manage_\w+|\w+_html|\w+_json)$'
+    strip_prefix: ""
+    verb: ANY
+    path_from: method_name_strip
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: zope
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Primary modern routing is ZCML-based (browser:page, browser:view in *.zcml); no ZCML parser is available — these routes are entirely missed"
+  - "Zope uses object-graph traversal: any non-underscore method on a published object is a potential URL segment; this playbook captures only conventional naming patterns"
+  - "Acquisition traversal can expose methods from parent objects not present in the directly scanned class"
+  - "__call__ methods that make objects callable as endpoints are not captured"
+  - "VirtualHostMonster URL rewriting and SiteRoot mounts are runtime configuration, not statically analyzable"

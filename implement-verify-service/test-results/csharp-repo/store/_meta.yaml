@@ -1,0 +1,10 @@
+repo: csharp-test-repo
+commit: nocommit
+branch: main
+analyzed_at: '2026-03-31T11:39:48+00:00'
+provider: ctags
+file_count: 10
+symbol_count: 57
+languages:
+- 'C#: 10'
+remote: https://github.com/dotnet/eShop.git

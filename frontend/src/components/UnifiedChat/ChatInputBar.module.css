@@ -1,0 +1,88 @@
+/**
+ * ChatInputBar.module.css
+ *
+ * Spec 2026-02-28: Unified Chat Panel v1 (Frontend)
+ * Task Group 5, Task 5.4: ChatInputBar styles
+ *
+ * Styles for the chat input area containing:
+ * - MentionInput textarea
+ * - FileAttachmentBar chips
+ * - Send button and Paperclip (attach) button
+ */
+
+/* Container: bottom-anchored input area */
+.container {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  border-top: 1px solid #e0e0e0;
+  background: #ffffff;
+}
+
+/* Input row: textarea + action buttons */
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* Button row: paperclip and send buttons */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+/* Paperclip attach button */
+.attachButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.attachButton:hover {
+  color: #333;
+  background: #f0f0f0;
+}
+
+.attachButton:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Send button */
+.sendButton {
+  background: #5C6BC0;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.sendButton:hover:not(:disabled) {
+  background: #4a5ab8;
+}
+
+.sendButton:disabled {
+  background: #c5cae9;
+  cursor: not-allowed;
+}
+
+/* Hidden file input */
+.hiddenFileInput {
+  display: none;
+}

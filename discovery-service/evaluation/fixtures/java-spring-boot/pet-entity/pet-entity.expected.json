@@ -1,0 +1,25 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Pet",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "birthDate",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Pet \u2192 PetType",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Pet \u2192 Visit",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

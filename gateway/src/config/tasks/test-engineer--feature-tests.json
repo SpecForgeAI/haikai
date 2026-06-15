@@ -1,0 +1,14 @@
+{
+  "id": "test-engineer--feature-tests",
+  "personaId": "test-engineer",
+  "menuLabel": "Feature Tests",
+  "description": "Assists with writing test cases and acceptance criteria for a specific feature, including happy paths, edge cases, and error scenarios.",
+  "mode": "advisory",
+  "taskPromptRef": "prompts/test-engineer.feature-tests.task.md",
+  "responseFormat": null,
+  "contextNeeds": ["mission", "tech-stack", "test-strategy"],
+  "persistence": "feature",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

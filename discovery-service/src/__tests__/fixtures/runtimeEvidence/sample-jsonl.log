@@ -1,0 +1,2 @@
+{"timestamp":"2026-10-10T14:00:00Z","level":"INFO","logger":"http","message":"GET /api/orders 200 ok"}
+{"timestamp":"2026-10-10T14:00:01Z","level":"INFO","logger":"http","message":"POST /api/orders 201 created"}

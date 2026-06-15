@@ -1,0 +1,14 @@
+digraph Design_Pattern_Map {
+    rankdir=TB;
+
+    factory [label="factory", shape=hexagon];
+    factory_AbstractFactoryTest [label="AbstractFactoryTest", shape=box];
+    factory_FactoryMaker [label="FactoryMaker", shape=box];
+    factory_ElfKingdomFactory [label="ElfKingdomFactory", shape=box];
+    factory_OrcKingdomFactory [label="OrcKingdomFactory", shape=box];
+
+    factory -> factory_AbstractFactoryTest [];
+    factory -> factory_FactoryMaker [];
+    factory -> factory_ElfKingdomFactory [];
+    factory -> factory_OrcKingdomFactory [];
+}

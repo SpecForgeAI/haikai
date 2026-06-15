@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "Mage_Adminhtml_Block_Html_Date",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

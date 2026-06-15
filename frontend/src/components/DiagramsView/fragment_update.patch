@@ -1,0 +1,26 @@
+--- a/SequenceDiagramRenderer.tsx
++++ b/SequenceDiagramRenderer.tsx
+@@ -2,6 +2,7 @@
+  * SequenceDiagramRenderer.tsx
+  * Task Group 2: Participant header rendering for Sequence Diagrams
+  * Task Group 3: Message arrow rendering for Sequence Diagrams
++ * Task Group 4: Fragment frame rendering for Sequence Diagrams
+  *
+  * This component renders Sequence diagram elements on an SVG canvas:
+  * - Participant headers (box or stickman)
+@@ -19,6 +20,7 @@ import {
+   ParticipantRefKind,
+   MessageRefKind,
+   ExchangeRole,
++  FragmentKind,
+ } from '../../types/sequenceDiagram';
+ import { MetaModel } from '../../types/model';
+ import {
+@@ -26,6 +28,7 @@ import {
+   LAYOUT_CONSTANTS,
+   ParticipantLayout,
+   MessageLayout,
++  FragmentLayout,
+   SequenceLayoutResult,
+ } from '../../utils/sequenceLayout';
+ import {

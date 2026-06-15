@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=yes" />
+<title>Spec Verification & Self-Repair — A/B/X/Y Flow</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/style.css" />
+<style>
+  :root {
+    --bg:#0f1117; --panel:#1b1f29; --panel2:#252b38; --border:#2e3548;
+    --txt:#e8ecf3; --muted:#9aa3b2;
+    --A:#ff8c1a; --B:#b366ff; --X:#4da6ff; --Y:#3ddc84; --R:#7a8294; --F:#ff5a5f; --P:#3ddc84; --L:#ffd23f;
+    --accent:#4da6ff;
+  }
+  *{box-sizing:border-box}
+  html,body,#root{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .tabs{position:absolute;top:8px;left:8px;right:8px;z-index:25;display:flex;gap:6px;flex-wrap:wrap;background:rgba(15,17,23,.85);backdrop-filter:blur(8px);padding:6px;border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.45);}
+  .tab{flex:1 1 130px;min-height:44px;padding:6px 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);font-size:13px;cursor:pointer;text-align:center;font-weight:500;line-height:1.2;}
+  .tab:active{transform:scale(.97);}
+  .tab.active{background:linear-gradient(180deg,#3a3f52,#2a2f3e);border-color:#5b6480;box-shadow:inset 0 0 0 1px var(--accent);}
+  .tab small{display:block;color:var(--muted);font-weight:400;font-size:11px;margin-top:2px;}
+
+  .player{position:absolute;top:108px;left:8px;right:8px;z-index:24;background:rgba(15,17,23,.92);backdrop-filter:blur(8px);padding:8px 10px;border:1px solid var(--border);border-radius:10px;display:flex;flex-direction:column;gap:6px;}
+  .player .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .btn{min-width:42px;min-height:36px;padding:6px 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--border);color:var(--txt);font-size:14px;cursor:pointer;font-weight:600;}
+  .btn:active{transform:scale(.96);}
+  .btn.primary{background:linear-gradient(180deg,#3a86ff,#2c6bd9);border-color:#5b9dff;color:#fff;}
+  .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .player select{background:var(--panel2);color:var(--txt);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:13px;}
+  .progress{height:6px;background:var(--panel2);border-radius:6px;overflow:hidden;border:1px solid var(--border);}
+  .progress > div{height:100%;background:linear-gradient(90deg,var(--Y),var(--X),var(--B));transition:width .4s ease;}
+  .step-label{font-size:12.5px;color:var(--txt);line-height:1.35;}
+  .step-label .num{color:var(--muted);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;margin-right:6px;}
+  .scen-desc{font-size:12px;color:var(--muted);line-height:1.35;}
+
+  .legend{position:absolute;bottom:10px;left:8px;z-index:20;background:rgba(15,17,23,.85);backdrop-filter:blur(8px);padding:6px 10px;border:1px solid var(--border);border-radius:10px;font-size:11.5px;display:flex;gap:8px;flex-wrap:wrap;}
+  .legend .chip{display:inline-flex;align-items:center;gap:5px;}
+  .legend .dot{width:10px;height:10px;border-radius:3px;display:inline-block;}
+
+  .info{position:absolute;right:8px;top:8px;z-index:30;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;max-width:280px;font-size:13px;line-height:1.45;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+  .info h4{margin:0 0 6px;font-size:14px;display:flex;align-items:center;gap:6px;}
+  .info .tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:700;color:#0f1117;}
+  .info p{margin:6px 0 0;color:var(--muted);}
+  .info .close{position:absolute;top:6px;right:8px;background:transparent;border:0;color:var(--muted);font-size:18px;cursor:pointer;}
+
+  .node-box{padding:8px 10px;border-radius:8px;border:1.5px solid;background:var(--panel);color:var(--txt);font-size:12px;line-height:1.25;min-width:140px;max-width:220px;text-align:center;cursor:pointer;transition:opacity .25s,filter .25s,box-shadow .25s;}
+  .node-box:hover{filter:brightness(1.15);}
+  .node-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.4px;margin-bottom:4px;color:#0f1117;}
+  .node-label{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;}
+  .node-A{border-color:var(--A);} .tag-A{background:var(--A);}
+  .node-B{border-color:var(--B);} .tag-B{background:var(--B);}
+  .node-X{border-color:var(--X);} .tag-X{background:var(--X);}
+  .node-Y{border-color:var(--Y);} .tag-Y{background:var(--Y);}
+  .node-R{border-color:var(--R);} .tag-R{background:var(--R);}
+  .node-F{border-color:var(--F);} .tag-F{background:var(--F);color:#fff;}
+  .node-P{border-color:var(--P);} .tag-P{background:var(--P);}
+  .node-L{border-color:var(--L);} .tag-L{background:var(--L);}
+  .node-pending{opacity:.25;}
+  .node-active{animation:pulse 1.2s ease-in-out infinite;box-shadow:0 0 0 0 rgba(77,166,255,.7);}
+  .node-done{opacity:1;filter:saturate(.85);}
+  .node-done::after{content:"✓";position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:var(--P);color:#0f1117;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1;}
+  .node-box{position:relative;}
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0   rgba(77,166,255,.55); }
+    70%  { box-shadow: 0 0 0 12px rgba(77,166,255,0);   }
+    100% { box-shadow: 0 0 0 0   rgba(77,166,255,0);   }
+  }
+  .react-flow__edge.pending path{stroke-opacity:.18;}
+  .react-flow__edge.active path{stroke-width:3px;}
+  .react-flow__edge.done path{stroke-opacity:.95;}
+  .react-flow__attribution{background:transparent!important;color:var(--muted)!important;font-size:10px;}
+  @media (max-width:640px){
+    .tab{flex:1 1 45%;font-size:12.5px;min-height:42px;}
+    .info{max-width:calc(100vw - 16px);}
+    .player{top:104px;}
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+    "reactflow": "https://esm.sh/reactflow@11.11.4?deps=react@18.3.1,react-dom@18.3.1&bundle"
+  }
+}
+</script>
+<script type="module">
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
+import ReactFlow, { Background, Controls, MiniMap, MarkerType, ReactFlowProvider, Handle, Position, useReactFlow } from 'reactflow';
+const h = React.createElement;
+
+const N = (id, tag, label, x, y, w, info) => ({ id, tag, label, x, y, w, info });
+
+// POLYREPO BASELINE — see spec.md decisions D1–D5.
+//   D1: commit trailers (orchestrate-id, task-group-id, repo)
+//   D2: state store keyed (orch_id, task_group_id, repo, verifier)
+//   D3: connector env vars keyed {REPO_KEY}_{CONNECTOR}_TOKEN
+//   D4: repair LLM classifier prompt includes {repo, connector_kind}
+//   D5: AND gate = ∀ repo ∈ touched_repos · ∀ verifier · verdict = pass
+// Two concrete repos shown as example: backend + frontend.
+const NODES = [
+  // ─── D8.1a: git-change gate fires BEFORE shape-spec ───
+  N('discGate',  'A', 'git change gate\n(D8.1a, before shape-spec)', 120, -90, 190, 'D8.1a. Before /shape-spec commences, the runtime re-validates discovery: git diff --name-only <discovered_at_sha> HEAD over build/CI/lint paths. Empty → reuse cache (no LLM). Changed → re-discover once. This is the primary checkpoint — shape-spec is about to describe a NEW change, so the baseline of what is wired up must be current, or the spec gets shaped against stale assumptions. (First discovery itself happens earlier, at /projects/init.)'),
+
+  // ─── Spec lifecycle ───
+  N('shape',     'Y', '/shape-spec',    400,    0, null, 'Agent slash command. Drafts spec.md and requirements.md from the conversation. Discovery baseline is guaranteed current by the git change gate that ran immediately before this.'),
+  N('frozen',    'B', 'spec-frozen',    400,   90, null, 'Orchestration hook. Fires when the spec is finalized. Subscribers auto-create per-repo feature branches and scaffold tasks/.'),
+  N('tasks',     'Y', '/create-tasks',  400,  180, null, 'Agent slash command. Splits the spec into parent tasks and task groups. Each group carries a [@repo:X] tag — drives touched_repos (D5).'),
+  N('rubrics',   'Y', '/create-rubrics',400,  270, null, 'Agent slash command. Produces a rubric per task group used by the rubric-verifier later.'),
+  N('orch',      'Y', '/orchestrate',   400,  360, null, 'Agent slash command. Compiles orchestration.yml — the DAG between task groups. Resolves touched_repos(group) from [@repo:X] tags.'),
+  N('runCli',    'X', 'standards-extractor\norchestrate run', 400, 470, null, 'Operator CLI. Spawns the orchestrate runtime. Returns {job_id, status:"running", touched_repos:[...]}.'),
+  N('sched',     'R', 'scheduler picks group', 400, 590, null, 'Runtime. Walks the DAG, picks the next unblocked task group, hands per-repo work to per-repo implementers.'),
+
+  // ─── POLYREPO: coordination.lock.yaml (input pinning artifact) ───
+  N('coordLock', 'R', 'coordination.lock.yaml\n(D5: pin per-repo inputs)', 620, 590, 180, 'Polyrepo artifact. Pins each touched_repo to a specific input SHA at orchestrate-start so verdicts are reproducible. Composes with the D5 cross-repo AND gate downstream.'),
+
+  // D7: per-repo verify config (static, human-set)
+  N('verifyCfg', 'Y', 'verify config\n(per repo)', 880, 590, 165, 'D7. Static config (verify: true|false per repo and per verifier). A disabled repo is still implemented but its cells are recorded `skipped`, with reason, and excluded from the AND gate. Human-set ahead of time — not an LLM or hook decision. Use cases: generated/vendored repos, CI outage, hotfix bypass.'),
+
+  // D8: discovery — resolves verifier commands from repo data, pinned
+  N('discovery', 'Y', 'discovery (D8)\n@ init · cached · git-gated', 1120, 470, 200, 'D8. Runs ONCE at /projects/init (not per orchestration). Agentic hypothesis→probe→assess (reuses discovery_loop.py) over pom.xml / build.gradle / .github/workflows / lint configs → concrete verifier commands (e.g. ./mvnw -B test). Cached keyed by discovered_at_sha. Re-runs ONLY when git diff --name-only since that SHA touches a build/CI/lint path (D8.1a) — empty diff reuses the cache with no LLM call. Each orchestration pins the in-effect manifest into its coordination.lock for reproducibility (D8.1b). Mechanical scan + LLM interpretation stay separate layers; no framework pattern-matching in the scanner. Product standards override; drift surfaces as a discovery-drift SSE frame (D8.2).'),
+
+  // ─── POLYREPO: per-repo implementer fanout ───
+  N('implBack',  'R', 'implementer\n[backend]', 260, 700, 150, 'Runtime. Backend-specialist subagent. Writes code + tests in the backend repo.'),
+  N('implFront', 'R', 'implementer\n[frontend]', 540, 700, 150, 'Runtime. Frontend-specialist subagent. Writes code + tests in the frontend repo.'),
+
+  // ─── [A] git hook + [X] local verify (per-repo) ───
+  N('preCommit', 'A', '.git/hooks/pre-commit\n(per repo)', 80, 830, 165, 'Git hook. The only [A] surface — fires on the developer workstation at commit time, once per repo. Shells into [X].'),
+  N('verify',    'X', 'standards-extractor\nverify --staged', 80, 940, 165, 'Operator CLI invoked by [A]. Runs linters, formatters, fast static checks against staged diff. Repo-local.'),
+
+  // ─── POLYREPO: per-repo commits with D1 trailers ───
+  N('commitBack', 'R', 'commit[backend]\norch-id · group · repo=backend', 260, 940, 175, 'Runtime. Backend repo commit. Trailers (D1): orchestrate-id, task-group-id, repo=backend. Triple is the correlation key downstream.'),
+  N('commitFront', 'R', 'commit[frontend]\norch-id · group · repo=frontend', 540, 940, 175, 'Runtime. Frontend repo commit. Trailers (D1): orchestrate-id, task-group-id, repo=frontend.'),
+
+  // ─── Post-impl / pre-verify hooks ───
+  N('postImpl',  'B', 'post-implement', 400, 1060, null, 'Transition point. The verification-loop fires hooks.yaml handlers here after all per-repo commits land. Side-effect only; payload includes per-repo SHAs.'),
+  N('preVer',    'B', 'pre-verify',     400, 1160, null, 'Transition point. The verification-loop fires handlers here before the verifier cells fan out. Side-effect only; payload includes touched_repos.'),
+
+  // ─── Verifier kinds (each invoked × per (repo, group)) ───
+  N('inline',    'R', 'inline-runner\n× per (repo, group)',  60, 1280, 165, 'Subagent verifier (deterministic). Runs the pinned shell tools per repo against the diff and RETURNS one verdict per (repo, task-group) cell to the verification-loop, which records it and gates. Does not evaluate the gate itself.'),
+  N('ciTrig',    'R', 'CI triggered by\nimplementer (D9)', 245, 1280, 175, 'D9: the implementer agent triggers CI itself — git push / `gh workflow run` right after commit. No separate dispatch runner. The CI verdict comes back via the inbound-gateway below, which delivers it to the verification-loop.'),
+  N('conn',      'X', 'connector adapter\n(thin, CLI strings)', 245, 1390, 200, 'D9: thin per-provider adapter — trigger cmd, status/poll cmd, verdict_mapping. {REPO_KEY}_{CONN}_TOKEN (D3). NOT a REST client.'),
+  N('whrecv',    'X', 'inbound-gateway\nPOST /api/v2/inbound/{provider}', 245, 1480, 230, 'D9.1: the inbound-gateway — a core FastAPI route in standards-extractor with a stable URL. Receives GitLab Pipeline Hook / GitHub workflow_run (push). Verifies signature, dedups, correlates the commit SHA→cell via the authenticated binding recorded at CI-trigger time (D10.4; trailers are a redundant cross-check), maps status via verdict_mapping, records the verdict durably (dedup on delivery id), then starts a FRESH verification-loop run for that group, reconstructing from jobs.db (D10.2 — never resumes a session). It decides nothing — the loop gates and dispatches repair. The only reason this is runtime not agent: a URL must stay reachable regardless of which agent is running. Poll (gh run view) is fallback when no public URL.'),
+  N('rubricV',   'R', 'rubric-verifier\n× per (repo, group)', 440, 1280, 175, 'Subagent verifier (non-deterministic). Scores per-repo diff against rubric.md row-by-row and RETURNS the verdict to the verification-loop, which records it and gates. Does not evaluate the gate itself.'),
+  N('observe',   'R', 'observe cell\n× per (repo, group)', 635, 1280, 175, 'Async verifier cell (not a subagent) — long-running quality/security signal (SonarQube nightly, SCA, perf). Lands via the inbound-gateway, which correlates it and delivers to the verification-loop; the verdict may arrive hours later, per (repo, verifier) cell.'),
+
+  // ─── Verdict / state store / AND gate ───
+  N('verdict',   'B', 'verdict-landed', 400, 1530, null, 'Transition point fired by the verification-loop per (repo, verifier) cell. Side-effect only — the live green/red dots are the SSE stream (D6), not this hook.'),
+  N('store',     'R', 'state store (jobs.db)\nverdicts(orch, group, repo, verifier)', 360, 1620, 230, 'Runtime (D2). SQLite extension. Composite PK includes repo dimension. orchestration_events, task_group_state, verdicts tables. Append-only: both a verifier return (recorded by the loop) and an async CI verdict (recorded by the inbound-gateway) append here; the verification-loop projects it to evaluate the gate and resumes from it after a pause.'),
+
+  // D6: built-in SSE progress stream — projection of the state store, always on
+  N('sse',       'X', 'SSE progress stream\nGET /orchestrations/{id}/stream', 60, 1620, 200, 'D6. Built-in live view (not a hook). One SSE frame per state-store event — every transition, not just gates. Carries cells_done/cells_total so the UI renders per-repo lanes filling independently. Resumable via ?from_seq. Hooks ACT; this stream SHOWS.'),
+  N('gate',      'L', 'AND gate (D5)\nverification-loop', 400, 1710, 200, 'Agentic (D5). The verification-loop evaluates the cross-repo AND — every (repo, verifier) cell must reach pass/skipped before the group advances. The gate is a pure fold over recorded verdicts that the LOOP applies. The decision belongs to the loop; advance() is a guarded write that refuses to record a red-gate or double advance (D10.1) — a code safety-net over the fold, not a replacement for the loop judgement. Async (ci/observe) verdicts reach the loop via the inbound-gateway, which routes but decides nothing.'),
+  N('gateEv',    'B', 'gate-evaluated', 400, 1800, null, 'Transition point the verification-loop fires after it folds the D5 gate. The branch (pass advance / fail repair) is the loop logic; handlers here only observe.'),
+
+  // ─── PASS branch ───
+  N('pass',      'P', 'PASS',           200, 1900, null, 'All (repo × verifier) cells green. Group is done.'),
+  N('done',      'B', 'task-group-done',200, 1990, null, 'Orchestration hook. Marks group complete in state store, writes status to spec.'),
+  N('next',      'L', 'verification-loop\nadvances DAG', 200, 2080, null, 'Agentic. On a passing gate the verification-loop releases the next unblocked group(s) in the DAG and dispatches their implementers. If none remain, the spec is complete.'),
+
+  // ─── FAIL branch (D4 repair is repo-aware) ───
+  N('fail',      'F', 'FAIL',           600, 1900, null, 'At least one (repo, verifier) cell red. Routes to repair-engine.'),
+  N('preRep',    'B', 'pre-repair',     600, 1990, null, 'Transition point before the verification-loop opens a repair. Handlers may snapshot/notify; the per-cell attempt cap is the loop instruction (D10.1), not this hook.'),
+  N('repair',    'R', 'repair-engine\n(D4 LLM, repo-aware)', 600, 2080, 195, 'Subagent (D4), dispatched by the verification-loop on a failed cell. LLM classifier per failure. Prompt includes {failure_log, diff_summary, task_group_spec, repo, connector_kind, attempt_count} → {class, confidence, rationale}. Fix-task scoped to (task_group, repo). Returns its classification to the loop, which acts on it (re-run / fix-task / back off / escalate) — the engine does not route.'),
+  N('postRep',   'B', 'post-repair',    600, 2170, null, 'Transition point after a repair commits. Handlers may diff vs previous / post to reviewer. Side-effect only.'),
+
+  // ─── Observer drift (per cell) ───
+  N('drift',     'B', 'observer-drift', 840, 1530, 170, 'Transition point when a late async verdict flips a (repo, verifier) cell after the DAG moved on. The verification-loop reopens just that cell and spawns a compensating fix-task scoped to (task_group, repo); handlers here only observe.'),
+];
+
+const E = (id, source, target, label) => ({ id, source, target, label });
+const EDGES = [
+  // spec lifecycle (unchanged)
+  E('e0','discGate','shape','re-validate discovery, then shape'),  // D8.1a
+  E('e1','shape','frozen'), E('e2','frozen','tasks'), E('e3','tasks','rubrics'),
+  E('e4','rubrics','orch'), E('e5','orch','runCli'), E('e6','runCli','sched'),
+
+  // POLYREPO: scheduler → coordination.lock → per-repo implementer fanout
+  E('e7','sched','coordLock','pin inputs'),
+  E('e7c','coordLock','verifyCfg','consult verify config'),   // D7
+  E('e7d','discovery','coordLock','pin discovered commands'), // D8.1
+  E('e7a','coordLock','implBack','touched_repos[0]'),
+  E('e7b','coordLock','implFront','touched_repos[1]'),
+
+  // per-repo implementer → preCommit (single hook surface) → verify → per-repo commit
+  E('e8a','implBack','preCommit','on commit'),
+  E('e8b','implFront','preCommit','on commit'),
+  E('e9','preCommit','verify'),
+  E('e10a','verify','commitBack','green'),
+  E('e10b','verify','commitFront','green'),
+
+  // per-repo commits → post-impl hook
+  E('e11a','commitBack','postImpl'),
+  E('e11b','commitFront','postImpl'),
+  E('e12','postImpl','preVer'),
+
+  // verifier fan-out (kinds unchanged; each runs per (repo, group))
+  E('e13','preVer','inline'), E('e14','preVer','ciTrig'),
+  E('e15','preVer','rubricV'),  E('e16','preVer','observe'),
+  E('e17','ciTrig','conn'),
+  E('e17b','conn','whrecv','CI runs → webhook'),   // D9.1
+
+  // verdict-landed fires per (repo, verifier) cell
+  E('e18','inline','verdict'),
+  E('e19','whrecv','verdict','correlate + write'), // CI verdict via receiver
+  E('e20','rubricV','verdict'),
+  E('e21','observe','whrecv','quality/SCA push'),  // observe also via receiver
+
+  // state → AND gate → gate-evaluated
+  E('e22','verdict','store'), E('e23','store','gate'),
+  E('e22b','store','sse','project every event → SSE frame'),   // D6
+  E('e24','gate','gateEv'),    E('e25','gateEv','pass'),
+  E('e26','gateEv','fail'),
+
+  // pass branch
+  E('e27','pass','done'), E('e28','done','next'),
+
+  // fail branch (D4 repair, fix-task scoped to (group, repo))
+  E('e29','fail','preRep'), E('e30','preRep','repair'),
+  E('e31','repair','postRep'),
+  E('e32a','postRep','implBack','loop back (backend cell failed)'),
+  E('e32b','postRep','implFront','loop back (frontend cell failed)'),
+
+  // observer drift (per cell)
+  E('e33','observe','drift','much later'),
+  E('e34','drift','gate','reopens — compensating fix-task'),
+];
+
+const S = (label, nodes, edges, focus) => ({ label, nodes, edges, focus });
+const SCENARIOS = {
+  overview: {
+    name:'Overview', sub:'everything',
+    desc:'All surfaces and edges. Tap a node to inspect it. Pick another scenario, then ▶ Play, to step through a real run.',
+    steps: null,
+  },
+  happy: {
+    name:'Happy path', sub:'all green across both repos',
+    desc:'A normal polyrepo run: spec ➜ coordination.lock pins inputs ➜ implementers fan out per repo ➜ commits land in backend + frontend ➜ all (repo × verifier) cells pass ➜ gate passes ➜ next group.',
+    steps: [
+      S('Draft spec',                  ['shape'],     []),
+      S('spec-frozen [B] fires',       ['frozen'],    ['e1']),
+      S('Create tasks (with @repo)',   ['tasks'],     ['e2']),
+      S('Create rubrics',              ['rubrics'],   ['e3']),
+      S('Orchestrate DAG',             ['orch'],      ['e4']),
+      S('Operator launches [X]',       ['runCli'],    ['e5']),
+      S('Scheduler picks group',       ['sched'],     ['e6']),
+      S('Discovery (D8) — cached at init; git gate says unchanged → reuse', ['discovery'], []),
+      S('coordination.lock pins inputs + pinned discovered manifest', ['coordLock'], ['e7','e7d']),
+      S('Consult verify config (D7) — both repos enabled', ['verifyCfg'], ['e7c']),
+      S('Implementers fan out (parallel)', ['implBack','implFront'], ['e7a','e7b']),
+      S('pre-commit [A] fires (per repo)', ['preCommit'], ['e8a','e8b']),
+      S('verify --staged [X]',         ['verify'],    ['e9']),
+      S('Commits land (per repo)',     ['commitBack','commitFront'], ['e10a','e10b']),
+      S('post-implement [B]',          ['postImpl'],  ['e11a','e11b']),
+      S('pre-verify [B]',              ['preVer'],    ['e12']),
+      S('Verifiers fan out (× per (repo, group))', ['inline','ciTrig','rubricV','observe'], ['e13','e14','e15','e16']),
+      S('CI connectors [X] (repo-keyed env vars)', ['conn'], ['e17']),
+      S('Verdicts arrive — all (repo, verifier) green', ['verdict'], ['e18','e19','e20','e21']),
+      S('State store (composite PK: orch, group, repo, verifier)', ['store'], ['e22']),
+      S('SSE stream (D6) — frames per event: "8 of 8 green"', ['sse'], ['e22b']),
+      S('AND gate evaluates ∀ repo × ∀ verifier', ['gate'], ['e23']),
+      S('gate-evaluated [B]',          ['gateEv'],    ['e24']),
+      S('PASS',                        ['pass'],      ['e25']),
+      S('task-group-done [B]',         ['done'],      ['e27']),
+      S('Scheduler advances',          ['next'],      ['e28']),
+    ],
+  },
+  fail: {
+    name:'Fail + repair', sub:'backend rubric ✕ → repair scoped to (group, backend) → green',
+    desc:'Polyrepo run. Attempt 1: both repos commit, but the backend rubric-verifier cell fails (frontend cell + all other verifiers green). Repair-engine classifies as `real`, fix-task scoped to (task_group, backend). Only the backend implementer loops back. Attempt 2: backend re-commit, full re-verify, all cells green.',
+    steps: [
+      // ─── Spec lifecycle ──────────
+      S('Draft spec',                  ['shape'],     []),
+      S('spec-frozen [B] fires',       ['frozen'],    ['e1']),
+      S('Create tasks (with @repo)',   ['tasks'],     ['e2']),
+      S('Create rubrics',              ['rubrics'],   ['e3']),
+      S('Orchestrate DAG',             ['orch'],      ['e4']),
+      S('Operator launches [X]',       ['runCli'],    ['e5']),
+      // ─── Attempt 1 ────────────────
+      S('① Scheduler picks group',     ['sched'],     ['e6']),
+      S('① coordination.lock pins inputs', ['coordLock'], ['e7']),
+      S('① Implementers fan out',      ['implBack','implFront'], ['e7a','e7b']),
+      S('① pre-commit [A] fires',      ['preCommit'], ['e8a','e8b']),
+      S('① verify --staged [X]',       ['verify'],    ['e9']),
+      S('① Commits land (per repo)',   ['commitBack','commitFront'], ['e10a','e10b']),
+      S('① post-implement [B]',        ['postImpl'],  ['e11a','e11b']),
+      S('① pre-verify [B]',            ['preVer'],    ['e12']),
+      S('① Verifiers fan out',         ['inline','ciTrig','rubricV','observe'], ['e13','e14','e15','e16']),
+      S('① CI connectors [X]',         ['conn'],      ['e17']),
+      S('① Verdicts — rubric[backend] ✕', ['verdict'], ['e18','e19','e20','e21']),
+      S('① State store',               ['store'],     ['e22']),
+      S('① AND gate trips (1 cell red)', ['gate'],    ['e23']),
+      S('① gate-evaluated [B]',        ['gateEv'],    ['e24']),
+      S('① FAIL ✕',                    ['fail'],      ['e26']),
+      S('① pre-repair [B]',            ['preRep'],    ['e29']),
+      S('① repair-engine — classify (D4)\n→ {repo=backend, class=real}', ['repair'], ['e30']),
+      S('① post-repair [B]',           ['postRep'],   ['e31']),
+      S('↩ Fix-task scoped (group, backend)\nonly backend implementer loops back', ['implBack'], ['e32a']),
+      // ─── Attempt 2 — backend re-commit only ────────
+      S('② implBack applies fix',      ['implBack'],  []),
+      S('② pre-commit [A] (backend)',  ['preCommit'], ['e8a']),
+      S('② verify --staged [X]',       ['verify'],    ['e9']),
+      S('② commit[backend] (new SHA)', ['commitBack'], ['e10a']),
+      S('② post-implement [B]',        ['postImpl'],  ['e11a']),
+      S('② pre-verify [B]',            ['preVer'],    ['e12']),
+      S('② Verifiers re-run (both repos)', ['inline','ciTrig','rubricV','observe'], ['e13','e14','e15','e16']),
+      S('② CI connectors [X]',         ['conn'],      ['e17']),
+      S('② Verdicts — all (repo, verifier) green ✓', ['verdict'], ['e18','e19','e20','e21']),
+      S('② State store',               ['store'],     ['e22']),
+      S('② AND gate',                  ['gate'],      ['e23']),
+      S('② gate-evaluated [B]',        ['gateEv'],    ['e24']),
+      S('② PASS ✓',                    ['pass'],      ['e25']),
+      S('② task-group-done [B]',       ['done'],      ['e27']),
+      S('② Scheduler advances',        ['next'],      ['e28']),
+    ],
+  },
+  drift: {
+    name:'Observer drift', sub:'frontend × observe flips → re-open + compensating fix',
+    desc:'DAG already moved on. Hours later, the observe-runner cell for (frontend, group-1) flips red. observer-drift fires for that cell. AND gate re-opens. Repair-engine classifies and spawns a compensating fix-task scoped to (group-1, frontend). Backend cells unaffected.',
+    steps: [
+      S('observe-runner running per (repo, group)', ['observe'], []),
+      S('Long after — observe[frontend, group-1] flips red', ['observe'], []),
+      S('observer-drift [B] fires for that cell',   ['drift'],   ['e33']),
+      S('Re-enter AND gate (one cell now red)',     ['gate'],    ['e34']),
+      S('gate-evaluated [B]',                       ['gateEv'],  ['e24']),
+      S('FAIL ✕',                                   ['fail'],    ['e26']),
+      S('pre-repair [B]',                           ['preRep'],  ['e29']),
+      S('repair-engine — classify (D4)\n→ {repo=frontend, class=real}', ['repair'], ['e30']),
+      S('post-repair [B]',                          ['postRep'], ['e31']),
+      S('Compensating fix-task scoped (group-1, frontend)\nonly frontend implementer loops back', ['implFront'], ['e32b']),
+    ],
+  },
+  ci: {
+    name:'CI sub-path', sub:'connectors per repo',
+    desc:'Focus on the [X] connectors layer — how per-repo external CI plugs in. Each repo gets its own env-var-keyed connector (D3): backend → GitHub Actions, frontend → GitLab CI in this example.',
+    steps: [
+      S('Operator launches [X]',        ['runCli'],    ['e5']),
+      S('Scheduler picks group',        ['sched'],     ['e6']),
+      S('coord.lock pins per-repo SHAs', ['coordLock'], ['e7']),
+      S('Implementers commit per repo', ['implBack','implFront'], ['e7a','e7b']),
+      S('Commits land',                 ['commitBack','commitFront'], ['e10a','e10b']),
+      S('post-implement [B]',           ['postImpl'],  ['e11a','e11b']),
+      S('pre-verify [B]',               ['preVer'],    ['e12']),
+      S('CI triggered by implementer (D9): git push / gh workflow run', ['ciTrig'], ['e14']),
+      S('thin connector adapter resolves {REPO_KEY}_{CONN}_TOKEN', ['conn'], ['e17']),
+      S('CI runs → GitLab/GitHub webhook → receiver (D9.1)', ['whrecv'], ['e17b']),
+      S('receiver correlates trailer→cell, writes verdict', ['verdict'], ['e19']),
+      S('State store (composite PK incl. repo)', ['store'], ['e22']),
+      S('AND gate ∀ repo × ∀ verifier', ['gate'],      ['e23']),
+      S('gate-evaluated [B]',           ['gateEv'],    ['e24']),
+    ],
+  },
+};
+
+const TAG_COLOR = { A:'#ff8c1a', B:'#b366ff', X:'#4da6ff', Y:'#3ddc84', R:'#7a8294', F:'#ff5a5f', P:'#3ddc84', L:'#ffd23f' };
+const TAG_LABEL = { A:'A — git hook', B:'B — orchestration hook', X:'X — operator CLI', Y:'Y — agent /slash', R:'runtime', F:'fail', P:'pass', L:'verification-loop (agentic)' };
+const TAG_TEXT  = { A:'A', B:'B', X:'X', Y:'Y', R:'rt', F:'FAIL', P:'PASS', L:'loop' };
+
+function FlowNode({ data }) {
+  let state = data.state || 'pending';
+  const cls = 'node-box node-' + data.tag + ' node-' + state;
+  const tagCls = 'node-tag tag-' + data.tag;
+  return h('div', { className: cls, style:{ minWidth: data.w || 140 }, onClick:(e)=>{ e.stopPropagation(); data.onSelect(data.nodeId); } },
+    h(Handle, { type:'target', position:Position.Top, style:{ background:'#555' } }),
+    h('div', { className: tagCls }, TAG_TEXT[data.tag] || data.tag),
+    h('div', { className: 'node-label' }, data.label.split('\n').map((l,i)=>h(React.Fragment,{key:i}, i?h('br'):null, l))),
+    h(Handle, { type:'source', position:Position.Bottom, style:{ background:'#555' } })
+  );
+}
+const nodeTypes = { flow: FlowNode };
+
+function edgeColor(sourceTag, targetTag) {
+  if (sourceTag !== 'R') return TAG_COLOR[sourceTag];
+  if (targetTag !== 'R') return TAG_COLOR[targetTag];
+  return TAG_COLOR.R;
+}
+
+function App() {
+  const [scenario, setScenario] = useState('overview');
+  const [step, setStep] = useState(-1);          // -1 = idle; 0..steps-1 = current step
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1200);      // ms per step
+  const [selectedId, setSelectedId] = useState(null);
+  const [follow, setFollow] = useState(true);
+  const { setCenter } = useReactFlow();
+  const sc = SCENARIOS[scenario];
+  const hasSteps = !!sc.steps;
+  const total = hasSteps ? sc.steps.length : 0;
+  const tagById = useMemo(()=> Object.fromEntries(NODES.map(n=>[n.id,n.tag])), []);
+
+  // reset on scenario change
+  useEffect(() => { setStep(-1); setPlaying(false); }, [scenario]);
+
+  // playback timer
+  useEffect(() => {
+    if (!playing || !hasSteps) return;
+    if (step >= total - 1) { setPlaying(false); return; }
+    const t = setTimeout(() => setStep(s => Math.min(total - 1, s + 1)), speed);
+    return () => clearTimeout(t);
+  }, [playing, step, total, hasSteps, speed]);
+
+  // auto-pan to follow active step
+  useEffect(() => {
+    if (!follow || !hasSteps || step < 0) return;
+    const ids = sc.steps[step].nodes || [];
+    if (!ids.length) return;
+    let sx = 0, sy = 0, n = 0;
+    ids.forEach(id => {
+      const nd = NODES.find(x => x.id === id);
+      if (nd) { sx += nd.x + 70; sy += nd.y + 30; n++; }
+    });
+    if (n > 0) setCenter(sx/n, sy/n, { duration: 600, zoom: 0.85 });
+  }, [step, scenario, follow, hasSteps, setCenter]);
+
+  // compute per-id state
+  const { nodeState, edgeState } = useMemo(() => {
+    const ns = {}; const es = {};
+    if (!hasSteps) {
+      // overview — everything visible (active-without-pulse), nothing dimmed
+      NODES.forEach(n => ns[n.id] = 'done'); // 'done' = bright, no pulse, ✓ would distract — turn off
+      EDGES.forEach(e => es[e.id] = 'done');
+    } else {
+      NODES.forEach(n => ns[n.id] = 'pending');
+      EDGES.forEach(e => es[e.id] = 'pending');
+      if (step >= 0) {
+        for (let i = 0; i < step; i++) {
+          (sc.steps[i].nodes || []).forEach(id => ns[id] = 'done');
+          (sc.steps[i].edges || []).forEach(id => es[id] = 'done');
+        }
+        (sc.steps[step].nodes || []).forEach(id => ns[id] = 'active');
+        (sc.steps[step].edges || []).forEach(id => es[id] = 'active');
+      }
+    }
+    return { nodeState: ns, edgeState: es };
+  }, [scenario, step, hasSteps]);
+
+  // for overview, suppress the ✓ badge by remapping to 'visible'
+  const visualNodeState = (id) => {
+    if (!hasSteps) return 'visible';
+    return nodeState[id];
+  };
+
+  const nodes = useMemo(() => NODES.map(n => ({
+    id: n.id, type:'flow', position:{ x:n.x, y:n.y },
+    data: { tag:n.tag, label:n.label, w:n.w, state: visualNodeState(n.id), nodeId:n.id, onSelect:setSelectedId },
+    draggable: true,
+  })), [nodeState, hasSteps]);
+
+  const edges = useMemo(() => EDGES.map(e => {
+    const st = edgeState[e.id];
+    const col = edgeColor(tagById[e.source], tagById[e.target]);
+    return {
+      id:e.id, source:e.source, target:e.target, label:e.label,
+      className: st,
+      animated: st === 'active',
+      markerEnd:{ type:MarkerType.ArrowClosed, color:col, width:18, height:18 },
+      style:{ stroke:col, strokeWidth: st === 'active' ? 3 : (st === 'done' ? 2 : 1.4) },
+      labelStyle:{ fill:'#e8ecf3', fontSize:10 },
+      labelBgStyle:{ fill:'#1b1f29' }, labelBgPadding:[4,2], labelBgBorderRadius:4,
+    };
+  }), [edgeState, tagById]);
+
+  const sel = selectedId ? NODES.find(n=>n.id===selectedId) : null;
+
+  const onPlay = () => {
+    if (!hasSteps) return;
+    if (step >= total - 1) setStep(0);
+    else if (step < 0) setStep(0);
+    setPlaying(true);
+  };
+  const onPause = () => setPlaying(false);
+  const onReset = () => { setPlaying(false); setStep(-1); };
+  const onPrev = () => { setPlaying(false); setStep(s => Math.max(0, (s < 0 ? 0 : s - 1))); };
+  const onNext = () => { setPlaying(false); setStep(s => Math.min(total - 1, s + 1)); };
+
+  const progressPct = !hasSteps ? 100 : (step < 0 ? 0 : ((step + 1) / total) * 100);
+  const stepLabel = !hasSteps
+    ? 'Tap any node to inspect it.'
+    : (step < 0 ? 'Ready. Tap ▶ to step through this scenario.' : `${sc.steps[step].label}`);
+
+  return h(React.Fragment, null,
+    h('div', { className:'tabs' },
+      Object.entries(SCENARIOS).map(([k,v]) =>
+        h('button', { key:k, className:'tab' + (k===scenario?' active':''), onClick:()=>{ setScenario(k); setSelectedId(null); } },
+          v.name, h('small', null, v.sub)
+        )
+      )
+    ),
+    h('div', { className:'player' },
+      h('div', { className:'scen-desc' }, sc.desc),
+      h('div', { className:'row' },
+        playing
+          ? h('button', { className:'btn primary', onClick:onPause, disabled:!hasSteps }, '⏸ Pause')
+          : h('button', { className:'btn primary', onClick:onPlay, disabled:!hasSteps }, '▶ Play'),
+        h('button', { className:'btn', onClick:onPrev, disabled:!hasSteps || step <= 0 }, '⏮'),
+        h('button', { className:'btn', onClick:onNext, disabled:!hasSteps || step >= total - 1 }, '⏭'),
+        h('button', { className:'btn', onClick:onReset, disabled:!hasSteps || step < 0 }, '⟲'),
+        h('select', { value:speed, onChange:(e)=>setSpeed(parseInt(e.target.value,10)) },
+          h('option',{value:2000},'0.5×'),
+          h('option',{value:1200},'1×'),
+          h('option',{value:700}, '2×'),
+          h('option',{value:400}, '3×'),
+        ),
+        h('button', { className:'btn' + (follow?' primary':''), onClick:()=>setFollow(f=>!f), title:'Auto-pan to follow active step' }, follow ? '👁 Follow' : '👁 Off'),
+        h('div', { style:{flex:1,minWidth:80} }),
+        hasSteps && h('div', { className:'step-label' },
+          h('span',{className:'num'}, (step<0?0:step+1) + '/' + total),
+          stepLabel
+        ),
+        !hasSteps && h('div', { className:'step-label' }, stepLabel),
+      ),
+      h('div', { className:'progress' }, h('div', { style:{ width: progressPct + '%' } }))
+    ),
+    sel && h('div', { className:'info' },
+      h('button',{className:'close',onClick:()=>setSelectedId(null)},'×'),
+      h('h4', null,
+        h('span',{className:'tag tag-'+sel.tag, style:{background:TAG_COLOR[sel.tag]}}, TAG_TEXT[sel.tag] || sel.tag),
+        ' ', sel.label.replace(/\n/g,' ')
+      ),
+      h('div', { style:{fontSize:11,color:'var(--muted)',marginTop:2} }, TAG_LABEL[sel.tag]),
+      h('p', null, sel.info)
+    ),
+    h('div', { className:'legend' },
+      h('span',{className:'chip'}, h('span',{className:'dot',style:{background:'var(--Y)'}}),' Y agent /slash'),
+      h('span',{className:'chip'}, h('span',{className:'dot',style:{background:'var(--X)'}}),' X operator CLI'),
+      h('span',{className:'chip'}, h('span',{className:'dot',style:{background:'var(--A)'}}),' A git hook'),
+      h('span',{className:'chip'}, h('span',{className:'dot',style:{background:'var(--B)'}}),' B orch hook'),
+      h('span',{className:'chip'}, h('span',{className:'dot',style:{background:'var(--R)'}}),' runtime'),
+      h('span',{className:'chip'}, h('span',{className:'dot',style:{background:'var(--L)'}}),' verification-loop'),
+    ),
+    h(ReactFlow, {
+      nodes, edges, nodeTypes,
+      fitView:true, fitViewOptions:{ padding:0.22 },
+      minZoom:0.12, maxZoom:1.5,
+      onPaneClick:()=>setSelectedId(null),
+      panOnScroll:false, zoomOnPinch:true, panOnDrag:true,
+      proOptions:{ hideAttribution:false },
+    },
+      h(Background, { color:'#2b3142', gap:24, size:1 }),
+      h(Controls, { showInteractive:false }),
+      h(MiniMap, { pannable:true, zoomable:true, maskColor:'rgba(15,17,23,.7)', nodeColor:(n)=>TAG_COLOR[n.data?.tag] || '#888', style:{ background:'#1b1f29', border:'1px solid var(--border)' } })
+    )
+  );
+}
+
+createRoot(document.getElementById('root')).render(
+  h(ReactFlowProvider, null, h(App))
+);
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "fixtures": [
+    {"name": "no_bom",                 "expected": 3, "kind": "happy"},
+    {"name": "with_bom",               "expected": 5, "kind": "bom"},
+    {"name": "empty_array",            "expected": 0, "kind": "edge"},
+    {"name": "empty_file",             "expected": 0, "kind": "edge"},
+    {"name": "malformed",              "expected": 0, "kind": "error"},
+    {"name": "bom_with_unicode_paths", "expected": 4, "kind": "bom_unicode"},
+    {"name": "crlf_line_endings",      "expected": 2, "kind": "happy_crlf"},
+    {"name": "extra_fields",           "expected": 3, "kind": "happy_extra"},
+    {"name": "non_array_object",       "expected": 0, "kind": "error"},
+    {"name": "missing_file",           "expected": 0, "kind": "error"}
+  ]
+}

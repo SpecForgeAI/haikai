@@ -1,0 +1,29 @@
+@startuml
+title Inheritance Tree
+
+class AbstractDocument
+class Document
+class Car
+class HasModel
+class HasPrice
+class HasParts
+class HasType
+class Part
+class DocumentImplementation
+
+Document <|-- AbstractDocument
+AbstractDocument <|-- Car
+HasModel <|-- Car
+HasPrice <|-- Car
+HasParts <|-- Car
+Document <|-- HasModel
+Document <|-- HasParts
+Document <|-- HasPrice
+Document <|-- HasType
+AbstractDocument <|-- Part
+HasType <|-- Part
+HasModel <|-- Part
+HasPrice <|-- Part
+AbstractDocument <|-- DocumentImplementation
+
+@enduml

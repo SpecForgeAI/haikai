@@ -1,0 +1,605 @@
+/**
+ * ContextPickerModal.module.css
+ *
+ * Spec 2026-01-04: Product Implement Context Picker v1
+ * Task Group 3: Styles for the ContextPickerModal component
+ *
+ * Spec 2026-01-16: Context Picker Bundles - UI and Selection Contract
+ * Task Group 4: Bundle dropdown styles
+ *
+ * Spec 2026-01-16: Context Picker Smart Defaults and Heuristic Suggestions
+ * Task Group 4: Depth selector styles
+ * Task Group 5: Suggestions section styles
+ *
+ * Spec 2026-01-17: Context Picker Modal UI Improvements
+ * Task Group 3: Modal size expansion (1200px width, 85vh height)
+ * Task Group 4: Icon tab strip styles
+ * Task Group 5: Collapsible section styles
+ *
+ * Spec 2026-01-17: Context Picker UX - Relationship Labels and Stable Chips
+ * Task Group 1: Modal height increased from 85vh to 90vh
+ *
+ * Follows patterns from WorkItemCreateModal.module.css and PaletteDomainSelector.module.css
+ */
+
+/* Overlay - semi-transparent backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container
+ * Spec 2026-01-17 Task Group 3: Increased from 600px to 1200px width, 80vh to 85vh height
+ * Spec 2026-01-17 UX: Increased from 85vh to 90vh for better content visibility
+ */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 1200px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header section */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f5f5f5;
+  border-radius: 8px 8px 0 0;
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* ============================================================================
+ * Legacy Tab Navigation (hidden when using domain tabs)
+ * ============================================================================ */
+
+.tabContainer {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.tab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.activeTab {
+  color: #1976D2;
+  border-bottom-color: #1976D2;
+  background: white;
+}
+
+/* ============================================================================
+ * Domain Tab Strip Styles
+ * Spec 2026-01-17 Task Group 4: Icon-based domain tabs
+ * Follows pattern from PaletteDomainSelector.module.css
+ * ============================================================================ */
+
+.domainTabStrip {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.domainTab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.domainTab:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.domainTab.selected {
+  color: #1976D2;
+  background: white;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.domainTab:focus {
+  outline: 2px solid #1976D2;
+  outline-offset: 2px;
+}
+
+.domainTabIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+/* ============================================================================
+ * Collapsible Section Styles
+ * Spec 2026-01-17 Task Group 5: Domain sections (Entities/Relationships)
+ * Follows pattern from PaletteSection.module.css
+ * ============================================================================ */
+
+.domainSection {
+  margin-bottom: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  background: white;
+  overflow: hidden;
+}
+
+.domainSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e8e8e8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.domainSectionHeader:hover {
+  background: #eee;
+}
+
+.domainSectionTriangle {
+  font-size: 10px;
+  color: #666;
+  width: 12px;
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.domainSectionTriangle.expanded {
+  transform: rotate(90deg);
+}
+
+.domainSectionLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.domainSectionCount {
+  font-size: 11px;
+  color: #888;
+  background: #e8e8e8;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.domainSectionBody {
+  padding: 8px 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+ * Content Section
+ * Spec 2026-01-17 Task Group 3: Increased min/max height for larger content area
+ * ============================================================================ */
+
+.content {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 450px;
+  max-height: 600px;
+}
+
+/* Search input */
+.searchContainer {
+  margin-bottom: 16px;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.searchInput::placeholder {
+  color: #999;
+}
+
+/* ============================================================================
+ * Suggestions Section Styles
+ * Spec 2026-01-16: Context Picker Smart Defaults and Heuristic Suggestions
+ * ============================================================================ */
+
+.suggestionsSection {
+  margin-bottom: 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  background: #fafbfc;
+  overflow: hidden;
+}
+
+.suggestionsSectionHeader {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: #f0f2f5;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.suggestionCard {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e8e8e8;
+  gap: 12px;
+}
+
+.suggestionCard:last-child {
+  border-bottom: none;
+}
+
+.suggestionContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.suggestionTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+
+.suggestionRationale {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+.suggestionActions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.addButton {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #1976D2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.addButton:hover {
+  background: #1565C0;
+}
+
+.dismissButton {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  color: #666;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.dismissButton:hover {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+/* Group container (for architecture tab) */
+.group {
+  margin-bottom: 12px;
+}
+
+.groupHeader {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.groupToggle {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  color: #666;
+  transition: transform 0.2s ease;
+}
+
+.groupToggle.expanded {
+  transform: rotate(90deg);
+}
+
+.groupTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.groupCount {
+  margin-left: 8px;
+  font-size: 11px;
+  color: #999;
+  font-weight: normal;
+}
+
+.groupContent {
+  padding-left: 24px;
+}
+
+/* Option row container - wraps checkbox/label and bundle dropdown */
+.optionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.optionRow:hover {
+  background: rgba(0, 0, 0, 0.02);
+  margin: 0 -8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Option item with checkbox */
+.optionItem {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.checkbox {
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+  cursor: pointer;
+  accent-color: #1976D2;
+  flex-shrink: 0;
+}
+
+.optionLabel {
+  font-size: 14px;
+  color: #333;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Bundle selector dropdown - inline with option row
+ * Following pattern from AdvancedAddDialog.module.css .spacingSelect
+ */
+.bundleSelect {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  width: 180px;
+  flex-shrink: 0;
+}
+
+.bundleSelect:hover {
+  border-color: #999;
+}
+
+.bundleSelect:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+/* ============================================================================
+ * Depth Selector Styles
+ * Spec 2026-01-16: Context Picker Smart Defaults and Heuristic Suggestions
+ * ============================================================================ */
+
+.depthSelectContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.depthSelect {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  width: 120px;
+}
+
+.depthSelect:hover {
+  border-color: #999;
+}
+
+.depthSelect:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.depthWarning {
+  font-size: 11px;
+  color: #e65100;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Empty state */
+.emptyState {
+  padding: 40px 20px;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+/* Footer section with action buttons */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+  flex-shrink: 0;
+}
+
+/* Primary button (Apply) */
+.primaryButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.primaryButton:disabled {
+  background: #bbb;
+  cursor: not-allowed;
+}
+
+/* Secondary button (Cancel) */
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.secondaryButton:disabled {
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* No results message */
+.noResults {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  font-style: italic;
+}

@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "WP_Widget_Calendar",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

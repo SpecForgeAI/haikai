@@ -1,0 +1,35 @@
+{
+  "sources": [
+
+  ],
+  "technical_documents": {
+    "tech_stack": [
+      "https://github.com/AutoMaker-Org/automaker/blob/main/apps/ui/docs/AGENT_ARCHITECTURE.md"
+    ]
+  }
+}
+
+curl -X 'POST' \
+  'http://localhost:8000/api/v1/standards/global/generate?global_dir=company%2Fglobal-standards-2&recursive=true' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer changeit' \
+  -H 'Content-Type: application/json' \
+  -d '{
+  "sources": [
+
+  ],
+  "technical_documents": {
+    "tech_stack": [
+      "https://github.com/AutoMaker-Org/automaker/blob/main/apps/ui/docs/AGENT_ARCHITECTURE.md"
+    ]
+  }
+}'
+
+
+curl -X 'POST' \
+  'http://localhost:8000/api/v1/standards/product/generate?project_dir=company%2Fnew-company&global_dir=company%2Fglobal-standards-2&recursive=true' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer changeit' \
+  -H 'Content-Type: application/json' \
+  -d '[
+]'

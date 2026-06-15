@@ -1,0 +1,780 @@
+{
+  "metaModel": {
+    "entities": {
+      "business_users": [
+        {
+          "id": "user-1",
+          "name": "Trading Desk User",
+          "description": "Front office trader who executes trades",
+          "tags": "front-office, trading"
+        },
+        {
+          "id": "user-2",
+          "name": "Risk Manager",
+          "description": "Middle office risk analyst",
+          "tags": "middle-office, risk"
+        },
+        {
+          "id": "user-3",
+          "name": "Compliance Officer",
+          "description": "Regulatory compliance specialist",
+          "tags": "compliance, regulatory"
+        }
+      ],
+      "business_processes": [
+        {
+          "id": "process-1",
+          "name": "Risk Aggregation",
+          "description": "Aggregate risk across all positions",
+          "tags": "risk, core"
+        },
+        {
+          "id": "process-2",
+          "name": "Trade Execution",
+          "description": "Execute trades on behalf of clients",
+          "tags": "trading, core"
+        }
+      ],
+      "applications": [
+        {
+          "id": "app-1",
+          "name": "Risk Engine",
+          "description": "Core risk calculation system",
+          "app_type": "Batch",
+          "status": "Active",
+          "tags": "risk, core"
+        },
+        {
+          "id": "app-2",
+          "name": "Trading Platform",
+          "description": "Electronic trading platform",
+          "app_type": "Web",
+          "status": "Active",
+          "tags": "trading, core"
+        },
+        {
+          "id": "app-3",
+          "name": "Data Warehouse",
+          "description": "Central data repository",
+          "app_type": "Batch",
+          "status": "Active",
+          "tags": "data, infrastructure"
+        },
+        {
+          "id": "app-4",
+          "name": "OMS System",
+          "description": "Order Management System for trade lifecycle",
+          "app_type": "Web",
+          "status": "Active",
+          "tags": "trading, orders"
+        },
+        {
+          "id": "app-5",
+          "name": "VaR Interrogation and Reporting",
+          "description": "Value at Risk analysis and reporting dashboard",
+          "app_type": "Web",
+          "status": "Active",
+          "tags": "risk, reporting"
+        }
+      ],
+      "app_components": [
+        {
+          "id": "comp-1",
+          "name": "Risk Calculator",
+          "description": "Calculates VaR and other risk metrics",
+          "application_id": "app-1",
+          "tags": "calculation"
+        },
+        {
+          "id": "comp-2",
+          "name": "Position Loader",
+          "description": "Loads position data from sources",
+          "application_id": "app-1",
+          "tags": "data-loading"
+        }
+      ],
+      "services": [
+        {
+          "id": "svc-1",
+          "name": "Risk API",
+          "description": "REST API for risk data",
+          "application_id": "app-1",
+          "service_type": "REST",
+          "tags": "api"
+        },
+        {
+          "id": "svc-2",
+          "name": "Trade API",
+          "description": "API for trade execution",
+          "application_id": "app-2",
+          "service_type": "REST",
+          "tags": "api"
+        }
+      ],
+      "application_points": [
+        {
+          "id": "point-1",
+          "name": "Risk Dashboard",
+          "description": "Web UI for risk monitoring",
+          "application_id": "app-1",
+          "point_type": "UI",
+          "tags": "ui, monitoring"
+        },
+        {
+          "id": "point-2",
+          "name": "Trade Blotter",
+          "description": "Trading interface",
+          "application_id": "app-2",
+          "point_type": "UI",
+          "tags": "ui, trading"
+        }
+      ],
+      "logical_data_entities": [
+        {
+          "id": "lde-1",
+          "name": "Position",
+          "description": "A holding of a financial instrument",
+          "tags": "core, trading"
+        },
+        {
+          "id": "lde-2",
+          "name": "Risk Metric",
+          "description": "A calculated risk measure",
+          "tags": "risk"
+        },
+        {
+          "id": "lde-3",
+          "name": "Trade",
+          "description": "A financial transaction record",
+          "tags": "trading, core"
+        }
+      ],
+      "logical_data_attributes": [
+        {
+          "id": "lattr-1",
+          "name": "position_id",
+          "description": "Unique identifier for position",
+          "logical_entity_id": "lde-1",
+          "data_type": "VARCHAR",
+          "is_primary_key": true,
+          "is_nullable": false,
+          "tags": ""
+        },
+        {
+          "id": "lattr-2",
+          "name": "quantity",
+          "description": "Position quantity",
+          "logical_entity_id": "lde-1",
+          "data_type": "DECIMAL",
+          "is_primary_key": false,
+          "is_nullable": false,
+          "tags": ""
+        }
+      ],
+      "physical_data_entities": [
+        {
+          "id": "pde-1",
+          "name": "POSITIONS",
+          "description": "Position table in data warehouse",
+          "logical_entity_id": "lde-1",
+          "physical_type": "Table",
+          "database": "DW_PROD",
+          "tags": "warehouse"
+        },
+        {
+          "id": "pde-2",
+          "name": "RISK_METRICS",
+          "description": "Risk metrics table",
+          "logical_entity_id": "lde-2",
+          "physical_type": "Table",
+          "database": "RISK_DB",
+          "tags": "risk"
+        }
+      ],
+      "physical_data_attributes": [
+        {
+          "id": "pattr-1",
+          "name": "position_id",
+          "description": "Primary key",
+          "physical_entity_id": "pde-1",
+          "data_type": "VARCHAR",
+          "is_primary_key": true,
+          "is_nullable": false,
+          "tags": ""
+        },
+        {
+          "id": "pattr-2",
+          "name": "quantity",
+          "description": "Position quantity",
+          "physical_entity_id": "pde-1",
+          "data_type": "DECIMAL",
+          "is_primary_key": false,
+          "is_nullable": false,
+          "tags": ""
+        },
+        {
+          "id": "pattr-3",
+          "name": "metric_id",
+          "description": "Primary key",
+          "physical_entity_id": "pde-2",
+          "data_type": "VARCHAR",
+          "is_primary_key": true,
+          "is_nullable": false,
+          "tags": ""
+        },
+        {
+          "id": "pattr-4",
+          "name": "var_value",
+          "description": "Value at Risk",
+          "physical_entity_id": "pde-2",
+          "data_type": "DECIMAL",
+          "is_primary_key": false,
+          "is_nullable": true,
+          "tags": ""
+        }
+      ]
+    },
+    "relationships": {
+      "business_user_processes": [
+        {
+          "id": "bup-1",
+          "business_user_id": "user-2",
+          "business_process_id": "process-1",
+          "description": "Risk manager uses risk aggregation",
+          "tags": ""
+        },
+        {
+          "id": "bup-2",
+          "business_user_id": "user-1",
+          "business_process_id": "process-2",
+          "description": "Trader uses trade execution",
+          "tags": ""
+        }
+      ],
+      "application_point_business_processes": [
+        {
+          "id": "apbp-1",
+          "application_point_id": "point-1",
+          "business_process_id": "process-1",
+          "description": "Risk Dashboard supports Risk Aggregation",
+          "tags": ""
+        },
+        {
+          "id": "apbp-2",
+          "application_point_id": "point-2",
+          "business_process_id": "process-2",
+          "description": "Trade Blotter supports Trade Execution",
+          "tags": ""
+        }
+      ],
+      "logical_data_entity_relationships": [],
+      "logical_data_entity_physical_data_entities": [
+        {
+          "id": "ldepde-1",
+          "logical_entity_id": "lde-1",
+          "physical_entity_id": "pde-1",
+          "description": "Position maps to POSITIONS table",
+          "tags": ""
+        },
+        {
+          "id": "ldepde-2",
+          "logical_entity_id": "lde-2",
+          "physical_entity_id": "pde-2",
+          "description": "Risk Metric maps to RISK_METRICS table",
+          "tags": ""
+        }
+      ],
+      "logical_data_attribute_physical_data_attributes": [
+        {
+          "id": "ldapda-1",
+          "logical_attribute_id": "lattr-1",
+          "physical_attribute_id": "pattr-1",
+          "description": "Logical position_id maps to physical position_id",
+          "tags": ""
+        },
+        {
+          "id": "ldapda-2",
+          "logical_attribute_id": "lattr-2",
+          "physical_attribute_id": "pattr-2",
+          "description": "Logical quantity maps to physical quantity",
+          "tags": ""
+        }
+      ],
+      "data_movements": [
+        {
+          "id": "dm-1",
+          "source_application_id": "app-3",
+          "target_application_id": "app-1",
+          "data_entity_id": "lde-1",
+          "movement_type": "Batch",
+          "description": "Position data flows from DW to Risk Engine",
+          "tags": ""
+        },
+        {
+          "id": "dm-2",
+          "source_application_id": "app-4",
+          "target_application_id": "app-5",
+          "data_entity_id": "lde-2",
+          "movement_type": "Real-time",
+          "description": "Risk metrics flow from OMS to VaR Reporting",
+          "tags": ""
+        },
+        {
+          "id": "dm-3",
+          "source_application_id": "app-2",
+          "target_application_id": "app-4",
+          "data_entity_id": "lde-3",
+          "movement_type": "Real-time",
+          "description": "Trade data flows from Trading Platform to OMS",
+          "tags": ""
+        }
+      ]
+    }
+  },
+  "diagrams": [
+    {
+      "id": "diag-1",
+      "name": "Risk Domain Overview",
+      "description": "High-level view of risk systems with BUSINESS_USER stick man rendering",
+      "diagram_type": "APPLICATION_LANDSCAPE",
+      "settings": {},
+      "diagram_nodes": [
+        {
+          "id": "node-1",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-1",
+          "pos_x": 100,
+          "pos_y": 100,
+          "width": 250,
+          "height": 200,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_h_align": "LEFT",
+          "text_v_align": "TOP",
+          "text_font_size": "14px",
+          "text_font_weight": "bold"
+        },
+        {
+          "id": "node-2",
+          "entity_type": "APP_COMPONENT",
+          "entity_id": "comp-1",
+          "pos_x": 120,
+          "pos_y": 150,
+          "width": 100,
+          "height": 50,
+          "auto_size": false,
+          "z_index": 2,
+          "parent_node_id": "node-1",
+          "style_override": {},
+          "text_font_size": "10px"
+        },
+        {
+          "id": "node-3",
+          "entity_type": "APP_COMPONENT",
+          "entity_id": "comp-2",
+          "pos_x": 230,
+          "pos_y": 150,
+          "width": 100,
+          "height": 50,
+          "auto_size": false,
+          "z_index": 2,
+          "parent_node_id": "node-1",
+          "style_override": {},
+          "text_font_size": "10px",
+          "text_font_style": "italic"
+        },
+        {
+          "id": "node-4",
+          "entity_type": "SERVICE",
+          "entity_id": "svc-1",
+          "pos_x": 120,
+          "pos_y": 220,
+          "width": 100,
+          "height": 50,
+          "auto_size": false,
+          "z_index": 2,
+          "parent_node_id": "node-1",
+          "style_override": {}
+        },
+        {
+          "id": "node-5",
+          "entity_type": "BUSINESS_PROCESS",
+          "entity_id": "process-1",
+          "pos_x": 450,
+          "pos_y": 150,
+          "width": 140,
+          "height": 60,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_h_align": "RIGHT",
+          "text_v_align": "BOTTOM"
+        },
+        {
+          "id": "node-6",
+          "entity_type": "BUSINESS_USER",
+          "entity_id": "user-2",
+          "pos_x": 650,
+          "pos_y": 100,
+          "width": 80,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_area_width": 100,
+          "text_h_align": "CENTER"
+        },
+        {
+          "id": "node-7",
+          "entity_type": "BUSINESS_USER",
+          "entity_id": "user-1",
+          "pos_x": 650,
+          "pos_y": 250,
+          "width": 80,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_area_width": 120,
+          "text_font_weight": "bold",
+          "text_font_size": "11px"
+        }
+      ],
+      "diagram_edges": []
+    },
+    {
+      "id": "diag-2",
+      "name": "Application Landscape",
+      "description": "Overview of all applications with edge labels",
+      "diagram_type": "APPLICATION_LANDSCAPE",
+      "settings": {},
+      "diagram_nodes": [
+        {
+          "id": "node-7",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-1",
+          "pos_x": 100,
+          "pos_y": 100,
+          "width": 150,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {}
+        },
+        {
+          "id": "node-8",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-2",
+          "pos_x": 300,
+          "pos_y": 100,
+          "width": 150,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {}
+        },
+        {
+          "id": "node-9",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-3",
+          "pos_x": 200,
+          "pos_y": 250,
+          "width": 150,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {}
+        }
+      ],
+      "diagram_edges": [
+        {
+          "id": "edge-1",
+          "relationship_type": "DATA_MOVEMENT",
+          "relationship_id": "dm-1",
+          "source_node_id": "node-9",
+          "target_node_id": "node-7",
+          "label_text": "Position Data",
+          "label_pos_x": 150,
+          "label_pos_y": 180,
+          "line_weight": "MEDIUM",
+          "line_type": "SOLID",
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "ep-1",
+              "sequence_order": 0,
+              "pos_x": 200,
+              "pos_y": 250
+            },
+            {
+              "id": "ep-2",
+              "sequence_order": 1,
+              "pos_x": 175,
+              "pos_y": 180
+            }
+          ],
+          "label_font_size": "11px",
+          "label_font_weight": "bold"
+        }
+      ]
+    },
+    {
+      "id": "diag-3",
+      "name": "Risk System Data Flow",
+      "description": "Data flow between OMS, Risk, and VaR systems with DATA_MOVEMENT default labels",
+      "diagram_type": "DATA_FLOW",
+      "settings": {},
+      "diagram_nodes": [
+        {
+          "id": "node-10",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-4",
+          "pos_x": 100,
+          "pos_y": 100,
+          "width": 120,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_h_align": "CENTER",
+          "text_v_align": "MIDDLE"
+        },
+        {
+          "id": "node-11",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-1",
+          "pos_x": 300,
+          "pos_y": 100,
+          "width": 120,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_h_align": "LEFT",
+          "text_v_align": "TOP"
+        },
+        {
+          "id": "node-12",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-5",
+          "pos_x": 500,
+          "pos_y": 100,
+          "width": 180,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_h_align": "CENTER",
+          "text_v_align": "MIDDLE"
+        },
+        {
+          "id": "node-13",
+          "entity_type": "BUSINESS_USER",
+          "entity_id": "user-3",
+          "pos_x": 600,
+          "pos_y": 250,
+          "width": 70,
+          "height": 70,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_area_width": 90
+        }
+      ],
+      "diagram_edges": [
+        {
+          "id": "edge-2",
+          "relationship_type": "DATA_MOVEMENT",
+          "relationship_id": "dm-2",
+          "source_node_id": "node-10",
+          "target_node_id": "node-11",
+          "label_text": "",
+          "label_pos_x": 260,
+          "label_pos_y": 120,
+          "line_weight": "MEDIUM",
+          "line_type": "SOLID",
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "ep-3",
+              "sequence_order": 0,
+              "pos_x": 220,
+              "pos_y": 140
+            },
+            {
+              "id": "ep-4",
+              "sequence_order": 1,
+              "pos_x": 300,
+              "pos_y": 140
+            }
+          ],
+          "label_font_style": "italic"
+        },
+        {
+          "id": "edge-3",
+          "relationship_type": "DATA_MOVEMENT",
+          "relationship_id": "dm-2",
+          "source_node_id": "node-11",
+          "target_node_id": "node-12",
+          "label_text": "Risk Data",
+          "label_pos_x": 460,
+          "label_pos_y": 120,
+          "line_weight": "MEDIUM",
+          "line_type": "SOLID",
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "ep-5",
+              "sequence_order": 0,
+              "pos_x": 420,
+              "pos_y": 140
+            },
+            {
+              "id": "ep-6",
+              "sequence_order": 1,
+              "pos_x": 500,
+              "pos_y": 140
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "diag-4",
+      "name": "Font Styling Demo",
+      "description": "Demonstrates font styling options for nodes and edges",
+      "diagram_type": "APPLICATION_LANDSCAPE",
+      "settings": {},
+      "diagram_nodes": [
+        {
+          "id": "node-14",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-2",
+          "pos_x": 100,
+          "pos_y": 100,
+          "width": 150,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_font_size": "16px",
+          "text_font_weight": "bold"
+        },
+        {
+          "id": "node-15",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-4",
+          "pos_x": 350,
+          "pos_y": 100,
+          "width": 150,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_font_size": "14px",
+          "text_font_style": "italic"
+        },
+        {
+          "id": "node-16",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-5",
+          "pos_x": 225,
+          "pos_y": 250,
+          "width": 200,
+          "height": 80,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_font_size": "10px",
+          "text_font_weight": "normal",
+          "text_font_style": "normal"
+        }
+      ],
+      "diagram_edges": [
+        {
+          "id": "edge-4",
+          "relationship_type": "DATA_MOVEMENT",
+          "relationship_id": "dm-3",
+          "source_node_id": "node-14",
+          "target_node_id": "node-15",
+          "label_text": "",
+          "label_pos_x": 275,
+          "label_pos_y": 120,
+          "line_weight": "MEDIUM",
+          "line_type": "SOLID",
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "ep-7",
+              "sequence_order": 0,
+              "pos_x": 250,
+              "pos_y": 140
+            },
+            {
+              "id": "ep-8",
+              "sequence_order": 1,
+              "pos_x": 350,
+              "pos_y": 140
+            }
+          ],
+          "label_font_size": "14px",
+          "label_font_weight": "bold",
+          "label_font_style": "italic"
+        },
+        {
+          "id": "edge-5",
+          "relationship_type": "DATA_MOVEMENT",
+          "relationship_id": "dm-2",
+          "source_node_id": "node-15",
+          "target_node_id": "node-16",
+          "label_text": "Metrics Flow",
+          "label_pos_x": 400,
+          "label_pos_y": 200,
+          "line_weight": "MEDIUM",
+          "line_type": "SOLID",
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "ep-9",
+              "sequence_order": 0,
+              "pos_x": 425,
+              "pos_y": 180
+            },
+            {
+              "id": "ep-10",
+              "sequence_order": 1,
+              "pos_x": 375,
+              "pos_y": 250
+            }
+          ],
+          "label_font_size": "11px"
+        }
+      ]
+    }
+  ]
+}

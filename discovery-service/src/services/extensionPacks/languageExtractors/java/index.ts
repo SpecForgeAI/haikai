@@ -1,0 +1,1 @@
+export { extractJavaIR } from './extract';

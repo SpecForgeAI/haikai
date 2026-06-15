@@ -1,0 +1,222 @@
+/**
+ * ManageArchitecturesModal.module.css
+ *
+ * Spec 2026-05-02 Multi-Architecture CRUD UI + Tag Management -- Task Group 5
+ * Spec 2026-05-01 Multi-Architecture Full Clone (Spec #6) -- Task Group 7
+ *   adds the per-row `.cloneButton` rule alongside Edit + Archive.
+ * Spec 2026-05-01 Multi-Architecture Selective Cross-Architecture Copy
+ * (Spec #7) -- Task Group 10 adds the per-row `.copyFromButton` rule as the
+ * fourth action button alongside Edit + Clone + Archive. Same visual
+ * treatment + disabled-state pattern as Archive.
+ *
+ * Mirrors the structure of EditArchitectureModal.module.css (overlay +
+ * modal + header + content + footer) but uses a wider container because
+ * the architectures list needs more horizontal space than a single-field
+ * edit dialog. Per-row layout: left side metadata (name, description,
+ * tag chips) + right side actions (Edit, Clone, Copy from, Archive).
+ */
+
+/* Overlay - semi-transparent backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - 75% of viewport width to fit the wide list rows */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  width: 75vw;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  border-radius: 8px 8px 0 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Scrollable content area */
+.content {
+  padding: 12px 20px;
+  overflow-y: auto;
+}
+
+/* Empty state -- impossible in practice (every project has at least one
+   architecture per spec #1's data migration), but rendered defensively. */
+.emptyState {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 14px;
+  color: #888;
+}
+
+/* List of architecture rows */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowMeta {
+  flex: 1 1 auto;
+  min-width: 0; /* allow truncation on description */
+}
+
+.rowName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #222;
+  margin-bottom: 2px;
+}
+
+.rowDescription {
+  font-size: 13px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  margin-bottom: 6px;
+}
+
+.rowTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* Read-only tag chip -- visually similar to the EditArchitectureModal
+   chip but without the remove button. Smaller and a touch lighter to
+   read as "display only". */
+.tagChip {
+  display: inline-flex;
+  align-items: center;
+  background: #e3f2fd;
+  color: #0d47a1;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.editButton,
+.cloneButton,
+.copyFromButton,
+.archiveButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.editButton:hover,
+.cloneButton:hover,
+.copyFromButton:hover:not(:disabled),
+.archiveButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.archiveButton:disabled,
+.copyFromButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Footer */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+.closeFooterButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.closeFooterButton:hover {
+  background: #f5f5f5;
+  border-color: #bbb;
+}

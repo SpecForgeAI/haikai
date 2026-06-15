@@ -1,0 +1,38 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "EncounterProvider",
+      "tag": "pack",
+      "description": "@Entity/@Table(\"encounter_provider\") join-entity linking Encounter, Provider, and EncounterRole."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "encounterProviderId",
+      "tag": "pack",
+      "description": "@Id primary key."
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "EncounterProvider \u2192 Encounter",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "EncounterProvider \u2192 Provider",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "EncounterProvider \u2192 EncounterRole",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "copy",
+      "tag": "either",
+      "description": "Pack detects copy() as business_logic. An LLM review might classify it as a shallow clone rather than true domain logic, but we credit either tier for now."
+    }
+  ],
+  "shouldNotEmit": []
+}

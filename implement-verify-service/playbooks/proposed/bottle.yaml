@@ -1,0 +1,41 @@
+name: bottle
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - "import bottle"
+    - "from bottle import"
+  manifest_contains:
+    - {file: pyproject.toml, substring: "bottle"}
+    - {file: requirements.txt, substring: "bottle"}
+
+extract:
+  - id: bottle_decorator_routes
+    query: annotations
+    file_filter: all
+    file_extensions: [".py"]
+    annotation_names: [route, get, post, put, delete, patch]
+    target_kind: method
+
+  - id: bottle_functional_calls
+    query: call_args
+    file_filter: all
+    file_extensions: [".py"]
+    callee_pattern: '\.(get|post|put|delete|patch)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: bottle
+
+conflict_rules: []
+
+known_pitfalls:
+  - "@route verb defaults to GET when method= kwarg is absent; multi-method lists (method=['GET','POST']) emit only one entry"
+  - "app.route('/path', method='POST', callback=fn) is not captured — verb lives in a kwarg, not the callee suffix"
+  - "app.mount('/prefix', subapp) prefix is not inlined into subapp child routes"
+  - "Bottle plugins that add routes dynamically at runtime are not captured by static analysis"

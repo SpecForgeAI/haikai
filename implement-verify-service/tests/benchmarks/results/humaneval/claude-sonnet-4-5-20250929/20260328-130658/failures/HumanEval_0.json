@@ -1,0 +1,14 @@
+{
+  "problem_id": "HumanEval/0",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "",
+  "expected_output": "    for idx, elem in enumerate(numbers):\n        for idx2, elem2 in enumerate(numbers):\n            if idx != idx2:\n                distance = abs(elem - elem2)\n                if distance < threshold:\n                    return True\n\n    return False\n",
+  "latency_seconds": 0.6745776508469135,
+  "mode": "direct",
+  "model": "claude-sonnet-4-5-20250929",
+  "metadata": {
+    "retries": 0
+  }
+}

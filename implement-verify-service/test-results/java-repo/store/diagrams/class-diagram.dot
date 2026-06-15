@@ -1,0 +1,34 @@
+digraph ClassDiagram {
+    rankdir=TB;
+    node [shape=record, fontsize=10];
+
+    AbstractDocument [label="{AbstractDocument|+ documentProperties\l|+ AbstractDocument(Map<String, Object> properties)\l+ buildStringRepresentation()\l+ children(String key, Function<Map<String, Object>, T> childConstructor)\l+ get(String key)\l+ put(String key, Object value)\l+ toString()\l}"];
+    App [label="{App||+ main(String[] args)\l}"];
+    Car [label="{Car||+ Car(Map<String, Object> properties)\l}"];
+    Part [label="{Part||+ Part(Map<String, Object> properties)\l}"];
+    Property [label="{Property||}"];
+    AbstractDocumentTest [label="{AbstractDocumentTest|+ KEY\l+ VALUE\l+ document\l|+ shouldHandleExceptionDuringConstruction()\l+ shouldIncludePropsInToString()\l+ shouldPutAndGetNestedDocument()\l+ shouldPutAndGetValue()\l+ shouldRetrieveChildren()\l+ shouldRetrieveEmptyStreamForNonExistingChildren()\l+ shouldUpdateExistingValue()\l}"];
+    DocumentImplementation [label="{DocumentImplementation||}"];
+    AppTest [label="{AppTest||+ shouldExecuteAppWithoutException()\l}"];
+    DomainTest [label="{DomainTest|+ TEST_CAR_MODEL\l+ TEST_CAR_PRICE\l+ TEST_PART_MODEL\l+ TEST_PART_PRICE\l+ TEST_PART_TYPE\l|+ shouldConstructCar()\l+ shouldConstructPart()\l}"];
+    Document [label="{Document||}"];
+    HasModel [label="{HasModel||}"];
+    HasPrice [label="{HasPrice||}"];
+    HasParts [label="{HasParts||}"];
+    HasType [label="{HasType||}"];
+
+    AbstractDocument -> Document [arrowhead=empty];
+    Car -> AbstractDocument [arrowhead=empty];
+    Car -> HasModel [arrowhead=empty];
+    Car -> HasPrice [arrowhead=empty];
+    Car -> HasParts [arrowhead=empty];
+    HasModel -> Document [arrowhead=empty];
+    HasParts -> Document [arrowhead=empty];
+    HasPrice -> Document [arrowhead=empty];
+    HasType -> Document [arrowhead=empty];
+    Part -> AbstractDocument [arrowhead=empty];
+    Part -> HasType [arrowhead=empty];
+    Part -> HasModel [arrowhead=empty];
+    Part -> HasPrice [arrowhead=empty];
+    DocumentImplementation -> AbstractDocument [arrowhead=empty];
+}

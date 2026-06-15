@@ -1,0 +1,47 @@
+# Critical .gitignore patterns enforced by Haikai prepare_for_commit().
+# Language-agnostic — covers common frameworks without being project-specific.
+# These are appended to .gitignore if missing, never removed.
+
+dependencies:
+  - node_modules/
+  - vendor/
+  - __pycache__/
+  - "*.pyc"
+  - .venv/
+  - venv/
+  - target/
+  - .cargo/
+
+build_output:
+  - dist/
+  - build/
+  - .next/
+  - out/
+  - coverage/
+
+environment_and_secrets:
+  - .env
+  - ".env.*"
+  - "!.env.example"
+  - "*.pem"
+  - "*.key"
+
+ide_and_os:
+  - .DS_Store
+  - Thumbs.db
+  - .idea/
+  - .vscode/
+  - "*.swp"
+  - "*.swo"
+
+logs:
+  - "*.log"
+  - "npm-debug.log*"
+
+lock_files:
+  - "*.lock"
+  - "!package-lock.json"
+  - "!yarn.lock"
+  - "!pnpm-lock.yaml"
+  - "!Gemfile.lock"
+  - "!Cargo.lock"

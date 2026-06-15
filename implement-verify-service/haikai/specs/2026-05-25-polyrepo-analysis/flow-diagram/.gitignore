@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.manus-logs/
+*.log
+
+# Manus bootstrap writes STS keys, Forge API keys, and a JWT secret into this
+# file. Never commit it — GitGuardian will fail CI.
+.project-config.json
+
+# Repo root .gitignore has a broad `lib/` rule (Python virtualenv-style) which
+# accidentally ignores the React shadcn helper at client/src/lib/utils.ts.
+# That file is required by every ui/* component, so the build dies without it.
+# Unignore it locally.
+!client/src/lib/
+!client/src/lib/**

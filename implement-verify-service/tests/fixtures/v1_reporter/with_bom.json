@@ -1,0 +1,7 @@
+﻿[
+  {"type": "REST", "operation": "GET", "path": "/api/a", "framework": "test"},
+  {"type": "REST", "operation": "POST", "path": "/api/b", "framework": "test"},
+  {"type": "REST", "operation": "PUT", "path": "/api/c", "framework": "test"},
+  {"type": "REST", "operation": "DELETE", "path": "/api/d", "framework": "test"},
+  {"type": "REST", "operation": "PATCH", "path": "/api/e", "framework": "test"}
+]

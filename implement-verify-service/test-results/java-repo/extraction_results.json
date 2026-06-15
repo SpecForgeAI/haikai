@@ -1,0 +1,3348 @@
+{
+  "repo": "iluwatar/java-design-patterns",
+  "url": "https://github.com/iluwatar/java-design-patterns",
+  "total_java_files": 1877,
+  "files_analyzed": 50,
+  "calls": [
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.<init:AbstractDocument>",
+      "receiver": "Objects",
+      "method": "requireNonNull",
+      "line": 40
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.put",
+      "receiver": "documentProperties",
+      "method": "put",
+      "line": 46
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.get",
+      "receiver": "documentProperties",
+      "method": "get",
+      "line": 52
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream.ofNullable(get(key))\n        .filter(Objects::nonNull)\n        .map(el -> (List<Map<String, Object>>) el)\n        .findAny()\n        .stream()\n        .flatMap(Collection::stream)",
+      "method": "map",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream.ofNullable(get(key))\n        .filter(Objects::nonNull)\n        .map(el -> (List<Map<String, Object>>) el)\n        .findAny()\n        .stream()",
+      "method": "flatMap",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream.ofNullable(get(key))\n        .filter(Objects::nonNull)\n        .map(el -> (List<Map<String, Object>>) el)\n        .findAny()",
+      "method": "stream",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream.ofNullable(get(key))\n        .filter(Objects::nonNull)\n        .map(el -> (List<Map<String, Object>>) el)",
+      "method": "findAny",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream.ofNullable(get(key))\n        .filter(Objects::nonNull)",
+      "method": "map",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream.ofNullable(get(key))",
+      "method": "filter",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": "Stream",
+      "method": "ofNullable",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.children",
+      "receiver": null,
+      "method": "get",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.toString",
+      "receiver": null,
+      "method": "buildStringRepresentation",
+      "line": 68
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": null,
+      "method": "new StringBuilder",
+      "line": 72
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder.append(getClass().getName())",
+      "method": "append",
+      "line": 73
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder",
+      "method": "append",
+      "line": 73
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "getClass()",
+      "method": "getName",
+      "line": 73
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": null,
+      "method": "getClass",
+      "line": 73
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "documentProperties",
+      "method": "size",
+      "line": 79
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "documentProperties",
+      "method": "entrySet",
+      "line": 85
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "entry",
+      "method": "getKey",
+      "line": 86
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "entry",
+      "method": "getValue",
+      "line": 87
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder.append(\"[\").append(key).append(\" : \").append(value)",
+      "method": "append",
+      "line": 90
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder.append(\"[\").append(key).append(\" : \")",
+      "method": "append",
+      "line": 90
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder.append(\"[\").append(key)",
+      "method": "append",
+      "line": 90
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder.append(\"[\")",
+      "method": "append",
+      "line": 90
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder",
+      "method": "append",
+      "line": 90
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder",
+      "method": "append",
+      "line": 94
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder",
+      "method": "append",
+      "line": 98
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "caller": "AbstractDocument.buildStringRepresentation",
+      "receiver": "builder",
+      "method": "toString",
+      "line": 99
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 50
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Map",
+      "method": "of",
+      "line": 53
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.TYPE",
+      "method": "toString",
+      "line": 54
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.MODEL",
+      "method": "toString",
+      "line": 55
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.PRICE",
+      "method": "toString",
+      "line": 56
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Map",
+      "method": "of",
+      "line": 59
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.TYPE",
+      "method": "toString",
+      "line": 60
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.MODEL",
+      "method": "toString",
+      "line": 61
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.PRICE",
+      "method": "toString",
+      "line": 62
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Map",
+      "method": "of",
+      "line": 65
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.MODEL",
+      "method": "toString",
+      "line": 66
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.PRICE",
+      "method": "toString",
+      "line": 68
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "Property.PARTS",
+      "method": "toString",
+      "line": 70
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "List",
+      "method": "of",
+      "line": 71
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new Car",
+      "line": 73
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 75
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 76
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "car.getModel()",
+      "method": "orElseThrow",
+      "line": 76
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "car",
+      "method": "getModel",
+      "line": 76
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 77
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "car.getPrice()",
+      "method": "orElseThrow",
+      "line": 77
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "car",
+      "method": "getPrice",
+      "line": 77
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 78
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "car.getParts()",
+      "method": "forEach",
+      "line": 79
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "car",
+      "method": "getParts",
+      "line": 79
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 82
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "p.getType()",
+      "method": "orElse",
+      "line": 84
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "p",
+      "method": "getType",
+      "line": 84
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "p.getModel()",
+      "method": "orElse",
+      "line": 85
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "p",
+      "method": "getModel",
+      "line": 85
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "p.getPrice()",
+      "method": "orElse",
+      "line": 86
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "caller": "App.main",
+      "receiver": "p",
+      "method": "getPrice",
+      "line": 86
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java",
+      "caller": "HasModel.getModel",
+      "receiver": "Optional",
+      "method": "ofNullable",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java",
+      "caller": "HasModel.getModel",
+      "receiver": null,
+      "method": "get",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java",
+      "caller": "HasModel.getModel",
+      "receiver": "Property.MODEL",
+      "method": "toString",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java",
+      "caller": "HasParts.getParts",
+      "receiver": null,
+      "method": "children",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java",
+      "caller": "HasParts.getParts",
+      "receiver": "Property.PARTS",
+      "method": "toString",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java",
+      "caller": "HasPrice.getPrice",
+      "receiver": "Optional",
+      "method": "ofNullable",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java",
+      "caller": "HasPrice.getPrice",
+      "receiver": null,
+      "method": "get",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java",
+      "caller": "HasPrice.getPrice",
+      "receiver": "Property.PRICE",
+      "method": "toString",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java",
+      "caller": "HasType.getType",
+      "receiver": "Optional",
+      "method": "ofNullable",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java",
+      "caller": "HasType.getType",
+      "receiver": null,
+      "method": "get",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java",
+      "caller": "HasType.getType",
+      "receiver": "Property.TYPE",
+      "method": "toString",
+      "line": 35
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest",
+      "receiver": null,
+      "method": "new DocumentImplementation",
+      "line": 47
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest",
+      "receiver": null,
+      "method": "new HashMap",
+      "line": 47
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetValue",
+      "receiver": "document",
+      "method": "put",
+      "line": 51
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetValue",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 52
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetValue",
+      "receiver": "document",
+      "method": "get",
+      "line": 52
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": "List",
+      "method": "of",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": "Map",
+      "method": "of",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": "Map",
+      "method": "of",
+      "line": 57
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": "document",
+      "method": "put",
+      "line": 59
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": "document",
+      "method": "children",
+      "line": 61
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": null,
+      "method": "assertNotNull",
+      "line": 62
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 63
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveChildren",
+      "receiver": "childrenStream",
+      "method": "count",
+      "line": 63
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren",
+      "receiver": "document",
+      "method": "children",
+      "line": 68
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren",
+      "receiver": null,
+      "method": "assertNotNull",
+      "line": 69
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 70
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren",
+      "receiver": "children",
+      "method": "count",
+      "line": 70
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": "Map",
+      "method": "of",
+      "line": 75
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": null,
+      "method": "new DocumentImplementation",
+      "line": 76
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 77
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": "document.toString()",
+      "method": "contains",
+      "line": 77
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": "document",
+      "method": "toString",
+      "line": 77
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 78
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": "document.toString()",
+      "method": "contains",
+      "line": 78
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldIncludePropsInToString",
+      "receiver": "document",
+      "method": "toString",
+      "line": 78
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldHandleExceptionDuringConstruction",
+      "receiver": null,
+      "method": "assertThrows",
+      "line": 87
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldHandleExceptionDuringConstruction",
+      "receiver": null,
+      "method": "new DocumentImplementation",
+      "line": 91
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": null,
+      "method": "new DocumentImplementation",
+      "line": 98
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": null,
+      "method": "new HashMap",
+      "line": 98
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": "nestedDocument",
+      "method": "put",
+      "line": 99
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": "document",
+      "method": "put",
+      "line": 101
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": "document",
+      "method": "get",
+      "line": 105
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": null,
+      "method": "assertNotNull",
+      "line": 107
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 108
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldPutAndGetNestedDocument",
+      "receiver": "retrievedNestedDocument",
+      "method": "get",
+      "line": 108
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldUpdateExistingValue",
+      "receiver": "document",
+      "method": "put",
+      "line": 119
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldUpdateExistingValue",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 122
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldUpdateExistingValue",
+      "receiver": "document",
+      "method": "get",
+      "line": 122
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldUpdateExistingValue",
+      "receiver": "document",
+      "method": "put",
+      "line": 125
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldUpdateExistingValue",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 128
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "caller": "AbstractDocumentTest.shouldUpdateExistingValue",
+      "receiver": "document",
+      "method": "get",
+      "line": 128
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java",
+      "caller": "AppTest.shouldExecuteAppWithoutException",
+      "receiver": null,
+      "method": "assertDoesNotThrow",
+      "line": 42
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java",
+      "caller": "AppTest.shouldExecuteAppWithoutException",
+      "receiver": "App",
+      "method": "main",
+      "line": 42
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "Map",
+      "method": "of",
+      "line": 49
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "Property.TYPE",
+      "method": "toString",
+      "line": 50
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "Property.MODEL",
+      "method": "toString",
+      "line": 51
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "Property.PRICE",
+      "method": "toString",
+      "line": 52
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": null,
+      "method": "new Part",
+      "line": 53
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 54
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "part.getType()",
+      "method": "orElseThrow",
+      "line": 54
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "part",
+      "method": "getType",
+      "line": 54
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 55
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "part.getModel()",
+      "method": "orElseThrow",
+      "line": 55
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "part",
+      "method": "getModel",
+      "line": 55
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 56
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "part.getPrice()",
+      "method": "orElseThrow",
+      "line": 56
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructPart",
+      "receiver": "part",
+      "method": "getPrice",
+      "line": 56
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "Map",
+      "method": "of",
+      "line": 62
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "Property.MODEL",
+      "method": "toString",
+      "line": 63
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "Property.PRICE",
+      "method": "toString",
+      "line": 64
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "Property.PARTS",
+      "method": "toString",
+      "line": 65
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "List",
+      "method": "of",
+      "line": 65
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "Map",
+      "method": "of",
+      "line": 65
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "Map",
+      "method": "of",
+      "line": 65
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": null,
+      "method": "new Car",
+      "line": 66
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 67
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "car.getModel()",
+      "method": "orElseThrow",
+      "line": 67
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "car",
+      "method": "getModel",
+      "line": 67
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 68
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "car.getPrice()",
+      "method": "orElseThrow",
+      "line": 68
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "car",
+      "method": "getPrice",
+      "line": 68
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 69
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "car.getParts()",
+      "method": "count",
+      "line": 69
+    },
+    {
+      "file": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "caller": "DomainTest.shouldConstructCar",
+      "receiver": "car",
+      "method": "getParts",
+      "line": 69
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App",
+      "receiver": null,
+      "method": "new Kingdom",
+      "line": 48
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new App",
+      "line": 56
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.main",
+      "receiver": "app",
+      "method": "run",
+      "line": 57
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 62
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": null,
+      "method": "createKingdom",
+      "line": 63
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 64
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom.getArmy()",
+      "method": "getDescription",
+      "line": 64
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom",
+      "method": "getArmy",
+      "line": 64
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 65
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom.getCastle()",
+      "method": "getDescription",
+      "line": 65
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom",
+      "method": "getCastle",
+      "line": 65
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 66
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom.getKing()",
+      "method": "getDescription",
+      "line": 66
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom",
+      "method": "getKing",
+      "line": 66
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 68
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": null,
+      "method": "createKingdom",
+      "line": 69
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 70
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom.getArmy()",
+      "method": "getDescription",
+      "line": 70
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom",
+      "method": "getArmy",
+      "line": 70
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 71
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom.getCastle()",
+      "method": "getDescription",
+      "line": 71
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom",
+      "method": "getCastle",
+      "line": 71
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 72
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom.getKing()",
+      "method": "getDescription",
+      "line": 72
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.run",
+      "receiver": "kingdom",
+      "method": "getKing",
+      "line": 72
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "Kingdom.FactoryMaker",
+      "method": "makeFactory",
+      "line": 81
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "kingdom",
+      "method": "setKing",
+      "line": 82
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "kingdomFactory",
+      "method": "createKing",
+      "line": 82
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "kingdom",
+      "method": "setCastle",
+      "line": 83
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "kingdomFactory",
+      "method": "createCastle",
+      "line": 83
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "kingdom",
+      "method": "setArmy",
+      "line": 84
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "caller": "App.createKingdom",
+      "receiver": "kingdomFactory",
+      "method": "createArmy",
+      "line": 84
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java",
+      "caller": "ElfKingdomFactory.createCastle",
+      "receiver": null,
+      "method": "new ElfCastle",
+      "line": 32
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java",
+      "caller": "ElfKingdomFactory.createKing",
+      "receiver": null,
+      "method": "new ElfKing",
+      "line": 37
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java",
+      "caller": "ElfKingdomFactory.createArmy",
+      "receiver": null,
+      "method": "new ElfArmy",
+      "line": 42
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java",
+      "caller": "FactoryMaker.makeFactory",
+      "receiver": null,
+      "method": "new ElfKingdomFactory",
+      "line": 51
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java",
+      "caller": "FactoryMaker.makeFactory",
+      "receiver": null,
+      "method": "new OrcKingdomFactory",
+      "line": 52
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java",
+      "caller": "OrcKingdomFactory.createCastle",
+      "receiver": null,
+      "method": "new OrcCastle",
+      "line": 32
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java",
+      "caller": "OrcKingdomFactory.createKing",
+      "receiver": null,
+      "method": "new OrcKing",
+      "line": 37
+    },
+    {
+      "file": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java",
+      "caller": "OrcKingdomFactory.createArmy",
+      "receiver": null,
+      "method": "new OrcArmy",
+      "line": 42
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest",
+      "receiver": null,
+      "method": "new App",
+      "line": 35
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 39
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "app",
+      "method": "getKingdom",
+      "line": 40
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "kingdom",
+      "method": "getKing",
+      "line": 42
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 43
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 44
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "elfKing",
+      "method": "getDescription",
+      "line": 44
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 46
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "kingdom",
+      "method": "getKing",
+      "line": 47
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 48
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 49
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyKingCreation",
+      "receiver": "orcKing",
+      "method": "getDescription",
+      "line": 49
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 54
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "app",
+      "method": "getKingdom",
+      "line": 55
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "kingdom",
+      "method": "getCastle",
+      "line": 57
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 58
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 59
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "elfCastle",
+      "method": "getDescription",
+      "line": 59
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 61
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "kingdom",
+      "method": "getCastle",
+      "line": 62
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 63
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 64
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyCastleCreation",
+      "receiver": "orcCastle",
+      "method": "getDescription",
+      "line": 64
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 69
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "app",
+      "method": "getKingdom",
+      "line": 70
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "kingdom",
+      "method": "getArmy",
+      "line": 72
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 73
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 74
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "elfArmy",
+      "method": "getDescription",
+      "line": 74
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 76
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "kingdom",
+      "method": "getArmy",
+      "line": 77
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 78
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 79
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyArmyCreation",
+      "receiver": "orcArmy",
+      "method": "getDescription",
+      "line": 79
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 84
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "app",
+      "method": "getKingdom",
+      "line": 85
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "kingdom",
+      "method": "getKing",
+      "line": 87
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "kingdom",
+      "method": "getCastle",
+      "line": 88
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "kingdom",
+      "method": "getArmy",
+      "line": 89
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 90
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 91
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "king",
+      "method": "getDescription",
+      "line": 91
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 92
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 93
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "castle",
+      "method": "getDescription",
+      "line": 93
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 94
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 95
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyElfKingdomCreation",
+      "receiver": "army",
+      "method": "getDescription",
+      "line": 95
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "app",
+      "method": "createKingdom",
+      "line": 100
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "app",
+      "method": "getKingdom",
+      "line": 101
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "kingdom",
+      "method": "getKing",
+      "line": 103
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "kingdom",
+      "method": "getCastle",
+      "line": 104
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "kingdom",
+      "method": "getArmy",
+      "line": 105
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 106
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 107
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "king",
+      "method": "getDescription",
+      "line": 107
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 108
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 109
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "castle",
+      "method": "getDescription",
+      "line": 109
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 110
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 111
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "caller": "AbstractFactoryTest.verifyOrcKingdomCreation",
+      "receiver": "army",
+      "method": "getDescription",
+      "line": 111
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java",
+      "caller": "AppTest.shouldExecuteApplicationWithoutException",
+      "receiver": null,
+      "method": "assertDoesNotThrow",
+      "line": 37
+    },
+    {
+      "file": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java",
+      "caller": "AppTest.shouldExecuteApplicationWithoutException",
+      "receiver": "App",
+      "method": "main",
+      "line": 37
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature",
+      "receiver": "LoggerFactory",
+      "method": "getLogger",
+      "line": 35
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature",
+      "receiver": "ActiveCreature.class",
+      "method": "getName",
+      "line": 35
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": null,
+      "method": "new LinkedBlockingQueue",
+      "line": 49
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": null,
+      "method": "new Thread",
+      "line": 51
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "requests.take()",
+      "method": "run",
+      "line": 56
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "requests",
+      "method": "take",
+      "line": 56
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "logger",
+      "method": "error",
+      "line": 59
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "e",
+      "method": "getMessage",
+      "line": 59
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "Thread.currentThread()",
+      "method": "interrupt",
+      "line": 62
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "Thread",
+      "method": "currentThread",
+      "line": 62
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.<init:ActiveCreature>",
+      "receiver": "thread",
+      "method": "start",
+      "line": 66
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.eat",
+      "receiver": "requests",
+      "method": "put",
+      "line": 75
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.eat",
+      "receiver": "logger",
+      "method": "info",
+      "line": 77
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.eat",
+      "receiver": null,
+      "method": "name",
+      "line": 77
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.eat",
+      "receiver": "logger",
+      "method": "info",
+      "line": 78
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.eat",
+      "receiver": null,
+      "method": "name",
+      "line": 78
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.roam",
+      "receiver": "requests",
+      "method": "put",
+      "line": 88
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.roam",
+      "receiver": "logger",
+      "method": "info",
+      "line": 88
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.roam",
+      "receiver": null,
+      "method": "name",
+      "line": 88
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "caller": "ActiveCreature.kill",
+      "receiver": "this.thread",
+      "method": "interrupt",
+      "line": 107
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App",
+      "receiver": "LoggerFactory",
+      "method": "getLogger",
+      "line": 42
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App",
+      "receiver": "App.class",
+      "method": "getName",
+      "line": 42
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new App",
+      "line": 52
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.main",
+      "receiver": "app",
+      "method": "run",
+      "line": 53
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": null,
+      "method": "new ArrayList",
+      "line": 58
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures",
+      "method": "add",
+      "line": 61
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": null,
+      "method": "new Orc",
+      "line": 61
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "Orc.class",
+      "method": "getSimpleName",
+      "line": 61
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures.get(i)",
+      "method": "eat",
+      "line": 62
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures",
+      "method": "get",
+      "line": 62
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures.get(i)",
+      "method": "roam",
+      "line": 63
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures",
+      "method": "get",
+      "line": 63
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "Thread",
+      "method": "sleep",
+      "line": 65
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "logger",
+      "method": "error",
+      "line": 67
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "e",
+      "method": "getMessage",
+      "line": 67
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "Thread.currentThread()",
+      "method": "interrupt",
+      "line": 68
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "Thread",
+      "method": "currentThread",
+      "line": 68
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures.get(i)",
+      "method": "kill",
+      "line": 71
+    },
+    {
+      "file": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "caller": "App.run",
+      "receiver": "creatures",
+      "method": "get",
+      "line": 71
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": null,
+      "method": "new Orc",
+      "line": 35
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 36
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": "orc",
+      "method": "name",
+      "line": 36
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": null,
+      "method": "assertEquals",
+      "line": 37
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": "orc",
+      "method": "getStatus",
+      "line": 37
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": "orc",
+      "method": "eat",
+      "line": 38
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": "orc",
+      "method": "roam",
+      "line": 39
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "caller": "ActiveCreatureTest.executionTest",
+      "receiver": "orc",
+      "method": "kill",
+      "line": 40
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/AppTest.java",
+      "caller": "AppTest.shouldExecuteApplicationWithoutException",
+      "receiver": null,
+      "method": "assertDoesNotThrow",
+      "line": 35
+    },
+    {
+      "file": "active-object/src/test/java/com/iluwatar/activeobject/AppTest.java",
+      "caller": "AppTest.shouldExecuteApplicationWithoutException",
+      "receiver": "App",
+      "method": "main",
+      "line": 35
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "caller": "Actor",
+      "receiver": null,
+      "method": "new LinkedBlockingQueue",
+      "line": 35
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "caller": "Actor.send",
+      "receiver": "mailbox",
+      "method": "add",
+      "line": 42
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "caller": "Actor.run",
+      "receiver": "mailbox",
+      "method": "take",
+      "line": 53
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "caller": "Actor.run",
+      "receiver": null,
+      "method": "onReceive",
+      "line": 54
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "caller": "Actor.run",
+      "receiver": "Thread.currentThread()",
+      "method": "interrupt",
+      "line": 56
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "caller": "Actor.run",
+      "receiver": "Thread",
+      "method": "currentThread",
+      "line": 56
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem",
+      "receiver": "Executors",
+      "method": "newCachedThreadPool",
+      "line": 33
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem",
+      "receiver": null,
+      "method": "new ConcurrentHashMap",
+      "line": 34
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem",
+      "receiver": null,
+      "method": "new AtomicInteger",
+      "line": 35
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem.startActor",
+      "receiver": "idCounter",
+      "method": "incrementAndGet",
+      "line": 38
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem.startActor",
+      "receiver": "actor",
+      "method": "setActorId",
+      "line": 39
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem.startActor",
+      "receiver": "actorRegister",
+      "method": "put",
+      "line": 40
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem.startActor",
+      "receiver": "executor",
+      "method": "submit",
+      "line": 41
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem.getActorById",
+      "receiver": "actorRegister",
+      "method": "get",
+      "line": 45
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "caller": "ActorSystem.shutdown",
+      "receiver": "executor",
+      "method": "shutdownNow",
+      "line": 49
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new ActorSystem",
+      "line": 49
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new ExampleActor",
+      "line": 50
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new ExampleActor2",
+      "line": 51
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "system",
+      "method": "startActor",
+      "line": 53
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "system",
+      "method": "startActor",
+      "line": 54
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "ansh",
+      "method": "send",
+      "line": 55
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new Message",
+      "line": 55
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "srijan",
+      "method": "getActorId",
+      "line": 55
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "srijan",
+      "method": "send",
+      "line": 56
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new Message",
+      "line": 56
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "ansh",
+      "method": "getActorId",
+      "line": 56
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "Thread",
+      "method": "sleep",
+      "line": 58
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "srijan",
+      "method": "stop",
+      "line": 60
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "ansh",
+      "method": "stop",
+      "line": 61
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/App.java",
+      "caller": "App.main",
+      "receiver": "system",
+      "method": "shutdown",
+      "line": 62
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor",
+      "receiver": null,
+      "method": "new ArrayList",
+      "line": 35
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 45
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": null,
+      "method": "getActorId",
+      "line": 46
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "message",
+      "method": "getContent",
+      "line": 46
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "message",
+      "method": "getSenderId",
+      "line": 46
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "actorSystem",
+      "method": "getActorById",
+      "line": 47
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "message",
+      "method": "getSenderId",
+      "line": 47
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "message.getSenderId()",
+      "method": "equals",
+      "line": 49
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "message",
+      "method": "getSenderId",
+      "line": 49
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": null,
+      "method": "getActorId",
+      "line": 49
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": "sender",
+      "method": "send",
+      "line": 50
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": null,
+      "method": "new Message",
+      "line": 50
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "caller": "ExampleActor.onReceive",
+      "receiver": null,
+      "method": "getActorId",
+      "line": 50
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "caller": "ExampleActor2",
+      "receiver": null,
+      "method": "new ArrayList",
+      "line": 35
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "caller": "ExampleActor2.onReceive",
+      "receiver": "receivedMessages",
+      "method": "add",
+      "line": 43
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "caller": "ExampleActor2.onReceive",
+      "receiver": "message",
+      "method": "getContent",
+      "line": 43
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "caller": "ExampleActor2.onReceive",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 44
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "caller": "ExampleActor2.onReceive",
+      "receiver": null,
+      "method": "getActorId",
+      "line": 44
+    },
+    {
+      "file": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "caller": "ExampleActor2.onReceive",
+      "receiver": "message",
+      "method": "getContent",
+      "line": 44
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMainMethod",
+      "receiver": "App",
+      "method": "main",
+      "line": 39
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": null,
+      "method": "new ActorSystem",
+      "line": 44
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": null,
+      "method": "new ExampleActor",
+      "line": 46
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": null,
+      "method": "new ExampleActor2",
+      "line": 47
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "system",
+      "method": "startActor",
+      "line": 49
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "system",
+      "method": "startActor",
+      "line": 50
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "ansh",
+      "method": "send",
+      "line": 53
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": null,
+      "method": "new Message",
+      "line": 53
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "srijan",
+      "method": "getActorId",
+      "line": 53
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "Thread",
+      "method": "sleep",
+      "line": 56
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": null,
+      "method": "assertTrue",
+      "line": 59
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "ansh.getReceivedMessages()",
+      "method": "contains",
+      "line": 60
+    },
+    {
+      "file": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "caller": "ActorModelTest.testMessagePassing",
+      "receiver": "ansh",
+      "method": "getReceivedMessages",
+      "line": 60
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new ConfigureForUnixVisitor",
+      "line": 42
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new ConfigureForDosVisitor",
+      "line": 43
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new Zoom",
+      "line": 45
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": null,
+      "method": "new Hayes",
+      "line": 46
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": "hayes",
+      "method": "accept",
+      "line": 48
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": "zoom",
+      "method": "accept",
+      "line": 49
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": "hayes",
+      "method": "accept",
+      "line": 50
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java",
+      "caller": "App.main",
+      "receiver": "zoom",
+      "method": "accept",
+      "line": 51
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForDosVisitor.java",
+      "caller": "ConfigureForDosVisitor.visit",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 37
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForDosVisitor.java",
+      "caller": "ConfigureForDosVisitor.visit",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 42
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForUnixVisitor.java",
+      "caller": "ConfigureForUnixVisitor.visit",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 38
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java",
+      "caller": "Hayes.accept",
+      "receiver": "((HayesVisitor) modemVisitor)",
+      "method": "visit",
+      "line": 37
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java",
+      "caller": "Hayes.accept",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 39
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java",
+      "caller": "Zoom.accept",
+      "receiver": "((ZoomVisitor) modemVisitor)",
+      "method": "visit",
+      "line": 37
+    },
+    {
+      "file": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java",
+      "caller": "Zoom.accept",
+      "receiver": "LOGGER",
+      "method": "info",
+      "line": 39
+    }
+  ],
+  "imports": [
+    {
+      "module": "java.util",
+      "names": [
+        "Collection"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Objects"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.function",
+      "names": [
+        "Function"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.stream",
+      "names": [
+        "Stream"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain",
+      "names": [
+        "Car"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain.enums",
+      "names": [
+        "Property"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.function",
+      "names": [
+        "Function"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.stream",
+      "names": [
+        "Stream"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument",
+      "names": [
+        "AbstractDocument"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument",
+      "names": [
+        "Document"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain.enums",
+      "names": [
+        "Property"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Optional"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument",
+      "names": [
+        "Document"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain.enums",
+      "names": [
+        "Property"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.stream",
+      "names": [
+        "Stream"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument",
+      "names": [
+        "Document"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain.enums",
+      "names": [
+        "Property"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Optional"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument",
+      "names": [
+        "Document"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain.enums",
+      "names": [
+        "Property"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Optional"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument",
+      "names": [
+        "AbstractDocument"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "*"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "HashMap"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertDoesNotThrow"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertEquals"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain",
+      "names": [
+        "Car"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain",
+      "names": [
+        "Part"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.abstractdocument.domain.enums",
+      "names": [
+        "Property"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "Map"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Getter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Getter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Setter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertEquals"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertTrue"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertDoesNotThrow"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "BlockingQueue"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "LinkedBlockingQueue"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.slf4j",
+      "names": [
+        "Logger"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.slf4j",
+      "names": [
+        "LoggerFactory"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "ArrayList"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.slf4j",
+      "names": [
+        "Logger"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.slf4j",
+      "names": [
+        "LoggerFactory"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertEquals"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "assertDoesNotThrow"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "BlockingQueue"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "LinkedBlockingQueue"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Getter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Setter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "ConcurrentHashMap"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "ExecutorService"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent",
+      "names": [
+        "Executors"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util.concurrent.atomic",
+      "names": [
+        "AtomicInteger"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "ArrayList"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Getter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "ArrayList"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "java.util",
+      "names": [
+        "List"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Getter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "AllArgsConstructor"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok",
+      "names": [
+        "Getter"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api.Assertions",
+      "names": [
+        "*"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.actormodel",
+      "names": [
+        "ActorSystem"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.actormodel",
+      "names": [
+        "App"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.actormodel",
+      "names": [
+        "ExampleActor"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.actormodel",
+      "names": [
+        "ExampleActor2"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "com.iluwatar.actormodel",
+      "names": [
+        "Message"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "org.junit.jupiter.api",
+      "names": [
+        "Test"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    },
+    {
+      "module": "lombok.extern.slf4j",
+      "names": [
+        "Slf4j"
+      ],
+      "is_relative": false
+    }
+  ],
+  "assignments": {},
+  "summary": {
+    "total_calls": 376,
+    "total_imports": 94,
+    "total_assignments": 101,
+    "unique_methods": 112,
+    "unique_modules": 14,
+    "errors": 0,
+    "top_methods": {
+      "assertEquals": 26,
+      "info": 24,
+      "toString": 22,
+      "getDescription": 18,
+      "assertTrue": 15,
+      "get": 14,
+      "of": 13,
+      "put": 10,
+      "createKingdom": 10,
+      "append": 9,
+      "orElseThrow": 7,
+      "getActorId": 7,
+      "getArmy": 6,
+      "getCastle": 6,
+      "getKing": 6,
+      "getKingdom": 5,
+      "ofNullable": 4,
+      "getModel": 4,
+      "getPrice": 4,
+      "new DocumentImplementation": 4
+    },
+    "top_modules": {
+      "java.util": 23,
+      "org.junit.jupiter.api.Assertions": 9,
+      "lombok": 9,
+      "lombok.extern.slf4j": 8,
+      "org.junit.jupiter.api": 8,
+      "java.util.concurrent": 7,
+      "com.iluwatar.abstractdocument.domain.enums": 6,
+      "com.iluwatar.abstractdocument": 6,
+      "com.iluwatar.actormodel": 5,
+      "org.slf4j": 4,
+      "java.util.stream": 3,
+      "com.iluwatar.abstractdocument.domain": 3,
+      "java.util.function": 2,
+      "java.util.concurrent.atomic": 1
+    }
+  },
+  "errors": []
+}

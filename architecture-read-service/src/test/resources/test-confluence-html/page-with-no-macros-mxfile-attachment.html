@@ -1,0 +1,47 @@
+<!--
+  Test fixture: Page with no draw.io macros but has mxfile attachment
+
+  This fixture represents a Confluence page where:
+  - No draw.io macros exist (neither structured nor ADF)
+  - The page has an attachment with mediaType "application/vnd.jgraph.mxfile"
+
+  Used to test orphan mxfile attachment detection.
+  The actual attachment metadata is provided separately in the test;
+  this fixture only contains the page body content.
+-->
+<ac:layout><ac:layout-section ac:type="single"><ac:layout-cell>
+<h1>Project Notes</h1>
+<p>This page contains some project documentation and notes.</p>
+
+<h2>Meeting Notes</h2>
+<p>Summary of recent team meetings and decisions.</p>
+<ul>
+    <li>Decided to refactor the authentication module</li>
+    <li>Agreed on new API versioning strategy</li>
+    <li>Scheduled code review sessions</li>
+</ul>
+
+<h2>Action Items</h2>
+<ac:task-list>
+    <ac:task>
+        <ac:task-id>1</ac:task-id>
+        <ac:task-status>complete</ac:task-status>
+        <ac:task-body>Review architecture proposal</ac:task-body>
+    </ac:task>
+    <ac:task>
+        <ac:task-id>2</ac:task-id>
+        <ac:task-status>incomplete</ac:task-status>
+        <ac:task-body>Update deployment scripts</ac:task-body>
+    </ac:task>
+</ac:task-list>
+
+<h2>Attachments</h2>
+<p>See attached files for more details. Note: There is an mxfile attachment on this page
+that was uploaded directly but is not embedded via a draw.io macro.</p>
+
+<ac:structured-macro ac:name="code" ac:schema-version="1">
+    <ac:parameter ac:name="language">json</ac:parameter>
+    <ac:plain-text-body>{"status": "draft", "version": "1.0"}</ac:plain-text-body>
+</ac:structured-macro>
+
+</ac:layout-cell></ac:layout-section></ac:layout>

@@ -1,0 +1,107 @@
+# Diagram Serialiser Configuration
+# Versioned syntax configs for each output format.
+# Hard stop (VersionNotFoundError) on unknown format or version.
+#
+# Schema sources:
+#   Mermaid:   https://mermaid.js.org/intro/syntax-reference.html
+#   PlantUML:  https://plantuml.com/class-diagram
+#   Graphviz:  https://graphviz.org/doc/info/lang.html
+#   Metamodel: architecture.json (internal)
+
+mermaid:
+  "1":
+    extension: ".mmd"
+    supported_diagrams:
+      - classDiagram
+      - graph
+    syntax:
+      class_header: "classDiagram"
+      graph_header: "graph"
+      member_visibility:
+        public: "+"
+        protected: "#"
+        private: "-"
+      inheritance: "{parent} <|-- {child}"
+      implements: "{parent} <|.. {child}"
+      dependency: "{source} ..> {target}"
+      composition: "{whole} *-- {part}"
+
+plantuml:
+  "1":
+    extension: ".puml"
+    supported_diagrams:
+      - class
+      - sequence
+      - component
+      - state
+      - activity
+      - object
+    syntax:
+      wrapper_start: "@startuml"
+      wrapper_end: "@enduml"
+      member_visibility:
+        public: "+"
+        protected: "#"
+        private: "-"
+        package: "~"
+      inheritance: "{parent} <|-- {child}"
+      implements: "{parent} <|.. {child}"
+      dependency: "{source} ..> {target}"
+      composition: "{whole} *-- {part}"
+      stereotype: "<<{name}>>"
+      note: "note right of {class} : {text}"
+
+graphviz:
+  "1":
+    extension: ".dot"
+    supported_diagrams:
+      - digraph
+      - graph
+    syntax:
+      directed_keyword: "digraph"
+      undirected_keyword: "graph"
+      directed_edge: "->"
+      undirected_edge: "--"
+      node: '"{name}" [label="{label}", shape={shape}]'
+      edge: '"{source}" -> "{target}"'
+      subgraph: 'subgraph cluster_{name} { label="{label}" }'
+      default_shapes:
+        class: "record"
+        interface: "ellipse"
+        module: "box"
+        package: "box3d"
+      rankdir: "TB"
+      inheritance_arrowhead: "empty"
+
+metamodel:
+  "1":
+    extension: ".json"
+    supported_diagrams:
+      - General
+      - ClassDiagram
+      - ComponentDiagram
+    node_fields:
+      - id
+      - entity_type
+      - entity_id
+      - label
+      - pos_x
+      - pos_y
+      - width
+      - height
+      - z_index
+      - parent_node_id
+    edge_fields:
+      - id
+      - source_node_id
+      - target_node_id
+      - relationship_type
+    node_template:
+      width: 200
+      height: 120
+      auto_size: false
+      z_index: 1
+    edge_template:
+      edge_type: "default"
+    grid_spacing_x: 250
+    grid_spacing_y: 180

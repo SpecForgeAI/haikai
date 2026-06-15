@@ -1,0 +1,81 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+.venv-local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Project runtime state (mirrors .gitignore — these dirs are user/runtime-
+# generated and must not bloat the build context or leak local data)
+workspace/
+api_workspace/
+output/
+staging/
+temp/
+tmp/
+*.log
+*.db
+.specforge/
+debug/
+.claude/
+.claude-local/
+# Exclude node_modules at ANY depth — a bare `node_modules/` only matches the
+# top level, leaving nested ones (e.g. diagrams/node_modules) in the 243MB+
+# build context (and a corrupt file there once broke the build).
+**/node_modules
+node_modules/
+
+# Local environment (templates with placeholder values still ship — they're
+# the documented .env.docker / .env.api.example / .env.example).
+.env
+.env.local
+
+# Documentation — repo-root-level only. CRITICAL: don't use bare `*.md`
+# because that would also strip the 82 skill files in haikai-profiles/
+# (discover-endpoints.md, write-spec.md, all the agent definitions, etc).
+# Those files ARE needed at runtime by the LLM agent.
+/*.md
+!/README.md
+docs/
+
+# Tests
+tests/
+test_*.py
+*_test.py
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+docker-compose.override.yml
+Dockerfile.dev
+
+# Build / package artifacts
+build/
+dist/
+*.egg-info/
+*.bak
+*.zip

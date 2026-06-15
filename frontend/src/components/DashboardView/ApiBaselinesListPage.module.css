@@ -1,0 +1,502 @@
+/**
+ * ApiBaselinesListPage styles
+ *
+ * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 8
+ *
+ * Layout mirrors `DiscoveryRunDetailView.module.css` for visual parity with
+ * the sibling discovery page.
+ */
+
+.container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header h2 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sectionHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #444;
+}
+
+.refreshButton {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.row:hover {
+  background: #fafafa;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.statusDraft   { background: #ECEFF1; color: #455A64; }
+.statusConfigured { background: #E1F5FE; color: #0277BD; }
+.statusRunning { background: #FFF8E1; color: #F57C00; }
+.statusCompleted { background: #E8F5E9; color: #2E7D32; }
+.statusFailed { background: #FFEBEE; color: #C62828; }
+.statusCancelled { background: #F5F5F5; color: #757575; }
+.statusActive { background: #E8F5E9; color: #2E7D32; }
+.statusArchived { background: #ECEFF1; color: #455A64; }
+
+.rowName {
+  font-weight: 500;
+  flex: 1;
+}
+
+.rowDate {
+  color: #888;
+  font-size: 12px;
+}
+
+.emptyMessage {
+  padding: 12px;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.errorBanner {
+  padding: 8px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.detailContainer {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.detailHeader h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.backButton {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.detailSection {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.detailSection h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+
+.detailRow {
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+.detailKey {
+  font-weight: 600;
+  margin-right: 6px;
+  color: #555;
+}
+
+.secretsPrompt {
+  padding: 12px;
+  border: 1px solid #ffe082;
+  background: #fff8e1;
+  border-radius: 4px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cta {
+  display: flex;
+  gap: 8px;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: #fff;
+  border: 1px solid #1976d2;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  border-color: #b0bec5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: #fff;
+  color: #444;
+  border: 1px solid #ccc;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Page-header actions row (Spec 2026-05-25 Task Group 5)
+ *
+ * Hosts the "Capture target API behaviour" entry button alongside the page
+ * title. The button uses the existing `.primaryButton` class for styling
+ * parity with the detail-view CTAs.
+ * --------------------------------------------------------------------------*/
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.primaryButton[title]:hover {
+  /* Tooltip is provided by the native title attribute; keep this rule
+     present so the linter's "tooltip used here" sweep recognises the
+     attribute -- no visual side-effect intended. */
+  cursor: inherit;
+}
+
+/* ----------------------------------------------------------------------------
+ * Paired-source banner (Spec 2026-05-25 Task Group 5)
+ *
+ * Renders at the top of `BaselineDetailView` when the loaded baseline has
+ * `kind='target'`. Reads as "Target-side API capture (paired with: <link>)".
+ * --------------------------------------------------------------------------*/
+
+.pairedBanner {
+  padding: 8px 12px;
+  background-color: #E3F2FD;
+  border: 1px solid #90CAF9;
+  color: #0D47A1;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.pairedBanner a {
+  color: #0D47A1;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* ----------------------------------------------------------------------------
+ * Drift report tab + tabs nav (Spec 2026-05-25 Diff Engine Task Group 5)
+ *
+ * The BaselineDetailView introduces a tab container ONLY when
+ * `baseline.kind === 'target'`. The tabs nav strip sits above the tab
+ * content; the kind=target paired banner stays above the tabs nav.
+ * When `baseline.kind === 'current'`, no tabs are rendered -- the view
+ * stays flat exactly as before.
+ * --------------------------------------------------------------------------*/
+
+.tabsNav {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tabButton {
+  padding: 8px 14px;
+  font-size: 13px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: #fafafa;
+  cursor: pointer;
+  border-radius: 4px 4px 0 0;
+  color: #555;
+}
+
+.tabButton:hover {
+  background: #f0f0f0;
+}
+
+.tabButtonActive {
+  background: #fff;
+  border-color: #e0e0e0;
+  color: #1976d2;
+  font-weight: 600;
+  position: relative;
+  top: 1px;
+}
+
+.driftHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.driftCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.driftCount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.driftCountMatched { color: #2E7D32; }
+.driftCountStatusDrift { color: #C62828; }
+.driftCountBodyShapeDrift { color: #EF6C00; }
+.driftCountBodyValueDrift { color: #0277BD; }
+.driftCountSourceOnly { color: #757575; }
+
+.staleBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #FFF3E0;
+  color: #E65100;
+  border: 1px solid #FFB74D;
+}
+
+.driftItemsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.driftItemsTable th,
+.driftItemsTable td {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.driftItemsTable th {
+  background: #fafafa;
+  font-weight: 600;
+  color: #555;
+}
+
+.classificationBadge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.classificationMatched { background: #E8F5E9; color: #2E7D32; }
+.classificationStatusDrift { background: #FFEBEE; color: #C62828; }
+.classificationBodyShapeDrift { background: #FFF3E0; color: #E65100; }
+.classificationBodyValueDrift { background: #E1F5FE; color: #0277BD; }
+.classificationSourceOnly { background: #F5F5F5; color: #757575; }
+.classificationTargetOnly { background: #F5F5F5; color: #757575; }
+
+.diffModalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.diffModalPanel {
+  background: #fff;
+  border-radius: 6px;
+  width: min(960px, 90vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.diffModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.diffModalBody {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 16px;
+  overflow: auto;
+}
+
+.diffPane {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px;
+  background: #fafafa;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+  max-height: 60vh;
+}
+
+.diffPaneHeader {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+  color: #444;
+}
+
+.diffAnnotations {
+  font-size: 12px;
+  padding: 8px 16px 12px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.diffAnnotation {
+  margin: 2px 0;
+}
+
+.diffAnnotationKeyAdded { color: #2E7D32; }
+.diffAnnotationKeyRemoved { color: #C62828; }
+.diffAnnotationValueChanged { color: #E65100; }
+.diffAnnotationTypeChanged { color: #0277BD; }
+
+/* ----------------------------------------------------------------------------
+ * Findings badge column on the Drift report tab.
+ * Spec: 2026-05-25 API Test Harness -- Findings Integration -- Task Group 4
+ * sub-task 4.3. Per-row badge shows the count of findings linked to that
+ * diff_item, color-coded by the max severity present.
+ * ---------------------------------------------------------------------------- */
+
+.findingsBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #334155;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.findingsBadge:hover {
+  border-color: #1976d2;
+}
+
+.findingsBadge:disabled {
+  cursor: default;
+}
+
+.findingsBadgeCritical {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.findingsBadgeHigh {
+  background: #FFE0B2;
+  color: #E65100;
+}
+
+.findingsBadgeMedium {
+  background: #FFF9C4;
+  color: #F9A825;
+}
+
+.findingsBadgeLow {
+  background: #DCFCE7;
+  color: #166534;
+}
+
+.findingsBadgeInfo {
+  background: #E3F2FD;
+  color: #0277BD;
+}
+
+.findingsBadgeEmpty {
+  display: inline-block;
+  color: #cbd5e1;
+  font-size: 12px;
+}

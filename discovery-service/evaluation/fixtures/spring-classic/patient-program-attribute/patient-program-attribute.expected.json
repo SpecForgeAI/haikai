@@ -1,0 +1,23 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "PatientProgramAttribute",
+      "tag": "gap-fill",
+      "description": "Blind spot: HBM-XML-mapped entity. Has @Audited and extends BaseAttribute<ProgramAttributeType, PatientProgram>, but carries no @Entity annotation. The Jakarta-Persistence pack can't detect it. Gap-fill should infer \"this is an attribute-table entity\" from the class name + BaseAttribute superclass."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "patientProgramAttributeId",
+      "tag": "gap-fill",
+      "description": "PK column \u2014 inferable from the getId override + the naming convention."
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "PatientProgramAttribute \u2192 PatientProgram",
+      "tag": "gap-fill",
+      "description": "Relationship to owner, visible via the generic BaseAttribute<ProgramAttributeType, PatientProgram> parameterization and the getPatientProgram()/setPatientProgram() bridge methods."
+    }
+  ],
+  "shouldNotEmit": []
+}

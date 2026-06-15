@@ -1,0 +1,116 @@
+/**
+ * LogFileUploadInput Styles
+ *
+ * Spec 2026-05-10: Runtime Log Input at Discovery Run Start
+ * Task Group 3: Reusable LogFileUploadInput component
+ *
+ * Mirrors the visual conventions of InfrastructureTerraformImportModal.module.css
+ * (input groups, hint text, error message, list rows) for cross-modal consistency.
+ */
+
+/* Outer section wrapper -- the component is intended to be embedded inside an
+ * existing modal body, so it does NOT supply its own modal chrome. */
+.section {
+  margin-bottom: 16px;
+}
+
+/* Section title -- "Upload Log Files" */
+.sectionTitle {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 6px 0;
+}
+
+/* Helper text shown beneath the title to clarify optional + downstream usage */
+.helperText {
+  font-size: 12px;
+  color: #666;
+  margin: 0 0 8px 0;
+}
+
+/* Native multi-file input -- styled to match Terraform import modal */
+.fileInput {
+  width: 100%;
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+/* Selection list -- one row per chosen file */
+.selectionList {
+  list-style: none;
+  margin: 8px 0 0 0;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.selectionListEmpty {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+  padding: 8px 12px;
+}
+
+.selectionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.selectionRow:last-child {
+  border-bottom: none;
+}
+
+.fileName {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 12px;
+  color: #333;
+}
+
+.fileSize {
+  flex: 0 0 auto;
+  color: #666;
+  font-variant-numeric: tabular-nums;
+  margin-right: 12px;
+  font-size: 12px;
+}
+
+.removeButton {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 8px;
+  color: #555;
+}
+
+.removeButton:hover {
+  background: #f0f0f0;
+}
+
+/* Inline validation error list (for rejected files) */
+.validationErrors {
+  margin: 8px 0 0 0;
+  padding: 8px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 12px;
+  list-style: disc inside;
+}
+
+.validationErrors li {
+  margin: 2px 0;
+}

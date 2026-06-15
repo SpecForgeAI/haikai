@@ -1,0 +1,43 @@
+name: beego
+version: 1
+language: go
+
+detection:
+  imports_match:
+    - "github.com/beego/beego"
+    - "github.com/astaxie/beego"
+  manifest_contains:
+    - {file: go.mod, substring: "github.com/beego/beego"}
+
+extract:
+  - id: beego_verb_shortcuts
+    query: call_args
+    file_filter: all
+    file_extensions: [".go"]
+    callee_pattern: '\.(Get|Post|Put|Delete|Patch|Head|Options|Any)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+  - id: beego_router_registrations
+    query: call_args
+    file_filter: all
+    file_extensions: [".go"]
+    callee_pattern: '\.(Router|NSRouter)$'
+    path_arg_index: 0
+    verb: ANY
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: beego
+
+conflict_rules: []
+
+known_pitfalls:
+  - "web.Router() optional third-arg verb mapping string (e.g. 'get:GetAll;post:Create') is not parsed; these routes emit as ANY"
+  - "Namespace prefixes from beego.NewNamespace('/v1', ...) are not inlined into child NSRouter paths"
+  - "Annotation-comment routing (// @router /path [get] doc comments) requires beego.Include() and is not captured"
+  - "AutoRouter() derives paths from controller/method names at runtime and is not statically analyzable"
+  - "RESTful controller verb methods (Get(), Post() on embedded beego.Controller) are not captured; paths come from the Router registration, not the method name"

@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "App",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

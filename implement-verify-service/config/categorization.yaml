@@ -1,0 +1,139 @@
+# Rules for categorizing files into standard categories
+# Categories: backend, frontend, global, testing
+
+categorization_rules:
+  backend:
+    directories:
+      - /api/
+      - /server/
+      - /backend/
+      - /controllers/
+      - /models/
+      - /services/
+      - /repositories/
+      - /middleware/
+      - /routes/
+      - /handlers/
+      - /dao/
+      - /entities/
+    
+    file_patterns:
+      - "*.controller.*"
+      - "*.service.*"
+      - "*.repository.*"
+      - "*.model.*"
+      - "*.entity.*"
+      - "*.dao.*"
+      - "*.handler.*"
+      - "*.middleware.*"
+    
+    extensions:
+      - .java
+      - .kt
+      - .scala
+      - .go
+      - .rs
+      - .py
+      - .rb
+      - .php
+      - .cs
+  
+  frontend:
+    directories:
+      - /components/
+      - /pages/
+      - /views/
+      - /ui/
+      - /client/
+      - /frontend/
+      - /src/
+      - /src/components/
+      - /src/pages/
+      - /styles/
+      - /assets/
+    
+    file_patterns:
+      - "*.component.*"
+      - "*.page.*"
+      - "*.view.*"
+      - "*.widget.*"
+    
+    extensions:
+      - .js
+      - .jsx
+      - .ts
+      - .tsx
+      - .vue
+      - .svelte
+      - .html
+      - .css
+      - .scss
+      - .sass
+      - .less
+  
+  testing:
+    directories:
+      - /test/
+      - /tests/
+      - /__tests__/
+      - /spec/
+      - /specs/
+    
+    file_patterns:
+      - "*.test.*"
+      - "*.spec.*"
+      - "*_test.*"
+      - "*_spec.*"
+      - "test_*"
+    
+    extensions:
+      - .test.js
+      - .test.ts
+      - .spec.js
+      - .spec.ts
+      - .test.py
+      - .spec.py
+  
+  global:
+    # Files that apply to all categories
+    file_patterns:
+      - .eslintrc*
+      - .prettierrc*
+      - .editorconfig
+      - tsconfig.json
+      - .pylintrc
+      - .flake8
+      - .rubocop.yml
+  
+  metamodel:
+    # Architecture metamodel JSON files
+    file_patterns:
+      - "*metamodel*.json"
+      - "*architecture*.json"
+      - "*project_payload*.json"
+      - "*structure*.json"
+    extensions:
+      - .json
+
+# Mapping of categories to standard files
+standard_file_mapping:
+  backend:
+    api: "backend/api.md"
+    models: "backend/models.md"
+    queries: "backend/queries.md"
+  
+  frontend:
+    components: "frontend/components.md"
+    css: "frontend/css.md"
+    accessibility: "frontend/accessibility.md"
+  
+  testing:
+    test_writing: "testing/test-writing.md"
+  
+  global:
+    coding_style: "global/coding-style.md"
+    conventions: "global/conventions.md"
+    tech_stack: "global/tech-stack.md"
+  
+  metamodel:
+    tech_stack: "global/tech-stack.md"

@@ -1,0 +1,6 @@
+iteration	phase	metric_assertions_passed	assertions_total	verdict	notes
+0	baseline	15	15	MULTISPEC_OK	real Spring Boot 3.4.2; haiboxd 8785; mvn package + java -jar in box
+0	phase1_b2	5	5	pass	two specs -> two branches, each only its own controller (real _git_one_spec)
+0	phase2_consolidate	5	5	pass	isolated worktree carries both; live repo untouched on main (Unit 6/L3)
+0	phase3_serve	2	2	pass	GET /api/one=200 feature-one; GET /api/two=200 feature-two (both live)
+0	phase4_buildresults	3	3	pass	outcome=deployed; target_base_url set; callback_delivered=True (Unit 2/C5)

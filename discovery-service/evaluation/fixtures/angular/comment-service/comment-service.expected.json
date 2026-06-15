@@ -1,0 +1,25 @@
+{
+  "expected": [
+    {
+      "type": "business_logics",
+      "name": "moderateComment",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /api/articles/${slug}/comments",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /api/articles/${slug}/comments",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "DELETE /api/articles/${slug}/comments/${id}",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

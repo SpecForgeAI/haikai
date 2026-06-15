@@ -1,0 +1,161 @@
+/**
+ * SaveBackConfirmModal.module.css
+ *
+ * Spec 2026-05-01 Multi-Architecture Discovery Integration -- Task Group 8
+ *
+ * Confirmation modal for the discovery save-back action. Mirrors
+ * `ArchiveArchitectureConfirmModal.module.css` (overlay + modal + header +
+ * content + footer with secondary Cancel + primary action). The primary
+ * button is intentionally NOT the danger variant -- save-back is a
+ * non-destructive promote action -- but the shell is otherwise identical
+ * so the two confirmation surfaces feel consistent.
+ */
+
+/* Overlay - semi-transparent backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Sit above the parent DiscoveryRunDetailView (no internal modal stacking
+     to worry about) but high enough that any future host overlays it. */
+  z-index: 1100;
+}
+
+/* Modal container */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 480px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  border-radius: 8px 8px 0 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.closeButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Content */
+.content {
+  padding: 20px;
+}
+
+.message {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.archivedWarning {
+  font-size: 13px;
+  color: #b71c1c;
+  line-height: 1.4;
+  margin: 12px 0 0 0;
+  padding: 8px 12px;
+  background: #fff3e0;
+  border-left: 3px solid #ef6c00;
+  border-radius: 2px;
+}
+
+.errorMessage {
+  margin-top: 12px;
+  color: #d32f2f;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Footer */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

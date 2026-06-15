@@ -1,0 +1,392 @@
+/**
+ * ModelFileDialog Styles
+ *
+ * Styling for the Model File Dialog component.
+ * Matches the visual style of Modal.module.css for consistency.
+ *
+ * Spec 2026-01-18: Organisations Iteration 4 - Update Project Save As Modal
+ * Added inputGroup, input, inputHint, organisationLoading, organisationWarning,
+ * formErrorMessage, and saveButton styles for the new form fields.
+ */
+
+/* Overlay - same as Modal */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - same as Modal */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header - same as Modal */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover:not(:disabled) {
+  color: #333;
+}
+
+.closeButton:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Content area */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Input section for saveAs mode (legacy) */
+.inputSection {
+  margin-bottom: 16px;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Input group styling - matches CreateProjectModal.module.css
+ */
+.inputGroup {
+  margin-bottom: 16px;
+}
+
+.inputGroup:last-of-type {
+  margin-bottom: 8px;
+}
+
+.inputLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Standard input styling - matches CreateProjectModal.module.css
+ */
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.input::placeholder {
+  color: #999;
+}
+
+.input:disabled {
+  background-color: #f5f5f5;
+  color: #888;
+  cursor: not-allowed;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Input hint text - matches CreateProjectModal.module.css
+ */
+.inputHint {
+  display: block;
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+}
+
+/* Legacy filename input (can be removed if no longer used) */
+.filenameInput {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.filenameInput:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.filenameInput::placeholder {
+  color: #999;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Organisation loading indicator - matches CreateProjectModal.module.css
+ * Subtle loading text shown while fetching organisations list
+ */
+.organisationLoading {
+  display: block;
+  font-size: 12px;
+  color: #1976D2;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Organisation warning message - matches CreateProjectModal.module.css
+ * Non-blocking warning shown when organisations fail to load
+ * Less prominent than error messages (amber/yellow tones)
+ */
+.organisationWarning {
+  display: block;
+  font-size: 12px;
+  color: #b57f00;
+  margin-top: 4px;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Form error message - shown on submission failure
+ */
+.formErrorMessage {
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* File list section */
+.fileListSection {
+  margin-bottom: 8px;
+}
+
+.fileListLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+/* File list container */
+.fileList {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+/* File row */
+.fileRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.fileRow:last-child {
+  border-bottom: none;
+}
+
+.fileRow:hover {
+  background: #f5f5f5;
+}
+
+.fileRow.selected {
+  background: #e3f2fd;
+}
+
+.fileName {
+  font-size: 14px;
+  color: #333;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileDate {
+  font-size: 12px;
+  color: #888;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+/* Loading state */
+.loadingContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #666;
+  gap: 12px;
+}
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e0e0e0;
+  border-top-color: #1976D2;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error state */
+.errorContainer {
+  padding: 20px;
+  text-align: center;
+}
+
+.errorMessage {
+  color: #d32f2f;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.retryButton {
+  background: #f5f5f5;
+  border: 1px solid #ccc;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  color: #333;
+}
+
+.retryButton:hover {
+  background: #e8e8e8;
+}
+
+/* Empty message */
+.emptyMessage {
+  padding: 40px 20px;
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+}
+
+/* Footer - similar to Modal but with two buttons */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover:not(:disabled) {
+  background: #e8e8e8;
+}
+
+.cancelButton:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.okButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.okButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.okButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+/**
+ * Spec 2026-01-18: Organisations Iteration 4
+ * Save button - same styling as okButton but with explicit name
+ */
+.saveButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.saveButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.saveButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}

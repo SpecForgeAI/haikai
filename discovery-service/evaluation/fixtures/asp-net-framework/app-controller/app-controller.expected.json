@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "AppController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

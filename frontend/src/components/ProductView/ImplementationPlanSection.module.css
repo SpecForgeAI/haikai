@@ -1,0 +1,76 @@
+/**
+ * ImplementationPlanSection.module.css
+ *
+ * Spec 2026-02-11: Collapsible Implementation Plan Zone
+ * - Compact collapsible header bar (~28px when collapsed)
+ * - Chevron rotates on expand
+ * - Increment count badge in header
+ * - Body contains plan title and compact increment rows
+ */
+
+/* Section container */
+.section {
+  background: #ffffff;
+  border-bottom: 1px solid #E0E0E0;
+  flex-shrink: 0;
+}
+
+/* Collapsible header bar */
+.header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 28px;
+  background: #e8f5e9;
+}
+
+.header:hover {
+  background: #c8e6c9;
+}
+
+/* Chevron indicator */
+.chevron {
+  font-size: 10px;
+  color: #666666;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+/* Header title */
+.headerTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333333;
+  flex: 1;
+}
+
+/* Increment count badge */
+.headerCount {
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #666666;
+  border-radius: 8px;
+  padding: 1px 6px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Expanded body */
+.body {
+  padding: 4px 8px 8px;
+}
+
+/* Increment list container */
+.incrementList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}

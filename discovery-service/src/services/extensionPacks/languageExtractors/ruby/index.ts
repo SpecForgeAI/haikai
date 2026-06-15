@@ -1,0 +1,1 @@
+export { extractRubyIR } from './extract';

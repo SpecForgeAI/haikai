@@ -1,0 +1,14 @@
+{
+  "id": "architect--tech-standards",
+  "personaId": "architect",
+  "menuLabel": "Technical Standards",
+  "description": "Assists with defining and refining technical standards, coding conventions, technology choices, and governance policies for the project.",
+  "mode": "advisory",
+  "taskPromptRef": "prompts/architect.tech-standards.task.md",
+  "responseFormat": null,
+  "contextNeeds": ["mission", "tech-stack"],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

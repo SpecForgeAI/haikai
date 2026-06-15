@@ -1,0 +1,323 @@
+/**
+ * CaptureReviewPanel + SaveAsBaselineModal styles
+ *
+ * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 9
+ *
+ * Visual parity with `ApiBaselinesListPage.module.css` -- shared button
+ * shapes, badge/pill conventions, and section borders so the review surface
+ * looks native alongside the sibling list/detail pages.
+ */
+
+.panel {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panelHeader h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.acceptedTally {
+  font-size: 12px;
+  color: #555;
+  background: #e8f5e9;
+  padding: 3px 8px;
+  border-radius: 12px;
+}
+
+.reviewTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.reviewTable th,
+.reviewTable td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.reviewTable thead th {
+  font-weight: 600;
+  color: #444;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.smallButton {
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-left: 6px;
+  border: 1px solid #ccc;
+  background: #fff;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.smallButton:disabled {
+  background: #f5f5f5;
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+.linkButton {
+  font-size: 12px;
+  background: none;
+  border: none;
+  color: #1976d2;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.linkButton:disabled {
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+.inlineForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inlineForm label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: #555;
+  gap: 4px;
+}
+
+.inlineForm textarea,
+.inlineForm input {
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.cta {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.expandedBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border: 1px dashed #e0e0e0;
+  border-radius: 4px;
+}
+
+.expandedSection {
+  font-size: 12px;
+}
+
+.expandedSection strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.codeBlock {
+  margin: 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: #fff;
+  padding: 6px 8px;
+  border: 1px solid #eee;
+  border-radius: 3px;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: #fff;
+  border: 1px solid #1976d2;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  border-color: #b0bec5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: #fff;
+  color: #444;
+  border: 1px solid #ccc;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.emptyMessage {
+  padding: 12px;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.errorBanner {
+  padding: 8px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+/* ============================================================================
+ * SaveAsBaselineModal
+ * ============================================================================ */
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 6px;
+  padding: 20px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modal h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #555;
+}
+
+.modal input,
+.modal textarea {
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-family: inherit;
+}
+
+.warningBanner {
+  padding: 8px 12px;
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #6d4c00;
+}
+
+.warningBanner ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.summaryRow {
+  font-size: 13px;
+  color: #444;
+}
+
+/* ----------------------------------------------------------------------------
+ * Discovery-supported annotations (Spec 2026-05-16 -- Task Group 4)
+ *
+ * Discovery context loaded once per panel mount; signals surfaced as
+ * session-level badges + a per-row sentinel note when the session itself
+ * has no discovery findings linked. We can't JOIN per-endpoint because the
+ * AMS aggregation DTO does not surface finding -> endpoint method/path
+ * links (target_id only carries a UUID, not the operation triple).
+ * --------------------------------------------------------------------------*/
+
+.discoveryBanner {
+  background: #f3f7ff;
+  border: 1px solid #d6e4ff;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: #1a1a1a;
+}
+
+.discoveryBannerTitle {
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.discoveryBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.discoveryBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #e6f0ff;
+  color: #0b3d91;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.discoveryBadgeWarning {
+  background: #fff3cd;
+  color: #6d4c00;
+}
+
+.discoveryBadgeInfo {
+  background: #e0f2f1;
+  color: #00695c;
+}
+
+.discoveryRowNote {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  color: #666;
+  font-size: 10px;
+}

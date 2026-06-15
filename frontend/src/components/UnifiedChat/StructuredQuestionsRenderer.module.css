@@ -1,0 +1,168 @@
+/**
+ * StructuredQuestionsRenderer.module.css
+ *
+ * Spec 2026-02-28: Unified Chat Panel v1 (Frontend)
+ * Task Group 6, Task 6.4: StructuredQuestionsRenderer styles
+ *
+ * Inspired by QuestionsTable.module.css layout with:
+ * - Container with subtle background
+ * - Header row with column labels
+ * - Body with question rows
+ * - Footer with submit button
+ */
+
+/* Container */
+.container {
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+/* Header row */
+.header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-bottom: 2px solid #e0e0e0;
+  font-weight: 600;
+  font-size: 12px;
+  color: #555555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.headerQuestion,
+.headerAnswer {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Body */
+.body {
+  padding: 6px 12px;
+}
+
+/* Question row */
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  align-items: center;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Question cell */
+.questionCell {
+  font-size: 13px;
+  color: #333333;
+  line-height: 1.4;
+}
+
+.questionText {
+  word-wrap: break-word;
+}
+
+/* Answer cell */
+.answerCell {
+  display: flex;
+}
+
+/* Answer input */
+.answerInput {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.answerInput:focus {
+  border-color: #5C6BC0;
+  box-shadow: 0 0 0 2px rgba(92, 107, 192, 0.15);
+}
+
+.answerInput:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Footer */
+.footer {
+  padding: 12px;
+  background: #ffffff;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Submit button */
+.submitButton {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ffffff;
+  background: #5C6BC0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.submitButton:hover:not(:disabled) {
+  background: #4A5AAF;
+}
+
+.submitButton:active:not(:disabled) {
+  background: #3F4FA0;
+}
+
+.submitButton:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* Attach button (paperclip) */
+.attachButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.attachButton:hover:not(:disabled) {
+  color: #333;
+  background: #f0f0f0;
+}
+
+.attachButton:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Hidden file input */
+.hiddenFileInput {
+  display: none;
+}

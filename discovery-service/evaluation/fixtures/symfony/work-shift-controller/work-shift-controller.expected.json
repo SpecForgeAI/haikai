@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "WorkShiftController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/83",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "start_with_1 = 9 * 10**(n-2) if n > 1 else 1\nend_with_1 = 9 * 10**(n-2) if n > 1 else 1\nboth_start_and_end_1 = 10**(n-2) if n > 2 else 1 if n == 2 else 1\nreturn start_with_1 + end_with_1 - both_start_and_end_1",
+  "expected_output": "    if n == 1: return 1\n    return 18 * (10 ** (n - 2))\n",
+  "latency_seconds": 1.6635139661375433,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 93,
+    "output_tokens": 99,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "BaseApiController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

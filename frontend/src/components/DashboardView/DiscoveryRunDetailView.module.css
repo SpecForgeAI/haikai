@@ -1,0 +1,1061 @@
+/**
+ * DiscoveryRunDetailView Styles
+ *
+ * Spec 2026-04-05: Discovery Results Visibility -- Task Group 5 (Task 5.4)
+ * Extended: Candidate Review and Approval Workflow (Increment 13) -- Task Group 5
+ * Extended: Discovery Refinement UX Polish (Increment 16) -- Task Group 7
+ *
+ * Follows the existing DashboardView styling patterns:
+ * - Card layout (.card, .cardHeader, .cardMetrics, .metricPill)
+ * - Section containers (.sectionContainer, .sectionContent)
+ * - Status-colored badges for run states
+ * - Clean minimal read-only table for candidates
+ * - Filter bar, action buttons, row tinting, save-approved button
+ * - Progress indicator, refresh button, count summary, saving indicator
+ */
+
+/* ============================================================================
+ * Detail View Container
+ * ============================================================================ */
+
+.detailContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+}
+
+/* ============================================================================
+ * Header Bar (Back button + title)
+ * ============================================================================ */
+
+.detailHeader {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.detailHeader h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.backButton {
+  color: #1976D2;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: none;
+  border: 1px solid #1976D2;
+  border-radius: 4px;
+  padding: 4px 12px;
+  white-space: nowrap;
+}
+
+.backButton:hover {
+  background: #e3f2fd;
+  text-decoration: none;
+}
+
+/* ============================================================================
+ * Run List Section
+ * ============================================================================ */
+
+.runListSection {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: #ffffff;
+}
+
+.runListSection h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 8px 0;
+}
+
+/* Run list header with title and refresh button */
+.runListHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.runListHeader h3 {
+  margin: 0;
+}
+
+/* Refresh button -- styled like the back button for consistency */
+.refreshButton {
+  color: #1976D2;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: none;
+  border: 1px solid #1976D2;
+  border-radius: 4px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.refreshButton:hover:not(:disabled) {
+  background: #e3f2fd;
+}
+
+.refreshButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.runList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runListItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-size: 13px;
+  color: #555;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.runListItem:hover {
+  background: #f5f5f5;
+  border-color: #e0e0e0;
+}
+
+.runListItemSelected {
+  background: #e3f2fd;
+  border-color: #90caf9;
+}
+
+.runListItemDate {
+  color: #888;
+  font-size: 12px;
+  margin-left: auto;
+}
+
+/* ============================================================================
+ * Status Badges (colored by run state)
+ * ============================================================================ */
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.statusCompleted {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.statusFailed {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.statusRunning {
+  background: #fff8e1;
+  color: #f57f17;
+}
+
+.statusPending {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.statusCancelled {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+/* ============================================================================
+ * Run Detail Panel
+ * ============================================================================ */
+
+.runDetailPanel {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px 18px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.runDetailPanel h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.runDetailRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: #555;
+}
+
+.runDetailLabel {
+  font-weight: 600;
+  color: #333;
+  min-width: 100px;
+}
+
+.errorMessage {
+  background: #fff3f3;
+  border: 1px solid #ffcdd2;
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: #c62828;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ============================================================================
+ * Progress Indicator (RUNNING status -- Task 7.2)
+ * ============================================================================ */
+
+.progressText {
+  color: #f57f17;
+  font-weight: 500;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Phase Progression List
+ * ============================================================================ */
+
+.phaseList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.phaseItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #555;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.phaseKey {
+  font-weight: 600;
+  color: #333;
+  min-width: 80px;
+}
+
+.phaseValue {
+  color: #666;
+}
+
+/* ============================================================================
+ * View Candidates Button
+ * ============================================================================ */
+
+.viewCandidatesButton {
+  color: #1976D2;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: none;
+  border: 1px solid #1976D2;
+  border-radius: 4px;
+  padding: 6px 14px;
+  white-space: nowrap;
+  align-self: flex-start;
+}
+
+.viewCandidatesButton:hover {
+  background: #e3f2fd;
+}
+
+/* ============================================================================
+ * Filter Bar (Review Status Filter Chips)
+ * ============================================================================ */
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #555;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.filterChip:hover {
+  background: #f5f5f5;
+  border-color: #bdbdbd;
+}
+
+.filterChipActive {
+  background: #e3f2fd;
+  border-color: #90caf9;
+  color: #1565c0;
+  font-weight: 600;
+}
+
+.filterChipCount {
+  font-size: 11px;
+  color: #888;
+  font-weight: 400;
+}
+
+.filterChipActive .filterChipCount {
+  color: #1976D2;
+}
+
+/* ============================================================================
+ * Count Summary Line (Task 7.6)
+ * ============================================================================ */
+
+.countSummary {
+  font-size: 12px;
+  color: #666;
+  padding: 4px 0;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bulkActions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* ============================================================================
+ * Candidate Table
+ * ============================================================================ */
+
+.candidateTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.candidateTable th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 2px solid #e0e0e0;
+  font-weight: 600;
+  color: #333;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.candidateTable td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #555;
+  vertical-align: top;
+}
+
+.candidateTable tr:hover td {
+  background: #fafafa;
+}
+
+/* ============================================================================
+ * Column Filter Row (Excel-like header filters)
+ * ============================================================================ */
+
+.filterRow th {
+  padding: 4px 10px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 400;
+}
+
+.filterInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  font-size: 11px;
+  border: 1px solid #d0d0d0;
+  border-radius: 3px;
+  background: #fafafa;
+  color: #333;
+  outline: none;
+}
+
+.filterInput:focus {
+  border-color: #90caf9;
+  background: #fff;
+}
+
+.filterInput::placeholder {
+  color: #aaa;
+}
+
+.filterSelect {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 4px;
+  font-size: 11px;
+  border: 1px solid #d0d0d0;
+  border-radius: 3px;
+  background: #fafafa;
+  color: #333;
+  outline: none;
+  cursor: pointer;
+}
+
+.filterSelect:focus {
+  border-color: #90caf9;
+  background: #fff;
+}
+
+.clearFiltersButton {
+  display: inline;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1976D2;
+  background: none;
+  border: 1px solid #90caf9;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.clearFiltersButton:hover {
+  background: #e3f2fd;
+}
+
+.childRow td:first-child {
+  padding-left: 28px;
+}
+
+.parentLabel {
+  display: inline-block;
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  margin-left: 4px;
+}
+
+.emptyMessage {
+  padding: 16px;
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Review Status Row Tinting
+ * ============================================================================ */
+
+.rowApproved td {
+  background-color: #f1f8e9;
+}
+
+.rowRejected td {
+  background-color: #fef0f0;
+}
+
+.rowDeferred td {
+  background-color: #f5f5f5;
+}
+
+/* ============================================================================
+ * Action Buttons (Approve, Reject, Defer)
+ * ============================================================================ */
+
+.actionButton {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 2px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 3px;
+  cursor: pointer;
+  background: none;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.actionButtonApprove {
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+
+.actionButtonApprove:hover:not(:disabled) {
+  background: #e8f5e9;
+}
+
+.actionButtonReject {
+  color: #c62828;
+  border: 1px solid #ef9a9a;
+}
+
+.actionButtonReject:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.actionButtonDefer {
+  color: #616161;
+  border: 1px solid #bdbdbd;
+}
+
+.actionButtonDefer:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.actionButtonDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+ * Row Loading Indicator
+ * ============================================================================ */
+
+.rowLoading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* Row-level saving indicator text (Task 7.7) */
+.rowSavingIndicator {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #f57f17;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Save All Approved Button and Section
+ * ============================================================================ */
+
+.saveApprovedSection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.saveApprovedButton {
+  display: inline-block;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #2e7d32;
+  border: 1px solid #2e7d32;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.saveApprovedButton:hover:not(:disabled) {
+  background: #1b5e20;
+}
+
+.saveApprovedButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.saveApprovedSuccess {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #2e7d32;
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  border-radius: 4px;
+}
+
+/* ============================================================================
+ * Loading State
+ * ============================================================================ */
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * V3 Tier UX (Spec 2026-04-20) -- Task Group 6
+ * Warnings banner, tier column, confidence slider, confirm dialog.
+ * ============================================================================ */
+
+/* Warnings banner (Tier B/C) shown above run details */
+.warningsBanner {
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  border: 1px solid transparent;
+}
+
+.warningsBannerTierB {
+  background: #fff8e1;
+  color: #8a5a00;
+  border-color: #ffe082;
+}
+
+.warningsBannerTierC {
+  background: #ffebee;
+  color: #c62828;
+  border-color: #ef9a9a;
+}
+
+.warningsBannerList {
+  margin: 4px 0 0 18px;
+  padding: 0;
+}
+
+.warningsBannerList li {
+  margin: 2px 0;
+}
+
+/* Run list tier cell */
+.runListItemTier {
+  margin-left: 8px;
+}
+
+/* Confidence slider bar above candidate table */
+.confidenceSliderBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: #555;
+}
+
+.confidenceSliderLabel {
+  font-weight: 600;
+  color: #333;
+}
+
+.confidenceSliderInput {
+  flex: 0 0 220px;
+  accent-color: #1976D2;
+}
+
+.confidenceSliderValue {
+  font-variant-numeric: tabular-nums;
+  color: #1976D2;
+  min-width: 40px;
+  font-weight: 600;
+}
+
+/* Tier C confirm dialog (LLM_SOLO_CONFIRMATION_REQUIRED) */
+.confirmDialogOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirmDialog {
+  background: #ffffff;
+  border-radius: 8px;
+  max-width: 480px;
+  width: 90%;
+  padding: 20px 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.confirmDialogTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.confirmDialogBody {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.5;
+}
+
+.confirmDialogBody ul {
+  margin: 4px 0 0 18px;
+  padding: 0;
+}
+
+.confirmDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.confirmDialogButton {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.confirmDialogButtonCancel {
+  color: #555;
+  background: #ffffff;
+  border: 1px solid #bdbdbd;
+}
+
+.confirmDialogButtonCancel:hover {
+  background: #f5f5f5;
+}
+
+.confirmDialogButtonProceed {
+  color: #ffffff;
+  background: #c62828;
+  border: 1px solid #c62828;
+}
+
+.confirmDialogButtonProceed:hover {
+  background: #ad1e1e;
+}
+
+/* ============================================================================
+ * Spec 2026-05-01 Multi-Architecture Discovery Integration -- Task Group 7
+ *
+ * Read-only architecture chip rendered in the run-detail header. Mirrors
+ * the closed-state pill from ArchitectureSelector.module.css `.trigger`
+ * but without the chevron and with `cursor: not-allowed` so it reads as
+ * informational rather than interactive.
+ * ============================================================================ */
+
+.architectureChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Pill shape -- matches ArchitectureSelector.module.css .trigger. */
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #d0d0d0;
+  background: #fafafa;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  /* Read-only -- no hover affordance, no chevron, disabled cursor. */
+  cursor: not-allowed;
+  /* Stay on a single line and elide overflowing names. */
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.architectureChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.architectureChipArchived {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  margin-left: 4px;
+}
+
+/* ============================================================================
+ * Spec 2026-05-10 Candidate Details Expansion UI -- Task Group 3
+ *
+ * Styles for the per-row expansion panel revealed beneath an eligible
+ * candidate row. The panel holds three columns (Code Detection, Log Scans,
+ * LLM Review) arranged in a CSS grid that collapses to a single column on
+ * narrow viewports. Visual language follows the surrounding table:
+ * subtle borders (#e0e0e0), light card background (#ffffff over the row's
+ * #fafafa hover tint), 4px border radius, and 13px body / 14px heading
+ * type to match `.runDetailPanel` and `.runListSection`.
+ * ============================================================================ */
+
+/* Outer wrapper -- the three-column grid lives inside the expansion <td>.
+ * Padding mirrors `.childRow` indentation/`.runDetailPanel` interior so the
+ * panel reads as visually attached to the candidate row above. */
+.detailsPanel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding: 12px 16px;
+  background: #fafafa;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* Card-like body for each of the three columns. Subtle border + white
+ * background match the `.runListSection`/`.runDetailPanel` aesthetic. */
+.detailsColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+/* Bold heading bar at the top of each column. Sized like the section
+ * headings used elsewhere in the module (14px / 600 / #333). */
+.detailsColumnHeading {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 4px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* Body text container. Comfortable line-height for multi-line evidence
+ * text, body-color matching the surrounding table cells. */
+.detailsColumnBody {
+  font-size: 12px;
+  color: #555;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Narrow-screen fallback: stack the three columns vertically. */
+@media (max-width: 768px) {
+  .detailsPanel {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================================
+ * Spec 2026-05-10: Runtime Log Input at Discovery Run Start -- Task Group 5
+ *
+ * Warning chip rendered on the run-list row when log-attach was partial or
+ * failed. Pinned adjacent to the existing run-status indicator. Visual
+ * language follows the surrounding badges (.statusBadge / .filterChip):
+ * pill shape, 2px/8px padding, 11px uppercase weight-600 text, soft
+ * background tinted to the warning level. "partial" reuses the warm
+ * amber tone that .statusRunning / .warningsBannerTierB already set as the
+ * project's warning palette; "failed" reuses the .statusFailed red.
+ * ============================================================================ */
+
+.logsAttachWarningChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-left: 4px;
+  border: 1px solid transparent;
+}
+
+.logsAttachWarningChipPartial {
+  background: #fff8e1;
+  color: #8a5a00;
+  border-color: #ffe082;
+}
+
+.logsAttachWarningChipFailed {
+  background: #ffebee;
+  color: #c62828;
+  border-color: #ef9a9a;
+}
+
+/* ============================================================================
+ * Service Deleted Chip
+ *
+ * Spec: 2026-05-11 Discovery Run Robustness -- Section 2.
+ *
+ * Rendered on the run-list row and the run-detail header when the run's
+ * `service_id` FK is NULL (a service-deletion nulled it via the
+ * ON DELETE SET NULL action from Liquibase changeset 126). When the
+ * `config_snapshot.serviceIdentitySnapshot` is present, the
+ * `serviceNameLabel` renders the original service name alongside the
+ * amber chip ("OldService [Service deleted]"). When the snapshot is
+ * absent (legacy orphans pre-snapshot capture), only the chip renders
+ * (the FK value is lost when SET NULL fires).
+ *
+ * Palette reuses the warning-amber tone established by
+ * `.logsAttachWarningChipPartial` so reviewers recognise it as a
+ * non-fatal warning rather than a hard error.
+ * ============================================================================ */
+
+.serviceNameLabel {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin-left: 4px;
+}
+
+.serviceDeletedChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-left: 4px;
+  border: 1px solid #ffe082;
+  background: #fff8e1;
+  color: #8a5a00;
+}
+
+/* ============================================================================
+ * Spec 2026-05-29 (Business-logic behaviour capture -- Gap C) -- Task Group 3.4
+ *
+ * Read-only, EXPANDABLE 7-part behaviour block + confidence badge rendered
+ * below the three evidence columns for a `business_logics` candidate (mirrors
+ * the `endpoint-data-effect-path` block). Reuses the existing low-confidence
+ * visual treatment: the locked confidence palette already established by
+ * `TierBadge.module.css` / `.statusFailed` / `.statusRunning` /
+ * `.statusCompleted` (red / amber / green). Buckets match the established
+ * `ConfidenceBadge` thresholds (HIGH >= 0.85, MEDIUM >= 0.45, else LOW).
+ * VIEW-ONLY -- no accept/reject/edit controls live on this block.
+ * ============================================================================ */
+
+/* Pill-shaped confidence badge. Shape/size matches `.statusBadge` /
+ * `.tierBadge` so it reads as a sibling of the existing badges. */
+.behaviourConfidenceBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+/* HIGH: green -- matches .statusCompleted / .tierBadgeSuccess. */
+.behaviourConfidenceHigh {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-color: #c8e6c9;
+}
+
+/* MEDIUM: amber -- matches .statusRunning / .tierBadgeWarning. */
+.behaviourConfidenceMedium {
+  background: #fff8e1;
+  color: #f57c00;
+  border-color: #ffe082;
+}
+
+/* LOW: red -- the existing low-confidence visual treatment
+ * (.statusFailed / .tierBadgeDanger / .actionButtonReject palette). */
+.behaviourConfidenceLow {
+  background: #ffebee;
+  color: #c62828;
+  border-color: #ffcdd2;
+}
+
+/* One section heading inside the expanded block (e.g. "Validation /
+ * preconditions"). Sized down from `.detailsColumnHeading` so the seven
+ * parts read as sub-sections of the block, not new columns. */
+.behaviourSectionHeading {
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  margin: 6px 0 2px 0;
+}
+
+/* Prose / structured lines under a section heading. Comfortable line-height
+ * for multi-line reconstruction guidance; body colour matches
+ * `.detailsColumnBody`. */
+.behaviourSectionList {
+  margin: 0 0 4px 0;
+  padding-left: 16px;
+  color: #555;
+  line-height: 1.5;
+}
+
+/* ============================================================================
+ * Spec 2026-06-02 Unique, Aggregate Discovery Candidates (Spec 0) -- Task Group 7
+ *
+ * Per-row CONFLICT badge rendered alongside the Review Status when a merged
+ * candidate carries a live (unresolved) cross-source value conflict
+ * (`data._conflicts[attr]` with no matching `data._conflictResolutions[attr]`).
+ * Clicking it opens the side-by-side `ConflictResolutionModal` chooser.
+ *
+ * Reuses the established danger/red review palette (the `.actionButtonReject`
+ * / `.statusFailed` red, `#c62828` on `#ffebee`) so it reads as a blocker --
+ * the same visual language as the Reject affordance and the low-confidence
+ * treatment -- rather than introducing a new colour token. Pill-shaped to
+ * match `.statusBadge` / `.tierBadge`.
+ * ============================================================================ */
+
+.conflictBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  color: #c62828;
+  background: #ffebee;
+  border: 1px solid #ef9a9a;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.conflictBadge:hover {
+  background: #ffcdd2;
+  border-color: #e57373;
+}

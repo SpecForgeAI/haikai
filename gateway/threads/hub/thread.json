@@ -1,0 +1,48 @@
+{
+  "threadKey": "project:d59d0daf-2ad7-4c9f-b916-3e4b7b06a373:hub",
+  "projectId": "d59d0daf-2ad7-4c9f-b916-3e4b7b06a373",
+  "messages": [
+    {
+      "id": "d701a236-a951-47c7-9e94-9bd76b51507a",
+      "role": "user",
+      "personaId": null,
+      "taskId": "assistant--whats-next",
+      "content": "What's Next?",
+      "structuredResponse": null,
+      "timestamp": "2026-03-04T20:51:47.795Z"
+    },
+    {
+      "id": "a281f510-df96-4bc2-a888-75a351f19a81",
+      "role": "assistant",
+      "personaId": "assistant",
+      "taskId": "assistant--whats-next",
+      "content": "Your project does not yet have a Product Mission defined. This is the essential first step before any other work can begin.",
+      "structuredResponse": {
+        "type": "whats-next-actions",
+        "explanation": "Your project does not yet have a Product Mission defined. This is the essential first step before any other work can begin.",
+        "actions": [
+          {
+            "id": "define-mission",
+            "label": "Define Product Mission",
+            "reason": "A product mission is the foundation for all other activities. Define it first to guide roadmap, architecture, and standards decisions.",
+            "priority": 100,
+            "target": {
+              "screen": "product",
+              "tab": "product",
+              "personaId": "product-manager",
+              "taskId": "product-manager--define-product"
+            },
+            "launch": "panel"
+          }
+        ]
+      },
+      "timestamp": "2026-03-04T20:51:47.819Z"
+    }
+  ],
+  "activePersonaId": null,
+  "activeTaskId": null,
+  "summary": null,
+  "summarisedUpToIndex": 0,
+  "createdAt": "2026-03-04T20:51:43.899Z",
+  "updatedAt": "2026-03-04T20:51:47.841Z"
+}

@@ -1,0 +1,704 @@
+/**
+ * ImplementationAssistantPanel Component
+ *
+ * Spec 2026-01-03: Product Implement View (Stage 5 - Increment 4)
+ * Updated for Spec 2026-01-09: Implement Chat - Planner Conversation Loop (Iteration 2)
+ * Updated for Spec 2026-01-09: Implement Generate Specs - Iteration 4
+ * Task Group 5: Full chat integration with Implement button and generate_specs support.
+ *
+ * Spec 2026-01-10: Preserve Implement Tab State Across Product & Delivery Tab Switches
+ * Task Group 3: Chat state hydration and persistence
+ * - Hydrates chat state from context on mount when stored state exists
+ * - Persists chat state to context on state changes (write-through)
+ * - Preserves inputDraft across tab switches
+ *
+ * Spec 2026-01-11: Fix Infinite Re-render Loop in Implementation Assistant
+ * Task Group 2: Consumer Component Fixes
+ * - Destructure context methods at component top level
+ * - Fix persistChatState callback dependencies (remove uiStateContext)
+ * - Fix hydration useEffect dependencies (use stable getImplementChatState)
+ *
+ * Spec 2026-01-13: Fix Implement Context Resolution Plumbing
+ * - Added filename to buildContext() for Gateway context resolution
+ *
+ * Spec 2026-01-13: Implement Assistant Stage 2 - Phased Conversations
+ * - Added phase parameter to buildContext() function
+ * - handleSend passes phase: 'refine' for exploratory dialog
+ * - handleImplement passes phase: 'handoff' for spec generation
+ *
+ * Spec 2026-01-13: Implement Assistant Stage 3 - Bootstrap Phase
+ * - Added isBootstrapping, hasBootstrapped state variables
+ * - Added triggerBootstrap() callback for auto-triggered context loading
+ * - Added useEffect hook to trigger bootstrap on mount when messages empty
+ * - Updated UI to show "Initializing assistant..." loading state
+ * - Persists hasBootstrapped to context state
+ *
+ * Features:
+ * - Header with "Implementation Assistant" title
+ * - Chat interface with ChatInput and ChatMessageList components
+ * - Empty state message when no messages
+ * - Session management per work item (resets on workItemId change)
+ * - Constructs context for implement_feature mode API calls
+ * - Implement button to trigger generate_specs intent
+ * - Generated specs display panel
+ * - Chat state persistence across tab switches
+ * - Auto-bootstrap on mount for rich context loading
+ */
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { ChatMessageList } from '../chat/ChatMessageList';
+import {
+  ChatMessage,
+  ImplementChatContext,
+  ImplementChatIntent,
+  ImplementChatPhase,
+  postChatMessage,
+  HandoffPlanResponse,
+} from '../../api/chatApi';
+import { ContextState } from '../../utils/contextStorage';
+import {
+  useProductUiState,
+  deriveProjectKey,
+  ImplementChatUiState,
+} from '../../contexts/ProductUiStateContext';
+import styles from './ImplementationAssistantPanel.module.css';
+
+/**
+ * Props interface for ImplementationAssistantPanel
+ */
+export interface ImplementationAssistantPanelProps {
+  /** Work item unique identifier */
+  workItemId: string;
+  /** Work item title */
+  workItemTitle: string;
+  /** Work item type (e.g., Feature, Story, Epic) */
+  workItemType: string;
+  /** Work item description */
+  workItemDescription: string;
+  /** Project identifier (architecture filename) */
+  projectId: string;
+  /** Context state containing linked entity_refs and diagram_refs */
+  contextState: ContextState;
+}
+
+/**
+ * Generate a unique message ID
+ */
+function generateMessageId(): string {
+  return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * ImplementationAssistantPanel Component
+ *
+ * Provides a chat interface for Planner-style clarification dialog.
+ * Uses implement_feature mode to bypass tool execution on the Gateway.
+ * Includes Implement button for generating specs.
+ *
+ * Spec 2026-01-10: Persists chat state to ProductUiStateContext for
+ * preservation across tab switches.
+ *
+ * Spec 2026-01-11: Fixed effect dependencies to prevent infinite re-render loops.
+ *
+ * Spec 2026-01-13: Includes filename in context for Gateway context resolution.
+ *
+ * Spec 2026-01-13: Includes phase in context for phased conversation workflow.
+ *
+ * Spec 2026-01-13: Auto-triggers bootstrap phase on mount for rich context loading.
+ */
+export function ImplementationAssistantPanel({
+  workItemId,
+  workItemTitle,
+  workItemType,
+  workItemDescription,
+  projectId,
+  contextState,
+}: ImplementationAssistantPanelProps) {
+  // Spec 2026-01-10: Access UI state context for chat state persistence
+  // Spec 2026-01-11 Task Group 2: Destructure context methods at top level
+  // This enables using individual methods in dependency arrays instead of the entire context
+  const uiStateContext = useProductUiState();
+  const { getImplementChatState, setImplementChatState } = uiStateContext;
+
+  const projectKey = deriveProjectKey(projectId);
+
+  // Session state - resets when workItemId changes (unless hydrating from context)
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inputMessage, setInputMessage] = useState('');
+
+  // Generated specs state - Iteration 4
+  const [generatedSpecs, setGeneratedSpecs] = useState<string[] | null>(null);
+
+  // Spec 2026-01-14: Handoff plan state
+  const [handoffPlan, setHandoffPlan] = useState<HandoffPlanResponse | null>(null);
+
+  // Spec 2026-01-13: Bootstrap phase state
+  const [isBootstrapping, setIsBootstrapping] = useState(false);
+  const [hasBootstrapped, setHasBootstrapped] = useState(false);
+
+  // Track if we're currently persisting to avoid feedback loops
+  const isPersisting = useRef(false);
+  // Track the previous workItemId to detect changes
+  const prevWorkItemIdRef = useRef<string | null>(null);
+
+  /**
+   * Spec 2026-01-10: Helper to persist current chat state to context
+   *
+   * Spec 2026-01-11 Task Group 2: Fixed dependencies
+   * - Removed uiStateContext from dependency array
+   * - Added setImplementChatState to dependencies (already stable with [] deps)
+   *
+   * Spec 2026-01-13: Added hasBootstrapped to persisted state
+   */
+  const persistChatState = useCallback(() => {
+    if (!projectKey || !workItemId || isPersisting.current) return;
+
+    isPersisting.current = true;
+    const chatState: ImplementChatUiState = {
+      sessionId,
+      messages,
+      generatedSpecs,
+      error,
+      inputDraft: inputMessage,
+      hasBootstrapped,
+      handoffPlan,
+    };
+    setImplementChatState(projectKey, workItemId, chatState);
+    isPersisting.current = false;
+  }, [projectKey, workItemId, sessionId, messages, generatedSpecs, handoffPlan, error, inputMessage, hasBootstrapped, setImplementChatState]);
+
+  /**
+   * Spec 2026-01-10: Hydrate state from context on mount or when workItemId changes
+   * If stored state exists, restore it; otherwise reset to empty defaults
+   *
+   * Spec 2026-01-11 Task Group 2: Fixed dependencies
+   * - Removed uiStateContext from dependency array
+   * - Added getImplementChatState to dependencies (now stable after context fix)
+   *
+   * Spec 2026-01-13: Hydrates hasBootstrapped from stored state
+   */
+  useEffect(() => {
+    // Detect if this is a workItemId change or initial mount
+    const isWorkItemChange = prevWorkItemIdRef.current !== null && prevWorkItemIdRef.current !== workItemId;
+    prevWorkItemIdRef.current = workItemId;
+
+    if (!projectKey || !workItemId) {
+      // No project or work item - reset to defaults
+      setSessionId(null);
+      setMessages([]);
+      setError(null);
+      setInputMessage('');
+      setGeneratedSpecs(null);
+      setHasBootstrapped(false);
+      return;
+    }
+
+    // Try to hydrate from stored state
+    const storedState = getImplementChatState(projectKey, workItemId);
+
+    if (storedState) {
+      // Hydrate from stored state
+      setSessionId(storedState.sessionId);
+      setMessages(storedState.messages);
+      setGeneratedSpecs(storedState.generatedSpecs);
+      setError(storedState.error);
+      setInputMessage(storedState.inputDraft);
+      setHasBootstrapped(storedState.hasBootstrapped ?? false);
+      setHandoffPlan(storedState.handoffPlan ?? null);
+    } else if (isWorkItemChange) {
+      // New work item with no stored state - reset to empty defaults
+      setSessionId(null);
+      setMessages([]);
+      setError(null);
+      setInputMessage('');
+      setGeneratedSpecs(null);
+      setHasBootstrapped(false);
+      setHandoffPlan(null);
+    }
+    // On initial mount with no stored state, we also want empty defaults
+    // This case is handled by the initial useState values
+  }, [projectKey, workItemId, getImplementChatState]);
+
+  /**
+   * Spec 2026-01-10: Persist state whenever key fields change
+   * This implements write-through persistence
+   *
+   * Spec 2026-01-11 Task Group 2: Effect behavior verified
+   * - persistChatState callback is now stable due to fixed deps
+   * - Effect only re-runs on meaningful state changes
+   */
+  useEffect(() => {
+    // Only persist after initial mount and when we have valid keys
+    if (projectKey && workItemId && prevWorkItemIdRef.current === workItemId) {
+      persistChatState();
+    }
+  }, [sessionId, messages, generatedSpecs, handoffPlan, error, hasBootstrapped, persistChatState, projectKey, workItemId]);
+
+  /**
+   * Construct the implement_feature context
+   *
+   * Spec 2026-01-13: Added filename for Gateway context resolution
+   * The projectId prop contains the architecture filename needed by the Gateway
+   * to resolve entity and diagram IDs into human-readable summaries.
+   *
+   * Spec 2026-01-13: Added phase parameter for phased conversation workflow
+   * - phase: 'bootstrap' for initial context loading
+   * - phase: 'refine' for exploratory dialog (steps 1a-1e)
+   * - phase: 'handoff' for transition to spec generation
+   */
+  const buildContext = useCallback(
+    (intent: ImplementChatIntent, phase: ImplementChatPhase): ImplementChatContext => {
+      const entityIds = contextState.entity_refs.map((ref) => ref.entity_id);
+      const diagramIds = contextState.diagram_refs.map((ref) => ref.diagram_id);
+
+      return {
+        mode: 'implement_feature',
+        intent,
+        phase,
+        filename: projectId,
+        workItem: {
+          id: workItemId,
+          title: workItemTitle,
+          type: workItemType,
+          description: workItemDescription,
+        },
+        architectureContext: {
+          entityIds,
+          diagramIds,
+        },
+      };
+    },
+    [workItemId, workItemTitle, workItemType, workItemDescription, contextState, projectId]
+  );
+
+  /**
+   * Spec 2026-01-13: Trigger bootstrap phase
+   * Auto-triggered on mount when messages are empty
+   * Sends phase: 'bootstrap' with empty message to load context
+   */
+  const triggerBootstrap = useCallback(async () => {
+    if (hasBootstrapped || isBootstrapping || !workItemId) return;
+
+    setIsBootstrapping(true);
+    setError(null);
+
+    const context = buildContext('normal_chat', 'bootstrap');
+
+    try {
+      const response = await postChatMessage({
+        sessionId: sessionId || undefined,
+        message: '', // Bootstrap allows empty message
+        context,
+      });
+
+      // Store sessionId from response
+      if (response.sessionId) {
+        setSessionId(response.sessionId);
+      }
+
+      // Add assistant bootstrap message
+      const assistantMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: response.assistant.message,
+        timestamp: new Date(),
+      };
+      setMessages([assistantMessage]);
+      setHasBootstrapped(true);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to initialize assistant';
+      setError(errorMessage);
+      // Still mark as bootstrapped to prevent retry loops
+      setHasBootstrapped(true);
+    } finally {
+      setIsBootstrapping(false);
+    }
+  }, [hasBootstrapped, isBootstrapping, workItemId, sessionId, buildContext]);
+
+  /**
+   * Spec 2026-01-13: Bootstrap useEffect hook
+   * Triggers bootstrap on mount when messages are empty and not yet bootstrapped
+   */
+  useEffect(() => {
+    // Only trigger bootstrap if:
+    // 1. We have a workItemId
+    // 2. Messages are empty
+    // 3. Not already bootstrapped
+    // 4. Not currently bootstrapping
+    // 5. Not currently loading
+    if (workItemId && messages.length === 0 && !hasBootstrapped && !isBootstrapping && !isLoading) {
+      triggerBootstrap();
+    }
+  }, [workItemId, messages.length, hasBootstrapped, isBootstrapping, isLoading, triggerBootstrap]);
+
+  /**
+   * Spec 2026-01-10: Handle input change with persistence
+   */
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setInputMessage(newValue);
+    // Persist draft after state updates (will be handled by effect)
+  }, []);
+
+  /**
+   * Handle sending a message (normal_chat intent, refine phase)
+   *
+   * Spec 2026-01-13: Passes phase: 'refine' for exploratory dialog
+   */
+  const handleSend = useCallback(async () => {
+    const message = inputMessage.trim();
+    if (!message) return;
+
+    // Add user message immediately
+    const userMessage: ChatMessage = {
+      id: generateMessageId(),
+      role: 'user',
+      content: message,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+    setError(null);
+    setInputMessage('');
+
+    const context = buildContext('normal_chat', 'refine');
+
+    try {
+      const response = await postChatMessage({
+        sessionId: sessionId || undefined,
+        message,
+        context,
+      });
+
+      // Store sessionId from response
+      if (response.sessionId && !sessionId) {
+        setSessionId(response.sessionId);
+      }
+
+      // Add assistant message
+      const assistantMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: response.assistant.message,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to send message';
+      setError(errorMessage);
+
+      // Add error as assistant message for visibility
+      const errorChatMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: `Error: ${errorMessage}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorChatMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [inputMessage, sessionId, buildContext]);
+
+  /**
+   * Handle Implement button click (generate_specs intent, handoff phase)
+   * Spec: Implement Generate Specs - Iteration 4
+   *
+   * Spec 2026-01-13: Passes phase: 'handoff' for spec generation
+   */
+  const handleImplement = useCallback(async () => {
+    if (!sessionId || !workItemId) return;
+
+    // Add user message indicating implement action
+    const userMessage: ChatMessage = {
+      id: generateMessageId(),
+      role: 'user',
+      content: 'Proceed to implementation planning',
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+    setError(null);
+
+    const context = buildContext('generate_specs', 'handoff');
+
+    try {
+      const response = await postChatMessage({
+        sessionId,
+        message: 'Proceed to implementation planning',
+        context,
+      });
+
+      // Add assistant message
+      const assistantMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: response.assistant.message,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // Extract specs from response if present
+      if (response.specs && response.specs.length > 0) {
+        setGeneratedSpecs(response.specs);
+      }
+      // Spec 2026-01-14: Extract handoff plan from response if present
+      if (response.handoffPlan) {
+        setHandoffPlan(response.handoffPlan);
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to generate specifications';
+      setError(errorMessage);
+
+      // Add error as assistant message for visibility
+      const errorChatMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: `Error: ${errorMessage}`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorChatMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sessionId, workItemId, buildContext]);
+
+  /**
+   * Handle keyboard events in textarea
+   */
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend]
+  );
+
+  /**
+   * Handle Copy All button click
+   */
+  const handleCopyAll = useCallback(async () => {
+    if (generatedSpecs && generatedSpecs.length > 0) {
+      const allSpecs = generatedSpecs.join('\n\n');
+      try {
+        await navigator.clipboard.writeText(allSpecs);
+      } catch (err) {
+        console.error('Failed to copy specs to clipboard:', err);
+      }
+    }
+  }, [generatedSpecs]);
+
+  const hasMessages = messages.length > 0;
+  const canSend = inputMessage.trim().length > 0 && !isLoading && !isBootstrapping;
+  const canImplement = !!sessionId && !isLoading && !isBootstrapping && !!workItemId;
+
+  return (
+    <div className={styles.container} data-testid="implementation-assistant-panel">
+      {/* Header */}
+      <div className={styles.header}>
+        <h2 className={styles.title} data-testid="implementation-assistant-title">
+          Implementation Assistant
+        </h2>
+      </div>
+
+      {/* Content area */}
+      <div className={styles.content}>
+        {/* Spec 2026-01-13: Bootstrap loading state */}
+        {isBootstrapping ? (
+          <div className={styles.bootstrapLoading} data-testid="bootstrap-loading">
+            <div className={styles.loadingSpinner} />
+            <div className={styles.loadingText}>
+              Initializing assistant...
+            </div>
+          </div>
+        ) : hasMessages ? (
+          <div className={styles.messagesContainer}>
+            <ChatMessageList messages={messages} />
+          </div>
+        ) : (
+          <div className={styles.emptyState} data-testid="implementation-assistant-empty">
+            <div className={styles.emptyStateIcon}>
+              <svg
+                width="48"
+                height="48"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                <line x1="9" y1="10" x2="15" y2="10" />
+                <line x1="12" y1="7" x2="12" y2="13" />
+              </svg>
+            </div>
+            <div className={styles.emptyStateText}>
+              Start a conversation to clarify this work item.
+            </div>
+            <div className={styles.emptyStateHint}>
+              The Implementation Assistant will help you understand requirements,
+              surface assumptions, and ensure clarity before implementation.
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator */}
+        {isLoading && !isBootstrapping && (
+          <div className={styles.loadingIndicator}>
+            Assistant is thinking...
+          </div>
+        )}
+      </div>
+
+      {/* Generated Specs Panel - Iteration 4 */}
+      {generatedSpecs && generatedSpecs.length > 0 && (
+        <div className={styles.specsPanel} data-testid="generated-specs-panel">
+          <div className={styles.specsPanelHeader}>
+            <h3>Generated Specifications (Not Yet Executed)</h3>
+            <button
+              className={styles.copyButton}
+              onClick={handleCopyAll}
+              data-testid="copy-all-button"
+            >
+              Copy All
+            </button>
+          </div>
+          <div className={styles.specsWarning}>
+            These specifications have not been executed. No changes have been made.
+          </div>
+          <div className={styles.specsContent}>
+            {generatedSpecs.map((spec, index) => (
+              <pre key={index} className={styles.specBlock} data-testid={`spec-block-${index}`}>
+                {spec}
+              </pre>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Handoff Plan Preview Panel - Spec 2026-01-14 */}
+      {handoffPlan && (
+        <div className={styles.handoffPlanPanel} data-testid="handoff-plan-panel">
+          <div className={styles.handoffPlanHeader}>
+            <h3>
+              Implementation Plan {' '}
+              {handoffPlan.is_split ? (
+                <span className={styles.handoffSplitBadge}>
+                  {handoffPlan.handoff_intents.length} Sub-Specs
+                </span>
+              ) : (
+                <span className={styles.handoffNoSplitBadge}>Single Spec</span>
+              )}
+            </h3>
+          </div>
+          <div className={styles.handoffPlanSummary}>
+            {handoffPlan.handoff_plan_summary}
+          </div>
+          <div className={styles.handoffIntentsList}>
+            {handoffPlan.handoff_intents.map((intent) => (
+              <div key={intent.id} className={styles.handoffIntentCard} data-testid={`intent-card-${intent.id}`}>
+                <div className={styles.handoffIntentCardHeader}>
+                  <span className={styles.handoffIntentId}>{intent.id}</span>
+                  <h4 className={styles.handoffIntentTitle}>{intent.title}</h4>
+                </div>
+                <div className={styles.handoffIntentDescription}>
+                  {intent.intent}
+                </div>
+                {intent.in_scope.length > 0 && (
+                  <div className={styles.handoffIntentSection}>
+                    <div className={styles.handoffIntentSectionLabel}>In Scope</div>
+                    <ul className={styles.handoffIntentList}>
+                      {intent.in_scope.map((item, idx) => (
+                        <li key={idx} className={`${styles.handoffIntentListItem} ${styles.inScope}`}>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {intent.out_of_scope.length > 0 && (
+                  <div className={styles.handoffIntentSection}>
+                    <div className={styles.handoffIntentSectionLabel}>Out of Scope</div>
+                    <ul className={styles.handoffIntentList}>
+                      {intent.out_of_scope.map((item, idx) => (
+                        <li key={idx} className={`${styles.handoffIntentListItem} ${styles.outOfScope}`}>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {intent.acceptance_criteria.length > 0 && (
+                  <div className={styles.handoffIntentSection}>
+                    <div className={styles.handoffIntentSectionLabel}>Acceptance Criteria</div>
+                    <ul className={styles.handoffIntentList}>
+                      {intent.acceptance_criteria.map((item, idx) => (
+                        <li key={idx} className={`${styles.handoffIntentListItem} ${styles.acceptance}`}>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {intent.dependencies.length > 0 && (
+                  <div className={styles.handoffIntentSection}>
+                    <div className={styles.handoffIntentSectionLabel}>Dependencies</div>
+                    <ul className={styles.handoffIntentList}>
+                      {intent.dependencies.map((dep, idx) => (
+                        <li key={idx} className={`${styles.handoffIntentListItem} ${styles.dependency}`}>
+                          {dep}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Input area */}
+      <div className={styles.inputArea}>
+        <textarea
+          className={styles.textarea}
+          value={inputMessage}
+          onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
+          placeholder="Type a message..."
+          disabled={isLoading || isBootstrapping}
+          aria-label="Chat message input"
+        />
+        <div className={styles.buttonRow}>
+          <button
+            className={styles.sendButton}
+            onClick={handleSend}
+            disabled={!canSend}
+            aria-label="Send message"
+            data-testid="send-button"
+          >
+            Send
+          </button>
+          <button
+            className={styles.implementButton}
+            onClick={handleImplement}
+            disabled={!canImplement}
+            aria-label="Generate implementation specifications"
+            data-testid="implement-button"
+          >
+            Implement
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

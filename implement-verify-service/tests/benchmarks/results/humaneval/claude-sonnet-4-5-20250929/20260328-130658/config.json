@@ -1,0 +1,11 @@
+{
+  "model": "claude-sonnet-4-5-20250929",
+  "mode": "direct",
+  "limit": 3,
+  "total_in_dataset": 164,
+  "api_base_url": "http://172.30.0.4:8000",
+  "benchmark_config": {
+    "batch_size": 10,
+    "timeout": 120
+  }
+}

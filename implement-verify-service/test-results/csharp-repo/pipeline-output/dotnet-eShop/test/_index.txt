@@ -1,0 +1,263 @@
+# file	kind	name	scope	signature	line	flags
+src/Basket.API/Extensions/Extensions.cs	method	AddApplicationServices	Extensions	(this IHostApplicationBuilder builder)	10	-
+src/Basket.API/Extensions/Extensions.cs	class	Extensions	-	-	8	-
+src/Basket.API/Extensions/Extensions.cs	class	IntegrationEventContext	-	-	25	extends:JsonSerializerContext
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	method	GetUserIdentity	ServerCallContextIdentityExtensions	(this ServerCallContext context)	7	-
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	method	GetUserName	ServerCallContextIdentityExtensions	(this ServerCallContext context)	8	-
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	class	ServerCallContextIdentityExtensions	-	-	5	-
+src/Basket.API/Grpc/BasketService.cs	method	BasketService	-	( IBasketRepository repository, ILogger<BasketService> logger)	8	-
+src/Basket.API/Grpc/BasketService.cs	method	DeleteBasket	-	(DeleteBasketRequest request, ServerCallContext context)	59	-
+src/Basket.API/Grpc/BasketService.cs	method	GetBasket	-	(GetBasketRequest request, ServerCallContext context)	13	-
+src/Basket.API/Grpc/BasketService.cs	method	MapToCustomerBasket	-	(string userId, UpdateBasketRequest customerBasketRequest)	93	-
+src/Basket.API/Grpc/BasketService.cs	method	MapToCustomerBasketResponse	-	(CustomerBasket customerBasket)	77	-
+src/Basket.API/Grpc/BasketService.cs	method	UpdateBasket	-	(UpdateBasketRequest request, ServerCallContext context)	36	-
+src/Basket.API/Grpc/BasketService.cs	variable	customerBasket	-	-	49	-
+src/Basket.API/Grpc/BasketService.cs	variable	data	-	-	26	-
+src/Basket.API/Grpc/BasketService.cs	variable	response	-	-	50	-
+src/Basket.API/Grpc/BasketService.cs	variable	response	-	-	95	-
+src/Basket.API/Grpc/BasketService.cs	variable	response	-	-	79	-
+src/Basket.API/Grpc/BasketService.cs	variable	userId	-	-	15	-
+src/Basket.API/Grpc/BasketService.cs	variable	userId	-	-	38	-
+src/Basket.API/Grpc/BasketService.cs	variable	userId	-	-	61	-
+src/Basket.API/IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	method	OrderStartedIntegrationEventHandler	-	( IBasketRepository repository, ILogger<OrderStartedIntegrationEventHandler> logger)	6	-
+src/Basket.API/IntegrationEvents/Events/OrderStartedIntegrationEvent.cs	method	OrderStartedIntegrationEvent	-	(string UserId)	6	-
+src/Basket.API/Model/BasketItem.cs	class	BasketItem	-	-	3	extends:IValidatableObject
+src/Basket.API/Model/BasketItem.cs	property	Id	BasketItem	-	5	-
+src/Basket.API/Model/BasketItem.cs	property	OldUnitPrice	BasketItem	-	9	-
+src/Basket.API/Model/BasketItem.cs	property	PictureUrl	BasketItem	-	11	-
+src/Basket.API/Model/BasketItem.cs	property	ProductId	BasketItem	-	6	-
+src/Basket.API/Model/BasketItem.cs	property	ProductName	BasketItem	-	7	-
+src/Basket.API/Model/BasketItem.cs	property	Quantity	BasketItem	-	10	-
+src/Basket.API/Model/BasketItem.cs	property	UnitPrice	BasketItem	-	8	-
+src/Basket.API/Model/BasketItem.cs	method	Validate	BasketItem	(ValidationContext validationContext)	13	-
+src/Basket.API/Model/BasketItem.cs	variable	results	-	-	15	-
+src/Basket.API/Model/CustomerBasket.cs	property	BuyerId	CustomerBasket	-	5	-
+src/Basket.API/Model/CustomerBasket.cs	method	CustomerBasket	CustomerBasket	()	9	-
+src/Basket.API/Model/CustomerBasket.cs	method	CustomerBasket	CustomerBasket	(string customerId)	11	-
+src/Basket.API/Model/CustomerBasket.cs	class	CustomerBasket	-	-	3	-
+src/Basket.API/Model/CustomerBasket.cs	property	Items	CustomerBasket	-	7	-
+src/Basket.API/Program.cs	method	app.MapDefaultEndpoints	-	()	10	-
+src/Basket.API/Program.cs	method	app.MapGrpcService	-	()	12	-
+src/Basket.API/Program.cs	method	app.Run	-	()	14	-
+src/Basket.API/Program.cs	method	builder.AddApplicationServices	-	()	4	-
+src/Basket.API/Program.cs	method	builder.AddBasicServiceDefaults	-	()	3	-
+src/Basket.API/Program.cs	method	builder.Services.AddGrpc	-	()	6	-
+src/Basket.API/Repositories/IBasketRepository.cs	method	DeleteBasketAsync	IBasketRepository	(string id)	9	-
+src/Basket.API/Repositories/IBasketRepository.cs	method	GetBasketAsync	IBasketRepository	(string customerId)	7	-
+src/Basket.API/Repositories/IBasketRepository.cs	interface	IBasketRepository	-	-	5	-
+src/Basket.API/Repositories/IBasketRepository.cs	method	UpdateBasketAsync	IBasketRepository	(CustomerBasket basket)	8	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	variable	BasketKeyPrefix	-	-	13	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	class	BasketSerializationContext	-	-	53	extends:JsonSerializerContext
+src/Basket.API/Repositories/RedisBasketRepository.cs	method	DeleteBasketAsync	-	(string id)	18	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	method	GetBasketAsync	-	(string customerId)	23	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	method	RedisBasketRepository	-	(ILogger<RedisBasketRepository> logger, IConnectionMultiplexer redis)	6	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	method	UpdateBasketAsync	-	(CustomerBasket basket)	34	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	variable	_database	-	-	8	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	variable	created	-	-	37	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	unknown	data	-	-	25	-
+src/Basket.API/Repositories/RedisBasketRepository.cs	variable	json	-	-	36	-
+src/Catalog.API/Apis/CatalogApi.cs	class	CatalogApi	-	-	10	-
+src/Catalog.API/Apis/CatalogApi.cs	method	CreateItem	CatalogApi	( [AsParameters] CatalogServices services, CatalogItem product)	366	-
+src/Catalog.API/Apis/CatalogApi.cs	method	DeleteItemById	CatalogApi	( [AsParameters] CatalogServices services, [Description(R)] int id)	390	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetAllItems	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string? name, [Description(R)] int? type, [Description(R)] int? brand)	124	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetAllItemsV1	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services)	116	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetFullPath	CatalogApi	(string contentRootPath, string pictureFileName)	420	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetImageMimeTypeFromImageFileExtension	CatalogApi	(string extension)	406	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemById	CatalogApi	( HttpContext httpContext, [AsParameters] CatalogServices services, [Description(R)] int id)	171	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemPictureById	CatalogApi	( CatalogContext context, IWebHostEnvironment environment, [Description(R)] int id)	205	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemsByBrandAndTypeId	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] int typeId, [Description(R)] int? brandId)	292	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemsByBrandId	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] int? brandId)	302	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemsByIds	CatalogApi	( [AsParameters] CatalogServices services, [Description(R)] int[] ids)	162	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemsByName	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string name)	194	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemsBySemanticRelevance	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R), Required, MinLength(1)] string text)	237	-
+src/Catalog.API/Apis/CatalogApi.cs	method	GetItemsBySemanticRelevanceV1	CatalogApi	( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string text)	227	-
+src/Catalog.API/Apis/CatalogApi.cs	method	MapCatalogApi	CatalogApi	(this IEndpointRouteBuilder app)	12	-
+src/Catalog.API/Apis/CatalogApi.cs	method	UpdateItem	CatalogApi	( HttpContext httpContext, [Description(R)] int id, [AsParameters] CatalogServices services, CatalogItem productToUpdate)	324	-
+src/Catalog.API/Apis/CatalogApi.cs	method	UpdateItemV1	CatalogApi	( HttpContext httpContext, [AsParameters] CatalogServices services, CatalogItem productToUpdate)	310	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	api	-	-	16	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	catalogEntry	-	-	340	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	catalogItem	-	-	330	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	imageFileExtension	-	-	219	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	item	-	-	210	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	item	-	-	183	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	item	-	-	370	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	item	-	-	394	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	items	-	-	166	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	itemsOnPage	-	-	263	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	itemsOnPage	-	-	152	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	itemsWithDistance	-	-	266	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	lastModified	-	-	221	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	mimetype	-	-	220	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	pageIndex	-	-	132	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	pageIndex	-	-	243	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	pageSize	-	-	131	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	pageSize	-	-	242	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	path	-	-	217	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	priceChangedEvent	-	-	350	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	priceEntry	-	-	345	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	root	-	-	134	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	totalItems	-	-	149	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	totalItems	-	-	259	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	v1	-	-	17	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	v2	-	-	18	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	vApi	-	-	15	-
+src/Catalog.API/Apis/CatalogApi.cs	variable	vector	-	-	251	-
+src/Catalog.API/CatalogOptions.cs	class	CatalogOptions	-	-	3	-
+src/Catalog.API/CatalogOptions.cs	property	PicBaseUrl	CatalogOptions	-	5	-
+src/Catalog.API/CatalogOptions.cs	property	UseCustomizationData	CatalogOptions	-	6	-
+src/Catalog.API/Extensions/Extensions.cs	method	AddApplicationServices	Extensions	(this IHostApplicationBuilder builder)	5	-
+src/Catalog.API/Extensions/Extensions.cs	class	Extensions	-	-	3	-
+src/Catalog.API/Extensions/HostEnvironmentExtensions.cs	class	HostEnvironmentExtensions	-	-	5	-
+src/Catalog.API/Extensions/HostEnvironmentExtensions.cs	method	IsBuild	HostEnvironmentExtensions	(this IHostEnvironment hostEnvironment)	7	-
+src/Catalog.API/Infrastructure/CatalogContext.cs	property	CatalogBrands	CatalogContext	-	15	-
+src/Catalog.API/Infrastructure/CatalogContext.cs	method	CatalogContext	CatalogContext	(DbContextOptions<CatalogContext> options, IConfiguration configuration)	10	-
+src/Catalog.API/Infrastructure/CatalogContext.cs	class	CatalogContext	-	-	8	extends:DbContext
+src/Catalog.API/Infrastructure/CatalogContext.cs	property	CatalogItems	CatalogContext	-	14	-
+src/Catalog.API/Infrastructure/CatalogContext.cs	property	CatalogTypes	CatalogContext	-	16	-
+src/Catalog.API/Infrastructure/CatalogContext.cs	method	OnModelCreating	CatalogContext	(ModelBuilder builder)	18	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	property	Brand	CatalogSourceEntry	-	81	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	method	CatalogContextSeed	-	( IWebHostEnvironment env, IOptions<CatalogOptions> settings, ICatalogAI catalogAI, ILogger<CatalogContextSeed> logger)	7	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	class	CatalogSourceEntry	-	-	77	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	property	Description	CatalogSourceEntry	-	83	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	property	Id	CatalogSourceEntry	-	79	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	property	Name	CatalogSourceEntry	-	82	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	property	Price	CatalogSourceEntry	-	84	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	method	SeedAsync	-	(CatalogContext context)	13	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	property	Type	CatalogSourceEntry	-	80	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	brandIdsByName	-	-	43	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	catalogItems	-	-	46	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	contentRootPath	-	-	16	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	embeddings	-	-	64	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	picturePath	-	-	17	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	sourceItems	-	-	27	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	sourceJson	-	-	26	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	sourcePath	-	-	25	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	typeIdsByName	-	-	44	-
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	variable	useCustomizationData	-	-	15	-
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs	class	CatalogBrandEntityTypeConfiguration	-	-	3	extends:IEntityTypeConfiguration
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs	method	Configure	CatalogBrandEntityTypeConfiguration	(EntityTypeBuilder<CatalogBrand> builder)	6	-
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	class	CatalogItemEntityTypeConfiguration	-	-	3	extends:IEntityTypeConfiguration
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	method	Configure	CatalogItemEntityTypeConfiguration	(EntityTypeBuilder<CatalogItem> builder)	6	-
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs	class	CatalogTypeEntityTypeConfiguration	-	-	3	extends:IEntityTypeConfiguration
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs	method	Configure	CatalogTypeEntityTypeConfiguration	(EntityTypeBuilder<CatalogType> builder)	6	-
+src/Catalog.API/Infrastructure/Exceptions/CatalogDomainException.cs	method	CatalogDomainException	CatalogDomainException	()	8	-
+src/Catalog.API/Infrastructure/Exceptions/CatalogDomainException.cs	method	CatalogDomainException	CatalogDomainException	(string message)	11	-
+src/Catalog.API/Infrastructure/Exceptions/CatalogDomainException.cs	method	CatalogDomainException	CatalogDomainException	(string message, Exception innerException)	15	-
+src/Catalog.API/Infrastructure/Exceptions/CatalogDomainException.cs	class	CatalogDomainException	-	-	6	extends:Exception
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	method	BuildTargetModel	eShop.Catalog.API.Infrastructure.Migrations.Initial	(ModelBuilder modelBuilder)	19	-
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	class	Initial	eShop.Catalog.API.Infrastructure.Migrations	-	16	-
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	12	-
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	method	Down	eShop.Catalog.API.Infrastructure.Migrations.Initial	(MigrationBuilder migrationBuilder)	99	-
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	class	Initial	eShop.Catalog.API.Infrastructure.Migrations	-	9	extends:Migration
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	method	Up	eShop.Catalog.API.Infrastructure.Migrations.Initial	(MigrationBuilder migrationBuilder)	12	-
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	6	-
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	method	BuildTargetModel	eShop.Catalog.API.Infrastructure.Migrations.RemoveHiLoAndIndexCatalogName	(ModelBuilder modelBuilder)	19	-
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	class	RemoveHiLoAndIndexCatalogName	eShop.Catalog.API.Infrastructure.Migrations	-	16	-
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	12	-
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	method	Down	eShop.Catalog.API.Infrastructure.Migrations.RemoveHiLoAndIndexCatalogName	(MigrationBuilder migrationBuilder)	57	-
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	class	RemoveHiLoAndIndexCatalogName	eShop.Catalog.API.Infrastructure.Migrations	-	9	extends:Migration
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	method	Up	eShop.Catalog.API.Infrastructure.Migrations.RemoveHiLoAndIndexCatalogName	(MigrationBuilder migrationBuilder)	12	-
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	6	-
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	method	BuildTargetModel	eShop.Catalog.API.Infrastructure.Migrations.Outbox	(ModelBuilder modelBuilder)	20	-
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	class	Outbox	eShop.Catalog.API.Infrastructure.Migrations	-	17	-
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	13	-
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	method	Down	eShop.Catalog.API.Infrastructure.Migrations.Outbox	(MigrationBuilder migrationBuilder)	33	-
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	class	Outbox	eShop.Catalog.API.Infrastructure.Migrations	-	9	extends:Migration
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	method	Up	eShop.Catalog.API.Infrastructure.Migrations.Outbox	(MigrationBuilder migrationBuilder)	12	-
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	6	-
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	method	BuildModel	eShop.Catalog.API.Infrastructure.Migrations.CatalogContextModelSnapshot	(ModelBuilder modelBuilder)	17	-
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	class	CatalogContextModelSnapshot	eShop.Catalog.API.Infrastructure.Migrations	-	15	extends:ModelSnapshot
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	module	eShop.Catalog.API.Infrastructure.Migrations	-	-	12	-
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	method	CatalogIntegrationEventService	-	(ILogger<CatalogIntegrationEventService> logger, IEventBus eventBus, CatalogContext catalogContext, IIntegrationEventLogService integrationEventLogService)	3	-
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	method	Dispose	-	(bool disposing)	42	-
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	method	Dispose	-	()	55	-
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	method	PublishThroughEventBusAsync	-	(IntegrationEvent evt)	11	-
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	method	SaveEventAndCatalogContextChangesAsync	-	(IntegrationEvent evt)	28	-
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	variable	disposedValue	-	-	9	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	method	OrderStatusChangedToAwaitingValidationIntegrationEventHandler	-	( CatalogContext catalogContext, ICatalogIntegrationEventService catalogIntegrationEventService, ILogger<OrderStatusChangedToAwaitingValidationIntegrationEventHandler> logger)	3	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	variable	catalogItem	-	-	17	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	variable	confirmedIntegrationEvent	-	-	27	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	variable	confirmedOrderStockItem	-	-	21	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	variable	confirmedOrderStockItems	-	-	13	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	variable	hasStock	-	-	20	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs	method	OrderStatusChangedToPaidIntegrationEventHandler	-	( CatalogContext catalogContext, ILogger<OrderStatusChangedToPaidIntegrationEventHandler> logger)	3	-
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs	variable	catalogItem	-	-	15	-
+src/Catalog.API/IntegrationEvents/Events/ConfirmedOrderStockItem.cs	method	ConfirmedOrderStockItem	-	(int ProductId, bool HasStock)	3	-
+src/Catalog.API/IntegrationEvents/Events/OrderStatusChangedToAwaitingValidationIntegrationEvent.cs	method	OrderStatusChangedToAwaitingValidationIntegrationEvent	-	(int OrderId, IEnumerable<OrderStockItem> OrderStockItems)	3	-
+src/Catalog.API/IntegrationEvents/Events/OrderStatusChangedToPaidIntegrationEvent.cs	method	OrderStatusChangedToPaidIntegrationEvent	-	(int OrderId, IEnumerable<OrderStockItem> OrderStockItems)	3	-
+src/Catalog.API/IntegrationEvents/Events/OrderStockConfirmedIntegrationEvent.cs	method	OrderStockConfirmedIntegrationEvent	-	(int OrderId)	3	-
+src/Catalog.API/IntegrationEvents/Events/OrderStockItem.cs	method	OrderStockItem	-	(int ProductId, int Units)	3	-
+src/Catalog.API/IntegrationEvents/Events/OrderStockRejectedIntegrationEvent.cs	method	OrderStockRejectedIntegrationEvent	-	(int OrderId, List<ConfirmedOrderStockItem> OrderStockItems)	3	-
+src/Catalog.API/IntegrationEvents/Events/ProductPriceChangedIntegrationEvent.cs	method	ProductPriceChangedIntegrationEvent	-	(int ProductId, decimal NewPrice, decimal OldPrice)	6	-
+src/Catalog.API/IntegrationEvents/ICatalogIntegrationEventService.cs	interface	ICatalogIntegrationEventService	-	-	3	-
+src/Catalog.API/IntegrationEvents/ICatalogIntegrationEventService.cs	method	PublishThroughEventBusAsync	ICatalogIntegrationEventService	(IntegrationEvent evt)	6	-
+src/Catalog.API/IntegrationEvents/ICatalogIntegrationEventService.cs	method	SaveEventAndCatalogContextChangesAsync	ICatalogIntegrationEventService	(IntegrationEvent evt)	5	-
+src/Catalog.API/Model/CatalogBrand.cs	property	Brand	CatalogBrand	-	14	-
+src/Catalog.API/Model/CatalogBrand.cs	method	CatalogBrand	CatalogBrand	(string brand)	7	-
+src/Catalog.API/Model/CatalogBrand.cs	class	CatalogBrand	-	-	5	-
+src/Catalog.API/Model/CatalogBrand.cs	property	Id	CatalogBrand	-	11	-
+src/Catalog.API/Model/CatalogItem.cs	method	AddStock	CatalogItem	(int quantity)	86	-
+src/Catalog.API/Model/CatalogItem.cs	property	AvailableStock	CatalogItem	-	29	-
+src/Catalog.API/Model/CatalogItem.cs	property	CatalogBrand	CatalogItem	-	26	-
+src/Catalog.API/Model/CatalogItem.cs	property	CatalogBrandId	CatalogItem	-	24	-
+src/Catalog.API/Model/CatalogItem.cs	method	CatalogItem	CatalogItem	(string name)	47	-
+src/Catalog.API/Model/CatalogItem.cs	class	CatalogItem	-	-	7	-
+src/Catalog.API/Model/CatalogItem.cs	property	CatalogType	CatalogItem	-	22	-
+src/Catalog.API/Model/CatalogItem.cs	property	CatalogTypeId	CatalogItem	-	20	-
+src/Catalog.API/Model/CatalogItem.cs	property	Description	CatalogItem	-	14	-
+src/Catalog.API/Model/CatalogItem.cs	property	Embedding	CatalogItem	-	40	-
+src/Catalog.API/Model/CatalogItem.cs	property	Id	CatalogItem	-	9	-
+src/Catalog.API/Model/CatalogItem.cs	property	MaxStockThreshold	CatalogItem	-	36	-
+src/Catalog.API/Model/CatalogItem.cs	property	Name	CatalogItem	-	12	-
+src/Catalog.API/Model/CatalogItem.cs	property	OnReorder	CatalogItem	-	45	-
+src/Catalog.API/Model/CatalogItem.cs	property	PictureFileName	CatalogItem	-	18	-
+src/Catalog.API/Model/CatalogItem.cs	property	Price	CatalogItem	-	16	-
+src/Catalog.API/Model/CatalogItem.cs	method	RemoveStock	CatalogItem	(int quantityDesired)	62	-
+src/Catalog.API/Model/CatalogItem.cs	property	RestockThreshold	CatalogItem	-	32	-
+src/Catalog.API/Model/CatalogItem.cs	variable	original	-	-	88	-
+src/Catalog.API/Model/CatalogItem.cs	variable	removed	-	-	74	-
+src/Catalog.API/Model/CatalogServices.cs	property	CatalogAI	-	-	12	-
+src/Catalog.API/Model/CatalogServices.cs	method	CatalogServices	-	( CatalogContext context, [FromServices] ICatalogAI catalogAI, IOptions<CatalogOptions> options, ILogger<CatalogServices> logger, [FromServices] ICatalogIntegrationEventService eventService)	4	-
+src/Catalog.API/Model/CatalogServices.cs	property	Context	-	-	11	-
+src/Catalog.API/Model/CatalogServices.cs	property	EventService	-	-	15	-
+src/Catalog.API/Model/CatalogServices.cs	property	Logger	-	-	14	-
+src/Catalog.API/Model/CatalogServices.cs	property	Options	-	-	13	-
+src/Catalog.API/Model/CatalogType.cs	method	CatalogType	CatalogType	(string type)	7	-
+src/Catalog.API/Model/CatalogType.cs	class	CatalogType	-	-	5	-
+src/Catalog.API/Model/CatalogType.cs	property	Id	CatalogType	-	11	-
+src/Catalog.API/Model/CatalogType.cs	property	Type	CatalogType	-	14	-
+src/Catalog.API/Model/PaginatedItems.cs	property	Count	__anon1	-	11	-
+src/Catalog.API/Model/PaginatedItems.cs	property	Data	__anon1	-	13	-
+src/Catalog.API/Model/PaginatedItems.cs	property	PageIndex	__anon1	-	7	-
+src/Catalog.API/Model/PaginatedItems.cs	property	PageSize	__anon1	-	9	-
+src/Catalog.API/Model/PaginationRequest.cs	method	PaginationRequest	-	( [property: Description(R)] [property: DefaultValue(10)] int PageSize = 10, [property: Description(R)] [property: DefaultValue(0)] int PageIndex = 0 )	5	-
+src/Catalog.API/Program.Testing.cs	class	Program	-	-	6	-
+src/Catalog.API/Program.cs	method	app.MapCatalogApi	-	()	20	-
+src/Catalog.API/Program.cs	method	app.MapDefaultEndpoints	-	()	16	-
+src/Catalog.API/Program.cs	method	app.Run	-	()	23	-
+src/Catalog.API/Program.cs	method	app.UseDefaultOpenApi	-	()	22	-
+src/Catalog.API/Program.cs	method	app.UseStatusCodePages	-	()	18	-
+src/Catalog.API/Program.cs	method	builder.AddApplicationServices	-	()	7	-
+src/Catalog.API/Program.cs	method	builder.AddServiceDefaults	-	()	6	-
+src/Catalog.API/Program.cs	method	builder.Services.AddProblemDetails	-	()	8	-
+src/Catalog.API/Services/CatalogAI.cs	method	CatalogAI	CatalogAI	(IWebHostEnvironment environment, ILogger<CatalogAI> logger, IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)	17	-
+src/Catalog.API/Services/CatalogAI.cs	class	CatalogAI	-	-	7	extends:ICatalogAI
+src/Catalog.API/Services/CatalogAI.cs	variable	EmbeddingDimensions	CatalogAI	-	9	-
+src/Catalog.API/Services/CatalogAI.cs	method	GetEmbeddingAsync	CatalogAI	(string text)	55	-
+src/Catalog.API/Services/CatalogAI.cs	method	GetEmbeddingsAsync	CatalogAI	(IEnumerable<CatalogItem> items)	34	-
+src/Catalog.API/Services/CatalogAI.cs	variable	IsEnabled	CatalogAI	-	25	-
+src/Catalog.API/Services/CatalogAI.cs	variable	_embeddingGenerator	CatalogAI	-	10	-
+src/Catalog.API/Services/CatalogAI.cs	variable	_environment	CatalogAI	-	13	-
+src/Catalog.API/Services/CatalogAI.cs	variable	_logger	CatalogAI	-	15	-
+src/Catalog.API/Services/CatalogAI.cs	variable	embedding	-	-	61	-
+src/Catalog.API/Services/CatalogAI.cs	variable	embeddings	-	-	40	-
+src/Catalog.API/Services/CatalogAI.cs	variable	item	CatalogAI	-	75	-
+src/Catalog.API/Services/CatalogAI.cs	variable	item	CatalogAI	-	28	-
+src/Catalog.API/Services/CatalogAI.cs	variable	results	-	-	41	-
+src/Catalog.API/Services/CatalogAI.cs	variable	timestamp	-	-	38	-
+src/Catalog.API/Services/CatalogAI.cs	variable	timestamp	-	-	59	-
+src/Catalog.API/Services/ICatalogAI.cs	method	GetEmbeddingAsync	ICatalogAI	(CatalogItem item)	14	-
+src/Catalog.API/Services/ICatalogAI.cs	method	GetEmbeddingAsync	ICatalogAI	(string text)	11	-
+src/Catalog.API/Services/ICatalogAI.cs	method	GetEmbeddingsAsync	ICatalogAI	(IEnumerable<CatalogItem> item)	17	-
+src/Catalog.API/Services/ICatalogAI.cs	interface	ICatalogAI	-	-	5	-
+src/Catalog.API/Services/ICatalogAI.cs	property	IsEnabled	ICatalogAI	-	8	-

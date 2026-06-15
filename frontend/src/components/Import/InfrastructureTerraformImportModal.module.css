@@ -1,0 +1,367 @@
+/**
+ * InfrastructureTerraformImportModal Styles
+ *
+ * Spec 2026-05-08: Infrastructure Terraform Import (GCP)
+ * Task Group 7: Frontend Modal + Menu + API Client
+ *
+ * Mirrors the visual style of InfrastructureTerraformExportModal.module.css for
+ * symmetric look-and-feel between the export / import pair.
+ */
+
+/* Overlay - same as InfrastructureTerraformExportModal */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container -- review step is wider to fit the 3 candidate tables */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 560px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modalReview {
+  max-width: 960px;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+/* Content area */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Input group */
+.inputGroup {
+  margin-bottom: 16px;
+}
+
+.inputLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+.required {
+  color: #c62828;
+  margin-left: 2px;
+}
+
+.select,
+.textInput {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background-color: white;
+}
+
+.select:focus,
+.textInput:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.fileInput {
+  width: 100%;
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+/* Inline empty-state message (e.g. no environments defined) */
+.emptyState {
+  background-color: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #6d4c00;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+/* Error message */
+.errorMessage {
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* Hint text under fields */
+.hint {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* Footer */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: #e8e8e8;
+}
+
+.submitButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.submitButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.submitButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+.discardButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.discardButton:hover {
+  background: #e8e8e8;
+}
+
+/* Advanced (collapsible) section */
+.advancedToggle {
+  background: none;
+  border: none;
+  color: #1976D2;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 0;
+  margin-top: 4px;
+}
+
+.advancedToggle:hover {
+  text-decoration: underline;
+}
+
+.advancedSection {
+  border-top: 1px solid #e0e0e0;
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+/* Step 2 -- review tables */
+.warningsPanel {
+  background-color: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+
+.warningsHeader {
+  font-weight: 600;
+  font-size: 14px;
+  color: #6d4c00;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+
+.warningsCount {
+  display: inline-block;
+  background: #6d4c00;
+  color: white;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+.warningsList {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: #6d4c00;
+}
+
+.section {
+  margin-bottom: 20px;
+}
+
+.sectionHeader {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 6px 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.sectionCount {
+  display: inline-block;
+  background: #1976D2;
+  color: white;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+.candidateTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.candidateTable th {
+  text-align: left;
+  padding: 8px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+}
+
+.candidateTable td {
+  padding: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.evidenceRow td {
+  background: #f9f9f9;
+}
+
+.evidenceSnippet {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 3px;
+  padding: 8px;
+  margin: 4px 0;
+}
+
+.confidenceBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.confidenceHigh {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.confidenceMedium {
+  background: #fff8e1;
+  color: #f57c00;
+  border: 1px solid #ffe082;
+}
+
+.confidenceLow {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ffcdd2;
+}
+
+.expandButton {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 6px;
+  color: #555;
+}
+
+.expandButton:hover {
+  background: #f0f0f0;
+}
+
+.emptyCategoryMessage {
+  font-size: 13px;
+  color: #999;
+  font-style: italic;
+  padding: 8px;
+}

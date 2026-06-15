@@ -1,0 +1,162 @@
+# caller_file	caller	callee_file	callee	line	confidence
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.<init:AbstractDocument>	-	Objects.requireNonNull	40	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	46	0.40
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	52	0.40
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el)
+        .findAny()
+        .stream()
+        .flatMap(Collection::stream).map	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el)
+        .findAny()
+        .stream().flatMap	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el)
+        .findAny().stream	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el).findAny	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull).map	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key)).filter	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable	57	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	57	0.40
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	68	0.70
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	new StringBuilder	72	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append(getClass().getName()).append	73	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	73	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	getClass().getName	73	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	getClass	73	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	documentProperties.size	79	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	documentProperties.entrySet	85	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	entry.getKey	86	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	entry.getValue	87	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append(key).append(" : ").append(value).append	90	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append(key).append(" : ").append	90	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append(key).append	90	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append	90	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	90	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	94	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	98	0.20
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	99	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	50	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	Map.of	53	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	54	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	55	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	56	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	Map.of	59	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	60	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	61	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	62	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	Map.of	65	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	66	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	68	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	70	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	List.of	71	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	new Car	73	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	75	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	76	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	car.getModel().orElseThrow	76	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	76	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	77	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	car.getPrice().orElseThrow	77	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	77	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	78	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	car.getParts().forEach	79	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	79	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	82	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	p.getType().orElse	84	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	84	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	p.getModel().orElse	85	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	85	0.70
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	p.getPrice().orElse	86	0.20
+src/main/java/com/iluwatar/abstractdocument/App.java	App.main	src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	86	0.70
+src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	-	Optional.ofNullable	35	0.20
+src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	35	0.40
+src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	35	0.40
+src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	-	Optional.ofNullable	35	0.20
+src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	35	0.40
+src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	-	Optional.ofNullable	35	0.20
+src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	35	0.40
+src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest	-	new DocumentImplementation	47	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest	-	new HashMap	47	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetValue	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	51	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetValue	-	assertEquals	52	0.85
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetValue	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	52	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	List.of	57	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	Map.of	57	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	Map.of	57	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	59	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	61	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	assertNotNull	62	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	assertEquals	63	0.85
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	childrenStream.count	63	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	68	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	-	assertNotNull	69	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	-	assertEquals	70	0.85
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	-	children.count	70	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	Map.of	75	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	new DocumentImplementation	76	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	assertTrue	77	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	document.toString().contains	77	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	77	0.70
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	assertTrue	78	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	document.toString().contains	78	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	78	0.70
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldHandleExceptionDuringConstruction	-	assertThrows	87	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldHandleExceptionDuringConstruction	-	new DocumentImplementation	91	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	new DocumentImplementation	98	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	new HashMap	98	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	99	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	101	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	105	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	assertNotNull	107	0.20
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	assertEquals	108	0.85
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	108	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	119	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	-	assertEquals	122	0.85
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	122	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	125	0.40
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	-	assertEquals	128	0.85
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	128	0.40
+src/test/java/com/iluwatar/abstractdocument/AppTest.java	AppTest.shouldExecuteAppWithoutException	-	assertDoesNotThrow	42	0.85
+src/test/java/com/iluwatar/abstractdocument/AppTest.java	AppTest.shouldExecuteAppWithoutException	src/main/java/com/iluwatar/abstractdocument/App.java	App.main	42	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	Map.of	49	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	50	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	51	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	52	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	new Part	53	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	assertEquals	54	0.85
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	part.getType().orElseThrow	54	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	54	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	assertEquals	55	0.85
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	part.getModel().orElseThrow	55	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	55	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	assertEquals	56	0.85
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	part.getPrice().orElseThrow	56	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	56	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	Map.of	62	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	63	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	64	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	65	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	List.of	65	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	Map.of	65	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	Map.of	65	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	new Car	66	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	assertEquals	67	0.85
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	car.getModel().orElseThrow	67	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	67	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	assertEquals	68	0.85
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	car.getPrice().orElseThrow	68	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	68	0.70
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	assertEquals	69	0.85
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	car.getParts().count	69	0.20
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	69	0.70

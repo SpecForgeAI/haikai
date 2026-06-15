@@ -1,0 +1,35 @@
+# =============================================================================
+# No-Database Profile Configuration
+# =============================================================================
+#
+# This profile disables database connectivity, allowing the application to run
+# in file-only mode without requiring PostgreSQL.
+#
+# USAGE:
+# ------
+# Via Spring profile:
+#   java -jar architecture-model-service.jar --spring.profiles.active=no-db
+#
+# Via property (recommended):
+#   java -jar architecture-model-service.jar --app.features.include-database=false
+#
+# Via environment variable:
+#   APP_FEATURES_INCLUDE_DATABASE=false
+#
+# HOW IT WORKS:
+# -------------
+# Setting app.features.include-database=false triggers the
+# DatabaseAutoConfigurationImportFilter which excludes all database
+# auto-configurations early in Spring Boot startup:
+# - DataSourceAutoConfiguration (JDBC DataSource / Hikari pool)
+# - HibernateJpaAutoConfiguration (JPA/Hibernate / EntityManagerFactory)
+# - LiquibaseAutoConfiguration (Database migrations)
+# - JpaRepositoriesAutoConfiguration (Spring Data JPA repository scanning)
+#
+# Spec 2026-01-19: Disable Database Feature Flag
+# =============================================================================
+
+# Disable database feature - this triggers the DatabaseAutoConfigurationImportFilter
+app:
+  features:
+    include-database: false

@@ -1,0 +1,30 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "Article",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "slug",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "title",
+      "tag": "pack"
+    },
+    {
+      "type": "ui_components",
+      "name": "ArticleCard",
+      "tag": "pack"
+    },
+    {
+      "type": "ui_components",
+      "name": "FavoriteButton",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

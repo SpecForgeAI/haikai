@@ -1,0 +1,36 @@
+# Docker Compose for Testing (Port 8001)
+# Runs alongside main container (port 8000) for regression testing
+# Usage: docker-compose -f docker-compose.test.yml up --build
+
+services:
+  standards-extractor-api-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: standards-extractor-api-test
+    env_file:
+      - .env.docker
+    ports:
+      - "8001:8000"  # External 8001 -> Internal 8000
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src:delegated
+      - ./templates:/app/templates:delegated
+      - ./config:/app/config:delegated
+      # Mount test scripts
+      - ./tests:/app/tests:delegated
+      # Mount workspace directory (separate from main container)
+      - ./workspace:/app/workspace:delegated
+      - ./api_workspace_test:/app/api_workspace:delegated
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+networks:
+  test-network:
+    driver: bridge

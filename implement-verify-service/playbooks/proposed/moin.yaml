@@ -1,0 +1,33 @@
+name: moin
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - "from flask"
+    - "from moin"
+  files_match:
+    - "src/moin/**/*.py"
+  manifest_contains:
+    - {file: pyproject.toml, substring: 'name = "moin"'}
+
+extract:
+  - id: flask_route_decorators
+    query: annotations
+    file_filter: all
+    file_extensions: [".py"]
+    annotation_names: [route]
+    target_kind: method
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: moin
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Blueprint url_prefix values are not inlined; emitted paths will be relative to the blueprint root"
+  - "HTTP verb defaults to GET when the methods= kwarg is absent from @route; multi-verb routes emit only one entry"
+  - "Dynamically constructed wiki item URLs (/<item_name>) are runtime-generated and not captured by static analysis"
+  - "Views registered via add_url_rule() calls rather than the @route decorator are missed"

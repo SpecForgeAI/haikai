@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Vet",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Vet \u2192 Specialty",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

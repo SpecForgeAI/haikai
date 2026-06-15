@@ -1,0 +1,150 @@
+/**
+ * GroupedProjectList Styles
+ *
+ * Spec 2026-01-10: Project Hierarchy Grouping
+ *
+ * Styling for the GroupedProjectList component.
+ * Matches the visual style of DeleteProjectModal for consistency.
+ */
+
+/* Container for the grouped list */
+.groupedList {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Individual section */
+.section {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+/* Section header - clickable area */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f9f9f9;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+  gap: 8px;
+}
+
+.sectionHeader:hover {
+  background: #f0f0f0;
+}
+
+.sectionHeader:focus {
+  outline: none;
+  background: #e8f4fc;
+}
+
+.sectionHeader:focus-visible {
+  outline: 2px solid #1976D2;
+  outline-offset: -2px;
+}
+
+/* Chevron icon for expand/collapse */
+.chevron {
+  font-size: 10px;
+  color: #666;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+}
+
+.chevron.expanded {
+  transform: rotate(0deg);
+}
+
+/* Section name text */
+.sectionName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  flex: 1;
+}
+
+/* Project count badge */
+.sectionCount {
+  font-size: 12px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+/* Section content area (project list within section) */
+.sectionContent {
+  animation: expandIn 0.15s ease;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+/* Project row - matches DeleteProjectModal .projectRow styling */
+.projectRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  padding-left: 32px; /* Indent to align with section header text */
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.projectRow:last-child {
+  border-bottom: none;
+}
+
+.projectRow:hover {
+  background: #f5f5f5;
+}
+
+/* Selected row styling - matches DeleteProjectModal .selected */
+.projectRow.selected {
+  background: #e3f2fd;
+}
+
+/* Project name */
+.projectName {
+  font-size: 14px;
+  color: #333;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Project date */
+.projectDate {
+  font-size: 12px;
+  color: #888;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+/* Empty message */
+.emptyMessage {
+  padding: 40px 20px;
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}

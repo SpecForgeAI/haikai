@@ -1,0 +1,378 @@
+/**
+ * CreatePackageSetModal.module.css
+ * Spec: Create Package Set Modal with Embedded Packages Builder
+ * Task Group 7: Modal CSS Styling
+ *
+ * Follows CreateBusinessLogicModal.module.css patterns for consistency.
+ * Extended with packages builder table styling.
+ */
+
+/* Overlay - semi-transparent backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - wider than standard for table content */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 600px;
+  width: 90%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header section */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f5f5f5;
+  border-radius: 8px 8px 0 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Content section - form container */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Form layout */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Form field group */
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Field label */
+.label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+
+/* Required field indicator */
+.required {
+  color: #d32f2f;
+  margin-left: 2px;
+}
+
+/* Text input (for Package Set Name field) */
+.textInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.textInput:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.textInput::placeholder {
+  color: #999;
+}
+
+/* Error state for inputs */
+.inputError {
+  border-color: #d32f2f;
+}
+
+.inputError:focus {
+  border-color: #d32f2f;
+  box-shadow: 0 0 0 2px rgba(211, 47, 47, 0.1);
+}
+
+/* Error message */
+.errorMessage {
+  font-size: 12px;
+  color: #d32f2f;
+  margin-top: 2px;
+  display: block;
+}
+
+/* ============================================================================
+ * Packages Builder Table Styles (Task Group 7.5)
+ * ============================================================================ */
+
+.packagesBuilder {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.packagesTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.packagesTable th {
+  text-align: left;
+  padding: 8px 10px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  color: #555;
+  font-size: 12px;
+}
+
+.packagesTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.packagesTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Column widths */
+.packageNameColumn {
+  width: 40%;
+}
+
+.purposeColumn {
+  width: 40%;
+}
+
+.actionsColumn {
+  width: 20%;
+  text-align: center;
+}
+
+/* Table input fields */
+.tableInput {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.tableInput:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.tableInput::placeholder {
+  color: #999;
+}
+
+/* Action buttons container */
+.actionButtons {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Action button (up/down/remove) */
+.actionButton {
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #666;
+  transition: background-color 0.2s, border-color 0.2s;
+  min-width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.actionButton:hover:not(:disabled) {
+  background: #e8e8e8;
+  border-color: #ccc;
+}
+
+.actionButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Remove button - red tint on hover */
+.removeButton:hover:not(:disabled) {
+  background: #ffebee;
+  border-color: #ef9a9a;
+  color: #d32f2f;
+}
+
+/* Add Package button */
+.addPackageButton {
+  background: white;
+  border: 1px dashed #bbb;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #666;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  align-self: flex-start;
+}
+
+.addPackageButton:hover {
+  background: #f5f5f5;
+  border-color: #1976D2;
+  color: #1976D2;
+}
+
+/* ============================================================================
+ * Footer Section with Action Buttons
+ * ============================================================================ */
+
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+/* Primary button (Create) */
+.primaryButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.primaryButton:disabled {
+  background: #bbb;
+  cursor: not-allowed;
+}
+
+/* Secondary button (Cancel) */
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.secondaryButton:disabled {
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Loading state */
+.loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* ============================================================================
+ * Responsive Considerations (Task Group 7.6)
+ * ============================================================================ */
+
+@media (max-width: 600px) {
+  .modal {
+    width: 95%;
+    max-width: none;
+  }
+
+  .packagesTable th,
+  .packagesTable td {
+    padding: 6px 8px;
+  }
+
+  .actionButtons {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .actionButton {
+    min-width: 24px;
+    height: 24px;
+    font-size: 10px;
+  }
+}

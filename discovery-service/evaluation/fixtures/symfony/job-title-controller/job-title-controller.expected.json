@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "JobTitleController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

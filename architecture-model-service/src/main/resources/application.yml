@@ -1,0 +1,110 @@
+spring:
+  application:
+    name: architecture-model-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/architecture_model
+    username: postgres
+    password: p05tgre5
+    driver-class-name: org.postgresql.Driver
+
+#  datasource:
+#    url: jdbc:postgresql://abmbot-postgres.czag82yqiits.eu-west-2.rds.amazonaws.com:5432/architecture_model
+#    username: arch_app
+#    password: ArchApp_2026!
+#    driver-class-name: org.postgresql.Driver
+
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+  # Multipart limits raised from Spring Boot defaults (1 MB / 10 MB) to give
+  # headroom for any future direct-to-AMS multipart traffic and to match the
+  # gateway-side caps for runtime-log uploads.
+  # Spec: Runtime Log Input at Discovery Run Start (2026-05-10) -- Task Group 1.
+  # Note: the AMS log-files PATCH endpoint itself only carries small JSON bodies
+  # (metadata only); raw log bytes are written to disk by the gateway and never
+  # cross this service boundary. These limits leave headroom rather than gate.
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 2000MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,env
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-exception: true
+    include-stacktrace: on_param
+
+logging:
+  level:
+    com.example.architecturemodel: DEBUG
+    org.hibernate.SQL: INFO
+    org.hibernate.type.descriptor.sql.BasicBinder: INFO
+    org.springframework.boot.context.config: DEBUG
+
+# OAS Spec configuration
+architectureModel:
+  oas:
+    parentFolder: "./oas-specs"
+    maxBytes: 2097152  # 2MB default
+
+# Application configuration
+app:
+  projectRootDir: ${APP_PROJECT_ROOT_DIR:.}
+
+  # Data Entity Point startup backfill configuration
+  # When enabled (default: true), ensures Data Entity Points exist for all
+  # Logical and Physical Data Entities on application startup.
+  # This is a safety net to catch any edge cases not covered by the migration.
+  # Override via environment variable: APP_DATA_ENTITY_POINTS_STARTUP_ENSURE
+  # Spec: Data Entity Point Backfill and Legacy Snapshot Compatibility
+  data-entity-points:
+    startup-ensure: ${APP_DATA_ENTITY_POINTS_STARTUP_ENSURE:true}
+
+  # Feature toggles for different application modes
+  # Spec 2026-01-19: Startup Configuration for Feature Toggles
+  # - includeDelivery: Enable/disable delivery features (roadmap, backlog, work items)
+  # - includeDatabase: Enable/disable database connectivity (run in file-only mode)
+  #   Default: true (database enabled). Set to false to run without database.
+  #   When false, DatabaseAutoConfigurationImportFilter excludes all DB auto-configurations.
+  # Override via environment variables or command-line arguments
+  #
+  # Spec 2026-01-20: UI Characteristics Key Suggestions
+  # - ui-characteristics-ui-capability-keys: Pipe-delimited autocomplete suggestions for UI Capability type
+  # - ui-characteristics-interaction-complexity-keys: Pipe-delimited autocomplete suggestions for Interaction Complexity type
+  # - ui-characteristics-technical-shape-keys: Pipe-delimited autocomplete suggestions for Technical Shape type
+  # Override via environment variables (e.g., APP_FEATURES_UI_CHARACTERISTICS_UI_CAPABILITY_KEYS)
+  features:
+    include-delivery: ${APP_FEATURES_INCLUDE_DELIVERY:true}
+    include-database: ${APP_FEATURES_INCLUDE_DATABASE:true}
+    ui-characteristics-ui-capability-keys: search|filter_basic|slice_and_dice|sort|drill_down|compare|pagination|bulk_actions|inline_edit|create|edit|delete|export_csv|export_excel|export_pdf|import|download|notifications|validation
+    ui-characteristics-interaction-complexity-keys: screen_count|nav_depth|interaction_archetype|entity_focus|drill_depth|workflow_steps
+    ui-characteristics-technical-shape-keys: framework|framework_version|state_management|api_style|data_fetching|design_system|component_library|visualisation_library|test_setup

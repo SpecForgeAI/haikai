@@ -1,0 +1,175 @@
+/**
+ * TechHintsCell Component Styles
+ * Spec 2026-04-20: Tech Hints LLM Resolution (Task Group 5.4)
+ *
+ * Follows the module CSS + flex-layout conventions of
+ * PackageSetCell.module.css / PackageSetPreview.module.css:
+ *   - Small, semantic class names.
+ *   - Colour palette matches the existing grid preview styling.
+ *   - Amber for partial/unresolved states, red for conflict.
+ */
+
+/* Outer container — scrolls inline with the cell. */
+.techHintsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+/* Display (non-editing) wrapper. */
+.techHintsValue {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: text;
+  min-height: 20px;
+}
+
+/* Raw text line shown above the chips. */
+.rawText {
+  color: #222;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rawTextPlaceholder {
+  color: #999;
+  font-style: italic;
+}
+
+/* Chip row */
+.chipsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  background: #eef2ff;
+  color: #1e3a8a;
+}
+
+/* Language chip — distinct colour from framework chips. */
+.chipLanguage {
+  background: #e0f2fe;
+  color: #075985;
+  border-color: #bae6fd;
+}
+
+.chipFramework {
+  background: #eef2ff;
+  color: #3730a3;
+  border-color: #c7d2fe;
+}
+
+/* Stale: greyed until re-resolved. */
+.chipStale {
+  opacity: 0.5;
+  filter: grayscale(40%);
+}
+
+.chipRemove {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 11px;
+  cursor: pointer;
+  color: inherit;
+  line-height: 1;
+}
+
+.chipRemove:hover {
+  color: #b91c1c;
+}
+
+/* Confirmation sentence */
+.confirmationSentence {
+  font-style: italic;
+  color: #555;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+/* Warning strips */
+.warningStrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.warningStripPartial {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.warningStripConflict {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Spec 2026-06-06: Persistence-Tier "database scan pack available" note --
+   positive (green) confirmation, distinct from the amber/red warnings. */
+.warningStripOk {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+/* Unresolved badge (row indicator).  Attaches inline for the simple case; a
+ * parent grid can absolutely-position the badge if it prefers. */
+.unresolvedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  cursor: help;
+}
+
+/* Inline pending spinner */
+.pendingSpinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #e5e7eb;
+  border-top-color: #6366f1;
+  animation: techHintsSpin 0.8s linear infinite;
+}
+
+@keyframes techHintsSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* Editing input. */
+.input {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 13px;
+  border: 1px solid #c7d2fe;
+  border-radius: 3px;
+  box-sizing: border-box;
+}

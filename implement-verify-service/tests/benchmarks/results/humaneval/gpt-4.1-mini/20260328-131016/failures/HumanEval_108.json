@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/108",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "count = 0\nfor num in arr:\n    s = str(num)\n    digits = []\n    for i, ch in enumerate(s):\n        if ch == '-':\n            continue\n        if i == 0 and s[0] == '-':\n            digits.append(-int(ch))\n        else:\n            digits.append(int(ch))\n    if sum(digits) > 0:\n        count += 1\nreturn count",
+  "expected_output": "    def digits_sum(n):\n        neg = 1\n        if n < 0: n, neg = -1 * n, -1 \n        n = [int(i) for i in str(n)]\n        n[0] = n[0] * neg\n        return sum(n)\n    return len(list(filter(lambda x: x > 0, [digits_sum(i) for i in arr])))\n",
+  "latency_seconds": 1.6654423428699374,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 172,
+    "output_tokens": 86,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

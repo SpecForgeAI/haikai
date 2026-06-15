@@ -1,0 +1,275 @@
+# Docker Compose for Architecture Modelling Tool Development Environment
+# Usage: docker-compose up --build
+# Note: Copy .env.docker to .env and set OPENAI_API_KEY before starting
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: arch-tool-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: p05tgre5
+      POSTGRES_DB: architecture_model
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - arch-tool-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Architecture Model Service (Spring Boot - Java)
+  architecture-model-service:
+    build:
+      context: ./architecture-model-service
+      dockerfile: Dockerfile.dev
+    container_name: arch-model-service
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./architecture-model-service/src:/app/src:delegated
+      - ./architecture-model-service/pom.xml:/app/pom.xml:delegated
+      - ./oas-specs:/app/oas-specs:delegated
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/architecture_model
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: p05tgre5
+    networks:
+      - arch-tool-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Architecture Read Service (Spring Boot - Java)
+  architecture-read-service:
+    build:
+      context: ./architecture-read-service
+      dockerfile: Dockerfile.dev
+    container_name: arch-read-service
+    ports:
+      - "8079:8079"
+    volumes:
+      - ./architecture-read-service/src:/app/src:delegated
+      - ./architecture-read-service/pom.xml:/app/pom.xml:delegated
+    environment:
+      SERVER_PORT: 8079
+    networks:
+      - arch-tool-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8079/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Jira Service (Spring Boot - Java)
+  jira-service:
+    build:
+      context: ./jira-service
+      dockerfile: Dockerfile.dev
+    container_name: arch-jira-service
+    ports:
+      - "8078:8078"
+    volumes:
+      - ./jira-service/src:/app/src:delegated
+      - ./jira-service/pom.xml:/app/pom.xml:delegated
+    environment:
+      SERVER_PORT: 8078
+      JIRA_BASE_URL: ${JIRA_BASE_URL:-}
+      JIRA_AUTH_MODE: ${JIRA_AUTH_MODE:-BEARER}
+      JIRA_BEARER_TOKEN: ${JIRA_BEARER_TOKEN:-changeit}
+      JIRA_USERNAME: ${JIRA_USERNAME:-}
+      JIRA_API_TOKEN: ${JIRA_API_TOKEN:-}
+    networks:
+      - arch-tool-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8078/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # MCP Server (Node.js)
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile.dev
+    container_name: arch-mcp-server
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./mcp-server/src:/app/src:delegated
+    environment:
+      ARCH_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
+      PORT: 8090
+    networks:
+      - arch-tool-network
+    depends_on:
+      architecture-model-service:
+        condition: service_healthy
+
+  # Discovery Service (Node.js)
+  discovery-service:
+    build:
+      context: ./discovery-service
+      dockerfile: Dockerfile.dev
+    container_name: arch-discovery-service
+    ports:
+      - "8091:8091"
+    volumes:
+      - ./discovery-service/src:/app/src:delegated
+    environment:
+      PORT: 8091
+      ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
+      GATEWAY_BASE_URL: http://gateway:8081
+    networks:
+      - arch-tool-network
+    depends_on:
+      architecture-model-service:
+        condition: service_healthy
+
+  # Gateway Service (Node.js)
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.dev
+    container_name: arch-gateway
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./gateway/src:/app/src:delegated
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      MCP_BASE_URL: http://mcp-server:8090
+      PORT: 8081
+      ALLOWED_ORIGINS: http://localhost:5173
+      JIRA_SERVICE_URL: http://jira-service:8078
+    networks:
+      - arch-tool-network
+    depends_on:
+      - mcp-server
+
+  # Frontend (Vite + React)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: arch-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src:delegated
+      - ./frontend/public:/app/public:delegated
+      - ./frontend/index.html:/app/index.html:delegated
+      - ./frontend/vite.config.ts:/app/vite.config.ts:delegated
+      - ./frontend/tsconfig.json:/app/tsconfig.json:delegated
+      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json:delegated
+    environment:
+      VITE_MODEL_API_TARGET: http://architecture-model-service:8080
+      VITE_CHAT_API_TARGET: http://gateway:8081
+    networks:
+      - arch-tool-network
+    depends_on:
+      - gateway
+      - architecture-model-service
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Implement & Verify Service (folder: implement-verify-service/)
+  # Python / FastAPI standards-extraction + spec-driven verify stack.
+  # Internal service/container names are kept as-is for now and will be
+  # rebranded post-merge. Reads its own env from implement-verify-service/.env.
+  # ──────────────────────────────────────────────────────────────────────
+
+  # Implement-Verify API (FastAPI)
+  standards-extractor-api:
+    build:
+      context: ./implement-verify-service
+      dockerfile: Dockerfile
+    container_name: standards-extractor-api
+    restart: unless-stopped
+    env_file:
+      - ./implement-verify-service/.env
+    environment:
+      # Pin the shared queue/state paths so the API and worker use the SAME
+      # db on the shared volume (the worker's default differs otherwise).
+      API_WORKSPACE_DIR: /app/workspace
+      JOBS_DB_PATH: /app/workspace/jobs.db
+      VERIFICATION_DB_PATH: /app/workspace/verify.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.haikai:/app/workspace:delegated
+    networks:
+      - arch-tool-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # Implement-Verify job worker — runs queued jobs (verify-task-group,
+  # bug-investigation, ...). Shares the same image, env, and workspace volume.
+  standards-extractor-worker:
+    build:
+      context: ./implement-verify-service
+      dockerfile: Dockerfile
+    container_name: standards-extractor-worker
+    restart: unless-stopped
+    env_file:
+      - ./implement-verify-service/.env
+    environment:
+      API_WORKSPACE_DIR: /app/workspace
+      JOBS_DB_PATH: /app/workspace/jobs.db
+      VERIFICATION_DB_PATH: /app/workspace/verify.db
+      WORKER_ID: worker-1
+    volumes:
+      - ~/.haikai:/app/workspace:delegated
+    networks:
+      - arch-tool-network
+    depends_on:
+      - standards-extractor-api
+    command: ["python3", "-m", "src.job_queue.worker"]
+
+  # haibox local sandbox runner — "warm a box, serve the target, replay
+  # against it". The worker provisions serving targets here.
+  haiboxd:
+    build:
+      context: ./implement-verify-service
+      dockerfile: Dockerfile
+    container_name: haiboxd
+    restart: unless-stopped
+    env_file:
+      - ./implement-verify-service/.env
+    environment:
+      API_WORKSPACE_DIR: /app/workspace
+      HAIBOX_HOST: 0.0.0.0          # in-container; reachable on the compose network
+      HAIBOX_PORT: "8780"
+      HAIBOX_WORK_ROOT: /app/workspace/haibox
+      HAIBOX_MAX_BOXES: "8"
+    volumes:
+      - ~/.haikai:/app/workspace:delegated
+    networks:
+      - arch-tool-network
+    command: ["python3", "-m", "src.haibox.service"]
+
+networks:
+  arch-tool-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

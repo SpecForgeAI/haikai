@@ -1,0 +1,104 @@
+/**
+ * MentionInput.module.css
+ *
+ * Spec 2026-02-28: Unified Chat Panel v1 (Frontend)
+ * Task Group 6, Task 6.2: MentionInput styles
+ *
+ * Styling for the textarea with @-mention dropdown.
+ * Dropdown appears above the textarea as a floating list
+ * with persona color dots and display names.
+ */
+
+/* Container: positions the dropdown relative to the textarea */
+.container {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Textarea */
+.textarea {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  outline: none;
+  resize: none;
+  line-height: 1.5;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  border-color: #5C6BC0;
+  box-shadow: 0 0 0 2px rgba(92, 107, 192, 0.15);
+}
+
+.textarea:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Dropdown: floating list positioned above the textarea */
+.dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+/* Dropdown item */
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+  transition: background-color 0.1s ease;
+}
+
+.dropdownItem:hover {
+  background: #f5f5f5;
+}
+
+/* Selected (keyboard-navigated) item */
+.dropdownItemSelected {
+  background: #e8eaf6;
+}
+
+.dropdownItemSelected:hover {
+  background: #e8eaf6;
+}
+
+/* Persona color dot */
+.colorDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Persona display name in dropdown */
+.personaName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

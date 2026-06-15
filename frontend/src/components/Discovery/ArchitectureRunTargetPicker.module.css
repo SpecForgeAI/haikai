@@ -1,0 +1,61 @@
+/**
+ * ArchitectureRunTargetPicker.module.css
+ *
+ * Spec 2026-05-01 Multi-Architecture Discovery Integration -- Task Group 6
+ *
+ * Visual shape mirrors the form-control styling used by the Start
+ * Discovery Run modal so the picker reads as a native part of the
+ * confirmation dialog rather than a bolted-on widget.
+ */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.select {
+  appearance: none;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  width: 100%;
+  max-width: 100%;
+  /* Native chevron suppressed so we render our own (consistent with
+     spec #2's ArchitectureSelector closed-state pill). */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23666' d='M0 0l5 6 5-6z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.15);
+}
+
+.select:disabled {
+  background-color: #f5f5f5;
+  color: #777;
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.confirmation {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+  font-style: italic;
+}

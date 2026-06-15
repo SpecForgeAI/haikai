@@ -1,0 +1,161 @@
+sequenceDiagram
+    participant 101 as 101
+    participant 103 as 103
+    participant 104 as 104
+    participant 107 as 107
+    participant 109 as 109
+    participant 110 as 110
+    participant 116 as 116
+    participant 119 as 119
+    participant 121 as 121
+    participant 122 as 122
+    participant 123 as 123
+    participant 126 as 126
+    participant 127 as 127
+    participant 128 as 128
+    participant 130 as 130
+    participant 133 as 133
+    participant 134 as 134
+    participant 150 as 150
+    participant 152 as 152
+    participant 153 as 153
+    participant 156 as 156
+    participant 159 as 159
+    participant 18 as 18
+    participant 20 as 20
+    participant 21 as 21
+    participant 22 as 22
+    participant 23 as 23
+    participant 26 as 26
+    participant 266 as 266
+    participant 280 as 280
+    participant 29 as 29
+    participant 30 as 30
+    participant 31 as 31
+    participant 32 as 32
+    participant 35 as 35
+    participant 36 as 36
+    participant 37 as 37
+    participant 38 as 38
+    participant 40 as 40
+    participant 41 as 41
+    participant 46 as 46
+    participant 47 as 47
+    participant 49 as 49
+    participant 50 as 50
+    participant 53 as 53
+    participant 58 as 58
+    participant 60 as 60
+    participant 67 as 67
+    participant 71 as 71
+    participant 72 as 72
+    participant 73 as 73
+    participant 74 as 74
+    participant 75 as 75
+    participant 77 as 77
+    participant 82 as 82
+    participant 84 as 84
+    participant 93 as 93
+    participant 98 as 98
+    participant <module> as <module>
+    participant Extensions as Extensions
+    participant HostEnvironmentExtensions as HostEnvironmentExtensions
+    participant CatalogApi as CatalogApi
+    participant BasketItem as BasketItem
+    participant BasketService as BasketService
+    participant ServerCallContextIdentityExtensions as ServerCallContextIdentityExtensions
+    participant IBasketRepository as IBasketRepository
+    participant MapToCustomerBasketResponse as MapToCustomerBasketResponse
+    participant MapToCustomerBasket as MapToCustomerBasket
+    participant CatalogAI as CatalogAI
+    participant root as root
+    participant services_Context as services.Context
+    participant SaveEventAndCatalogContextChangesAsync as SaveEventAndCatalogContextChangesAsync
+    participant PublishThroughEventBusAsync as PublishThroughEventBusAsync
+    participant CatalogBrandEntityTypeConfiguration as CatalogBrandEntityTypeConfiguration
+    participant CatalogContext as CatalogContext
+    participant CatalogContextModelSnapshot as CatalogContextModelSnapshot
+    participant modelBuilder as modelBuilder
+    participant CatalogContextSeed as CatalogContextSeed
+    participant sourceItems as sourceItems
+    participant CatalogIntegrationEventService as CatalogIntegrationEventService
+    participant Dispose as Dispose
+    participant CatalogItem as CatalogItem
+    participant CatalogItemEntityTypeConfiguration as CatalogItemEntityTypeConfiguration
+    participant CatalogTypeEntityTypeConfiguration as CatalogTypeEntityTypeConfiguration
+    participant Initial as Initial
+    participant OrderStartedIntegrationEventHandler as OrderStartedIntegrationEventHandler
+    participant OrderStatusChangedToAwaitingValidationIntegrationEventHandler as OrderStatusChangedToAwaitingValidationIntegrationEventHandler
+    participant OrderStatusChangedToPaidIntegrationEventHandler as OrderStatusChangedToPaidIntegrationEventHandler
+    participant Outbox as Outbox
+    participant RedisBasketRepository as RedisBasketRepository
+    participant RemoveHiLoAndIndexCatalogName as RemoveHiLoAndIndexCatalogName
+    <module>->>Extensions: AddApplicationServices()
+    Extensions->>HostEnvironmentExtensions: IsBuild()
+    <module>->>Extensions: AddApplicationServices()
+    Extensions->>HostEnvironmentExtensions: IsBuild()
+    <module>->>CatalogApi: MapCatalogApi()
+    BasketService->>ServerCallContextIdentityExtensions: GetUserIdentity()
+    BasketService->>IBasketRepository: DeleteBasketAsync()
+    BasketService->>ServerCallContextIdentityExtensions: GetUserIdentity()
+    BasketService->>IBasketRepository: GetBasketAsync()
+    BasketService->>MapToCustomerBasketResponse: MapToCustomerBasketResponse()
+    BasketService->>ServerCallContextIdentityExtensions: GetUserIdentity()
+    BasketService->>MapToCustomerBasket: MapToCustomerBasket()
+    BasketService->>IBasketRepository: UpdateBasketAsync()
+    BasketService->>MapToCustomerBasketResponse: MapToCustomerBasketResponse()
+    CatalogApi->>CatalogAI: GetEmbeddingAsync()
+    CatalogAI->>CatalogAI: GetEmbeddingAsync()
+    CatalogApi->>CatalogApi: GetAllItems()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>CatalogApi: GetFullPath()
+    CatalogApi->>CatalogApi: GetImageMimeTypeFromImageFileExtension()
+    CatalogApi->>CatalogApi: GetAllItems()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>CatalogApi: GetAllItems()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>CatalogApi: GetItemsBySemanticRelevance()
+    CatalogApi->>CatalogApi: GetItemsByName()
+    CatalogApi->>CatalogApi: GetAllItems()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>CatalogAI: GetEmbeddingAsync()
+    CatalogAI->>CatalogAI: GetEmbeddingAsync()
+    CatalogApi->>CatalogApi: GetItemsByName()
+    CatalogApi->>CatalogApi: GetAllItems()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>root: root()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>services_Context: CatalogItems()
+    CatalogApi->>CatalogApi: UpdateItem()
+    CatalogApi->>CatalogAI: GetEmbeddingAsync()
+    CatalogAI->>CatalogAI: GetEmbeddingAsync()
+    CatalogApi->>SaveEventAndCatalogContextChangesAsync: SaveEventAndCatalogContextChangesAsync()
+    CatalogApi->>PublishThroughEventBusAsync: PublishThroughEventBusAsync()
+    CatalogContextModelSnapshot->>modelBuilder: modelBuilder()
+    CatalogContextSeed->>sourceItems: sourceItems()
+    CatalogContextSeed->>sourceItems: sourceItems()
+    CatalogContextSeed->>CatalogAI: GetEmbeddingsAsync()
+    CatalogIntegrationEventService->>Dispose: Dispose()
+    Initial->>modelBuilder: modelBuilder()
+    OrderStartedIntegrationEventHandler->>IBasketRepository: DeleteBasketAsync()
+    OrderStatusChangedToAwaitingValidationIntegrationEventHandler->>SaveEventAndCatalogContextChangesAsync: SaveEventAndCatalogContextChangesAsync()
+    OrderStatusChangedToAwaitingValidationIntegrationEventHandler->>PublishThroughEventBusAsync: PublishThroughEventBusAsync()
+    Outbox->>modelBuilder: modelBuilder()
+    RedisBasketRepository->>IBasketRepository: GetBasketAsync()
+    RemoveHiLoAndIndexCatalogName->>modelBuilder: modelBuilder()

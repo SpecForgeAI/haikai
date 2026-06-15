@@ -1,0 +1,689 @@
+/**
+ * Migration Book of Work review-workspace styles
+ *
+ * Spec 2026-05-17 PM Migration Delivery Plan -- Groups 11 + 12.
+ * Mirrors the lightweight pattern used by `FindingDetailDrawer.module.css`
+ * + `FindingsTab.module.css` -- no bespoke shadow library, plain CSS modules
+ * keyed off the existing Discovery review surface.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Top-level layout */
+/* ------------------------------------------------------------------ */
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #f9fafb;
+}
+
+.workspaceHeader {
+  padding: 12px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workspaceTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.workspaceSubtitle {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 0 0;
+}
+
+.unsavedIndicator {
+  font-size: 12px;
+  font-weight: 500;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.workspaceBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.leftPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid #e5e7eb;
+}
+
+.rightPanel {
+  width: min(420px, 35vw);
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ------------------------------------------------------------------ */
+/* Filters bar */
+/* ------------------------------------------------------------------ */
+
+.filtersBar {
+  padding: 12px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filterLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filterInput,
+.filterSelect {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  min-width: 140px;
+}
+
+.filterToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.filterClearButton {
+  font-size: 12px;
+  padding: 4px 10px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tree */
+/* ------------------------------------------------------------------ */
+
+.treeContainer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.treeEmpty {
+  font-size: 13px;
+  color: #6b7280;
+  padding: 12px;
+}
+
+.treeNode {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
+}
+
+.nodeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+}
+
+.nodeRowSelected {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+
+.nodeRowSaved {
+  background: #ecfdf5;
+  border-color: #34d399;
+}
+
+.nodeRowExcluded {
+  background: #f3f4f6;
+  opacity: 0.65;
+}
+
+.nodeToggle {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  font-size: 10px;
+  width: 18px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.nodeType {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  min-width: 64px;
+}
+
+.nodeTitle {
+  flex: 1;
+  font-size: 13px;
+  color: #1f2937;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badgeRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.badgeConfidenceHigh {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+.badgeConfidenceMedium {
+  background: #fef9c3;
+  border-color: #fde047;
+  color: #854d0e;
+}
+.badgeConfidenceLow {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.badgeReadinessReady {
+  background: #dcfce7;
+  border-color: #86efac;
+  color: #166534;
+}
+.badgeReadinessNeedsContext {
+  background: #fef9c3;
+  border-color: #fde047;
+  color: #854d0e;
+}
+.badgeReadinessNeedsDecision {
+  background: #ffedd5;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+.badgeReadinessBlocked {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.badgeWorkstreamUnknown {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+  font-style: italic;
+}
+
+.badgeSaved {
+  background: #34d399;
+  color: #064e3b;
+  border-color: #10b981;
+}
+.badgeExcluded {
+  background: #d1d5db;
+  color: #1f2937;
+  border-color: #9ca3af;
+}
+.badgeFailed {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #b91c1c;
+}
+
+.treeChildren {
+  margin-left: 18px;
+  padding-left: 8px;
+  border-left: 1px dashed #d1d5db;
+  margin-top: 4px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Drawer / detail panel */
+/* ------------------------------------------------------------------ */
+
+.drawerEmpty {
+  padding: 24px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.drawerHeader {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.drawerTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.section {
+  margin-bottom: 16px;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin: 0 0 6px 0;
+}
+
+.bulletList {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.bodyText {
+  font-size: 13px;
+  color: #374151;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.refChip {
+  display: inline-block;
+  font-size: 11px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin: 2px 4px 2px 0;
+  font-family: 'Menlo', 'Consolas', monospace;
+}
+
+/* ------------------------------------------------------------------ */
+/* Selection controls + save dialog */
+/* ------------------------------------------------------------------ */
+
+.selectionControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.selectButton {
+  font-size: 12px;
+  padding: 5px 10px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+}
+
+.selectButtonPrimary {
+  background: #3b82f6;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal {
+  width: min(520px, 92vw);
+  max-height: 90vh;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modalHeader {
+  padding: 14px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modalTitle {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: #1f2937;
+}
+
+.modalBody {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modalFooter {
+  padding: 12px 20px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modalWarning {
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.modalCounts {
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 12px;
+}
+
+.modalToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.modalInputRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.modalInput {
+  font-size: 13px;
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+}
+
+.modalHint {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+/* ------------------------------------------------------------------ */
+/* Post-save view */
+/* ------------------------------------------------------------------ */
+
+.postSaveBanner {
+  background: #ecfdf5;
+  border: 1px solid #34d399;
+  color: #065f46;
+  padding: 10px 16px;
+  border-radius: 4px;
+  margin: 12px 16px;
+  font-size: 13px;
+}
+
+.postSaveFailures {
+  margin: 0 16px 12px;
+  padding: 10px 16px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+}
+
+.postSaveLink {
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------------ */
+/* Draft list view */
+/* ------------------------------------------------------------------ */
+
+.listContainer {
+  padding: 16px 20px;
+  background: #ffffff;
+  min-height: 100%;
+}
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.listTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.listTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.listTable th,
+.listTable td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.listTable thead th {
+  background: #f9fafb;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.listRow {
+  cursor: pointer;
+}
+.listRow:hover {
+  background: #f3f4f6;
+}
+.listRowArchived {
+  opacity: 0.65;
+  font-style: italic;
+}
+
+.listEmpty {
+  padding: 24px;
+  color: #6b7280;
+  font-size: 13px;
+  text-align: center;
+}
+
+.miniChip {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #eef2ff;
+  color: #3730a3;
+  margin-right: 4px;
+  border: 1px solid #c7d2fe;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase-2 expansion (Spec 2026-06-11 Two-Phase generation, Task Group 5)
+ * ------------------------------------------------------------------------- */
+
+.badgeExpansionNotExpanded {
+  background: #eceff1;
+  border: 1px solid #b0bec5;
+  color: #455a64;
+}
+
+.badgeExpansionExpanding {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #1565c0;
+}
+
+.badgeExpansionExpanded {
+  background: #d8f0d8;
+  border: 1px solid #aedca0;
+  color: #2e7d32;
+}
+
+.badgeExpansionFailed {
+  background: #fadcd9;
+  border: 1px solid #f1aeab;
+  color: #c62828;
+}
+
+.expandEpicButton {
+  margin-left: 6px;
+  padding: 1px 8px;
+  font-size: 11px;
+  border: 1px solid #90a4ae;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.expandEpicButton:hover {
+  background: #eceff1;
+}
+
+.expansionErrorBanner {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid #f1aeab;
+  border-radius: 4px;
+  background: #fadcd9;
+  color: #c62828;
+  font-size: 13px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Unaddressed findings panel (Spec 2026-06-11 Findings Coverage + Gap
+ * Wayfinding, Task Group 4.3). Advisory panel between the workspace header
+ * and body; severity badges reuse the badge palette above.
+ * -------------------------------------------------------------------------- */
+
+.coveragePanel {
+  border: 1px solid #ffe0b2;
+  background: #fff8f0;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin: 12px 0;
+}
+
+.coveragePanelTitle {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: #5d4037;
+}
+
+.coveragePanelNote {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.coverageList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.coverageRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.coverageRowTitle {
+  flex: 1;
+  min-width: 0;
+}
+
+.coverageRowLink {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1565c0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.coverageRowLink:hover {
+  text-decoration: underline;
+}

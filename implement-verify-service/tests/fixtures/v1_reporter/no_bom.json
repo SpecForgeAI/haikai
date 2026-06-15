@@ -1,0 +1,5 @@
+[
+  {"type": "REST", "operation": "GET",  "path": "/api/users",      "framework": "test"},
+  {"type": "REST", "operation": "POST", "path": "/api/users",      "framework": "test"},
+  {"type": "REST", "operation": "GET",  "path": "/api/users/{id}", "framework": "test"}
+]

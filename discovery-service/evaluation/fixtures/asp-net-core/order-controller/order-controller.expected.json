@@ -1,0 +1,20 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "OrderController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /Order/[action]",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /Order/[action]/{orderId}",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

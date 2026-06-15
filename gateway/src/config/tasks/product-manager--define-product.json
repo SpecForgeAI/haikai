@@ -1,0 +1,37 @@
+{
+  "id": "product-manager--define-product",
+  "personaId": "product-manager",
+  "menuLabel": "Define Product",
+  "description": "Conducts structured product discovery to gather sufficient information for generating a comprehensive MISSION.MD document. Guides the user through product identity, problem definition, audience, vision, success criteria, constraints, scope, and delivery expectations.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/product-manager.define-product.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": [],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "mission-md",
+      "filename": "MISSION.MD",
+      "tool": "save_product_artifacts",
+      "description": "Product mission statement"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

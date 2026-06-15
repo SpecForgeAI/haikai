@@ -1,0 +1,121 @@
+{
+  "metaModel": {
+    "entities": {
+      "business_users": [],
+      "business_processes": [],
+      "applications": [
+        {
+          "id": "app_oms",
+          "name": "OMS System",
+          "description": "Order Management System",
+          "app_type": "Web",
+          "status": "Active",
+          "tags": "core, oms"
+        },
+        {
+          "id": "app_risk",
+          "name": "Risk System",
+          "description": "Risk analytics and position store",
+          "app_type": "Batch",
+          "status": "Active",
+          "tags": "risk, analytics"
+        }
+      ],
+      "app_components": [],
+      "services": [],
+      "application_points": [
+        {
+          "id": "ap_oms",
+          "name": "OMS System",
+          "description": "Application point for OMS System",
+          "application_id": "app_oms",
+          "point_type": "UI",
+          "tags": ""
+        },
+        {
+          "id": "ap_risk",
+          "name": "Risk System",
+          "description": "Application point for Risk System",
+          "application_id": "app_risk",
+          "point_type": "UI",
+          "tags": ""
+        }
+      ],
+      "logical_data_entities": [
+        {
+          "id": "lde_trade",
+          "name": "Trade",
+          "description": "Represents a trade",
+          "tags": ""
+        }
+      ],
+      "logical_data_attributes": [],
+      "physical_data_entities": [],
+      "physical_data_attributes": []
+    },
+    "relationships": {
+      "business_user_processes": [],
+      "application_point_business_processes": [],
+      "logical_data_entity_relationships": [],
+      "logical_data_entity_physical_data_entities": [],
+      "logical_data_attribute_physical_data_attributes": [],
+      "data_movements": []
+    }
+  },
+  "diagrams": [
+    {
+      "id": "d1",
+      "name": "OMS to Risk Flow",
+      "description": "Simple data flow example"
+    }
+  ],
+  "diagram_nodes": [
+    {
+      "id": "n1",
+      "diagram_id": "d1",
+      "entity_type": "ApplicationPoint",
+      "entity_id": "ap_oms",
+      "x": 100,
+      "y": 200,
+      "width": 180,
+      "height": 80,
+      "parent_node_id": null
+    },
+    {
+      "id": "n2",
+      "diagram_id": "d1",
+      "entity_type": "ApplicationPoint",
+      "entity_id": "ap_risk",
+      "x": 400,
+      "y": 200,
+      "width": 180,
+      "height": 80,
+      "parent_node_id": null
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "e1",
+      "diagram_id": "d1",
+      "relationship_id": "dm_trade_oms_to_risk",
+      "source_node_id": "n1",
+      "target_node_id": "n2"
+    }
+  ],
+  "edge_points": [
+    {
+      "id": "p1",
+      "edge_id": "e1",
+      "sequence": 0,
+      "x": 280,
+      "y": 240
+    },
+    {
+      "id": "p2",
+      "edge_id": "e1",
+      "sequence": 1,
+      "x": 400,
+      "y": 240
+    }
+  ]
+}

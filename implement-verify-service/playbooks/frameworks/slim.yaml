@@ -1,0 +1,36 @@
+name: slim
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - Slim\App
+    - Slim/App
+    - slim/slim
+
+extract:
+  - id: route_calls
+    query: call_args
+    file_filter: all
+    callee_pattern: '->(get|post|put|delete|patch|map|any|head|options)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^[/:*]'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: slim
+
+verification:
+  - id: route_call_count
+    query: call_args
+    callee_pattern: '->(get|post|put|delete|patch)$'
+    expected_count: same_as_output_count
+    tolerance_pct: 20
+
+conflict_rules: []
+
+known_pitfalls:
+  - "$app->group('/api', fn) prefixes not resolved"
+  - "->map(['GET','POST'], path, ...) takes a verb array — currently treats as 'MAP'"

@@ -1,0 +1,971 @@
+/**
+ * CaptureReviewPanel Component
+ *
+ * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 9
+ *
+ * Reviewer-facing panel rendered inside `CaptureSessionDetailView` once a
+ * capture session reaches `running`, `completed`, or `failed` status. Lists
+ * every captured row grouped by operation -> scenario -> captures and
+ * exposes the four review-time actions per spec:
+ *   - accept (PATCH `accepted=true, accepted_at=NOW()`)
+ *   - reject + reviewer notes (PATCH `accepted=false` + structured notes)
+ *   - rename scenario (PATCH the parent `scenarios.scenario_name`)
+ *   - mask response field(s) (PATCH the structured `reviewer_notes` payload)
+ *
+ * Spec contract enforced here:
+ *   - NO `/rerun` affordance ANYWHERE. Not even a disabled placeholder.
+ *     The "rerun scenario" UI was explicitly cut in v1 -- captures that
+ *     fail are evidence for the reviewer to accept-with-notes, reject, or
+ *     ignore until the next full run.
+ *   - Masks are applied at render time only. The original redacted JSON on
+ *     the capture row is never mutated -- the mask metadata lives in
+ *     `reviewer_notes` and the renderer walks the tree replacing matched
+ *     paths with a placeholder.
+ *   - Only operations actually present in the captured rows are surfaced;
+ *     operations with no captures (e.g. excluded mutating ops) don't appear
+ *     in this panel at all -- they live in the wizard step 4 table during
+ *     setup.
+ *
+ * The "Save as Baseline" CTA appears once the panel detects at least one
+ * `accepted=true` capture. Opening it mounts the sibling
+ * `SaveAsBaselineModal` which owns the baseline + items POST flow.
+ */
+
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ApiBehaviourCaptureDto,
+  ApiBehaviourOperationDto,
+  ApiBehaviourScenarioDto,
+  FieldMask,
+  ReviewerNotesPayload,
+  listCaptures,
+  listOperations,
+  listScenarios,
+  parseReviewerNotes,
+  serialiseReviewerNotes,
+  updateCapture,
+  updateScenario,
+} from '../../api/apiBehaviourClient';
+import styles from './CaptureReviewPanel.module.css';
+import { SaveAsBaselineModal } from './SaveAsBaselineModal';
+import {
+  MigrationDiscoveryContext,
+  fetchMigrationDiscoveryContext,
+} from '../../api/migrationDiscoveryContextApi';
+
+// ============================================================================
+// Props
+// ============================================================================
+
+export interface CaptureReviewPanelProps {
+  projectId: string;
+  architectureId: string;
+  sessionId: string;
+  /**
+   * When `true` the panel renders the data in read-only mode -- still showing
+   * all captures, but suppressing the action buttons. The detail view passes
+   * `true` while the session is still `running` so users can watch progress
+   * without acting on rows that may yet be retried by the loop.
+   */
+  readOnly?: boolean;
+}
+
+// ============================================================================
+// Internal helpers
+// ============================================================================
+
+interface GroupedCapture {
+  operation: ApiBehaviourOperationDto;
+  scenarios: Array<{
+    scenario: ApiBehaviourScenarioDto;
+    captures: ApiBehaviourCaptureDto[];
+  }>;
+}
+
+function operationLabel(op: ApiBehaviourOperationDto): string {
+  const method = (op.method ?? '').toUpperCase();
+  const path = op.path ?? '(no path)';
+  return method ? `${method} ${path}` : path;
+}
+
+function compareOperations(
+  a: ApiBehaviourOperationDto,
+  b: ApiBehaviourOperationDto,
+): number {
+  const ap = a.path ?? '';
+  const bp = b.path ?? '';
+  if (ap !== bp) return ap < bp ? -1 : 1;
+  const am = (a.method ?? '').toUpperCase();
+  const bm = (b.method ?? '').toUpperCase();
+  if (am !== bm) return am < bm ? -1 : 1;
+  return 0;
+}
+
+function compareScenarios(
+  a: ApiBehaviourScenarioDto,
+  b: ApiBehaviourScenarioDto,
+): number {
+  const an = a.scenario_name ?? '';
+  const bn = b.scenario_name ?? '';
+  if (an !== bn) return an < bn ? -1 : 1;
+  return 0;
+}
+
+function compareCapturesByAttempt(
+  a: ApiBehaviourCaptureDto,
+  b: ApiBehaviourCaptureDto,
+): number {
+  const aa = a.attempt_number ?? 0;
+  const ba = b.attempt_number ?? 0;
+  return aa - ba;
+}
+
+/**
+ * Group the flat capture / scenario / operation list into the
+ * (operation -> scenario -> captures) tree the table renders from. Captures
+ * that don't have matching scenarios or operations in the loaded lists are
+ * dropped silently -- this can happen mid-run while the new service is still
+ * inserting rows; the polling loop in `CaptureSessionDetailView` will refresh
+ * the panel on the next tick.
+ */
+function group(
+  operations: ApiBehaviourOperationDto[] = [],
+  scenarios: ApiBehaviourScenarioDto[] = [],
+  captures: ApiBehaviourCaptureDto[] = [],
+): GroupedCapture[] {
+  // Defensive: a list endpoint that returns an empty/204/non-array body
+  // resolves to a non-array here; coerce so the .map/.for below never crash
+  // (mirrors the source-side coercion in `refresh`).
+  const ops = Array.isArray(operations) ? operations : [];
+  const scens = Array.isArray(scenarios) ? scenarios : [];
+  const caps = Array.isArray(captures) ? captures : [];
+  const opById = new Map(ops.map((o) => [o.id, o]));
+  const scenarioById = new Map(scens.map((s) => [s.id, s]));
+
+  // Bucket captures by (operationId, scenarioId).
+  const byOp = new Map<string, Map<string, ApiBehaviourCaptureDto[]>>();
+  for (const cap of caps) {
+    if (!opById.has(cap.operation_id)) continue;
+    if (!scenarioById.has(cap.scenario_id)) continue;
+    let scenarioMap = byOp.get(cap.operation_id);
+    if (!scenarioMap) {
+      scenarioMap = new Map();
+      byOp.set(cap.operation_id, scenarioMap);
+    }
+    let captureList = scenarioMap.get(cap.scenario_id);
+    if (!captureList) {
+      captureList = [];
+      scenarioMap.set(cap.scenario_id, captureList);
+    }
+    captureList.push(cap);
+  }
+
+  const grouped: GroupedCapture[] = [];
+  for (const [opId, scenarioMap] of byOp.entries()) {
+    const op = opById.get(opId);
+    if (!op) continue;
+    const scenarioEntries: GroupedCapture['scenarios'] = [];
+    for (const [scenarioId, capList] of scenarioMap.entries()) {
+      const scenario = scenarioById.get(scenarioId);
+      if (!scenario) continue;
+      capList.sort(compareCapturesByAttempt);
+      scenarioEntries.push({ scenario, captures: capList });
+    }
+    scenarioEntries.sort((a, b) => compareScenarios(a.scenario, b.scenario));
+    grouped.push({ operation: op, scenarios: scenarioEntries });
+  }
+  grouped.sort((a, b) => compareOperations(a.operation, b.operation));
+  return grouped;
+}
+
+const MASK_PLACEHOLDER = '«masked»';
+
+/**
+ * Recursively rebuild a JSON value with paths listed in `maskPaths` replaced
+ * by the placeholder string. Original input is never mutated.
+ *
+ * Path syntax: dotted segments for object keys, `[<index>]` for array
+ * indices, e.g. `body.users[0].email`. The walker tracks the current path
+ * as it descends and does an exact-string compare against the mask set.
+ */
+function applyMasks(
+  value: unknown,
+  maskPaths: Set<string>,
+  currentPath: string,
+): unknown {
+  if (maskPaths.has(currentPath)) {
+    return MASK_PLACEHOLDER;
+  }
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((v, i) =>
+      applyMasks(v, maskPaths, `${currentPath}[${i}]`),
+    );
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const nextPath = currentPath ? `${currentPath}.${k}` : k;
+      out[k] = applyMasks(v, maskPaths, nextPath);
+    }
+    return out;
+  }
+  return value;
+}
+
+function formatJsonWithMasks(
+  body: Record<string, unknown> | null,
+  masks: FieldMask[],
+  rootKey: string,
+): string {
+  if (body === null) return '—';
+  const maskSet = new Set(masks.map((m) => m.path));
+  const masked = applyMasks(body, maskSet, rootKey) as Record<string, unknown>;
+  try {
+    return JSON.stringify(masked, null, 2);
+  } catch {
+    return String(masked);
+  }
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return 'Unexpected error';
+}
+
+// ============================================================================
+// Component
+// ============================================================================
+
+export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
+  projectId,
+  architectureId,
+  sessionId,
+  readOnly = false,
+}) => {
+  const [operations, setOperations] = useState<ApiBehaviourOperationDto[]>([]);
+  const [scenarios, setScenarios] = useState<ApiBehaviourScenarioDto[]>([]);
+  const [captures, setCaptures] = useState<ApiBehaviourCaptureDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Expanded capture rows -- inline scenario detail with redacted bodies.
+  const [expandedCaptureIds, setExpandedCaptureIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  // Per-row in-flight tracking so we can disable mid-PATCH.
+  const [actionInFlight, setActionInFlight] = useState<string | null>(null);
+
+  // Reject + notes form state -- captureId -> pending notes string.
+  const [rejectNotesDraft, setRejectNotesDraft] = useState<Record<string, string>>({});
+  const [openRejectFormFor, setOpenRejectFormFor] = useState<string | null>(null);
+
+  // Mask form state -- captureId -> pending path/label inputs.
+  const [maskPathDraft, setMaskPathDraft] = useState<Record<string, string>>({});
+  const [maskLabelDraft, setMaskLabelDraft] = useState<Record<string, string>>({});
+  const [openMaskFormFor, setOpenMaskFormFor] = useState<string | null>(null);
+
+  // Rename scenario state -- scenarioId -> pending name string.
+  const [renameDraft, setRenameDraft] = useState<Record<string, string>>({});
+  const [openRenameFormFor, setOpenRenameFormFor] = useState<string | null>(null);
+
+  // Save-as-baseline modal visibility.
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  // ---- Discovery context (Spec 2026-05-16 Task Group 4) ---------------
+  // The capture review panel fetches the migration discovery context once on
+  // mount so it can surface discovery-supported annotations alongside each
+  // scenario. The AMS aggregation DTO surfaces:
+  //   - `findingsSummary.countsByCategory` (presence of `runtime_usage`,
+  //     `missing_contract_detail`, `business_logic`, etc. at session level)
+  //   - `unresolvedDecisionTasks[]`
+  //   - `runtimeUsageSummary` / `databaseDiscoverySummary`
+  // It does NOT surface finding -> endpoint method/path links, so we cannot
+  // JOIN per-row at this layer. The annotations are rendered at session
+  // level (top-of-panel banner) plus a per-scenario `db_sample` badge that
+  // reads off `scenario.generation_source`, and a per-row sentinel when the
+  // session itself has zero findings.
+  const [discoveryCtx, setDiscoveryCtx] = useState<MigrationDiscoveryContext | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMigrationDiscoveryContext(projectId, {
+      currentArchitectureId: architectureId,
+      includeFindings: true,
+    })
+      .then((ctx) => {
+        if (!cancelled) setDiscoveryCtx(ctx);
+      })
+      .catch(() => {
+        // Fail-soft: leave discoveryCtx null; the panel falls back to the
+        // existing UI with no discovery-supported annotations.
+        if (!cancelled) setDiscoveryCtx(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, architectureId]);
+
+  const discoveryCategoryCounts = discoveryCtx?.findingsSummary?.countsByCategory ?? {};
+  const hasRuntimeUsageFindings =
+    (discoveryCtx?.runtimeUsageSummary?.runtimeFindingCount ?? 0) > 0 ||
+    (discoveryCategoryCounts.runtime_usage ?? 0) > 0;
+  const hasMissingContractDetail =
+    (discoveryCategoryCounts.missing_contract_detail ?? 0) > 0;
+  const unresolvedDecisionTaskCount =
+    (discoveryCtx?.unresolvedDecisionTasks ?? []).length;
+  const hasDbSampleHints =
+    (discoveryCtx?.databaseDiscoverySummary?.sampleDataHintCount ?? 0) > 0 ||
+    (discoveryCtx?.findingsSummary?.sampleDataHintCount ?? 0) > 0;
+  const totalFindings = discoveryCtx?.findingsSummary?.totalFindings ?? 0;
+  const sessionHasNoDiscoveryEvidence = discoveryCtx !== null && totalFindings === 0;
+
+  // ---- Initial load ----------------------------------------------------
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [ops, scens, caps] = await Promise.all([
+        listOperations(projectId, architectureId, sessionId),
+        listScenarios(projectId, architectureId, sessionId),
+        listCaptures(projectId, architectureId, sessionId),
+      ]);
+      // Coerce defensively: the list endpoints are typed `[]` but a 204 /
+      // empty / non-array body resolves to undefined; never put a non-array
+      // into state or the `group()` / `.filter` consumers crash.
+      setOperations(Array.isArray(ops) ? ops : []);
+      setScenarios(Array.isArray(scens) ? scens : []);
+      setCaptures(Array.isArray(caps) ? caps : []);
+      setError(null);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, architectureId, sessionId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  // ---- Derived state ---------------------------------------------------
+  const grouped = useMemo(
+    () => group(operations, scenarios, captures),
+    [operations, scenarios, captures],
+  );
+
+  const acceptedCount = useMemo(
+    () => captures.filter((c) => c.accepted === true).length,
+    [captures],
+  );
+
+  const operationsWithoutAccepted = useMemo(() => {
+    const accepted = new Set(
+      captures.filter((c) => c.accepted === true).map((c) => c.operation_id),
+    );
+    return operations.filter((o) => !accepted.has(o.id));
+  }, [operations, captures]);
+
+  // ---- Mutators --------------------------------------------------------
+
+  const handleAccept = useCallback(
+    async (capture: ApiBehaviourCaptureDto) => {
+      setActionInFlight(`accept:${capture.id}`);
+      try {
+        const updated = await updateCapture(projectId, architectureId, capture.id, {
+          accepted: true,
+          accepted_at: new Date().toISOString(),
+        });
+        setCaptures((prev) =>
+          prev.map((c) => (c.id === capture.id ? updated : c)),
+        );
+      } catch (err) {
+        setError(describeError(err));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [projectId, architectureId],
+  );
+
+  const handleRejectSubmit = useCallback(
+    async (capture: ApiBehaviourCaptureDto) => {
+      const notes = rejectNotesDraft[capture.id] ?? '';
+      setActionInFlight(`reject:${capture.id}`);
+      try {
+        const existing = parseReviewerNotes(capture.reviewer_notes);
+        const payload: ReviewerNotesPayload = {
+          text: notes,
+          masks: existing.masks,
+        };
+        const updated = await updateCapture(projectId, architectureId, capture.id, {
+          accepted: false,
+          accepted_at: null,
+          reviewer_notes: serialiseReviewerNotes(payload),
+        });
+        setCaptures((prev) =>
+          prev.map((c) => (c.id === capture.id ? updated : c)),
+        );
+        setOpenRejectFormFor(null);
+        setRejectNotesDraft((prev) => {
+          const next = { ...prev };
+          delete next[capture.id];
+          return next;
+        });
+      } catch (err) {
+        setError(describeError(err));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [projectId, architectureId, rejectNotesDraft],
+  );
+
+  const handleMaskSubmit = useCallback(
+    async (capture: ApiBehaviourCaptureDto) => {
+      const path = (maskPathDraft[capture.id] ?? '').trim();
+      const label = (maskLabelDraft[capture.id] ?? '').trim();
+      if (!path) return;
+      setActionInFlight(`mask:${capture.id}`);
+      try {
+        const existing = parseReviewerNotes(capture.reviewer_notes);
+        // De-dupe by path -- a second add with the same path replaces the
+        // label rather than stacking entries.
+        const otherMasks = existing.masks.filter((m) => m.path !== path);
+        const newMask: FieldMask = label ? { path, label } : { path };
+        const payload: ReviewerNotesPayload = {
+          text: existing.text,
+          masks: [...otherMasks, newMask],
+        };
+        const updated = await updateCapture(projectId, architectureId, capture.id, {
+          reviewer_notes: serialiseReviewerNotes(payload),
+        });
+        setCaptures((prev) =>
+          prev.map((c) => (c.id === capture.id ? updated : c)),
+        );
+        setOpenMaskFormFor(null);
+        setMaskPathDraft((prev) => {
+          const next = { ...prev };
+          delete next[capture.id];
+          return next;
+        });
+        setMaskLabelDraft((prev) => {
+          const next = { ...prev };
+          delete next[capture.id];
+          return next;
+        });
+      } catch (err) {
+        setError(describeError(err));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [projectId, architectureId, maskPathDraft, maskLabelDraft],
+  );
+
+  const handleRenameSubmit = useCallback(
+    async (scenario: ApiBehaviourScenarioDto) => {
+      const newName = (renameDraft[scenario.id] ?? '').trim();
+      if (!newName || newName === scenario.scenario_name) {
+        setOpenRenameFormFor(null);
+        return;
+      }
+      setActionInFlight(`rename:${scenario.id}`);
+      try {
+        const updated = await updateScenario(projectId, architectureId, scenario.id, {
+          scenario_name: newName,
+        });
+        setScenarios((prev) =>
+          prev.map((s) => (s.id === scenario.id ? updated : s)),
+        );
+        setOpenRenameFormFor(null);
+        setRenameDraft((prev) => {
+          const next = { ...prev };
+          delete next[scenario.id];
+          return next;
+        });
+      } catch (err) {
+        setError(describeError(err));
+      } finally {
+        setActionInFlight(null);
+      }
+    },
+    [projectId, architectureId, renameDraft],
+  );
+
+  const toggleExpanded = useCallback((captureId: string) => {
+    setExpandedCaptureIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(captureId)) next.delete(captureId);
+      else next.add(captureId);
+      return next;
+    });
+  }, []);
+
+  // ---- Render ----------------------------------------------------------
+
+  if (loading) {
+    return (
+      <div className={styles.panel} data-testid="capture-review-panel">
+        <div className={styles.emptyMessage}>Loading captured rows…</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={styles.panel} data-testid="capture-review-panel">
+        <div className={styles.errorBanner}>{error}</div>
+      </div>
+    );
+  }
+
+  if (grouped.length === 0) {
+    return (
+      <div className={styles.panel} data-testid="capture-review-panel">
+        <div className={styles.emptyMessage}>
+          No captured rows yet for this session.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.panel} data-testid="capture-review-panel">
+      <div className={styles.panelHeader}>
+        <h3>Captured behaviour ({captures.length})</h3>
+        <div className={styles.headerActions}>
+          <span
+            className={styles.acceptedTally}
+            data-testid="capture-review-accepted-count"
+          >
+            {acceptedCount} accepted
+          </span>
+          {!readOnly && acceptedCount > 0 && (
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => setSaveModalOpen(true)}
+              data-testid="capture-review-open-save-baseline"
+            >
+              Save as Baseline
+            </button>
+          )}
+        </div>
+      </div>
+
+      {discoveryCtx && (
+        <div
+          className={styles.discoveryBanner}
+          data-testid="capture-review-discovery-banner"
+        >
+          <span className={styles.discoveryBannerTitle}>Discovery context:</span>
+          {totalFindings > 0
+            ? `${totalFindings} finding${totalFindings === 1 ? '' : 's'} linked to this architecture`
+            : 'No discovery findings linked to this architecture'}
+          <div className={styles.discoveryBadgeRow}>
+            {hasRuntimeUsageFindings && (
+              <span
+                className={styles.discoveryBadge}
+                data-testid="capture-review-discovery-runtime-usage-badge"
+                title="Endpoint prioritised due to runtime usage findings"
+              >
+                Endpoint prioritised due to runtime usage
+              </span>
+            )}
+            {hasDbSampleHints && (
+              <span
+                className={`${styles.discoveryBadge} ${styles.discoveryBadgeInfo}`}
+                data-testid="capture-review-discovery-db-sample-badge"
+                title="Discovery surfaced DB sample-data hints for this architecture"
+              >
+                Sample data hints available
+              </span>
+            )}
+            {hasMissingContractDetail && (
+              <span
+                className={`${styles.discoveryBadge} ${styles.discoveryBadgeWarning}`}
+                data-testid="capture-review-discovery-missing-contract-detail"
+                title="Discovery flagged missing contract detail on one or more endpoints"
+              >
+                Warning: missing contract detail
+              </span>
+            )}
+            {unresolvedDecisionTaskCount > 0 && (
+              <span
+                className={`${styles.discoveryBadge} ${styles.discoveryBadgeWarning}`}
+                data-testid="capture-review-discovery-decision-task-warning"
+                title="Unresolved discovery decision tasks may affect endpoint behaviour"
+              >
+                Warning: {unresolvedDecisionTaskCount} unresolved decision task
+                {unresolvedDecisionTaskCount === 1 ? '' : 's'}
+              </span>
+            )}
+            {sessionHasNoDiscoveryEvidence && (
+              <span
+                className={`${styles.discoveryBadge} ${styles.discoveryBadgeWarning}`}
+                data-testid="capture-review-discovery-no-evidence"
+                title="No discovery findings linked to this architecture; LLM had no discovery context to draw on"
+              >
+                Warning: no discovery evidence linked
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <table className={styles.reviewTable} data-testid="capture-review-table">
+        <thead>
+          <tr>
+            <th>Operation</th>
+            <th>Scenario</th>
+            <th>Status</th>
+            <th>Attempt</th>
+            <th>Reviewer</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grouped.map(({ operation, scenarios: scenarioRows }) =>
+            scenarioRows.map(({ scenario, captures: capRows }) =>
+              capRows.map((cap) => {
+                const expanded = expandedCaptureIds.has(cap.id);
+                const notesPayload = parseReviewerNotes(cap.reviewer_notes);
+                const acceptedLabel =
+                  cap.accepted === true ? 'accepted' : cap.accepted === false ? 'rejected' : '—';
+                return (
+                  <React.Fragment key={cap.id}>
+                    <tr
+                      data-testid="capture-review-row"
+                      data-capture-id={cap.id}
+                      data-operation-id={operation.id}
+                      data-scenario-id={scenario.id}
+                      data-accepted={String(cap.accepted ?? '')}
+                    >
+                      <td>{operationLabel(operation)}</td>
+                      <td>
+                        {openRenameFormFor === scenario.id && !readOnly ? (
+                          <span className={styles.inlineForm}>
+                            <input
+                              type="text"
+                              value={renameDraft[scenario.id] ?? scenario.scenario_name ?? ''}
+                              onChange={(e) =>
+                                setRenameDraft((prev) => ({
+                                  ...prev,
+                                  [scenario.id]: e.target.value,
+                                }))
+                              }
+                              data-testid="capture-review-rename-input"
+                            />
+                            <button
+                              type="button"
+                              className={styles.smallButton}
+                              onClick={() => handleRenameSubmit(scenario)}
+                              disabled={actionInFlight !== null}
+                              data-testid="capture-review-rename-submit"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.smallButton}
+                              onClick={() => setOpenRenameFormFor(null)}
+                              disabled={actionInFlight !== null}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <>
+                            {scenario.scenario_name ?? '(unnamed)'}
+                            {!readOnly && (
+                              <button
+                                type="button"
+                                className={styles.linkButton}
+                                onClick={() => {
+                                  setOpenRenameFormFor(scenario.id);
+                                  setRenameDraft((prev) => ({
+                                    ...prev,
+                                    [scenario.id]: scenario.scenario_name ?? '',
+                                  }));
+                                }}
+                                disabled={actionInFlight !== null}
+                                data-testid="capture-review-rename-button"
+                              >
+                                rename
+                              </button>
+                            )}
+                            {/* Per-scenario discovery-supported badges
+                                (Spec 2026-05-16 Task Group 4). The DB
+                                sample-hint badge reads directly off
+                                `scenario.generation_source`, which is
+                                durably set by the orchestrator when a
+                                scenario is generated from a DB sample
+                                tool call. */}
+                            {scenario.generation_source === 'db_sample' && (
+                              <span
+                                className={`${styles.discoveryBadge} ${styles.discoveryBadgeInfo}`}
+                                data-testid="capture-review-scenario-db-sample-badge"
+                                title="Scenario generated using DB sample hint"
+                              >
+                                DB sample hint
+                              </span>
+                            )}
+                            {sessionHasNoDiscoveryEvidence && (
+                              <span
+                                className={styles.discoveryRowNote}
+                                data-testid="capture-review-row-no-discovery-evidence"
+                                title="No discovery findings were linked to this architecture when the capture session ran"
+                              >
+                                no discovery evidence linked
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td>
+                        {cap.response_status ?? (cap.error_type ? `err:${cap.error_type}` : '—')}
+                      </td>
+                      <td>{cap.attempt_number ?? '—'}</td>
+                      <td data-testid="capture-review-accepted-cell">{acceptedLabel}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className={styles.linkButton}
+                          onClick={() => toggleExpanded(cap.id)}
+                          data-testid="capture-review-expand-toggle"
+                        >
+                          {expanded ? 'Hide' : 'Show'} detail
+                        </button>
+                        {!readOnly && (
+                          <>
+                            <button
+                              type="button"
+                              className={styles.smallButton}
+                              onClick={() => handleAccept(cap)}
+                              disabled={actionInFlight !== null}
+                              data-testid="capture-review-accept-button"
+                            >
+                              Accept
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.smallButton}
+                              onClick={() => {
+                                setOpenRejectFormFor(cap.id);
+                                setRejectNotesDraft((prev) => ({
+                                  ...prev,
+                                  [cap.id]: notesPayload.text,
+                                }));
+                              }}
+                              disabled={actionInFlight !== null}
+                              data-testid="capture-review-reject-button"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              className={styles.smallButton}
+                              onClick={() => {
+                                setOpenMaskFormFor(cap.id);
+                                setMaskPathDraft((prev) => ({
+                                  ...prev,
+                                  [cap.id]: '',
+                                }));
+                                setMaskLabelDraft((prev) => ({
+                                  ...prev,
+                                  [cap.id]: '',
+                                }));
+                              }}
+                              disabled={actionInFlight !== null}
+                              data-testid="capture-review-mask-button"
+                            >
+                              Mask field
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Reject + notes inline form */}
+                    {openRejectFormFor === cap.id && !readOnly && (
+                      <tr data-testid="capture-review-reject-form-row">
+                        <td colSpan={6}>
+                          <div className={styles.inlineForm}>
+                            <label>
+                              Reviewer notes:
+                              <textarea
+                                value={rejectNotesDraft[cap.id] ?? ''}
+                                onChange={(e) =>
+                                  setRejectNotesDraft((prev) => ({
+                                    ...prev,
+                                    [cap.id]: e.target.value,
+                                  }))
+                                }
+                                rows={3}
+                                data-testid="capture-review-reject-notes-input"
+                              />
+                            </label>
+                            <div className={styles.cta}>
+                              <button
+                                type="button"
+                                className={styles.smallButton}
+                                onClick={() => setOpenRejectFormFor(null)}
+                                disabled={actionInFlight !== null}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.smallButton}
+                                onClick={() => handleRejectSubmit(cap)}
+                                disabled={actionInFlight !== null}
+                                data-testid="capture-review-reject-submit"
+                              >
+                                Confirm reject
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Mask field inline form */}
+                    {openMaskFormFor === cap.id && !readOnly && (
+                      <tr data-testid="capture-review-mask-form-row">
+                        <td colSpan={6}>
+                          <div className={styles.inlineForm}>
+                            <label>
+                              Field path (e.g. response.body.user.email):
+                              <input
+                                type="text"
+                                value={maskPathDraft[cap.id] ?? ''}
+                                onChange={(e) =>
+                                  setMaskPathDraft((prev) => ({
+                                    ...prev,
+                                    [cap.id]: e.target.value,
+                                  }))
+                                }
+                                data-testid="capture-review-mask-path-input"
+                              />
+                            </label>
+                            <label>
+                              Optional label:
+                              <input
+                                type="text"
+                                value={maskLabelDraft[cap.id] ?? ''}
+                                onChange={(e) =>
+                                  setMaskLabelDraft((prev) => ({
+                                    ...prev,
+                                    [cap.id]: e.target.value,
+                                  }))
+                                }
+                                data-testid="capture-review-mask-label-input"
+                              />
+                            </label>
+                            <div className={styles.cta}>
+                              <button
+                                type="button"
+                                className={styles.smallButton}
+                                onClick={() => setOpenMaskFormFor(null)}
+                                disabled={actionInFlight !== null}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.smallButton}
+                                onClick={() => handleMaskSubmit(cap)}
+                                disabled={actionInFlight !== null}
+                                data-testid="capture-review-mask-submit"
+                              >
+                                Apply mask
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Inline expansion: redacted request + response with masks */}
+                    {expanded && (
+                      <tr data-testid="capture-review-expanded-row">
+                        <td colSpan={6}>
+                          <div className={styles.expandedBlock}>
+                            <div className={styles.expandedSection}>
+                              <strong>Request:</strong>
+                              <pre
+                                className={styles.codeBlock}
+                                data-testid="capture-review-expanded-request"
+                              >
+                                {formatJsonWithMasks(
+                                  cap.request_body_json,
+                                  notesPayload.masks,
+                                  'request.body',
+                                )}
+                              </pre>
+                            </div>
+                            <div className={styles.expandedSection}>
+                              <strong>Response (status {cap.response_status ?? '—'}):</strong>
+                              <pre
+                                className={styles.codeBlock}
+                                data-testid="capture-review-expanded-response"
+                              >
+                                {formatJsonWithMasks(
+                                  cap.response_body_json,
+                                  notesPayload.masks,
+                                  'response.body',
+                                )}
+                              </pre>
+                            </div>
+                            {notesPayload.text && (
+                              <div className={styles.expandedSection}>
+                                <strong>Reviewer notes:</strong>
+                                <pre className={styles.codeBlock}>{notesPayload.text}</pre>
+                              </div>
+                            )}
+                            {notesPayload.masks.length > 0 && (
+                              <div
+                                className={styles.expandedSection}
+                                data-testid="capture-review-mask-summary"
+                              >
+                                <strong>Masked fields:</strong>
+                                <ul>
+                                  {notesPayload.masks.map((m) => (
+                                    <li key={m.path}>
+                                      {m.path}
+                                      {m.label ? ` (${m.label})` : ''}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              }),
+            ),
+          )}
+        </tbody>
+      </table>
+
+      {saveModalOpen && (
+        <SaveAsBaselineModal
+          projectId={projectId}
+          architectureId={architectureId}
+          sessionId={sessionId}
+          captures={captures}
+          operations={operations}
+          scenarios={scenarios}
+          operationsWithoutAccepted={operationsWithoutAccepted}
+          onClose={() => setSaveModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+export default CaptureReviewPanel;

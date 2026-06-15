@@ -1,0 +1,29 @@
+name: mediawiki
+version: 1
+language: php
+
+detection:
+  files_match:
+    - 'includes/api/ApiBase.php'
+  manifest_contains:
+    - {file: 'composer.json', substring: 'mediawiki/'}
+
+extract:
+  - id: api_action_classes
+    query: method_decls
+    file_filter: all
+    name_pattern: '^execute$'
+    class_pattern: '^Api[A-Z]\w*$'
+    path_from: class_name_strip
+    strip_prefix: 'Api'
+    verb: ANY
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: mediawiki
+
+conflict_rules: []
+known_pitfalls:
+  - "Each Api*.php that defines execute() is an API action — name = class name minus 'Api'"
+  - "Currently emits /execute path; class-name-based path resolution not implemented"

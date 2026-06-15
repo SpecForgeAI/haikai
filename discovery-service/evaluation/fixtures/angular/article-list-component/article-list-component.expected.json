@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "ArticleListComponent",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

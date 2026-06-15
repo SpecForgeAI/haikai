@@ -1,0 +1,93 @@
+# file	kind	name	scope	signature	line	flags
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	method	AbstractDocument	AbstractDocument	(Map<String, Object> properties)	39	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	class	AbstractDocument	-	-	35	extends:Document
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	method	buildStringRepresentation	AbstractDocument	()	71	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	builder	-	-	72	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	method	children	AbstractDocument	(String key, Function<Map<String, Object>, T> childConstructor)	56	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	module	com.iluwatar.abstractdocument	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	currentPropertyIndex	-	-	82	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	documentProperties	-	-	76	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	documentProperties	AbstractDocument	-	37	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	method	get	AbstractDocument	(String key)	51	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	key	-	-	86	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	numProperties	-	-	79	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	method	put	AbstractDocument	(String key, Object value)	45	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	method	toString	AbstractDocument	()	67	-
+src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	variable	value	-	-	87	-
+src/main/java/com/iluwatar/abstractdocument/App.java	class	App	-	-	42	-
+src/main/java/com/iluwatar/abstractdocument/App.java	variable	car	-	-	73	-
+src/main/java/com/iluwatar/abstractdocument/App.java	variable	carProperties	-	-	64	-
+src/main/java/com/iluwatar/abstractdocument/App.java	module	com.iluwatar.abstractdocument	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/App.java	variable	doorProperties	-	-	58	-
+src/main/java/com/iluwatar/abstractdocument/App.java	method	main	App	(String[] args)	49	-
+src/main/java/com/iluwatar/abstractdocument/App.java	variable	wheelProperties	-	-	52	-
+src/main/java/com/iluwatar/abstractdocument/Document.java	interface	Document	-	-	32	-
+src/main/java/com/iluwatar/abstractdocument/Document.java	method	children	Document	(String key, Function<Map<String, Object>, T> constructor)	58	-
+src/main/java/com/iluwatar/abstractdocument/Document.java	module	com.iluwatar.abstractdocument	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/Document.java	method	get	Document	(String key)	49	-
+src/main/java/com/iluwatar/abstractdocument/Document.java	method	put	Document	(String key, Object value)	41	-
+src/main/java/com/iluwatar/abstractdocument/domain/Car.java	method	Car	Car	(Map<String, Object> properties)	33	-
+src/main/java/com/iluwatar/abstractdocument/domain/Car.java	class	Car	-	-	31	extends:AbstractDocument,HasModel,HasPrice,HasParts
+src/main/java/com/iluwatar/abstractdocument/domain/Car.java	module	com.iluwatar.abstractdocument.domain	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	interface	HasModel	-	-	32	extends:Document
+src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	module	com.iluwatar.abstractdocument.domain	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	method	getModel	HasModel	()	34	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	interface	HasParts	-	-	32	extends:Document
+src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	module	com.iluwatar.abstractdocument.domain	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	method	getParts	HasParts	()	34	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	interface	HasPrice	-	-	32	extends:Document
+src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	module	com.iluwatar.abstractdocument.domain	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	method	getPrice	HasPrice	()	34	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	interface	HasType	-	-	32	extends:Document
+src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	module	com.iluwatar.abstractdocument.domain	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	method	getType	HasType	()	34	-
+src/main/java/com/iluwatar/abstractdocument/domain/Part.java	method	Part	Part	(Map<String, Object> properties)	33	-
+src/main/java/com/iluwatar/abstractdocument/domain/Part.java	class	Part	-	-	31	extends:AbstractDocument,HasType,HasModel,HasPrice
+src/main/java/com/iluwatar/abstractdocument/domain/Part.java	module	com.iluwatar.abstractdocument.domain	-	-	25	-
+src/main/java/com/iluwatar/abstractdocument/domain/enums/Property.java	unknown	MODEL	Property	-	32	-
+src/main/java/com/iluwatar/abstractdocument/domain/enums/Property.java	unknown	PARTS	Property	-	29	-
+src/main/java/com/iluwatar/abstractdocument/domain/enums/Property.java	unknown	PRICE	Property	-	31	-
+src/main/java/com/iluwatar/abstractdocument/domain/enums/Property.java	class	Property	-	-	28	-
+src/main/java/com/iluwatar/abstractdocument/domain/enums/Property.java	unknown	TYPE	Property	-	30	-
+src/main/java/com/iluwatar/abstractdocument/domain/enums/Property.java	module	com.iluwatar.abstractdocument.domain.enums	-	-	25	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	class	AbstractDocumentTest	-	-	35	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	DocumentImplementation	AbstractDocumentTest.DocumentImplementation	(Map<String, Object> properties)	42	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	class	DocumentImplementation	AbstractDocumentTest	-	40	extends:AbstractDocument
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	KEY	AbstractDocumentTest	-	37	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	VALUE	AbstractDocumentTest	-	38	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	children	-	-	57	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	children	-	-	68	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	childrenStream	-	-	61	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	module	com.iluwatar.abstractdocument	-	-	25	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	document	-	-	76	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	document	AbstractDocumentTest	-	47	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	invalidProperties	-	-	83	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	key	-	-	114	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	nestedDocument	-	-	98	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	originalValue	-	-	115	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	props	-	-	75	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	retrievedNestedDocument	-	-	104	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldHandleExceptionDuringConstruction	AbstractDocumentTest	()	82	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldIncludePropsInToString	AbstractDocumentTest	()	74	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldPutAndGetNestedDocument	AbstractDocumentTest	()	96	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldPutAndGetValue	AbstractDocumentTest	()	50	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldRetrieveChildren	AbstractDocumentTest	()	56	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldRetrieveEmptyStreamForNonExistingChildren	AbstractDocumentTest	()	67	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	method	shouldUpdateExistingValue	AbstractDocumentTest	()	112	-
+src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	variable	updatedValue	-	-	116	-
+src/test/java/com/iluwatar/abstractdocument/AppTest.java	class	AppTest	-	-	32	-
+src/test/java/com/iluwatar/abstractdocument/AppTest.java	module	com.iluwatar.abstractdocument	-	-	25	-
+src/test/java/com/iluwatar/abstractdocument/AppTest.java	method	shouldExecuteAppWithoutException	AppTest	()	41	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	class	DomainTest	-	-	37	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	TEST_CAR_MODEL	DomainTest	-	43	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	TEST_CAR_PRICE	DomainTest	-	44	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	TEST_PART_MODEL	DomainTest	-	40	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	TEST_PART_PRICE	DomainTest	-	41	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	TEST_PART_TYPE	DomainTest	-	39	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	car	-	-	66	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	carProperties	-	-	61	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	module	com.iluwatar.abstractdocument	-	-	25	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	part	-	-	53	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	variable	partProperties	-	-	48	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	method	shouldConstructCar	DomainTest	()	60	-
+src/test/java/com/iluwatar/abstractdocument/DomainTest.java	method	shouldConstructPart	DomainTest	()	47	-

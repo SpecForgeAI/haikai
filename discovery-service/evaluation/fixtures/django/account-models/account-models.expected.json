@@ -1,0 +1,115 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "CustomerNote",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "CustomerNote \u2192 settings.AUTH_USER_MODEL",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "date",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "content",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "is_public",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "CustomerNote \u2192 settings.AUTH_USER_MODEL",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "CustomerEvent",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "date",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "type",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "CustomerEvent \u2192 order.Order",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "parameters",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "CustomerEvent \u2192 User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "CustomerEvent \u2192 App",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "StaffNotificationRecipient",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "StaffNotificationRecipient \u2192 User",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "staff_email",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "active",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Group",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "name",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Group \u2192 Permission",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "restricted_access_to_channels",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Group \u2192 channel.Channel",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

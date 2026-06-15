@@ -1,0 +1,14 @@
+name: rails-with-plugins
+version: 1
+
+detection:
+  files_match:
+    - 'plugins/*/config/routes.rb'
+    - 'engines/*/config/routes.rb'
+
+compose:
+  - rails
+
+known_pitfalls:
+  - "Rails engines/plugins mount their own routes.rb — we parse all of them"
+  - "Plugin route prefixes come from main routes.rb `mount Foo::Engine => '/foo'` calls — NOT yet resolved"

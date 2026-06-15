@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "CategoriesController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /categories",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /categories/:id",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /categories",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "PUT /categories/:id",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "DELETE /categories/:id",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

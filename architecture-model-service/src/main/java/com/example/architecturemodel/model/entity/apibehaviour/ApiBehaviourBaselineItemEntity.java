@@ -1,0 +1,129 @@
+package com.example.architecturemodel.model.entity.apibehaviour;
+
+import io.hypersistence.utils.hibernate.type.json.JsonType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.annotations.Type;
+
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Per-baseline frozen capture row.
+ *
+ * <p>Each row freezes one accepted (capture, operation, scenario) triple as
+ * part of a saved baseline. Rather than referencing the live capture row, the
+ * request/response bodies are copied into {@code request_json} and
+ * {@code response_json} so a baseline remains a stable artefact even if the
+ * source session is later deleted.</p>
+ *
+ * <p>{@code capture_id}, {@code scenario_id}, {@code operation_id} are
+ * logical references for traceability only; cascade flows from the parent
+ * baseline.</p>
+ *
+ * <p><b>{@code response_status}</b> is <b>boxed</b> {@link Integer}: the
+ * column is {@code NOT NULL} at the DB level (a baseline item only freezes a
+ * capture that produced a response) but PATCH on the row should still
+ * preserve {@code null} when omitted (see project memory note
+ * {@code project_primitive_double_dto_overwrite.md}).</p>
+ *
+ * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 1</p>
+ */
+@Entity
+@Table(
+    name = "api_behaviour_baseline_items",
+    indexes = {
+        @Index(
+            name = "idx_api_behaviour_baseline_item_baseline",
+            columnList = "baseline_id"
+        )
+    }
+)
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ApiBehaviourBaselineItemEntity {
+
+    @Id
+    @Column(name = "id", nullable = false)
+    private UUID id;
+
+    @Column(name = "baseline_id", nullable = false)
+    private UUID baselineId;
+
+    @Column(name = "capture_id", nullable = false)
+    private UUID captureId;
+
+    @Column(name = "operation_id", nullable = false)
+    private UUID operationId;
+
+    @Column(name = "scenario_id", nullable = false)
+    private UUID scenarioId;
+
+    @Column(name = "method", nullable = false)
+    private String method;
+
+    @Column(name = "path", nullable = false)
+    private String path;
+
+    @Column(name = "scenario_name", nullable = false)
+    private String scenarioName;
+
+    /**
+     * Pre-redacted request body snapshot copied from the source capture row
+     * at save-time.
+     */
+    @Type(JsonType.class)
+    @Column(name = "request_json", columnDefinition = "jsonb", nullable = false)
+    private Map<String, Object> requestJson;
+
+    /** NOT NULL at DB level, but boxed {@link Integer} for PATCH safety. */
+    @Column(name = "response_status", nullable = false)
+    private Integer responseStatus;
+
+    /**
+     * Pre-redacted response body snapshot copied from the source capture row
+     * at save-time.
+     */
+    @Type(JsonType.class)
+    @Column(name = "response_json", columnDefinition = "jsonb", nullable = false)
+    private Map<String, Object> responseJson;
+
+    @Column(name = "business_notes")
+    private String businessNotes;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        Instant now = Instant.now();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = Instant.now();
+    }
+}

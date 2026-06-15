@@ -1,0 +1,14 @@
+# child	rel	parent	file
+IntegrationEventContext	extends	JsonSerializerContext	src/Basket.API/Extensions/Extensions.cs
+BasketItem	extends	IValidatableObject	src/Basket.API/Model/BasketItem.cs
+BasketSerializationContext	extends	JsonSerializerContext	src/Basket.API/Repositories/RedisBasketRepository.cs
+CatalogContext	extends	DbContext	src/Catalog.API/Infrastructure/CatalogContext.cs
+CatalogBrandEntityTypeConfiguration	extends	IEntityTypeConfiguration	src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs
+CatalogItemEntityTypeConfiguration	extends	IEntityTypeConfiguration	src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs
+CatalogTypeEntityTypeConfiguration	extends	IEntityTypeConfiguration	src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs
+CatalogDomainException	extends	Exception	src/Catalog.API/Infrastructure/Exceptions/CatalogDomainException.cs
+Initial	extends	Migration	src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs
+RemoveHiLoAndIndexCatalogName	extends	Migration	src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs
+Outbox	extends	Migration	src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs
+CatalogContextModelSnapshot	extends	ModelSnapshot	src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs
+CatalogAI	extends	ICatalogAI	src/Catalog.API/Services/CatalogAI.cs

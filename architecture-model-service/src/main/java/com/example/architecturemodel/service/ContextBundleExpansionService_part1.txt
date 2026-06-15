@@ -1,0 +1,34 @@
+package com.example.architecturemodel.service;
+
+import com.example.architecturemodel.exception.ResourceNotFoundException;
+import com.example.architecturemodel.model.dto.DiagramBundleSelection;
+import com.example.architecturemodel.model.dto.EntityBundleSelection;
+import com.example.architecturemodel.model.dto.ExpandResolveResponseDto;
+import com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary;
+import com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary;
+import com.example.architecturemodel.model.dto.relationship.RelationshipEndpoint;
+import com.example.architecturemodel.model.dto.relationship.ResolvedRelationshipDto;
+import com.example.architecturemodel.model.entity.EndpointEntity;
+import com.example.architecturemodel.model.entity.InterfaceEntity;
+import com.example.architecturemodel.model.entity.InterfaceLogicalEntityEntity;
+import com.example.architecturemodel.model.entity.LogicalDataEntityRelationshipEntity;
+import com.example.architecturemodel.model.entity.ModelFileEntity;
+import com.example.architecturemodel.model.entity.PhysicalDataAttributeEntity;
+import com.example.architecturemodel.model.entity.ServiceEntity;
+import com.example.architecturemodel.repository.ModelFileRepository;
+import com.example.architecturemodel.repository.diagram.DiagramNodeRepository;
+import com.example.architecturemodel.repository.diagram.DiagramRepository;
+import com.example.architecturemodel.repository.entity.EndpointRepository;
+import com.example.architecturemodel.repository.entity.InterfaceRepository;
+import com.example.architecturemodel.repository.entity.PhysicalDataAttributeRepository;
+import com.example.architecturemodel.repository.entity.ServiceRepository;
+import com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository;
+import com.example.architecturemodel.repository.relationship.LogicalDataEntityRelationshipRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+import java.util.stream.Collectors;

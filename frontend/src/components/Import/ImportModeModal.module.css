@@ -1,0 +1,202 @@
+/**
+ * ImportModeModal Styles
+ *
+ * Spec 2026-01-11: Redesign Import as XLSX for Architecture Meta-Model
+ *
+ * Styling for the Import Mode Modal component.
+ * Follows the visual style of CreateProjectModal.module.css for consistency.
+ */
+
+/* Overlay - same as CreateProjectModal */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - similar to CreateProjectModal but wider for two cards */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 600px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header - same as CreateProjectModal */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+/* Content area */
+.content {
+  padding: 20px;
+}
+
+/* File info */
+.fileInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.fileLabel {
+  font-size: 13px;
+  color: #666;
+}
+
+.fileName {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  word-break: break-all;
+}
+
+.description {
+  font-size: 14px;
+  color: #555;
+  margin: 0 0 20px 0;
+  line-height: 1.5;
+}
+
+/* Mode options container */
+.modeOptions {
+  display: flex;
+  gap: 16px;
+}
+
+/* Mode card */
+.modeCard {
+  flex: 1;
+  padding: 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+}
+
+.modeCard:hover {
+  border-color: #1976D2;
+  background: #f5faff;
+}
+
+.modeTitle {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.modeDescription {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+  flex-grow: 1;
+}
+
+/* Append button - secondary style */
+.appendButton {
+  width: 100%;
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 10px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.appendButton:hover {
+  background: #e8e8e8;
+  border-color: #bbb;
+}
+
+/* Overwrite button - primary style */
+.overwriteButton {
+  width: 100%;
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.overwriteButton:hover {
+  background: #1565C0;
+}
+
+/* Footer - similar to CreateProjectModal */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: #e8e8e8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 500px) {
+  .modeOptions {
+    flex-direction: column;
+  }
+}

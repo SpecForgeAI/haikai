@@ -1,0 +1,394 @@
+/**
+ * PackageSetsView.module.css
+ *
+ * Styles for the Package Sets View component.
+ * Uses a master-detail layout with package sets grid on left/top
+ * and packages detail panel on right/bottom.
+ *
+ * Spec: 2026-01-06-package-sets-screen
+ * Spec: 2026-01-06-create-package-set-modal (Task Group 9.6)
+ * Spec: 2026-01-06-clone-package-set-modal (Task Group 2)
+ * Spec: 2026-01-06-package-set-standards-import (Task Group 5)
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 16px;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.masterDetailContainer {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Master Panel - Package Sets Grid */
+.masterPanel {
+  flex: 1;
+  min-width: 300px;
+  max-width: 50%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+}
+
+/* Task Group 9.6: Updated masterHeader with flexbox for title and button */
+.masterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.masterHeaderTitle {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+/* Package Set Standards Import Task Group 5.4: Header buttons container */
+.headerButtons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Task Group 9.6: Create Package Set button styling */
+.createButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.createButton:hover {
+  background: #1565C0;
+}
+
+.createButton:active {
+  background: #0D47A1;
+}
+
+/* Package Set Standards Import Task Group 5.4: Import button styling */
+.importButton {
+  background: #43A047;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.importButton:hover {
+  background: #388E3C;
+}
+
+.importButton:active {
+  background: #2E7D32;
+}
+
+.importButton:disabled {
+  background: #A5D6A7;
+  cursor: not-allowed;
+}
+
+/* Package Set Standards Import Task Group 5.5: Import status bar */
+.importStatus {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #E3F2FD;
+  border: 1px solid #BBDEFB;
+}
+
+.importStatusSuccess {
+  color: #1B5E20;
+}
+
+.importStatusError {
+  color: #C62828;
+}
+
+.importStatusInfo {
+  color: #1565C0;
+}
+
+/* Package Set Standards Import Task Group 5.5: Import error display */
+.importError {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #FFEBEE;
+  border: 1px solid #FFCDD2;
+  color: #C62828;
+}
+
+/* Package Set Standards Import Task Group 5.5: Standard source badge */
+.standardSourceBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #E8F5E9;
+  color: #2E7D32;
+  border: 1px solid #A5D6A7;
+}
+
+.masterContent {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Table Styles */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 10px 12px;
+  background: #f9f9f9;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  color: #555;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+}
+
+.table tbody tr {
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.table tbody tr:hover {
+  background-color: #f5f5f5;
+}
+
+.table tbody tr.selected {
+  background-color: #e3f2fd;
+}
+
+.table tbody tr.selected:hover {
+  background-color: #bbdefb;
+}
+
+/* Column Widths */
+.nameColumn {
+  width: auto;
+}
+
+.countColumn {
+  width: 120px;
+  text-align: right;
+}
+
+.countColumnHeader {
+  text-align: right !important;
+}
+
+/* Clone Package Set Modal Task Group 2.2: Actions Column */
+.actionsColumn {
+  width: 80px;
+  text-align: center;
+}
+
+.actionsColumnHeader {
+  text-align: center !important;
+}
+
+/* Clone Package Set Modal Task Group 2.2: Clone Button Styling */
+.cloneButton {
+  background: transparent;
+  border: 1px solid #1976D2;
+  color: #1976D2;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 28px;
+}
+
+.cloneButton:hover {
+  background: #1976D2;
+  color: white;
+}
+
+.cloneButton:active {
+  background: #1565C0;
+  border-color: #1565C0;
+  color: white;
+}
+
+.cloneButton:focus {
+  outline: 2px solid #90CAF9;
+  outline-offset: 1px;
+}
+
+/* Detail Panel - Packages Table */
+.detailPanel {
+  flex: 1;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.detailHeader {
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.detailTitle {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+  margin: 0;
+}
+
+.detailSubtitle {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+.detailContent {
+  flex: 1;
+  overflow: auto;
+}
+
+/* Packages Table */
+.packagesTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.packagesTable th {
+  text-align: left;
+  padding: 10px 12px;
+  background: #f9f9f9;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  color: #555;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.packagesTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+}
+
+.orderColumn {
+  width: 60px;
+  text-align: center;
+}
+
+.orderColumnHeader {
+  text-align: center !important;
+}
+
+.purposeColumn {
+  color: #666;
+  font-style: italic;
+}
+
+/* Empty States */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.emptyStateIcon {
+  font-size: 48px;
+  color: #ccc;
+  margin-bottom: 16px;
+}
+
+.emptyStateText {
+  font-size: 14px;
+  color: #888;
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+/* No Selection State */
+.noSelectionState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px 20px;
+  text-align: center;
+  background: #fafafa;
+}
+
+.noSelectionText {
+  font-size: 14px;
+  color: #888;
+}
+
+/* Responsive Layout */
+@media (max-width: 800px) {
+  .masterDetailContainer {
+    flex-direction: column;
+  }
+
+  .masterPanel {
+    max-width: 100%;
+    max-height: 40%;
+  }
+
+  .detailPanel {
+    min-height: 200px;
+  }
+}

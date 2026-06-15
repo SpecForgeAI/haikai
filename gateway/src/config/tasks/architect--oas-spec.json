@@ -1,0 +1,48 @@
+{
+  "id": "architect--oas-spec",
+  "personaId": "architect",
+  "menuLabel": "Interface Specification",
+  "description": "Guides the user through generating an OpenAPI specification for a selected architecture interface, using the architecture meta-model context.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/architect.oas-spec.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "interface_selection",
+          "endpoint_review",
+          "schema_and_models",
+          "authentication_and_errors",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": [],
+  "persistence": "panel",
+  "artifacts": [
+    {
+      "artifactId": "oas-spec",
+      "filename": "OAS-SPEC",
+      "tool": "save_markdown_artifact",
+      "description": "OpenAPI specification for an architecture interface"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["panel"],
+  "saveTargetResolution": "derived-from-context"
+}

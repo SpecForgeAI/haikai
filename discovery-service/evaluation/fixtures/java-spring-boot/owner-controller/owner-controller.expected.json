@@ -1,0 +1,45 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "OwnerController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /owners/new",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /owners/new",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /owners/find",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /owners",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /owners/{ownerId}/edit",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /owners/{ownerId}/edit",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /owners/{ownerId}",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "product-manager",
+  "displayName": "Product Manager",
+  "color": "#00897B",
+  "identityPromptRef": "prompts/product-manager.identity.md",
+  "tasks": [
+    "product-manager--define-product",
+    "product-manager--roadmap",
+    "product-manager--implement-support",
+    "product-manager--backlog",
+    "product-manager--definition-of-done"
+  ],
+  "menuLabel": "Hi, what can I help you with?"
+}

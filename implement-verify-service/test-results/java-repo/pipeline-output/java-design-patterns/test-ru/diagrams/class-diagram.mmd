@@ -1,0 +1,159 @@
+classDiagram
+    class AbstractDocument {
+        +AbstractDocument(Map<String, Object> properties)
+        +buildStringRepresentation()
+        +children(String key, Function<Map<String, Object>, T> childConstructor)
+        +documentProperties
+        +get(String key)
+        +put(String key, Object value)
+        +toString()
+    }
+    class App {
+        +main(String[] args)
+        +createKingdom(final Kingdom.FactoryMaker.KingdomType kingdomType)
+        +kingdom
+        +main(String[] args)
+        +run()
+    }
+    class Car {
+        +Car(Map<String, Object> properties)
+    }
+    class Part {
+        +Part(Map<String, Object> properties)
+    }
+    class Property {
+    }
+    class AbstractDocumentTest {
+        +KEY
+        +VALUE
+        +document
+        +shouldHandleExceptionDuringConstruction()
+        +shouldIncludePropsInToString()
+        +shouldPutAndGetNestedDocument()
+        +shouldPutAndGetValue()
+        +shouldRetrieveChildren()
+        +shouldRetrieveEmptyStreamForNonExistingChildren()
+        +shouldUpdateExistingValue()
+    }
+    class DocumentImplementation {
+    }
+    class AppTest {
+        +shouldExecuteAppWithoutException()
+        +shouldExecuteApplicationWithoutException()
+    }
+    class DomainTest {
+        +TEST_CAR_MODEL
+        +TEST_CAR_PRICE
+        +TEST_PART_MODEL
+        +TEST_PART_PRICE
+        +TEST_PART_TYPE
+        +shouldConstructCar()
+        +shouldConstructPart()
+    }
+    class ElfArmy {
+        +DESCRIPTION
+        +getDescription()
+    }
+    class ElfCastle {
+        +DESCRIPTION
+        +getDescription()
+    }
+    class ElfKing {
+        +DESCRIPTION
+        +getDescription()
+    }
+    class ElfKingdomFactory {
+        +createArmy()
+        +createCastle()
+        +createKing()
+    }
+    class FactoryMaker {
+    }
+    class Kingdom {
+        +army
+        +castle
+        +king
+    }
+    class KingdomType {
+    }
+    class OrcArmy {
+        +DESCRIPTION
+        +getDescription()
+    }
+    class OrcCastle {
+        +DESCRIPTION
+        +getDescription()
+    }
+    class OrcKing {
+        +DESCRIPTION
+        +getDescription()
+    }
+    class OrcKingdomFactory {
+        +createArmy()
+        +createCastle()
+        +createKing()
+    }
+    class AbstractFactoryTest {
+        +app
+        +verifyArmyCreation()
+        +verifyCastleCreation()
+        +verifyElfKingdomCreation()
+        +verifyKingCreation()
+        +verifyOrcKingdomCreation()
+    }
+    class ActiveCreature {
+        +ActiveCreature(String name)
+        +eat()
+        +getStatus()
+        +kill(int status)
+        +logger
+        +name
+        +name()
+        +requests
+        +roam()
+        +status
+        +thread
+    }
+    class Document {
+    }
+    class HasModel {
+    }
+    class HasPrice {
+    }
+    class HasParts {
+    }
+    class HasType {
+    }
+    class Runnable {
+    }
+    class Army {
+    }
+    class Castle {
+    }
+    class King {
+    }
+    class KingdomFactory {
+    }
+    Document <|-- AbstractDocument
+    AbstractDocument <|-- Car
+    HasModel <|-- Car
+    HasPrice <|-- Car
+    HasParts <|-- Car
+    Document <|-- HasModel
+    Document <|-- HasParts
+    Document <|-- HasPrice
+    Document <|-- HasType
+    AbstractDocument <|-- Part
+    HasType <|-- Part
+    HasModel <|-- Part
+    HasPrice <|-- Part
+    AbstractDocument <|-- DocumentImplementation
+    Runnable <|-- App
+    Army <|-- ElfArmy
+    Castle <|-- ElfCastle
+    King <|-- ElfKing
+    KingdomFactory <|-- ElfKingdomFactory
+    Army <|-- OrcArmy
+    Castle <|-- OrcCastle
+    King <|-- OrcKing
+    KingdomFactory <|-- OrcKingdomFactory

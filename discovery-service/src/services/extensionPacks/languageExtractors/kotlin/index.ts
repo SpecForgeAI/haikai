@@ -1,0 +1,1 @@
+export { extractKotlinIR } from './extract';

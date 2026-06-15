@@ -1,0 +1,80 @@
+name: page-based-php
+version: 1
+language: php
+
+# Generic playbook for legacy PHP apps where each `.php` file under a web root
+# IS itself an addressable URL. Covers dolibarr, mantisbt, opencart, moodle,
+# ampache, parts of WordPress, etc. The convention: filesystem layout = route
+# table.
+detection:
+  files_match:
+    # Common PHP web roots / page-based markers
+    - 'htdocs/**/*.php'
+    - 'public/index.php'
+    - 'public_html/**/*.php'
+    - 'web/index.php'
+    - 'wp-config.php'              # WordPress (admin pages also page-based)
+    - 'config_inc.php.sample'      # MantisBT signature
+    - 'mantis_offline.php'         # MantisBT signature
+    - 'admin/index.php'            # OpenCart / phpBB / many shop carts
+
+extract:
+  - id: htdocs_pages
+    query: files
+    file_glob: 'htdocs/**/*.php'
+    strip_suffix: '.php'
+    root_strip: htdocs
+    verb: ANY
+    exclude_globs:
+      - '**/include/**'
+      - '**/includes/**'
+      - '**/lib/**'
+      - '**/libraries/**'
+      - '**/vendor/**'
+      - '**/core/**'
+      - '**/class/**'
+      - '**/inc/**'
+      - '**/*.inc.php'
+  - id: public_pages
+    query: files
+    file_glob: 'public/**/*.php'
+    strip_suffix: '.php'
+    root_strip: public
+    verb: ANY
+    exclude_globs:
+      - '**/vendor/**'
+      - '**/lib/**'
+  - id: wp_admin_pages
+    query: files
+    file_glob: 'wp-admin/*.php'
+    strip_suffix: '.php'
+    verb: ANY
+  - id: root_pages
+    query: files
+    file_glob: '*.php'
+    strip_suffix: '.php'
+    verb: ANY
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: page-based-php
+
+conflict_rules:
+  # When a real PHP framework is also detected, page-based-php would
+  # over-count by adding every .php file in the project as its own endpoint
+  # alongside the framework's real routes. Drop our entire emission set in
+  # that case — Laravel/Symfony/Drupal/WordPress already produced the routes.
+  - drop_my_endpoints_if_framework_present:
+      - laravel
+      - symfony
+      - drupal
+      - wordpress
+      - yii2
+      - rails
+  # index.php front-controller files aren't their own endpoint
+  - drop_if_handler_matches: '^index$'
+
+known_pitfalls:
+  - "Counts every .php file as one endpoint — frameworks with a front controller (index.php?route=...) will double-count without a conflict rule."
+  - "Doesn't walk inside library/vendor dirs because the globs target known web roots."

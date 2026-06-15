@@ -1,0 +1,32 @@
+name: kratos
+version: 1
+language: go
+
+detection:
+  imports_match:
+    - "github.com/go-kratos/kratos"
+  files_match:
+    - "app/**/*.go"
+  manifest_contains:
+    - {file: "go.mod", substring: "go-kratos/kratos"}
+
+extract:
+  - id: kratos_http_calls
+    query: call_args
+    file_extensions: [".go"]
+    callee_pattern: '\.(GET|POST|PUT|DELETE|PATCH|OPTIONS|HEAD|get|post|put|delete|patch|options|head)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^["/]'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: kratos
+
+conflict_rules: []
+known_pitfalls:
+  - "gRPC endpoints and proto-defined HTTP routes not extracted (requires proto parser)"
+  - "Routes defined via service proto annotations require proto compilation and parsing"
+  - "Middleware-wrapped routes may not be captured"
+  - "Dynamically constructed paths not extracted"

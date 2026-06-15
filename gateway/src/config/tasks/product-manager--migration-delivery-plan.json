@@ -1,0 +1,181 @@
+{
+  "_documentation": {
+    "spec": "agent-os/specs/2026-05-17-pm-migration-delivery-plan-book-of-work-draft/spec.md",
+    "persona": "product-manager",
+    "purpose": "Task config for the Migration Delivery Plan + Draft Book-of-Work flow. Persona is product-manager; the task consumes Migration Discovery Context + current/target architecture inputs and emits a hierarchical Initiative -> Epic -> Feature -> Story draft.",
+    "contextNeeds": "mission, product-summary, migration-discovery-context (Q-12 resolver reused verbatim), meta-model-summary, existing-roadmap, target-state-decisions-context (Spec 2026-05-25 PM Tasks Captured Decisions Integration -- decisions are facts the Book of Work must align with), target-tech-stack-context (Spec 2026-05-25 Tech-Stack.md Pre-fill + Target-Tech-Stack.md Write -- rendered target tech stack the Book of Work must honour).",
+    "responseSchema": "GeneratedMigrationBookOfWork — defined and validated in gateway/src/services/generatedMigrationBookOfWorkSchema.ts. The 14-value workstream enum INCLUDES the `unknown` sentinel (Q-7).",
+    "promptRules": "Functional equivalence is mandatory and never asked of the user. No fabrication: every item must trace back to provided inputs. Output is a book of work (backlog), NOT a migration plan document.",
+    "designPointRefs": "Q-1 gateway-only orchestration; Q-3 gateway -> AMS direct REST (no MCP); Q-7 14-value workstream incl. unknown sentinel; Q-11 task config filename; Q-12 reuse Migration Discovery Context resolver verbatim; Q-13 prompt filename; Q-17 auth gating matches product-manager--backlog verbatim."
+  },
+  "id": "product-manager--migration-delivery-plan",
+  "personaId": "product-manager",
+  "menuLabel": "Create Migration Delivery Plan",
+  "description": "Consumes Migration Discovery Context plus current/target architecture inputs and produces a hierarchical draft book of work (Initiatives -> Epics -> Features -> Stories) with per-item confidence, readiness, traceability, and quality assessment. Generation is gateway-orchestrated; AMS persists only. Functional equivalence is mandatory; sparse context yields prerequisite / refinement stories rather than invented detail.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/product-manager.migration-delivery-plan.task.md",
+  "responseFormat": {
+    "type": "object",
+    "schemaRef": "GeneratedMigrationBookOfWork",
+    "required": [
+      "title",
+      "summary",
+      "generationInputs",
+      "generationSummary",
+      "qualityAssessment",
+      "items"
+    ],
+    "properties": {
+      "title": { "type": "string" },
+      "summary": { "type": "string" },
+      "generationInputs": {
+        "type": "object",
+        "description": "Snapshot of inputs used (Product Definition refs, architecture refs, mapping refs, finding refs, options)."
+      },
+      "generationSummary": {
+        "type": "object",
+        "description": "Counts + coverage stats produced by the generator (initiative/epic/feature/story counts, confidence breakdown, readiness breakdown, findings addressed/not addressed, coverage)."
+      },
+      "qualityAssessment": {
+        "type": "object",
+        "description": "Whole-book + per-level rubric scores with rationale."
+      },
+      "items": {
+        "type": "array",
+        "description": "Flat array of MigrationBookOfWorkItem records (parentId references form the hierarchy). Each item carries id, type (initiative|epic|feature|story), parentId|null, title, description, acceptanceCriteria[], workstream (14-value enum incl. unknown), sequenceOrder, tags[], confidence (high|medium|low), readiness (ready_for_spec|needs_focused_context|needs_user_decision|blocked), readinessReasons[], missingInputs[], recommendedNextAction, traceabilitySummary, and reference arrays (evidenceReferences[], architectureReferences[], apiBaselineReferences[], discoveryFindingReferences[], mappingReferences[], sourceContextRefs[]).",
+        "items": {
+          "type": "object",
+          "required": [
+            "id",
+            "type",
+            "parentId",
+            "title",
+            "description",
+            "acceptanceCriteria",
+            "workstream",
+            "sequenceOrder",
+            "tags",
+            "confidence",
+            "readiness",
+            "readinessReasons",
+            "missingInputs",
+            "recommendedNextAction",
+            "traceabilitySummary"
+          ],
+          "properties": {
+            "id": { "type": "string" },
+            "type": {
+              "type": "string",
+              "enum": ["initiative", "epic", "feature", "story"]
+            },
+            "parentId": { "type": ["string", "null"] },
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "acceptanceCriteria": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "workstream": {
+              "type": "string",
+              "enum": [
+                "target_service_api_implementation",
+                "target_frontend_implementation",
+                "target_database_schema_implementation",
+                "target_infrastructure_environment_implementation",
+                "data_migration",
+                "api_soap_integration_compatibility",
+                "migration_test_pack",
+                "reconciliation_reporting",
+                "cutover_rollback_decommission",
+                "architecture_refinement",
+                "discovery_gap_resolution",
+                "test_strategy",
+                "other",
+                "unknown"
+              ]
+            },
+            "sequenceOrder": { "type": "integer" },
+            "tags": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "confidence": {
+              "type": "string",
+              "enum": ["high", "medium", "low"]
+            },
+            "readiness": {
+              "type": "string",
+              "enum": [
+                "ready_for_spec",
+                "needs_focused_context",
+                "needs_user_decision",
+                "blocked"
+              ]
+            },
+            "readinessReasons": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "missingInputs": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "recommendedNextAction": { "type": "string" },
+            "traceabilitySummary": { "type": "string" },
+            "evidenceReferences": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "architectureReferences": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "apiBaselineReferences": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "discoveryFindingReferences": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "mappingReferences": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "sourceContextRefs": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "saveState": {
+              "type": "string",
+              "enum": ["draft", "selected", "excluded", "saved", "failed"]
+            },
+            "workItemId": { "type": ["string", "null"] },
+            "errorMessage": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  },
+  "contextNeeds": [
+    "mission",
+    "product-summary",
+    "migration-discovery-context",
+    "meta-model-summary",
+    "existing-roadmap",
+    "target-state-decisions-context",
+    "target-tech-stack-context"
+  ],
+  "persistence": "project",
+  "persistenceScope": ["projectId", "currentArchitectureId", "targetArchitectureId"],
+  "artifacts": [
+    {
+      "artifactId": "migration-delivery-plan",
+      "tool": "save_migration_book_of_work_draft",
+      "description": "Generated hierarchical migration book of work (draft) with per-item confidence, readiness, traceability, and quality assessment. Persisted to architecture-model-service `generated_migration_books_of_work` table; the optional AMS `/generate` endpoint is intentionally NOT used (gateway is the sole orchestrator).",
+      "filename": "MIGRATION_BOOK_OF_WORK"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

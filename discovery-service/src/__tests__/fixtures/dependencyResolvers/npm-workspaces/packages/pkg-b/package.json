@@ -1,0 +1,7 @@
+{
+  "name": "@example/pkg-b",
+  "version": "1.0.0",
+  "dependencies": {
+    "axios": "^1.0.0"
+  }
+}

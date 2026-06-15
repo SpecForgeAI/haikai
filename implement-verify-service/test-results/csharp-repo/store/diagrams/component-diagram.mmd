@@ -1,0 +1,13 @@
+graph LR
+    Extensions["Extensions"] --> System["System"]
+    Extensions["Extensions"] --> eShop["eShop"]
+    GlobalUsings["GlobalUsings"] --> global_System["global System"]
+    GlobalUsings["GlobalUsings"] --> global_Grpc["global Grpc"]
+    GlobalUsings["GlobalUsings"] --> global_Microsoft["global Microsoft"]
+    GlobalUsings["GlobalUsings"] --> global_eShop["global eShop"]
+    GlobalUsings["GlobalUsings"] --> global_StackExchange["global StackExchange"]
+    Grpc["Grpc"] --> System["System"]
+    Grpc["Grpc"] --> eShop["eShop"]
+    IntegrationEvents["IntegrationEvents"] --> eShop["eShop"]
+    Repositories["Repositories"] --> eShop["eShop"]
+    Repositories["Repositories"] --> System["System"]

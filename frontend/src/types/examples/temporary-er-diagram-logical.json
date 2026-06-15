@@ -1,0 +1,473 @@
+{
+  "id": "temp-diag-logical-001",
+  "name": "E-Commerce Domain Logical ER Diagram",
+  "description": "Logical ER diagram representing core e-commerce domain entities and their relationships",
+  "diagram_kind": "ER",
+  "source_architecture_domain": "DATA",
+  "view_mode": "LOGICAL",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "node-customer",
+      "node_kind": "ENTITY",
+      "semantic_type": "LOGICAL_DATA_ENTITY",
+      "ref_name": "Customer",
+      "display_name": "Customer",
+      "pos_x": 50,
+      "pos_y": 80,
+      "width": 260,
+      "height": 200,
+      "z_index": 1,
+      "compartments": [
+        {
+          "id": "comp-customer-attrs",
+          "compartment_kind": "ATTRIBUTES",
+          "items": [
+            {
+              "id": "attr-customer-id",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "customer_id",
+              "display_name": "Customer ID",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": true,
+                "is_foreign_key": false,
+                "data_type": "Identifier",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-customer-name",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "full_name",
+              "display_name": "Full Name",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "String",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-customer-email",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "email_address",
+              "display_name": "Email Address",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "String",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-customer-registration-date",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "registration_date",
+              "display_name": "Registration Date",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "Date",
+                "is_nullable": false
+              }
+            }
+          ]
+        }
+      ],
+      "style": {
+        "background_color": "#E8F4FD",
+        "line_color": "#2196F3",
+        "text_color": "#1565C0"
+      },
+      "metadata": {
+        "is_primary": true,
+        "is_reference": false,
+        "tags": ["core-entity", "customer-domain"]
+      }
+    },
+    {
+      "id": "node-order",
+      "node_kind": "ENTITY",
+      "semantic_type": "LOGICAL_DATA_ENTITY",
+      "ref_name": "Order",
+      "display_name": "Order",
+      "pos_x": 400,
+      "pos_y": 80,
+      "width": 260,
+      "height": 220,
+      "z_index": 1,
+      "compartments": [
+        {
+          "id": "comp-order-attrs",
+          "compartment_kind": "ATTRIBUTES",
+          "items": [
+            {
+              "id": "attr-order-id",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "order_id",
+              "display_name": "Order ID",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": true,
+                "is_foreign_key": false,
+                "data_type": "Identifier",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-customer-id",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "customer_id",
+              "display_name": "Customer ID",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": true,
+                "data_type": "Identifier",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-date",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "order_date",
+              "display_name": "Order Date",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "DateTime",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-status",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "status",
+              "display_name": "Status",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "String",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-total",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "total_amount",
+              "display_name": "Total Amount",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "Decimal",
+                "is_nullable": false
+              }
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "is_primary": false,
+        "is_reference": false,
+        "tags": ["core-entity", "order-domain"]
+      }
+    },
+    {
+      "id": "node-order-item",
+      "node_kind": "ENTITY",
+      "semantic_type": "LOGICAL_DATA_ENTITY",
+      "ref_name": "OrderItem",
+      "display_name": "Order Item",
+      "pos_x": 400,
+      "pos_y": 380,
+      "width": 260,
+      "height": 220,
+      "z_index": 1,
+      "compartments": [
+        {
+          "id": "comp-order-item-attrs",
+          "compartment_kind": "ATTRIBUTES",
+          "items": [
+            {
+              "id": "attr-order-item-id",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "order_item_id",
+              "display_name": "Order Item ID",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": true,
+                "is_foreign_key": false,
+                "data_type": "Identifier",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-item-order-id",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "order_id",
+              "display_name": "Order ID",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": true,
+                "data_type": "Identifier",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-item-product-name",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "product_name",
+              "display_name": "Product Name",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "String",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-item-quantity",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "quantity",
+              "display_name": "Quantity",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "Integer",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-order-item-unit-price",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "unit_price",
+              "display_name": "Unit Price",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "Decimal",
+                "is_nullable": false
+              }
+            }
+          ]
+        }
+      ],
+      "metadata": {
+        "is_primary": false,
+        "is_reference": false,
+        "tags": ["detail-entity", "order-domain"]
+      }
+    },
+    {
+      "id": "node-product",
+      "node_kind": "ENTITY",
+      "semantic_type": "LOGICAL_DATA_ENTITY",
+      "ref_name": "Product",
+      "display_name": "Product",
+      "pos_x": 50,
+      "pos_y": 380,
+      "width": 260,
+      "height": 200,
+      "z_index": 1,
+      "compartments": [
+        {
+          "id": "comp-product-attrs",
+          "compartment_kind": "ATTRIBUTES",
+          "items": [
+            {
+              "id": "attr-product-id",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "product_id",
+              "display_name": "Product ID",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": true,
+                "is_foreign_key": false,
+                "data_type": "Identifier",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-product-name",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "name",
+              "display_name": "Name",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "String",
+                "is_nullable": false
+              }
+            },
+            {
+              "id": "attr-product-description",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "description",
+              "display_name": "Description",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "Text",
+                "is_nullable": true
+              }
+            },
+            {
+              "id": "attr-product-price",
+              "item_kind": "ATTRIBUTE",
+              "ref_name": "base_price",
+              "display_name": "Base Price",
+              "semantic_type": "LOGICAL_DATA_ATTRIBUTE",
+              "metadata": {
+                "is_primary_key": false,
+                "is_foreign_key": false,
+                "data_type": "Decimal",
+                "is_nullable": false
+              }
+            }
+          ]
+        }
+      ],
+      "style": {
+        "background_color": "#FFF3E0",
+        "line_color": "#FF9800",
+        "text_color": "#E65100"
+      },
+      "metadata": {
+        "is_primary": false,
+        "is_reference": true,
+        "tags": ["reference-entity", "product-domain"]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-customer-order",
+      "edge_kind": "RELATIONSHIP",
+      "semantic_type": "DATA_ENTITY_RELATIONSHIP",
+      "source_node_id": "node-customer",
+      "target_node_id": "node-order",
+      "source_ref_name": "Customer",
+      "target_ref_name": "Order",
+      "edge_points": [
+        { "sequence_order": 1, "pos_x": 310, "pos_y": 180 },
+        { "sequence_order": 2, "pos_x": 400, "pos_y": 180 }
+      ],
+      "source_item_ref_name": "customer_id",
+      "target_item_ref_name": "customer_id",
+      "relationship_type": "ASSOCIATION",
+      "cardinality": "ONE_TO_MANY",
+      "relationship_hint": "A customer places zero or more orders over time",
+      "source_label": {
+        "text": "1",
+        "pos_x": 315,
+        "pos_y": 168
+      },
+      "target_label": {
+        "text": "0..*",
+        "pos_x": 380,
+        "pos_y": 168
+      },
+      "style": {
+        "line_color": "#333333",
+        "line_type": "SOLID",
+        "line_weight": 2
+      },
+      "metadata": {
+        "optionality": "OPTIONAL",
+        "notes": ["A customer may have zero orders initially"]
+      }
+    },
+    {
+      "id": "edge-order-orderitem",
+      "edge_kind": "RELATIONSHIP",
+      "semantic_type": "DATA_ENTITY_RELATIONSHIP",
+      "source_node_id": "node-order",
+      "target_node_id": "node-order-item",
+      "source_ref_name": "Order",
+      "target_ref_name": "OrderItem",
+      "edge_points": [
+        { "sequence_order": 1, "pos_x": 530, "pos_y": 300 },
+        { "sequence_order": 2, "pos_x": 530, "pos_y": 380 }
+      ],
+      "source_item_ref_name": "order_id",
+      "target_item_ref_name": "order_id",
+      "relationship_type": "COMPOSITION",
+      "cardinality": "ONE_TO_MANY",
+      "relationship_hint": "An order is composed of one or more line items; items cannot exist without an order",
+      "source_label": {
+        "text": "1",
+        "pos_x": 540,
+        "pos_y": 310
+      },
+      "target_label": {
+        "text": "1..*",
+        "pos_x": 540,
+        "pos_y": 370
+      },
+      "style": {
+        "line_color": "#333333",
+        "line_type": "SOLID",
+        "line_weight": 2
+      },
+      "metadata": {
+        "optionality": "REQUIRED",
+        "notes": ["Composition: order items have no independent lifecycle"]
+      }
+    },
+    {
+      "id": "edge-orderitem-product",
+      "edge_kind": "RELATIONSHIP",
+      "semantic_type": "DATA_ENTITY_RELATIONSHIP",
+      "source_node_id": "node-order-item",
+      "target_node_id": "node-product",
+      "source_ref_name": "OrderItem",
+      "target_ref_name": "Product",
+      "edge_points": [
+        { "sequence_order": 1, "pos_x": 400, "pos_y": 490 },
+        { "sequence_order": 2, "pos_x": 310, "pos_y": 490 }
+      ],
+      "relationship_type": "ASSOCIATION",
+      "cardinality": "MANY_TO_ONE",
+      "relationship_hint": "Each order item references exactly one product"
+    }
+  ],
+  "groups": [
+    {
+      "id": "group-core-commerce",
+      "group_kind": "SCHEMA",
+      "ref_name": "core_commerce",
+      "display_name": "Core Commerce",
+      "pos_x": 30,
+      "pos_y": 50,
+      "width": 650,
+      "height": 570,
+      "child_node_ids": ["node-customer", "node-order", "node-order-item", "node-product"],
+      "style": {
+        "background_color": "#FAFAFA",
+        "line_color": "#BDBDBD",
+        "text_color": "#757575"
+      }
+    }
+  ],
+  "metadata": {
+    "created_by_task": "generate-er-diagram",
+    "notes": [
+      "Logical ER diagram for the core e-commerce domain",
+      "Demonstrates Customer-Order-OrderItem-Product relationships",
+      "Generated as an example of the TemporaryArchitectureDiagram contract"
+    ]
+  }
+}

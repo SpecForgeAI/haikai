@@ -1,0 +1,1 @@
+ALTER TABLE diagram_nodes ADD COLUMN IF NOT EXISTS line_weight VARCHAR(10);

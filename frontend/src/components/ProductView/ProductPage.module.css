@@ -1,0 +1,245 @@
+/**
+ * ProductPage Styles
+ *
+ * Spec 2026-02-12: Increment 1 -- Add Product Tab + Minimal ProductDefinition
+ * Task Group 3.6: ProductPage CSS module
+ *
+ * Spec 2026-02-13: SA Increment 1 -- Add Solution Architect Mode
+ * Task Group 5.8: Sub-tab bar styles for PM/SA toggle
+ *
+ * Spec 2026-03-01: Increment 9 -- Side Panel v2: Product and Roadmap Screens
+ * Task Group 3.4: Added product definition card grid styles
+ *
+ * Follows the existing application design system with similar spacing, colors,
+ * and font sizes as ProductView.module.css.
+ */
+
+.pageContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Form card: product name input + save button */
+.formCard {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.formLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+}
+
+.formRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.productNameInput {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.productNameInput:focus {
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.15);
+}
+
+.saveButton {
+  padding: 6px 16px;
+  background: #1976D2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.saveButton:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.saveButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+/* Placeholder card: "Product Manager (Coming Soon)" */
+.placeholderCard {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 24px;
+  text-align: center;
+}
+
+.placeholderHeading {
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  margin: 0 0 8px 0;
+}
+
+.placeholderBody {
+  font-size: 12px;
+  color: #888;
+  margin: 0;
+}
+
+/* Loading state */
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* Error state */
+.errorState {
+  background: #fff3f3;
+  border: 1px solid #ffcdd2;
+  border-radius: 4px;
+  padding: 8px 12px;
+  color: #c62828;
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Retry button within error state */
+.retryButton {
+  padding: 4px 12px;
+  background: #c62828;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.retryButton:hover {
+  background: #b71c1c;
+}
+
+/* ============================================================================
+ * Sub-tab bar styles (retained for backward compatibility; unused in Increment 9)
+ * Spec 2026-02-13: SA Increment 1 -- Task 5.8
+ * ============================================================================ */
+
+/* Sub-tab bar: flex container for tab buttons */
+.subTabBar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+/* Individual tab button */
+.subTab {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* Active tab state */
+.subTabActive {
+  color: #1976D2;
+  border-bottom-color: #1976D2;
+  font-weight: 600;
+}
+
+/* Hover state for inactive tabs */
+.subTab:hover:not(.subTabActive) {
+  color: #1976D2;
+  background: rgba(25, 118, 210, 0.04);
+}
+
+/* ============================================================================
+ * Product definition card grid styles
+ * Spec 2026-03-01: Increment 9 -- Task Group 3.4
+ * ============================================================================ */
+
+/* Definition header */
+.definitionHeader {
+  margin-bottom: 4px;
+}
+
+.definitionTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+/* Card grid: 2-3 columns responsive layout */
+.definitionGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 800px) {
+  .definitionGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Individual definition card (matches .formCard pattern) */
+.definitionCard {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Card label */
+.cardLabel {
+  font-size: 12px;
+  color: #888;
+  font-weight: 500;
+}
+
+/* Card value */
+.cardValue {
+  font-size: 16px;
+  color: #333;
+  font-weight: 600;
+}

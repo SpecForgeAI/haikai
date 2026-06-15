@@ -1,0 +1,30 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Owner",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "address",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "city",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "telephone",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Owner \u2192 Pet",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

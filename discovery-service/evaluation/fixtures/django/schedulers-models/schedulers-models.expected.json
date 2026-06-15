@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "CustomSchedule",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "schedule_import_path",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

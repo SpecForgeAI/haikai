@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "ui_screens",
+      "name": "LoginPage",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

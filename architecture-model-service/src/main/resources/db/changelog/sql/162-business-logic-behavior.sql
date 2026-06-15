@@ -1,0 +1,30 @@
+-- ============================================================================
+-- Business-logic behaviour capture for Discovery (Spec: 2026-05-29) -- Task Group 1
+--
+-- Adds ONE nullable `behavior` JSONB column to the EXISTING business_logics
+-- table (created by the applied changeset 015-business-logic.sql, which is
+-- NEVER edited -- comment-only edits also break startup via Liquibase checksum
+-- validation; this is a NEW changeset only).
+--
+-- `behavior` carries the per-method 7-part structured behaviour block (IO;
+-- validation/preconditions; transformation/computation; data effects; side
+-- effects; edge cases; provenance + confidence). It is a STRUCTURED JSON
+-- passthrough: typed enough for the UI to render the 7 parts section-by-section,
+-- loose enough that prose sub-fields are free text.
+--
+-- The block embeds its OWN internal `schema_version` and `source_hash` (the
+-- re-run cache key) INSIDE the JSONB blob -- they are deliberately NOT separate
+-- columns, so the block shape can evolve without a schema migration. This
+-- mirrors Spec 1's path_metadata_json precedent (161-endpoint-data-effects.sql).
+--
+-- The embedded confidence (part 7) is a DOUBLE PRECISION value INSIDE the JSONB
+-- and is mapped to a boxed `Double` in the JPA entity / DTO so a PATCH carrying
+-- no value preserves null rather than wiping to 0.0 (per
+-- project_primitive_double_dto_overwrite.md). There is NO separate confidence
+-- column -- confidence lives inside the behaviour block.
+--
+-- Additive + nullable: existing business_logics rows have no behaviour block,
+-- so a null/absent `behavior` round-trips cleanly.
+-- ============================================================================
+
+ALTER TABLE business_logics ADD COLUMN behavior JSONB;

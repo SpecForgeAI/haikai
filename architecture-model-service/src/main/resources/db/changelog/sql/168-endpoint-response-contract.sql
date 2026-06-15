@@ -1,0 +1,47 @@
+-- ============================================================================
+-- Per-endpoint response-contract capture for Discovery (Spec: 2026-05-30) --
+-- Task Group 1.
+--
+-- Adds ONE nullable `response_contract` JSONB column to the EXISTING `endpoints`
+-- table (created by an applied changeset, which is NEVER edited -- comment-only
+-- edits also break startup via Liquibase checksum validation; this is a NEW
+-- changeset only). Mirrors the 162-business-logic-behavior.sql /
+-- 164-physical-entity-constraints-jsonb.sql precedent (a nullable JSONB column
+-- on an existing table, via the Hypersistence @Type(JsonType.class)
+-- Map<String,Object> idiom in the JPA entity).
+--
+-- `response_contract` carries the per-endpoint RESPONSE CONTRACT -- what
+-- response (status + body + headers) each input produces -- as METADATA ON THE
+-- ENTITY, NOT as a new entity type or relationship. It is a STRUCTURED JSON
+-- passthrough: typed enough for the UI to render it section-by-section, loose
+-- enough that prose sub-fields (body_shape, response_summary, envelope) are free
+-- text. Top-level shape:
+--   {
+--     error_responses:      [ { exception, status, body_shape, source } ],
+--     auth:                 { required_roles[], expected_unauthenticated_status,
+--                             expected_forbidden_status, source },
+--     validation:           [ { field, constraint, failure_status, message } ],
+--     serialization:        { null_handling, date_format, field_naming,
+--                             envelope, headers[] },
+--     status_codes:         { success, location_header },
+--     conditional_variants: [ { condition, response_summary } ],
+--     provenance:           { source_files[], method_id, advice_ids[] },
+--     confidence:           <double 0..1>
+--   }
+--
+-- The block embeds its OWN internal `schema_version` INSIDE the JSONB blob -- it
+-- is deliberately NOT a separate column, so the block shape can evolve without a
+-- schema migration. This mirrors Spec 1's path_metadata_json precedent
+-- (161-endpoint-data-effects.sql).
+--
+-- The embedded `confidence` is a DOUBLE PRECISION value INSIDE the JSONB and is
+-- mapped to a boxed `Double` in the JPA entity / DTO so a PATCH carrying no value
+-- preserves null rather than wiping to 0.0 (per
+-- project_primitive_double_dto_overwrite.md). There is NO separate confidence
+-- column -- confidence lives inside the response-contract block.
+--
+-- Additive + nullable: existing `endpoints` rows have no response contract, so a
+-- null/absent `response_contract` round-trips cleanly.
+-- ============================================================================
+
+ALTER TABLE endpoints ADD COLUMN response_contract JSONB;

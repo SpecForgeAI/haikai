@@ -1,0 +1,21 @@
+# GitLab CI connector — ci-trigger verifier (async).
+# Mechanism: src/verification/connectors/gitlab_ci.py
+name: gitlab-ci
+kind: ci-trigger
+provider: gitlab
+auth:
+  token_template: "{REPO_KEY}_GITLAB_TOKEN"   # D3; falls back to GITLAB_TOKEN
+trigger:
+  api: POST /api/v4/projects/{project}/pipeline
+  records_binding: head_sha -> cell            # D10.4
+verdict_path:
+  webhook: /api/v2/inbound/gitlab/{ingress_token}   # primary (inbound-gateway, D9.1)
+  poll: pipelines by sha                            # fallback (connector poll())
+status_map:
+  pending: [created, waiting_for_resource, preparing, pending, running, scheduled, manual]
+  pass: [success]
+  fail: [failed, canceled]
+  skipped: [skipped]
+fold: fail > pending > pass > skipped   # mirrors the D5 gate; poll paginates (100/page, 10 pages)
+notes: |
+  Same dedup/correlate/TTL rules as github-actions (D10.4/D10.5).

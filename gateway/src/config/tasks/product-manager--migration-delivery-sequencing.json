@@ -1,0 +1,107 @@
+{
+  "_documentation": {
+    "spec": "agent-os/specs/2026-05-25-pm-tasks-captured-decisions-integration/spec.md",
+    "persona": "product-manager",
+    "purpose": "Task config for the new single-turn Migration Delivery Sequencing PM task. Consumes the supplied book of work + Migration Discovery Context + Target State Captured Decisions and produces a recommended initiative ordering (sequence / parallelisableWith / blockedBy / rationale). The sequencing answer is persisted as a captured decision via Spec 2's POST endpoint with decision_code='delivery.sequencing'.",
+    "contextNeeds": "migration-discovery-context (so the LLM can reason about cross-initiative dependencies), target-state-decisions-context (the architect's captured technology decisions, cited in initiative rationale).",
+    "responseSchema": "MigrationDeliverySequencingResponse three-variant structured response (Sequenced / InsufficientContext / Failed) validated by gateway/src/services/migrationDeliverySequencingResponseValidator.ts (hand-rolled per Q11; mirrors specGenerationResponseValidator.ts pattern).",
+    "promptRules": "Must cite decision codes in `rationale`; must reference initiative IDs only from the supplied book of work; mandatory functional-equivalence clause; single-turn; no follow-up questions.",
+    "designPointRefs": "Q3 static availableFrom mirroring existing two PM tasks (runtime gating in handler); Q10 distinguish no-target vs no-decisions via recommendedNextAction text; Q11 hand-rolled validator; Q12 bookOfWorkId is a required handler input (no new AMS endpoint); Q13 validator hard fails + warning-only cycle detection; Q14 prompt wording finalised at write-spec time; Q15 createdByTask + null thread/turn ref; Q17 reuse existing fetchLatestCapturedDecisions + fetchActiveTargetArchitectureId."
+  },
+  "id": "product-manager--migration-delivery-sequencing",
+  "personaId": "product-manager",
+  "menuLabel": "Recommend Migration Delivery Sequencing",
+  "description": "Single-turn PM task that produces a recommended initiative ordering for the supplied book of work, citing the captured technology decisions. Output is persisted as a captured decision (decision_code='delivery.sequencing', scope_kind='architecture') via the Spec 2 data plane so re-runs supersede the prior answer through the normal supersession path. Runtime gating in the handler returns status='insufficient_context' when no active target architecture exists or when no decisions have been captured yet.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/product-manager.migration-delivery-sequencing.task.md",
+  "responseFormat": {
+    "type": "object",
+    "schemaRef": "MigrationDeliverySequencingResponse",
+    "description": "Three structured-response variants validated by assertMigrationDeliverySequencingResponse (gateway/src/services/migrationDeliverySequencingResponseValidator.ts). Branch is keyed on the top-level `status` field.",
+    "required": ["status"],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": ["sequenced", "insufficient_context", "failed"]
+      }
+    },
+    "variants": {
+      "Sequenced": {
+        "description": "status='sequenced'. Required: initiativeOrder (non-empty), confidence, warnings.",
+        "required": ["status", "initiativeOrder", "confidence", "warnings"],
+        "properties": {
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "initiativeOrder": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "initiativeId",
+                "sequence",
+                "parallelisableWith",
+                "blockedBy",
+                "rationale"
+              ],
+              "properties": {
+                "initiativeId": { "type": "string" },
+                "sequence": { "type": "integer", "minimum": 1 },
+                "parallelisableWith": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "blockedBy": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "rationale": { "type": "string" }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "recommendedNextAction": { "type": "string" }
+        }
+      },
+      "InsufficientContext": {
+        "description": "status='insufficient_context'. Required: recommendedNextAction (non-empty string).",
+        "required": ["status", "recommendedNextAction"],
+        "properties": {
+          "recommendedNextAction": { "type": "string" },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "object" }
+          }
+        }
+      },
+      "Failed": {
+        "description": "status='failed'. Required: errorMessage (non-empty string).",
+        "required": ["status", "errorMessage"],
+        "properties": {
+          "errorMessage": { "type": "string" }
+        }
+      }
+    }
+  },
+  "contextNeeds": [
+    "migration-discovery-context",
+    "target-state-decisions-context"
+  ],
+  "persistence": "project",
+  "persistenceScope": ["projectId", "currentArchitectureId", "targetArchitectureId"],
+  "artifacts": [
+    {
+      "artifactId": "migration-delivery-sequencing",
+      "tool": "post_captured_decision",
+      "description": "Sequencing answer persisted as a captured decision via Spec 2's POST endpoint (decision_code='delivery.sequencing', scope_kind='architecture', createdByTask='product-manager--migration-delivery-sequencing', conversationThreadId=null, conversationTurnRef=null, answerValue=JSON-stringified initiativeOrder). Supersession via Spec 2's data plane on re-run.",
+      "filename": "MIGRATION_DELIVERY_SEQUENCING"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

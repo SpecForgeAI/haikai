@@ -1,0 +1,35 @@
+name: trac
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - "from trac.web"
+    - "from trac.core"
+    - "trac.web.api"
+  files_match:
+    - "trac/web/*.py"
+    - "trac/__init__.py"
+
+extract:
+  - id: match_request_re_calls
+    query: call_args
+    file_filter: all
+    file_extensions: [".py"]
+    callee_pattern: '\bre\.(match|search|fullmatch)$'
+    path_arg_index: 0
+    verb: ANY
+    path_must_match: '^r?[''"/]'
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: trac
+
+conflict_rules: []
+known_pitfalls:
+  - "Extracted paths are raw regex patterns (e.g. r'/ticket/([0-9]+)'), not normalized URL templates — consumer must convert capture groups to path-parameter notation"
+  - "HTTP verb is not declared at the routing layer; GET vs POST is differentiated inside process_request() by inspecting req.method — all discovered routes are emitted as ANY"
+  - "Components that gate on path via string comparison or startswith() instead of re.match/re.search are missed entirely"
+  - "Path prefixes set by a parent dispatcher or mount point are not inlined into child component paths"
+  - "tracopt/ and contrib/ plugins follow the same IRequestHandler pattern and are covered, but third-party plugins installed outside the repo are not"

@@ -1,0 +1,75 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Tag",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Tag_user",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Topic_tag",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Topic",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Category_tag_stat",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Category_tag",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Categorie",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Tag_group_membership",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Tag_group",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Target_tag",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Synonym",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Sidebar_section_link",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Embeddable_host_tag",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Tag \u2192 Embeddable_host",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

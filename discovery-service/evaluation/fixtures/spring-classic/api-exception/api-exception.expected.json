@@ -1,0 +1,13 @@
+{
+  "expected": [],
+  "shouldNotEmit": [
+    {
+      "type": "physical_data_entities",
+      "name": "APIException"
+    },
+    {
+      "type": "business_logics",
+      "name": "APIException"
+    }
+  ]
+}

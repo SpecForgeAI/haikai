@@ -1,0 +1,25 @@
+# file	imports	names
+Extensions/Extensions.cs	System.Text.Json	Serialization
+Extensions/Extensions.cs	eShop.Basket.API	Repositories
+Extensions/Extensions.cs	eShop.Basket.API.IntegrationEvents	EventHandling
+Extensions/Extensions.cs	eShop.Basket.API.IntegrationEvents.EventHandling	Events
+GlobalUsings.cs	global System.ComponentModel	DataAnnotations
+GlobalUsings.cs	global System.Security	Claims
+GlobalUsings.cs	global System.Text	Json
+GlobalUsings.cs	global Grpc	Core
+GlobalUsings.cs	global Microsoft.AspNetCore	Authorization
+GlobalUsings.cs	global eShop.Basket.API	Extensions
+GlobalUsings.cs	global eShop.Basket.API	Grpc
+GlobalUsings.cs	global eShop.EventBus	Abstractions
+GlobalUsings.cs	global eShop.EventBus	Events
+GlobalUsings.cs	global eShop	ServiceDefaults
+GlobalUsings.cs	global StackExchange	Redis
+Grpc/BasketService.cs	System.Diagnostics	CodeAnalysis
+Grpc/BasketService.cs	eShop.Basket.API	Repositories
+Grpc/BasketService.cs	eShop.Basket.API	Extensions
+Grpc/BasketService.cs	eShop.Basket.API	Model
+IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	eShop.Basket.API	Repositories
+IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	eShop.Basket.API.IntegrationEvents.EventHandling	Events
+Repositories/IBasketRepository.cs	eShop.Basket.API	Model
+Repositories/RedisBasketRepository.cs	System.Text.Json	Serialization
+Repositories/RedisBasketRepository.cs	eShop.Basket.API	Model

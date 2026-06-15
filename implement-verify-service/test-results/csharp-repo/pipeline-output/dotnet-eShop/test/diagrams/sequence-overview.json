@@ -1,0 +1,1490 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "c43d81e5-0f0e-4eed-88ac-b57ee6256ee8",
+      "entity_type": "services",
+      "entity_id": "101",
+      "label": "101",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d69d564f-4107-4e00-a913-cc50f8822c39",
+      "entity_type": "services",
+      "entity_id": "103",
+      "label": "103",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "643e8115-04b5-4a38-a07e-61b62988bfc2",
+      "entity_type": "services",
+      "entity_id": "104",
+      "label": "104",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d9f3aa2e-4cd1-4095-8227-8c2d395493dc",
+      "entity_type": "services",
+      "entity_id": "107",
+      "label": "107",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a6ce80a8-171f-4cd5-b073-4ec9527101f0",
+      "entity_type": "services",
+      "entity_id": "109",
+      "label": "109",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "94b870b1-a613-4350-9491-878a8b937338",
+      "entity_type": "services",
+      "entity_id": "110",
+      "label": "110",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9ec9159a-9638-4428-945b-e7cd4bab726a",
+      "entity_type": "services",
+      "entity_id": "116",
+      "label": "116",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2b2690be-7362-4419-9712-f83e1dfd2f1b",
+      "entity_type": "services",
+      "entity_id": "119",
+      "label": "119",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "232b64eb-8fd2-4304-bd10-11c19ea7ef87",
+      "entity_type": "services",
+      "entity_id": "121",
+      "label": "121",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b75156b1-e672-4ad6-a172-4ca890de91e6",
+      "entity_type": "services",
+      "entity_id": "122",
+      "label": "122",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "263e0716-9c50-4bc4-b913-f8b27d0d02e2",
+      "entity_type": "services",
+      "entity_id": "123",
+      "label": "123",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1a07ff5f-4544-4edf-b6f0-2e143395dddb",
+      "entity_type": "services",
+      "entity_id": "126",
+      "label": "126",
+      "pos_x": 750,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4c73ec59-35cd-4505-8007-7bf25997b760",
+      "entity_type": "services",
+      "entity_id": "127",
+      "label": "127",
+      "pos_x": 0,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c945f4e0-c1af-4ba8-bbc3-cde85ddd2c99",
+      "entity_type": "services",
+      "entity_id": "128",
+      "label": "128",
+      "pos_x": 250,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "aa8da553-8b01-4a03-9b61-26d881c4430f",
+      "entity_type": "services",
+      "entity_id": "130",
+      "label": "130",
+      "pos_x": 500,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "cd1ca5e1-a38e-481e-ad41-b2e9ccde7eac",
+      "entity_type": "services",
+      "entity_id": "133",
+      "label": "133",
+      "pos_x": 750,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "da4f2ddc-5a84-40bd-8b65-b1f95e376b5c",
+      "entity_type": "services",
+      "entity_id": "134",
+      "label": "134",
+      "pos_x": 0,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a5c4e2c6-9081-4a2e-9429-80c633bf3a3e",
+      "entity_type": "services",
+      "entity_id": "150",
+      "label": "150",
+      "pos_x": 250,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b6e6b984-4eba-45e4-8f2c-a7db814080d4",
+      "entity_type": "services",
+      "entity_id": "152",
+      "label": "152",
+      "pos_x": 500,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5844cd55-db2c-4e01-8d62-65ba04bcca13",
+      "entity_type": "services",
+      "entity_id": "153",
+      "label": "153",
+      "pos_x": 750,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "15e169e4-e414-4549-b510-8120fffc9806",
+      "entity_type": "services",
+      "entity_id": "156",
+      "label": "156",
+      "pos_x": 0,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ab0a63fb-afec-4462-bdfd-71ba6e22a75a",
+      "entity_type": "services",
+      "entity_id": "159",
+      "label": "159",
+      "pos_x": 250,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c18cbe9b-dfb3-4cab-bc08-974d4a23d6e1",
+      "entity_type": "services",
+      "entity_id": "18",
+      "label": "18",
+      "pos_x": 500,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "fa87594e-2386-403f-84d9-ce142276fc08",
+      "entity_type": "services",
+      "entity_id": "20",
+      "label": "20",
+      "pos_x": 750,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "306542eb-7884-40a7-84c1-73f506da8f10",
+      "entity_type": "services",
+      "entity_id": "21",
+      "label": "21",
+      "pos_x": 0,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a1a66cd9-7d53-45a8-8c67-96ba702a6776",
+      "entity_type": "services",
+      "entity_id": "22",
+      "label": "22",
+      "pos_x": 250,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0cc043dc-3db4-44f7-ad76-9c439ad8de69",
+      "entity_type": "services",
+      "entity_id": "23",
+      "label": "23",
+      "pos_x": 500,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1ecb0235-104b-42e0-9d48-7326974d15d7",
+      "entity_type": "services",
+      "entity_id": "26",
+      "label": "26",
+      "pos_x": 750,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ab484e3c-70f6-43ca-892b-19ea14e021f5",
+      "entity_type": "services",
+      "entity_id": "266",
+      "label": "266",
+      "pos_x": 0,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "fbcf34ea-ac72-440f-b892-4e9129e9af95",
+      "entity_type": "services",
+      "entity_id": "280",
+      "label": "280",
+      "pos_x": 250,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4534ee8e-5967-43d7-9baf-df9cd5df6521",
+      "entity_type": "services",
+      "entity_id": "29",
+      "label": "29",
+      "pos_x": 500,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "247337d1-f2ae-4f5b-82bc-6ac8e9f15cb0",
+      "entity_type": "services",
+      "entity_id": "30",
+      "label": "30",
+      "pos_x": 750,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "49a8667f-4a5d-478e-9504-1e57c5c03c40",
+      "entity_type": "services",
+      "entity_id": "31",
+      "label": "31",
+      "pos_x": 0,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "342362fc-8b21-4990-a0ae-572ca69bf065",
+      "entity_type": "services",
+      "entity_id": "32",
+      "label": "32",
+      "pos_x": 250,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2e61ccf9-9868-4458-9111-68d6dd0a3f8a",
+      "entity_type": "services",
+      "entity_id": "35",
+      "label": "35",
+      "pos_x": 500,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "003ab663-f757-4d2b-bfdc-c9c08ccb18d8",
+      "entity_type": "services",
+      "entity_id": "36",
+      "label": "36",
+      "pos_x": 750,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e89484a2-642c-4d01-b5ac-ef1833ed99fa",
+      "entity_type": "services",
+      "entity_id": "37",
+      "label": "37",
+      "pos_x": 0,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9cf68cee-ea20-4a48-be44-2e6a9b2dcf56",
+      "entity_type": "services",
+      "entity_id": "38",
+      "label": "38",
+      "pos_x": 250,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "345cbd06-2f88-4cb4-bb39-7841cb701c80",
+      "entity_type": "services",
+      "entity_id": "40",
+      "label": "40",
+      "pos_x": 500,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f8b331eb-a1b7-42d2-a2e8-07cec827058f",
+      "entity_type": "services",
+      "entity_id": "41",
+      "label": "41",
+      "pos_x": 750,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "71a95caa-b755-4208-ba53-95469b28b277",
+      "entity_type": "services",
+      "entity_id": "46",
+      "label": "46",
+      "pos_x": 0,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5a3c832b-7cab-453c-8b02-00e3d8e1a343",
+      "entity_type": "services",
+      "entity_id": "47",
+      "label": "47",
+      "pos_x": 250,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "aa8d49e1-df7b-416f-8afd-057f5cd54f64",
+      "entity_type": "services",
+      "entity_id": "49",
+      "label": "49",
+      "pos_x": 500,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0afae890-d900-4b55-8563-319510f3bd0a",
+      "entity_type": "services",
+      "entity_id": "50",
+      "label": "50",
+      "pos_x": 750,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "df9288f4-93a3-48bc-b063-d69e942525be",
+      "entity_type": "services",
+      "entity_id": "53",
+      "label": "53",
+      "pos_x": 0,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a158d133-da79-4c44-bd41-5c3c3a42caa3",
+      "entity_type": "services",
+      "entity_id": "58",
+      "label": "58",
+      "pos_x": 250,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3a3c6968-2463-4cd2-8b67-27cb1401aba8",
+      "entity_type": "services",
+      "entity_id": "60",
+      "label": "60",
+      "pos_x": 500,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "277f1104-00b5-4146-8b5a-7e0abef58de0",
+      "entity_type": "services",
+      "entity_id": "67",
+      "label": "67",
+      "pos_x": 750,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "55e576d5-f688-495d-a26a-602fc91f2fee",
+      "entity_type": "services",
+      "entity_id": "71",
+      "label": "71",
+      "pos_x": 0,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0ef2187b-b3d6-49cf-826e-a045bccb2523",
+      "entity_type": "services",
+      "entity_id": "72",
+      "label": "72",
+      "pos_x": 250,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a2241fe2-0a0b-452b-8f11-942782ce12cd",
+      "entity_type": "services",
+      "entity_id": "73",
+      "label": "73",
+      "pos_x": 500,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4dbf8e5a-d7fc-44b2-a9ca-381562f42eb3",
+      "entity_type": "services",
+      "entity_id": "74",
+      "label": "74",
+      "pos_x": 750,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "70fc7e53-3b30-43e3-8ea8-356921b1eb7d",
+      "entity_type": "services",
+      "entity_id": "75",
+      "label": "75",
+      "pos_x": 0,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e7270702-842b-4ba8-8083-f03768dc78d7",
+      "entity_type": "services",
+      "entity_id": "77",
+      "label": "77",
+      "pos_x": 250,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9f9183cd-650d-454b-a0a6-d7d9b7d1d138",
+      "entity_type": "services",
+      "entity_id": "82",
+      "label": "82",
+      "pos_x": 500,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "70733fc8-90b5-4efd-933f-f7f7fdf7dfdc",
+      "entity_type": "services",
+      "entity_id": "84",
+      "label": "84",
+      "pos_x": 750,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "540b0d49-628b-4971-84ff-fb9ac1b96b62",
+      "entity_type": "services",
+      "entity_id": "93",
+      "label": "93",
+      "pos_x": 0,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "01a25b06-1f0f-42e5-b0c6-e8790b733e65",
+      "entity_type": "services",
+      "entity_id": "98",
+      "label": "98",
+      "pos_x": 250,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "65a4e2a4-a9d8-40ea-8bc2-865322eca1dc",
+      "entity_type": "services",
+      "entity_id": "<module>",
+      "label": "<module>",
+      "pos_x": 500,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "61149591-6453-4d97-af20-01ce29e7e7e6",
+      "entity_type": "services",
+      "entity_id": "Extensions",
+      "label": "Extensions",
+      "pos_x": 750,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "cd0ddce3-0747-4ff2-9d73-459184166d99",
+      "entity_type": "services",
+      "entity_id": "HostEnvironmentExtensions",
+      "label": "HostEnvironmentExtensions",
+      "pos_x": 0,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "entity_type": "services",
+      "entity_id": "CatalogApi",
+      "label": "CatalogApi",
+      "pos_x": 250,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0d330eed-b362-4809-8614-04509d698315",
+      "entity_type": "services",
+      "entity_id": "BasketItem",
+      "label": "BasketItem",
+      "pos_x": 500,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "entity_type": "services",
+      "entity_id": "BasketService",
+      "label": "BasketService",
+      "pos_x": 750,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "49d35d45-d156-4d16-baae-542d56a49388",
+      "entity_type": "services",
+      "entity_id": "ServerCallContextIdentityExtensions",
+      "label": "ServerCallContextIdentityExtensions",
+      "pos_x": 0,
+      "pos_y": 2880,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "67409cbe-4f48-46b9-8ebc-d2f0806addcf",
+      "entity_type": "services",
+      "entity_id": "IBasketRepository",
+      "label": "IBasketRepository",
+      "pos_x": 250,
+      "pos_y": 2880,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1f8feab4-873e-43f3-9e61-618b8fd0170a",
+      "entity_type": "services",
+      "entity_id": "MapToCustomerBasketResponse",
+      "label": "MapToCustomerBasketResponse",
+      "pos_x": 500,
+      "pos_y": 2880,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5ecd2da0-b03c-4fa8-a3a4-d292c5e0c202",
+      "entity_type": "services",
+      "entity_id": "MapToCustomerBasket",
+      "label": "MapToCustomerBasket",
+      "pos_x": 750,
+      "pos_y": 2880,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "entity_type": "services",
+      "entity_id": "CatalogAI",
+      "label": "CatalogAI",
+      "pos_x": 0,
+      "pos_y": 3060,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "entity_type": "services",
+      "entity_id": "root",
+      "label": "root",
+      "pos_x": 250,
+      "pos_y": 3060,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "entity_type": "services",
+      "entity_id": "services_Context",
+      "label": "services.Context",
+      "pos_x": 500,
+      "pos_y": 3060,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d51ecc33-fbbb-4cdd-8c61-cf3bd5684aa6",
+      "entity_type": "services",
+      "entity_id": "SaveEventAndCatalogContextChangesAsync",
+      "label": "SaveEventAndCatalogContextChangesAsync",
+      "pos_x": 750,
+      "pos_y": 3060,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c15005d6-1081-41fa-9041-97a96dec1490",
+      "entity_type": "services",
+      "entity_id": "PublishThroughEventBusAsync",
+      "label": "PublishThroughEventBusAsync",
+      "pos_x": 0,
+      "pos_y": 3240,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3ca5dcb0-8471-48c9-881d-742be0ad3e90",
+      "entity_type": "services",
+      "entity_id": "CatalogBrandEntityTypeConfiguration",
+      "label": "CatalogBrandEntityTypeConfiguration",
+      "pos_x": 250,
+      "pos_y": 3240,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5cca4b0c-eb3c-4948-9f93-f468bf3f94f0",
+      "entity_type": "services",
+      "entity_id": "CatalogContext",
+      "label": "CatalogContext",
+      "pos_x": 500,
+      "pos_y": 3240,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9645486c-051a-4a10-b447-b356e929c9c0",
+      "entity_type": "services",
+      "entity_id": "CatalogContextModelSnapshot",
+      "label": "CatalogContextModelSnapshot",
+      "pos_x": 750,
+      "pos_y": 3240,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "77c66a04-0904-499e-a592-226dd67fb827",
+      "entity_type": "services",
+      "entity_id": "modelBuilder",
+      "label": "modelBuilder",
+      "pos_x": 0,
+      "pos_y": 3420,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0a1c30c5-c47e-481e-989b-49fa73447056",
+      "entity_type": "services",
+      "entity_id": "CatalogContextSeed",
+      "label": "CatalogContextSeed",
+      "pos_x": 250,
+      "pos_y": 3420,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "bebaa360-4813-44df-af42-7862bf3e4315",
+      "entity_type": "services",
+      "entity_id": "sourceItems",
+      "label": "sourceItems",
+      "pos_x": 500,
+      "pos_y": 3420,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d5769533-f2f4-4a4a-af4c-77b24c9bf8d8",
+      "entity_type": "services",
+      "entity_id": "CatalogIntegrationEventService",
+      "label": "CatalogIntegrationEventService",
+      "pos_x": 750,
+      "pos_y": 3420,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8c1b4929-3431-4b66-be91-84e1413c69a7",
+      "entity_type": "services",
+      "entity_id": "Dispose",
+      "label": "Dispose",
+      "pos_x": 0,
+      "pos_y": 3600,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "022a85ef-d5e4-4354-ab4c-5748327c523b",
+      "entity_type": "services",
+      "entity_id": "CatalogItem",
+      "label": "CatalogItem",
+      "pos_x": 250,
+      "pos_y": 3600,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "90f61c1e-3666-4540-be42-14565ac215d1",
+      "entity_type": "services",
+      "entity_id": "CatalogItemEntityTypeConfiguration",
+      "label": "CatalogItemEntityTypeConfiguration",
+      "pos_x": 500,
+      "pos_y": 3600,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f5727b2f-2551-424d-8e36-c6ef262b7598",
+      "entity_type": "services",
+      "entity_id": "CatalogTypeEntityTypeConfiguration",
+      "label": "CatalogTypeEntityTypeConfiguration",
+      "pos_x": 750,
+      "pos_y": 3600,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "40a71d58-f503-49cb-b0b3-d11bb32f1f9a",
+      "entity_type": "services",
+      "entity_id": "Initial",
+      "label": "Initial",
+      "pos_x": 0,
+      "pos_y": 3780,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "faf6c70f-7fa9-41d0-83eb-03675d854739",
+      "entity_type": "services",
+      "entity_id": "OrderStartedIntegrationEventHandler",
+      "label": "OrderStartedIntegrationEventHandler",
+      "pos_x": 250,
+      "pos_y": 3780,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6040da14-bfa8-488b-8abe-58a8680739fc",
+      "entity_type": "services",
+      "entity_id": "OrderStatusChangedToAwaitingValidationIntegrationEventHandler",
+      "label": "OrderStatusChangedToAwaitingValidationIntegrationEventHandler",
+      "pos_x": 500,
+      "pos_y": 3780,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4e8b138e-9f0b-4561-930f-95568b44d4ca",
+      "entity_type": "services",
+      "entity_id": "OrderStatusChangedToPaidIntegrationEventHandler",
+      "label": "OrderStatusChangedToPaidIntegrationEventHandler",
+      "pos_x": 750,
+      "pos_y": 3780,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "38db8753-6a3e-48e3-8f19-316e1af68ed0",
+      "entity_type": "services",
+      "entity_id": "Outbox",
+      "label": "Outbox",
+      "pos_x": 0,
+      "pos_y": 3960,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ce853efb-4f41-43f4-8499-771acb44800c",
+      "entity_type": "services",
+      "entity_id": "RedisBasketRepository",
+      "label": "RedisBasketRepository",
+      "pos_x": 250,
+      "pos_y": 3960,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "011419fd-9d62-46d3-9368-d2f33ca4526b",
+      "entity_type": "services",
+      "entity_id": "RemoveHiLoAndIndexCatalogName",
+      "label": "RemoveHiLoAndIndexCatalogName",
+      "pos_x": 500,
+      "pos_y": 3960,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "1bb234e7-964a-4205-bc63-d19cb7b3226d",
+      "source_node_id": "65a4e2a4-a9d8-40ea-8bc2-865322eca1dc",
+      "target_node_id": "61149591-6453-4d97-af20-01ce29e7e7e6",
+      "relationship_type": "calls",
+      "label": "AddApplicationServices()"
+    },
+    {
+      "id": "4640fa86-e1d8-4c7f-b852-d0532fa9c171",
+      "source_node_id": "61149591-6453-4d97-af20-01ce29e7e7e6",
+      "target_node_id": "cd0ddce3-0747-4ff2-9d73-459184166d99",
+      "relationship_type": "calls",
+      "label": "IsBuild()"
+    },
+    {
+      "id": "3859b398-5236-45c2-8ecd-8d1178b090d1",
+      "source_node_id": "65a4e2a4-a9d8-40ea-8bc2-865322eca1dc",
+      "target_node_id": "61149591-6453-4d97-af20-01ce29e7e7e6",
+      "relationship_type": "calls",
+      "label": "AddApplicationServices()"
+    },
+    {
+      "id": "0a8ebc29-5c58-4dec-a30c-069a1f86e3a3",
+      "source_node_id": "61149591-6453-4d97-af20-01ce29e7e7e6",
+      "target_node_id": "cd0ddce3-0747-4ff2-9d73-459184166d99",
+      "relationship_type": "calls",
+      "label": "IsBuild()"
+    },
+    {
+      "id": "a7dcaa62-6987-476d-9885-72608ec07adb",
+      "source_node_id": "65a4e2a4-a9d8-40ea-8bc2-865322eca1dc",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "MapCatalogApi()"
+    },
+    {
+      "id": "659a9265-0dc2-4740-be7e-d38c0912b5ab",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "49d35d45-d156-4d16-baae-542d56a49388",
+      "relationship_type": "calls",
+      "label": "GetUserIdentity()"
+    },
+    {
+      "id": "9aafb985-7fe3-4c27-a3bd-f7afaef2dbc1",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "67409cbe-4f48-46b9-8ebc-d2f0806addcf",
+      "relationship_type": "calls",
+      "label": "DeleteBasketAsync()"
+    },
+    {
+      "id": "2c429d75-acde-4f28-8815-7202f7104fe9",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "49d35d45-d156-4d16-baae-542d56a49388",
+      "relationship_type": "calls",
+      "label": "GetUserIdentity()"
+    },
+    {
+      "id": "789994d7-8e26-4147-86b0-74559931ddbe",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "67409cbe-4f48-46b9-8ebc-d2f0806addcf",
+      "relationship_type": "calls",
+      "label": "GetBasketAsync()"
+    },
+    {
+      "id": "3c27f690-2116-42e3-8e5e-af1b38b9f865",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "1f8feab4-873e-43f3-9e61-618b8fd0170a",
+      "relationship_type": "calls",
+      "label": "MapToCustomerBasketResponse()"
+    },
+    {
+      "id": "cb50774d-b4da-467a-95a8-c2680759010f",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "49d35d45-d156-4d16-baae-542d56a49388",
+      "relationship_type": "calls",
+      "label": "GetUserIdentity()"
+    },
+    {
+      "id": "089ec069-d40f-4fb7-b2b4-27559ceb23b5",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "5ecd2da0-b03c-4fa8-a3a4-d292c5e0c202",
+      "relationship_type": "calls",
+      "label": "MapToCustomerBasket()"
+    },
+    {
+      "id": "543e8104-0eb2-4dbd-8e27-b115af41b04a",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "67409cbe-4f48-46b9-8ebc-d2f0806addcf",
+      "relationship_type": "calls",
+      "label": "UpdateBasketAsync()"
+    },
+    {
+      "id": "346c23a3-01bb-4931-a2e6-70dd027a624a",
+      "source_node_id": "e4945b9f-8e2a-4848-ba99-429582fd16ad",
+      "target_node_id": "1f8feab4-873e-43f3-9e61-618b8fd0170a",
+      "relationship_type": "calls",
+      "label": "MapToCustomerBasketResponse()"
+    },
+    {
+      "id": "cb160525-95de-4c6b-bcab-9d9482c142b3",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingAsync()"
+    },
+    {
+      "id": "c6529962-b63c-4f7e-90e6-b841669cd7d7",
+      "source_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingAsync()"
+    },
+    {
+      "id": "8a127fdd-fad3-486b-9804-82c908dbb4d4",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetAllItems()"
+    },
+    {
+      "id": "20fa97df-388e-4fa8-aed9-ec5f3fe053c5",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "dd24c597-1a23-4546-a835-90311609981b",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "c2411df8-3aa7-4caa-a62f-356f0c7926b3",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "cda9c7b6-ca57-43ee-8082-aba88f98b933",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetFullPath()"
+    },
+    {
+      "id": "f5c2f0b3-c262-4892-9022-a1920547563d",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetImageMimeTypeFromImageFileExtension()"
+    },
+    {
+      "id": "168bc601-39c8-45f1-93a5-9edd66e73910",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetAllItems()"
+    },
+    {
+      "id": "c196fb24-6082-4b50-be3a-e15b76e0f879",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "b577c111-0c92-4bc2-9122-cfce52836799",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "654c26e5-fc77-402b-b561-be54d237e052",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "d0c703db-923d-42ce-8a0c-92b97682a660",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetAllItems()"
+    },
+    {
+      "id": "e7091e65-f16c-400c-8463-9ab5f096d545",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "888415be-7476-41f6-bc0c-a5de506864d7",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "483f382e-5df1-4842-8532-d526a61cb73e",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "8b572898-f069-4531-a776-e80e354cfdad",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetItemsBySemanticRelevance()"
+    },
+    {
+      "id": "6feac32b-e524-4fde-a7ce-0fae1d71f0ff",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetItemsByName()"
+    },
+    {
+      "id": "2f637246-1073-4d88-bc47-17a6d98dbaf5",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetAllItems()"
+    },
+    {
+      "id": "a7dc65b9-382e-402b-aa83-fce483a3a7ba",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "2f5c09dd-e35e-4cd1-9ce0-6c7391f4f076",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "68a0821c-9aa3-490d-a460-d372ee2a5f6a",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "e70fa958-c977-4b5f-8957-659634be8af5",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingAsync()"
+    },
+    {
+      "id": "d68d31b0-5ec2-45fd-a47d-abbf4cc55399",
+      "source_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingAsync()"
+    },
+    {
+      "id": "ceed60d7-db0e-4114-ab73-d5fbc2c7f8b5",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetItemsByName()"
+    },
+    {
+      "id": "372f2b02-e462-4acc-9dae-a11d5ac8ab04",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "GetAllItems()"
+    },
+    {
+      "id": "1eb8214e-35ad-4fdb-93d7-de6845b6d016",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "dee9a73d-d2b0-4c9a-842a-2a17b6833712",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "335f4091-2ba6-4aad-834c-839bb731dd1b",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "56b10652-3be1-4dc6-8e48-c65ccf66bbb6",
+      "relationship_type": "calls",
+      "label": "root()"
+    },
+    {
+      "id": "2d20cb5c-9946-4c58-bf4a-83bf9879c0b7",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "3be73ca2-73a6-41c6-a430-0ea2179e2eec",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "d062ec70-55b6-4b8c-bba0-36733e20b534",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "663bedc0-ed7c-4a77-b6ca-a59e97577fe1",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "846f60e3-6956-4432-b65b-9d0d01d6485e",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "9319c636-3f1d-43f4-bb0a-42c0e4ebbe69",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "9843feda-6d64-428f-aeb3-a88b0e210500",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "a1c3a1ea-e127-481b-8396-da0e4827ee57",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "7a42134b-09ef-4c25-ae08-d6c850afd42f",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "efb11eaf-3c59-4069-9ddd-99bb168c5ef0",
+      "relationship_type": "calls",
+      "label": "CatalogItems()"
+    },
+    {
+      "id": "ed7783f6-35ca-42e1-8e41-5cd09579237b",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "relationship_type": "calls",
+      "label": "UpdateItem()"
+    },
+    {
+      "id": "c3074ddd-fd71-4e5e-a00c-d7967b3b0af5",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingAsync()"
+    },
+    {
+      "id": "5de1daeb-ba60-458d-8265-2b68b0cf9bd5",
+      "source_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingAsync()"
+    },
+    {
+      "id": "111a96f0-f8b5-427a-ba76-2de1c4a34e2d",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "d51ecc33-fbbb-4cdd-8c61-cf3bd5684aa6",
+      "relationship_type": "calls",
+      "label": "SaveEventAndCatalogContextChangesAsync()"
+    },
+    {
+      "id": "61c92d3c-be2b-4330-a575-f6281cdd332c",
+      "source_node_id": "e72c8117-ef6b-4df6-aeca-830dbc48dd1f",
+      "target_node_id": "c15005d6-1081-41fa-9041-97a96dec1490",
+      "relationship_type": "calls",
+      "label": "PublishThroughEventBusAsync()"
+    },
+    {
+      "id": "a7c378cd-e5ac-4df8-bfe2-d419e8d66aff",
+      "source_node_id": "9645486c-051a-4a10-b447-b356e929c9c0",
+      "target_node_id": "77c66a04-0904-499e-a592-226dd67fb827",
+      "relationship_type": "calls",
+      "label": "modelBuilder()"
+    },
+    {
+      "id": "56900e7f-1b0c-4e2d-979f-7e9f69ec00a4",
+      "source_node_id": "0a1c30c5-c47e-481e-989b-49fa73447056",
+      "target_node_id": "bebaa360-4813-44df-af42-7862bf3e4315",
+      "relationship_type": "calls",
+      "label": "sourceItems()"
+    },
+    {
+      "id": "f93e10af-7325-4287-b50d-4321d4e4ef40",
+      "source_node_id": "0a1c30c5-c47e-481e-989b-49fa73447056",
+      "target_node_id": "bebaa360-4813-44df-af42-7862bf3e4315",
+      "relationship_type": "calls",
+      "label": "sourceItems()"
+    },
+    {
+      "id": "e521947f-8550-4352-ab1c-e8a2c36e07c8",
+      "source_node_id": "0a1c30c5-c47e-481e-989b-49fa73447056",
+      "target_node_id": "c12ad139-34b8-4c6b-9dbc-8299cd5c95da",
+      "relationship_type": "calls",
+      "label": "GetEmbeddingsAsync()"
+    },
+    {
+      "id": "05fec2c3-d2c3-43f9-88db-a51dde66b0a1",
+      "source_node_id": "d5769533-f2f4-4a4a-af4c-77b24c9bf8d8",
+      "target_node_id": "8c1b4929-3431-4b66-be91-84e1413c69a7",
+      "relationship_type": "calls",
+      "label": "Dispose()"
+    },
+    {
+      "id": "5111b51d-cdf6-416e-90fd-00aa83e8575e",
+      "source_node_id": "40a71d58-f503-49cb-b0b3-d11bb32f1f9a",
+      "target_node_id": "77c66a04-0904-499e-a592-226dd67fb827",
+      "relationship_type": "calls",
+      "label": "modelBuilder()"
+    },
+    {
+      "id": "6d3f88c0-197c-48f4-a1df-ca643b3f5b4b",
+      "source_node_id": "faf6c70f-7fa9-41d0-83eb-03675d854739",
+      "target_node_id": "67409cbe-4f48-46b9-8ebc-d2f0806addcf",
+      "relationship_type": "calls",
+      "label": "DeleteBasketAsync()"
+    },
+    {
+      "id": "e67f054a-04cd-4a90-b4e5-0f55e2dbe4fa",
+      "source_node_id": "6040da14-bfa8-488b-8abe-58a8680739fc",
+      "target_node_id": "d51ecc33-fbbb-4cdd-8c61-cf3bd5684aa6",
+      "relationship_type": "calls",
+      "label": "SaveEventAndCatalogContextChangesAsync()"
+    },
+    {
+      "id": "3c6a6cd8-e86f-40f6-a529-805881f65e09",
+      "source_node_id": "6040da14-bfa8-488b-8abe-58a8680739fc",
+      "target_node_id": "c15005d6-1081-41fa-9041-97a96dec1490",
+      "relationship_type": "calls",
+      "label": "PublishThroughEventBusAsync()"
+    },
+    {
+      "id": "5e98cc8d-765a-43e5-8ae2-4678bc3af2c1",
+      "source_node_id": "38db8753-6a3e-48e3-8f19-316e1af68ed0",
+      "target_node_id": "77c66a04-0904-499e-a592-226dd67fb827",
+      "relationship_type": "calls",
+      "label": "modelBuilder()"
+    },
+    {
+      "id": "8be414cd-1ee1-4ded-9ff5-03ada524a9b0",
+      "source_node_id": "ce853efb-4f41-43f4-8499-771acb44800c",
+      "target_node_id": "67409cbe-4f48-46b9-8ebc-d2f0806addcf",
+      "relationship_type": "calls",
+      "label": "GetBasketAsync()"
+    },
+    {
+      "id": "70e4b916-51b8-423c-a38d-f97e985f0163",
+      "source_node_id": "011419fd-9d62-46d3-9368-d2f33ca4526b",
+      "target_node_id": "77c66a04-0904-499e-a592-226dd67fb827",
+      "relationship_type": "calls",
+      "label": "modelBuilder()"
+    }
+  ]
+}

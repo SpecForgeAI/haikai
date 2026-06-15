@@ -1,0 +1,36 @@
+name: dokuwiki
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - "DokuWiki\\Remote"
+    - "RemotePlugin"
+  files_match:
+    - "inc/Remote/Api.php"
+    - "doku.php"
+  manifest_contains:
+    - {file: "composer.json", substring: "dokuwiki/dokuwiki"}
+
+extract:
+  - id: xmlrpc_remote_methods
+    query: method_decls
+    file_filter: all
+    file_extensions: [".php"]
+    name_pattern: '^[a-z][a-zA-Z0-9_]+$'
+    strip_prefix: ""
+    verb: POST
+    path_from: method_name_strip
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: dokuwiki
+
+conflict_rules: []
+known_pitfalls:
+  - "Main web dispatch uses ?do=<action> query parameter, not URL path segments — web action routes are not capturable by any available query type"
+  - "XML-RPC method names are namespaced as <class>.<method> (e.g. wiki.getPage); method_decls emits only the bare method name without the class-derived namespace prefix"
+  - "method_decls with file_filter: all matches public methods across all PHP files, not just RemotePlugin subclasses — expect false positives outside inc/Remote/"
+  - "Action plugins register via DokuWiki's event system, not a routing call — plugin-contributed web routes are not captured"
+  - "Page URLs are content-addressed (?id=<pagename>) with no fixed path structure and cannot be represented as route templates"

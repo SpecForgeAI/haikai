@@ -1,0 +1,5 @@
+11.193.196.176 sourceIP=- - - [08/May/2026:15:49:05 +0000] "GET /ui/job/cloudprod-green.1777556997748.367530/succinct HTTP/1.1" port=10086 statusCode=200 responseBytes=2266
+11.193.196.176 sourceIP=- - - [08/May/2026:15:49:06 +0000] "GET /ui/job/cloudprod-green.1777556997748.367531/succinct HTTP/1.1" port=10086 statusCode=200 responseBytes=2266
+11.193.196.176 sourceIP=- - - [08/May/2026:15:49:07 +0000] "GET /ui/job/cloudprod-green.1777556997748.367532/succinct HTTP/1.1" port=10086 statusCode=200 responseBytes=2266
+11.193.196.176 sourceIP=- - - [08/May/2026:15:49:08 +0000] "POST /ui/api/orders HTTP/1.1" port=10086 statusCode=201 responseBytes=512
+11.193.196.176 sourceIP=- - - [08/May/2026:15:49:09 +0000] "GET /ui/health HTTP/1.1" port=10086 statusCode=200 responseBytes=64

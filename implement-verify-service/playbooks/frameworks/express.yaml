@@ -1,0 +1,39 @@
+name: express
+version: 1
+language: javascript
+
+detection:
+  # Detection is imports-only: requires ≥MIN_IMPORT_FILES (2) files importing
+  # `express`. We deliberately DO NOT use manifest_contains because every
+  # large JS/TS repo (Kibana, Strapi, Next.js apps, etc.) carries express
+  # as a transitive dep without using it as the routing framework.
+  imports_match:
+    - express
+
+extract:
+  - id: route_calls
+    query: call_args
+    file_filter: all
+    callee_pattern: '\.(get|post|put|delete|patch|head|options|all|use)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^[/:*]'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: express
+
+verification:
+  - id: route_call_count
+    query: call_args
+    callee_pattern: '\.(get|post|put|delete|patch)$'
+    expected_count: same_as_output_count
+    tolerance_pct: 20
+
+conflict_rules: []
+
+known_pitfalls:
+  - "router.use() may be middleware or a sub-router mount — not always an endpoint"
+  - "Variable router names: any identifier matching `\\.get\\(` etc. is treated as a route"
+  - "Path prefixes from app.use('/api', router) are NOT yet resolved — flat path only"

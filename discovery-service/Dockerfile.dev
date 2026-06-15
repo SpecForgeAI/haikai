@@ -1,0 +1,22 @@
+# Development Dockerfile for Discovery Service
+FROM node:20-alpine
+
+# Install universal-ctags for symbol extraction
+RUN apk add --no-cache universal-ctags
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files for dependency installation (layer caching)
+COPY package.json package-lock.json ./
+
+# Install dependencies (includes devDependencies for tsx)
+RUN npm ci
+
+# Note: Source files are NOT copied - they will be volume mounted for hot-reload
+
+# Expose Discovery Service port
+EXPOSE 8091
+
+# Start the development server (uses tsx watch for hot-reload)
+CMD ["npm", "run", "dev"]

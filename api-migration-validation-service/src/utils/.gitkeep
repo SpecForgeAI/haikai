@@ -1,0 +1,6 @@
+# Utils placeholder
+#
+# Reserved for cross-cutting helper modules added by Groups 5+ (e.g. scenario
+# templating, retry helpers, response-shape sanitisers). Kept as a directory
+# marker for parity with the discovery-service skeleton called out in the
+# spec's "Reuse anchors" section.

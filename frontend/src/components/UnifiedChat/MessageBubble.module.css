@@ -1,0 +1,186 @@
+/**
+ * MessageBubble.module.css
+ *
+ * Spec 2026-02-28: Unified Chat Panel v1 (Frontend)
+ * Task Group 5, Task 5.2: MessageBubble styles
+ *
+ * Spec 2026-03-26: Render Temporary Architecture Diagrams in Frontend (Increment 4)
+ * Task Group 5, Task 5.3: Added .viewDiagramLink style for "View Diagram" action button
+ *
+ * Styles for the message bubble component with role-based alignment:
+ * - User messages: right-aligned, green background
+ * - Assistant messages: left-aligned with persona avatar, grey background
+ * - System messages: centered, muted styling
+ *
+ * Font sizes per spec: persona label 12px/600, content 14px/400, timestamps 11px/400
+ */
+
+/* ============================================================================
+ * Wrapper: controls alignment per role
+ * ============================================================================ */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  margin: 6px 0;
+  max-width: 100%;
+}
+
+/* User messages: right-aligned */
+.wrapperUser {
+  align-items: flex-end;
+}
+
+/* Assistant messages: left-aligned */
+.wrapperAssistant {
+  align-items: flex-start;
+}
+
+/* System messages: centered */
+.wrapperSystem {
+  align-items: center;
+}
+
+/* ============================================================================
+ * Assistant Header: avatar + persona name
+ * ============================================================================ */
+
+.assistantHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+/* Persona avatar: 28px colored circle with white initials */
+.personaAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Persona display name label */
+.personaLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
+
+/* ============================================================================
+ * User Label
+ * ============================================================================ */
+
+.userLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2E7D32;
+  margin-bottom: 4px;
+}
+
+/* ============================================================================
+ * Bubble: message content container
+ * ============================================================================ */
+
+.bubble {
+  max-width: 85%;
+  padding: 8px 12px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.bubbleUser {
+  background: #E6F4EA;
+  border-radius: 12px 12px 4px 12px;
+}
+
+.bubbleAssistant {
+  background: #F1F1F1;
+  border-radius: 12px 12px 12px 4px;
+}
+
+.bubbleSystem {
+  background: transparent;
+  padding: 4px 8px;
+}
+
+/* ============================================================================
+ * Message Content
+ * ============================================================================ */
+
+.messageContent {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #1a1a1a;
+}
+
+/* System message content: muted text */
+.systemContent {
+  font-size: 13px;
+  font-weight: 400;
+  font-style: italic;
+  color: #888;
+}
+
+/* ============================================================================
+ * Timestamp
+ * ============================================================================ */
+
+.timestamp {
+  font-size: 11px;
+  font-weight: 400;
+  color: #999;
+  margin-top: 2px;
+}
+
+/* ============================================================================
+ * Structured Response area (TaskMenu, StructuredQuestions)
+ * ============================================================================ */
+
+.structuredResponseArea {
+  margin-top: 8px;
+}
+
+/* ============================================================================
+ * View Diagram Link
+ * Spec 2026-03-26: Render Temporary Architecture Diagrams -- TG5.3
+ * Styled as a text-button link, consistent with other action triggers
+ * (e.g., CompletionChip download button) within message bubbles.
+ * ============================================================================ */
+
+.viewDiagramLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid #5C6BC0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #5C6BC0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.viewDiagramLink:hover {
+  background: #E8EAF6;
+  color: #3949AB;
+  border-color: #3949AB;
+}
+
+.viewDiagramLink:focus-visible {
+  outline: 2px solid #5C6BC0;
+  outline-offset: 2px;
+}

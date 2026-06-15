@@ -1,0 +1,32 @@
+name: silverstripe
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - "SilverStripe\\Control\\Controller"
+    - "SilverStripe\\Control\\Director"
+    - "SilverStripe\\Control\\RequestHandler"
+  files_match:
+    - "_config/*.yml"
+  manifest_contains:
+    - {file: "composer.json", substring: "silverstripe/framework"}
+
+extract:
+  - id: director_yaml_rules
+    query: configs
+    parser: symfony_yaml
+    file_glob: "**/_config/*.yml"
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: silverstripe
+
+conflict_rules: []
+known_pitfalls:
+  - "SilverStripe routes live under 'SilverStripe\\Control\\Director.rules' YAML keys; symfony_yaml parses the file structure but does not understand this schema — route paths will not be extracted without a dedicated silverstripe_director_yml parser"
+  - "PHP-based registration via Director::config()->merge('rules', [...]) embeds paths as array keys inside an object argument, not as positional string literals — call_args path_arg_index cannot resolve them"
+  - "Controller action methods are arbitrary public methods listed in the $allowed_actions static array, not a naming-convention prefix — method_decls has no pattern to match them"
+  - "Sub-controller routing (parent rule + $Action/$ID URL segments) is resolved at runtime and child segments cannot be statically inlined"
+  - "Module-contributed rules from vendor packages carry their own _config/*.yml files; scanning only the project root _config/ directory misses all vendor-contributed routes"

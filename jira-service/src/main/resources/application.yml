@@ -1,0 +1,94 @@
+spring:
+  application:
+    name: jira-service
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+server:
+  port: 8078
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    com.example.jiraservice: DEBUG
+
+# Jira Cloud configuration
+jira:
+  base-url: ${JIRA_BASE_URL:https://garyjohnston1983.atlassian.net}
+  auth-mode: ${JIRA_AUTH_MODE:BASIC}
+  bearer-token: ${JIRA_BEARER_TOKEN:changeit}
+  username: ${JIRA_USERNAME:garyjohnston83@gmail.com}
+  api-token: ${JIRA_API_TOKEN:changeit}
+  connect-timeout-ms: 5000
+  read-timeout-ms: 30000
+  type-mapping:
+    KAN:
+      Initiative: INITIATIVE
+      Epic: EPIC
+      Feature: FEATURE
+      Story: STORY
+      Task: TASK
+      Bug: BUG
+      Test: TEST
+      Subtask: TASK
+      Request: TASK
+    RP:
+      Initiative: INITIATIVE
+      Epic: EPIC
+      Feature: FEATURE
+      Story: STORY
+      Task: TASK
+      Bug: BUG
+      Test: TEST
+      Subtask: TASK
+      Request: TASK
+  # Reverse mapping used when CREATING Jira issues from tool work items.
+  # Resolves the ambiguity in type-mapping (e.g. Subtask/Request/Task all
+  # collapse to TASK on read; on write we need to pick a single Jira type).
+  default-jira-type:
+    KAN:
+      INITIATIVE: Initiative
+      EPIC: Epic
+      FEATURE: Feature
+      STORY: Story
+      TASK: Task
+      BUG: Bug
+      TEST: Test
+    RP:
+      # Temporary remapping to sidestep Jira hierarchy constraint where Epic
+      # in this RP project can't have a parent. Shifted everything down one
+      # level: tool INITIATIVE creates as Jira Epic (top-of-Jira-hierarchy);
+      # tool EPIC creates as Jira Story (which can have an Epic parent).
+      # Read direction is unchanged.
+      INITIATIVE: Epic
+      EPIC: Story
+      FEATURE: Task
+      STORY: Subtask
+      TASK: Subtask
+      BUG: Bug
+      TEST: Task
+  # Per-project tool-status -> ordered list of candidate Jira target-status names,
+  # used by JiraIssueTransitionService when pushing tool status to Jira via the
+  # transitions API. First match (any available transition whose target name matches
+  # a candidate, case-insensitive) wins. When a (project, tool-status) is NOT listed
+  # here, the service falls back to a hardcoded default candidate list (see
+  # DEFAULT_TOOL_STATUS_TO_JIRA_CANDIDATES). Listing it here fully overrides the
+  # default for that combination -- to extend rather than override, copy the defaults
+  # plus your additions.
+  #status-mapping:
+  #  SMD:
+  #    PLANNED:      [To Do, Backlog]
+  #    IN_PROGRESS:  [In Progress]
+  #    DEV_COMPLETE: [In Review, In QA]
+  #    COMPLETED:    [Done, Closed]
+  #    CANCELLED:    [Won't Do, Cancelled]

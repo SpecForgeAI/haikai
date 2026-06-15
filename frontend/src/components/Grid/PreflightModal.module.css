@@ -1,0 +1,402 @@
+/**
+ * PreflightModal.module.css
+ *
+ * Spec 2026-05-06: Library Discovery Integration -- Task Group 7
+ *
+ * Visual shape mirrors StartDiscoveryRunConfirmModal.module.css for shell
+ * parity (overlay, modal frame, header / content / footer, primary /
+ * secondary buttons), with extra section / list classes for the preflight
+ * specifics.
+ */
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 720px;
+  width: 90%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  border-radius: 8px 8px 0 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+}
+
+.subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: #666;
+  margin-top: 2px;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.content {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.computingState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 12px;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #1976d2;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.computingText {
+  font-size: 13px;
+  color: #555;
+}
+
+.errorPanel {
+  background: #fff3f3;
+  border: 1px solid #ffcdd2;
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: #c62828;
+  font-size: 13px;
+}
+
+.section {
+  border: 1px solid #eee;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: #fafafa;
+}
+
+.sectionTitle {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.rootRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rootKind {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.rootName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.rootMeta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #555;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metaLabel {
+  font-weight: 600;
+  color: #444;
+}
+
+.libList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.libRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #555;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid #eee;
+  flex-wrap: wrap;
+}
+
+.libName {
+  font-weight: 600;
+  color: #333;
+  flex: 0 0 auto;
+}
+
+.libSubfolder {
+  color: #777;
+  font-style: italic;
+}
+
+.libDepth {
+  color: #555;
+  font-size: 11px;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.libCoords {
+  color: #777;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.libScope {
+  color: #555;
+  font-size: 11px;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.statusNew {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.statusReScan {
+  background: #fff8e1;
+  color: #f57f17;
+}
+
+.statusSkippedCycle {
+  background: #fce4ec;
+  color: #ad1457;
+}
+
+.statusSkippedDepthCap {
+  background: #f3e5f5;
+  color: #6a1b9a;
+}
+
+.emptyMessage {
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+}
+
+.expandButton {
+  background: none;
+  border: 1px dashed #1976d2;
+  color: #1976d2;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.expandButton:hover {
+  background: #e3f2fd;
+}
+
+.warningList {
+  margin: 0;
+  padding-left: 20px;
+  color: #814a00;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.warningRow {
+  margin: 2px 0;
+}
+
+.warningType {
+  font-weight: 600;
+  color: #b26a00;
+}
+
+.warningLibName {
+  font-weight: 600;
+  color: #6a4500;
+}
+
+.warningMessage {
+  color: #814a00;
+}
+
+.toggleRow {
+  margin-top: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid #eee;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+/* Spec 2026-05-11 Section 1: per-run M control. */
+.fieldGroup {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.input {
+  width: 80px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}

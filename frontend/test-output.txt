@@ -1,0 +1,1590 @@
+
+> architecture-tool@0.1.0 test
+> vitest
+
+
+[1m[46m RUN [49m[22m [36mv4.0.15 [39m[90mC:/Workspaces/SSD/architecture-store-and-diagrams/frontend[39m
+
+ [31m❯[39m src/__tests__/advanced-add-relationships.test.ts [2m([22m[2m19 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 59[2mms[22m[39m
+       [32m✓[39m should return correct relationships for APPLICATION entity type[32m 2[2mms[22m[39m
+       [32m✓[39m should return correct relationships for BUSINESS_PROCESS entity type[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty array for PROCESS_ACTIVITY (leaf entity)[32m 9[2mms[22m[39m
+       [32m✓[39m should return empty array for LOGICAL_DATA_ATTRIBUTE (leaf entity)[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty array for PHYSICAL_DATA_ATTRIBUTE (leaf entity)[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty array for unknown entity type[32m 0[2mms[22m[39m
+       [32m✓[39m should correctly distinguish PARENT_CHILD relationships[32m 3[2mms[22m[39m
+[31m       [31m×[31m should correctly distinguish ASSOCIATION relationships[39m[32m 30[2mms[22m[39m
+       [32m✓[39m should return correct kind labels[32m 1[2mms[22m[39m
+       [32m✓[39m should return true for APPLICATION[32m 1[2mms[22m[39m
+       [32m✓[39m should return true for BUSINESS_PROCESS[32m 0[2mms[22m[39m
+       [32m✓[39m should return true for LOGICAL_DATA_ENTITY[32m 4[2mms[22m[39m
+       [32m✓[39m should return false for PROCESS_ACTIVITY (leaf)[32m 0[2mms[22m[39m
+       [32m✓[39m should return false for unknown entity type[32m 1[2mms[22m[39m
+       [32m✓[39m should return all entity types with expandable relationships[32m 1[2mms[22m[39m
+       [32m✓[39m should not include leaf entity types[32m 5[2mms[22m[39m
+       [32m✓[39m should support Application -> AppComponent -> Service -> Interface chain[32m 0[2mms[22m[39m
+       [32m✓[39m should support BusinessProcess -> ProcessActivity chain[32m 0[2mms[22m[39m
+       [32m✓[39m should support LogicalDataEntity -> LogicalDataAttribute chain[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/excel-operations.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[32m 262[2mms[22m[39m
+       [32m✓[39m should return tab name as-is when under 31 characters[32m 2[2mms[22m[39m
+       [32m✓[39m should truncate names longer than 31 characters[32m 0[2mms[22m[39m
+       [32m✓[39m should replace <-> with - in relationship names[32m 0[2mms[22m[39m
+       [32m✓[39m should handle relationship names without <->[32m 0[2mms[22m[39m
+       [32m✓[39m should truncate names longer than 31 characters after replacement[32m 0[2mms[22m[39m
+       [32m✓[39m should return entity types that are NOT derived[32m 25[2mms[22m[39m
+[31m       [31m×[31m should return expected count of exportable entity types[39m[32m 46[2mms[22m[39m
+       [32m✓[39m should return all relationship types[32m 8[2mms[22m[39m
+[31m       [31m×[31m should return expected count of relationship types[39m[32m 103[2mms[22m[39m
+       [32m✓[39m should map worksheet names back to entity types[32m 0[2mms[22m[39m
+       [32m✓[39m should return undefined for unknown worksheet names[32m 32[2mms[22m[39m
+       [32m✓[39m should map worksheet names (with hyphen) back to relationship types[32m 14[2mms[22m[39m
+       [32m✓[39m should return undefined for unknown relationship worksheet names[32m 0[2mms[22m[39m
+     [32m✓[39m should exclude derived entities (application_points, business_points, app_business_points)[32m 14[2mms[22m[39m
+ [31m❯[39m src/__tests__/relationship-eligibility-per-diagram.test.ts [2m([22m[2m33 tests[22m[2m | [22m[31m15 failed[39m[2m)[22m[33m 894[2mms[22m[39m
+     [32m✓[39m 1.1.1 Empty diagram returns empty Sets for all entity types[32m 44[2mms[22m[39m
+     [32m✓[39m 1.1.2 Diagram with single Business User node populates businessUsersOnDiagram Set correctly[32m 1[2mms[22m[39m
+     [32m✓[39m 1.1.3 APPLICATION node correctly maps to applicationPointsOnDiagram via application_id lookup[32m 0[2mms[22m[39m
+     [32m✓[39m 1.1.4 APP_COMPONENT node correctly maps to applicationPointsOnDiagram via application_component_id[32m 35[2mms[22m[39m
+     [32m✓[39m 1.1.5 SERVICE node correctly maps to applicationPointsOnDiagram via service_id[32m 0[2mms[22m[39m
+     [32m✓[39m 1.1.6 Diagram with mixed entity types populates multiple Sets correctly[32m 0[2mms[22m[39m
+     [32m✓[39m 1.1.7 Undefined diagram returns empty Sets[32m 0[2mms[22m[39m
+[31m     [31m×[31m 2.1.1 isUserProcessEnabled: enabled when both user_id AND process_id in respective Sets[39m[32m 141[2mms[22m[39m
+     [32m✓[39m 2.1.2 isUserProcessEnabled: disabled when user_id missing from Set[32m 0[2mms[22m[39m
+[31m     [31m×[31m 2.1.3 isAppPointProcessEnabled: enabled when either endpoint NOT on diagram[39m[32m 1[2mms[22m[39m
+     [32m✓[39m 2.1.4 isAppPointProcessEnabled: disabled when BOTH already on diagram with containment[32m 0[2mms[22m[39m
+[31m     [31m×[31m 2.1.5 isLogicalEREnabled: enabled when both source AND target entity IDs in logicalDataEntitiesOnDiagram[39m[32m 6[2mms[22m[39m
+[31m     [31m×[31m 2.1.6 isDataMovementEnabled: enabled when both source AND target app point IDs in applicationPointsOnDiagram[39m[32m 1[2mms[22m[39m
+     [32m✓[39m 2.1.7 isDataMovementEnabled: disabled when one app point missing from Set[32m 0[2mms[22m[39m
+     [32m✓[39m 2.1.8 isLogicalPhysicalEntityEnabled: enabled when both IDs in respective Sets[32m 0[2mms[22m[39m
+[31m     [31m×[31m 3.1.1 Eligibility uses active diagram nodes for computation[39m[32m 8[2mms[22m[39m
+     [32m✓[39m 3.1.2 Empty diagram results in all relationship rows disabled[32m 11[2mms[22m[39m
+[31m     [31m×[31m 3.1.3 Switching diagrams updates eligibility correctly[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m 3.1.4 Pre-computed EntitiesOnDiagram is used for O(1) lookups[39m[32m 160[2mms[22m[39m
+     [32m✓[39m 4.1.1 Disabled relationship shows endpoints_missing reason[32m 0[2mms[22m[39m
+[31m     [31m×[31m 4.1.2 App Point Process when both on diagram shows already_visualised reason[39m[32m 156[2mms[22m[39m
+[31m     [31m×[31m 4.1.3 Enabled relationship shows null disabledReason[39m[32m 51[2mms[22m[39m
+     [32m✓[39m 5.1.1 createRelationshipEdge for DATA_MOVEMENT sets line_type to SOLID[32m 14[2mms[22m[39m
+     [32m✓[39m 5.1.2 createRelationshipEdge for DATA_MOVEMENT sets arrow_end to ARROW[32m 0[2mms[22m[39m
+     [32m✓[39m 5.1.3 createRelationshipEdge for DATA_MOVEMENT sets label_text from options[32m 20[2mms[22m[39m
+     [32m✓[39m 6.3.1 Start with empty diagram, all relationship rows disabled[32m 0[2mms[22m[39m
+[31m     [31m×[31m 6.3.2 Add both endpoints for a Data Movement, row becomes enabled[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m 6.3.3 Switch to new empty Diagram 2, same Data Movement row is disabled[39m[32m 17[2mms[22m[39m
+[31m     [31m×[31m 6.3.4 Add nodes to Diagram 2, row becomes enabled for Diagram 2[39m[32m 18[2mms[22m[39m
+[31m     [31m×[31m 6.3.5 Switch back to Diagram 1, eligibility reflects Diagram 1 nodes[39m[32m 50[2mms[22m[39m
+[31m     [31m×[31m 6.3.6 Add App Point Process where both end up on diagram, row becomes disabled[39m[32m 69[2mms[22m[39m
+[31m     [31m×[31m 6.3.7 Delete one endpoint node, relationship row becomes disabled[39m[32m 26[2mms[22m[39m
+     [32m✓[39m 6.3.8 getContainmentState returns BOTH when process is child of app point[32m 19[2mms[22m[39m
+ [31m❯[39m src/__tests__/viewport-centered-spawn-integration.test.ts [2m([22m[2m16 tests[22m[2m | [22m[31m8 failed[39m[2m)[22m[33m 548[2mms[22m[39m
+[31m       [31m×[31m should position node at scrolled viewport center (far from canvas center)[39m[32m 253[2mms[22m[39m
+       [32m✓[39m should position node correctly when scrolled to top-left corner[32m 54[2mms[22m[39m
+[31m       [31m×[31m should position node correctly when scrolled to bottom-right area[39m[32m 11[2mms[22m[39m
+[31m       [31m×[31m should position node at viewport center when zoomed out to 50%[39m[32m 1[2mms[22m[39m
+[31m       [31m×[31m should position node at viewport center when zoomed in to 200%[39m[32m 136[2mms[22m[39m
+[31m       [31m×[31m should spawn at correct center after viewport width change[39m[32m 22[2mms[22m[39m
+       [32m✓[39m should spawn at correct center after viewport shrinks[32m 1[2mms[22m[39m
+[31m       [31m×[31m should position all nodes at the same center when viewport unchanged[39m[32m 1[2mms[22m[39m
+[31m       [31m×[31m should handle scroll offset near canvas edge[39m[32m 28[2mms[22m[39m
+       [32m✓[39m should handle very large scroll values[32m 0[2mms[22m[39m
+       [32m✓[39m should handle small viewport dimensions[32m 0[2mms[22m[39m
+       [32m✓[39m should center node even in very narrow viewport[32m 0[2mms[22m[39m
+[31m       [31m×[31m should complete full workflow: scroll -> add node -> verify visibility[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should convert raw scroll values to canvas coordinates at 100% zoom[32m 0[2mms[22m[39m
+     [32m✓[39m should convert raw scroll values to canvas coordinates at 50% zoom[32m 0[2mms[22m[39m
+     [32m✓[39m should convert raw scroll values to canvas coordinates at 150% zoom[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/relationship-visualisation.test.ts [2m([22m[2m43 tests[22m[2m | [22m[31m8 failed[39m[2m)[22m[33m 2979[2mms[22m[39m
+[31m     [31m×[31m RelationshipEdgeType constants should be defined correctly[39m[32m 124[2mms[22m[39m
+     [32m✓[39m DiagramEdge should support source and target label fields[32m 5[2mms[22m[39m
+     [33m[2m✓[22m[39m getMultiplicityLabels should return correct labels for ONE_TO_ONE [33m 2434[2mms[22m[39m
+     [32m✓[39m getMultiplicityLabels should return correct labels for ONE_TO_MANY[32m 7[2mms[22m[39m
+     [32m✓[39m getMultiplicityLabels should return correct labels for MANY_TO_ONE[32m 0[2mms[22m[39m
+     [32m✓[39m getMultiplicityLabels should return correct labels for MANY_TO_MANY[32m 0[2mms[22m[39m
+     [32m✓[39m findNodeForEntity should find node by entity_type and entity_id[32m 10[2mms[22m[39m
+     [32m✓[39m findNodeForEntity should return undefined for non-existent entity[32m 0[2mms[22m[39m
+     [32m✓[39m areEndpointsOnDiagram should return true when both endpoints exist[32m 0[2mms[22m[39m
+     [32m✓[39m areEndpointsOnDiagram should return false when one endpoint missing[32m 0[2mms[22m[39m
+     [32m✓[39m getContainmentState should return NEITHER when both missing[32m 0[2mms[22m[39m
+     [32m✓[39m getContainmentState should return A_ONLY when app point exists but process missing[32m 0[2mms[22m[39m
+     [32m✓[39m getContainmentState should return BOTH when both exist and process is child[32m 0[2mms[22m[39m
+     [32m✓[39m findAppPointNode should find APPLICATION_POINT node[32m 0[2mms[22m[39m
+[31m     [31m×[31m User-Process should be enabled when both endpoints on diagram[39m[32m 109[2mms[22m[39m
+     [32m✓[39m User-Process should be disabled when one endpoint missing[32m 0[2mms[22m[39m
+[31m     [31m×[31m App Point-Process should be enabled (A_ONLY) when app point exists but process missing[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m App Point-Process should be enabled (NEITHER) when both missing[39m[32m 1[2mms[22m[39m
+     [32m✓[39m App Point-Process should be disabled (BOTH) when both exist with containment[32m 0[2mms[22m[39m
+[31m     [31m×[31m Logical ER should be enabled when both entities on diagram[39m[32m 47[2mms[22m[39m
+[31m     [31m×[31m Data Movements should be enabled when both app points on diagram[39m[32m 129[2mms[22m[39m
+     [32m✓[39m calculateEdgePoints should return points on node edges, not centers[32m 20[2mms[22m[39m
+     [32m✓[39m calculateMidpointLabelPosition should return midpoint of edge[32m 0[2mms[22m[39m
+     [32m✓[39m calculateSourceLabelPosition should return position near source[32m 0[2mms[22m[39m
+     [32m✓[39m calculateTargetLabelPosition should return position near target[32m 0[2mms[22m[39m
+[31m     [31m×[31m createRelationshipEdge should create edge with correct fields[39m[32m 56[2mms[22m[39m
+[31m     [31m×[31m handleAddUserProcessRelationship should create dashed edge with no arrow[39m[32m 1[2mms[22m[39m
+     [32m✓[39m handleAddLogicalERRelationship should create edge with multiplicity labels[32m 1[2mms[22m[39m
+     [32m✓[39m handleAddDataMovementRelationship should create edge with arrow and label[32m 0[2mms[22m[39m
+     [32m✓[39m handleAddLogicalPhysicalEntityRelationship should create simple solid line[32m 0[2mms[22m[39m
+     [32m✓[39m relationship item props should include isRelationshipEnabled[32m 0[2mms[22m[39m
+     [32m✓[39m disabled relationship should have correct CSS class[32m 0[2mms[22m[39m
+     [32m✓[39m context menu should support relationship item type[32m 0[2mms[22m[39m
+     [32m✓[39m disabled Add item should have correct CSS class[32m 0[2mms[22m[39m
+     [32m✓[39m User-Process edge should use dashed stroke style[32m 0[2mms[22m[39m
+     [32m✓[39m Data Movement edge should have arrow end[32m 0[2mms[22m[39m
+     [32m✓[39m Logical ER edge should have source and target labels[32m 0[2mms[22m[39m
+     [32m✓[39m Logical-Physical entity edge should be solid with no labels[32m 0[2mms[22m[39m
+     [32m✓[39m isPointOnLabel should detect click on multiplicity label[32m 2[2mms[22m[39m
+     [32m✓[39m label position should persist in DiagramEdge[32m 0[2mms[22m[39m
+     [32m✓[39m selectedLabelType should track which label is selected[32m 0[2mms[22m[39m
+     [32m✓[39m left-click and right-click Add should produce identical results[32m 0[2mms[22m[39m
+     [32m✓[39m multiple relationships can be added to same diagram[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/business-point-migration.test.ts [2m([22m[2m22 tests[22m[2m | [22m[31m20 failed[39m[2m)[22m[33m 671[2mms[22m[39m
+[31m     [31m×[31m migrates business_user_processes to business_user_business_points[39m[32m 126[2mms[22m[39m
+[31m     [31m×[31m converts business_process_id to business_point_id using generateBusinessPointId[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m preserves business_user_id in migrated relationships[39m[32m 32[2mms[22m[39m
+[31m     [31m×[31m preserves id in migrated relationships[39m[32m 17[2mms[22m[39m
+[31m     [31m×[31m preserves description in migrated relationships[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m preserves tags in migrated relationships[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m preserves temporal fields (valid_from, valid_to) in migrated relationships[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m migrates application_point_business_processes to application_point_business_points[39m[32m 49[2mms[22m[39m
+[31m     [31m×[31m converts business_process_id to business_point_id[39m[32m 91[2mms[22m[39m
+[31m     [31m×[31m preserves application_point_id in migrated relationships[39m[32m 45[2mms[22m[39m
+[31m     [31m×[31m preserves all metadata in migrated relationships[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m handles empty business_user_processes array[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m handles empty application_point_business_processes array[39m[32m 27[2mms[22m[39m
+[31m     [31m×[31m handles both arrays being empty[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m preserves existing new-format relationships while migrating old ones[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m avoids duplicate IDs when merging old and new relationships[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m creates Business Points for all Business Processes during migration[39m[32m 52[2mms[22m[39m
+[31m     [31m×[31m Business Points have correct names from source processes[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m Business Points have correct kind[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m buildModelFromData migrates legacy data format[39m[32m 132[2mms[22m[39m
+     [32m✓[39m buildModelFromData handles missing relationship arrays[32m 31[2mms[22m[39m
+     [32m✓[39m buildModelFromData creates Business Points for all processes[32m 45[2mms[22m[39m
+ [31m❯[39m src/__tests__/interactions-meta-model-tab.test.ts [2m([22m[2m37 tests[22m[2m | [22m[31m7 failed[39m[2m)[22m[33m 587[2mms[22m[39m
+       [32m✓[39m should have interactions grid configuration defined[32m 1[2mms[22m[39m
+       [32m✓[39m should have expected column definitions[32m 139[2mms[22m[39m
+       [32m✓[39m should have required columns marked as required[32m 0[2mms[22m[39m
+       [32m✓[39m should have optional columns marked as not required[32m 0[2mms[22m[39m
+       [32m✓[39m should have fk_typeahead columns with correct fkTarget values[32m 0[2mms[22m[39m
+       [32m✓[39m should have column widths as reasonable positive values[32m 0[2mms[22m[39m
+       [32m✓[39m should have ID column with autoGenerate true[32m 0[2mms[22m[39m
+[31m       [31m×[31m should have Interactions mapped to interactions entity type[39m[32m 46[2mms[22m[39m
+[31m       [31m×[31m should contain Interactions tab[39m[32m 10[2mms[22m[39m
+[31m       [31m×[31m should have Interactions after Activities in the array[39m[32m 83[2mms[22m[39m
+[31m       [31m×[31m should have Interactions in business domain group[39m[32m 1[2mms[22m[39m
+[31m       [31m×[31m should have Interactions after Activities in business group[39m[32m 2[2mms[22m[39m
+[31m       [31m×[31m should have correct business group tab ordering[39m[32m 30[2mms[22m[39m
+       [32m✓[39m should have labels for all 7 App_Business_Point entity types[32m 10[2mms[22m[39m
+       [32m✓[39m should format APPLICATION entity correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should format SERVICE entity correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should format BUSINESS_PROCESS entity correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should format PROCESS_ACTIVITY entity correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should format INTERFACE entity correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should format ENDPOINT entity correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty string for empty ID[32m 0[2mms[22m[39m
+       [32m✓[39m should return ID fallback when entity not found[32m 7[2mms[22m[39m
+       [32m✓[39m should format APPLICATION entity when found[32m 0[2mms[22m[39m
+       [32m✓[39m should format SERVICE entity when found[32m 0[2mms[22m[39m
+       [32m✓[39m should search across all 7 App_Business_Point collections[32m 0[2mms[22m[39m
+       [32m✓[39m should have interactions prefix defined in idGenerator[32m 0[2mms[22m[39m
+       [32m✓[39m should generate ID with int- prefix[32m 0[2mms[22m[39m
+       [32m✓[39m should generate ID following pattern: int-<timestamp>-<random>[32m 0[2mms[22m[39m
+       [32m✓[39m should generate unique IDs[32m 0[2mms[22m[39m
+       [32m✓[39m should validate interactions entity type[32m 134[2mms[22m[39m
+       [32m✓[39m should validate missing user_id reference[32m 12[2mms[22m[39m
+       [32m✓[39m should validate missing primary_app_business_point_id reference[32m 13[2mms[22m[39m
+       [32m✓[39m should validate invalid FK references for user_id[32m 9[2mms[22m[39m
+       [32m✓[39m should pass validation for valid interaction[32m 7[2mms[22m[39m
+[31m       [31m×[31m should have all configuration pieces in place for interactions tab[39m[32m 6[2mms[22m[39m
+       [32m✓[39m should have ENTITY_TYPES.INTERACTION defined[32m 0[2mms[22m[39m
+       [32m✓[39m should have interactions array in emptyModel[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/interactions-reclassify-as-relationship.test.ts [2m([22m[2m32 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 644[2mms[22m[39m
+     [32m✓[39m 1.1a "Interactions" is NOT in entityTabNames[32m 32[2mms[22m[39m
+     [32m✓[39m 1.1b "Interactions" is in relationshipTabNames after "App Point <-> Business Point"[32m 16[2mms[22m[39m
+     [32m✓[39m 1.1c "Interactions" is NOT in domainGroupings.business[32m 0[2mms[22m[39m
+     [32m✓[39m 1.1d relationshipTabToType contains "Interactions" -> "interactions" mapping[32m 0[2mms[22m[39m
+     [32m✓[39m 2.1a Interactions section has type: "relationship"[32m 47[2mms[22m[39m
+     [32m✓[39m 2.1b Interactions section appears after "App Point <-> Business Point" in relationship sections[32m 0[2mms[22m[39m
+     [32m✓[39m 2.1c Interactions section is NOT in entity sections[32m 1[2mms[22m[39m
+     [32m✓[39m 2.1d Palette items are correctly populated from metaModel.entities.interactions[32m 93[2mms[22m[39m
+     [32m✓[39m 3.1a DiagramInteractionEdge interface exists with required fields[32m 1[2mms[22m[39m
+     [32m✓[39m 3.1b RELATIONSHIP_EDGE_TYPES includes USER_INTERACTION constant[32m 0[2mms[22m[39m
+     [32m✓[39m 3.1c Diagram interface includes interaction_edges array field[32m 29[2mms[22m[39m
+     [32m✓[39m 4.1a INTERACTION entity type constant still exists (for backward compatibility)[32m 0[2mms[22m[39m
+     [32m✓[39m 4.1b INTERACTION has amber color configuration (retained for reference)[32m 0[2mms[22m[39m
+     [32m✓[39m 4.1c getEntityTypeConstant still maps "interactions" to INTERACTION[32m 26[2mms[22m[39m
+     [32m✓[39m 5.1a generateLinePath creates valid SVG path string[32m 0[2mms[22m[39m
+     [32m✓[39m 5.1b getStrokeDasharray returns "4,4" for dotted style[32m 0[2mms[22m[39m
+     [32m✓[39m 5.1c getStrokeDasharray returns "none" for solid style[32m 0[2mms[22m[39m
+     [32m✓[39m 5.1d calculateMidpoint returns correct midpoint between two points[32m 0[2mms[22m[39m
+     [32m✓[39m 5.1e Interaction edge color is purple (#8E44AD)[32m 0[2mms[22m[39m
+     [32m✓[39m 6.1a calculateDefaultLabelPosition returns midpoint of edge segment[32m 14[2mms[22m[39m
+     [32m✓[39m 6.1b DiagramInteractionEdge has label position fields[32m 0[2mms[22m[39m
+     [32m✓[39m 6.1c Label text field can be set on DiagramInteractionEdge[32m 0[2mms[22m[39m
+     [32m✓[39m 6.1d User link fields are optional on DiagramInteractionEdge[32m 0[2mms[22m[39m
+     [32m✓[39m 7.1a interaction_edges array can be updated on Diagram[32m 0[2mms[22m[39m
+     [32m✓[39m 7.1b Edge label_text can be updated[32m 0[2mms[22m[39m
+     [32m✓[39m 7.1c Edges can be filtered by interaction_id[32m 0[2mms[22m[39m
+     [32m✓[39m 7.1d Edges can be deleted from diagram[32m 0[2mms[22m[39m
+     [32m✓[39m 7.1e Old user_interactions array still exists for backward compatibility[32m 77[2mms[22m[39m
+[31m     [31m×[31m 8.1a Tab configuration is internally consistent[39m[32m 229[2mms[22m[39m
+     [32m✓[39m 8.1b Palette and tab arrays are consistent for Interactions[32m 9[2mms[22m[39m
+     [32m✓[39m 8.1c New DiagramInteractionEdge is compatible with old DiagramUserInteraction[32m 0[2mms[22m[39m
+     [32m✓[39m 8.1d Edge style constants are correctly defined[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/decoration-rendering.test.ts [2m([22m[2m39 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 655[2mms[22m[39m
+       [32m✓[39m should return SVG elements for basic BOX decoration[32m 56[2mms[22m[39m
+       [32m✓[39m should apply background color to BOX decoration[32m 20[2mms[22m[39m
+       [32m✓[39m should apply border color and style to BOX decoration[32m 1[2mms[22m[39m
+       [32m✓[39m should include text element when text is provided[32m 27[2mms[22m[39m
+       [32m✓[39m should indicate selection state when isSelected is true[32m 0[2mms[22m[39m
+       [32m✓[39m should return SVG elements for basic LINE decoration[32m 1[2mms[22m[39m
+       [32m✓[39m should handle polyline with multiple points[32m 26[2mms[22m[39m
+       [32m✓[39m should apply line color and style[32m 0[2mms[22m[39m
+       [32m✓[39m should include arrow paths when arrows are specified[32m 15[2mms[22m[39m
+       [32m✓[39m should include label element when text is provided[32m 0[2mms[22m[39m
+       [32m✓[39m should position text at TOP-LEFT[32m 54[2mms[22m[39m
+       [32m✓[39m should position text at CENTER-MIDDLE[32m 0[2mms[22m[39m
+       [32m✓[39m should position text at BOTTOM-RIGHT[32m 0[2mms[22m[39m
+       [32m✓[39m should calculate midpoint for 2-point line[32m 0[2mms[22m[39m
+       [32m✓[39m should calculate midpoint for multi-point polyline[32m 2[2mms[22m[39m
+[31m       [31m×[31m should use explicit label position when provided[39m[32m 52[2mms[22m[39m
+       [32m✓[39m should have BOX decorations default z-index below nodes[32m 0[2mms[22m[39m
+       [32m✓[39m should have LINE decorations default z-index above edges[32m 0[2mms[22m[39m
+       [32m✓[39m should sort decorations by z_index for rendering order[32m 0[2mms[22m[39m
+       [32m✓[39m should allow custom z_index values per decoration[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty strokeDasharray for SOLID style[32m 0[2mms[22m[39m
+       [32m✓[39m should return dash pattern for DASHED style[32m 0[2mms[22m[39m
+       [32m✓[39m should return dot pattern for DOTTED style[32m 0[2mms[22m[39m
+       [32m✓[39m should parse line weight correctly[32m 0[2mms[22m[39m
+       [32m✓[39m should use default line weight when not specified[32m 0[2mms[22m[39m
+       [32m✓[39m should create a BOX decoration with default styling[32m 0[2mms[22m[39m
+       [32m✓[39m should generate a unique ID[32m 13[2mms[22m[39m
+       [32m✓[39m should create a LINE decoration with default styling[32m 1[2mms[22m[39m
+       [32m✓[39m should generate a unique ID[32m 0[2mms[22m[39m
+       [32m✓[39m should return true for point inside box[32m 0[2mms[22m[39m
+       [32m✓[39m should return false for point outside box[32m 0[2mms[22m[39m
+       [32m✓[39m should return true for point on box edge[32m 42[2mms[22m[39m
+       [32m✓[39m should return true for point near line segment[32m 0[2mms[22m[39m
+       [32m✓[39m should return false for point far from line[32m 0[2mms[22m[39m
+       [32m✓[39m should work with polylines[32m 0[2mms[22m[39m
+       [32m✓[39m should respect tolerance parameter[32m 0[2mms[22m[39m
+       [32m✓[39m should return 8 handle positions[32m 75[2mms[22m[39m
+       [32m✓[39m should return corners and edge midpoints[32m 15[2mms[22m[39m
+       [32m✓[39m should calculate correct coordinates for each handle[32m 13[2mms[22m[39m
+ [31m❯[39m src/__tests__/business-point-integration.test.ts [2m([22m[2m18 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 619[2mms[22m[39m
+     [32m✓[39m creating a Business Process results in a corresponding Business Point[32m 28[2mms[22m[39m
+     [32m✓[39m Business Point appears in dropdown with correct format[32m 0[2mms[22m[39m
+     [32m✓[39m reconcileBusinessPoints creates Business Point for new process[32m 28[2mms[22m[39m
+     [32m✓[39m creating a Process Activity results in a corresponding Business Point[32m 0[2mms[22m[39m
+     [32m✓[39m Process Activity Business Point appears in dropdown with correct format[32m 16[2mms[22m[39m
+     [32m✓[39m reconcileBusinessPoints creates Business Points for both processes and activities[32m 1[2mms[22m[39m
+     [32m✓[39m renaming a Business Process updates the corresponding Business Point name[32m 0[2mms[22m[39m
+     [32m✓[39m renaming preserves other Business Point properties[32m 0[2mms[22m[39m
+     [32m✓[39m reconciliation updates stale Business Point names[32m 49[2mms[22m[39m
+     [32m✓[39m deleting a Business Process removes its corresponding Business Point[32m 1[2mms[22m[39m
+     [32m✓[39m deleting a Business Process cascade deletes relationships[32m 73[2mms[22m[39m
+     [32m✓[39m cascadeDeleteForBusinessSourceEntity removes BP and relationships[32m 11[2mms[22m[39m
+     [32m✓[39m User-Business Point relationship is eligible when both on diagram[32m 14[2mms[22m[39m
+     [32m✓[39m relationship edge can be created with correct styling[32m 1[2mms[22m[39m
+     [32m✓[39m App Point-Business Point relationship renders with SOLID line[32m 0[2mms[22m[39m
+     [32m✓[39m entities on diagram correctly identifies Business Point presence[32m 0[2mms[22m[39m
+[31m     [31m×[31m loading legacy file migrates to Business Point format[39m[32m 277[2mms[22m[39m
+     [32m✓[39m model with both processes and activities creates all Business Points[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/hierarchical-layout-gaps.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[32m 220[2mms[22m[39m
+     [32m✓[39m should produce a complete diagram with no overlapping nodes anywhere in a complex multi-branch tree[32m 47[2mms[22m[39m
+     [32m✓[39m should produce identical entity IDs when layout is run multiple times[32m 1[2mms[22m[39m
+[31m     [31m×[31m should produce a standalone leaf node with at least minimum dimensions[39m[32m 117[2mms[22m[39m
+[31m     [31m×[31m should correctly position a 6-level deep hierarchy with no overlap[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should expand container width to accommodate a long label[32m 0[2mms[22m[39m
+     [32m✓[39m should expand container height when label wraps to multiple lines in narrow context[32m 0[2mms[22m[39m
+     [32m✓[39m should assign strictly increasing z-index values for nested containment[32m 1[2mms[22m[39m
+[31m     [31m×[31m should handle nodes with explicit empty children arrays correctly[39m[32m 14[2mms[22m[39m
+[31m     [31m×[31m should stack 4+ leaf siblings vertically with consistent gaps[39m[32m 15[2mms[22m[39m
+ [31m❯[39m src/__tests__/custom-interface-integration.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 456[2mms[22m[39m
+[31m       [31m×[31m should produce correctly positioned nodes with grid layout config[39m[32m 219[2mms[22m[39m
+       [32m✓[39m should correctly convert layout to diagram nodes with proper z-index[32m 42[2mms[22m[39m
+       [32m✓[39m should format multiple endpoints correctly for display[32m 30[2mms[22m[39m
+       [32m✓[39m should detect Interface nodes that need custom rendering[32m 0[2mms[22m[39m
+       [32m✓[39m should calculate correct height for endpoint section[32m 32[2mms[22m[39m
+       [32m✓[39m should use correct defaults when no layout config provided[32m 1[2mms[22m[39m
+       [32m✓[39m should respect column count constraints (1-10)[32m 49[2mms[22m[39m
+       [32m✓[39m should respect node width constraints (10-1000)[32m 0[2mms[22m[39m
+       [32m✓[39m should apply different spacing presets correctly with grid layout[32m 37[2mms[22m[39m
+       [32m✓[39m should handle empty children array in grid layout[32m 30[2mms[22m[39m
+       [32m✓[39m should handle more columns than children[32m 1[2mms[22m[39m
+       [32m✓[39m should handle interface with no endpoints[32m 1[2mms[22m[39m
+       [32m✓[39m should support all layout-related fields[32m 0[2mms[22m[39m
+       [32m✓[39m should work with optional layout fields (backward compatibility)[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/business-process-refinements.test.ts [2m([22m[2m30 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 539[2mms[22m[39m
+       [32m✓[39m returns correct height for single-line text[32m 47[2mms[22m[39m
+       [32m✓[39m returns correct height for multi-line wrapped text[32m 87[2mms[22m[39m
+       [32m✓[39m empty string returns minimum height[32m 14[2mms[22m[39m
+       [32m✓[39m handles different font sizes[32m 15[2mms[22m[39m
+       [32m✓[39m returns correct height for Application label[32m 41[2mms[22m[39m
+       [32m✓[39m handles long application names that wrap[32m 27[2mms[22m[39m
+       [32m✓[39m empty name returns zero height[32m 0[2mms[22m[39m
+       [32m✓[39m positions first child correctly with variable heights[32m 0[2mms[22m[39m
+       [32m✓[39m positions second child correctly with variable heights[32m 0[2mms[22m[39m
+       [32m✓[39m positions third child correctly with variable heights[32m 0[2mms[22m[39m
+       [32m✓[39m handles existing children offset[32m 0[2mms[22m[39m
+       [32m✓[39m computes correct total height with variable child heights[32m 17[2mms[22m[39m
+       [32m✓[39m computes correct height with dynamic label height[32m 0[2mms[22m[39m
+       [32m✓[39m empty childHeights array returns minimum parent size[32m 0[2mms[22m[39m
+       [32m✓[39m single child computes correctly[32m 0[2mms[22m[39m
+       [32m✓[39m calculateChildPosition still works with default heights[32m 0[2mms[22m[39m
+[31m       [31m×[31m calculateParentSize still works with child count[39m[32m 159[2mms[22m[39m
+       [32m✓[39m calculates visible center correctly[32m 0[2mms[22m[39m
+       [32m✓[39m calculates centering position for new Application[32m 0[2mms[22m[39m
+       [32m✓[39m handles scrolled viewport[32m 13[2mms[22m[39m
+       [32m✓[39m NEW Application node should have text_v_align = TOP[32m 0[2mms[22m[39m
+       [32m✓[39m NEW Application node should have text_font_weight = bold[32m 0[2mms[22m[39m
+       [32m✓[39m EXISTING Application update should include styling[32m 0[2mms[22m[39m
+       [32m✓[39m child heights should be calculated dynamically (not fixed 60px)[32m 17[2mms[22m[39m
+       [32m✓[39m NEW Application should be centered in viewport[32m 0[2mms[22m[39m
+       [32m✓[39m EXISTING Application should retain its position[32m 9[2mms[22m[39m
+       [32m✓[39m produces correct layout for single process[32m 1[2mms[22m[39m
+       [32m✓[39m multiple processes with varying text lengths layout correctly[32m 14[2mms[22m[39m
+       [32m✓[39m Application with no linked processes[32m 0[2mms[22m[39m
+       [32m✓[39m Very long process names wrap correctly[32m 69[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-tree-building.test.ts [2m([22m[2m12 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 281[2mms[22m[39m
+     [32m✓[39m should create only one tree node for an entity reachable via multiple paths[32m 30[2mms[22m[39m
+     [32m✓[39m should merge children from multiple paths into single node[32m 16[2mms[22m[39m
+     [32m✓[39m should merge Application -> App Component -> Service -> Interface with Application -> Service -> Interface[32m 24[2mms[22m[39m
+     [32m✓[39m should handle Interface -> LogicalDataEntity chain correctly in merged tree[32m 1[2mms[22m[39m
+     [32m✓[39m should not exceed depth 10[32m 1[2mms[22m[39m
+     [32m✓[39m should build tree with normal depth chains correctly[32m 0[2mms[22m[39m
+     [32m✓[39m should not create infinite loops when cycles exist in the meta-model[32m 1[2mms[22m[39m
+     [32m✓[39m should prevent revisiting the same entity in the traversal path[32m 0[2mms[22m[39m
+[31m     [31m×[31m should still include BusinessProcess reached via Application[39m[32m 189[2mms[22m[39m
+     [32m✓[39m should have each (entityType, entityId) pair appear at most once in the tree[32m 1[2mms[22m[39m
+     [32m✓[39m should maintain parent-child relationships correctly after deduplication[32m 0[2mms[22m[39m
+     [32m✓[39m should have all child nodes with valid parentKey[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-tree-building-business-branch.test.ts [2m([22m[2m10 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[33m 546[2mms[22m[39m
+     [32m✓[39m should resolve Business Point to underlying Business Process when kind is BUSINESS_PROCESS[32m 71[2mms[22m[39m
+     [32m✓[39m should resolve Business Point to underlying Process Activity when kind is PROCESS_ACTIVITY[32m 1[2mms[22m[39m
+[31m     [31m×[31m should show Business Points under Application via application_point_business_points[39m[32m 292[2mms[22m[39m
+[31m     [31m×[31m should show Business Process under Business Point in Application tree[39m[32m 47[2mms[22m[39m
+     [32m✓[39m should show Process Activities as children of Business Process[32m 1[2mms[22m[39m
+     [32m✓[39m should show Process Activities under Business Process in full Application tree[32m 0[2mms[22m[39m
+[31m     [31m×[31m should not deduplicate business entities when technical branch uses different entity types[39m[32m 55[2mms[22m[39m
+[31m     [31m×[31m should maintain separate entity instances when same entity type appears in different contexts[39m[32m 46[2mms[22m[39m
+[31m     [31m×[31m should show both technical (AppComponent) and business (BusinessPoint) branches under Application[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m should allow full traversal of both technical and business branches[39m[32m 21[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-integration.test.ts [2m([22m[2m34 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 76[2mms[22m[39m
+[31m     [31m×[31m should build Application tree with correct children[39m[32m 39[2mms[22m[39m
+     [32m✓[39m should build BusinessProcess tree with process activities[32m 1[2mms[22m[39m
+     [32m✓[39m should build LogicalDataEntity tree with attributes and physical entities[32m 1[2mms[22m[39m
+     [32m✓[39m should correctly label relationship kinds[32m 0[2mms[22m[39m
+     [32m✓[39m should filter out nodes already on diagram[32m 1[2mms[22m[39m
+     [32m✓[39m should handle empty responses[32m 0[2mms[22m[39m
+     [32m✓[39m should handle all nodes already on diagram[32m 0[2mms[22m[39m
+     [32m✓[39m should support Application -> AppComponent -> Service -> Interface chain with deduplication[32m 1[2mms[22m[39m
+     [32m✓[39m should support AppComponent -> Service nesting[32m 1[2mms[22m[39m
+     [32m✓[39m should return "Application" for APPLICATION[32m 0[2mms[22m[39m
+     [32m✓[39m should return "App Component" for APP_COMPONENT[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Service" for SERVICE[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Interface" for INTERFACE[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Business Process" for BUSINESS_PROCESS[32m 14[2mms[22m[39m
+     [32m✓[39m should return "Process Activity" for PROCESS_ACTIVITY[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Logical Data Entity" for LOGICAL_DATA_ENTITY[32m 11[2mms[22m[39m
+     [32m✓[39m should return "Logical Data Attribute" for LOGICAL_DATA_ATTRIBUTE[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Physical Data Entity" for PHYSICAL_DATA_ENTITY[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Physical Data Attribute" for PHYSICAL_DATA_ATTRIBUTE[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Business User" for BUSINESS_USER[32m 0[2mms[22m[39m
+     [32m✓[39m should return "Application Point" for APPLICATION_POINT[32m 0[2mms[22m[39m
+     [32m✓[39m APPLICATION should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m BUSINESS_PROCESS should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m APP_COMPONENT should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m SERVICE should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m LOGICAL_DATA_ENTITY should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m PHYSICAL_DATA_ENTITY should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m BUSINESS_USER should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m INTERFACE should have expandable relationships[32m 0[2mms[22m[39m
+     [32m✓[39m PROCESS_ACTIVITY should be a leaf entity (no expandable relationships)[32m 0[2mms[22m[39m
+     [32m✓[39m LOGICAL_DATA_ATTRIBUTE should be a leaf entity (no expandable relationships)[32m 0[2mms[22m[39m
+     [32m✓[39m PHYSICAL_DATA_ATTRIBUTE should be a leaf entity (no expandable relationships)[32m 0[2mms[22m[39m
+     [32m✓[39m should include all required fields in tree nodes[32m 0[2mms[22m[39m
+     [32m✓[39m should generate unique keys for each node[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/user-interaction-add-delete-toggle.test.ts [2m([22m[2m31 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 540[2mms[22m[39m
+     [32m✓[39m should return "A" when both primary and secondary ABP IDs are present[32m 1[2mms[22m[39m
+     [32m✓[39m should return "B" when only primary ABP ID is present[32m 0[2mms[22m[39m
+     [32m✓[39m should return "B" when secondary ABP ID is null[32m 0[2mms[22m[39m
+     [32m✓[39m should return empty array when no edges exist[32m 46[2mms[22m[39m
+     [32m✓[39m should return only edges matching the interaction ID[32m 1[2mms[22m[39m
+     [32m✓[39m should not return non-USER_INTERACTION edges[32m 20[2mms[22m[39m
+       [32m✓[39m should return true when P and S nodes exist and no edges[32m 1[2mms[22m[39m
+       [32m✓[39m should return false when P node missing[32m 0[2mms[22m[39m
+       [32m✓[39m should return false when S node missing[32m 0[2mms[22m[39m
+       [32m✓[39m should return false when edges already exist[32m 0[2mms[22m[39m
+       [32m✓[39m should return true when P and U nodes exist and no edges[32m 0[2mms[22m[39m
+       [32m✓[39m should return false when U node missing[32m 0[2mms[22m[39m
+       [32m✓[39m should create MAIN edge between P and S nodes[32m 1[2mms[22m[39m
+[31m       [31m×[31m should create USER_LINK edge when U node is present[39m[32m 261[2mms[22m[39m
+       [32m✓[39m should NOT create USER_LINK edge when U node is absent[32m 0[2mms[22m[39m
+       [32m✓[39m should create MAIN edge between U and P nodes[32m 0[2mms[22m[39m
+     [32m✓[39m should throw error when required nodes missing[32m 21[2mms[22m[39m
+     [32m✓[39m should return USER_LINK edge when deleting MAIN edge[32m 23[2mms[22m[39m
+     [32m✓[39m should return null when deleting USER_LINK edge (no cascade)[32m 0[2mms[22m[39m
+     [32m✓[39m should return null when no USER_LINK exists for the interaction[32m 0[2mms[22m[39m
+     [32m✓[39m should return null for non-USER_INTERACTION edge types[32m 0[2mms[22m[39m
+     [32m✓[39m should return 0 when no edges exist[32m 0[2mms[22m[39m
+     [32m✓[39m should return correct count for matching edges[32m 0[2mms[22m[39m
+     [32m✓[39m should return both MAIN and USER_LINK IDs when deleting MAIN[32m 1[2mms[22m[39m
+     [32m✓[39m should return only USER_LINK ID when deleting USER_LINK (no cascade)[32m 20[2mms[22m[39m
+     [32m✓[39m should return only MAIN ID when no USER_LINK exists[32m 0[2mms[22m[39m
+       [32m✓[39m should indicate ADD action when no edges exist but can add[32m 0[2mms[22m[39m
+       [32m✓[39m should indicate DELETE action when edges exist[32m 0[2mms[22m[39m
+       [32m✓[39m should indicate disabled ADD action when nodes missing[32m 0[2mms[22m[39m
+       [32m✓[39m should collect all USER_INTERACTION edges for an interaction[32m 39[2mms[22m[39m
+       [32m✓[39m should enable ADD action after all edges removed[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/temporal-relationships-integration.test.ts [2m([22m[2m15 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[33m 594[2mms[22m[39m
+[31m     [31m×[31m legacy edge is visible before changeover (Q2 2026), target edge is not[39m[32m 218[2mms[22m[39m
+[31m     [31m×[31m target edge is visible after changeover (Q3 2026), legacy edge is not[39m[32m 31[2mms[22m[39m
+[31m     [31m×[31m switching view quarter between Q2 and Q3 toggles which edge is visible[39m[32m 44[2mms[22m[39m
+     [32m✓[39m no overlap when valid_to: "2026-Q3" and valid_from: "2026-Q3"[32m 1[2mms[22m[39m
+     [32m✓[39m relationships can have a gap between validity windows[32m 24[2mms[22m[39m
+     [32m✓[39m setting valid_to to past quarter hides element but keeps it in JSON[32m 37[2mms[22m[39m
+[31m     [31m×[31m DELETE_ENTITY removes entity AND its relationships from JSON (actual deletion)[39m[32m 94[2mms[22m[39m
+     [32m✓[39m temporally hidden elements can be recovered by changing view quarter[32m 0[2mms[22m[39m
+[31m     [31m×[31m deleted elements cannot be recovered by changing view quarter[39m[32m 23[2mms[22m[39m
+     [32m✓[39m edge hidden when relationship valid but endpoint entity expired[32m 21[2mms[22m[39m
+     [32m✓[39m edge hidden when endpoint valid but relationship expired[32m 20[2mms[22m[39m
+[31m     [31m×[31m edge visible only when BOTH relationship AND endpoints are valid[39m[32m 60[2mms[22m[39m
+     [32m✓[39m temporal fields on relationships are preserved when loading JSON[32m 1[2mms[22m[39m
+     [32m✓[39m null temporal fields are preserved and treated as timeless[32m 1[2mms[22m[39m
+     [32m✓[39m undefined temporal fields work correctly (backward compatibility)[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-underlying-direction.test.ts [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 188[2mms[22m[39m
+       [32m✓[39m should include UNDERLYING as a valid direction[32m 25[2mms[22m[39m
+       [32m✓[39m should have relationship to BUSINESS_PROCESS with UNDERLYING direction[32m 0[2mms[22m[39m
+       [32m✓[39m should have relationship to PROCESS_ACTIVITY with UNDERLYING direction[32m 0[2mms[22m[39m
+[31m       [31m×[31m should be correctly configured via application_point_business_points[39m[32m 66[2mms[22m[39m
+       [32m✓[39m should return all expected relationships including UNDERLYING ones[32m 92[2mms[22m[39m
+ [31m❯[39m src/__tests__/cascade-delete.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m7 failed[39m[2m)[22m[33m 501[2mms[22m[39m
+[31m     [31m×[31m removes all business_user_processes where business_user_id matches[39m[32m 146[2mms[22m[39m
+[31m     [31m×[31m returns unchanged relationships when no matches found[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m removes business_user_processes AND application_point_business_processes where business_process_id matches[39m[32m 150[2mms[22m[39m
+     [32m✓[39m returns unchanged relationships when no matches found[32m 1[2mms[22m[39m
+[31m     [31m×[31m removes logical_data_entity_relationships (source OR target), logical_data_entity_physical_data_entities, AND data_movements where data_entity_id matches[39m[32m 19[2mms[22m[39m
+[31m     [31m×[31m removes relationships where entity is target (not just source)[39m[32m 0[2mms[22m[39m
+     [32m✓[39m removes logical_data_entity_physical_data_entities where physical_entity_id matches[32m 15[2mms[22m[39m
+     [32m✓[39m returns unchanged relationships when no matches found[32m 0[2mms[22m[39m
+     [32m✓[39m removes logical_data_attribute_physical_data_attributes where logical_attribute_id matches[32m 43[2mms[22m[39m
+     [32m✓[39m returns unchanged relationships when no matches found[32m 25[2mms[22m[39m
+     [32m✓[39m removes logical_data_attribute_physical_data_attributes where physical_attribute_id matches[32m 57[2mms[22m[39m
+     [32m✓[39m returns unchanged relationships when no matches found[32m 0[2mms[22m[39m
+[31m     [31m×[31m removes application_point_business_processes where application_point_id matches[39m[32m 0[2mms[22m[39m
+[31m     [31m×[31m preserves data_movements (they reference applications, not application_points)[39m[32m 39[2mms[22m[39m
+ [31m❯[39m src/__tests__/hierarchical-layout.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[33m 413[2mms[22m[39m
+[31m     [31m×[31m should return minimum dimensions for a short label leaf node[39m[32m 191[2mms[22m[39m
+     [32m✓[39m should expand width for a long label that exceeds minimum[32m 0[2mms[22m[39m
+[31m     [31m×[31m should calculate container size based on single child[39m[32m 28[2mms[22m[39m
+[31m     [31m×[31m should calculate container size based on multiple children[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should handle deeply nested hierarchy correctly[32m 0[2mms[22m[39m
+[31m     [31m×[31m should position multiple siblings vertically without overlap[39m[32m 50[2mms[22m[39m
+     [32m✓[39m should position siblings of different heights correctly[32m 1[2mms[22m[39m
+     [32m✓[39m should position children fully inside parent bounds[32m 55[2mms[22m[39m
+[31m     [31m×[31m should maintain correct padding between children and parent edges[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should center children horizontally within parent[32m 0[2mms[22m[39m
+[31m     [31m×[31m should produce correct layout for a 4-level hierarchy[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should produce layout with no overlapping nodes at any level[32m 0[2mms[22m[39m
+     [32m✓[39m should handle Application with both App Component and Business Process branches[32m 39[2mms[22m[39m
+     [32m✓[39m should correctly stack multiple branches of varying depths[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/palette-context-menu-compound.test.ts [2m([22m[2m18 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 539[2mms[22m[39m
+       [32m✓[39m should calculate correct X position with left padding[32m 107[2mms[22m[39m
+       [32m✓[39m should calculate correct Y position for first child[32m 0[2mms[22m[39m
+       [32m✓[39m should calculate correct Y position for second child[32m 31[2mms[22m[39m
+       [32m✓[39m should account for existing children when calculating position[32m 17[2mms[22m[39m
+       [32m✓[39m should calculate correct width with default child width[32m 0[2mms[22m[39m
+       [32m✓[39m should calculate correct height for 2 children[32m 0[2mms[22m[39m
+       [32m✓[39m should calculate correct height for 3 children[32m 0[2mms[22m[39m
+       [32m✓[39m should use minimum parent size for 0 children[32m 0[2mms[22m[39m
+[31m       [31m×[31m should find business processes linked via application points[39m[32m 280[2mms[22m[39m
+       [32m✓[39m should return empty array when no application points exist[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty array when no relationships exist[32m 0[2mms[22m[39m
+       [32m✓[39m should find app components belonging to application[32m 0[2mms[22m[39m
+       [32m✓[39m should not include components from other applications[32m 0[2mms[22m[39m
+       [32m✓[39m should return empty array when no components exist[32m 0[2mms[22m[39m
+       [32m✓[39m should create parent and child nodes with correct parent_node_id[32m 0[2mms[22m[39m
+       [32m✓[39m should skip children that already exist on diagram[32m 33[2mms[22m[39m
+       [32m✓[39m should add only missing children when parent exists[32m 0[2mms[22m[39m
+       [32m✓[39m should count existing children correctly[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/data-movement-rendering-fix.test.ts [2m([22m[2m4 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 367[2mms[22m[39m
+[31m       [31m×[31m returns exactly 2 entities for DATA_MOVEMENT (source and target apps only)[39m[32m 150[2mms[22m[39m
+       [32m✓[39m does NOT include logical data entity in returned endpoints[32m 14[2mms[22m[39m
+       [32m✓[39m includes DATA_MOVEMENT edge when both app nodes are visible (logical entity NOT on diagram)[32m 69[2mms[22m[39m
+       [32m✓[39m excludes DATA_MOVEMENT edge when source app node is not visible[32m 132[2mms[22m[39m
+ [31m❯[39m src/__tests__/palette-viewport-centered-add.test.ts [2m([22m[2m11 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[33m 392[2mms[22m[39m
+[31m       [31m×[31m should position node at viewport center when adding via left-click[39m[33m 323[2mms[22m[39m
+[31m       [31m×[31m should position node correctly at scrolled viewport[39m[32m 34[2mms[22m[39m
+[31m       [31m×[31m should position node at viewport center when adding via context menu[39m[32m 1[2mms[22m[39m
+       [32m✓[39m should position nodes identically regardless of add method[32m 1[2mms[22m[39m
+       [32m✓[39m should use same viewport center calculation for both add methods[32m 1[2mms[22m[39m
+[31m       [31m×[31m should fall back to canvas center when viewportInfo is null[39m[32m 2[2mms[22m[39m
+[31m       [31m×[31m should fall back to canvas center when viewportInfo is undefined[39m[32m 13[2mms[22m[39m
+       [32m✓[39m should position node at canvas center (1000, 1000) as fallback[32m 0[2mms[22m[39m
+       [32m✓[39m should handle viewportInfo with zero scroll[32m 0[2mms[22m[39m
+       [32m✓[39m should handle viewportInfo with large dimensions[32m 0[2mms[22m[39m
+     [32m✓[39m should position multiple nodes at the same center location[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/interactions-fix-integration.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 443[2mms[22m[39m
+[31m       [31m×[31m Interactions routes through entity path, not relationship path[39m[32m 103[2mms[22m[39m
+       [32m✓[39m gridConfigs has complete Interactions configuration[32m 49[2mms[22m[39m
+[31m       [31m×[31m Interactions appears in correct position in business domain[39m[32m 42[2mms[22m[39m
+       [32m✓[39m Interaction entity has correct structure for EntityGrid[32m 14[2mms[22m[39m
+       [32m✓[39m Interaction fields map correctly to grid columns[32m 11[2mms[22m[39m
+       [32m✓[39m all original relationship tabs still exist[32m 103[2mms[22m[39m
+       [32m✓[39m relationship tabs still have valid grid configurations[32m 1[2mms[22m[39m
+       [32m✓[39m Interactions data stored in entities.interactions (not relationships)[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-integration-gaps.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 527[2mms[22m[39m
+     [32m✓[39m should build valid tree with only application hierarchy when no Business Points linked[32m 37[2mms[22m[39m
+     [32m✓[39m should not crash when Application has no Application Point[32m 15[2mms[22m[39m
+     [32m✓[39m should produce correct diagram nodes when selecting Application and Business Processes from tree[32m 63[2mms[22m[39m
+     [32m✓[39m should create single node when only Application is selected (no children)[32m 1[2mms[22m[39m
+[31m     [31m×[31m should create standalone node when only Business Process is selected (parent not selected)[39m[32m 151[2mms[22m[39m
+     [32m✓[39m should correctly nest 3-level hierarchy in diagram output[32m 101[2mms[22m[39m
+     [32m✓[39m should handle MetaModel with all empty relationship arrays gracefully[32m 0[2mms[22m[39m
+     [32m✓[39m should correctly render Application -> App Component -> Service hierarchy[32m 92[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-business-branch.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 535[2mms[22m[39m
+[31m     [31m×[31m should produce correct diagram nodes when selecting Application -> Business Point -> Business Process[39m[32m 38[2mms[22m[39m
+     [32m✓[39m should produce correct nested hierarchy when selecting full chain to Process Activity[32m 91[2mms[22m[39m
+[31m     [31m×[31m should produce nodes for both technical and business branches when both are selected[39m[32m 75[2mms[22m[39m
+[31m     [31m×[31m should show underlying Business Process when expanding Business Point with kind=BUSINESS_PROCESS[39m[32m 143[2mms[22m[39m
+     [32m✓[39m should show underlying Process Activity when expanding Business Point with kind=PROCESS_ACTIVITY[32m 0[2mms[22m[39m
+     [32m✓[39m should reuse existing parent node and not create duplicate[32m 1[2mms[22m[39m
+     [32m✓[39m should apply same containment styling as Add with business processes option[32m 86[2mms[22m[39m
+[31m     [31m×[31m should create Interface as container for Logical Data Entities[39m[32m 56[2mms[22m[39m
+     [32m✓[39m should apply spec-compliant containment styling to Business Process[32m 19[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-container-types-wrapping.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 893[2mms[22m[39m
+[31m     [31m×[31m should recognize INTERFACE as a container type that can wrap Logical Data Entities[39m[32m 278[2mms[22m[39m
+     [32m✓[39m should order nodes from deepest leaves to root (descending depth)[32m 49[2mms[22m[39m
+[31m     [31m×[31m should create Application -> App Component -> Service -> Interface -> LDE hierarchy[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should create Business Process -> Process Activity hierarchy[32m 223[2mms[22m[39m
+[31m     [31m×[31m should apply text_v_align=TOP and text_font_weight=bold to all container nodes[39m[32m 48[2mms[22m[39m
+     [32m✓[39m should apply containment styling to existing nodes when updated[32m 119[2mms[22m[39m
+[31m     [31m×[31m should assign z-index so that parents have lower z-index than children[39m[32m 29[2mms[22m[39m
+     [32m✓[39m should start z-index above existing diagram nodes[32m 18[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-wrapping-integration.test.ts [2m([22m[2m7 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 903[2mms[22m[39m
+[31m     [31m×[31m should create Application parent with Business Process child inside[39m[32m 221[2mms[22m[39m
+     [33m[2m✓[22m[39m should create Service parent with Interface children inside [33m 453[2mms[22m[39m
+     [32m✓[39m should create Application -> Service -> Interface nested hierarchy[32m 75[2mms[22m[39m
+[31m     [31m×[31m should reuse existing parent node and update its styling[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should not create duplicate nodes for entities already on diagram[32m 0[2mms[22m[39m
+     [32m✓[39m should assign incrementing z-index from root to leaves[32m 2[2mms[22m[39m
+[31m     [31m×[31m should calculate parent dimensions based on children[39m[32m 34[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-cross-branch-containment.test.ts [2m([22m[2m16 tests[22m[2m | [22m[31m7 failed[39m[2m)[22m[33m 1076[2mms[22m[39m
+     [32m✓[39m should render Business Process as nested box inside Application[32m 148[2mms[22m[39m
+     [32m✓[39m should set Business Process parent_node_id pointing to Application node[32m 1[2mms[22m[39m
+     [32m✓[39m should apply containment styling to Application parent[32m 49[2mms[22m[39m
+[31m     [31m×[31m should render Logical Data Entity as nested box inside Interface[39m[32m 287[2mms[22m[39m
+[31m     [31m×[31m should set Logical Data Entity parent_node_id pointing to Interface node[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m should apply containment styling to Interface parent[39m[32m 60[2mms[22m[39m
+     [32m✓[39m should NOT create any diagram edges for Application -> Business Process containment[32m 1[2mms[22m[39m
+[31m     [31m×[31m should NOT create any diagram edges for Interface -> Logical Entity containment[39m[32m 79[2mms[22m[39m
+     [32m✓[39m should verify actsAsContainment is true for Application -> Business Process relationship[32m 0[2mms[22m[39m
+     [32m✓[39m should verify actsAsContainment is true for Interface -> Logical Entity relationship[32m 0[2mms[22m[39m
+[31m     [31m×[31m should recognize all expected entity types as containers[39m[32m 125[2mms[22m[39m
+     [32m✓[39m should properly nest Business Process with Process Activity inside Application[32m 1[2mms[22m[39m
+     [32m✓[39m should set Business Process z-index higher than Application z-index[32m 66[2mms[22m[39m
+[31m     [31m×[31m should set Logical Data Entity z-index higher than Interface z-index[39m[32m 15[2mms[22m[39m
+     [32m✓[39m should position multiple Business Processes inside Application[32m 125[2mms[22m[39m
+[31m     [31m×[31m should position multiple Logical Entities inside Interface[39m[32m 61[2mms[22m[39m
+ [31m❯[39m src/__tests__/chat-panel-integration.test.ts [2m([22m[2m6 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 503[2mms[22m[39m
+[31m       [31m×[31m MetaModelView container is a flex row with height: 100%[39m[32m 209[2mms[22m[39m
+[31m       [31m×[31m ChatPanel panel stretches to fill parent height[39m[32m 35[2mms[22m[39m
+[31m       [31m×[31m ChatPanel collapsedTab also stretches to fill parent height[39m[32m 70[2mms[22m[39m
+       [32m✓[39m ChatMessageList container uses flex: 1 1 0 to prevent content expansion[32m 36[2mms[22m[39m
+       [32m✓[39m ChatInput container uses flex: 0 0 auto to stay fixed size[32m 64[2mms[22m[39m
+       [32m✓[39m ChatPanel panel has min-height: 0 for proper nested scroll behavior[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/data-movement-integration.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 526[2mms[22m[39m
+[31m       [31m×[31m complete workflow from palette eligibility to edge rendering[39m[32m 258[2mms[22m[39m
+       [32m✓[39m Data Movement disabled when no app points on diagram[32m 18[2mms[22m[39m
+[31m       [31m×[31m Data Movement enabled on diagram with both app points, disabled on diagram with only one[39m[32m 1[2mms[22m[39m
+       [32m✓[39m active Data Movement edge visible in current period[32m 15[2mms[22m[39m
+       [32m✓[39m expired Data Movement edge NOT visible in current period[32m 20[2mms[22m[39m
+[31m       [31m×[31m Data Movement endpoint entities exclude logical data entity for time filtering[39m[32m 93[2mms[22m[39m
+       [32m✓[39m edge filtered out when source node removed from visibleNodeIds[32m 1[2mms[22m[39m
+[31m       [31m×[31m palette disables after node removal[39m[32m 69[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-app-point-process.test.ts [2m([22m[2m13 tests[22m[2m | [22m[31m5 failed[39m[2m)[22m[33m 875[2mms[22m[39m
+[31m     [31m×[31m should show Business Processes as children of Application in tree[39m[33m 373[2mms[22m[39m
+[31m     [31m×[31m should find both Business Processes linked via different App Points[39m[32m 92[2mms[22m[39m
+     [32m✓[39m should show Process Activities as children of Business Process[32m 1[2mms[22m[39m
+     [32m✓[39m should mark Process Activity relationship as PARENT_CHILD[32m 49[2mms[22m[39m
+     [32m✓[39m should show "(association)" label for Business Process under Application[32m 0[2mms[22m[39m
+     [32m✓[39m should show "(parent/child)" label for Process Activity under Business Process[32m 16[2mms[22m[39m
+[31m     [31m×[31m should show complete chain from Application to Process Activity[39m[32m 87[2mms[22m[39m
+[31m     [31m×[31m should traverse full depth for all Business Processes[39m[32m 1[2mms[22m[39m
+[31m     [31m×[31m should have APPLICATION entry with BUSINESS_PROCESS association[39m[32m 41[2mms[22m[39m
+     [32m✓[39m should have BUSINESS_PROCESS entry with PROCESS_ACTIVITY parent/child[32m 0[2mms[22m[39m
+     [32m✓[39m should have correct foreignKeyField for App Point to Process relationship[32m 0[2mms[22m[39m
+     [32m✓[39m should handle Application with no App Points (no Business Process children)[32m 59[2mms[22m[39m
+     [32m✓[39m should handle Business Process with no Process Activities[32m 21[2mms[22m[39m
+ [31m❯[39m src/__tests__/data-movement-add-fix-integration.test.ts [2m([22m[2m7 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 98[2mms[22m[39m
+       [32m✓[39m edge should have all required properties after ADD_DIAGRAM_EDGE action[32m 2[2mms[22m[39m
+       [32m✓[39m DATA_MOVEMENT edge should have solid line, arrow, and label[32m 1[2mms[22m[39m
+       [32m✓[39m edge_points should connect source and target node positions[32m 0[2mms[22m[39m
+       [32m✓[39m ADD_DIAGRAM_EDGE should not mutate existing edges array[32m 0[2mms[22m[39m
+[31m       [31m×[31m callback should accept DiagramEdge and return void[39m[32m 68[2mms[22m[39m
+       [32m✓[39m label_text should be set to Logical Data Entity name[32m 0[2mms[22m[39m
+       [32m✓[39m clicking Add on enabled Data Movement row should dispatch ADD_DIAGRAM_EDGE[32m 25[2mms[22m[39m
+ [31m❯[39m src/__tests__/advanced-add-dialog.test.ts [2m([22m[2m14 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 254[2mms[22m[39m
+       [32m✓[39m should format title as "Advanced Add: <EntityType> "<EntityName>""[32m 1[2mms[22m[39m
+       [32m✓[39m should handle various entity types in title[32m 0[2mms[22m[39m
+       [32m✓[39m should mark root node as isRoot in tree data[32m 1[2mms[22m[39m
+       [32m✓[39m should include root key in initial selection[32m 0[2mms[22m[39m
+       [32m✓[39m should build tree with parent-child relationships[32m 1[2mms[22m[39m
+       [32m✓[39m should propagate relationship kind to child nodes[32m 0[2mms[22m[39m
+       [32m✓[39m should build nested tree structure for cascading deselection[32m 0[2mms[22m[39m
+       [32m✓[39m should build tree with multiple levels for indeterminate testing[32m 0[2mms[22m[39m
+       [32m✓[39m should build correct tree structure for selection building[32m 1[2mms[22m[39m
+[31m       [31m×[31m should find linked business processes via application points[39m[32m 181[2mms[22m[39m
+       [32m✓[39m should build multi-level tree with deduplication (svc-1 under AppComponent, svc-2 under Application)[32m 8[2mms[22m[39m
+       [32m✓[39m should handle entity with no related entities[32m 2[2mms[22m[39m
+       [32m✓[39m should include logical attributes as children[32m 38[2mms[22m[39m
+       [32m✓[39m should include physical entities as association children[32m 1[2mms[22m[39m
+ [31m❯[39m src/__tests__/relationship-grid-defensive.test.ts [2m([22m[2m6 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 485[2mms[22m[39m
+       [32m✓[39m gridConfigs returns undefined for invalid relationship types[32m 71[2mms[22m[39m
+       [32m✓[39m all relationshipTabToType entries have corresponding gridConfigs[32m 1[2mms[22m[39m
+       [32m✓[39m gridConfigs for relationship types have required columns[32m 27[2mms[22m[39m
+[31m       [31m×[31m valid RelationshipType keys match relationshipTabToType values[39m[33m 325[2mms[22m[39m
+[31m       [31m×[31m interactions is NOT in relationshipTabToType values[39m[32m 1[2mms[22m[39m
+       [32m✓[39m empty relationships arrays are valid (not undefined)[32m 38[2mms[22m[39m
+ [31m❯[39m src/__tests__/node-creation-viewport.test.ts [2m([22m[2m11 tests[22m[2m | [22m[31m6 failed[39m[2m)[22m[33m 329[2mms[22m[39m
+[31m       [31m×[31m should position node at viewport center when viewportCenter is provided[39m[32m 166[2mms[22m[39m
+[31m       [31m×[31m should position node at scrolled viewport center[39m[32m 42[2mms[22m[39m
+[31m       [31m×[31m should position node at zoomed viewport center[39m[32m 41[2mms[22m[39m
+       [32m✓[39m should use default cascading placement when viewportCenter is not provided[32m 1[2mms[22m[39m
+       [32m✓[39m should use cascading offset with existing nodes when no viewport center[32m 0[2mms[22m[39m
+       [32m✓[39m should use default placement when viewportCenter is undefined[32m 14[2mms[22m[39m
+[31m       [31m×[31m should align node center with viewport center, not top-left corner[39m[32m 20[2mms[22m[39m
+[31m       [31m×[31m should handle different node dimensions correctly[39m[32m 1[2mms[22m[39m
+[31m       [31m×[31m should preserve other node properties when using viewport center[39m[32m 1[2mms[22m[39m
+     [32m✓[39m should export correct default width[32m 0[2mms[22m[39m
+     [32m✓[39m should export correct default height[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/spacing-presets-integration.test.ts [2m([22m[2m9 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[33m 360[2mms[22m[39m
+       [32m✓[39m should produce different sized layouts for different presets in full flow[32m 113[2mms[22m[39m
+[31m       [31m×[31m should maintain correct viewport centering for all presets[39m[32m 30[2mms[22m[39m
+       [32m✓[39m should maintain no-overlap guarantee for complex tree with all presets[32m 43[2mms[22m[39m
+       [32m✓[39m should maintain parent containment for complex tree with all presets[32m 87[2mms[22m[39m
+       [32m✓[39m should produce identical results when omitting preset vs explicit normal[32m 0[2mms[22m[39m
+       [32m✓[39m should match expected normal preset config values[32m 0[2mms[22m[39m
+       [32m✓[39m should be able to extract spacingPreset from AdvancedAddResult[32m 0[2mms[22m[39m
+       [32m✓[39m should default to normal when spacingPreset is undefined[32m 0[2mms[22m[39m
+       [32m✓[39m should have consistent size ratios between presets[32m 64[2mms[22m[39m
+ [31m❯[39m src/__tests__/state-label-alignment.test.ts [2m([22m[2m19 tests[22m[2m | [22m[31m2 failed[39m[2m)[22m[33m 530[2mms[22m[39m
+[31m       [31m×[31m Normal state has text_h_align defaulting to CENTER[39m[33m 319[2mms[22m[39m
+[31m       [31m×[31m Normal state has text_v_align defaulting to MIDDLE[39m[32m 109[2mms[22m[39m
+       [32m✓[39m Normal state has showLabel: true[32m 19[2mms[22m[39m
+       [32m✓[39m Initial state has showLabel: false (no alignment needed)[32m 0[2mms[22m[39m
+       [32m✓[39m Final state has showLabel: false (no alignment needed)[32m 0[2mms[22m[39m
+       [32m✓[39m LEFT maps to text-anchor start[32m 0[2mms[22m[39m
+       [32m✓[39m CENTER maps to text-anchor middle[32m 0[2mms[22m[39m
+       [32m✓[39m RIGHT maps to text-anchor end[32m 0[2mms[22m[39m
+       [32m✓[39m undefined defaults to middle[32m 0[2mms[22m[39m
+       [32m✓[39m LEFT alignment positions text at left edge plus padding[32m 0[2mms[22m[39m
+       [32m✓[39m CENTER alignment positions text at horizontal center[32m 0[2mms[22m[39m
+       [32m✓[39m RIGHT alignment positions text at right edge minus padding[32m 0[2mms[22m[39m
+       [32m✓[39m TOP alignment positions text near top edge[32m 0[2mms[22m[39m
+       [32m✓[39m MIDDLE alignment positions text at vertical center[32m 16[2mms[22m[39m
+       [32m✓[39m BOTTOM alignment positions text near bottom edge[32m 0[2mms[22m[39m
+       [32m✓[39m enables alignment controls for Normal state nodes[32m 0[2mms[22m[39m
+       [32m✓[39m disables alignment controls for Initial state nodes[32m 0[2mms[22m[39m
+       [32m✓[39m disables alignment controls for Final state nodes[32m 0[2mms[22m[39m
+       [32m✓[39m disables alignment controls for non-STATE nodes[32m 22[2mms[22m[39m
+ [31m❯[39m src/__tests__/interactions-tab-routing.test.ts [2m([22m[2m8 tests[22m[2m | [22m[31m7 failed[39m[2m)[22m[33m 428[2mms[22m[39m
+[31m       [31m×[31m Interactions is NOT in relationshipTabNames[39m[32m 252[2mms[22m[39m
+[31m       [31m×[31m Interactions is NOT in relationshipTabToType[39m[32m 38[2mms[22m[39m
+[31m       [31m×[31m Interactions is in entityTabNames[39m[32m 1[2mms[22m[39m
+[31m       [31m×[31m Interactions is in domainGroupings.business[39m[32m 29[2mms[22m[39m
+[31m       [31m×[31m tabToEntityType maps Interactions to interactions[39m[32m 1[2mms[22m[39m
+       [32m✓[39m gridConfigs has interactions configuration[32m 0[2mms[22m[39m
+[31m       [31m×[31m Interactions appears after Activities in domainGroupings.business[39m[32m 1[2mms[22m[39m
+[31m       [31m×[31m Interactions appears after Activities in entityTabNames[39m[32m 50[2mms[22m[39m
+ [31m❯[39m src/__tests__/interactions-tab-configuration.test.ts [2m([22m[2m13 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 213[2mms[22m[39m
+       [32m✓[39m should NOT include "Interactions" in domainGroupings.business array[32m 65[2mms[22m[39m
+       [32m✓[39m should NOT include "Interactions" in entityTabNames array[32m 1[2mms[22m[39m
+[31m       [31m×[31m should have all other entity tabs in entityTabNames[39m[32m 36[2mms[22m[39m
+       [32m✓[39m should include "Interactions" in relationshipTabNames array[32m 0[2mms[22m[39m
+       [32m✓[39m should position "Interactions" after "App Point <-> Business Point"[32m 0[2mms[22m[39m
+       [32m✓[39m should position "Interactions" before "Logical ER"[32m 0[2mms[22m[39m
+       [32m✓[39m should map "Interactions" to "interactions" in relationshipTabToType[32m 0[2mms[22m[39m
+       [32m✓[39m should have all expected relationship tab mappings[32m 36[2mms[22m[39m
+       [32m✓[39m should NOT have "Interactions" in tabToEntityType[32m 0[2mms[22m[39m
+       [32m✓[39m should have correct tab ordering in relationshipTabNames[32m 0[2mms[22m[39m
+       [32m✓[39m should position Interactions in the correct conceptual grouping[32m 0[2mms[22m[39m
+     [32m✓[39m should route Interactions to RelationshipGrid via isRelationshipTab check[32m 0[2mms[22m[39m
+     [32m✓[39m should render Interactions in relationshipTabNames.map() output[32m 0[2mms[22m[39m
+ [31m❯[39m src/__tests__/data-movement-palette-state.test.ts [2m([22m[2m5 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[33m 366[2mms[22m[39m
+[31m     [31m×[31m Data Movement row is ENABLED when both source and target app nodes on diagram[39m[32m 163[2mms[22m[39m
+     [32m✓[39m Data Movement row is DISABLED when only source app node on diagram[32m 14[2mms[22m[39m
+[31m     [31m×[31m Data Movement row becomes ENABLED after adding missing target app node[39m[32m 110[2mms[22m[39m
+[31m     [31m×[31m Data Movement row becomes DISABLED after removing source app node[39m[32m 55[2mms[22m[39m
+[31m     [31m×[31m Data Movement eligibility does NOT check for logical data entity presence[39m[32m 12[2mms[22m[39m
+ [31m❯[39m src/__tests__/deletion-behavior.test.ts [2m([22m[2m12 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 325[2mms[22m[39m
+[31m       [31m×[31m should trigger deletion on Delete key press[39m[32m 130[2mms[22m[39m
+[31m       [31m×[31m should trigger deletion on Backspace key press[39m[32m 31[2mms[22m[39m
+[31m       [31m×[31m should NOT trigger deletion on other keys[39m[32m 13[2mms[22m[39m
+       [32m✓[39m should remove selected nodes from diagram[32m 2[2mms[22m[39m
+       [32m✓[39m should cascade edge deletion when node is removed[32m 34[2mms[22m[39m
+       [32m✓[39m should remove selected edges from diagram[32m 0[2mms[22m[39m
+       [32m✓[39m should NOT cascade node deletion when edge is removed[32m 39[2mms[22m[39m
+       [32m✓[39m should clear selection after deletion[32m 1[2mms[22m[39m
+       [32m✓[39m should be a no-op when selection is empty[32m 1[2mms[22m[39m
+       [32m✓[39m should make deleted entity selectable in palette after deletion[32m 1[2mms[22m[39m
+       [32m✓[39m should only trigger deletion when canvas has focus[32m 41[2mms[22m[39m
+       [32m✓[39m should NOT trigger deletion when editing inspector[32m 0[2mms[22m[39m
+[90mstdout[2m | src/__tests__/bottom-panel-cleanup.test.ts
+[22m[39m
+=== Bottom Panel Cleanup Tests (Task Group 4) ===
+
+  Bottom panel structure remains in place (collapsed and expanded states)
+PASS: testBottomPanelStructureRemainsInPlace
+  Bottom panel contains no decoration tools (Add Box, Add Line, Text Editor removed)
+PASS: testBottomPanelContainsNoDecorationTools
+  Bottom panel shows placeholder when expanded
+PASS: testBottomPanelShowsPlaceholder
+  Bottom panel collapse/expand mechanism still functional
+PASS: testBottomPanelCollapseExpandFunctional
+
+Results: 4 passed, 0 failed
+=================================================
+
+
+[90mstdout[2m | src/__tests__/decoration-integration-gaps.test.ts
+[22m[39m
+=== Decoration Integration Gap Tests (Task Group 6) ===
+
+  End-to-end BOX workflow: create, style, render, persist
+PASS: testEndToEndBoxWorkflow
+  End-to-end LINE workflow: create with arrows, add label, persist
+PASS: testEndToEndLineWorkflow
+  Mixed selection: nodes, edges, and decorations can be selected together
+PASS: testMixedSelectionHandling
+  Style changes apply only to compatible element types
+PASS: testStyleChangesApplyToCompatibleTypes
+  Delete removes selected decoration from array
+PASS: testDeleteDecorationRemovesFromArray
+  Delete removes multiple selected decorations
+PASS: testDeleteMultipleDecorations
+  Decorations serialize and deserialize correctly via JSON
+PASS: testDecorationsRoundTripInJSON
+  Empty decorations array handled correctly
+PASS: testEmptyDecorationsArrayHandling
+  Backward compatibility: diagrams without decorations field handled
+PASS: testBackwardCompatibilityWithoutDecorationsField
+  LINE with single point handled gracefully
+PASS: testLineWithSinglePoint
+  LINE with empty points array handled gracefully
+PASS: testLineWithEmptyPoints
+  BOX with zero width handled gracefully
+PASS: testBoxWithZeroWidth
+  BOX with zero height handled gracefully
+PASS: testBoxWithZeroHeight
+  BOX with zero width AND height (point) handled gracefully
+PASS: testBoxWithZeroDimensions
+  Minimum dimensions enforcement works correctly
+PASS: testMinimumDimensionsEnforcement
+
+Results: 15 passed, 0 failed
+=====================================================
+
+
+[90mstdout[2m | src/__tests__/behavioural-entity-type-registration.test.ts
+[22m[39m======================================================================
+Running Behavioural Entity Type Registration Tests (Task Group 1)
+======================================================================
+PASS: DIAGRAM_NODE_ENTITY_TYPE_MAP contains all 22 expected entity types
+PASS: Behavioural entity types (CLASS, METHOD, EVENT, STATE, STATE_TRANSITION, ACTIVITY, ACTIVITY_PARTITION, ACTIVITY_FLOW) map to correct MetaModelEntities keys
+PASS: Mapping keys align with ENTITY_TYPES constants
+PASS: All mapping values are valid keyof MetaModelEntities
+PASS: getKnownEntityTypes returns all registry keys
+PASS: Existing entity types have correct mappings
+======================================================================
+All Behavioural Entity Type Registration Tests PASSED (6/6)
+======================================================================
+
+[90mstdout[2m | src/__tests__/decoration-panel.test.ts
+[22m[39m
+=== Decoration Panel Tests (Task Group 3) ===
+
+  Panel toggles from collapsed to expanded
+PASS: testPanelToggleCollapsedToExpanded
+  Panel toggles from expanded to collapsed
+PASS: testPanelToggleExpandedToCollapsed
+  Panel toggle preserves addMode state
+PASS: testPanelTogglePreservesAddMode
+  Add Box button enters BOX mode
+PASS: testAddBoxButtonEntersBoxMode
+  Add Line button enters LINE mode
+PASS: testAddLineButtonEntersLineMode
+  Add mode switches correctly between BOX, LINE, and null
+PASS: testAddModeSwitch
+  Text editor visible for single BOX decoration selection
+PASS: testTextEditorVisibleForSingleBoxDecoration
+  Text editor visible for single LINE decoration selection
+PASS: testTextEditorVisibleForSingleLineDecoration
+  Text editor hidden when no decoration selected
+PASS: testTextEditorHiddenWhenNoSelection
+  Text editor hidden for multiple decoration selection
+PASS: testTextEditorHiddenForMultipleSelection
+  Text editor hidden for invalid decoration ID
+PASS: testTextEditorHiddenForInvalidId
+  getSelectedDecoration returns correct decoration data
+PASS: testGetSelectedDecorationReturnsCorrectDecoration
+  getSelectedDecoration returns null for no selection
+PASS: testGetSelectedDecorationReturnsNullForNoSelection
+  Text input updates BOX decoration in real-time
+PASS: testTextUpdateBoxDecoration
+  Text input updates LINE decoration in real-time
+PASS: testTextUpdateLineDecoration
+  Text update preserves all other decoration properties
+PASS: testTextUpdatePreservesOtherProperties
+  Text can be cleared by setting empty string
+PASS: testTextClearAllowed
+  Multi-line text input is supported
+PASS: testMultilineTextSupport
+
+Results: 18 passed, 0 failed
+================================================
+
+
+[90mstdout[2m | src/__tests__/domain-relationship-filtering.test.ts
+[22m[39mRunning Domain Relationship Filtering Tests...
+
+PASS: testInvalidDomainReturnsEmptyArray
+PASS: testEmptyStringDomainReturnsEmptyArray
+PASS: testAllValidDomainsReturnArrays
+PASS: testFunctionDoesNotThrowForAnyDomain
+PASS: testMissingGridConfigHandledGracefully
+PASS: testBusinessDomainIncludesUserBusinessPoint
+PASS: testBusinessDomainIncludesAppPointBusinessPointCrossDomain
+PASS: testBusinessDomainIncludesInteractions
+PASS: testBusinessDomainExcludesDataOnlyRelationships
+PASS: testApplicationDomainIncludesAppPointBusinessPointCrossDomain
+PASS: testApplicationDomainIncludesDataMovements
+PASS: testApplicationDomainIncludesInterfaceLogicalEntity
+PASS: testApplicationDomainExcludesUserBusinessPoint
+PASS: testDataDomainIncludesLogicalER
+PASS: testDataDomainIncludesLogicalPhysicalEntities
+PASS: testDataDomainIncludesLogicalPhysicalAttributes
+PASS: testDataDomainIncludesInterfaceLogicalEntity
+PASS: testDataDomainIncludesDataMovements
+PASS: testDataDomainExcludesUserBusinessPoint
+PASS: testBehaviouralDomainReturnsEmptyArray
+PASS: testAppPointBusinessPointAppearsInTwoDomains
+PASS: testInterfaceLogicalEntityAppearsInTwoDomains
+PASS: testBusinessDomainEntityTypeKeys
+PASS: testApplicationDomainEntityTypeKeys
+PASS: testDataDomainEntityTypeKeys
+PASS: testBehaviouralDomainEntityTypeKeys
+PASS: testApplicationPointBusinessPointsFkTargets
+PASS: testBusinessUserBusinessPointsFkTargets
+PASS: testDataMovementsFkTargets
+PASS: testDomainEntityTypesIncludesHiddenBusinessPoints
+PASS: testDomainEntityTypesIncludesHiddenApplicationPoints
+
+Results: 31 passed, 0 failed
+
+[90mstdout[2m | src/__tests__/endpoint-e2e-verification.test.ts
+[22m[39m============================================================
+Running Endpoint End-to-End Verification Tests
+============================================================
+PASS: Loading a diagram JSON file containing ENDPOINT nodes
+PASS: ENDPOINT nodes render as standard boxes with endpoint name
+PASS: Saving diagram with ENDPOINT nodes and verifying JSON structure
+PASS: Reloading saved diagram preserves ENDPOINT nodes correctly
+PASS: ENDPOINT nodes can be selected and moved
+PASS: Edges can connect to ENDPOINT nodes
+PASS: Diagram load works without errors
+PASS: ENDPOINT node rendering verification
+PASS: Save/reload cycle verification
+PASS: Full model validation with ENDPOINT nodes
+============================================================
+All Endpoint End-to-End Verification Tests PASSED
+============================================================
+
+[90mstdout[2m | src/__tests__/endpoint-palette-integration.test.ts
+[22m[39m============================================================
+Running Endpoint Palette Integration Tests
+============================================================
+PASS: getPaletteSections includes an "Endpoints" section
+PASS: Endpoints section appears after Interfaces section
+PASS: Endpoints section contains endpoint entities from metaModel
+PASS: getEntityTypeConstant mapping exists for endpoints
+============================================================
+All Endpoint Palette Integration Tests PASSED
+============================================================
+
+[90mstdout[2m | src/__tests__/endpoint-entity-type-registration.test.ts
+[22m[39m============================================================
+Running Endpoint Entity Type Registration Tests
+============================================================
+PASS: getEntityLabel returns correct label for ENDPOINT nodes
+PASS: getEntity returns the endpoint entity when given ENDPOINT type
+PASS: validateDiagramNodes does not report "unknown entity type ENDPOINT" error
+PASS: Diagram loading with ENDPOINT nodes succeeds without errors
+PASS: ENTITY_TYPE_DISPLAY_NAMES includes endpoints mapping
+============================================================
+All Endpoint Entity Type Registration Tests PASSED
+============================================================
+
+[90mstdout[2m | src/__tests__/inspector-panel-edge-label-styling.test.ts
+[22m[39m
+=== Edge Label Text Styling Tests (Task Group 8.1) ===
+
+  Default edge label font size (12px): PASS
+  Custom font size 16px: PASS
+  Custom font size 24px: PASS
+  Custom font size 8px: PASS
+  InspectorPanel font size update: PASS
+PASS: testEdgeLabelFontSizeRendering
+
+  Default edge label font weight (normal): PASS
+  Bold font weight rendering: PASS
+  InspectorPanel apply bold update: PASS
+  InspectorPanel remove bold update: PASS
+PASS: testEdgeLabelBoldFontWeight
+
+  Default edge label font style (normal): PASS
+  Italic font style rendering: PASS
+  InspectorPanel apply italic update: PASS
+  InspectorPanel remove italic update: PASS
+PASS: testEdgeLabelItalicFontStyle
+
+  Default edge label text decoration (none): PASS
+  Underline text decoration rendering: PASS
+  InspectorPanel apply underline update: PASS
+  InspectorPanel remove underline update: PASS
+PASS: testEdgeLabelUnderlineTextDecoration
+
+
+Results: 4 passed, 0 failed
+========================================
+
+
+=== Edge Label Verification Tests (Tasks 8.2, 8.3) ===
+
+  All styles combined (16px, bold, italic, underline): PASS
+PASS: testEdgeLabelAllStylesCombined
+
+  Canvas.tsx edge label rendering verification: PASS
+    - fontSize={labelFontSize}: Present (line 936)
+    - fontWeight={labelFontWeight}: Present (line 937, with selection override)
+    - fontStyle={labelFontStyle}: Present (line 938)
+    - textDecoration={labelTextDecoration}: Present (line 939)
+PASS: testCanvasEdgeLabelRenderingVerification
+
+  InspectorPanel label_font_size applies to edges: PASS
+  InspectorPanel label_font_weight applies to edges: PASS
+  InspectorPanel label_font_style applies to edges: PASS
+  InspectorPanel label_text_decoration applies to edges: PASS
+PASS: testInspectorPanelAppliesToEdges
+
+  Alignment controls hidden for edge-only selection: PASS
+PASS: testAlignmentControlsHiddenForEdges
+
+
+Results: 4 passed, 0 failed
+========================================
+
+
+[90mstdout[2m | src/__tests__/inspector-panel-business-user-styling.test.ts
+[22m[39m
+=== BUSINESS_USER Text Styling Tests (Task Group 7) ===
+
+  Default BUSINESS_USER font size (12px): PASS
+  Custom font size 16px: PASS
+  Custom font size 24px: PASS
+  Custom font size 8px: PASS
+  InspectorPanel font size update: PASS
+PASS: testBusinessUserFontSizeRendering
+
+  Default BUSINESS_USER font weight (normal): PASS
+  Bold font weight rendering: PASS
+  InspectorPanel apply bold update: PASS
+  InspectorPanel remove bold update: PASS
+PASS: testBusinessUserBoldFontWeight
+
+  Default BUSINESS_USER font style (normal): PASS
+  Italic font style rendering: PASS
+  InspectorPanel apply italic update: PASS
+  InspectorPanel remove italic update: PASS
+PASS: testBusinessUserItalicFontStyle
+
+  Default BUSINESS_USER text decoration (none): PASS
+  Underline text decoration rendering: PASS
+  InspectorPanel apply underline update: PASS
+  InspectorPanel remove underline update: PASS
+PASS: testBusinessUserUnderlineTextDecoration
+
+
+Results: 4 passed, 0 failed
+========================================
+
+
+=== BUSINESS_USER Verification Tests (Tasks 7.2, 7.3) ===
+
+  All styles combined (16px, bold, italic, underline): PASS
+PASS: testBusinessUserAllStylesCombined
+
+  Canvas.tsx BUSINESS_USER text rendering verification: PASS
+    - fontSize={nodeFontSize}: Present
+    - fontWeight={nodeFontWeight}: Present
+    - fontStyle={nodeFontStyle}: Present
+    - textDecoration={nodeTextDecoration}: Present
+PASS: testCanvasBusinessUserRenderingVerification
+
+  InspectorPanel font size applies to BUSINESS_USER: PASS
+  InspectorPanel bold applies to BUSINESS_USER: PASS
+  InspectorPanel italic applies to BUSINESS_USER: PASS
+  InspectorPanel underline applies to BUSINESS_USER: PASS
+PASS: testInspectorPanelAppliesToBusinessUser
+
+
+Results: 3 passed, 0 failed
+========================================
+
+
+[90mstdout[2m | src/__tests__/inspector-panel-extended-alignment.test.ts
+[22m[39m
+=== Alignment Control Visibility Tests (Task Group 6) ===
+
+  Rectangular nodes (APPLICATION) - alignment controls visible: PASS
+  Multiple rectangular nodes - alignment controls visible: PASS
+  SERVICE type node - alignment controls visible: PASS
+  APP_COMPONENT type node - alignment controls visible: PASS
+PASS: testAlignmentControlsVisibleForRectangularNodes
+
+  Single BUSINESS_USER node - alignment controls hidden: PASS
+  Multiple BUSINESS_USER nodes - alignment controls hidden: PASS
+PASS: testAlignmentControlsHiddenForBusinessUserOnly
+
+  Single edge selected - alignment controls hidden: PASS
+  Multiple edges selected - alignment controls hidden: PASS
+  Edge selection does not affect alignment visibility: PASS
+PASS: testAlignmentControlsHiddenForEdgesOnly
+
+  BUSINESS_USER + edges selected - alignment controls hidden: PASS
+  Mixed non-rectangular selection - alignment controls hidden: PASS
+PASS: testAlignmentControlsHiddenForBusinessUserAndEdges
+
+  Rectangular + BUSINESS_USER mixed - alignment controls visible: PASS
+  Rectangular + BUSINESS_USER + edges mixed - alignment controls visible: PASS
+PASS: testMixedSelectionWithRectangularShowsAlignment
+
+  Alignment update filtering - only rectangular nodes affected: PASS
+  BUSINESS_USER nodes excluded from alignment updates: PASS
+PASS: testAlignmentFilteringForMixedSelection
+
+
+Results: 6 passed, 0 failed
+========================================
+
+
+[90mstdout[2m | src/__tests__/inspector-panel-extended-integration.test.ts
+[22m[39m
+=== Extended Integration Tests (Task Group 9) ===
+
+  Alignment controls visible for rectangular + BUSINESS_USER: PASS
+  Alignment changes apply only to rectangular nodes: PASS
+PASS: testMixedSelectionRectangularAndBusinessUser
+
+  Alignment controls visible for rectangular + edges: PASS
+  Alignment changes apply only to rectangular nodes (not edges): PASS
+PASS: testMixedSelectionRectangularAndEdges
+
+  Alignment controls HIDDEN for BUSINESS_USER + edges: PASS
+  Font styles apply to both BUSINESS_USER and edges: PASS
+PASS: testMixedSelectionBusinessUserAndEdges
+
+  Multi-select all three types - alignment controls visible: PASS
+  Multi-select all three types - alignment only affects rectangular: PASS
+  Multi-select all three types - font styles affect all: PASS
+PASS: testMultiSelectAllThreeTypes
+
+  Font size change updates all rectangular nodes: PASS
+  Font size change updates all BUSINESS_USER nodes: PASS
+  Font size change updates all edges: PASS
+PASS: testFontSizeChangeOnMixedSelection
+
+  Save/load preserves rectangular node styling (all 6 attributes): PASS
+  Save/load preserves BUSINESS_USER node styling (4 attributes): PASS
+  Save/load preserves edge label styling (4 attributes): PASS
+PASS: testSaveLoadPreservesStylingSAllTypes
+
+
+Results: 6 passed, 0 failed
+========================================
+
+
+=== Edge Cases and Expected Behaviors (Task 9.2) ===
+
+Selection Visibility Rules:
+  [rectangular]                      -> Font Size: Show, Font Styles: Show, Alignment: Show
+  [BUSINESS_USER]                    -> Font Size: Show, Font Styles: Show, Alignment: HIDE
+  [edge]                             -> Font Size: Show, Font Styles: Show, Alignment: HIDE
+  [rectangular, BUSINESS_USER]       -> Font Size: Show, Font Styles: Show, Alignment: Show*
+  [rectangular, edge]                -> Font Size: Show, Font Styles: Show, Alignment: Show*
+  [BUSINESS_USER, edge]              -> Font Size: Show, Font Styles: Show, Alignment: HIDE
+  [rectangular, BUSINESS_USER, edge] -> Font Size: Show, Font Styles: Show, Alignment: Show*
+
+  * = Alignment changes apply ONLY to rectangular nodes
+
+Font Size/Style Update Targets:
+  - Nodes: text_font_size, text_font_weight, text_font_style, text_text_decoration
+  - Edges: label_font_size, label_font_weight, label_font_style, label_text_decoration
+
+Alignment Update Targets:
+  - Only rectangular nodes receive: text_h_align, text_v_align
+  - BUSINESS_USER nodes are filtered out
+  - Edges do not have alignment properties
+
+
+[90mstdout[2m | src/__tests__/remove-logical-entity-from-physical-entities.test.ts
+[22m[39m========================================
+Running: Remove logical_entity_id from PhysicalDataEntity Tests
+========================================
+
+Test 1.1.1: PhysicalDataEntity can be created without logical_entity_id
+  PASSED
+Test 1.1.2: Existing PhysicalDataEntity fields remain functional
+  PASSED
+Test 1.1.3: TypeScript compilation succeeds with new interface
+  PASSED
+Test 1.1.4: Legacy objects with logical_entity_id can be destructured to omit the field
+  PASSED
+Test 1.3: LogicalDataEntityPhysicalDataEntity relationship interface retains logical_entity_id and physical_entity_id
+  PASSED
+Test 2.1.1: physical_data_entities grid config does not include logical_entity_id column
+  PASSED
+Test 2.1.2: Grid config has correct number of columns without logical_entity_id
+  PASSED
+Test 2.1.3: Remaining columns have correct configuration
+  PASSED
+Test 2.1.4: logical_data_entity_physical_data_entities grid config unchanged
+  PASSED
+Test 3.1.1: Loading legacy JSON with logical_entity_id silently discards the field
+  PASSED
+Test 3.1.2: Loading JSON without logical_entity_id works correctly
+  PASSED
+Test 3.1.3: Saving model does not include logical_entity_id on physical entities
+  PASSED
+Test 3.1.4: Physical entity data is preserved correctly through load/save cycle
+  PASSED
+Test 4.4.1: Creating new Physical Entity does not require logical entity selection
+  PASSED
+Test 4.4.2: Editing existing Physical Entity should not show logical entity field
+  PASSED
+Test 4.4.3: Logical <-> Physical relationship grid still works correctly
+  PASSED
+Test 4.4.4: Building model correctly handles relationship-based lookup
+  PASSED
+Test 5.3.3: Multiple physical entities can map to same logical entity via relationship table
+  PASSED
+Test 5.3.4: One physical entity can map to multiple logical entities (M:N support)
+  PASSED
+Test 5.3.5: Backward compatibility with files containing deprecated field
+  PASSED
+
+========================================
+Results: 20 passed, 0 failed
+========================================
+
+[90mstdout[2m | src/__tests__/ui-screen-entity-type-registration.test.ts
+[22m[39m======================================================================
+Running UI_SCREEN Entity Type Registration Tests
+Spec: 2026-01-02 - UI_SCREEN Entity Type Registration Bugfix
+======================================================================
+PASS: DIAGRAM_NODE_ENTITY_TYPE_MAP contains UI_SCREEN -> "ui_screens"
+PASS: getEntityLabel returns correct label for UI_SCREEN nodes
+PASS: getEntity returns the UIScreen entity when given UI_SCREEN type
+PASS: validateDiagramNodes does not report "unknown entity type UI_SCREEN" error
+PASS: ENTITY_TYPE_DISPLAY_NAMES includes ui_screens mapping
+======================================================================
+All UI_SCREEN Entity Type Registration Tests PASSED (5/5)
+======================================================================
+
+ [32m✓[39m src/__tests__/create-and-place-drawer.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 260[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-interface-parity-integration.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 682[2mms[22m[39m
+ [32m✓[39m src/__tests__/interfaceCompositeBuilder.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 704[2mms[22m[39m
+ [32m✓[39m src/__tests__/business-point-relationships.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 371[2mms[22m[39m
+ [32m✓[39m src/__tests__/interfaces-entity-relationship.test.ts [2m([22m[2m46 tests[22m[2m)[22m[33m 915[2mms[22m[39m
+ [32m✓[39m src/__tests__/metamodel-view-layout-heights.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 228[2mms[22m[39m
+ [32m✓[39m src/__tests__/er-diagram-erd-rendering.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 674[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-button-ui.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 193[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-edge-creation.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 354[2mms[22m[39m
+ [32m✓[39m src/__tests__/er-diagram-live-sync.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 281[2mms[22m[39m
+ [32m✓[39m src/__tests__/ChatMessageList.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 211[2mms[22m[39m
+ [32m✓[39m src/__tests__/chat-panel-vertical-resize.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 229[2mms[22m[39m
+ [32m✓[39m src/__tests__/decision-flow-condition-modal.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 164[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-boundary-anchoring.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 282[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-creation-mode-state.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 362[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-inspector.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 360[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-edge-geometry.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 396[2mms[22m[39m
+ [32m✓[39m src/__tests__/element-context-menu.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 135[2mms[22m[39m
+ [32m✓[39m src/__tests__/userInteractionUtils-abp-resolution.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 391[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-gesture-types.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 271[2mms[22m[39m
+ [32m✓[39m src/__tests__/participant-spacing-toolbar.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 301[2mms[22m[39m
+ [32m✓[39m src/__tests__/hierarchical-layout-helper-functions.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 434[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-transition-creation.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 258[2mms[22m[39m
+ [32m✓[39m src/__tests__/left-panel-reorganisation.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+ [32m✓[39m src/__tests__/palette-context-menu-component.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 343[2mms[22m[39m
+ [32m✓[39m src/__tests__/palette-context-menu-integration.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m src/__tests__/layout-config-types.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-renderer.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 127[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-loading-diagnostic.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/__tests__/gridConfigs-interactions-tab.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 142[2mms[22m[39m
+ [32m✓[39m src/__tests__/chat-session-continuity.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/__tests__/zindex-rendering.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/__tests__/position-zindex-types.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 117[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-transition-rendering.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 160[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-config.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 210[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-palette-greying.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m src/__tests__/er-diagram-logical-er-creation.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/__tests__/erd-context-menu.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 216[2mms[22m[39m
+ [32m✓[39m src/__tests__/context-menu-blocking-no-diagram.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 98[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-label-defaults.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m src/__tests__/ui-layout-controls.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/__tests__/process-activity-frequency.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+ [32m✓[39m src/__tests__/relationship-grid-interactions.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 208[2mms[22m[39m
+ [32m✓[39m src/__tests__/ChatPanel-extended.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/__tests__/app-business-point-types.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-ancestor-selection.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 59[2mms[22m[39m
+ [32m✓[39m src/__tests__/position-controls.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-recursive-wrapping.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-palette-relationship.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+ [32m✓[39m src/__tests__/context-menu-state.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m src/__tests__/flow-tab.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-gap-tests.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-grid-context-menu.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramRenderer.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 150[2mms[22m[39m
+ [32m✓[39m src/__tests__/label-decoration-utils.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-shape-bounds-rendering.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 203[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-canvas-ui.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m src/__tests__/create-and-place-integration.test.ts [2m([22m[2m42 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/__tests__/box-select-utilities.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 41[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-partition-header.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 137[2mms[22m[39m
+ [32m✓[39m src/__tests__/viewport-utils.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 222[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-edge-types.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/__tests__/data-type-options.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-palette-extended.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m src/__tests__/spacing-presets-ui.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-interface-parent-wrapping.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 169[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-rendering-dimensions.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramCanvasIntegration.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 80[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-integration.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/__tests__/fixed-spawn-position-palette-panel.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/__tests__/typed-content-serialization.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 59[2mms[22m[39m
+ [32m✓[39m src/__tests__/typed-content-e2e.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m src/__tests__/ui-workflow-transition-creation.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 98[2mms[22m[39m
+ [32m✓[39m src/__tests__/activityFlowCreation.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 39[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-integration.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 165[2mms[22m[39m
+ [32m✓[39m src/__tests__/diagram-level-temporality.test.ts [2m([22m[2m34 tests[22m[2m)[22m[32m 150[2mms[22m[39m
+ [32m✓[39m src/__tests__/process-activities.test.ts [2m([22m[2m35 tests[22m[2m)[22m[33m 400[2mms[22m[39m
+ [32m✓[39m src/__tests__/sequence-diagram-wiring-integration.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 243[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-edge-label.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-edge-rendering.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/__tests__/zindex-unified-rendering.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 278[2mms[22m[39m
+ [32m✓[39m src/__tests__/sequence-editor-panel.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 254[2mms[22m[39m
+ [32m✓[39m src/__tests__/spacing-presets-layout.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 397[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-types-extended.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 310[2mms[22m[39m
+ [32m✓[39m src/__tests__/logical-er-modal-integration.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 171[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-transition-2click-mode.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 253[2mms[22m[39m
+ [32m✓[39m src/__tests__/business-point-sync.test.ts [2m([22m[2m47 tests[22m[2m)[22m[32m 258[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-integration.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 400[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-enable-disable.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-node-rendering.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 155[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-resize.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 333[2mms[22m[39m
+ [32m✓[39m src/__tests__/add-with-all-children.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 169[2mms[22m[39m
+ [32m✓[39m src/__tests__/flow-boundary-anchoring.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-decision-edge-labels.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 204[2mms[22m[39m
+ [32m✓[39m src/__tests__/palette-context-menu-gap-tests.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 42[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-label-persistence.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 186[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-boundary-anchoring.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 209[2mms[22m[39m
+ [32m✓[39m src/__tests__/ui-screen-editor-dropdowns-populate.test.tsx [2m([22m[2m20 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+ [32m✓[39m src/__tests__/standardise-user-interaction-palette-ui.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 222[2mms[22m[39m
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 1: Current Tab Placement Configuration in gridConfigs.ts[2m > [22m[2mverifies Interactions is NOT in domainGroupings.business (FIXED)
+[22m[39mCurrent domainGroupings.business: [ [32m'Users'[39m, [32m'Processes'[39m, [32m'Activities'[39m ]
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 1: Current Tab Placement Configuration in gridConfigs.ts[2m > [22m[2mverifies Interactions is NOT in entityTabNames (FIXED)
+[22m[39mCurrent entityTabNames: [
+  [32m'Users'[39m,
+  [32m'Processes'[39m,
+  [32m'Activities'[39m,
+  [32m'Applications'[39m,
+  [32m'App Components'[39m,
+  [32m'Services'[39m,
+  [32m'Interfaces'[39m,
+  [32m'Endpoints'[39m,
+  [32m'Classes'[39m,
+  [32m'Methods'[39m,
+  [32m'Logical Entities'[39m,
+  [32m'Logical Attributes'[39m,
+  [32m'Physical Entities'[39m,
+  [32m'Physical Attributes'[39m,
+  [32m'Events'[39m,
+  [32m'States'[39m,
+  [32m'State Transitions'[39m,
+  [32m'Activity Nodes'[39m,
+  [32m'Activity Flows'[39m,
+  [32m'Activity Partitions'[39m,
+  [32m'UI Screens'[39m,
+  [32m'UI Workflow Transitions'[39m,
+  [32m'UI Components'[39m,
+  [32m'UI Actions'[39m
+]
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 1: Current Tab Placement Configuration in gridConfigs.ts[2m > [22m[2mverifies Interactions IS in relationshipTabNames (FIXED)
+[22m[39mCurrent relationshipTabNames: [
+  [32m'User <-> Business Point'[39m,
+  [32m'App Point <-> Business Point'[39m,
+  [32m'Interactions'[39m,
+  [32m'Logical ER'[39m,
+  [32m'Logical <-> Physical Entities'[39m,
+  [32m'Logical <-> Physical Attributes'[39m,
+  [32m'Interface <-> Logical Entity'[39m,
+  [32m'Data Movements'[39m
+]
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 1: Current Tab Placement Configuration in gridConfigs.ts[2m > [22m[2mverifies Interactions is NOT in tabToEntityType (prevents double-rendering)
+[22m[39mtabToEntityType["Interactions"]: [90mundefined[39m
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 1: Current Tab Placement Configuration in gridConfigs.ts[2m > [22m[2mverifies Interactions IS in relationshipTabToType (FIXED)
+[22m[39mCurrent relationshipTabToType keys: [
+  [32m'User <-> Business Point'[39m,
+  [32m'App Point <-> Business Point'[39m,
+  [32m'Interactions'[39m,
+  [32m'Logical ER'[39m,
+  [32m'Logical <-> Physical Entities'[39m,
+  [32m'Logical <-> Physical Attributes'[39m,
+  [32m'Interface <-> Logical Entity'[39m,
+  [32m'Data Movements'[39m
+]
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 2: Current Routing Behavior for Interactions Tab[2m > [22m[2mverifies Interactions now routes to RelationshipGrid ONLY (FIXED)
+[22m[39misEntityTab for Interactions: [33mfalse[39m
+isRelationshipTab for Interactions: [33mtrue[39m
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 2: Current Routing Behavior for Interactions Tab[2m > [22m[2mdocuments that gridConfigs.interactions exists (CORRECT)
+[22m[39mgridConfigs.interactions fields: [
+  [32m'id'[39m,
+  [32m'name'[39m,
+  [32m'description'[39m,
+  [32m'user_id'[39m,
+  [32m'primary_app_business_point_id'[39m,
+  [32m'secondary_app_business_point_id'[39m,
+  [32m'tags'[39m
+]
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 3: getAppBusinessPointNodeId with Various ABP Data Scenarios[2m > [22m[2mresolves ABP to node ID when ABP exists and node is on diagram
+[22m[39mABP resolved correctly: node-app-1
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 3: getAppBusinessPointNodeId with Various ABP Data Scenarios[2m > [22m[2mreturns null when ABP exists but node is NOT on diagram
+[22m[39mABP not on diagram - returns null (correct)
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 3: getAppBusinessPointNodeId with Various ABP Data Scenarios[2m > [22m[2mreturns null when ABP does NOT exist in meta-model
+[22m[39mABP not in meta-model - returns null
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 3: getAppBusinessPointNodeId with Various ABP Data Scenarios[2m > [22m[2mreturns null when app_business_points array is undefined
+[22m[39mapp_business_points undefined - returns null
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 4: isUserInteractionRowEnabled Case A (without User node)[2m > [22m[2midentifies Case A when both primary and secondary ABP are set
+[22m[39mCase A correctly identified
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 4: isUserInteractionRowEnabled Case A (without User node)[2m > [22m[2mCase A ENABLED: P and S on diagram, User NOT on diagram (User NOT required)
+[22m[39mCase A enabled without User node: [33mtrue[39m
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 4: isUserInteractionRowEnabled Case A (without User node)[2m > [22m[2mCase A DISABLED: P on diagram but S missing
+[22m[39mCase A disabled when S missing: [33mfalse[39m
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 4: isUserInteractionRowEnabled Case A (without User node)[2m > [22m[2mCase A DISABLED: ABP not in app_business_points (potential root cause)
+[22m[39mCase A disabled when ABP not in app_business_points: [33mfalse[39m
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 5: RelationshipGrid Data Access Pattern[2m > [22m[2mdocuments RelationshipGrid data access pattern
+[22m[39mData locations for RelationshipGrid: {
+  business_user_business_points: [32m'metaModel.relationships.business_user_business_points'[39m,
+  application_point_business_points: [32m'metaModel.relationships.application_point_business_points'[39m,
+  logical_data_entity_relationships: [32m'metaModel.relationships.logical_data_entity_relationships'[39m,
+  data_movements: [32m'metaModel.relationships.data_movements'[39m,
+  interactions: [32m'metaModel.entities.interactions'[39m
+}
+FINDING: Interactions is in entities, not relationships
+RelationshipGrid needs fallback for entities.interactions
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mDiagnostic Test 5: RelationshipGrid Data Access Pattern[2m > [22m[2mdocuments createEmptyRelationship needs interactions case
+[22m[39mExpected empty Interaction shape: {
+  id: [32m'int-xxx'[39m,
+  name: [32m''[39m,
+  description: [32m''[39m,
+  user_id: [32m''[39m,
+  primary_app_business_point_id: [32m''[39m,
+  secondary_app_business_point_id: [32m''[39m,
+  tags: [32m''[39m
+}
+
+[90mstdout[2m | src/__tests__/interactions-placement-diagnostic.test.ts[2m > [22m[2mSummary: Root Causes and Required Changes[2m > [22m[2mdocuments all root causes and required changes
+[22m[39mROOT CAUSE ANALYSIS COMPLETE: {
+  "rootCause1": {
+    "description": "Interactions appears in wrong row (Entities instead of Relationships)",
+    "cause": "Interactions is in domainGroupings.business and entityTabNames",
+    "file": "frontend/src/config/gridConfigs.ts",
+    "changes": [
+      "Line 286: Remove \"Interactions\" from entityTabNames array",
+      "Line 300: Remove \"Interactions\" from domainGroupings.business array",
+      "Line 309: Add \"Interactions\" to relationshipTabNames after \"App Point <-> Business Point\"",
+      "After line 272: Add \"Interactions\": \"interactions\" to relationshipTabToType"
+    ]
+  },
+  "rootCause2": {
+    "description": "Clicking Interactions routes to Grid (EntityGrid) not RelationshipGrid",
+    "cause": "Interactions not in relationshipTabToType, so isRelationshipTab is false",
+    "file": "frontend/src/components/MetaModelView/MetaModelView.tsx",
+    "changes": [
+      "After gridConfigs.ts changes, routing will automatically work",
+      "No code changes needed in MetaModelView.tsx"
+    ]
+  },
+  "rootCause3": {
+    "description": "RelationshipGrid cannot access interactions data",
+    "cause": "Interactions data is in entities.interactions, not relationships.interactions",
+    "file": "frontend/src/components/Grid/RelationshipGrid.tsx",
+    "changes": [
+      "Line 19: Add fallback || state.model.metaModel.entities[relationshipType]",
+      "createEmptyRelationship: Add case \"interactions\" with correct shape"
+    ]
+  },
+  "potentialRootCause4": {
+    "description": "Case A enablement may fail if ABP array not populated",
+    "cause": "getAppBusinessPointNodeId returns null when ABP not in app_business_points",
+    "file": "frontend/src/utils/userInteractionUtils.ts",
+    "changes": [
+      "Verify ABP sync is creating entries when entities are created",
+      "Check if ABP auto-creation triggers are working"
+    ]
+  }
+}
+
+ [32m✓[39m src/__tests__/interactions-placement-diagnostic.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 256[2mms[22m[39m
+ [32m✓[39m src/__tests__/meta-model-ui-domain.test.tsx [2m([22m[2m20 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-partition-rendering.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-types.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 221[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-rendering.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 355[2mms[22m[39m
+ [32m✓[39m src/__tests__/canvas-sequence-diagram-wiring.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 277[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-edge-deletion.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 243[2mms[22m[39m
+ [32m✓[39m src/__tests__/interface-custom-renderer.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 317[2mms[22m[39m
+ [32m✓[39m src/__tests__/interaction-entity.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 127[2mms[22m[39m
+ [32m✓[39m src/__tests__/reducer-actions.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 144[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-diagram-defaults.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 321[2mms[22m[39m
+ [32m✓[39m src/__tests__/context-menu-actions.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 105[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-decision-label.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 104[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramLiveUpdate.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-action-label-alignment.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 51[2mms[22m[39m
+ [32m✓[39m src/__tests__/er-diagram-integration.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 328[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-interface-layout.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 505[2mms[22m[39m
+ [32m✓[39m src/__tests__/interface-custom-layout-detection.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-boundary-anchoring.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-ux-fixes-integration.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 49[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-no-attribute-nodes.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 222[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-factories.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 88[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-diagram-renderer.test.ts [2m([22m[2m26 tests[22m[2m)[22m[32m 207[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-integration.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-diagram-integration.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 891[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramOperandRendering.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 242[2mms[22m[39m
+ [32m✓[39m src/__tests__/data-movement-console-warnings.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 410[2mms[22m[39m
+ [32m✓[39m src/__tests__/palette-context-menu-actions.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+ [32m✓[39m src/__tests__/sequenceLayout.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 225[2mms[22m[39m
+ [32m✓[39m src/__tests__/ChatInput.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 135[2mms[22m[39m
+ [32m✓[39m src/__tests__/diagram-typed-content.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-label-decorations.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 81[2mms[22m[39m
+ [32m✓[39m src/__tests__/add-diagram-edge-reducer.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 45[2mms[22m[39m
+ [32m✓[39m src/__tests__/compound-handlers-viewport.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 99[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-decision-labels.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 144[2mms[22m[39m
+ [32m✓[39m src/__tests__/process-activity-conditional-colouring.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 262[2mms[22m[39m
+ [32m✓[39m src/__tests__/ui-screen-actions-enhancement.test.ts [2m([22m[2m29 tests[22m[2m)[22m[33m 640[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-persistence.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 206[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-canvas-rendering.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 312[2mms[22m[39m
+ [32m✓[39m src/__tests__/spacing-presets-types.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 130[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-canvas-resize.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 61[2mms[22m[39m
+ [32m✓[39m src/__tests__/fixed-spawn-position-compound-layout.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 517[2mms[22m[39m
+       [33m[2m✓[22m[39m should produce rootX=100, rootY=100 regardless of viewportCenter [33m 330[2mms[22m[39m
+ [32m✓[39m src/__tests__/app-business-point-sync.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 342[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-interface-candidates.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 229[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-defaults.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 64[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-acts-as-containment.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 152[2mms[22m[39m
+ [32m✓[39m src/__tests__/canvas-interface-entity-rendering.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-level.test.ts [2m([22m[2m39 tests[22m[2m)[22m[32m 183[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramFragmentRendering.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 185[2mms[22m[39m
+ [32m✓[39m src/__tests__/erd-canvas-rendering.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 78[2mms[22m[39m
+ [32m✓[39m src/__tests__/data-movement-application-points.test.ts [2m([22m[2m39 tests[22m[2m)[22m[32m 270[2mms[22m[39m
+ [32m✓[39m src/__tests__/erd-utils.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 634[2mms[22m[39m
+ [32m✓[39m src/__tests__/interaction-entity-phases-3-7.test.ts [2m([22m[2m42 tests[22m[2m)[22m[33m 475[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-square-resize.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 343[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramIntegration.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 795[2mms[22m[39m
+ [32m✓[39m src/__tests__/chat-panel-layout.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 322[2mms[22m[39m
+ [32m✓[39m src/__tests__/grid-layout-algorithm.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 296[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-edge-cases.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 259[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-types.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 91[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-gesture-handling.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 77[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramMessageRendering.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 439[2mms[22m[39m
+ [32m✓[39m src/__tests__/er-edge-cardinality-symbols.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 206[2mms[22m[39m
+ [32m✓[39m src/__tests__/fixed-spawn-position.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 79[2mms[22m[39m
+ [32m✓[39m src/__tests__/er-diagram-ux-integration.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 47[2mms[22m[39m
+ [32m✓[39m src/__tests__/remove-legacy-relationships.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m src/__tests__/useSequenceDiagram-guard.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 182[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-context-menu.test.ts [2m([22m[2m31 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [32m✓[39m src/__tests__/canvas-context-menu.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m src/__tests__/diagrams-view-sequence-editor-wiring.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 292[2mms[22m[39m
+ [32m✓[39m src/__tests__/handleAddWithAllChildren.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 25[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-diagram-rhs-palette.test.ts [2m([22m[2m17 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-node-rendering.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m src/__tests__/selection-inspector-editable.test.ts [2m([22m[2m29 tests[22m[2m)[22m[32m 26[2mms[22m[39m
+ [32m✓[39m src/__tests__/data-type-integration.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 168[2mms[22m[39m
+ [32m✓[39m src/__tests__/logical-er-create-modal.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+ [32m✓[39m src/__tests__/interface-entity-positioning.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 199[2mms[22m[39m
+ [32m✓[39m src/__tests__/chatApi.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 246[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-shape-rendering.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 341[2mms[22m[39m
+ [32m✓[39m src/__tests__/ChatBubble.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-validation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 79[2mms[22m[39m
+ [32m✓[39m src/__tests__/diagram-type-normalization.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 123[2mms[22m[39m
+ [32m✓[39m src/__tests__/advanced-add-point-resolution.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 300[2mms[22m[39m
+ [32m✓[39m src/__tests__/data-type-grid-config.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 230[2mms[22m[39m
+ [32m✓[39m src/__tests__/zindex-hit-testing.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+ [32m✓[39m src/__tests__/hierarchical-layout-integration.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 170[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-interactions.test.ts [2m([22m[2m26 tests[22m[2m)[22m[33m 415[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-erd-utils.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 285[2mms[22m[39m
+ [32m✓[39m src/__tests__/ui-workflow-diagram-palette.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 434[2mms[22m[39m
+ [32m✓[39m src/__tests__/data-type-migration.test.ts [2m([22m[2m31 tests[22m[2m)[22m[33m 412[2mms[22m[39m
+ [32m✓[39m src/__tests__/sequence-editor-typedContent.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 271[2mms[22m[39m
+ [32m✓[39m src/__tests__/decoration-inspector.test.ts [2m([22m[2m30 tests[22m[2m)[22m[32m 235[2mms[22m[39m
+ [32m✓[39m src/__tests__/participants-tab.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 241[2mms[22m[39m
+ [32m✓[39m src/__tests__/create-and-place-flow.test.ts [2m([22m[2m20 tests[22m[2m)[22m[32m 203[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-renderer-integration.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 75[2mms[22m[39m
+ [32m✓[39m src/__tests__/increment3-integration.test.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 504[2mms[22m[39m
+ [32m✓[39m src/__tests__/user-interaction-palette-enablement.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 557[2mms[22m[39m
+ [32m✓[39m src/__tests__/box-select-behavior.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 159[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-edge-anchoring.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 95[2mms[22m[39m
+ [32m✓[39m src/__tests__/case-a-enablement.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 339[2mms[22m[39m
+ [32m✓[39m src/__tests__/palette-context-menu-foundation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+ [32m✓[39m src/__tests__/bend-point-insertion.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 265[2mms[22m[39m
+ [32m✓[39m src/__tests__/endpoint-context.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 53[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-flow-node-click-integration.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 215[2mms[22m[39m
+ [32m✓[39m src/__tests__/SequenceDiagramSpacingPersistence.test.ts [2m([22m[2m18 tests[22m[2m)[22m[32m 179[2mms[22m[39m
+ [32m✓[39m src/__tests__/state-resize-helpers.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+ [32m✓[39m src/__tests__/ui-screen-association.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/__tests__/diagram-type-normalization-integration.test.ts [2m([22m[2m19 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+[90mstdout[2m | src/__tests__/on-add-edge-callback-wiring.test.ts[2m > [22m[2monAddEdge Callback Wiring[2m > [22m[2monAddEdge prop should be a function type when provided
+[22m[39mAdding edge: edge_test_001
+
+ [32m✓[39m src/__tests__/on-add-edge-callback-wiring.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m src/__tests__/edge-inspectors.test.ts [2m([22m[2m24 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/__tests__/group-movement.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/__tests__/erd-advanced-add.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/__tests__/multi-selection-integration.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m src/__tests__/vite-proxy-configuration.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m src/__tests__/ChatPanel.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/__tests__/logical-er-duplicate-prevention.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m src/__tests__/erd-node-types.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m src/__tests__/activity-edge-labels.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m src/__tests__/ChatPanelIntegration.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+
+[2m Test Files [22m [1m[31m99 failed[39m[22m[2m | [22m[1m[32m217 passed[39m[22m[90m (316)[39m
+[2m      Tests [22m [1m[31m167 failed[39m[22m[2m | [22m[1m[32m3911 passed[39m[22m[90m (4078)[39m
+[2m   Start at [22m 09:08:07
+[2m   Duration [22m 382.75s[2m (transform 405.73s, setup 0ms, import 665.16s, tests 62.80s, environment 5226.16s)[22m
+

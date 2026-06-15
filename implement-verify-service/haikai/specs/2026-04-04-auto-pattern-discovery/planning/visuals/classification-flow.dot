@@ -1,0 +1,71 @@
+digraph ClassifyInteractions {
+    rankdir=TB
+    node [shape=box, style=rounded, fontname="Helvetica", fontsize=11]
+    edge [fontname="Helvetica", fontsize=10]
+
+    // Inputs
+    subgraph cluster_inputs {
+        label="Inputs (from AST pipeline)"
+        style=dashed
+        color=gray
+        calls [label="_calls.txt\n(all call sites)"]
+        imports [label="_imports.txt\n(all imports)"]
+        frameworks [label="framework_detector\n(known frameworks)"]
+    }
+
+    // Step 1
+    ast [label="1. Run AST Extraction\n(tree-sitter)", shape=box]
+    ast -> calls
+    ast -> imports
+    ast -> frameworks
+
+    // Step 2
+    cache [label="2. YAML Cache Lookup\n(known patterns)", shape=box]
+    calls -> cache
+    cache -> classified [label="matched"]
+    cache -> unclassified [label="no match"]
+
+    classified [label="Classified\n(fast path)", shape=note, style=filled, fillcolor="#d4edda"]
+    unclassified [label="Unclassified\ncall sites", shape=note, style=filled, fillcolor="#fff3cd"]
+
+    // Step 3
+    batch [label="3. Batch by Framework", shape=box]
+    unclassified -> batch
+    frameworks -> batch
+
+    // Step 4 - LLM loop
+    subgraph cluster_llm {
+        label="4. LLM Agent Loop"
+        style=filled
+        color="#e8f4f8"
+        fontname="Helvetica"
+
+        classify [label="4a. Classify\ntype + direction"]
+        ambiguous [label="Ambiguous?", shape=diamond]
+        read_source [label="4b. Read Source\n(file + line range)"]
+        reclassify [label="4c. Reclassify\nwith context"]
+        resolved [label="Resolved", shape=note, style=filled, fillcolor="#d4edda"]
+
+        classify -> ambiguous
+        ambiguous -> resolved [label="clear"]
+        ambiguous -> read_source [label="need context"]
+        read_source -> reclassify
+        reclassify -> ambiguous [label="still ambiguous\n(max 3 passes)"]
+        reclassify -> resolved [label="clear"]
+    }
+
+    batch -> classify
+
+    // Step 5 - Output
+    merge [label="5. Merge Results", shape=box]
+    classified -> merge
+    resolved -> merge
+
+    interactions [label="_interactions.txt\n(all classified)", shape=note, style=filled, fillcolor="#cce5ff"]
+    auto_yaml [label="auto_discovered_patterns.yaml\n(cache for next run)", shape=note, style=filled, fillcolor="#e2e3e5"]
+    meta [label="_classification_meta.yaml\n(stats + cost)", shape=note, style=filled, fillcolor="#e2e3e5"]
+
+    merge -> interactions
+    merge -> auto_yaml
+    merge -> meta
+}

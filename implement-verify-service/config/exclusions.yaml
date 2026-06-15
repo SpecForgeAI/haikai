@@ -1,0 +1,129 @@
+# Default exclusion patterns for file scanning
+# These patterns follow .gitignore syntax
+
+directories:
+  # Dependencies
+  - node_modules/
+  - bower_components/
+  - vendor/
+  
+  # Python
+  - venv/
+  - env/
+  - __pycache__/
+  - .pytest_cache/
+  - .tox/
+  
+  # Build outputs
+  - dist/
+  - build/
+  - out/
+  - target/
+  - bin/
+  - obj/
+  
+  # IDE and editor
+  - .vscode/
+  - .idea/
+  - .vs/
+  - "*.swp"
+  
+  # Version control
+  - .git/
+  - .svn/
+  - .hg/
+  
+  # Logs and temp
+  - logs/
+  - tmp/
+  - temp/
+  - "*.log"
+
+files:
+  # Lock files
+  - package-lock.json
+  - yarn.lock
+  - pnpm-lock.yaml
+  - poetry.lock
+  - Gemfile.lock
+  - composer.lock
+  
+  # Minified files
+  - "*.min.js"
+  - "*.min.css"
+  
+  # Generated files
+  - "*.generated.*"
+  - "*.g.cs"
+  - "*.designer.cs"
+  
+  # Binary and media
+  - "*.png"
+  - "*.jpg"
+  - "*.jpeg"
+  - "*.gif"
+  - "*.ico"
+  - "*.pdf"
+  - "*.zip"
+  - "*.tar.gz"
+  - "*.exe"
+  - "*.dll"
+  - "*.so"
+  - "*.dylib"
+
+# File extensions to include (if empty, all text files are included)
+include_extensions:
+  # Web
+  - .js
+  - .jsx
+  - .ts
+  - .tsx
+  - .html
+  - .css
+  - .scss
+  - .sass
+  - .less
+  - .vue
+  
+  # Backend
+  - .py
+  - .java
+  - .kt
+  - .scala
+  - .go
+  - .rs
+  - .rb
+  - .php
+  - .cs
+  - .cpp
+  - .c
+  - .h
+  - .hpp
+  
+  # Config and data
+  - .json
+  - .yaml
+  - .yml
+  - .toml
+  - .xml
+  - .sql
+  
+  # Documentation
+  - .md
+  - .rst
+  - .txt
+
+# Dependency files to always include (for tech stack extraction)
+dependency_files:
+  - package.json
+  - requirements.txt
+  - Pipfile
+  - pyproject.toml
+  - pom.xml
+  - build.gradle
+  - build.gradle.kts
+  - Cargo.toml
+  - Gemfile
+  - composer.json
+  - go.mod
+  - Package.swift

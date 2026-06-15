@@ -1,0 +1,22 @@
+# Development Dockerfile for API Migration Validation Service
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files for dependency installation (layer caching)
+COPY package.json package-lock.json* ./
+
+# Install dependencies (includes devDependencies for tsx)
+# Use `npm install` (not `npm ci`) here because the lockfile is generated
+# the first time the image is built — mirrors discovery-service Dockerfile.dev
+# wiring while remaining tolerant of a missing lockfile during scaffold.
+RUN npm install
+
+# Note: Source files are NOT copied -- they will be volume mounted for hot-reload
+
+# Expose API Migration Validation Service port
+EXPOSE 8092
+
+# Start the development server (uses tsx watch for hot-reload)
+CMD ["npm", "run", "dev"]

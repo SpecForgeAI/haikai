@@ -1,0 +1,112 @@
+/**
+ * ConversationArchitectureInvalidationBanner.module.css
+ *
+ * Spec 2026-05-01 Multi-Architecture Save-Target Resolution (Spec #5) -- Task Group 9
+ *
+ * Warning banner styling for the chat panel's mid-conversation
+ * architecture-switch invalidation surface. Mirrors the pill/chip visual
+ * language of `frontend/src/components/TopBar/ArchitectureSelector.module.css`
+ * with a warning colour variant (amber background + dark orange border/text)
+ * so the banner reads as urgent without being alarming -- the user can recover
+ * with a single click on Swap back.
+ *
+ * The banner sits inline above the chat input (mounted by the chat panel in
+ * Group 10), so the styling stays compact: a single rounded panel with the
+ * message above two action buttons stacked horizontally.
+ */
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 8px 12px;
+  /* Warning variant: amber surface with a dark-orange border / text so the
+     banner is unmistakeable without screaming. */
+  background: #fff8e1;
+  border: 1px solid #e65100;
+  border-radius: 6px;
+  color: #e65100;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.message {
+  color: #3e2723;
+  /* Allow the strong-emphasised architecture names to wrap naturally; the
+     surrounding sentence stays readable on narrow chat panels. */
+  word-wrap: break-word;
+}
+
+.archName {
+  /* Matches the trigger pill from ArchitectureSelector but inlined so the
+     architecture name pops out of the warning copy. */
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #ffe0b2;
+  border: 1px solid #e65100;
+  color: #e65100;
+  font-weight: 600;
+  font-size: 12px;
+  /* Slight nudge so the inline pill does not collide with descender glyphs
+     in the surrounding sentence. */
+  vertical-align: baseline;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* Right-align so the destructive Abandon action sits closest to the chat
+     input; matches conventional dialog footer geometry. */
+  justify-content: flex-end;
+}
+
+.primaryButton {
+  /* Primary "swap back" action -- emphasised so the user gravitates to the
+     non-destructive recovery path. Warning-orange to harmonise with the
+     banner without competing with it. */
+  background: #e65100;
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.primaryButton:hover {
+  background: #bf360c;
+}
+
+.primaryButton:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: 1px;
+}
+
+.secondaryButton {
+  /* Secondary "abandon" action -- visually muted so it never looks like the
+     default option. The user has to deliberately choose it. */
+  background: white;
+  color: #6d4c41;
+  border: 1px solid #d7ccc8;
+  padding: 7px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.secondaryButton:hover {
+  background: #efebe9;
+  border-color: #a1887f;
+}
+
+.secondaryButton:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: 1px;
+}

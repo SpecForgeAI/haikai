@@ -1,0 +1,30 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Comment",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "id",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "body",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "createdAt",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Comment \u2192 ArticleEntity",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

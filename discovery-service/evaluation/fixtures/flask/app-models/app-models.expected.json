@@ -1,0 +1,90 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "User \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Post",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Post \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Message",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Message \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Message \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Notification",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Notification \u2192 unknown",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Task",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Task \u2192 unknown",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

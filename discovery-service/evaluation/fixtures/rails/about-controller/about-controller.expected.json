@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "AboutController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /about",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

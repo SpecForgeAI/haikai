@@ -1,0 +1,32 @@
+name: kanboard
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - "Kanboard\\"
+  files_match:
+    - "app/**/*.php"
+  manifest_contains:
+    - {file: "composer.json", substring: "kanboard/kanboard"}
+
+extract:
+  - id: kanboard_router_calls
+    query: call_args
+    file_extensions: [".php"]
+    callee_pattern: '\->(get|post|put|delete|patch|options|head)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: kanboard
+
+conflict_rules: []
+known_pitfalls:
+  - "Route parameters using :id syntax not normalized"
+  - "Middleware-wrapped routes may not be captured"
+  - "Dynamically constructed paths not extracted"
+  - "Named route references not resolved"

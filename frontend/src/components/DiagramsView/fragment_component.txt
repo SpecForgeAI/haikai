@@ -1,0 +1,72 @@
+
+// ============================================================================
+// Task Group 4: Fragment Frame Component
+// ============================================================================
+
+interface FragmentFrameProps {
+  layout: FragmentLayout;
+}
+
+/**
+ * Renders a single fragment frame with label.
+ * Fragment frames are drawn behind messages to properly contain them.
+ */
+const FragmentFrame: React.FC<FragmentFrameProps> = ({ layout }) => {
+  // Get the display label (lowercase with abbreviations)
+  const displayLabel = getFragmentLabel(layout.fragmentKind);
+
+  // Calculate label dimensions for background rectangle
+  const labelWidth = measureTextWidth(
+    displayLabel,
+    FRAGMENT_LABEL_FONT_SIZE,
+    FRAGMENT_LABEL_FONT_WEIGHT,
+    'normal'
+  );
+
+  // Label position (top-left inside frame)
+  const labelX = layout.leftX + FRAGMENT_LABEL_OFFSET_X;
+  const labelY = layout.topY + FRAGMENT_LABEL_OFFSET_Y;
+
+  // Label background dimensions
+  const labelBgWidth = labelWidth + FRAGMENT_LABEL_PADDING_X * 2;
+  const labelBgHeight = FRAGMENT_LABEL_FONT_SIZE + FRAGMENT_LABEL_PADDING_Y * 2;
+
+  // Frame dimensions
+  const frameWidth = layout.rightX - layout.leftX;
+  const frameHeight = layout.bottomY - layout.topY;
+
+  return (
+    <g className="sequence-fragment" data-fragment-id={layout.fragmentId}>
+      {/* Frame rectangle */}
+      <rect
+        x={layout.leftX}
+        y={layout.topY}
+        width={frameWidth}
+        height={frameHeight}
+        fill={FRAGMENT_FILL_COLOR}
+        stroke={FRAGMENT_STROKE_COLOR}
+        strokeWidth={FRAGMENT_STROKE_WIDTH}
+      />
+      {/* Label background rectangle (for visibility) */}
+      <rect
+        x={labelX}
+        y={labelY}
+        width={labelBgWidth}
+        height={labelBgHeight}
+        fill={FRAGMENT_LABEL_BG_COLOR}
+        stroke={FRAGMENT_STROKE_COLOR}
+        strokeWidth={FRAGMENT_STROKE_WIDTH}
+      />
+      {/* Label text */}
+      <text
+        x={labelX + FRAGMENT_LABEL_PADDING_X}
+        y={labelY + FRAGMENT_LABEL_PADDING_Y + FRAGMENT_LABEL_FONT_SIZE * 0.85}
+        fontSize={FRAGMENT_LABEL_FONT_SIZE}
+        fontWeight={FRAGMENT_LABEL_FONT_WEIGHT}
+        fill="#333"
+      >
+        {displayLabel}
+      </text>
+    </g>
+  );
+};

@@ -1,0 +1,14 @@
+{
+  "id": "assistant--whats-next",
+  "personaId": "assistant",
+  "menuLabel": "What's Next?",
+  "description": "Analyzes the current project state and suggests the most logical next steps for the user to take, based on what has been completed and what remains.",
+  "mode": "advisory",
+  "taskPromptRef": "prompts/assistant.whats-next.task.md",
+  "responseFormat": null,
+  "contextNeeds": [],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub"]
+}

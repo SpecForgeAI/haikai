@@ -1,0 +1,35 @@
+name: etherpad-lite
+version: 1
+language: typescript
+
+detection:
+  imports_match:
+    - "from 'express'"
+    - "require('express')"
+  files_match:
+    - "src/**/*.ts"
+  manifest_contains:
+    - {file: package.json, substring: ep_etherpad-lite}
+
+extract:
+  - id: express_route_calls
+    query: call_args
+    file_filter: all
+    file_extensions: [".ts", ".js"]
+    callee_pattern: '\.(get|post|put|delete|patch|all)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: etherpad-lite
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Express sub-router mount prefixes (app.use('/api', router)) are not inlined; emitted paths are relative to the mount point"
+  - "Plugin-registered routes (ep_* plugins calling router.get/post at runtime) are not captured unless plugin source is in the scan root"
+  - "app.use() middleware that also serves routes is excluded; only explicit verb methods are captured"
+  - "WebSocket upgrade paths (/socket.io) are not HTTP routes and are not emitted"

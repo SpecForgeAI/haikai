@@ -1,0 +1,118 @@
+# fixture - derived from public Petstore reference
+# Used by Workstream A (specFileLinker scanner) priority-order tests and the
+# Group 7 end-to-end fixture test. Carries matching values for all three
+# heuristics in a single file so the priority-order tests can target each:
+#   - info.title       -> title heuristic    (matches interface candidate name 'PetStoreApi')
+#   - paths base prefix -> base_path heuristic (matches interface data.basePath '/api/v1/pets')
+#   - tags[].name      -> tag heuristic      (matches interface data.openApiTag 'pets')
+openapi: 3.0.3
+info:
+  title: 'PetStoreApi'
+  version: '1.0.0'
+  description: 'Reference pet-store API used as a discovery fixture for spec-file auto-linking.'
+tags:
+  - name: 'pets'
+    description: 'Operations on pet resources'
+paths:
+  /api/v1/pets:
+    get:
+      tags:
+        - pets
+      summary: 'List pets'
+      operationId: 'listPets'
+      responses:
+        '200':
+          description: 'A paged array of pets'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pet'
+    post:
+      tags:
+        - pets
+      summary: 'Create a pet'
+      operationId: 'createPet'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPet'
+      responses:
+        '201':
+          description: 'Pet created'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+  /api/v1/pets/{petId}:
+    get:
+      tags:
+        - pets
+      summary: 'Get a pet by id'
+      operationId: 'getPetById'
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 'Pet found'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: 'Pet not found'
+  /api/v1/pets/{petId}/photos:
+    get:
+      tags:
+        - pets
+      summary: 'List photos for a pet'
+      operationId: 'listPetPhotos'
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: 'Photo URLs for the pet'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                  format: uri
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        tag:
+          type: string
+    NewPet:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        tag:
+          type: string

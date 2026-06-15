@@ -1,0 +1,28 @@
+digraph Inheritance_Tree {
+    rankdir=TB;
+
+    AbstractDocument [label="AbstractDocument", shape=record];
+    Document [label="Document", shape=record];
+    Car [label="Car", shape=record];
+    HasModel [label="HasModel", shape=record];
+    HasPrice [label="HasPrice", shape=record];
+    HasParts [label="HasParts", shape=record];
+    HasType [label="HasType", shape=record];
+    Part [label="Part", shape=record];
+    DocumentImplementation [label="DocumentImplementation", shape=record];
+
+    Document -> AbstractDocument [];
+    AbstractDocument -> Car [];
+    HasModel -> Car [];
+    HasPrice -> Car [];
+    HasParts -> Car [];
+    Document -> HasModel [];
+    Document -> HasParts [];
+    Document -> HasPrice [];
+    Document -> HasType [];
+    AbstractDocument -> Part [];
+    HasType -> Part [];
+    HasModel -> Part [];
+    HasPrice -> Part [];
+    AbstractDocument -> DocumentImplementation [];
+}

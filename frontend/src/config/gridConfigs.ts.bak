@@ -1,0 +1,323 @@
+import { GridColumnConfig } from '../types/config';
+import {
+  appTypeOptions,
+  statusOptions,
+  serviceTypeOptions,
+  pointTypeOptions,
+  physicalTypeOptions,
+  OAS_DATA_TYPE_OPTIONS,
+  SQL_DATA_TYPE_OPTIONS,
+  relationshipTypeOptions,
+  movementTypeOptions,
+  actorHintOptions,
+  userInteractionLevelOptions,
+  processActivityFrequencyOptions,
+  interfaceTypeOptions,
+  endpointTypeOptions,
+  endpointDirectionOptions,
+  endpointLifecycleStatusOptions,
+} from './defaults';
+import { applicationPointDisplayFormatter, businessPointDisplayFormatter, createAppBusinessPointDisplayFormatter } from '../utils/formatters';
+
+export const gridConfigs: Record<string, GridColumnConfig[]> = {
+  business_users: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 200 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 300 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 200 },
+  ],
+  business_processes: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 200 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 250 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 150 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  process_activities: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'business_process_id', displayName: 'Business Process', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'business_processes' },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 180 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 200 },
+    { field: 'frequency', displayName: 'Frequency', cellType: 'dropdown', required: false, width: 120, options: processActivityFrequencyOptions },
+    { field: 'sequence_order', displayName: 'Sequence Order', cellType: 'text', required: false, width: 100 },
+    { field: 'actor_hint', displayName: 'Actor Hint', cellType: 'dropdown', required: true, width: 140, options: actorHintOptions },
+    { field: 'user_interaction_level', displayName: 'User Interaction Level', cellType: 'dropdown', required: true, width: 160, options: userInteractionLevelOptions },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 120 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  // Interactions grid configuration - for creating/editing Interaction entities
+  // Note: Interactions are now treated as relationships (dotted edges) rather than entity nodes
+  interactions: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 180 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 180 },
+    { field: 'user_id', displayName: 'User', cellType: 'fk_typeahead', required: true, width: 150, fkTarget: 'business_users' },
+    { field: 'primary_app_business_point_id', displayName: 'Primary Point', cellType: 'fk_typeahead', required: true, width: 200, fkTarget: 'app_business_points' },
+    { field: 'secondary_app_business_point_id', displayName: 'Secondary Point', cellType: 'fk_typeahead', required: false, width: 200, fkTarget: 'app_business_points' },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 120 },
+  ],
+  applications: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 180 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 180 },
+    { field: 'app_type', displayName: 'Type', cellType: 'dropdown', required: false, width: 100, options: appTypeOptions },
+    { field: 'status', displayName: 'Status', cellType: 'dropdown', required: false, width: 100, options: statusOptions },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 120 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  app_components: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 180 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 180 },
+    { field: 'application_id', displayName: 'Application', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'applications' },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 120 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  services: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 150 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'application_id', displayName: 'Application', cellType: 'fk_typeahead', required: false, width: 140, fkTarget: 'applications' },
+    { field: 'app_component_id', displayName: 'App Component', cellType: 'fk_typeahead', required: false, width: 140, fkTarget: 'app_components' },
+    { field: 'service_type', displayName: 'Service Type', cellType: 'dropdown', required: false, width: 100, options: serviceTypeOptions },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 100 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  interfaces: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 150 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'service_id', displayName: 'Service', cellType: 'fk_typeahead', required: true, width: 150, fkTarget: 'services' },
+    { field: 'interface_type', displayName: 'Interface Type', cellType: 'dropdown', required: true, width: 130, options: interfaceTypeOptions },
+    { field: 'spec_link', displayName: 'Spec Link', cellType: 'text', required: false, width: 200 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 100 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  endpoints: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 150 },
+    { field: 'interface_id', displayName: 'Interface', cellType: 'fk_typeahead', required: true, width: 150, fkTarget: 'interfaces' },
+    { field: 'endpoint_type', displayName: 'Type', cellType: 'dropdown', required: true, width: 120, options: endpointTypeOptions.map(o => o.value) },
+    { field: 'path_or_address', displayName: 'Path/Address', cellType: 'text', required: true, width: 200 },
+    { field: 'protocol', displayName: 'Protocol', cellType: 'text', required: false, width: 80 },
+    { field: 'operation_verb', displayName: 'Verb', cellType: 'text', required: false, width: 80 },
+    { field: 'direction', displayName: 'Direction', cellType: 'dropdown', required: false, width: 100, options: endpointDirectionOptions.map(o => o.value) },
+    { field: 'lifecycle_status', displayName: 'Status', cellType: 'dropdown', required: false, width: 100, options: endpointLifecycleStatusOptions.map(o => o.value) },
+    { field: 'version', displayName: 'Version', cellType: 'text', required: false, width: 80 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 100 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  application_points: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 180 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'kind', displayName: 'Kind', cellType: 'text', required: true, width: 120 },
+    { field: 'application_id', displayName: 'Application', cellType: 'fk_typeahead', required: false, width: 160, fkTarget: 'applications' },
+    { field: 'application_component_id', displayName: 'App Component', cellType: 'fk_typeahead', required: false, width: 160, fkTarget: 'app_components' },
+    { field: 'service_id', displayName: 'Service', cellType: 'fk_typeahead', required: false, width: 160, fkTarget: 'services' },
+    { field: 'point_type', displayName: 'Point Type', cellType: 'dropdown', required: false, width: 100, options: pointTypeOptions },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 100 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  business_points: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 180 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'kind', displayName: 'Kind', cellType: 'text', required: true, width: 120 },
+    { field: 'business_process_id', displayName: 'Business Process', cellType: 'fk_typeahead', required: true, width: 160, fkTarget: 'business_processes' },
+    { field: 'process_activity_id', displayName: 'Process Activity', cellType: 'fk_typeahead', required: false, width: 160, fkTarget: 'process_activities' },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 100 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  logical_data_entities: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 200 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 250 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 150 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  logical_data_attributes: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 150 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'logical_entity_id', displayName: 'Logical Entity', cellType: 'fk_typeahead', required: true, width: 150, fkTarget: 'logical_data_entities' },
+    { field: 'data_type', displayName: 'Data Type', cellType: 'dropdown', required: false, width: 130, options: [...OAS_DATA_TYPE_OPTIONS] },
+    { field: 'is_primary_key', displayName: 'Primary Key', cellType: 'boolean', required: false, width: 80 },
+    { field: 'is_nullable', displayName: 'Nullable', cellType: 'boolean', required: false, width: 70 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 120 },
+  ],
+  physical_data_entities: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 120, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 150 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'physical_type', displayName: 'Physical Type', cellType: 'dropdown', required: false, width: 100, options: physicalTypeOptions },
+    { field: 'database', displayName: 'Database', cellType: 'text', required: false, width: 100 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 100 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  physical_data_attributes: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'name', displayName: 'Name', cellType: 'text', required: true, width: 150 },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'physical_entity_id', displayName: 'Physical Entity', cellType: 'fk_typeahead', required: true, width: 150, fkTarget: 'physical_data_entities' },
+    { field: 'data_type', displayName: 'Data Type', cellType: 'dropdown', required: false, width: 100, options: [...SQL_DATA_TYPE_OPTIONS] },
+    { field: 'is_primary_key', displayName: 'Primary Key', cellType: 'boolean', required: false, width: 80 },
+    { field: 'is_nullable', displayName: 'Nullable', cellType: 'boolean', required: false, width: 70 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 120 },
+  ],
+  // Business Point relationship grid configs (new format only - legacy configs removed)
+  business_user_business_points: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'business_user_id', displayName: 'Business User', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'business_users' },
+    { field: 'business_point_id', displayName: 'Business Point', cellType: 'fk_typeahead', required: true, width: 220, fkTarget: 'business_points', displayFormatter: businessPointDisplayFormatter },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 200 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 130 },
+  ],
+  application_point_business_points: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'application_point_id', displayName: 'Application Point', cellType: 'fk_typeahead', required: true, width: 220, fkTarget: 'application_points', displayFormatter: applicationPointDisplayFormatter },
+    { field: 'business_point_id', displayName: 'Business Point', cellType: 'fk_typeahead', required: true, width: 220, fkTarget: 'business_points', displayFormatter: businessPointDisplayFormatter },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 200 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 130 },
+  ],
+  // Other relationship grid configs
+  logical_data_entity_relationships: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'source_entity_id', displayName: 'Source Entity', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'logical_data_entities' },
+    { field: 'target_entity_id', displayName: 'Target Entity', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'logical_data_entities' },
+    { field: 'relationship_type', displayName: 'Type', cellType: 'dropdown', required: true, width: 120, options: relationshipTypeOptions },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 150 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 130 },
+  ],
+  logical_data_entity_physical_data_entities: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'logical_entity_id', displayName: 'Logical Entity', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'logical_data_entities' },
+    { field: 'physical_entity_id', displayName: 'Physical Entity', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'physical_data_entities' },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 200 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 130 },
+  ],
+  logical_data_attribute_physical_data_attributes: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'logical_attribute_id', displayName: 'Logical Attribute', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'logical_data_attributes' },
+    { field: 'physical_attribute_id', displayName: 'Physical Attribute', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'physical_data_attributes' },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 200 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 130 },
+  ],
+  interface_logical_entities: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'interface_id', displayName: 'Interface', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'interfaces' },
+    { field: 'logical_entity_id', displayName: 'Logical Entity', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'logical_data_entities' },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 200 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 130 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+  data_movements: [
+    { field: 'id', displayName: 'ID', cellType: 'text', required: true, width: 100, autoGenerate: true },
+    { field: 'source_application_point_id', displayName: 'Source App Point', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'application_points', displayFormatter: applicationPointDisplayFormatter },
+    { field: 'target_application_point_id', displayName: 'Target App Point', cellType: 'fk_typeahead', required: true, width: 180, fkTarget: 'application_points', displayFormatter: applicationPointDisplayFormatter },
+    { field: 'data_entity_id', displayName: 'Data Entity', cellType: 'fk_typeahead', required: true, width: 130, fkTarget: 'logical_data_entities' },
+    { field: 'movement_type', displayName: 'Type', cellType: 'dropdown', required: false, width: 100, options: movementTypeOptions },
+    { field: 'description', displayName: 'Description', cellType: 'text', required: false, width: 120 },
+    { field: 'tags', displayName: 'Tags', cellType: 'tags', required: false, width: 80 },
+    { field: 'valid_from', displayName: 'Valid From', cellType: 'text', required: false, width: 100 },
+    { field: 'valid_to', displayName: 'Valid To', cellType: 'text', required: false, width: 100 },
+  ],
+};
+
+// tabToEntityType mapping - maps entity tab names to their type keys
+// NOTE: 'Interactions' was REMOVED to fix double-rendering bug
+// (spec: 2025-12-09-fix-interactions-double-rendering-and-abp-mapping)
+// Interactions is now ONLY in relationshipTabToType to ensure MetaModelView
+// renders RelationshipGrid only (not both Grid and RelationshipGrid)
+export const tabToEntityType: Record<string, string> = {
+  'Users': 'business_users',
+  'Processes': 'business_processes',
+  'Activities': 'process_activities',
+  // 'Interactions' REMOVED - was causing double grid rendering
+  'Applications': 'applications',
+  'App Components': 'app_components',
+  'Services': 'services',
+  'Interfaces': 'interfaces',
+  'Endpoints': 'endpoints',
+  'Logical Entities': 'logical_data_entities',
+  'Logical Attributes': 'logical_data_attributes',
+  'Physical Entities': 'physical_data_entities',
+  'Physical Attributes': 'physical_data_attributes',
+};
+
+// Task Group 2: relationshipTabToType mapping - maps relationship tab names to their type keys
+// Task 2.3: Added "Interactions" mapping to "interactions" type
+export const relationshipTabToType: Record<string, string> = {
+  'User <-> Business Point': 'business_user_business_points',
+  'App Point <-> Business Point': 'application_point_business_points',
+  'Interactions': 'interactions',  // Task 2.3: Added - routes to RelationshipGrid with interactions data
+  'Logical ER': 'logical_data_entity_relationships',
+  'Logical <-> Physical Entities': 'logical_data_entity_physical_data_entities',
+  'Logical <-> Physical Attributes': 'logical_data_attribute_physical_data_attributes',
+  'Interface <-> Logical Entity': 'interface_logical_entities',
+  'Data Movements': 'data_movements',
+};
+
+// Task Group 2: entityTabNames - entity tabs rendered via EntityGrid
+// Task 2.2: Removed "Interactions" - it now routes to RelationshipGrid
+export const entityTabNames = [
+  'Users',
+  'Processes',
+  'Activities',
+  // 'Interactions' removed - now in relationshipTabNames (Task 2.2)
+  'Applications',
+  'App Components',
+  'Services',
+  'Interfaces',
+  'Endpoints',
+  'Logical Entities',
+  'Logical Attributes',
+  'Physical Entities',
+  'Physical Attributes',
+];
+
+// Task Group 2: domainGroupings - groups entity tabs by domain for UI organization
+// Task 2.2: Removed "Interactions" from business domain
+export const domainGroupings = {
+  business: ['Users', 'Processes', 'Activities'],  // Task 2.2: Removed 'Interactions'
+  application: ['Applications', 'App Components', 'Services', 'Interfaces', 'Endpoints'],
+  data: ['Logical Entities', 'Logical Attributes', 'Physical Entities', 'Physical Attributes'],
+};
+
+// Task Group 2: relationshipTabNames - relationship tabs rendered via RelationshipGrid
+// Task 2.3: Added "Interactions" after "App Point <-> Business Point" and before "Logical ER"
+export const relationshipTabNames = [
+  'User <-> Business Point',
+  'App Point <-> Business Point',
+  'Interactions',  // Task 2.3: Added - positioned per spec requirements
+  'Logical ER',
+  'Logical <-> Physical Entities',
+  'Logical <-> Physical Attributes',
+  'Interface <-> Logical Entity',
+  'Data Movements',
+];
+
+export const tabNames = entityTabNames;

@@ -1,0 +1,32 @@
+name: phpbb
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - "phpbb\\"
+  files_match:
+    - "phpBB/**/*.php"
+  manifest_contains:
+    - {file: "composer.json", substring: "phpbb"}
+
+extract:
+  - id: phpbb_router_calls
+    query: call_args
+    file_extensions: [".php"]
+    callee_pattern: '(->|::)(get|post|put|delete|patch|options|head)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: phpbb
+
+conflict_rules: []
+known_pitfalls:
+  - "Forum-specific routing conventions not fully extracted"
+  - "Legacy URL rewriting patterns not captured"
+  - "Controller-based routing via file paths not represented"
+  - "Permission/ACL constraints not included"

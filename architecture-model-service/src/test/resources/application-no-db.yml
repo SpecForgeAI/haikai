@@ -1,0 +1,28 @@
+# =============================================================================
+# No-Database Profile Configuration for Tests
+# =============================================================================
+#
+# This profile disables database connectivity in tests, allowing tests to run
+# without requiring a database.
+#
+# USAGE IN TESTS:
+# ---------------
+# Via profile annotation:
+#   @ActiveProfiles({"test", "no-db"})
+#
+# Via property (recommended):
+#   @TestPropertySource(properties = {"app.features.include-database=false"})
+#
+# HOW IT WORKS:
+# -------------
+# Setting app.features.include-database=false triggers the
+# DatabaseAutoConfigurationImportFilter which excludes all database
+# auto-configurations early in Spring Boot startup.
+#
+# Spec 2026-01-19: Disable Database Feature Flag
+# =============================================================================
+
+# Disable database feature - this triggers the DatabaseAutoConfigurationImportFilter
+app:
+  features:
+    include-database: false

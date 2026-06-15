@@ -1,0 +1,10 @@
+repo: dotnet-eShop
+commit: test
+branch: test
+analyzed_at: '2026-03-31T10:55:24+00:00'
+provider: ctags
+file_count: 48
+symbol_count: 262
+languages:
+- 'C#: 48'
+remote: https://github.com/dotnet/eShop.git

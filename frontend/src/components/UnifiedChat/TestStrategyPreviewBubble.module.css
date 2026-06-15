@@ -1,0 +1,238 @@
+/**
+ * TestStrategyPreviewBubble.module.css
+ *
+ * Spec 2026-03-01: Hub Bootstrap 4 -- SA Tech Stack + TE Test Strategy End-to-End
+ * Task Group 5, Task 5.5: TestStrategyPreviewBubble styles
+ *
+ * Styles for the test strategy preview bubble component:
+ * - Bordered container with purple-tinted background (test strategy theme)
+ * - Max-height with overflow-y scroll for long content
+ * - Expandable section headers with click-to-toggle and counts
+ * - Test level, quality gate, and testing principle item styling
+ * - Show JSON toggle button
+ * - Confirm (primary) and Reject (outlined secondary) action buttons
+ * - Disabled states with reduced opacity
+ * - Error state styling
+ */
+
+/* ============================================================================
+ * Container: bordered preview area with purple tint
+ * ============================================================================ */
+
+.container {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #f3f0fa;
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+ * Header: label for the generated test strategy with counts
+ * ============================================================================ */
+
+.header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6A1B9A;
+  margin-bottom: 12px;
+}
+
+.headerCounts {
+  font-size: 12px;
+  font-weight: 400;
+  color: #555;
+  margin-left: 8px;
+}
+
+/* ============================================================================
+ * Section: expandable sections for test levels, quality gates, principles
+ * ============================================================================ */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  cursor: pointer;
+  padding: 6px 0;
+  user-select: none;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.sectionHeader:hover {
+  color: #6A1B9A;
+}
+
+.sectionChevron {
+  font-size: 10px;
+  color: #888;
+  transition: transform 0.15s ease;
+}
+
+.sectionChevronOpen {
+  transform: rotate(90deg);
+}
+
+.sectionCount {
+  font-size: 12px;
+  font-weight: 400;
+  color: #777;
+}
+
+.sectionContent {
+  padding: 6px 0 6px 16px;
+}
+
+/* ============================================================================
+ * Entity items within expanded sections
+ * ============================================================================ */
+
+.entityItem {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.entityName {
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.entityDescription {
+  font-weight: 400;
+  color: #666;
+  margin-left: 6px;
+}
+
+/* ============================================================================
+ * Criteria list within quality gates
+ * ============================================================================ */
+
+.criteriaList {
+  margin: 4px 0 4px 16px;
+  padding: 0;
+  list-style: disc;
+  font-size: 12px;
+  color: #555;
+}
+
+/* ============================================================================
+ * Raw JSON view
+ * ============================================================================ */
+
+.rawJson {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #333;
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+ * Toggle button for Show JSON / Show Summary
+ * ============================================================================ */
+
+.toggleButton {
+  background: transparent;
+  color: #6A1B9A;
+  border: 1px solid #6A1B9A;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.toggleButton:hover {
+  background: #F3E5F5;
+}
+
+/* ============================================================================
+ * Error state
+ * ============================================================================ */
+
+.errorMessage {
+  color: #c62828;
+  font-size: 13px;
+  font-style: italic;
+  padding: 8px;
+  background: #FFEBEE;
+  border: 1px solid #EF9A9A;
+  border-radius: 4px;
+}
+
+/* ============================================================================
+ * Actions: button row below the preview
+ * ============================================================================ */
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+
+/* ============================================================================
+ * Confirm Button: purple primary
+ * ============================================================================ */
+
+.confirmButton {
+  background: #6A1B9A;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.confirmButton:hover:not(:disabled) {
+  background: #4A148C;
+}
+
+.confirmButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+ * Reject Button: outlined secondary
+ * ============================================================================ */
+
+.rejectButton {
+  background: transparent;
+  color: #555;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.rejectButton:hover:not(:disabled) {
+  border-color: #999;
+  color: #333;
+}
+
+.rejectButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

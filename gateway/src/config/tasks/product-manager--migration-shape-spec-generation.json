@@ -1,0 +1,155 @@
+{
+  "_documentation": {
+    "spec": "agent-os/specs/2026-05-19-pm-migration-shape-spec-batch-generation/spec.md",
+    "persona": "product-manager",
+    "purpose": "Task config for the Migration Shape-Spec Batch Generation flow. Persona is product-manager; the task consumes a saved GeneratedMigrationBookOfWork (Spec 1 output) + saved WorkItems + focused migration context per story and emits literal `/agent-os:shape-spec [spec details]` implementation specs in configurable batches (default 25). Generation is gateway-orchestrated; AMS owns persistence + the focused-context endpoint only. Implementation-Ready enrichment (2026-06-14): the Generated variant's `tests` is now a STRUCTURED array of {title, description, type: unit|functional} (D6) and a new `coveredEndpointIds: string[]` field captures the model EndpointEntity UUIDs in scope (D9; empty for non-endpoint stories), so the gateway can hydrate the Implement screen as a completed PM -> TE session.",
+    "contextNeeds": "book-of-work (saved GeneratedMigrationBookOfWork), saved-work-items (saved story WorkItems from the book of work), migration-spec-context (NEW focused per-story resolver introduced by this spec - A-5), api-baselines, architecture-mappings, discovery-findings, target-state-decisions-context (Spec 2026-05-25 PM Tasks Captured Decisions Integration -- captured decisions are evidence the generated spec must cite via evidenceRefs[]), target-tech-stack-context (Spec 2026-05-25 Tech-Stack.md Pre-fill + Target-Tech-Stack.md Write -- rendered target tech stack the implementation guidance must honour).",
+    "responseSchema": "Three-variant structured response (Generated / InsufficientContext / Failed) validated by gateway/src/services/specGenerationResponseValidator.ts (hand-rolled, no schema library - A-4).",
+    "promptRules": "Output MUST be the literal `/agent-os:shape-spec [spec details]`; never fabricate missing contracts/mappings/data/architecture details (return status='insufficient_context' instead); cite the provided focused-context + evidence references; preserve functional like-for-like; keep each spec scoped to its story. Implementation-ready: emit scope-in/out + testable acceptance criteria + a structured unit/functional test pack ({title, description, type}); resolve ambiguity via documented assumptions, NOT open questions.",
+    "designPointRefs": "R-2 gateway-only orchestration; R-3 sync per batch; R-4 serial within batch; R-7 confidence downgrade; R-8 re-run idempotency; R-11 auth gating verbatim from product-manager--migration-delivery-plan (Spec 1); R-12 per-story failure isolation; R-13 / A-7 LLM-output fixtures; A-4 hand-rolled validator; A-5 new focused-context resolver; A-6 lazy not_attempted."
+  },
+  "id": "product-manager--migration-shape-spec-generation",
+  "personaId": "product-manager",
+  "menuLabel": "Generate Migration Shape-Specs",
+  "description": "Consumes a saved migration book of work + its saved WorkItems and produces literal `/agent-os:shape-spec [spec details]` implementation specs in configurable batches (default 25). Each generated spec is implementation-ready and linked to its saved WorkItem with per-story status (generated | generated_with_warnings | insufficient_context | failed | skipped_blocked), confidence (high|medium|low), warnings, missingInputs, evidenceRefs, a structured unit/functional test pack, coveredEndpointIds, and predicted-vs-actual readiness comparison preserved. Generation is gateway-orchestrated (R-2); AMS owns persistence + the focused-context endpoint only. No fabrication: stories without sufficient focused-context return status='insufficient_context' rather than a faked spec body.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/product-manager.migration-shape-spec-generation.task.md",
+  "responseFormat": {
+    "type": "object",
+    "schemaRef": "SpecGenerationResponse",
+    "description": "Three structured-response variants validated by assertSpecGenerationResponse (gateway/src/services/specGenerationResponseValidator.ts). Branch is keyed on the top-level `status` field.",
+    "required": ["status"],
+    "properties": {
+      "status": {
+        "type": "string",
+        "enum": [
+          "generated",
+          "generated_with_warnings",
+          "insufficient_context",
+          "failed"
+        ]
+      }
+    },
+    "variants": {
+      "Generated": {
+        "description": "status='generated' or status='generated_with_warnings'. Required: confidence, specText (MUST start with literal `/agent-os:shape-spec`), warnings, evidenceRefs, assumptions, tests (structured {title, description, type: unit|functional} array), affectedAreas, coveredEndpointIds (model EndpointEntity UUIDs in scope; empty for non-endpoint stories).",
+        "required": [
+          "status",
+          "confidence",
+          "specText",
+          "warnings",
+          "evidenceRefs",
+          "assumptions",
+          "tests",
+          "affectedAreas",
+          "coveredEndpointIds"
+        ],
+        "properties": {
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"]
+          },
+          "specText": {
+            "type": "string",
+            "description": "MUST begin with the literal string `/agent-os:shape-spec` and MUST reference the target story / WorkItem title or scope. Implementation-ready: the body carries Feature summary + Scope in / Scope out + testable Acceptance criteria + an inline unit/functional Test Pack. Validator enforces an actionability heuristic (non-empty affectedAreas OR non-empty tests OR specText length above a content-length floor)."
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "object" }
+          },
+          "evidenceRefs": {
+            "type": "array",
+            "items": { "type": ["string", "object"] }
+          },
+          "assumptions": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Falsifiable assumptions recorded in lieu of open questions; the spec must stand alone (no follow-up conversation)."
+          },
+          "tests": {
+            "type": "array",
+            "description": "Structured unit/functional test pack (D6). Each acceptance criterion maps to >= 1 test. NO integration / E2E (those are Spec 2).",
+            "items": {
+              "type": "object",
+              "required": ["title", "description", "type"],
+              "properties": {
+                "title": { "type": "string" },
+                "description": { "type": "string" },
+                "type": { "type": "string", "enum": ["unit", "functional"] }
+              }
+            }
+          },
+          "affectedAreas": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "coveredEndpointIds": {
+            "type": "array",
+            "description": "Model EndpointEntity UUIDs this story migrates (D9). MAY be empty for non-endpoint stories (DB schema / data migration / other-service / infra). Forward-only groundwork; never fabricate ids.",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "InsufficientContext": {
+        "description": "status='insufficient_context'. Required: missingInputs (non-empty), reason, recommendedNextAction, evidenceRefs.",
+        "required": [
+          "status",
+          "missingInputs",
+          "reason",
+          "recommendedNextAction",
+          "evidenceRefs"
+        ],
+        "properties": {
+          "missingInputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["kind", "reason"],
+              "properties": {
+                "kind": { "type": "string" },
+                "id": { "type": "string" },
+                "reason": { "type": "string" }
+              }
+            }
+          },
+          "reason": { "type": "string" },
+          "recommendedNextAction": { "type": "string" },
+          "evidenceRefs": {
+            "type": "array",
+            "items": { "type": ["string", "object"] }
+          }
+        }
+      },
+      "Failed": {
+        "description": "status='failed'. Required: errorMessage (non-empty string).",
+        "required": ["status", "errorMessage"],
+        "properties": {
+          "errorMessage": { "type": "string" }
+        }
+      }
+    }
+  },
+  "contextNeeds": [
+    "book-of-work",
+    "saved-work-items",
+    "migration-spec-context",
+    "api-baselines",
+    "architecture-mappings",
+    "discovery-findings",
+    "target-state-decisions-context",
+    "target-tech-stack-context"
+  ],
+  "persistence": "project",
+  "persistenceScope": ["projectId", "bookOfWorkId"],
+  "artifacts": [
+    {
+      "artifactId": "migration-shape-spec-generations",
+      "tool": "save_migration_shape_spec_generations_batch",
+      "description": "Per-story shape-spec generation results (status / confidence / warnings / missingInputs / evidenceRefs / generated spec text / structured test pack / coveredEndpointIds) for the configured batch. Persisted to architecture-model-service via POST /api/projects/{projectId}/migration-books-of-work/{bookId}/spec-generations/batch (R-1, R-12). The gateway is the sole orchestrator (R-2); there is NO AMS-side generation endpoint.",
+      "filename": "MIGRATION_SHAPE_SPECS"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

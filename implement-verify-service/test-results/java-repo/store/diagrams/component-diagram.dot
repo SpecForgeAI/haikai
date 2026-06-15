@@ -1,0 +1,59 @@
+digraph Components {
+    rankdir=LR;
+    compound=true;
+
+    subgraph cluster_0 {
+        label="_root";
+        src [label="src", shape=box];
+        java [label="java", shape=box];
+        com [label="com", shape=box];
+        lombok [label="lombok", shape=box];
+        org [label="org", shape=box];
+    }
+
+
+    src -> java;
+    src -> java;
+    src -> java;
+    src -> java;
+    src -> java;
+    src -> java;
+    src -> com;
+    src -> com;
+    src -> java;
+    src -> java;
+    src -> lombok;
+    src -> java;
+    src -> java;
+    src -> java;
+    src -> com;
+    src -> java;
+    src -> com;
+    src -> com;
+    src -> java;
+    src -> com;
+    src -> com;
+    src -> java;
+    src -> com;
+    src -> com;
+    src -> java;
+    src -> com;
+    src -> com;
+    src -> java;
+    src -> com;
+    src -> java;
+    src -> org;
+    src -> java;
+    src -> java;
+    src -> java;
+    src -> org;
+    src -> org;
+    src -> org;
+    src -> org;
+    src -> com;
+    src -> com;
+    src -> com;
+    src -> java;
+    src -> java;
+    src -> org;
+}

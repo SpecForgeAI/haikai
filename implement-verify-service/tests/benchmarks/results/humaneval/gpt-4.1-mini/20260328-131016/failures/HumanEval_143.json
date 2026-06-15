@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/143",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n\nwords = sentence.split()\nprime_length_words = [word for word in words if is_prime(len(word))]\nreturn \" \".join(prime_length_words)",
+  "expected_output": "    new_lst = []\n    for word in sentence.split():\n        flg = 0\n        if len(word) == 1:\n            flg = 1\n        for i in range(2, len(word)):\n            if len(word)%i == 0:\n                flg = 1\n        if flg == 0 or len(word) == 2:\n            new_lst.append(word)\n    return \" \".join(new_lst)\n",
+  "latency_seconds": 1.964595457073301,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 195,
+    "output_tokens": 82,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

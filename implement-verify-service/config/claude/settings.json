@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Search",
+      "Edit(/app/api_workspace/**)",
+      "Write(/app/api_workspace/**)",
+      "Bash(cd /app/api_workspace*)",
+      "Bash(mkdir /app/api_workspace*)",
+      "Bash(rm /app/api_workspace*)",
+      "Bash(rm -rf /app/api_workspace*)",
+      "Bash(git *)"
+    ],
+    "deny": [
+      "Edit(/app/api_workspace/../*)",
+      "Write(/app/api_workspace/../*)",
+      "Bash(rm /app/*)",
+      "Bash(rm -rf /app/*)",
+      "Bash(rm /*)",
+      "Bash(rm -rf /*)",
+      "Read(/root/.ssh/*)",
+      "Read(/root/.aws/*)",
+      "Read(/app/.env*)",
+      "Read(/app/secrets/*)"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+@startuml
+title Component Diagram
+
+[src] --> [System]
+[src] --> [eShop]
+[src] --> [global System]
+[src] --> [global Grpc]
+[src] --> [global Microsoft]
+[src] --> [global eShop]
+[src] --> [global StackExchange]
+[src] --> [Microsoft]
+[src] --> [Pgvector]
+[src] --> [global Asp]
+[src] --> [global Npgsql]
+[src] --> [Npgsql]
+[src] --> [Asp]
+
+@enduml

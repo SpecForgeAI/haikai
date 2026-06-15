@@ -1,0 +1,164 @@
+classDiagram
+    class Extensions {
+        +AddApplicationServices(this IHostApplicationBuilder builder)
+        +AddApplicationServices(this IHostApplicationBuilder builder)
+    }
+    class IntegrationEventContext {
+    }
+    class ServerCallContextIdentityExtensions {
+        +GetUserIdentity(this ServerCallContext context)
+        +GetUserName(this ServerCallContext context)
+    }
+    class BasketItem {
+        +Id
+        +OldUnitPrice
+        +PictureUrl
+        +ProductId
+        +ProductName
+        +Quantity
+        +UnitPrice
+        +Validate(ValidationContext validationContext)
+    }
+    class CustomerBasket {
+        +BuyerId
+        +CustomerBasket()
+        +CustomerBasket(string customerId)
+        +Items
+    }
+    class BasketSerializationContext {
+    }
+    class CatalogApi {
+        +CreateItem( [AsParameters] CatalogServices services, CatalogItem product)
+        +DeleteItemById( [AsParameters] CatalogServices services, [Description(R)] int id)
+        +GetAllItems( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string? name, [Description(R)] int? type, [Description(R)] int? brand)
+        +GetAllItemsV1( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services)
+        +GetFullPath(string contentRootPath, string pictureFileName)
+        +GetImageMimeTypeFromImageFileExtension(string extension)
+        +GetItemById( HttpContext httpContext, [AsParameters] CatalogServices services, [Description(R)] int id)
+        +GetItemPictureById( CatalogContext context, IWebHostEnvironment environment, [Description(R)] int id)
+        +GetItemsByBrandAndTypeId( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] int typeId, [Description(R)] int? brandId)
+        +GetItemsByBrandId( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] int? brandId)
+        +GetItemsByIds( [AsParameters] CatalogServices services, [Description(R)] int[] ids)
+        +GetItemsByName( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string name)
+        +GetItemsBySemanticRelevance( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R), Required, MinLength(1)] string text)
+        +GetItemsBySemanticRelevanceV1( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string text)
+        +MapCatalogApi(this IEndpointRouteBuilder app)
+        +UpdateItem( HttpContext httpContext, [Description(R)] int id, [AsParameters] CatalogServices services, CatalogItem productToUpdate)
+        +UpdateItemV1( HttpContext httpContext, [AsParameters] CatalogServices services, CatalogItem productToUpdate)
+    }
+    class CatalogOptions {
+        +PicBaseUrl
+        +UseCustomizationData
+    }
+    class HostEnvironmentExtensions {
+        +IsBuild(this IHostEnvironment hostEnvironment)
+    }
+    class CatalogContext {
+        +CatalogBrands
+        +CatalogContext(DbContextOptions<CatalogContext> options, IConfiguration configuration)
+        +CatalogItems
+        +CatalogTypes
+        +OnModelCreating(ModelBuilder builder)
+    }
+    class CatalogSourceEntry {
+        +Brand
+        +Description
+        +Id
+        +Name
+        +Price
+        +Type
+    }
+    class CatalogBrandEntityTypeConfiguration {
+        +Configure(EntityTypeBuilder<CatalogBrand> builder)
+    }
+    class CatalogItemEntityTypeConfiguration {
+        +Configure(EntityTypeBuilder<CatalogItem> builder)
+    }
+    class CatalogTypeEntityTypeConfiguration {
+        +Configure(EntityTypeBuilder<CatalogType> builder)
+    }
+    class CatalogDomainException {
+        +CatalogDomainException()
+        +CatalogDomainException(string message)
+        +CatalogDomainException(string message, Exception innerException)
+    }
+    class Initial {
+    }
+    class RemoveHiLoAndIndexCatalogName {
+    }
+    class Outbox {
+    }
+    class CatalogContextModelSnapshot {
+    }
+    class CatalogBrand {
+        +Brand
+        +CatalogBrand(string brand)
+        +Id
+    }
+    class CatalogItem {
+        +AddStock(int quantity)
+        +AvailableStock
+        +CatalogBrand
+        +CatalogBrandId
+        +CatalogItem(string name)
+        +CatalogType
+        +CatalogTypeId
+        +Description
+        +Embedding
+        +Id
+        +MaxStockThreshold
+        +Name
+        +OnReorder
+        +PictureFileName
+        +Price
+        +RemoveStock(int quantityDesired)
+        +RestockThreshold
+    }
+    class CatalogType {
+        +CatalogType(string type)
+        +Id
+        +Type
+    }
+    class Program {
+    }
+    class CatalogAI {
+        +CatalogAI(IWebHostEnvironment environment, ILogger<CatalogAI> logger, IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)
+        +EmbeddingDimensions
+        +GetEmbeddingAsync(string text)
+        +GetEmbeddingsAsync(IEnumerable<CatalogItem> items)
+        +IsEnabled
+        #_embeddingGenerator
+        #_environment
+        #_logger
+        +item
+        +item
+    }
+    class JsonSerializerContext {
+    }
+    class IValidatableObject {
+    }
+    class DbContext {
+    }
+    class IEntityTypeConfiguration {
+    }
+    class Exception {
+    }
+    class Migration {
+    }
+    class ModelSnapshot {
+    }
+    class ICatalogAI {
+    }
+    JsonSerializerContext <|-- IntegrationEventContext
+    IValidatableObject <|-- BasketItem
+    JsonSerializerContext <|-- BasketSerializationContext
+    DbContext <|-- CatalogContext
+    IEntityTypeConfiguration <|-- CatalogBrandEntityTypeConfiguration
+    IEntityTypeConfiguration <|-- CatalogItemEntityTypeConfiguration
+    IEntityTypeConfiguration <|-- CatalogTypeEntityTypeConfiguration
+    Exception <|-- CatalogDomainException
+    Migration <|-- Initial
+    Migration <|-- RemoveHiLoAndIndexCatalogName
+    Migration <|-- Outbox
+    ModelSnapshot <|-- CatalogContextModelSnapshot
+    ICatalogAI <|-- CatalogAI

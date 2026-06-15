@@ -1,0 +1,599 @@
+"""Tests for endpoint and data movement extraction across all language extractors.
+
+Covers: Python (FastAPI), Java (Spring), TypeScript (Express+Prisma),
+Go (net/http+sql), C# (ASP.NET+EFCore).
+"""
+import sys
+import pytest
+
+# Reset endpoint config caches before each test module run
+from src.ast.extractors.endpoint_config import reset_caches
+reset_caches()
+
+
+# ---------------------------------------------------------------------------
+# Python (FastAPI / Flask / Celery)
+# ---------------------------------------------------------------------------
+
+class TestPythonEndpoints:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.python import PythonExtractor
+        reset_caches()
+        self.ext = PythonExtractor()
+
+    def test_fastapi_get_post(self):
+        source = b'''
+from fastapi import FastAPI
+app = FastAPI()
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: int):
+    return {"user_id": user_id}
+
+@app.post("/users")
+async def create_user(user: dict):
+    return user
+'''
+        eps = self.ext.extract_endpoints(source, "api.py")
+        assert len(eps) == 2
+        assert eps[0].operation == "GET"
+        assert eps[0].path == "/users/{user_id}"
+        assert eps[0].handler_method == "get_user"
+        assert eps[0].framework == "fastapi"
+        assert eps[1].operation == "POST"
+        assert eps[1].path == "/users"
+
+    def test_fastapi_router(self):
+        source = b'''
+from fastapi import APIRouter
+router = APIRouter()
+
+@router.put("/items/{item_id}")
+def update_item(item_id: int):
+    pass
+
+@router.delete("/items/{item_id}")
+def delete_item(item_id: int):
+    pass
+'''
+        eps = self.ext.extract_endpoints(source, "routes.py")
+        assert len(eps) == 2
+        assert eps[0].operation == "PUT"
+        assert eps[1].operation == "DELETE"
+
+    def test_no_endpoints_in_plain_code(self):
+        source = b'''
+def helper():
+    return 42
+
+class Service:
+    def process(self):
+        pass
+'''
+        eps = self.ext.extract_endpoints(source, "service.py")
+        assert len(eps) == 0
+
+
+class TestPythonDataMovements:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.python import PythonExtractor
+        reset_caches()
+        self.ext = PythonExtractor()
+
+    def test_requests_http_calls(self):
+        source = b'''
+import requests
+
+class OrderService:
+    def create_order(self):
+        resp = requests.post("http://api.example.com/orders", json={})
+        data = requests.get("http://api.example.com/users/1")
+'''
+        dms = self.ext.extract_interactions(source, "services.py")
+        assert len(dms) == 2
+        assert dms[0].mechanism == "requests"
+        assert dms[0].target_type == "HTTP_SERVICE"
+        assert dms[0].target == "http://api.example.com/orders"
+        assert dms[1].target == "http://api.example.com/users/1"
+
+    def test_sqlalchemy_session(self):
+        source = b'''
+class UserRepo:
+    def get_user(self, session, user_id):
+        return session.query(User).filter_by(id=user_id).first()
+
+    def save_user(self, session, user):
+        session.add(user)
+        session.commit()
+'''
+        dms = self.ext.extract_interactions(source, "repo.py")
+        assert len(dms) >= 2
+        mechanisms = [d.mechanism for d in dms]
+        assert "SQLAlchemy" in mechanisms
+
+    def test_no_movements_in_plain_code(self):
+        source = b'''
+def calculate(x, y):
+    return x + y
+'''
+        dms = self.ext.extract_interactions(source, "math.py")
+        assert len(dms) == 0
+
+
+# ---------------------------------------------------------------------------
+# Java (Spring)
+# ---------------------------------------------------------------------------
+
+class TestJavaEndpoints:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.java import JavaExtractor
+        reset_caches()
+        self.ext = JavaExtractor()
+
+    def test_spring_controller(self):
+        source = b'''
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/orders")
+public class OrderController {
+
+    @GetMapping("/{id}")
+    public Order getOrder(@PathVariable Long id) {
+        return orderService.findById(id);
+    }
+
+    @PostMapping
+    public Order createOrder(@RequestBody Order order) {
+        return orderService.save(order);
+    }
+
+    @DeleteMapping("/{id}")
+    public void deleteOrder(@PathVariable Long id) {
+        orderService.deleteById(id);
+    }
+}
+'''
+        eps = self.ext.extract_endpoints(source, "OrderController.java")
+        assert len(eps) == 3
+        ops = [e.operation for e in eps]
+        assert "GET" in ops
+        assert "POST" in ops
+        assert "DELETE" in ops
+        assert all(e.framework == "spring" for e in eps)
+        assert all(e.handler_class == "OrderController" for e in eps)
+
+    def test_kafka_listener(self):
+        source = b'''
+import org.springframework.kafka.annotation.KafkaListener;
+
+public class OrderListener {
+    @KafkaListener(topics = "order.created")
+    public void onOrderCreated(String message) {
+        processOrder(message);
+    }
+}
+'''
+        eps = self.ext.extract_endpoints(source, "OrderListener.java")
+        assert len(eps) == 1
+        assert eps[0].type == "MQ_CONSUMER"
+        assert eps[0].protocol == "KAFKA"
+
+    def test_scheduled_job(self):
+        source = b'''
+import org.springframework.scheduling.annotation.Scheduled;
+
+public class ReportJob {
+    @Scheduled(cron = "0 0 * * *")
+    public void generateReport() {
+        doReport();
+    }
+}
+'''
+        eps = self.ext.extract_endpoints(source, "ReportJob.java")
+        assert len(eps) == 1
+        assert eps[0].type == "SCHEDULED"
+        assert eps[0].protocol == "CRON"
+
+
+class TestJavaDataMovements:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.java import JavaExtractor
+        reset_caches()
+        self.ext = JavaExtractor()
+
+    def test_rest_template(self):
+        source = b'''
+public class UserService {
+    private RestTemplate restTemplate;
+
+    public User getUser(Long id) {
+        return restTemplate.getForObject("http://user-service/users/" + id, User.class);
+    }
+}
+'''
+        dms = self.ext.extract_interactions(source, "UserService.java")
+        assert len(dms) == 1
+        assert dms[0].mechanism == "RestTemplate"
+        assert dms[0].target_type == "HTTP_SERVICE"
+
+    def test_jpa_repository(self):
+        source = b'''
+public class OrderService {
+    private OrderRepository orderRepository;
+
+    public Order findOrder(Long id) {
+        return orderRepository.findById(id);
+    }
+
+    public void saveOrder(Order order) {
+        orderRepository.save(order);
+    }
+}
+'''
+        dms = self.ext.extract_interactions(source, "OrderService.java")
+        assert len(dms) == 2
+        dirs = {d.direction for d in dms}
+        assert "READ" in dirs
+        assert "WRITE" in dirs
+        assert all(d.mechanism == "JPA" for d in dms)
+
+
+# ---------------------------------------------------------------------------
+# TypeScript (Express + Prisma)
+# ---------------------------------------------------------------------------
+
+class TestTypeScriptEndpoints:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.typescript import TypeScriptExtractor
+        reset_caches()
+        self.ext = TypeScriptExtractor()
+
+    def test_express_routes(self):
+        source = b'''
+import express from "express";
+const router = express.Router();
+
+router.get("/users", async (req, res) => {
+    res.json(await getUsers());
+});
+
+router.post("/users", async (req, res) => {
+    res.json(await createUser(req.body));
+});
+
+router.delete("/users/:id", async (req, res) => {
+    res.sendStatus(204);
+});
+'''
+        eps = self.ext.extract_endpoints(source, "routes.ts")
+        assert len(eps) == 3
+        ops = [e.operation for e in eps]
+        assert "GET" in ops
+        assert "POST" in ops
+        assert "DELETE" in ops
+        assert all(e.framework == "express" for e in eps)
+
+    def test_no_endpoints_in_utility(self):
+        source = b'''
+export function formatDate(d: Date): string {
+    return d.toISOString();
+}
+'''
+        eps = self.ext.extract_endpoints(source, "utils.ts")
+        assert len(eps) == 0
+
+
+class TestTypeScriptDataMovements:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.typescript import TypeScriptExtractor
+        reset_caches()
+        self.ext = TypeScriptExtractor()
+
+    def test_fetch_and_prisma(self):
+        source = b'''
+async function getExternalData() {
+    const resp = await fetch("https://api.example.com/data");
+    const users = await prisma.user.findMany();
+    await prisma.order.create({ data: { amount: 100 } });
+}
+'''
+        dms = self.ext.extract_interactions(source, "service.ts")
+        assert len(dms) == 3
+        mechs = [d.mechanism for d in dms]
+        assert "fetch" in mechs
+        assert "Prisma" in mechs
+
+    def test_axios(self):
+        source = b'''
+import axios from "axios";
+
+async function postData() {
+    await axios.post("https://api.example.com/submit", { key: "value" });
+}
+'''
+        dms = self.ext.extract_interactions(source, "client.ts")
+        assert len(dms) == 1
+        assert dms[0].mechanism == "axios"
+        assert dms[0].target == "https://api.example.com/submit"
+
+
+# ---------------------------------------------------------------------------
+# Go (net/http + database/sql)
+# ---------------------------------------------------------------------------
+
+class TestGoEndpoints:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.go import GoExtractor
+        reset_caches()
+        self.ext = GoExtractor()
+
+    def test_http_handlefunc(self):
+        source = b'''
+package main
+
+import "net/http"
+
+func main() {
+    http.HandleFunc("/health", healthHandler)
+    http.HandleFunc("/api/users", usersHandler)
+}
+'''
+        eps = self.ext.extract_endpoints(source, "main.go")
+        assert len(eps) == 2
+        paths = [e.path for e in eps]
+        assert "/health" in paths
+        assert "/api/users" in paths
+        assert all(e.framework == "go_net_http" for e in eps)
+
+
+class TestGoDataMovements:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.go import GoExtractor
+        reset_caches()
+        self.ext = GoExtractor()
+
+    def test_http_get_and_sql(self):
+        source = b'''
+package main
+
+import (
+    "net/http"
+    "database/sql"
+)
+
+func fetchData(db *sql.DB) {
+    rows, _ := db.Query("SELECT * FROM users")
+    resp, _ := http.Get("http://other-service/data")
+}
+'''
+        dms = self.ext.extract_interactions(source, "main.go")
+        assert len(dms) == 2
+        types = {d.target_type for d in dms}
+        assert "DATABASE" in types
+        assert "HTTP_SERVICE" in types
+
+
+# ---------------------------------------------------------------------------
+# C# (ASP.NET + EF Core + HttpClient)
+# ---------------------------------------------------------------------------
+
+class TestCSharpEndpoints:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.csharp import CSharpExtractor
+        reset_caches()
+        self.ext = CSharpExtractor()
+
+    def test_aspnet_attributes(self):
+        source = b'''
+using Microsoft.AspNetCore.Mvc;
+
+[ApiController]
+public class ProductsController : ControllerBase
+{
+    [HttpGet("{id}")]
+    public IActionResult GetProduct(int id) { return Ok(); }
+
+    [HttpPost]
+    public IActionResult CreateProduct(Product p) { return Created(); }
+}
+'''
+        eps = self.ext.extract_endpoints(source, "ProductsController.cs")
+        assert len(eps) == 2
+        ops = [e.operation for e in eps]
+        assert "GET" in ops
+        assert "POST" in ops
+        assert all(e.framework == "aspnet" for e in eps)
+
+    def test_minimal_api(self):
+        source = b'''
+var app = WebApplication.Create();
+app.MapGet("/hello", () => "Hello");
+app.MapPost("/submit", (Data d) => Results.Ok(d));
+'''
+        eps = self.ext.extract_endpoints(source, "Program.cs")
+        assert len(eps) == 2
+        paths = [e.path for e in eps]
+        assert "/hello" in paths
+        assert "/submit" in paths
+
+
+class TestCSharpDataMovements:
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        from src.ast.extractors.csharp import CSharpExtractor
+        reset_caches()
+        self.ext = CSharpExtractor()
+
+    def test_ef_core_and_httpclient(self):
+        source = b'''
+public class ProductsController : ControllerBase
+{
+    private readonly AppDbContext _context;
+    private readonly HttpClient _httpClient;
+
+    public IActionResult GetProduct(int id)
+    {
+        var product = _context.Products.Find(id);
+        _context.SaveChanges();
+        var data = _httpClient.GetAsync("http://api.example.com/data");
+        return Ok(product);
+    }
+}
+'''
+        dms = self.ext.extract_interactions(source, "Controller.cs")
+        assert len(dms) == 3
+        mechs = {d.mechanism for d in dms}
+        assert "EFCore" in mechs
+        assert "HttpClient" in mechs
+
+
+# ---------------------------------------------------------------------------
+# Store writers
+# ---------------------------------------------------------------------------
+
+class TestStoreWriters:
+    def test_write_endpoints_file(self, tmp_path):
+        from src.ast.models import StructuralAnalysis, EndpointInfo
+
+        analyses = {
+            "api.py": StructuralAnalysis(
+                file_path="api.py",
+                language="python",
+                endpoints=[
+                    EndpointInfo(
+                        type="REST", path="/users", operation="GET",
+                        handler_class="", handler_method="get_users",
+                        file="api.py", line=10, framework="fastapi",
+                    ),
+                ],
+            ),
+        }
+
+        from src.ast.store import FileStore
+        store = FileStore(base_path=str(tmp_path))
+        store._project_root = ""
+        store.write_endpoints(tmp_path, analyses)
+
+        content = (tmp_path / "_endpoints.txt").read_text()
+        assert "REST" in content
+        assert "/users" in content
+        assert "GET" in content
+        assert "fastapi" in content
+
+    def test_write_interactions_file(self, tmp_path):
+        from src.ast.models import StructuralAnalysis, InteractionInfo
+
+        analyses = {
+            "service.py": StructuralAnalysis(
+                file_path="service.py",
+                language="python",
+                interactions=[
+                    InteractionInfo(
+                        source_class="OrderService", source_method="create",
+                        target="http://api.example.com/orders",
+                        target_type="HTTP_SERVICE", direction="REQUEST_RESPONSE",
+                        mechanism="requests", file="service.py", line=15,
+                    ),
+                ],
+            ),
+        }
+
+        from src.ast.store import FileStore
+        store = FileStore(base_path=str(tmp_path))
+        store._project_root = ""
+        store.write_interactions(tmp_path, analyses)
+
+        content = (tmp_path / "_interactions.txt").read_text()
+        assert "HTTP_SERVICE" in content
+        assert "requests" in content
+        assert "OrderService" in content
+
+    def test_write_extraction_meta(self, tmp_path):
+        from src.ast.models import StructuralAnalysis, EndpointInfo, InteractionInfo
+
+        analyses = {
+            "api.py": StructuralAnalysis(
+                file_path="api.py",
+                language="python",
+                endpoints=[
+                    EndpointInfo(
+                        type="REST", path="/users", operation="GET",
+                        handler_class="", handler_method="get_users",
+                        file="api.py", line=10, framework="fastapi",
+                    ),
+                    EndpointInfo(
+                        type="REST", path="/users", operation="POST",
+                        handler_class="", handler_method="create_user",
+                        file="api.py", line=20, framework="fastapi",
+                    ),
+                ],
+                interactions=[
+                    InteractionInfo(
+                        source_class="", source_method="get_users",
+                        target="db", target_type="DATABASE",
+                        direction="READ", mechanism="SQLAlchemy",
+                        file="api.py", line=12,
+                    ),
+                ],
+            ),
+        }
+
+        from src.ast.store import FileStore
+        import yaml
+        store = FileStore(base_path=str(tmp_path))
+        store.write_extraction_meta(tmp_path, analyses)
+
+        content = (tmp_path / "_extraction_meta.yaml").read_text()
+        meta = yaml.safe_load(content)
+        assert meta["extraction"]["stats"]["endpoints_found"] == 2
+        assert meta["extraction"]["stats"]["interactions_found"] == 1
+        assert len(meta["extraction"]["frameworks_detected"]) == 1
+        assert meta["extraction"]["frameworks_detected"][0]["name"] == "fastapi"
+
+
+# ---------------------------------------------------------------------------
+# Config loader
+# ---------------------------------------------------------------------------
+
+class TestEndpointConfig:
+    def test_load_endpoint_patterns(self):
+        reset_caches()
+        from src.ast.extractors.endpoint_config import load_endpoint_patterns
+        patterns = load_endpoint_patterns()
+        assert "fastapi" in patterns
+        assert "spring" in patterns
+        assert "express" in patterns
+        assert "aspnet" in patterns
+
+    def test_get_endpoint_frameworks_filters_by_language(self):
+        reset_caches()
+        from src.ast.extractors.endpoint_config import get_endpoint_frameworks
+        py = get_endpoint_frameworks("python")
+        assert "fastapi" in py
+        assert "spring" not in py
+
+        java = get_endpoint_frameworks("java")
+        assert "spring" in java
+        assert "fastapi" not in java
+
+    def test_get_interaction_patterns_filters_by_language(self):
+        reset_caches()
+        from src.ast.extractors.endpoint_config import get_interaction_patterns
+        py = get_interaction_patterns("python")
+        assert len(py) > 0
+        assert all(True for p in py)  # all loaded
+
+        go = get_interaction_patterns("go")
+        assert len(go) > 0
+        go_mechs = {p["mechanism"] for p in go}
+        assert "net/http" in go_mechs or "database/sql" in go_mechs

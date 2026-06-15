@@ -1,0 +1,59 @@
+{
+  "expected": [
+    {
+      "type": "business_logics",
+      "name": "retireLocation",
+      "tag": "pack",
+      "description": "Pack detects retire*/unretire*/purge* methods as business logic."
+    },
+    {
+      "type": "business_logics",
+      "name": "unretireLocation",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "purgeLocation",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "retireLocationTag",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "unretireLocationTag",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "purgeLocationTag",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "saveLocation",
+      "tag": "gap-fill",
+      "description": "Annotated with @Authorized(MANAGE_LOCATIONS) \u2014 pack's business-logic detector misses save* methods in favour of the retire/unretire/purge vocabulary. Gap-fill should recover it."
+    },
+    {
+      "type": "business_logics",
+      "name": "getDefaultLocation",
+      "tag": "gap-fill",
+      "description": "Returns the system-configured default location; non-trivial business logic the pack misses."
+    },
+    {
+      "type": "business_logics",
+      "name": "getLocationsHavingAllTags",
+      "tag": "gap-fill",
+      "description": "Non-trivial query \u2014 all tags must match. Real business logic the pack misses."
+    }
+  ],
+  "shouldNotEmit": [
+    {
+      "type": "business_logics",
+      "name": "setLocationDAO"
+    }
+  ]
+}

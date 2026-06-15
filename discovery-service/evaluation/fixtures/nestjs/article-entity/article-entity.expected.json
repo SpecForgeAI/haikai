@@ -1,0 +1,40 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "ArticleEntity",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "id",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "slug",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "title",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "body",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "ArticleEntity \u2192 UserEntity",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "ArticleEntity \u2192 Comment",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

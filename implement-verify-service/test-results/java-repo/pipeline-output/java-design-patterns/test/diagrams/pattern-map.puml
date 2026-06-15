@@ -1,0 +1,9 @@
+@startuml
+title Design Pattern Map
+
+[factory] --> [AbstractFactoryTest]
+[factory] --> [FactoryMaker]
+[factory] --> [ElfKingdomFactory]
+[factory] --> [OrcKingdomFactory]
+
+@enduml

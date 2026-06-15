@@ -1,0 +1,16 @@
+digraph Components {
+    rankdir=LR;
+    compound=true;
+
+    subgraph cluster_0 {
+        label="src";
+        src_main_java_com_iluwatar_abstractdocument [label="src/main/java/com/iluwatar/abstractdocument", shape=box3d];
+        src_main_java_com_iluwatar_abstractdocument_domain [label="src/main/java/com/iluwatar/abstractdocument/domain", shape=box3d];
+        src_main_java_com_iluwatar_abstractdocument_domain_enums [label="src/main/java/com/iluwatar/abstractdocument/domain/enums", shape=box3d];
+        src_test_java_com_iluwatar_abstractdocument [label="src/test/java/com/iluwatar/abstractdocument", shape=box3d];
+    }
+
+
+    src_main_java_com_iluwatar_abstractdocument -> src_main_java_com_iluwatar_abstractdocument_domain;
+    src_main_java_com_iluwatar_abstractdocument_domain -> src_main_java_com_iluwatar_abstractdocument_domain_enums;
+}

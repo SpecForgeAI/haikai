@@ -1,0 +1,281 @@
+/**
+ * SelectiveCopyConflictResolution.module.css
+ *
+ * Spec 2026-05-01 Multi-Architecture Selective Cross-Architecture Copy
+ * (Spec #7) -- Task Group 8
+ *
+ * Styles for the preflight summary + auto-included group + conflict
+ * resolution table. Visual rhythm matches the picker module so the wizard's
+ * step 2 / step 3 bodies feel consistent.
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Summary stats
+ * ------------------------------------------------------------------------- */
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f4f7fb;
+  border: 1px solid #d8e3ee;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #222;
+}
+
+.summaryItem {
+  white-space: nowrap;
+}
+
+.summaryItem strong {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.summaryDivider {
+  color: #aaa;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Many-conflicts soft banner
+ * ------------------------------------------------------------------------- */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #fff8e1;
+  border: 1px solid #f0d27a;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #5a4615;
+}
+
+.bannerText {
+  flex: 1;
+}
+
+.bannerDismiss {
+  background: transparent;
+  border: 1px solid #d4b96a;
+  color: #5a4615;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.bannerDismiss:hover {
+  background: #f5e8b5;
+}
+
+/* ---------------------------------------------------------------------------
+ * Section (auto-included + conflicts)
+ * ------------------------------------------------------------------------- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #f7f7f7;
+  border-bottom: 1px solid #e8e8e8;
+  font-size: 13px;
+  color: #222;
+}
+
+.sectionTitle {
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.sectionHint {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+.toggleButton {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 11px;
+  width: 18px;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * Auto-included list
+ * ------------------------------------------------------------------------- */
+
+.autoList {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.autoRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-top: 1px dashed #ececec;
+}
+
+.autoRow:first-child {
+  border-top: none;
+}
+
+.includedBecause {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+}
+
+.includedBecause em {
+  font-style: normal;
+  font-weight: 600;
+  color: #444;
+}
+
+/* ---------------------------------------------------------------------------
+ * Bulk action buttons
+ * ------------------------------------------------------------------------- */
+
+.bulkActions {
+  display: flex;
+  gap: 6px;
+}
+
+.bulkButton {
+  background: #fff;
+  border: 1px solid #c8c8c8;
+  color: #333;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.bulkButton:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+
+.bulkButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+ * Conflict list
+ * ------------------------------------------------------------------------- */
+
+.conflictList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.conflictRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border-top: 1px dashed #ececec;
+  font-size: 13px;
+}
+
+.conflictRow:first-child {
+  border-top: none;
+}
+
+.conflictMeta {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.elementName {
+  font-weight: 600;
+  color: #222;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.elementType {
+  font-size: 11px;
+  color: #888;
+  background: #f0f0f0;
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.conflictReason {
+  font-size: 12px;
+  color: #a04040;
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+ * Radio group
+ * ------------------------------------------------------------------------- */
+
+.radioGroup {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.radioLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #333;
+}
+
+.radioLabel input[type='radio'] {
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
+ * Empty state
+ * ------------------------------------------------------------------------- */
+
+.emptyState {
+  padding: 16px;
+  text-align: center;
+  font-style: italic;
+  color: #888;
+  font-size: 13px;
+}

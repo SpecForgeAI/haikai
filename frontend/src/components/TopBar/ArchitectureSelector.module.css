@@ -1,0 +1,175 @@
+/**
+ * ArchitectureSelector Styles
+ *
+ * Spec 2026-05-02 Multi-Architecture Selector + URL Routing -- Task Group 3
+ * Spec 2026-05-02 Multi-Architecture CRUD UI + Tag Management -- Task Group 7
+ *
+ * Pill/chip trigger with subtle border so the closed state reads as an
+ * interactive control even when the project has only one (`Default`)
+ * architecture (the spec #1 reality for every project today).
+ *
+ * Visual language matches frontend/src/components/TopBar/FileMenu.tsx so
+ * the selector sits next to the project name without looking out of
+ * place.
+ */
+
+/* ============================================================================
+ * Trigger (closed state) -- pill/chip with subtle border
+ * ============================================================================ */
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Pill shape */
+  padding: 4px 10px;
+  border-radius: 999px;
+  /* Subtle border so the affordance reads as interactive even when there
+     is only one architecture in the project (single-row dropdown). */
+  border: 1px solid #d0d0d0;
+  background: #fafafa;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  /* Stay on a single line and elide overflowing names so the selector
+     never blows up the top-bar layout. */
+  max-width: 220px;
+  white-space: nowrap;
+}
+
+.trigger:hover {
+  background: #f0f0f0;
+  border-color: #b8b8b8;
+}
+
+.trigger:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: 1px;
+}
+
+.trigger:active {
+  background: #e8e8e8;
+}
+
+.trigger.open {
+  background: #f0f0f0;
+  border-color: #b8b8b8;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Reserve room for the chevron */
+  max-width: 180px;
+}
+
+.chevron {
+  font-size: 9px;
+  color: #666;
+  flex: 0 0 auto;
+  /* Slight nudge so the triangle visually centres against the label */
+  line-height: 1;
+}
+
+/* ============================================================================
+ * Dropdown (mirrors FileMenu.module.css visual language)
+ * ============================================================================ */
+
+.menu {
+  position: fixed;
+  min-width: 180px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  padding: 4px 0;
+  /* Soft cap so very long names don't make a giant flyout. */
+  max-width: 320px;
+}
+
+.menuItem {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  user-select: none;
+  /* Keep names on a single line; ellide if very long. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuItem:hover {
+  background: #f5f5f5;
+}
+
+.menuItem:active {
+  background: #e8e8e8;
+}
+
+/* Active row -- the architecture currently selected. Subtle indicator,
+   matches viewToggle's "active" styling so the selector feels like part
+   of the same control family. */
+.menuItemActive {
+  color: #1976d2;
+  font-weight: 600;
+  background: #f5f5f5;
+}
+
+.empty {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #888;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Spec #3 Task Group 7 -- Footer separator + action entries
+ *
+ * The separator visually divides selectable architectures (above) from
+ * actions (below). The footer items use the same row geometry as
+ * `.menuItem` so they line up cleanly, but adopt a muted color and
+ * italic style so they read as actions rather than items the user can
+ * "select" as an active architecture.
+ * ============================================================================ */
+
+.separator {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
+.footerItem {
+  /* Match menuItem geometry so the rows line up vertically. */
+  padding: 8px 16px;
+  font-size: 13px;
+  /* Muted colour + italic label so the entry reads as an action rather
+     than a selectable architecture. */
+  color: #555;
+  font-style: italic;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  user-select: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerItem:hover {
+  background: #f5f5f5;
+  color: #1976d2;
+}
+
+.footerItem:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: -2px;
+}
+
+.footerItem:active {
+  background: #e8e8e8;
+}

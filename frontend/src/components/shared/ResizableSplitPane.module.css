@@ -1,0 +1,73 @@
+/**
+ * ResizableSplitPane.module.css
+ *
+ * Spec 2026-01-10: Product & Delivery - Resizable LHS Panels
+ * Task Group 1: Styles for ResizableSplitPane component
+ *
+ * Styling for:
+ * - Flex container with left pane, drag handle, and right pane
+ * - Drag handle with hover and focus states
+ * - Text selection prevention during drag
+ */
+
+/* Main container - flex row layout */
+.container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Prevent text selection during drag */
+.dragging {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Left pane - width controlled by JavaScript */
+.leftPane {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Right pane - fills remaining space */
+.rightPane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Drag handle - vertical divider between panes */
+.dragHandle {
+  width: 5px;
+  flex-shrink: 0;
+  background: #e0e0e0;
+  cursor: col-resize;
+  transition: background-color 0.15s ease;
+  position: relative;
+}
+
+/* Drag handle hover state */
+.dragHandle:hover {
+  background: #bdbdbd;
+}
+
+/* Drag handle focus state for keyboard accessibility */
+.dragHandle:focus {
+  outline: none;
+  background: #bdbdbd;
+  box-shadow: 0 0 0 2px #1976d2;
+}
+
+/* Visual indicator when dragging */
+.dragging .dragHandle {
+  background: #90caf9;
+}

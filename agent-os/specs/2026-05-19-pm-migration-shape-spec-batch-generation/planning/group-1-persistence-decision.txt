@@ -1,0 +1,10 @@
+PATH_B_new_table
+
+Decision: Spec 2 Group 1 adds a new `migration_story_spec_generations` table (Liquibase changeset 140), modelled key-for-key on Spec 1's `GeneratedMigrationBookOfWork*` quintet.
+
+Rationale (3-sentence):
+1. The existing `WorkItemImplementWorkspaceEntity` is a single opaque JSONB-blob workspace snapshot (one `workspace_state` column carrying plannerPayload / activeIncrementId / questions / executionArtifactsByIncrement / teamChatTranscript) whose semantic purpose is atomic-snapshot rehydration of the Implement-tab UI across browser sessions. Stacking 14 typed shape-spec-generation columns onto it (status check constraint, four JSONB blobs, FK to book-of-work, attempt counter, manual-edit protection metadata, etc.) would conflate two unrelated concerns on the same row and undermine the workspace's atomic-snapshot semantics.
+2. Spec 2's persistence shape (one row per spec-generation attempt per WorkItem, future-proofed for regeneration history, FK to book-of-work, status check constraint, lazy `not_attempted` model) is structurally a peer of `GeneratedMigrationBookOfWorkEntity`, not an extension of a workspace-state table.
+3. WorkItem FK remains the source of truth (R-9); no new field is added to `WorkItemEntity` itself.
+
+Downstream groups (esp. Group 8) build the controller surface on `MigrationStorySpecGenerationController` / Service / Repository / Mapper, NOT on the WorkItemImplementWorkspace quintet.

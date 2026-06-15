@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "ErrorsController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,22 @@
+# Development Dockerfile for Architecture Read Service (Spring Boot)
+FROM eclipse-temurin:21-jdk
+
+# Install Maven
+RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy pom.xml first for dependency caching
+COPY pom.xml ./
+
+# Download dependencies (layer caching)
+RUN mvn dependency:go-offline -B
+
+# Note: Source files are NOT copied - they will be volume mounted for hot-reload
+
+# Expose Spring Boot port
+EXPOSE 8079
+
+# Start Spring Boot with DevTools enabled for hot-reload
+CMD ["mvn", "spring-boot:run", "-Dspring-boot.run.jvmArguments=-Dspring.devtools.restart.enabled=true"]

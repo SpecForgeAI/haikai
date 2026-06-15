@@ -1,0 +1,276 @@
+/**
+ * StartDiscoveryRunModal styles
+ *
+ * Visual shape mirrors StartDiscoveryRunConfirmModal.module.css for app-wide
+ * modal consistency (overlay, header / content / footer, primary / secondary
+ * buttons). Adds an inline error-banner style for the upload-failure path.
+ */
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  /* Spec 2026-06-06: wider + height-capped so the Database form fits on screen
+     at 100% zoom. The form is laid out in multi-column rows (see .fieldRow);
+     max-height + a scrollable .content is a safety net for short viewports. */
+  max-width: 760px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  border-radius: 8px 8px 0 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: #666;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.closeButton:hover:not(:disabled) {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.closeButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.content {
+  padding: 20px;
+  /* Keep the header + footer pinned; scroll the form body only if it is ever
+     taller than the (height-capped) modal. Spec 2026-06-06. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.errorBanner {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.errorDetail {
+  margin-top: 6px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #8b1d1d;
+  word-break: break-word;
+}
+
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Spec 2026-05-11 Section 1: per-run M control. */
+.fieldGroup {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.input {
+  width: 80px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #666;
+  line-height: 1.4;
+}
+
+/* Spec 2026-05-16 Group 5: Source toggle + DB connection form */
+
+.sourceToggle {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.sourceToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+
+.sourceToggleLabel input[type='radio']:disabled + span {
+  opacity: 0.6;
+}
+
+.databasePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 12px;
+}
+
+.fieldRow > .fieldGroup {
+  flex: 1;
+  margin-top: 0;
+}
+
+/* Spec 2026-06-06: Database form layout. The global .input is a narrow 80px
+   (tuned for the code-panel number field); inside the wider DB panel, inputs
+   fill their column and direct field groups rely on the panel's gap (no extra
+   top margin) for a tighter, on-screen layout. */
+.databasePanel > .fieldGroup {
+  margin-top: 0;
+}
+
+.databasePanel .input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Selects (engine / Sybase-driver pickers) size to their content rather than
+   stretching the full column width. */
+.databasePanel select.input {
+  width: auto;
+  min-width: 200px;
+  max-width: 100%;
+}
+
+/* Profiling-mode options on a single row. */
+.radioRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: #333;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.checkboxRow input[type='checkbox'] {
+  margin-top: 2px;
+}

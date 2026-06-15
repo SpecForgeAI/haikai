@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.5</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.example</groupId>
+    <artifactId>architecture-model-service</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Architecture Model Service</name>
+    <description>Backend service for Architecture Modelling Tool</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- Test-harness H2 pin (2026-06-11). Spring Boot 3.2.5 manages H2 at
+             2.2.224, which rejects JSONB column definitions even in
+             MODE=PostgreSQL, silently dropping ~45 entity tables from the
+             hibernate create-drop schema. H2 2.3.x accepts JSONB as a native
+             alias of JSON in PostgreSQL mode. Test scope only. -->
+        <h2.version>2.3.232</h2.version>
+        <hypersistence-utils.version>3.7.3</hypersistence-utils.version>
+        <!-- Bulk-Resolve OAS/WSDL Parser (2026-05-20). Task Group 2.2.
+             swagger-parser 2.1.22 already cached locally; covers OAS
+             2.0/3.0/3.1 via a single artifact (JSON and YAML transparently). -->
+        <swagger-parser.version>2.1.22</swagger-parser.version>
+        <!-- wsdl4j 1.6.3 is the long-stable WSDL 1.1 reader; Apache 2.0 licensed. -->
+        <wsdl4j.version>1.6.3</wsdl4j.version>
+        <!-- Apache CXF cxf-rt-wsdl carries the WSDL 2.0 reader (WSDLManager
+             plus WSDL2Java internals). Pinned to a 4.x line which is
+             compatible with Spring Boot 3.x / Jakarta namespaces. -->
+        <cxf.version>4.0.5</cxf.version>
+    </properties>
+
+    <dependencies>
+        <!-- Spring Boot Starters -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Spring Boot DevTools for hot-reload in development -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- PostgreSQL Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Liquibase for database migrations -->
+        <dependency>
+            <groupId>org.liquibase</groupId>
+            <artifactId>liquibase-core</artifactId>
+        </dependency>
+
+        <!-- Hibernate Types for JSONB support -->
+        <dependency>
+            <groupId>io.hypersistence</groupId>
+            <artifactId>hypersistence-utils-hibernate-63</artifactId>
+            <version>${hypersistence-utils.version}</version>
+        </dependency>
+
+        <!-- Jackson for JSON processing -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <!-- SnakeYAML for YAML parsing -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!--
+            Bulk-Resolve OAS/WSDL Parser (2026-05-20). Task Group 2.2.
+
+            Compile-scoped contract-parsing libraries used by
+            OasWsdlParserService. The spec mandates one library per format
+            family with no fallbacks wired in v1:
+
+            * io.swagger.parser.v3:swagger-parser
+              OpenAPI 2.0/3.0/3.1 (handles JSON and YAML transparently in
+              a single API).
+            * wsdl4j:wsdl4j
+              WSDL 1.1 reader (the long-standing JSR-110 reference).
+              Apache 2.0 licensed; transitive footprint is tiny.
+            * org.apache.cxf:cxf-rt-wsdl
+              Minimal CXF runtime artifact that ships the WSDL 2.0 reader
+              (WSDLManager plus WSDL2 schema parser). Selected over the
+              heavier cxf-tools-wsdlto family because the v1 parse-scope is
+              "operation names only" so the runtime WSDL artifact suffices
+              and pulls fewer transitive dependencies than the wsdlto-core
+              family.
+        -->
+        <dependency>
+            <groupId>io.swagger.parser.v3</groupId>
+            <artifactId>swagger-parser</artifactId>
+            <version>${swagger-parser.version}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>wsdl4j</groupId>
+            <artifactId>wsdl4j</artifactId>
+            <version>${wsdl4j.version}</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.cxf</groupId>
+            <artifactId>cxf-rt-wsdl</artifactId>
+            <version>${cxf.version}</version>
+            <scope>compile</scope>
+        </dependency>
+
+        <!-- Test Dependencies -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,9 @@
+@startuml
+title Component Diagram
+
+[src] --> [java]
+[src] --> [com]
+[src] --> [lombok]
+[src] --> [org]
+
+@enduml

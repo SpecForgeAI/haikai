@@ -1,0 +1,8 @@
+{
+  "id": "software-developer",
+  "displayName": "Software Developer",
+  "color": "#455A64",
+  "identityPromptRef": "prompts/software-developer.identity.md",
+  "tasks": [],
+  "menuLabel": "Hi, what can I help you with?"
+}

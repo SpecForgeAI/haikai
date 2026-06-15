@@ -1,0 +1,7 @@
+@startuml
+title Package Structure
+
+[src/main/java/com/iluwatar/abstractdocument] --> [src/main/java/com/iluwatar/abstractdocument/domain]
+[src/main/java/com/iluwatar/abstractdocument/domain] --> [src/main/java/com/iluwatar/abstractdocument/domain/enums]
+
+@enduml

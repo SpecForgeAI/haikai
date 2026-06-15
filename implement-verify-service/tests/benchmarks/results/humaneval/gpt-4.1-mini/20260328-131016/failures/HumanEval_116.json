@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/116",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "return sorted(arr, key=lambda x: (bin(x & 0xffffffff).count('1'), x))",
+  "expected_output": "    return sorted(sorted(arr), key=lambda x: bin(x)[2:].count('1'))\n",
+  "latency_seconds": 0.7450691149570048,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 218,
+    "output_tokens": 22,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

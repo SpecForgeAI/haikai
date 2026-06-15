@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "ui_screens",
+      "name": "HomePage",
+      "tag": "pack"
+    },
+    {
+      "type": "ui_components",
+      "name": "Header",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

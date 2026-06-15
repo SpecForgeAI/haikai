@@ -1,0 +1,44 @@
+digraph Components {
+    rankdir=LR;
+    compound=true;
+
+    subgraph cluster_0 {
+        label="src";
+        src_Basket_API_Extensions [label="src/Basket.API/Extensions", shape=box3d];
+        src_Basket_API_Grpc [label="src/Basket.API/Grpc", shape=box3d];
+        src_Basket_API_IntegrationEvents_EventHandling [label="src/Basket.API/IntegrationEvents/EventHandling", shape=box3d];
+        src_Basket_API_IntegrationEvents_Events [label="src/Basket.API/IntegrationEvents/Events", shape=box3d];
+        src_Basket_API_Model [label="src/Basket.API/Model", shape=box3d];
+        src_Basket_API [label="src/Basket.API", shape=box3d];
+        src_Basket_API_Repositories [label="src/Basket.API/Repositories", shape=box3d];
+        src_Catalog_API_Apis [label="src/Catalog.API/Apis", shape=box3d];
+        src_Catalog_API [label="src/Catalog.API", shape=box3d];
+        src_Catalog_API_Extensions [label="src/Catalog.API/Extensions", shape=box3d];
+        src_Catalog_API_Infrastructure [label="src/Catalog.API/Infrastructure", shape=box3d];
+        src_Catalog_API_Infrastructure_EntityConfigurations [label="src/Catalog.API/Infrastructure/EntityConfigurations", shape=box3d];
+        src_Catalog_API_Infrastructure_Exceptions [label="src/Catalog.API/Infrastructure/Exceptions", shape=box3d];
+        src_Catalog_API_Infrastructure_Migrations [label="src/Catalog.API/Infrastructure/Migrations", shape=box3d];
+        src_Catalog_API_IntegrationEvents [label="src/Catalog.API/IntegrationEvents", shape=box3d];
+        src_Catalog_API_IntegrationEvents_EventHandling [label="src/Catalog.API/IntegrationEvents/EventHandling", shape=box3d];
+        src_Catalog_API_IntegrationEvents_Events [label="src/Catalog.API/IntegrationEvents/Events", shape=box3d];
+        src_Catalog_API_Model [label="src/Catalog.API/Model", shape=box3d];
+        src_Catalog_API_Services [label="src/Catalog.API/Services", shape=box3d];
+    }
+
+
+    src_Basket_API -> src_Basket_API_Extensions;
+    src_Basket_API -> src_Basket_API_Grpc;
+    src_Basket_API -> src_Basket_API_Model;
+    src_Basket_API -> src_Basket_API_Repositories;
+    src_Catalog_API -> src_Catalog_API_Apis;
+    src_Catalog_API -> src_Catalog_API_Extensions;
+    src_Catalog_API -> src_Catalog_API_Infrastructure;
+    src_Catalog_API_Infrastructure -> src_Catalog_API_Infrastructure_EntityConfigurations;
+    src_Catalog_API_Infrastructure -> src_Catalog_API_Infrastructure_Exceptions;
+    src_Catalog_API_Infrastructure -> src_Catalog_API_Infrastructure_Migrations;
+    src_Catalog_API -> src_Catalog_API_IntegrationEvents;
+    src_Catalog_API_IntegrationEvents -> src_Catalog_API_IntegrationEvents_EventHandling;
+    src_Catalog_API_IntegrationEvents -> src_Catalog_API_IntegrationEvents_Events;
+    src_Catalog_API -> src_Catalog_API_Model;
+    src_Catalog_API -> src_Catalog_API_Services;
+}

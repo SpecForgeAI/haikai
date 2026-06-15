@@ -1,0 +1,33 @@
+name: cherrypy
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - "import cherrypy"
+    - "from cherrypy"
+  manifest_contains:
+    - {file: pyproject.toml, substring: "CherryPy"}
+
+extract:
+  - id: exposed_method_decorators
+    query: annotations
+    file_filter: all
+    file_extensions: [".py"]
+    annotation_names: [expose, cherrypy.expose]
+    target_kind: method
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: cherrypy
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Path is derived from the method name, not a decorator argument; 'index' methods map to the parent path '/', not '/index'"
+  - "Object tree mount points (cherrypy.tree.mount(Root(), '/prefix')) are not captured; all emitted paths are relative to the mount root"
+  - "Methods marked with 'exposed = True' as a plain attribute instead of the @expose decorator are not captured"
+  - "RoutesDispatcher routes are defined via call_args-style calls and are not captured"
+  - "MethodDispatcher classes (methods literally named GET, POST, etc.) use the class's object-tree position as the path — not capturable via method_decls"
+  - "_cp_dispatch() and cherrypy.popargs() for custom traversal are not captured"

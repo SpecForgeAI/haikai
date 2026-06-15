@@ -1,0 +1,82 @@
+name: jax-rs
+version: 1
+language: java
+
+detection:
+  imports_match:
+    - jakarta.ws.rs
+    - javax.ws.rs
+  files_match:
+    - "**/*Resource.java"
+    - "**/*Endpoint.java"
+  manifest_contains:
+    - {file: pom.xml, substring: jakarta.ws.rs}
+    - {file: pom.xml, substring: javax.ws.rs}
+    - {file: pom.xml, substring: jersey-server}
+    - {file: pom.xml, substring: resteasy}
+    - {file: build.gradle, substring: jersey-server}
+    - {file: build.gradle, substring: resteasy}
+
+extract:
+  - id: method_annotations
+    query: annotations
+    file_filter: routing_imports
+    annotation_names:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - HEAD
+      - OPTIONS
+    target_kind: method
+  - id: class_paths
+    query: annotations
+    file_filter: routing_imports
+    annotation_names: [Path]
+    target_kind: class
+  - id: method_paths
+    query: annotations
+    file_filter: routing_imports
+    annotation_names: [Path]
+    target_kind: method
+
+expansion_rules:
+  - rule: prefix_class_path
+    description: "Class-level @Path is path prefix; method-level @Path appends to it"
+  - rule: derive_method_from_annotation
+    description: "Annotation @GET/@POST/@PUT/@DELETE/@PATCH directly maps to HTTP method"
+  - rule: method_path_optional
+    description: "Method may have @Path or rely on class @Path only"
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: jax-rs
+
+verification:
+  - id: verb_annotation_count
+    query: annotations
+    annotation_names: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS]
+    target_kind: method
+    expected_count: same_as_output_count
+    tolerance_pct: 10
+
+verb_annotations:
+  GET:     GET
+  POST:    POST
+  PUT:     PUT
+  DELETE:  DELETE
+  PATCH:   PATCH
+  HEAD:    HEAD
+  OPTIONS: OPTIONS
+
+path_only_annotations:
+  - Path
+
+conflict_rules: []
+
+known_pitfalls:
+  - "@Path on a class is a prefix, not an endpoint"
+  - "A method can have @GET/@POST without @Path — it inherits the class @Path entirely"
+  - "Some classes have @Path but no HTTP-verb annotations; those are sub-resource locators (no endpoints emitted)"

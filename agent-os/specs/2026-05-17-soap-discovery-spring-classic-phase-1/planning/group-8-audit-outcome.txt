@@ -1,0 +1,1 @@
+Confirmed end-to-end: 'SOAP_API' flows through discovery → AMS → frontend without coercion.

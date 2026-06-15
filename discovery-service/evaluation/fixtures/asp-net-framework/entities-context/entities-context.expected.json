@@ -1,0 +1,95 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Package",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PackageDeprecation",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PackageRegistration",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PackageDependency",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PackageFramework",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Credential",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Scope",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "UserSecurityPolicy",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "ReservedNamespace",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Certificate",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "UserCertificate",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "SymbolPackage",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PackageVulnerability",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "VulnerablePackageVersionRange",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PackageRename",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "FederatedCredentialPolicy",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "FederatedCredential",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "User",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

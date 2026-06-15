@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "StaticController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,23 @@
+# GitHub Actions connector — ci-trigger verifier (async).
+# Mechanism: src/verification/connectors/github_actions.py
+name: github-actions
+kind: ci-trigger
+provider: github
+auth:
+  token_template: "{REPO_KEY}_GITHUB_TOKEN"   # D3; falls back to GITHUB_TOKEN
+trigger:
+  api: POST /repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches
+  records_binding: head_sha -> cell            # D10.4 authenticated SHA→cell binding
+verdict_path:
+  webhook: /api/v2/inbound/github/{ingress_token}   # primary (inbound-gateway, D9.1)
+  poll: python -m gh runs by head_sha               # fallback (connector poll())
+status_map:
+  pending: [queued, in_progress, waiting, pending]
+  pass: [completed+success]
+  fail: [completed+failure, completed+cancelled, completed+timed_out, completed+startup_failure, completed+action_required]
+  skipped: [completed+skipped, completed+neutral, completed+stale]
+fold: fail > pending > pass > skipped   # mirrors the D5 gate; poll paginates (100/page, 10 pages)
+notes: |
+  Webhook deliveries are deduped by delivery id and correlated via the
+  ci_bindings SHA→cell row, never by trailer-grep (D10.4). A cell stuck
+  pending is timed out by the gateway TTL sweeper (D10.5).

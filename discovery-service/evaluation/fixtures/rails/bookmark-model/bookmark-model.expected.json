@@ -1,0 +1,25 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Bookmark",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Bookmark \u2192 User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Bookmark \u2192 Bookmarkable",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Bookmark \u2192 Dependent_reminder_notification",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,14 @@
+{
+  "id": "test-engineer--verify-implementation",
+  "personaId": "test-engineer",
+  "menuLabel": "Verify Implementation",
+  "description": "Assists with verifying that an implementation meets its acceptance criteria, checking for completeness, correctness, and quality against the defined requirements.",
+  "mode": "assessment",
+  "taskPromptRef": "prompts/test-engineer.verify-implementation.task.md",
+  "responseFormat": null,
+  "contextNeeds": ["mission", "tech-stack", "test-strategy"],
+  "persistence": "feature",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

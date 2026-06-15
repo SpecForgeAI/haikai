@@ -1,0 +1,275 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "Bootstrap",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Trace",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Server",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Data",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Trace",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Endpoint",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Server",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Http",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Grpc",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Data",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Mongodb",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Registry",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Consul",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Server_HTTP",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Network",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Addr",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Timeout",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Server_GRPC",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Network",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Addr",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Timeout",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Data_MongoDB",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Uri",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Database",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Registry_Consul",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "state",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sizeCache",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "unknownFields",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Address",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Scheme",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

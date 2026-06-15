@@ -1,0 +1,14 @@
+{
+  "id": "assistant--freeform",
+  "personaId": "assistant",
+  "menuLabel": "Freeform Chat",
+  "description": "Open-ended conversation with the assistant for general questions, navigation help, or ad-hoc requests that do not map to a specific task.",
+  "mode": "advisory",
+  "taskPromptRef": "prompts/assistant.freeform.task.md",
+  "responseFormat": null,
+  "contextNeeds": [],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub"]
+}

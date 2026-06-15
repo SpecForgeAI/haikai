@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "ui_screens",
+      "name": "SettingsPage",
+      "tag": "pack"
+    },
+    {
+      "type": "ui_components",
+      "name": "SubmitButton",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

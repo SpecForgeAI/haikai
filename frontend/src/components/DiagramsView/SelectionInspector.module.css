@@ -1,0 +1,161 @@
+/**
+ * SelectionInspector.module.css
+ * Task Group 3: Styles for the Selection Inspector for Created Entities
+ * Task Group 5: Extended for StateTransition and ActivityFlow Edge Inspectors
+ *
+ * This component displays editable fields for selected State, Activity,
+ * ActivityPartition, LogicalDataEntity, and PhysicalDataEntity nodes.
+ * Also displays fields for StateTransition and ActivityFlow edges.
+ */
+
+/* Container */
+.container {
+  display: flex;
+  flex-direction: column;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
+  padding: 0;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.headerTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Content area */
+.content {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Field group */
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Labels */
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+}
+
+.required {
+  color: #d32f2f;
+  margin-left: 2px;
+}
+
+/* Input fields */
+.input {
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+  width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.input::placeholder {
+  color: #999;
+}
+
+/* Textarea fields */
+.textarea {
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  line-height: 1.4;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.textarea::placeholder {
+  color: #999;
+}
+
+/* Select/dropdown fields */
+.select {
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  background: white;
+  box-sizing: border-box;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M3 4l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.select:hover {
+  border-color: #bbb;
+}
+
+/* Hint text */
+.hint {
+  font-size: 10px;
+  color: #888;
+  font-style: italic;
+}
+
+/* Task Group 5: Read-only value display (for fromState/toState, fromActivity/toActivity) */
+.readOnlyValue {
+  padding: 8px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #f5f5f5;
+  box-sizing: border-box;
+  width: 100%;
+  color: #333;
+  cursor: default;
+}

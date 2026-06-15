@@ -1,0 +1,189 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "46cfafab-f5e8-4d6b-b3a2-5f3e5ffb2fb8",
+      "entity_type": "classes",
+      "entity_id": "AbstractDocument",
+      "label": "AbstractDocument",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "21a197cd-b15d-4ede-9d4e-8403df3be8c3",
+      "entity_type": "classes",
+      "entity_id": "Document",
+      "label": "Document",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3aaca33d-a2b6-4d3d-8ddf-40f0eb2a8703",
+      "entity_type": "classes",
+      "entity_id": "Car",
+      "label": "Car",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "285ed4dd-4b3d-44e1-bb60-c6c1848f48f0",
+      "entity_type": "classes",
+      "entity_id": "HasModel",
+      "label": "HasModel",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6b947e15-a3a7-4647-b81f-5fd47109272a",
+      "entity_type": "classes",
+      "entity_id": "HasPrice",
+      "label": "HasPrice",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "94203a9f-6414-4718-80f4-e67f6e3f8c83",
+      "entity_type": "classes",
+      "entity_id": "HasParts",
+      "label": "HasParts",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0c91f27a-6a26-4fc3-a02b-eacd72868c28",
+      "entity_type": "classes",
+      "entity_id": "HasType",
+      "label": "HasType",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "afa392b6-1228-42e8-8f83-2d6974e9a168",
+      "entity_type": "classes",
+      "entity_id": "Part",
+      "label": "Part",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2a235bc5-0987-4bee-9b9b-20602e612f5b",
+      "entity_type": "classes",
+      "entity_id": "DocumentImplementation",
+      "label": "DocumentImplementation",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "241cb39e-6396-47bd-aec4-aaed86f294ed",
+      "source_node_id": "21a197cd-b15d-4ede-9d4e-8403df3be8c3",
+      "target_node_id": "46cfafab-f5e8-4d6b-b3a2-5f3e5ffb2fb8",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "f233e6eb-abcb-4392-8cb2-469fad6ce520",
+      "source_node_id": "46cfafab-f5e8-4d6b-b3a2-5f3e5ffb2fb8",
+      "target_node_id": "3aaca33d-a2b6-4d3d-8ddf-40f0eb2a8703",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "aed81049-3317-4cb3-9951-5f37517b80ad",
+      "source_node_id": "285ed4dd-4b3d-44e1-bb60-c6c1848f48f0",
+      "target_node_id": "3aaca33d-a2b6-4d3d-8ddf-40f0eb2a8703",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "ca300f6c-eb85-4f55-8a9b-e24b4602c586",
+      "source_node_id": "6b947e15-a3a7-4647-b81f-5fd47109272a",
+      "target_node_id": "3aaca33d-a2b6-4d3d-8ddf-40f0eb2a8703",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "9a041480-c945-46e9-91e0-98dac87c7b86",
+      "source_node_id": "94203a9f-6414-4718-80f4-e67f6e3f8c83",
+      "target_node_id": "3aaca33d-a2b6-4d3d-8ddf-40f0eb2a8703",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "cbf6b8b6-47a4-4ba1-bf92-65eb041e1e74",
+      "source_node_id": "21a197cd-b15d-4ede-9d4e-8403df3be8c3",
+      "target_node_id": "285ed4dd-4b3d-44e1-bb60-c6c1848f48f0",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "b426fab8-cbbd-4171-8051-ab5ced33a290",
+      "source_node_id": "21a197cd-b15d-4ede-9d4e-8403df3be8c3",
+      "target_node_id": "94203a9f-6414-4718-80f4-e67f6e3f8c83",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "46fa5abf-5195-4c98-ba79-f75dd50e28dc",
+      "source_node_id": "21a197cd-b15d-4ede-9d4e-8403df3be8c3",
+      "target_node_id": "6b947e15-a3a7-4647-b81f-5fd47109272a",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "6e03a408-0dd4-42de-933a-739358e4c8eb",
+      "source_node_id": "21a197cd-b15d-4ede-9d4e-8403df3be8c3",
+      "target_node_id": "0c91f27a-6a26-4fc3-a02b-eacd72868c28",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "78fd245c-a0a3-4d21-babd-b087f33c3485",
+      "source_node_id": "46cfafab-f5e8-4d6b-b3a2-5f3e5ffb2fb8",
+      "target_node_id": "afa392b6-1228-42e8-8f83-2d6974e9a168",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "2318144a-2efc-4160-bcb5-cc2757996781",
+      "source_node_id": "0c91f27a-6a26-4fc3-a02b-eacd72868c28",
+      "target_node_id": "afa392b6-1228-42e8-8f83-2d6974e9a168",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "a8e94f15-25dc-4dbe-aa38-3cfc66fc7d91",
+      "source_node_id": "285ed4dd-4b3d-44e1-bb60-c6c1848f48f0",
+      "target_node_id": "afa392b6-1228-42e8-8f83-2d6974e9a168",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "73a6be8c-40d9-47bb-8f2b-52aa747712d5",
+      "source_node_id": "6b947e15-a3a7-4647-b81f-5fd47109272a",
+      "target_node_id": "afa392b6-1228-42e8-8f83-2d6974e9a168",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "635bab3f-aecf-485d-b502-aecf97dc88bc",
+      "source_node_id": "46cfafab-f5e8-4d6b-b3a2-5f3e5ffb2fb8",
+      "target_node_id": "2a235bc5-0987-4bee-9b9b-20602e612f5b",
+      "relationship_type": "extends"
+    }
+  ]
+}

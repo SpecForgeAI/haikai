@@ -1,0 +1,379 @@
+/**
+ * FindingsTab Styles
+ *
+ * Spec 2026-05-16 Discovery Findings -- Task Group 7.2.
+ * Spec 2026-05-28 Bulk Findings Actions -- Task Group 3 adds the bulk
+ * toolbar, segmented scope toggle, action buttons row, and inline status
+ * banner styles at the bottom of this file.
+ * Spec F 2026-06-02 Normalize Findings Review Actions -- status badge classes
+ * re-keyed to the candidate-parity disposition vocabulary
+ * (approved / rejected / deferred / pending_review); the legacy resolved /
+ * needs_review / accepted / ignored badge classes are retired.
+ *
+ * Mirrors the visual rhythm of the surrounding Discovery surface
+ * (cards, badges, light section borders). Severity / status colour
+ * tokens follow the conventional traffic-light palette used by other
+ * dashboard surfaces.
+ */
+
+.findingsTab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summaryStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.summaryPill {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  min-width: 100px;
+}
+
+.summaryPillLabel {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summaryPillValue {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.summaryPillAlert {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.summaryPillAlert .summaryPillValue {
+  color: #b91c1c;
+}
+
+.filterStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.filterControl {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filterLabel {
+  font-size: 11px;
+  color: #475569;
+}
+
+.filterSelect, .filterInput {
+  padding: 4px 6px;
+  font-size: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  min-width: 110px;
+}
+
+.filterClearButton {
+  align-self: flex-end;
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.filterClearButton:hover {
+  background: #f1f5f9;
+}
+
+.tableSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table th, .table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.table th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.row {
+  cursor: pointer;
+}
+
+.row:hover {
+  background: #f8fafc;
+}
+
+.severityGroupHeader {
+  background: #eef2f7;
+  font-weight: 600;
+  color: #1f2937;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.severityGroupHeader td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.categoryGroupHeader {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.categoryGroupHeader td {
+  padding: 4px 8px 4px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.badgeSeverityCritical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badgeSeverityHigh {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.badgeSeverityMedium {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.badgeSeverityLow {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badgeSeverityInfo {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badgeStatusApproved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badgeStatusRejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badgeStatusDeferred {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.badgeStatusPendingReview {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.truncate {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.emptyState {
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+}
+
+.loadingState {
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+}
+
+.errorMessage {
+  padding: 8px 12px;
+  border: 1px solid #fecaca;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.confidenceCell {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * ============================================================================
+ * Bulk actions toolbar (Spec 2026-05-28 Task Group 3)
+ * ============================================================================
+ */
+
+.bulkToolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.bulkToolbarRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.bulkScopeLabel {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.bulkScopeToggle {
+  display: inline-flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.bulkScopeToggleButton {
+  background: transparent;
+  border: none;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  border-right: 1px solid #cbd5e1;
+}
+
+.bulkScopeToggleButton:last-child {
+  border-right: none;
+}
+
+.bulkScopeToggleButton:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.bulkScopeToggleButton:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+}
+
+.bulkScopeToggleButtonActive {
+  background: #2563eb;
+  color: white;
+}
+
+.bulkScopeToggleButtonActive:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.bulkActionButton {
+  background: white;
+  border: 1px solid #cbd5e1;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #1f2937;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.bulkActionButton:hover:not(:disabled) {
+  background: #e2e8f0;
+}
+
+.bulkActionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: #f8fafc;
+}
+
+/*
+ * Inline status banner (Q11 -- no toast library). Auto-dismisses after
+ * ~5s OR on next filter change; rendered immediately below the bulk
+ * toolbar.
+ */
+
+.bulkBanner {
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+}
+
+.bulkBannerSuccess {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.bulkBannerError {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #b91c1c;
+}

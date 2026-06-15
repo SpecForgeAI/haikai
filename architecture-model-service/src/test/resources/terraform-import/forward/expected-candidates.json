@@ -1,0 +1,735 @@
+{
+  "iac_source" : {
+    "provider" : "GCP",
+    "repository_url" : "https://example.com/fixture.git",
+    "branch" : "main",
+    "commit_sha" : "abc123",
+    "path" : "infra/",
+    "workspace" : "prod"
+  },
+  "will_create" : [ {
+    "candidate_id" : "create-0",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "format" : "DOCKER",
+      "location" : "var.region",
+      "name" : "fixture-repo",
+      "provider_resource_type" : "ARTIFACT_REGISTRY"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_artifact_registry_repository.fixture_repo",
+      "iac_resource_type" : "google_artifact_registry_repository",
+      "iac_resource_name" : "fixture_repo",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 124,
+      "end_line" : 128,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "location ref `var.region` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 124,
+      "end_line" : 128,
+      "raw_snippet" : "resource \"google_artifact_registry_repository\" \"fixture_repo\" {\n  repository_id = \"fixture-repo\"\n  location      = var.region\n  format        = \"DOCKER\"\n}",
+      "unresolved_expression_text" : "location=var.region"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-1",
+    "target_entity_type" : "ComputeResource",
+    "proposed_entity_fields" : {
+      "compute_type" : "CLOUD_RUN_SERVICE",
+      "image" : "gcr.io/fixture-project/api:latest",
+      "location" : "var.region",
+      "name" : "fixture-run",
+      "provider_resource_type" : "CLOUD_RUN_SERVICE"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloud_run_v2_service.fixture_run",
+      "iac_resource_type" : "google_cloud_run_v2_service",
+      "iac_resource_name" : "fixture_run",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 62,
+      "end_line" : 70,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "location ref `var.region` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 62,
+      "end_line" : 70,
+      "raw_snippet" : "resource \"google_cloud_run_v2_service\" \"fixture_run\" {\n  name     = \"fixture-run\"\n  location = var.region\n  template {\n    containers {\n      image = \"gcr.io/fixture-project/api:latest\"\n    }\n  }\n}",
+      "unresolved_expression_text" : "location=var.region"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-2",
+    "target_entity_type" : "ComputeCluster",
+    "proposed_entity_fields" : {
+      "implicit" : true,
+      "name" : "cloud-run-cluster",
+      "platform_type" : "CLOUD_RUN",
+      "provider_resource_type" : "CLOUD_RUN"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloud_run_v2_service.fixture_run_cluster",
+      "iac_resource_type" : "implicit_cloud_run_cluster",
+      "iac_resource_name" : "fixture_run_cluster",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 62,
+      "end_line" : 70,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "implicit ComputeCluster (CLOUD_RUN) inferred from Cloud Run service 'fixture-run'" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 62,
+      "end_line" : 70,
+      "raw_snippet" : "resource \"google_cloud_run_v2_service\" \"fixture_run\" {\n  name     = \"fixture-run\"\n  location = var.region\n  template {\n    containers {\n      image = \"gcr.io/fixture-project/api:latest\"\n    }\n  }\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-3",
+    "target_entity_type" : "DeploymentUnit",
+    "proposed_entity_fields" : {
+      "image" : "gcr.io/fixture-project/api:latest",
+      "name" : "fixture-run-deployment-unit",
+      "parent_compute_resource_address" : "google_cloud_run_v2_service.fixture_run"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloud_run_v2_service.fixture_run_du",
+      "iac_resource_type" : "deployment_unit",
+      "iac_resource_name" : "fixture_run_du",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 62,
+      "end_line" : 70,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "DeploymentUnit inferred from container image; relationship 'Deployment Unit runs on Compute' to parent CR" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 62,
+      "end_line" : 70,
+      "raw_snippet" : "resource \"google_cloud_run_v2_service\" \"fixture_run\" {\n  name     = \"fixture-run\"\n  location = var.region\n  template {\n    containers {\n      image = \"gcr.io/fixture-project/api:latest\"\n    }\n  }\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-4",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "name" : "fixture-scheduler",
+      "provider_resource_type" : "SCHEDULER",
+      "schedule" : "local.scheduler_cron",
+      "target_uri" : "https://example.com/cron"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloud_scheduler_job.fixture_scheduler",
+      "iac_resource_type" : "google_cloud_scheduler_job",
+      "iac_resource_name" : "fixture_scheduler",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 115,
+      "end_line" : 122,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "schedule ref `local.scheduler_cron` unresolved", "region ref `var.region` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 115,
+      "end_line" : 122,
+      "raw_snippet" : "resource \"google_cloud_scheduler_job\" \"fixture_scheduler\" {\n  name     = \"fixture-scheduler\"\n  schedule = local.scheduler_cron\n  region   = var.region\n  http_target {\n    uri = \"https://example.com/cron\"\n  }\n}",
+      "unresolved_expression_text" : "schedule=local.scheduler_cron; region=var.region"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-5",
+    "target_entity_type" : "ComputeResource",
+    "proposed_entity_fields" : {
+      "compute_type" : "FUNCTION",
+      "location" : "var.region",
+      "name" : "fixture-fn",
+      "provider_resource_type" : "FUNCTION",
+      "source" : "gs://fixture-bucket/fn.zip"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloudfunctions2_function.fixture_fn",
+      "iac_resource_type" : "google_cloudfunctions2_function",
+      "iac_resource_name" : "fixture_fn",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 72,
+      "end_line" : 78,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "location ref `var.region` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 72,
+      "end_line" : 78,
+      "raw_snippet" : "resource \"google_cloudfunctions2_function\" \"fixture_fn\" {\n  name     = \"fixture-fn\"\n  location = var.region\n  build_config {\n    source = \"gs://fixture-bucket/fn.zip\"\n  }\n}",
+      "unresolved_expression_text" : "location=var.region"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-6",
+    "target_entity_type" : "ComputeCluster",
+    "proposed_entity_fields" : {
+      "implicit" : true,
+      "name" : "cloud-functions-cluster",
+      "platform_type" : "CLOUD_FUNCTIONS",
+      "provider_resource_type" : "CLOUD_FUNCTIONS"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloudfunctions2_function.fixture_fn_cluster",
+      "iac_resource_type" : "implicit_cloud_functions_cluster",
+      "iac_resource_name" : "fixture_fn_cluster",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 72,
+      "end_line" : 78,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "implicit ComputeCluster (CLOUD_FUNCTIONS) inferred from function 'fixture-fn'" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 72,
+      "end_line" : 78,
+      "raw_snippet" : "resource \"google_cloudfunctions2_function\" \"fixture_fn\" {\n  name     = \"fixture-fn\"\n  location = var.region\n  build_config {\n    source = \"gs://fixture-bucket/fn.zip\"\n  }\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-7",
+    "target_entity_type" : "DeploymentUnit",
+    "proposed_entity_fields" : {
+      "name" : "fixture-fn-deployment-unit",
+      "parent_compute_resource_address" : "google_cloudfunctions2_function.fixture_fn",
+      "source" : "gs://fixture-bucket/fn.zip"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_cloudfunctions2_function.fixture_fn_du",
+      "iac_resource_type" : "deployment_unit",
+      "iac_resource_name" : "fixture_fn_du",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 72,
+      "end_line" : 78,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "DeploymentUnit inferred from function source; relationship 'Deployment Unit runs on Compute' to parent CR" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 72,
+      "end_line" : 78,
+      "raw_snippet" : "resource \"google_cloudfunctions2_function\" \"fixture_fn\" {\n  name     = \"fixture-fn\"\n  location = var.region\n  build_config {\n    source = \"gs://fixture-bucket/fn.zip\"\n  }\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-8",
+    "target_entity_type" : "LoadBalancer",
+    "proposed_entity_fields" : {
+      "composite_component_addresses" : [ "google_compute_global_forwarding_rule.fixture_lb_fwd", "google_compute_target_https_proxy.fixture_lb_proxy", "google_compute_url_map.fixture_lb_urlmap", "google_compute_backend_service.fixture_lb_backend", "google_compute_network_endpoint_group.fixture_lb_neg" ],
+      "exposure" : "HTTPS",
+      "name" : "fixture-lb-fwd",
+      "port" : "443"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_compute_global_forwarding_rule.fixture_lb_fwd",
+      "iac_resource_type" : "google_compute_global_forwarding_rule",
+      "iac_resource_name" : "fixture_lb_fwd",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 147,
+      "end_line" : 151,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "composite LB grouped from 5 components: google_compute_global_forwarding_rule.fixture_lb_fwd, google_compute_target_https_proxy.fixture_lb_proxy, google_compute_url_map.fixture_lb_urlmap, google_compute_backend_service.fixture_lb_backend, google_compute_network_endpoint_group.fixture_lb_neg" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 147,
+      "end_line" : 151,
+      "raw_snippet" : "resource \"google_compute_global_forwarding_rule\" \"fixture_lb_fwd\" {\n  name       = \"fixture-lb-fwd\"\n  target     = google_compute_target_https_proxy.fixture_lb_proxy.id\n  port_range = \"443\"\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-9",
+    "target_entity_type" : "ComputeResource",
+    "proposed_entity_fields" : {
+      "compute_type" : "VM",
+      "machine_type" : "var.instance_size",
+      "name" : "fixture-vm",
+      "provider_resource_type" : "VM",
+      "zone" : "europe-west1-b"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_compute_instance.fixture_vm",
+      "iac_resource_type" : "google_compute_instance",
+      "iac_resource_name" : "fixture_vm",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 56,
+      "end_line" : 60,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "machine_type ref `var.instance_size` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 56,
+      "end_line" : 60,
+      "raw_snippet" : "resource \"google_compute_instance\" \"fixture_vm\" {\n  name         = \"fixture-vm\"\n  machine_type = var.instance_size\n  zone         = \"europe-west1-b\"\n}",
+      "unresolved_expression_text" : "machine_type=var.instance_size"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-10",
+    "target_entity_type" : "Network",
+    "proposed_entity_fields" : {
+      "description" : "VPC for fixture",
+      "name" : "fixture-vpc",
+      "routing_mode" : "REGIONAL"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_compute_network.fixture_vpc",
+      "iac_resource_type" : "google_compute_network",
+      "iac_resource_name" : "fixture_vpc",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 35,
+      "end_line" : 40,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 35,
+      "end_line" : 40,
+      "raw_snippet" : "resource \"google_compute_network\" \"fixture_vpc\" {\n  name                    = \"fixture-vpc\"\n  description             = \"VPC for fixture\"\n  routing_mode            = \"REGIONAL\"\n  auto_create_subnetworks = false\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-11",
+    "target_entity_type" : "Subnet",
+    "proposed_entity_fields" : {
+      "cidr" : "10.0.1.0/24",
+      "name" : "fixture-subnet",
+      "network_ref" : "google_compute_network.fixture_vpc.id",
+      "region" : "var.region"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_compute_subnetwork.fixture_subnet",
+      "iac_resource_type" : "google_compute_subnetwork",
+      "iac_resource_name" : "fixture_subnet",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 42,
+      "end_line" : 47,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "region ref `var.region` unresolved", "network ref `google_compute_network.fixture_vpc.id` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 42,
+      "end_line" : 47,
+      "raw_snippet" : "resource \"google_compute_subnetwork\" \"fixture_subnet\" {\n  name          = \"fixture-subnet\"\n  ip_cidr_range = \"10.0.1.0/24\"\n  region        = var.region\n  network       = google_compute_network.fixture_vpc.id\n}",
+      "unresolved_expression_text" : "region=var.region; network=google_compute_network.fixture_vpc.id"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-12",
+    "target_entity_type" : "Listener",
+    "proposed_entity_fields" : {
+      "name" : "fixture-lb-fwd-listener",
+      "port" : "443",
+      "protocol" : "HTTPS"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_compute_url_map.fixture_lb_urlmap",
+      "iac_resource_type" : "google_compute_url_map",
+      "iac_resource_name" : "fixture_lb_urlmap",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 137,
+      "end_line" : 140,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "composite LB Listener inferred from URL map + target proxy + forwarding rule" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 137,
+      "end_line" : 140,
+      "raw_snippet" : "resource \"google_compute_url_map\" \"fixture_lb_urlmap\" {\n  name            = \"fixture-lb-urlmap\"\n  default_service = google_compute_backend_service.fixture_lb_backend.id\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-13",
+    "target_entity_type" : "ComputeCluster",
+    "proposed_entity_fields" : {
+      "location" : "var.region",
+      "name" : "fixture-gke",
+      "network_ref" : "google_compute_network.fixture_vpc.id",
+      "platform_type" : "KUBERNETES",
+      "provider_resource_type" : "KUBERNETES"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_container_cluster.fixture_gke",
+      "iac_resource_type" : "google_container_cluster",
+      "iac_resource_name" : "fixture_gke",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 49,
+      "end_line" : 54,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "location ref `var.region` unresolved", "network ref `google_compute_network.fixture_vpc.id` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 49,
+      "end_line" : 54,
+      "raw_snippet" : "resource \"google_container_cluster\" \"fixture_gke\" {\n  name     = \"fixture-gke\"\n  location = var.region\n  network  = google_compute_network.fixture_vpc.id\n  initial_node_count = 1\n}",
+      "unresolved_expression_text" : "location=var.region; network=google_compute_network.fixture_vpc.id"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-14",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "name" : "fixture-subscription",
+      "provider_resource_type" : "MESSAGE_QUEUE",
+      "topic_ref" : "google_pubsub_topic.fixture_topic.id"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_pubsub_subscription.fixture_subscription",
+      "iac_resource_type" : "google_pubsub_subscription",
+      "iac_resource_name" : "fixture_subscription",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 106,
+      "end_line" : 109,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "topic ref `google_pubsub_topic.fixture_topic.id` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 106,
+      "end_line" : 109,
+      "raw_snippet" : "resource \"google_pubsub_subscription\" \"fixture_subscription\" {\n  name  = \"fixture-subscription\"\n  topic = google_pubsub_topic.fixture_topic.id\n}",
+      "unresolved_expression_text" : "topic=google_pubsub_topic.fixture_topic.id"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-15",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "name" : "fixture-topic",
+      "provider_resource_type" : "MESSAGE_TOPIC"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_pubsub_topic.fixture_topic",
+      "iac_resource_type" : "google_pubsub_topic",
+      "iac_resource_name" : "fixture_topic",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 102,
+      "end_line" : 104,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 102,
+      "end_line" : 104,
+      "raw_snippet" : "resource \"google_pubsub_topic\" \"fixture_topic\" {\n  name = \"fixture-topic\"\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-16",
+    "target_entity_type" : "DataStoreInstance",
+    "proposed_entity_fields" : {
+      "engine" : "REDIS",
+      "engine_class" : "CACHE",
+      "memory_size_gb" : 1,
+      "name" : "fixture-cache",
+      "region" : "var.region",
+      "tier" : "BASIC"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_redis_instance.fixture_cache",
+      "iac_resource_type" : "google_redis_instance",
+      "iac_resource_name" : "fixture_cache",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 89,
+      "end_line" : 94,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "region ref `var.region` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 89,
+      "end_line" : 94,
+      "raw_snippet" : "resource \"google_redis_instance\" \"fixture_cache\" {\n  name           = \"fixture-cache\"\n  tier           = \"BASIC\"\n  memory_size_gb = 1\n  region         = var.region\n}",
+      "unresolved_expression_text" : "region=var.region"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-17",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "name" : "fixture-secret",
+      "provider_resource_type" : "SECRET_STORE"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_secret_manager_secret.fixture_secret",
+      "iac_resource_type" : "google_secret_manager_secret",
+      "iac_resource_name" : "fixture_secret",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 111,
+      "end_line" : 113,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "secret values are never imported (filtered at field-extraction time)" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 111,
+      "end_line" : 113,
+      "raw_snippet" : "resource \"google_secret_manager_secret\" \"fixture_secret\" {\n  secret_id = \"fixture-secret\"\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-18",
+    "target_entity_type" : "DataStoreInstance",
+    "proposed_entity_fields" : {
+      "database_version" : "POSTGRES_15",
+      "engine_class" : "RELATIONAL",
+      "name" : "fixture-db",
+      "region" : "var.region"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_sql_database_instance.fixture_db",
+      "iac_resource_type" : "google_sql_database_instance",
+      "iac_resource_name" : "fixture_db",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 80,
+      "end_line" : 87,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "region ref `var.region` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 80,
+      "end_line" : 87,
+      "raw_snippet" : "resource \"google_sql_database_instance\" \"fixture_db\" {\n  name             = \"fixture-db\"\n  database_version = \"POSTGRES_15\"\n  region           = var.region\n  settings {\n    tier = \"db-f1-micro\"\n  }\n}",
+      "unresolved_expression_text" : "region=var.region"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-19",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "location" : "EU",
+      "name" : "fixture-bucket",
+      "provider_resource_type" : "OBJECT_BUCKET",
+      "storage_class" : "local.bucket_storage_class"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_storage_bucket.fixture_bucket",
+      "iac_resource_type" : "google_storage_bucket",
+      "iac_resource_name" : "fixture_bucket",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 96,
+      "end_line" : 100,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "storage_class ref `local.bucket_storage_class` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 96,
+      "end_line" : 100,
+      "raw_snippet" : "resource \"google_storage_bucket\" \"fixture_bucket\" {\n  name          = \"fixture-bucket\"\n  location      = \"EU\"\n  storage_class = local.bucket_storage_class\n}",
+      "unresolved_expression_text" : "storage_class=local.bucket_storage_class"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-20",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "location" : "EU",
+      "name" : "var.unset_value",
+      "provider_resource_type" : "OBJECT_BUCKET"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_storage_bucket.fixture_unset_ref_bucket",
+      "iac_resource_type" : "google_storage_bucket",
+      "iac_resource_name" : "fixture_unset_ref_bucket",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 175,
+      "end_line" : 178,
+      "external_id" : null,
+      "confidence" : 0.600
+    },
+    "confidence" : 0.600,
+    "per_candidate_warnings" : [ "name ref `var.unset_value` unresolved" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 175,
+      "end_line" : 178,
+      "raw_snippet" : "resource \"google_storage_bucket\" \"fixture_unset_ref_bucket\" {\n  name     = var.unset_value\n  location = \"EU\"\n}",
+      "unresolved_expression_text" : "name=var.unset_value"
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-21",
+    "target_entity_type" : "InfrastructureResource",
+    "proposed_entity_fields" : {
+      "location" : "EU",
+      "name" : "module-bucket",
+      "provider_resource_type" : "OBJECT_BUCKET"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_storage_bucket.module_bucket",
+      "iac_resource_type" : "google_storage_bucket",
+      "iac_resource_name" : "module_bucket",
+      "provider" : "GCP",
+      "file_path" : "modules/m/main.tf",
+      "start_line" : 2,
+      "end_line" : 5,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ ],
+    "evidence" : {
+      "file_path" : "modules/m/main.tf",
+      "start_line" : 2,
+      "end_line" : 5,
+      "raw_snippet" : "resource \"google_storage_bucket\" \"module_bucket\" {\n  name     = \"module-bucket\"\n  location = \"EU\"\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  }, {
+    "candidate_id" : "create-22",
+    "target_entity_type" : "CloudAccount",
+    "proposed_entity_fields" : {
+      "external_id" : "fixture-project",
+      "inferred" : true,
+      "name" : "fixture-project",
+      "provider" : "GCP"
+    },
+    "proposed_binding" : {
+      "iac_address" : "inferred_cloud_account.fixture-project",
+      "iac_resource_type" : "inferred_cloud_account",
+      "iac_resource_name" : "fixture-project",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 29,
+      "end_line" : 32,
+      "external_id" : null,
+      "confidence" : 0.900
+    },
+    "confidence" : 0.900,
+    "per_candidate_warnings" : [ "CloudAccount inferred from provider/project block" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 29,
+      "end_line" : 32,
+      "raw_snippet" : null,
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  } ],
+  "will_update" : [ ],
+  "unsupported" : [ {
+    "candidate_id" : "unsupported-0",
+    "target_entity_type" : "Unsupported",
+    "proposed_entity_fields" : {
+      "name" : "fixture-fw",
+      "network" : "google_compute_network.fixture_vpc.id",
+      "resource_name" : "fixture_fw",
+      "resource_type" : "google_compute_firewall"
+    },
+    "proposed_binding" : {
+      "iac_address" : "google_compute_firewall.fixture_fw",
+      "iac_resource_type" : "google_compute_firewall",
+      "iac_resource_name" : "fixture_fw",
+      "provider" : "GCP",
+      "file_path" : "input.tf",
+      "start_line" : 160,
+      "end_line" : 167,
+      "external_id" : null,
+      "confidence" : 0.300
+    },
+    "confidence" : 0.300,
+    "per_candidate_warnings" : [ "unsupported resource type: google_compute_firewall; preserved as TODO" ],
+    "evidence" : {
+      "file_path" : "input.tf",
+      "start_line" : 160,
+      "end_line" : 167,
+      "raw_snippet" : "resource \"google_compute_firewall\" \"fixture_fw\" {\n  name    = \"fixture-fw\"\n  network = google_compute_network.fixture_vpc.id\n  allow {\n    protocol = \"tcp\"\n    ports    = [\"22\"]\n  }\n}",
+      "unresolved_expression_text" : null
+    },
+    "ignored" : false
+  } ],
+  "warnings" : [ "inferred relationship: DeploymentUnitRunsOnCompute (<uuid> -> <uuid>)", "inferred relationship: DeploymentUnitRunsOnCompute (<uuid> -> <uuid>)", "unsupported resource type: google_compute_firewall; preserved as TODO at input.tf:160" ],
+  "summary" : {
+    "will_create_count" : 23,
+    "will_update_count" : 0,
+    "unsupported_count" : 1,
+    "total_warnings_count" : 27
+  }
+}

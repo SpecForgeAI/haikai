@@ -1,0 +1,111 @@
+{
+  "threadKey": "project:8aba6fec-0803-423b-a266-307b2b93f8da:hub",
+  "projectId": "8aba6fec-0803-423b-a266-307b2b93f8da",
+  "messages": [
+    {
+      "id": "58e18ebb-2a0e-4091-aaeb-52c729789589",
+      "role": "user",
+      "personaId": null,
+      "taskId": "assistant--whats-next",
+      "content": "what do I need to do next?",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T17:28:25.114Z"
+    },
+    {
+      "id": "10909a6e-856a-4d2a-b2a4-a97543b7b008",
+      "role": "assistant",
+      "personaId": "assistant",
+      "taskId": "assistant--whats-next",
+      "content": "I can help you pick the right next step, but I need to know what you already have. Quick check: which of these are done?\n\n- Product mission/problem statement\n- Architecture baseline (services, interfaces, data model)\n- Roadmap (initiatives/epics)\n- Prioritized backlog with acceptance criteria\n- UX flows/wireframes\n- Test strategy (QA approach, automation plan)\n- Any API/interface specs (OpenAPI)\n\nBased on where you are, here’s the most logical progression (pick the first missing item):\n\n1) If no mission: route to Product Strategist to draft a crisp mission and success metrics.\n2) If mission is set but no architecture: route to Solution Architect to baseline services, data entities, and interfaces.\n3) If architecture exists but no roadmap: route to Roadmap Planner to structure initiatives and epics.\n4) If roadmap exists but no backlog: route to Delivery Planner to create and groom backlog items with acceptance criteria.\n5) If backlog exists but no UX: route to UX Lead for key flows and low-fidelity wireframes.\n6) If UX/backlog are ready but no test plan: route to QA Lead to define test strategy and automation scope.\n7) If APIs are defined in the architecture: route to API Engineer to generate OpenAPI specs for top-priority interfaces.\n8) If all above are set: route to Engineering Lead for a sprint plan and CI/CD setup.\n\nTell me which boxes you can check, and I’ll route you to the right specialist and set up the next work item immediately. If you already have an architecture model file and want to generate an OpenAPI next, share the filename and target interface ID.",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T17:28:25.124Z"
+    },
+    {
+      "id": "a06f59ce-dea5-4d9e-b103-da60760e0f2d",
+      "role": "system",
+      "personaId": null,
+      "taskId": null,
+      "content": "Switched to Product Manager",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T17:35:31.459Z"
+    },
+    {
+      "id": "bb8c0bf2-4a92-42bd-b68c-1fb364b5292c",
+      "role": "system",
+      "personaId": null,
+      "taskId": null,
+      "content": "Switched to Architect",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T17:37:12.859Z"
+    },
+    {
+      "id": "567d538c-f4ff-4fec-8fd4-ad20376555ac",
+      "role": "system",
+      "personaId": null,
+      "taskId": null,
+      "content": "Switched to Test Engineer",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T17:37:31.157Z"
+    },
+    {
+      "id": "2196faab-38f1-4136-8798-9f34af880daa",
+      "role": "system",
+      "personaId": null,
+      "taskId": null,
+      "content": "Switched to UX Designer",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T17:38:07.670Z"
+    },
+    {
+      "id": "c42c792e-bff4-40b4-9ccf-083bae359fca",
+      "role": "system",
+      "personaId": null,
+      "taskId": null,
+      "content": "Switched to Software Developer",
+      "structuredResponse": null,
+      "timestamp": "2026-03-02T22:10:21.751Z"
+    },
+    {
+      "id": "cc187268-6d14-4166-8d44-79a4e166184e",
+      "role": "system",
+      "personaId": null,
+      "taskId": null,
+      "content": "Switched to Product Manager",
+      "structuredResponse": null,
+      "timestamp": "2026-03-03T13:06:33.525Z"
+    },
+    {
+      "id": "0ce4e370-daa2-4052-adac-c0b77bdb419b",
+      "role": "user",
+      "personaId": null,
+      "taskId": "product-manager--define-product",
+      "content": "@Product Manager",
+      "structuredResponse": null,
+      "timestamp": "2026-03-03T13:06:53.105Z"
+    },
+    {
+      "id": "e16a3956-f258-4c6f-aa58-0eba08d51d6c",
+      "role": "assistant",
+      "personaId": "product-manager",
+      "taskId": "product-manager--define-product",
+      "content": "{\n  \"phase\": \"questions\",\n  \"questions\": [\n    \"What is the project or product name (or working title)?\",\n    \"Is this a new product or an enhancement to an existing one?\",\n    \"Do you have any existing documentation (PRD, brief, pitch deck) you can share or summarize?\",\n    \"In one sentence, what core problem are you trying to solve?\"\n  ],\n  \"summary\": \"Kicking off discovery. I need the product identity (name, new vs. existing), any existing docs, and the core problem to advise next steps and progress toward a MISSION.MD.\"\n}",
+      "structuredResponse": {
+        "phase": "questions",
+        "questions": [
+          "What is the project or product name (or working title)?",
+          "Is this a new product or an enhancement to an existing one?",
+          "Do you have any existing documentation (PRD, brief, pitch deck) you can share or summarize?",
+          "In one sentence, what core problem are you trying to solve?"
+        ],
+        "summary": "Kicking off discovery. I need the product identity (name, new vs. existing), any existing docs, and the core problem to advise next steps and progress toward a MISSION.MD."
+      },
+      "timestamp": "2026-03-03T13:06:53.113Z"
+    }
+  ],
+  "activePersonaId": null,
+  "activeTaskId": null,
+  "summary": null,
+  "summarisedUpToIndex": 0,
+  "createdAt": "2026-03-02T17:27:38.189Z",
+  "updatedAt": "2026-03-03T13:06:53.137Z"
+}

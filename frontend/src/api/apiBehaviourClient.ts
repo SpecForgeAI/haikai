@@ -1,0 +1,1760 @@
+/**
+ * API Behaviour Capture API Client
+ *
+ * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 7
+ *
+ * Frontend client for the capture-baseline feature. Talks to the gateway,
+ * which proxies AMS-direct CRUD for the seven `api_behaviour_*` resources
+ * AND the six action endpoints on the new `api-migration-validation-service`
+ * (port 8092). The LLM tool-loop relay endpoint is NOT called from the
+ * frontend -- only the new microservice consumes it.
+ *
+ * URL shape (all routes URL-safed by `:projectId` + `:architectureId`):
+ *   - AMS CRUD:
+ *       /api/v1/projects/:projectId/architectures/:architectureId/
+ *         api-behaviour/<resource>[/<id>]
+ *   - Actions:
+ *       /api/v1/projects/:projectId/architectures/:architectureId/
+ *         api-behaviour/capture-sessions/:sessionId/<action>
+ *
+ * Per-spec constraints honoured here:
+ *   - All numeric/boolean PATCH-mutable fields typed as `number | null` /
+ *     `boolean | null` so an explicit `null` round-trips the wire as JSON
+ *     null and the AMS PATCH handler's null-guard skips the field.
+ *   - JSONB fields typed as `Record<string, unknown> | null`.
+ *   - Snake_case field names match the AMS Jackson SNAKE_CASE serialiser.
+ *   - No `/rerun` surface anywhere -- explicitly out of v1.
+ */
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Gateway base URL from env. Defaults to empty string (same origin) for the
+ * Vite dev proxy. Mirrors `discoveryApi.ts` and `architecturesApi.ts`.
+ */
+const GATEWAY_BASE = import.meta.env.VITE_GATEWAY_BASE_URL ?? '';
+
+// ============================================================================
+// Typed error
+// ============================================================================
+
+export interface ApiBehaviourErrorBody {
+  code?: string | number;
+  message?: string;
+  details?: string;
+  [k: string]: unknown;
+}
+
+/**
+ * Typed error class thrown on non-2xx responses. Modal callers branch on
+ * `error.status` and `error.body.code` to render inline messages.
+ */
+export class ApiBehaviourApiError extends Error {
+  readonly status: number;
+  readonly body: ApiBehaviourErrorBody;
+
+  constructor(status: number, body: ApiBehaviourErrorBody, message?: string) {
+    super(message ?? body.message ?? `API behaviour API error (status ${status})`);
+    this.name = 'ApiBehaviourApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
+async function parseErrorBody(res: Response): Promise<ApiBehaviourErrorBody> {
+  try {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      // Parse as `unknown` and narrow explicitly. Some endpoints wrap the
+      // payload as `{ error: {...} }`; others return the body directly. The
+      // `ApiBehaviourErrorBody` index signature `[k: string]: unknown` means
+      // `body.error` is typed as `unknown` after key narrowing, so the
+      // assignment must go through an explicit cast.
+      const parsed = (await res.json()) as unknown;
+      if (parsed && typeof parsed === 'object') {
+        const obj = parsed as Record<string, unknown>;
+        const wrapped = obj.error;
+        if (wrapped && typeof wrapped === 'object') {
+          return wrapped as ApiBehaviourErrorBody;
+        }
+        return obj as ApiBehaviourErrorBody;
+      }
+      return { message: res.statusText };
+    }
+    const text = await res.text();
+    return { message: text || res.statusText };
+  } catch {
+    return { message: res.statusText };
+  }
+}
+
+// ============================================================================
+// DTOs (snake_case — matches AMS Jackson SNAKE_CASE)
+// ============================================================================
+
+export type CaptureSessionStatus =
+  | 'draft'
+  | 'configured'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface ApiBehaviourCaptureSessionDto {
+  id: string;
+  project_id: string;
+  architecture_id: string;
+  name: string | null;
+  status: CaptureSessionStatus | string;
+  environment_name: string | null;
+  api_base_url: string | null;
+  auth_type: string | null;
+  auth_config_redacted_json: Record<string, unknown> | null;
+  default_headers_redacted_json: Record<string, unknown> | null;
+  oas_spec_refs_json: Record<string, unknown> | null;
+  db_config_redacted_json: Record<string, unknown> | null;
+  mutating_calls_confirmed: boolean | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  /**
+   * Per-run scenario outcome tallies (AMS changeset 171, misleading-COMPLETED
+   * fix). A session is `completed` whenever there is no INFRASTRUCTURE error —
+   * every scenario can have errored with zero captures. Null/absent = "counts
+   * not recorded" (legacy rows / pre-fix runners). The detail view renders
+   * "N of M scenarios captured" and warns when a completed run captured nothing.
+   */
+  scenarios_attempted?: number | null;
+  scenarios_completed?: number | null;
+  scenarios_errored?: number | null;
+  created_at: string;
+  updated_at: string;
+  /**
+   * Discriminator added by Spec 2026-05-25 (API Test Harness -- Target-Side
+   * Capture). `'current'` for current-state capture sessions (default for
+   * legacy rows via the DB column DEFAULT); `'target'` for replay sessions
+   * created via `POST /target-capture-sessions`. Optional on the wire so
+   * unaware callers continue to compile against the legacy DTO shape.
+   */
+  kind?: 'current' | 'target' | null;
+  /**
+   * FK pairing field. Set only when `kind === 'target'`; null on current
+   * sessions. Points at the source current-state baseline being replayed.
+   * AMS service-layer validation enforces the FK-pairing invariant.
+   */
+  source_baseline_id?: string | null;
+  /**
+   * Model-Seeded Capture Inventory (Spec 2026-06-11). Persisted interface
+   * scope used by inventory reconciliation. Null/absent = the WHOLE
+   * architecture's endpoint set is in scope -- nothing silently absent.
+   */
+  scope_interface_ids_json?: string[] | null;
+  /**
+   * Start coverage-override audit trio (Spec 2026-06-11). All null when the
+   * session was never overridden at /start -- legacy rows render unchanged.
+   * The count mirrors AMS's boxed Integer so PATCH semantics never wipe it.
+   */
+  coverage_override_justification?: string | null;
+  coverage_override_unaccounted_count?: number | null;
+  coverage_override_at?: string | null;
+}
+
+export interface CreateApiBehaviourCaptureSessionRequest {
+  project_id: string;
+  architecture_id: string;
+  name?: string | null;
+  environment_name?: string | null;
+  api_base_url?: string | null;
+  auth_type?: string | null;
+  auth_config_redacted_json?: Record<string, unknown> | null;
+  default_headers_redacted_json?: Record<string, unknown> | null;
+  oas_spec_refs_json?: Record<string, unknown> | null;
+  db_config_redacted_json?: Record<string, unknown> | null;
+  mutating_calls_confirmed?: boolean | null;
+}
+
+/** PATCH body — every field optional; null preserves the column. */
+export interface UpdateApiBehaviourCaptureSessionRequest {
+  name?: string | null;
+  status?: CaptureSessionStatus | string | null;
+  environment_name?: string | null;
+  api_base_url?: string | null;
+  auth_type?: string | null;
+  auth_config_redacted_json?: Record<string, unknown> | null;
+  default_headers_redacted_json?: Record<string, unknown> | null;
+  oas_spec_refs_json?: Record<string, unknown> | null;
+  db_config_redacted_json?: Record<string, unknown> | null;
+  mutating_calls_confirmed?: boolean | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error_message?: string | null;
+}
+
+export interface ApiBehaviourOperationDto {
+  id: string;
+  session_id: string;
+  operation_id: string | null;
+  method: string | null;
+  path: string | null;
+  summary: string | null;
+  description: string | null;
+  included: boolean | null;
+  safe_to_execute: boolean | null;
+  request_schema_json: Record<string, unknown> | null;
+  response_schema_json: Record<string, unknown> | null;
+  oas_operation_json: Record<string, unknown> | null;
+  /**
+   * Model-Seeded Capture Inventory (Spec 2026-06-11). Non-null iff this row
+   * is an exclusion-with-reason accounting record written by
+   * `account-endpoints` (`included = false`). Persistence IS the accounting
+   * record the /start coverage gate reads -- no extra state exists.
+   */
+  exclusion_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateApiBehaviourOperationRequest {
+  included?: boolean | null;
+  safe_to_execute?: boolean | null;
+  summary?: string | null;
+  description?: string | null;
+}
+
+export interface ApiBehaviourScenarioDto {
+  id: string;
+  session_id: string;
+  operation_id: string;
+  scenario_name: string | null;
+  scenario_type: string | null;
+  status: string | null;
+  generation_source: string | null;
+  request_method: string | null;
+  request_path: string | null;
+  request_query_json: Record<string, unknown> | null;
+  request_headers_redacted_json: Record<string, unknown> | null;
+  request_body_json: Record<string, unknown> | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * PATCH body for a scenario row. The review UX uses this to persist scenario
+ * renames triggered by the "rename scenario" action in `CaptureReviewPanel`.
+ * Every field optional; `null` preserves the AMS column per the boxed-DTO
+ * convention.
+ */
+export interface UpdateApiBehaviourScenarioRequest {
+  scenario_name?: string | null;
+  scenario_type?: string | null;
+  status?: string | null;
+  notes?: string | null;
+}
+
+export interface ApiBehaviourCaptureDto {
+  id: string;
+  session_id: string;
+  scenario_id: string;
+  operation_id: string;
+  attempt_number: number | null;
+  request_method: string | null;
+  request_url_redacted: string | null;
+  request_path: string | null;
+  request_query_json: Record<string, unknown> | null;
+  request_headers_redacted_json: Record<string, unknown> | null;
+  request_body_json: Record<string, unknown> | null;
+  response_status: number | null;
+  response_headers_redacted_json: Record<string, unknown> | null;
+  response_body_json: Record<string, unknown> | null;
+  duration_ms: number | null;
+  error_type: string | null;
+  error_message: string | null;
+  captured_at: string | null;
+  accepted: boolean | null;
+  accepted_at: string | null;
+  reviewer_notes: string | null;
+}
+
+export interface UpdateApiBehaviourCaptureRequest {
+  accepted?: boolean | null;
+  accepted_at?: string | null;
+  reviewer_notes?: string | null;
+}
+
+export interface ApiBehaviourDiagnosticDto {
+  id: string;
+  session_id: string;
+  operation_id: string | null;
+  scenario_id: string | null;
+  diagnostic_type: string | null;
+  message: string | null;
+  detail_json: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export type BaselineStatus = 'draft' | 'active' | 'archived';
+
+export interface ApiBehaviourBaselineDto {
+  id: string;
+  project_id: string;
+  architecture_id: string;
+  session_id: string | null;
+  name: string | null;
+  status: BaselineStatus | string;
+  accepted_capture_count: number | null;
+  operation_count: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  /**
+   * Discriminator added by Spec 2026-05-25 (API Test Harness -- Target-Side
+   * Capture). `'current'` is the default for legacy rows; `'target'`
+   * identifies replay baselines that pair back to a source baseline via
+   * `paired_with_baseline_id`.
+   */
+  kind?: 'current' | 'target' | null;
+  /**
+   * FK pairing field. Set only when `kind === 'target'`; null on current
+   * baselines. Points at the source `kind='current', status='active'`
+   * baseline this target was replayed from.
+   */
+  paired_with_baseline_id?: string | null;
+}
+
+export interface CreateApiBehaviourBaselineRequest {
+  project_id: string;
+  architecture_id: string;
+  session_id?: string | null;
+  name?: string | null;
+  notes?: string | null;
+}
+
+export interface ApiBehaviourBaselineItemDto {
+  id: string;
+  baseline_id: string;
+  capture_id: string;
+  operation_id: string;
+  scenario_id: string;
+  method: string | null;
+  path: string | null;
+  scenario_name: string | null;
+  request_json: Record<string, unknown> | null;
+  response_status: number | null;
+  response_json: Record<string, unknown> | null;
+  business_notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateApiBehaviourBaselineItemRequest {
+  baseline_id: string;
+  capture_id: string;
+  operation_id: string;
+  scenario_id: string;
+  method?: string | null;
+  path?: string | null;
+  scenario_name?: string | null;
+  request_json?: Record<string, unknown> | null;
+  response_status?: number | null;
+  response_json?: Record<string, unknown> | null;
+  business_notes?: string | null;
+}
+
+// ============================================================================
+// Action endpoint payload + response shapes
+// ============================================================================
+
+/** Body for `parse-oas` when selecting `Interface` rows from the architecture. */
+export interface ParseOasRequest {
+  interfaceIds?: string[];
+}
+
+export interface ParseOasResponse {
+  sessionId: string;
+  operationCount: number;
+  mutatingExcluded: number;
+  title: string | null;
+  version: string | null;
+}
+
+// ----------------------------------------------------------------------------
+// Inventory reconciliation wire shapes (Model-Seeded Capture Inventory spec,
+// 2026-06-11, Task Group 4). These mirror the AMS reconciliation endpoint's
+// snake_case payload VERBATIM (single wire contract defined once in AMS; the
+// validation service's `reconcile-inventory` action passes it through
+// untouched). The reconciliation KEY and the endpoint<->operation comparison
+// live ONLY in the AMS Java calculator -- this client (like every TypeScript
+// consumer) only carries the payload, never recomputes it.
+// ----------------------------------------------------------------------------
+
+/** Body for the `reconcile-inventory` action (snake_case, AMS wire). */
+export interface ReconcileInventoryRequest {
+  /**
+   * Explicit scope override. Null/omitted -> the session row's persisted
+   * `scope_interface_ids_json`; when that is also null the WHOLE
+   * architecture's endpoint set is in scope.
+   */
+  scope_interface_ids?: string[] | null;
+  /** True + ids provided -> AMS persists the scope onto the session row. */
+  persist_scope?: boolean;
+  /**
+   * Omitted defaults to TRUE on the AMS side (session-linked reconciliation
+   * findings are refreshed delete-before-emit). Display-only callers (the
+   * baseline coverage figure) pass false explicitly.
+   */
+  refresh_findings?: boolean;
+}
+
+/** In-scope committed endpoint with NO matching operation row (gate blocker). */
+export interface InventoryUnaccountedEndpointRef {
+  endpoint_id: string;
+  interface_id: string | null;
+  key: string;
+  name: string | null;
+  method: string | null;
+  path: string | null;
+  protocol: string | null;
+  soap_action: string | null;
+  request_root_element: string | null;
+}
+
+/** Harness operation the committed model does not know (discovery gap). */
+export interface InventoryOperationWithoutModelEndpointRef {
+  operation_row_id: string;
+  operation_id: string | null;
+  method: string | null;
+  path: string | null;
+  key: string;
+}
+
+/** Endpoint excluded because its interface is outside the scope set. */
+export interface InventoryExcludedByScopeEndpointRef {
+  endpoint_id: string;
+  interface_id: string | null;
+  key: string;
+  name: string | null;
+}
+
+/**
+ * THE wire contract for the feature: the `reconcile-inventory` action
+ * returns this verbatim and every frontend surface renders it without
+ * reshaping. All numerics nullable (AMS boxed-Integer contract).
+ */
+export interface InventoryReconciliationResponse {
+  in_scope_unaccounted_endpoints: InventoryUnaccountedEndpointRef[];
+  operations_without_model_endpoint: InventoryOperationWithoutModelEndpointRef[];
+  excluded_by_scope_endpoints: InventoryExcludedByScopeEndpointRef[];
+  in_scope_coverage_pct: number | null;
+  in_scope_accounted_count: number | null;
+  in_scope_total_count: number | null;
+  architecture_coverage_pct: number | null;
+  architecture_accounted_count: number | null;
+  architecture_total_count: number | null;
+}
+
+/** One bulk item for the `account-endpoints` action. */
+export interface AccountEndpointsRequestItem {
+  endpoint_id: string;
+  action: 'include' | 'exclude';
+  /** REQUIRED (non-empty) when `action === 'exclude'`; 400 otherwise. */
+  reason?: string;
+}
+
+/**
+ * `account-endpoints` response: the created/updated operation rows, so the
+ * wizard can refresh its Step 4 table without a separate list call.
+ */
+export interface AccountEndpointsResponse {
+  sessionId: string;
+  operations: ApiBehaviourOperationDto[];
+}
+
+export interface TestApiConnectionResponse {
+  status: number;
+  durationMs: number;
+}
+
+export interface TestDbConnectionResponse {
+  ok: boolean;
+  message?: string;
+}
+
+/**
+ * Stateless "Test API connection" probe (in-wizard, pre-session).
+ *
+ * Unlike `testApiConnection` (which probes a persisted session using its
+ * in-memory secrets bundle), this variant carries the FULL connection
+ * config in the request body so the capture wizard can validate the API
+ * environment in Step 2 BEFORE any session row exists. The gateway endpoint
+ * `POST /api/v1/projects/:projectId/architectures/:architectureId/
+ * api-behaviour/test-connection` is itself stateless: it fires one probe call
+ * with the supplied baseUrl/auth/headers and returns the result. Secrets are
+ * never persisted -- they live only in this request body for the duration of
+ * the probe.
+ */
+export interface TestApiConnectionStatelessRequest {
+  baseUrl: string;
+  auth: {
+    type: 'none' | 'bearer' | 'basic' | 'header';
+    token?: string;
+    headerName?: string;
+    headerValue?: string;
+    username?: string;
+    password?: string;
+  };
+  defaultHeaders?: { name: string; value: string }[];
+}
+
+export interface TestApiConnectionStatelessResponse {
+  success: boolean;
+  status: number;
+  durationMs: number;
+  error?: string;
+}
+
+/**
+ * Body for `/secrets`. Mirrors the new service's `SecretsBundle` shape;
+ * plaintext fields are typed loosely because the auth shape varies by
+ * `auth_type`. NEVER persisted to AMS — held in process memory only.
+ */
+export interface SubmitSecretsRequest {
+  apiAuth: {
+    type: 'none' | 'bearer' | 'basic' | 'header' | string;
+    token?: string;
+    username?: string;
+    password?: string;
+    headerName?: string;
+    headerValue?: string;
+    [k: string]: unknown;
+  };
+  dbPassword?: string | null;
+  customHeaderSecrets?: Record<string, string>;
+}
+
+// ============================================================================
+// Reviewer-notes encoding convention (Task Group 9)
+// ============================================================================
+
+/**
+ * The `api_behaviour_captures.reviewer_notes` column is `TEXT`. To carry both
+ * the human-typed notes string AND the structured field-mask metadata from
+ * the review UX without adding a new column we encode the combined payload as
+ * a single JSON document:
+ *
+ *   {
+ *     "text": "human notes string",
+ *     "masks": [
+ *       { "path": "response.body.user.email", "label": "PII" },
+ *       { "path": "response.body.token",      "label": "secret" }
+ *     ]
+ *   }
+ *
+ * Notes that pre-date this encoding (or are written by any non-UI caller as
+ * plain text) parse defensively: `parseReviewerNotes` returns the literal
+ * string as `text` and an empty mask list.
+ *
+ * The original redacted JSON on the capture row is never mutated -- masks
+ * are applied at render time only, so the audit trail of what came back from
+ * the upstream API is preserved exactly.
+ */
+export interface FieldMask {
+  /**
+   * Dotted/bracketed path into the rendered request/response JSON tree.
+   * Format mirrors the conventional JSONPath subset (e.g. `body.user.email`
+   * or `headers[0].value`); the renderer matches by exact-string equality
+   * against the path-builder output so the rules are simple and deterministic.
+   */
+  path: string;
+  /** Free-form reviewer label shown alongside the masked placeholder. */
+  label?: string;
+}
+
+export interface ReviewerNotesPayload {
+  text: string;
+  masks: FieldMask[];
+}
+
+const REVIEWER_NOTES_VERSION_SENTINEL = 'masks';
+
+/**
+ * Parse a `reviewer_notes` cell into the structured payload shape. Defensive
+ * against:
+ *   - null / undefined / empty string -> `{ text: '', masks: [] }`
+ *   - legacy plain-text notes -> `{ text: <literal>, masks: [] }`
+ *   - well-formed JSON missing `text` or `masks` -> coerce to the contract
+ *   - malformed JSON -> treat as legacy plain text
+ *
+ * The sentinel is the presence of the literal `"masks"` substring AND a
+ * successful JSON parse with an object root. Any string that starts with a
+ * `{` but doesn't carry that sentinel is treated as legacy text to avoid
+ * accidental capture of user-typed JSON-looking strings.
+ */
+export function parseReviewerNotes(raw: string | null | undefined): ReviewerNotesPayload {
+  if (raw === null || raw === undefined || raw === '') {
+    return { text: '', masks: [] };
+  }
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('{') || !trimmed.includes(REVIEWER_NOTES_VERSION_SENTINEL)) {
+    return { text: raw, masks: [] };
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (!parsed || typeof parsed !== 'object') {
+      return { text: raw, masks: [] };
+    }
+    const obj = parsed as Record<string, unknown>;
+    const text = typeof obj.text === 'string' ? obj.text : '';
+    const masksRaw = Array.isArray(obj.masks) ? obj.masks : [];
+    const masks: FieldMask[] = [];
+    for (const m of masksRaw) {
+      if (!m || typeof m !== 'object') continue;
+      const mo = m as Record<string, unknown>;
+      if (typeof mo.path !== 'string' || mo.path.length === 0) continue;
+      const entry: FieldMask = { path: mo.path };
+      if (typeof mo.label === 'string') entry.label = mo.label;
+      masks.push(entry);
+    }
+    return { text, masks };
+  } catch {
+    return { text: raw, masks: [] };
+  }
+}
+
+/**
+ * Serialise a structured reviewer-notes payload back to the wire string. If
+ * the payload has no masks AND no text we write `null` to clear the column;
+ * if there's text but no masks we still emit the structured wrapper so the
+ * round-trip stays lossless (i.e. once a row is touched by the UI, its
+ * `reviewer_notes` is always JSON from then on).
+ *
+ * Returns `null` for the empty case so callers can pass it straight into the
+ * PATCH body and let the AMS null-guard skip the column on no-op edits.
+ */
+export function serialiseReviewerNotes(
+  payload: ReviewerNotesPayload | null | undefined,
+): string | null {
+  if (!payload) return null;
+  if (!payload.text && payload.masks.length === 0) return null;
+  return JSON.stringify({ text: payload.text, masks: payload.masks });
+}
+
+// ============================================================================
+// Internal URL helpers
+// ============================================================================
+
+function gatewayUrl(
+  projectId: string,
+  architectureId: string,
+  resource: string,
+  resourceId?: string,
+): string {
+  const base =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}/api-behaviour/${resource}`;
+  return resourceId ? `${base}/${encodeURIComponent(resourceId)}` : base;
+}
+
+function actionUrl(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  action: string,
+): string {
+  return (
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}` +
+    `/api-behaviour/capture-sessions/${encodeURIComponent(sessionId)}/${action}`
+  );
+}
+
+async function jsonRequest<T>(
+  url: string,
+  init: RequestInit,
+): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const body = await parseErrorBody(res);
+    throw new ApiBehaviourApiError(res.status, body);
+  }
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    return undefined as unknown as T;
+  }
+  return (await res.json()) as T;
+}
+
+// ============================================================================
+// Capture sessions CRUD
+// ============================================================================
+
+export async function listCaptureSessions(
+  projectId: string,
+  architectureId: string,
+): Promise<ApiBehaviourCaptureSessionDto[]> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto[]>(
+    gatewayUrl(projectId, architectureId, 'capture-sessions'),
+    { method: 'GET' },
+  );
+}
+
+export async function getCaptureSession(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    gatewayUrl(projectId, architectureId, 'capture-sessions', sessionId),
+    { method: 'GET' },
+  );
+}
+
+export async function createCaptureSession(
+  projectId: string,
+  architectureId: string,
+  payload: CreateApiBehaviourCaptureSessionRequest,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    gatewayUrl(projectId, architectureId, 'capture-sessions'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function updateCaptureSession(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  payload: UpdateApiBehaviourCaptureSessionRequest,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    gatewayUrl(projectId, architectureId, 'capture-sessions', sessionId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function deleteCaptureSession(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<void> {
+  await jsonRequest<void>(
+    gatewayUrl(projectId, architectureId, 'capture-sessions', sessionId),
+    { method: 'DELETE' },
+  );
+}
+
+/**
+ * Convenience helper for the secret-loss "Clone configuration" CTA. Issues a
+ * POST against the capture-sessions collection with EVERY redacted field
+ * from `source` pre-filled. The new draft is bound to the SAME project +
+ * architecture as the source; callers can navigate to the returned id to
+ * pick up wizard step 2 with the config already populated.
+ *
+ * Secrets are NEVER copied -- the source's plaintext lived only in process
+ * memory on the new service. The clone always starts with status='draft'
+ * and the reviewer-supplied `name` defaulting to `"<source.name> (clone)"`.
+ */
+export async function cloneCaptureSession(
+  projectId: string,
+  architectureId: string,
+  source: ApiBehaviourCaptureSessionDto,
+  overrides: Partial<CreateApiBehaviourCaptureSessionRequest> = {},
+): Promise<ApiBehaviourCaptureSessionDto> {
+  const payload: CreateApiBehaviourCaptureSessionRequest = {
+    project_id: projectId,
+    architecture_id: architectureId,
+    name: source.name ? `${source.name} (clone)` : null,
+    environment_name: source.environment_name,
+    api_base_url: source.api_base_url,
+    auth_type: source.auth_type,
+    auth_config_redacted_json: source.auth_config_redacted_json,
+    default_headers_redacted_json: source.default_headers_redacted_json,
+    oas_spec_refs_json: source.oas_spec_refs_json,
+    db_config_redacted_json: source.db_config_redacted_json,
+    mutating_calls_confirmed: source.mutating_calls_confirmed,
+    ...overrides,
+  };
+  return createCaptureSession(projectId, architectureId, payload);
+}
+
+// ============================================================================
+// Operations CRUD
+// ============================================================================
+
+export async function listOperations(
+  projectId: string,
+  architectureId: string,
+  sessionId?: string,
+): Promise<ApiBehaviourOperationDto[]> {
+  const base = gatewayUrl(projectId, architectureId, 'operations');
+  const url = sessionId ? `${base}?sessionId=${encodeURIComponent(sessionId)}` : base;
+  return jsonRequest<ApiBehaviourOperationDto[]>(url, { method: 'GET' });
+}
+
+export async function updateOperation(
+  projectId: string,
+  architectureId: string,
+  operationId: string,
+  payload: UpdateApiBehaviourOperationRequest,
+): Promise<ApiBehaviourOperationDto> {
+  return jsonRequest<ApiBehaviourOperationDto>(
+    gatewayUrl(projectId, architectureId, 'operations', operationId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// ============================================================================
+// Scenarios CRUD
+// ============================================================================
+
+export async function listScenarios(
+  projectId: string,
+  architectureId: string,
+  sessionId?: string,
+): Promise<ApiBehaviourScenarioDto[]> {
+  const base = gatewayUrl(projectId, architectureId, 'scenarios');
+  const url = sessionId ? `${base}?sessionId=${encodeURIComponent(sessionId)}` : base;
+  return jsonRequest<ApiBehaviourScenarioDto[]>(url, { method: 'GET' });
+}
+
+/**
+ * PATCH a single scenario row. Used by the review UX (`CaptureReviewPanel`)
+ * to persist scenario renames. Every field on the request body is optional;
+ * `null` round-trips to AMS where the null-guard skips it.
+ */
+export async function updateScenario(
+  projectId: string,
+  architectureId: string,
+  scenarioId: string,
+  payload: UpdateApiBehaviourScenarioRequest,
+): Promise<ApiBehaviourScenarioDto> {
+  return jsonRequest<ApiBehaviourScenarioDto>(
+    gatewayUrl(projectId, architectureId, 'scenarios', scenarioId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// ============================================================================
+// Captures CRUD
+// ============================================================================
+
+export async function listCaptures(
+  projectId: string,
+  architectureId: string,
+  sessionId?: string,
+): Promise<ApiBehaviourCaptureDto[]> {
+  const base = gatewayUrl(projectId, architectureId, 'captures');
+  const url = sessionId ? `${base}?sessionId=${encodeURIComponent(sessionId)}` : base;
+  return jsonRequest<ApiBehaviourCaptureDto[]>(url, { method: 'GET' });
+}
+
+export async function updateCapture(
+  projectId: string,
+  architectureId: string,
+  captureId: string,
+  payload: UpdateApiBehaviourCaptureRequest,
+): Promise<ApiBehaviourCaptureDto> {
+  return jsonRequest<ApiBehaviourCaptureDto>(
+    gatewayUrl(projectId, architectureId, 'captures', captureId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// ============================================================================
+// Diagnostics CRUD
+// ============================================================================
+
+export async function listDiagnostics(
+  projectId: string,
+  architectureId: string,
+  sessionId?: string,
+): Promise<ApiBehaviourDiagnosticDto[]> {
+  const base = gatewayUrl(projectId, architectureId, 'diagnostics');
+  const url = sessionId ? `${base}?sessionId=${encodeURIComponent(sessionId)}` : base;
+  return jsonRequest<ApiBehaviourDiagnosticDto[]>(url, { method: 'GET' });
+}
+
+// ============================================================================
+// Baselines CRUD
+// ============================================================================
+
+export async function listBaselines(
+  projectId: string,
+  architectureId: string,
+  options?: { kind?: 'current' | 'target' },
+): Promise<ApiBehaviourBaselineDto[]> {
+  const base = gatewayUrl(projectId, architectureId, 'baselines');
+  const kind = options?.kind;
+  const url = kind ? `${base}?kind=${encodeURIComponent(kind)}` : base;
+  return jsonRequest<ApiBehaviourBaselineDto[]>(url, { method: 'GET' });
+}
+
+export async function getBaseline(
+  projectId: string,
+  architectureId: string,
+  baselineId: string,
+): Promise<ApiBehaviourBaselineDto> {
+  return jsonRequest<ApiBehaviourBaselineDto>(
+    gatewayUrl(projectId, architectureId, 'baselines', baselineId),
+    { method: 'GET' },
+  );
+}
+
+export async function createBaseline(
+  projectId: string,
+  architectureId: string,
+  payload: CreateApiBehaviourBaselineRequest,
+): Promise<ApiBehaviourBaselineDto> {
+  return jsonRequest<ApiBehaviourBaselineDto>(
+    gatewayUrl(projectId, architectureId, 'baselines'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+/**
+ * PATCH body for an existing baseline. The status transitions are validated
+ * server-side (`draft → active|archived`, `active → archived|draft`,
+ * `archived → active`) — the UI's Activate/Archive controls send `status`
+ * alone. Other fields are PATCH-optional (null-guarded server-side).
+ */
+export interface UpdateApiBehaviourBaselineRequest {
+  name?: string | null;
+  status?: BaselineStatus;
+  notes?: string | null;
+}
+
+/**
+ * Update a baseline — most notably PROMOTE a draft to `active` (the readiness
+ * rules require an ACTIVE baseline for the api/baseline streams to read
+ * sufficient) or retire one to `archived`. Closes the "promotion to active is
+ * out of scope for v1" gap noted in `SaveAsBaselineModal`.
+ */
+export async function updateBaseline(
+  projectId: string,
+  architectureId: string,
+  baselineId: string,
+  payload: UpdateApiBehaviourBaselineRequest,
+): Promise<ApiBehaviourBaselineDto> {
+  return jsonRequest<ApiBehaviourBaselineDto>(
+    gatewayUrl(projectId, architectureId, 'baselines', baselineId),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// ============================================================================
+// Baseline items CRUD
+// ============================================================================
+
+export async function listBaselineItems(
+  projectId: string,
+  architectureId: string,
+  baselineId?: string,
+): Promise<ApiBehaviourBaselineItemDto[]> {
+  const base = gatewayUrl(projectId, architectureId, 'baseline-items');
+  const url = baselineId ? `${base}?baselineId=${encodeURIComponent(baselineId)}` : base;
+  return jsonRequest<ApiBehaviourBaselineItemDto[]>(url, { method: 'GET' });
+}
+
+export async function createBaselineItem(
+  projectId: string,
+  architectureId: string,
+  payload: CreateApiBehaviourBaselineItemRequest,
+): Promise<ApiBehaviourBaselineItemDto> {
+  return jsonRequest<ApiBehaviourBaselineItemDto>(
+    gatewayUrl(projectId, architectureId, 'baseline-items'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+// ============================================================================
+// Action endpoints (proxied to api-migration-validation-service)
+// ============================================================================
+
+/**
+ * Trigger OAS parsing on the new service. Either supply `interfaceIds`
+ * (preferred — pulls each `Interface.spec_link` and reads from the shared
+ * `oas-specs/` volume) OR upload a raw OAS file (fallback; bytes are NOT
+ * persisted, only the parsed inventory).
+ */
+export async function parseOas(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  body: ParseOasRequest | { file: File } | { files: File[] },
+): Promise<ParseOasResponse> {
+  const url = actionUrl(projectId, architectureId, sessionId, 'parse-oas');
+
+  // Multi-file upload (spec 2026-06-03 OAS-YAML + WADL/XSD): the wizard may
+  // upload a single OAS doc OR a WADL together with one-or-more sibling `.xsd`
+  // grammar files. Every part is sent under the SAME `file` field name; the
+  // backend's `multer().array('file')` collects them and classifies the set.
+  if ('files' in body) {
+    const fd = new FormData();
+    for (const f of body.files) fd.append('file', f, f.name);
+    return jsonRequest<ParseOasResponse>(url, { method: 'POST', body: fd });
+  }
+  if ('file' in body) {
+    const fd = new FormData();
+    fd.append('file', body.file, body.file.name);
+    return jsonRequest<ParseOasResponse>(url, { method: 'POST', body: fd });
+  }
+  return jsonRequest<ParseOasResponse>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function testApiConnection(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<TestApiConnectionResponse> {
+  return jsonRequest<TestApiConnectionResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'test-api-connection'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+export async function testDbConnection(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<TestDbConnectionResponse> {
+  return jsonRequest<TestDbConnectionResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'test-db-connection'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+/**
+ * Stateless "Test API connection" probe used by the capture wizard's Step 2
+ * (API environment) BEFORE a session row exists. Posts the full connection
+ * config (baseUrl + auth + default headers) to the gateway's stateless
+ * endpoint:
+ *
+ *   POST /api/v1/projects/:projectId/architectures/:architectureId/
+ *        api-behaviour/test-connection
+ *
+ * The endpoint fires one probe call and returns `{ success, status,
+ * durationMs, error? }`. Distinct from `testApiConnection`, which probes a
+ * persisted session via its in-memory secrets bundle and rides the session
+ * id in the path. Secrets are never persisted -- they live only in this
+ * request body for the duration of the probe.
+ */
+export async function testApiConnectionStateless(
+  projectId: string,
+  architectureId: string,
+  body: TestApiConnectionStatelessRequest,
+): Promise<TestApiConnectionStatelessResponse> {
+  return jsonRequest<TestApiConnectionStatelessResponse>(
+    gatewayUrl(projectId, architectureId, 'test-connection'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Optional body forwarded verbatim to api-migration-validation-service's
+ * `POST /api/capture-sessions/:id/start` handler. The downstream route
+ * accepts `discoveryRunIds`, `includeDiscoveryContext`, `maxFindings`, and
+ * `maxEvidenceItems` so the capture wizard can pass through the
+ * Discovery Context section selections (Spec 2026-05-16 Migration Discovery
+ * Context Integration -- Task Group 4). All fields are optional; omitting
+ * any one lets the downstream service apply its documented defaults.
+ */
+export interface StartCaptureSessionRequest {
+  discoveryRunIds?: string[];
+  includeDiscoveryContext?: boolean;
+  maxFindings?: number;
+  maxEvidenceItems?: number;
+  /**
+   * Model-Seeded Capture Inventory (Spec 2026-06-11): justified override for
+   * the fail-closed inventory-coverage gate. When present and non-empty the
+   * validation service persists the override trio (justification, unaccounted
+   * count at override time, timestamp) onto the session row and proceeds to
+   * start despite unaccounted in-scope endpoints. CamelCase, matching the
+   * existing `includeDiscoveryContext` / `discoveryRunIds` body fields.
+   */
+  coverageOverrideJustification?: string;
+}
+
+/**
+ * Start the capture loop. Guarded server-side on `status='configured' AND
+ * secrets present AND OAS inventory parsed`. Returns the running session
+ * snapshot.
+ *
+ * The optional `body` was added by the 2026-05-16 Migration Discovery
+ * Context Integration spec so the wizard can pass through the Discovery
+ * Context section selections (run IDs + include toggle + count limits).
+ * Backwards-compatible: calling with no body sends `{}` exactly as before
+ * and the downstream service defaults to `includeDiscoveryContext=true` +
+ * latest-relevant discovery context.
+ */
+export async function startCaptureSession(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  body?: StartCaptureSessionRequest,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    actionUrl(projectId, architectureId, sessionId, 'start'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    },
+  );
+}
+
+/**
+ * Cancel a running session. Sets status `cancelled`, signals abort, and
+ * purges in-memory secrets on the new service.
+ */
+export async function cancelCaptureSession(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    actionUrl(projectId, architectureId, sessionId, 'cancel'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+/**
+ * Map the wizard's auth-type vocabulary to the backend's. The wizard uses
+ * short, UI-friendly names (`'header'`) while the backend (`SecretsBundle`
+ * in api-migration-validation-service/types/secrets.ts) distinguishes
+ * `'api_key_header' | 'api_key_query' | 'custom_header'`. v1 only emits
+ * `'header'` from the wizard which maps cleanly to `'custom_header'`;
+ * other values pass through (so a backend-vocabulary type like
+ * `'api_key_header'` supplied directly still works).
+ *
+ * @internal
+ */
+function mapAuthTypeToBackend(raw: string | undefined): string {
+  if (!raw) return 'none';
+  switch (raw) {
+    case 'header':
+      return 'custom_header';
+    default:
+      return raw;
+  }
+}
+
+/**
+ * Reshape the wizard-friendly camelCase secrets bundle into the wire shape
+ * the backend `/secrets` action endpoint validates against. The backend
+ * expects `{ api: { type, ... }, db?: { password } }` -- this function
+ * is the single point of translation so callers can keep using the
+ * domain-friendly `apiAuth` / `dbPassword` field names.
+ *
+ * @internal
+ */
+function toSecretsWireBody(payload: SubmitSecretsRequest): {
+  api: Record<string, unknown>;
+  db: { password: string } | null;
+} {
+  const apiIn = payload.apiAuth ?? { type: 'none' };
+  const api: Record<string, unknown> = {
+    ...apiIn,
+    type: mapAuthTypeToBackend(typeof apiIn.type === 'string' ? apiIn.type : 'none'),
+  };
+  // The wizard sends `headerName` / `headerValue` for its `'header'` auth
+  // mode; the backend reads the same field names for `'custom_header'`, so
+  // no further key remapping is needed.
+  const dbPassword = payload.dbPassword;
+  return {
+    api,
+    db: typeof dbPassword === 'string' && dbPassword.length > 0
+      ? { password: dbPassword }
+      : null,
+  };
+}
+
+/**
+ * Re-populate the in-memory secrets bundle for a session. NEVER writes to
+ * AMS — the new service holds plaintext in process memory only while the
+ * session is `configured` or `running`. Used by the wizard finalisation step
+ * AND by the secret-loss "Re-enter secrets" inline prompt.
+ *
+ * Bug fix (2026-05-17): callers pass the friendly `{ apiAuth, dbPassword }`
+ * shape; this function reshapes it to the backend's wire DTO
+ * `{ api, db: { password } }` before posting. A prior revision sent the
+ * frontend shape verbatim and every secrets submission failed with 400
+ * "secrets body must include { api: { type, ... } }".
+ */
+export async function submitSecrets(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  payload: SubmitSecretsRequest,
+): Promise<{ ok: true }> {
+  const wireBody = toSecretsWireBody(payload);
+  return jsonRequest<{ ok: true }>(
+    actionUrl(projectId, architectureId, sessionId, 'secrets'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(wireBody),
+    },
+  );
+}
+
+
+// ============================================================================
+// Inventory reconciliation actions (Model-Seeded Capture Inventory spec,
+// 2026-06-11, Task Group 4)
+// ============================================================================
+
+/**
+ * Configure-time inventory reconciliation. Proxied by the gateway to the
+ * validation service's `reconcile-inventory` action, which calls the AMS
+ * reconciliation endpoint and returns its snake_case payload VERBATIM.
+ * Display-only callers (baseline coverage figure) pass
+ * `{ refresh_findings: false }`; configure-time callers omit the flag so
+ * the AMS default (true) refreshes session-linked reconciliation findings.
+ */
+export async function reconcileInventory(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  body: ReconcileInventoryRequest = {},
+): Promise<InventoryReconciliationResponse> {
+  return jsonRequest<InventoryReconciliationResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'reconcile-inventory'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Bulk include / exclude-with-reason accounting action. INCLUDE auto-creates
+ * a schema-less operation row from the committed endpoint's metadata; EXCLUDE
+ * persists the same identity row with `included = false` + the supplied
+ * `exclusion_reason` (which the server REQUIRES non-empty). Bulk-capable so
+ * "Include all" is one round trip. Responds with the created rows so the
+ * wizard refreshes its Step 4 table without a separate list call.
+ */
+export async function accountEndpoints(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  items: AccountEndpointsRequestItem[],
+): Promise<AccountEndpointsResponse> {
+  return jsonRequest<AccountEndpointsResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'account-endpoints'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    },
+  );
+}
+
+/** Machine-readable code on the /start 409 inventory-coverage block. */
+export const INVENTORY_UNACCOUNTED_ENDPOINTS_CODE = 'INVENTORY_UNACCOUNTED_ENDPOINTS';
+
+/** Parsed shape of the /start 409 `INVENTORY_UNACCOUNTED_ENDPOINTS` body. */
+export interface InventoryUnaccountedBlock {
+  message: string;
+  unaccountedCount: number;
+  /** Embedded refs, capped server-side at 50 entries. */
+  unaccounted: InventoryUnaccountedEndpointRef[];
+  /** The FULL count (may exceed `unaccounted.length` past the cap). */
+  unaccountedTotalCount: number;
+}
+
+/**
+ * Detect the /start inventory-coverage hard block. The validation service
+ * responds 409 with `{ error: { code: 'INVENTORY_UNACCOUNTED_ENDPOINTS',
+ * unaccountedCount, unaccounted[<=50], unaccountedTotalCount } }`; the
+ * gateway passes that envelope through verbatim and `parseErrorBody`
+ * unwraps the `error` wrapper, so detection is by `body.code` -- NEVER by
+ * message-string matching. Returns null for every other error.
+ */
+export function parseInventoryUnaccountedError(
+  err: unknown,
+): InventoryUnaccountedBlock | null {
+  if (!(err instanceof ApiBehaviourApiError)) return null;
+  if (err.status !== 409) return null;
+  if (err.body.code !== INVENTORY_UNACCOUNTED_ENDPOINTS_CODE) return null;
+  const raw = err.body as Record<string, unknown>;
+  const unaccounted = Array.isArray(raw.unaccounted)
+    ? (raw.unaccounted as InventoryUnaccountedEndpointRef[])
+    : [];
+  const count =
+    typeof raw.unaccountedCount === 'number' ? raw.unaccountedCount : unaccounted.length;
+  const total =
+    typeof raw.unaccountedTotalCount === 'number' ? raw.unaccountedTotalCount : count;
+  return {
+    message: typeof err.body.message === 'string' ? err.body.message : '',
+    unaccountedCount: count,
+    unaccounted,
+    unaccountedTotalCount: total,
+  };
+}
+
+// ============================================================================
+// Target capture session helpers (Spec 2026-05-25 Task Group 5)
+//
+// The "target-side capture" flow replays an existing current-state baseline's
+// accepted items against a new target service URL and persists the responses
+// as a paired target baseline (`kind='target', paired_with_baseline_id=<src>`).
+// The validation-service routes are mirrored by the gateway at
+// `/api/v1/api-migration-validation/target-capture-sessions/...`; the
+// helpers below wrap those routes 1:1 from the frontend. The validation
+// service's POST/GET payloads use camelCase keys (it owns its own DTOs),
+// so the request shapes are camelCase verbatim. The session DTOs returned
+// by the create/start/cancel routes still come back snake_case (AMS edge).
+// ============================================================================
+
+/**
+ * Body for `POST /api/v1/api-migration-validation/target-capture-sessions`.
+ *
+ * Server stamps `kind='target'`; callers do NOT supply it. `sourceBaselineId`
+ * is the FK at the current-state baseline being replayed. AMS service-layer
+ * validation enforces the source baseline lives in the same project +
+ * architecture and itself has `kind='current'`.
+ */
+export interface CreateTargetCaptureSessionRequest {
+  projectId: string;
+  architectureId: string;
+  sourceBaselineId: string;
+  targetApiBaseUrl: string;
+  name?: string | null;
+  authType?: string | null;
+  authConfigRedactedJson?: Record<string, unknown> | null;
+  defaultHeadersRedactedJson?: Record<string, string> | null;
+  mutatingCallsConfirmed?: boolean;
+}
+
+/**
+ * Body for `POST .../target-capture-sessions/:id/secrets`. Mirrors the
+ * validation service's in-memory `SecretsBundle` shape -- the gateway is a
+ * transparent pass-through, AMS NEVER sees plaintext.
+ */
+export interface TargetCaptureSecretsRequest {
+  api: {
+    type: 'none' | 'bearer' | 'api_key_header' | 'api_key_query' | 'basic' | 'custom_header';
+    token?: string;
+    headerName?: string;
+    paramName?: string;
+    value?: string;
+    username?: string;
+    password?: string;
+  };
+}
+
+export interface TargetCaptureSecretsResponse {
+  sessionId: string;
+  loaded: boolean;
+}
+
+export interface TargetCaptureTestConnectionResponse {
+  sessionId: string;
+  success: boolean;
+  status: number;
+  durationMs: number;
+}
+
+export interface TargetCaptureStartResponse extends ApiBehaviourCaptureSessionDto {
+  runId: string;
+}
+
+/**
+ * Polling endpoint response. Fields mirror the validation service's
+ * `targetCaptureSessionActions.ts /status` route shape. Frontend polls at
+ * the same 2-3s cadence as current-state and stops on terminal status.
+ */
+export interface TargetCaptureSessionStatusResponse {
+  sessionId: string;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  isLiveInRunManager: boolean;
+  lastDiagnosticMessage: string | null;
+}
+
+/** Build a gateway URL for a target-capture route. */
+function targetCaptureUrl(
+  sessionId: string | null,
+  action: 'create' | 'secrets' | 'test-connection' | 'start' | 'cancel' | 'status',
+  projectId?: string,
+): string {
+  const base = `${GATEWAY_BASE}/api/v1/api-migration-validation/target-capture-sessions`;
+  if (action === 'create') return base;
+  const sid = encodeURIComponent(sessionId ?? '');
+  const path = `${base}/${sid}/${action}`;
+  // The validation-service routes read projectId from query string OR body.
+  // For the id-scoped routes we ride it on the query string (matches the
+  // gateway client wrapper convention used in gateway/src/services/apiBehaviourClient.ts).
+  return projectId ? `${path}?projectId=${encodeURIComponent(projectId)}` : path;
+}
+
+/**
+ * POST `/api/v1/api-migration-validation/target-capture-sessions` -- creates
+ * a target session in `draft` status with `kind='target'` server-stamped.
+ */
+export async function createTargetCaptureSession(
+  body: CreateTargetCaptureSessionRequest,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    targetCaptureUrl(null, 'create'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * POST `/.../target-capture-sessions/:id/secrets` -- loads the in-memory
+ * secrets bundle on the validation service. NEVER touches AMS.
+ */
+export async function setTargetSessionSecrets(
+  sessionId: string,
+  body: TargetCaptureSecretsRequest,
+): Promise<TargetCaptureSecretsResponse> {
+  return jsonRequest<TargetCaptureSecretsResponse>(
+    targetCaptureUrl(sessionId, 'secrets'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * POST `/.../target-capture-sessions/:id/test-connection` -- one redacted
+ * probe call against the target URL using the in-memory secrets bundle.
+ */
+export async function testTargetConnection(
+  sessionId: string,
+  projectId: string,
+): Promise<TargetCaptureTestConnectionResponse> {
+  return jsonRequest<TargetCaptureTestConnectionResponse>(
+    targetCaptureUrl(sessionId, 'test-connection', projectId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+/**
+ * POST `/.../target-capture-sessions/:id/start` -- moves the session to
+ * `running` and fires `runTargetReplay(sessionId)` as a background task.
+ * Returns 202 with the running session row + `runId`.
+ */
+export async function startTargetCaptureSession(
+  sessionId: string,
+  projectId: string,
+): Promise<TargetCaptureStartResponse> {
+  return jsonRequest<TargetCaptureStartResponse>(
+    targetCaptureUrl(sessionId, 'start', projectId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+/**
+ * POST `/.../target-capture-sessions/:id/cancel` -- signals abort to any
+ * in-flight HTTP calls, purges the secrets bundle, and marks the session
+ * `cancelled`.
+ */
+export async function cancelTargetCaptureSession(
+  sessionId: string,
+  projectId: string,
+): Promise<ApiBehaviourCaptureSessionDto> {
+  return jsonRequest<ApiBehaviourCaptureSessionDto>(
+    targetCaptureUrl(sessionId, 'cancel', projectId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    },
+  );
+}
+
+/**
+ * GET `/.../target-capture-sessions/:id/status` -- polling endpoint used by
+ * `CaptureSessionDetailView`. Returns the live session status + the
+ * runManager presence flag + the most recent diagnostic message.
+ */
+export async function getTargetCaptureSessionStatus(
+  sessionId: string,
+  projectId: string,
+): Promise<TargetCaptureSessionStatusResponse> {
+  return jsonRequest<TargetCaptureSessionStatusResponse>(
+    targetCaptureUrl(sessionId, 'status', projectId),
+    { method: 'GET' },
+  );
+}
+
+// ============================================================================
+// Diff engine helpers (Spec 2026-05-25 Task Group 5)
+//
+// The diff-engine surface compares paired source / target API Behaviour
+// Baselines and persists structured drift in two AMS tables. The Drift
+// report tab on `BaselineDetailView` calls into these helpers to discover
+// existing diffs, list per-item rows, and trigger / poll recompute.
+//
+// Wire-format notes:
+//   - All numeric count fields on `ApiBehaviourDiffDto` and the per-item
+//     `source_response_status` / `target_response_status` are typed
+//     `number | null` (matching the AMS boxed `Integer` contract for PATCH
+//     safety -- see `project_primitive_double_dto_overwrite.md`).
+//   - `body_diff_json` is typed `Record<string, unknown> | null` because
+//     the AMS Java entity maps it as `Map<String, Object>` and the
+//     persistence boundary rejects non-object root JSON.
+//   - The create / recompute / status / cancel routes go through the
+//     validation-service proxy (`/api/v1/api-migration-validation/...`).
+//   - The CRUD reads (`getDiffByTargetBaseline`, `listDiffItems`) go
+//     directly to the AMS proxy under
+//     `/api/v1/projects/:projectId/api-behaviour/diffs/...`.
+// ============================================================================
+
+/**
+ * Wire-shape DTO for an `api_behaviour_diffs` row. Mirrors the AMS Java
+ * `ApiBehaviourDiffDto` record verbatim. All numeric count fields typed
+ * `number | null` for PATCH safety -- never plain `number`.
+ */
+export interface ApiBehaviourDiffDto {
+  id: string;
+  project_id: string;
+  architecture_id: string;
+  source_baseline_id: string;
+  target_baseline_id: string;
+  /** One of `'computing' | 'completed' | 'failed'`. */
+  status: string;
+  matched_count: number | null;
+  status_drift_count: number | null;
+  body_shape_drift_count: number | null;
+  body_value_drift_count: number | null;
+  source_only_count: number | null;
+  target_only_count: number | null;
+  source_baseline_updated_at: string | null;
+  target_baseline_updated_at: string | null;
+  computed_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Wire-shape DTO for an `api_behaviour_diff_items` row. Per-scenario
+ * classification produced by the diff runner. `body_diff_json` carries
+ * a flat list of per-JSON-pointer differences (key_added / key_removed
+ * / type_changed / value_changed) for the side-by-side modal's highlight
+ * pass.
+ */
+export interface ApiBehaviourDiffItemDto {
+  id: string;
+  diff_id: string;
+  method: string;
+  path: string;
+  scenario_name: string;
+  source_baseline_item_id: string | null;
+  target_baseline_item_id: string | null;
+  /** One of `'status_match' | 'status_drift' | 'source_only' | 'target_only'`. */
+  status_classification: string;
+  /** One of `'body_match' | 'body_shape_drift' | 'body_value_drift'`; null for source/target_only. */
+  body_classification: string | null;
+  source_response_status: number | null;
+  target_response_status: number | null;
+  body_diff_json: Record<string, unknown> | null;
+  notes: string | null;
+  created_at: string;
+}
+
+/**
+ * Request body for `POST /api/v1/api-migration-validation/diffs`. Validation
+ * service creates the diff in `status='computing'`, fires the runner as a
+ * fire-and-forget local call, and returns the diffId + status immediately.
+ *
+ * Rejects with 400 `error='target_baseline_not_finalised'` if the target
+ * baseline is still `draft`.
+ */
+export interface CreateDiffRequest {
+  projectId: string;
+  architectureId: string;
+  sourceBaselineId: string;
+  targetBaselineId: string;
+}
+
+/**
+ * Response shape for `GET /api/v1/api-migration-validation/diffs/:id/status`.
+ * Polled at 2-3s cadence while `status='computing'`; stops on terminal status.
+ */
+export interface DiffStatusResponse {
+  status: string;
+  matched_count: number | null;
+  status_drift_count: number | null;
+  body_shape_drift_count: number | null;
+  body_value_drift_count: number | null;
+  source_only_count: number | null;
+  target_only_count: number | null;
+  computed_at: string | null;
+  error_message: string | null;
+}
+
+/** Build a gateway URL for a validation-service diff action route. */
+function diffActionUrl(diffId: string | null, action: 'create' | 'recompute' | 'status' | 'cancel'): string {
+  const base = `${GATEWAY_BASE}/api/v1/api-migration-validation/diffs`;
+  if (action === 'create') return base;
+  return `${base}/${encodeURIComponent(diffId ?? '')}/${action}`;
+}
+
+/** Build a gateway URL for an AMS-direct diff CRUD route. */
+function diffCrudUrl(projectId: string, subPath: string): string {
+  return (
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}/api-behaviour/diffs/${subPath}`
+  );
+}
+
+/**
+ * POST `/api/v1/api-migration-validation/diffs` -- create or reuse a diff
+ * row. If a diff already exists for the (source, target) pair, the
+ * validation service reuses its id (recompute semantics).
+ */
+export async function createDiff(body: CreateDiffRequest): Promise<ApiBehaviourDiffDto> {
+  return jsonRequest<ApiBehaviourDiffDto>(diffActionUrl(null, 'create'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * POST `/api/v1/api-migration-validation/diffs/:id/recompute` -- re-runs an
+ * existing diff. Returns 409 (surfaced as `ApiBehaviourApiError.status=409`)
+ * if the diff is already running.
+ */
+export async function recomputeDiff(diffId: string): Promise<ApiBehaviourDiffDto> {
+  return jsonRequest<ApiBehaviourDiffDto>(diffActionUrl(diffId, 'recompute'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/**
+ * GET `/api/v1/api-migration-validation/diffs/:id/status` -- polling endpoint.
+ * UI polls at 2-3s cadence while `status='computing'`.
+ */
+export async function getDiffStatus(diffId: string): Promise<DiffStatusResponse> {
+  return jsonRequest<DiffStatusResponse>(diffActionUrl(diffId, 'status'), { method: 'GET' });
+}
+
+/**
+ * POST `/api/v1/api-migration-validation/diffs/:id/cancel` -- signal abort
+ * and mark the diff `status='failed'` with `error_message='cancelled'`.
+ */
+export async function cancelDiff(diffId: string): Promise<void> {
+  await jsonRequest<void>(diffActionUrl(diffId, 'cancel'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/**
+ * GET `/api/v1/projects/:projectId/api-behaviour/diffs/by-target/:targetBaselineId`
+ * -- AMS-direct lookup. Returns `null` on 404 (no diff exists for this
+ * target yet -- the Drift report tab shows the "Recompute" button to spawn
+ * one).
+ */
+export async function getDiffByTargetBaseline(
+  projectId: string,
+  targetBaselineId: string,
+): Promise<ApiBehaviourDiffDto | null> {
+  try {
+    return await jsonRequest<ApiBehaviourDiffDto>(
+      diffCrudUrl(projectId, `by-target/${encodeURIComponent(targetBaselineId)}`),
+      { method: 'GET' },
+    );
+  } catch (err) {
+    if (err instanceof ApiBehaviourApiError && err.status === 404) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * GET `/api/v1/projects/:projectId/api-behaviour/diffs/:diffId/items` --
+ * list all diff_items for a diff, ordered by `(method, path)`.
+ */
+export async function listDiffItems(
+  projectId: string,
+  diffId: string,
+): Promise<ApiBehaviourDiffItemDto[]> {
+  return jsonRequest<ApiBehaviourDiffItemDto[]>(
+    diffCrudUrl(projectId, `${encodeURIComponent(diffId)}/items`),
+    { method: 'GET' },
+  );
+}

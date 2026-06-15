@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "Mage_Cms_IndexController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

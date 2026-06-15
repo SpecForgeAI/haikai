@@ -1,0 +1,19 @@
+{
+  "$comment": "Derives from src/ast/models.py::InteractionInfo (D10). The only kind allowed the ambiguous/alternatives envelope (D5).",
+  "required": ["source_class", "source_method", "target", "target_type", "direction", "mechanism", "file", "line"],
+  "fields": {
+    "source_class": {"type": "string"},
+    "source_method": {"type": "string"},
+    "target": {"type": "string"},
+    "target_type": {"type": "string", "enum": ["HTTP_SERVICE", "DATABASE", "MESSAGE_QUEUE", "FILE_SYSTEM", "CACHE", "EXTERNAL_API", "GRPC_SERVICE", "EMAIL"]},
+    "direction": {"type": "string", "enum": ["READ", "WRITE", "PUBLISH", "SUBSCRIBE", "REQUEST_RESPONSE"]},
+    "mechanism": {"type": "string"},
+    "data_hint": {"type": "string", "default": ""},
+    "file": {"type": "string"},
+    "line": {"type": "integer", "minimum": 1},
+    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.75},
+    "ambiguous": {"type": "boolean", "default": false},
+    "alternatives": {"type": "array", "default": []}
+  },
+  "forbid": []
+}

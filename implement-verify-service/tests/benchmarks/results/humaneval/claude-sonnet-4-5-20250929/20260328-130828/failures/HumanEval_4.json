@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/4",
+  "passed": false,
+  "score": 0.0,
+  "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkFdB9RcR5CyUsuV3N'}",
+  "generated_output": "",
+  "expected_output": "    mean = sum(numbers) / len(numbers)\n    return sum(abs(x - mean) for x in numbers) / len(numbers)\n",
+  "latency_seconds": 0.25132616492919624,
+  "mode": "direct",
+  "model": "claude-sonnet-4-5-20250929",
+  "metadata": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "actual_model": ""
+  }
+}

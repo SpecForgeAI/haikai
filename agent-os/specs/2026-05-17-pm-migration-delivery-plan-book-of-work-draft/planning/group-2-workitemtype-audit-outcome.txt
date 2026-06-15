@@ -1,0 +1,1 @@
+Confirmed end-to-end: WorkItem model natively supports initiative/epic/feature/story.

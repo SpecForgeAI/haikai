@@ -1,0 +1,1 @@
+﻿/c/Users/gazwa/bash_completion.d/*.bash

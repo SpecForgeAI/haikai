@@ -1,0 +1,32 @@
+name: yii2
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - yii\base\Controller
+    - yii\web\Controller
+  files_match:
+    - '**/protected/humhub/controllers/**/*.php'
+    - '**/controllers/**/*Controller.php'
+  manifest_contains:
+    - {file: 'composer.json', substring: 'yiisoft/yii2'}
+
+extract:
+  - id: action_methods
+    query: method_decls
+    file_filter: all
+    name_pattern: '^action[A-Z]\w*$'
+    path_from: method_name_strip
+    strip_prefix: action
+    verb: ANY
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: yii2
+
+conflict_rules: []
+known_pitfalls:
+  - "Each public actionXxx in a Controller is a route — name camel→kebab in the URL"
+  - "Modules nest URL path; not yet resolved"

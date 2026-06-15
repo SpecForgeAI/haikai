@@ -1,0 +1,65 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "id",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "username",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "token",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "bio",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "image",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Profile",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "username",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "bio",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "image",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "following",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

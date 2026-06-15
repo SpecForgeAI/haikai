@@ -1,0 +1,50 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Reviewable",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Target",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Created_by",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Target_created_by",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Topic",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Category",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Reviewable_historie",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Reviewable_score",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Reviewable \u2192 Reviewable_note",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

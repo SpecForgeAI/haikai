@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>lib-root</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <!-- Internal scannable: in lookup table. -->
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>internal-lib</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+    <!-- External: not in lookup table, no shared prefix. -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
+      <version>5.3.20</version>
+    </dependency>
+    <!-- Internal-unresolvable: looks internal (same groupId) but NOT in lookup table. -->
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>missing-internal</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>

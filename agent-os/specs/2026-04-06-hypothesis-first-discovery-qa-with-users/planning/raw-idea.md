@@ -1,0 +1,1 @@
+Implement hypothesis-first discovery with human-in-the-loop Q&A validation — generating hypotheses from weak/ambiguous discovery results, asking targeted questions via existing chat/persona system, capturing structured answers, and using them to refine evidence, clusters, and candidates — as increment 15 of 16 for the legacy/current-state discovery capability.

@@ -1,0 +1,5 @@
+[
+  {"type": "REST", "operation": "GET",    "path": "/api/a", "framework": "test", "extra_thing": 42, "tags": ["x"]},
+  {"type": "REST", "operation": "POST",   "path": "/api/b", "framework": "test", "handler_class": "Foo", "confidence": 0.9},
+  {"type": "REST", "operation": "DELETE", "path": "/api/c", "framework": "test", "file": "x.py", "line": 10}
+]

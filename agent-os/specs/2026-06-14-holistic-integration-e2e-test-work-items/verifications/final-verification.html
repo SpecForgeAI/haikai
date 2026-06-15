@@ -1,0 +1,175 @@
+# Verification Report: Holistic Integration/E2E TEST Work Items (Spec 2 of 4)
+
+**Spec:** `2026-06-14-holistic-integration-e2e-test-work-items`
+**Date:** 2026-06-14
+**Verifier:** implementation-verifier
+**Status:** ✅ Passed
+
+---
+
+## Executive Summary
+
+Spec 2 of the 4-spec migration auto-flow program is fully implemented and verified. A new headless, batch-style gateway handler (`holisticTestDefinitionHandler.ts`) runs a holistic Test-Engineer review across a feature's stories or an epic's features and creates one first-class `TEST`-type work item per generated integration/E2E test, placed as a sibling with both a `book_of_work_json` blob item and a `work_item` row, its own `/agent-os:shape-spec` spec row, and an `implement-state.json`. All 5 task groups are complete, all 7 Confirmed Decisions (D1–D7) are satisfied in code, and every targeted/full test run across the three touched stacks passes (gateway 310 suites / 2,318 tests, AMS append-test-item 4/4, frontend 8/8 new) with both typecheck baselines respected. No new Liquibase changeset was added (D7) — changeset 181 remains the highest.
+
+---
+
+## 1. Tasks Verification
+
+**Status:** ✅ All Complete
+
+All five task groups and every sub-task were already marked `- [x]` in `tasks.md`. Each was spot-checked against the implemented code and confirmed genuinely complete (no checkbox required correcting from incomplete).
+
+### Completed Tasks
+- [x] Task Group 1: Generalize holistic prompt + new headless holistic-review handler
+  - [x] 1.1 Focused tests for generalized prompt + handler skeleton
+  - [x] 1.2 Generalize `holisticTestPlanningPrompt.ts` to feature|epic (level-relative nouns + `### {Story|Feature} N` headings)
+  - [x] 1.3 New headless holistic-review handler (`holisticTestDefinitionHandler.ts`, DI seams, `[diag-gateway]` logs)
+  - [x] 1.4 ALLOW-WITH-WARNING gating inside the handler
+  - [x] 1.5 Task Group 1 tests pass + typecheck
+- [x] Task Group 2: One TEST item per test (blob + work_item), holistic→spec row, implement-state.json
+  - [x] 2.1 Focused tests for TEST-item creation + spec assembly + implement-state
+  - [x] 2.2 ONE TEST work item per test, both representations [D2/D3]
+  - [x] 2.3 Placement / sortOrder after the last spanned child [D4]
+  - [x] 2.4 Dedicated lighter holistic→spec assembler [D6]
+  - [x] 2.5 Persist the TEST item's spec row via the reused AMS client [D6]
+  - [x] 2.6 Write `implement-state.json` for each TEST item [D6]
+  - [x] 2.7 New gateway route for the per-feature/epic action
+  - [x] 2.8 Task Group 2 tests pass + typecheck
+- [x] Task Group 3: Confirm AMS permits TEST-item creation + write-back (AMS WAS changed — append-test-item endpoint added)
+  - [x] 3.1 Confirm `TEST` type + feature/epic parenting permitted as-is
+  - [x] 3.2 Blob items append + `workItemId` stamp path (new `AppendTestItemRequest`/`AppendTestItemResponse` + service method)
+  - [x] 3.3 Focused AMS tests written (`GeneratedMigrationBookOfWorkAppendTestItemTest`, 4 tests)
+  - [x] 3.4 AMS tests pass via foreground `mvn`
+- [x] Task Group 4: "Define Integration/E2E Tests" node action + TEST chip + show/hide filter
+  - [x] 4.1 Focused tests for the action, chip, and filter
+  - [x] 4.2 New per-node "Define Integration/E2E Tests" control [D1]
+  - [x] 4.3 Re-point `BacklogTab.onDefineIntegrationTests` to the headless flow [D1]
+  - [x] 4.4 Surface the ALLOW-WITH-WARNING state [D5(b)(c)]
+  - [x] 4.5 Distinct TEST chip/badge [D5(a)]
+  - [x] 4.6 Show/hide TEST filter [D5(a)]
+  - [x] 4.7 Task Group 4 tests pass + typecheck + baseline
+- [x] Task Group 5: Test Review & Gap Analysis
+  - [x] 5.1 Review tests from Task Groups 1–4
+  - [x] 5.2 Analyze coverage gaps for this feature
+  - [x] 5.3 Strategic end-to-end tests (epic-level + feature-level + allow-with-warning + empty-plan covered)
+  - [x] 5.4 Run feature-specific tests across the touched stacks
+
+### Incomplete or Issues
+None. All tasks complete and verified against code.
+
+---
+
+## 2. Documentation Verification
+
+**Status:** ⚠️ Issues Found (no per-task implementation reports)
+
+### Implementation Documentation
+The spec's `implementation/` folder is **empty** — no per-task-group implementation report markdown files were written. This does not affect the correctness of the build (every task is evidenced directly in code and tests), but the implementer-report convention was not followed for this spec.
+
+### Verification Documentation
+- [x] Final verification report: `verifications/final-verification.html` (this document)
+
+### Code Evidence (in lieu of implementation reports)
+- Gateway handler: `gateway/src/services/holisticTestDefinitionHandler.ts`
+- Gateway prompt generalization: `gateway/src/services/holisticTestPlanningPrompt.ts`
+- Gateway route: `gateway/src/routes/migrationDeliveryDashboard.ts` (`.../items/:bookItemId/define-integration-tests`)
+- AMS endpoint: `architecture-model-service/.../controller/GeneratedMigrationBookOfWorkController.java` + `service/GeneratedMigrationBookOfWorkService.java` + `model/dto/AppendTestItemRequest.java` / `AppendTestItemResponse.java`
+- Frontend: `MigrationDeliveryDashboard.tsx`, `MigrationDeliveryHierarchyTree.tsx`, `ProductView/BacklogTab.tsx`, `api/migrationDeliveryDashboardApi.ts`
+- Tests: `gateway/src/__tests__/holisticTestDefinitions.test.ts`, `holisticTestDefinitionsE2E.test.ts`, `migrationDeliveryDefineIntegrationTestsRoute.test.ts`; AMS `GeneratedMigrationBookOfWorkAppendTestItemTest.java`; frontend `MigrationDeliveryDashboardDefineTests.test.tsx`, `MigrationDeliveryHierarchyTreeTestNodeAction.test.tsx`, `migrationDeliveryDashboardApi.defineIntegrationTests.test.ts`
+
+### Missing Documentation
+- Per-task-group implementation reports under `implementation/` (folder is empty).
+
+---
+
+## 3. Roadmap Updates
+
+**Status:** ⚠️ No Updates Needed
+
+### Updated Roadmap Items
+None.
+
+### Notes
+`agent-os/product/roadmap.md` is the original architecture-store-and-diagrams product roadmap (Phase 1 meta-model CRUD/JSON, Phase 2 diagram rendering, Phase 3 interactive editing, Phase 4 UX polish, Phase 5 backend/multi-user/deployment). None of its 41 items relate to the migration auto-flow program or to holistic integration/E2E TEST work items, so no roadmap checkbox corresponds to this spec. No update was applicable.
+
+---
+
+## 4. Decision-by-Decision Verification (D1–D7)
+
+**Status:** ✅ All Decisions Satisfied
+
+| Decision | Result | Evidence |
+|---|---|---|
+| **D1** — NEW headless batch handler + per-node "Define Integration/E2E Tests" action; BacklogTab re-pointed | ✅ PASS | `holisticTestDefinitionHandler.ts` (`runHolisticTestDefinitions`, DI seams, per-item isolation, `[diag-gateway]` logs); route `POST .../items/:bookItemId/define-integration-tests` in `migrationDeliveryDashboard.ts`; `BacklogTab.tsx` `handleDefineIntegrationTests` replaces the old `holisticReviewMode='holistic_only'` navigate; control shown on FEATURE/EPIC nodes in `MigrationDeliveryHierarchyTree.tsx` / `MigrationDeliveryDashboard.tsx` |
+| **D2** — ONE TEST work item per generated test | ✅ PASS | Per-test loop in `runHolisticTestDefinitions` (`for i in testPlan`) calling `createOneTestItem` once per test; jest "creates ONE TEST item per generated test (N tests → N items, never a bundle)" passes |
+| **D3** — BOTH representations (blob item + work_item row), `workItemId` stamped back | ✅ PASS | `defaultCreateTestItem` POSTs the AMS `append-test-item` endpoint which creates the `work_item` row + appends the blob item with the stamped `workItemId` atomically; AMS log `[diag-ams] append_test_item_ok ... workItemId=... seq=...` observed in the passing AMS test |
+| **D4** — sortOrder = max child order + 1, incrementing for multiples | ✅ PASS | `computeTestSequenceBase(children)` = `max(sequenceOrder)+1`; loop applies `sequenceBase + i`; jest "computeTestSequenceBase = max child sequenceOrder + 1" passes; E2E test observed `seq=3` for a node with two children |
+| **D5a** — `type='TEST'` literal; distinct chip + show/hide filter | ✅ PASS | `isTestNode` matches uppercase `"TEST"`; distinct TEST chip + `hideTestItems` prune (modelled on `pruneHierarchy`) in `MigrationDeliveryHierarchyTree.tsx`; frontend tests for chip + filter pass |
+| **D5bc** — ALLOW-WITH-WARNING gating | ✅ PASS | `partitionChildrenBySpecStatus` runs the review only on `generated`/`generated_with_warnings` children and returns `skippedChildren` (insufficient_context/not_generated); never blocks (empty spec-complete set still returns a structured result + warning); jest "ALLOW-WITH-WARNING: skips insufficient/not-generated children, never blocks" passes |
+| **D6** — Dedicated lighter holistic→spec assembler; reuse Spec 1 row schema + validator + persistence, NOT the per-story migration-context fetch; write implement-state.json | ✅ PASS | `assembleHolisticTestSpecBody` + `buildValidatedHolisticSpecResponse` (uses `assertSpecGenerationResponse` + `SPEC_TEXT_REQUIRED_PREFIX='/agent-os:shape-spec'`); `defaultPersistSpecRow` reuses `/spec-generations/batch` + `toAmsWireShape`, row keyed on the TEST item's `workItemId`; implement-state via `buildPersistedImplementStateLiteral` + `defaultPutImplementState`; `fetchMigrationSpecContext` is NOT imported/used (confirmed by import inspection) |
+| **D7** — NO new Liquibase changeset | ✅ PASS | `181-implementation-ready-spec-fields.sql` is the highest-numbered SQL changeset (no 182+); it provides `structured_tests_json` + `covered_endpoint_ids` columns reused by this spec; master changelog references 181 and no Spec-2 changeset |
+| **Generalization** — prompt runs on FEATURE (review stories) OR EPIC (review features); each TEST is integration\|e2e only | ✅ PASS | `buildHolisticTestPlanningPrompt(..., level)` with `HolisticReviewLevel`; jest verifies `### Story N` at feature level and `### Feature N` at epic level; `parseHolisticTestPlan` coerces `type` to `integration`/`e2e` only |
+
+---
+
+## 5. Test Suite Results
+
+**Status:** ✅ All Passing
+
+All verification commands were run independently. Gateway jest engages the global LLM-guard (`jest.config.js` → `setupFiles: ['<rootDir>/src/testSetup/llmGuard.setup.ts']`, runtime check `src/services/llmTestGuard.ts`) — no test can reach a live LLM.
+
+### Gateway
+
+**`npx tsc --noEmit`** (in `gateway/`) — ✅ CLEAN (exit 0, zero `error TS`).
+
+**Targeted jest** — the three new suites (`holisticTestDefinitions`, `migrationDeliveryDefineIntegrationTestsRoute`, `holisticTestDefinitionsE2E`):
+```
+Test Suites: 3 passed, 3 total
+Tests:       22 passed, 22 total
+Ran all test suites matching /holisticTestDefinitions|migrationDeliveryDefineIntegrationTestsRoute|holisticTestDefinitionsE2E/i.
+```
+(`[diag-gateway]` structured logs observed: review_started → llm_result → test_item_started → test_item_created (seq=3, specPersisted=true, implementStateWritten=true) → review_completed; and the empty-plan feature path created=0 emptyPlan=true.)
+
+**Full gateway suite** (`npx jest`) — ✅ exit 0:
+```
+Test Suites: 310 passed, 310 total
+Tests:       2318 passed, 2318 total
+Snapshots:   0 total
+Time:        16.414 s
+```
+
+### AMS
+
+**Targeted foreground `mvn`** (`mvn -q -Dtest=GeneratedMigrationBookOfWorkAppendTestItemTest test`, run from inside `architecture-model-service/`) — ✅:
+```
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.771 s
+-- in com.example.architecturemodel.service.GeneratedMigrationBookOfWorkAppendTestItemTest
+```
+(Note: the first attempt with `-pl architecture-model-service` from the repo root failed with "Could not find the selected project in the reactor" — there is no root reactor pom; AMS is a standalone module whose parent is `spring-boot-starter-parent`. Re-running from inside the module directory succeeded. This was a verifier command-form issue, not a product/test failure.)
+
+### Frontend
+
+**`npx tsc --noEmit`** (in `frontend/`) — ✅ **515 `error TS` — BELOW the 616 baseline (baseline not exceeded).** The reported errors are pre-existing and unrelated to this spec (e.g. `src/utils/workspaceStateMapper.test.ts` / `workspaceStateMapper.ts`); none originate from the spec-2 files.
+
+**Targeted vitest** — the three new suites:
+```
+✓ src/api/__tests__/migrationDeliveryDashboardApi.defineIntegrationTests.test.ts (2 tests)
+✓ .../MigrationDeliveryHierarchyTreeTestNodeAction.test.tsx (3 tests)
+✓ .../MigrationDeliveryDashboardDefineTests.test.tsx (3 tests)
+Test Files  3 passed (3)
+      Tests  8 passed (8)
+```
+
+### Test Summary (verification runs)
+- **Gateway:** 310 suites / 2,318 tests — all passing; tsc clean
+- **AMS (targeted):** 4 / 4 passing
+- **Frontend (new suites):** 3 suites / 8 tests — all passing; tsc 515 ≤ 616 baseline
+
+### Failed Tests
+None — all executed tests passing.
+
+### Notes
+- **Changeset confirmation (D7):** `181-implementation-ready-spec-fields.sql` is the highest-numbered changeset; no Spec-2 changeset exists. Confirmed.
+- **Known load flakes:** the two known non-deterministic gateway load flakes (which pass in isolation) did NOT trip in this full run — all 310 suites passed combined. No anomalies beyond the documented flakes were observed.
+- **LLM-guard:** engaged for all gateway jest via the global `setupFiles` guard; no live LLM was contacted.
+- **Per-stack test totals were independently reproduced** and match the implementers' reported figures (gateway 310/2,318 + tsc clean; AMS 4/4; frontend 8/8 new + tsc baseline unchanged).

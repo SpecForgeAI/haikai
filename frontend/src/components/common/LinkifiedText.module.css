@@ -1,0 +1,63 @@
+/**
+ * LinkifiedText.module.css
+ *
+ * Spec 2026-05-26 Mapping-Notes Pretty Rendering -- Task Group 1.
+ *
+ * Presentationally-local styles for the LinkifiedText utility. The four
+ * classes here are owned by the utility itself; mapping-review-specific
+ * styles (textarea, pencil button, edit-wrapper) live in
+ * `SelectiveCopyWizardModal.module.css`.
+ */
+
+/* Read-mode container. Preserves whitespace + handles long unbroken
+ * tokens (e.g. URLs) by wrapping aggressively. NO `cursor: pointer` --
+ * the pencil button is the edit trigger; the read content stays
+ * text-selectable so users can copy URLs / quote text. */
+.notesReadMode {
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 1em;
+}
+
+/* Truncated state: applied alongside .notesReadMode when the component
+ * is in truncate mode AND not expanded. Mirrors the WorkItemTree
+ * `.descriptionPreview` pattern; line count is supplied via the
+ * `--lc` CSS custom property so a single class supports any clamp
+ * value passed in via the `truncateLines` prop. */
+.notesReadModeTruncated {
+  display: -webkit-box;
+  -webkit-line-clamp: var(--lc, 4);
+  line-clamp: var(--lc, 4);
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Small inline-link button: transparent background, link colour, no
+ * border, underline on hover. Mirrors WorkItemTree `.showMoreLink`. */
+.notesShowMoreButton {
+  color: #1976d2;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+
+.notesShowMoreButton:hover {
+  text-decoration: underline;
+}
+
+/* Linkified URL anchors. Link colour matches the existing palette used
+ * elsewhere (e.g. WorkItemTree's `.showMoreLink`). */
+.notesLink {
+  color: #1976d2;
+  text-decoration: underline;
+}
+
+.notesLink:hover {
+  text-decoration: underline;
+  filter: brightness(0.85);
+}

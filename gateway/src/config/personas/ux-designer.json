@@ -1,0 +1,11 @@
+{
+  "id": "ux-designer",
+  "displayName": "UX Designer",
+  "color": "#F57C00",
+  "identityPromptRef": "prompts/ux-designer.identity.md",
+  "tasks": [
+    "ux-designer--users-interactions",
+    "ux-designer--ui-domain"
+  ],
+  "menuLabel": "Hi, what can I help you with?"
+}

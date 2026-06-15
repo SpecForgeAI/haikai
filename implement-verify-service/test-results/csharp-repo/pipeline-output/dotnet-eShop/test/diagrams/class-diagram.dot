@@ -1,0 +1,51 @@
+digraph ClassDiagram {
+    rankdir=TB;
+    node [shape=record, fontsize=10];
+
+    Extensions [label="{Extensions||+ AddApplicationServices(this IHostApplicationBuilder builder)\l+ AddApplicationServices(this IHostApplicationBuilder builder)\l}"];
+    IntegrationEventContext [label="{IntegrationEventContext||}"];
+    ServerCallContextIdentityExtensions [label="{ServerCallContextIdentityExtensions||+ GetUserIdentity(this ServerCallContext context)\l+ GetUserName(this ServerCallContext context)\l}"];
+    BasketItem [label="{BasketItem|+ Id\l+ OldUnitPrice\l+ PictureUrl\l+ ProductId\l+ ProductName\l+ Quantity\l+ UnitPrice\l|+ Validate(ValidationContext validationContext)\l}"];
+    CustomerBasket [label="{CustomerBasket|+ BuyerId\l+ Items\l|+ CustomerBasket()\l+ CustomerBasket(string customerId)\l}"];
+    BasketSerializationContext [label="{BasketSerializationContext||}"];
+    CatalogApi [label="{CatalogApi||+ CreateItem( [AsParameters] CatalogServices services, CatalogItem product)\l+ DeleteItemById( [AsParameters] CatalogServices services, [Description(R)] int id)\l+ GetAllItems( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string? name, [Description(R)] int? type, [Description(R)] int? brand)\l+ GetAllItemsV1( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services)\l+ GetFullPath(string contentRootPath, string pictureFileName)\l+ GetImageMimeTypeFromImageFileExtension(string extension)\l+ GetItemById( HttpContext httpContext, [AsParameters] CatalogServices services, [Description(R)] int id)\l+ GetItemPictureById( CatalogContext context, IWebHostEnvironment environment, [Description(R)] int id)\l+ GetItemsByBrandAndTypeId( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] int typeId, [Description(R)] int? brandId)\l+ GetItemsByBrandId( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] int? brandId)\l+ GetItemsByIds( [AsParameters] CatalogServices services, [Description(R)] int[] ids)\l+ GetItemsByName( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string name)\l+ GetItemsBySemanticRelevance( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R), Required, MinLength(1)] string text)\l+ GetItemsBySemanticRelevanceV1( [AsParameters] PaginationRequest paginationRequest, [AsParameters] CatalogServices services, [Description(R)] string text)\l+ MapCatalogApi(this IEndpointRouteBuilder app)\l+ UpdateItem( HttpContext httpContext, [Description(R)] int id, [AsParameters] CatalogServices services, CatalogItem productToUpdate)\l+ UpdateItemV1( HttpContext httpContext, [AsParameters] CatalogServices services, CatalogItem productToUpdate)\l}"];
+    CatalogOptions [label="{CatalogOptions|+ PicBaseUrl\l+ UseCustomizationData\l|}"];
+    HostEnvironmentExtensions [label="{HostEnvironmentExtensions||+ IsBuild(this IHostEnvironment hostEnvironment)\l}"];
+    CatalogContext [label="{CatalogContext|+ CatalogBrands\l+ CatalogItems\l+ CatalogTypes\l|+ CatalogContext(DbContextOptions<CatalogContext> options, IConfiguration configuration)\l+ OnModelCreating(ModelBuilder builder)\l}"];
+    CatalogSourceEntry [label="{CatalogSourceEntry|+ Brand\l+ Description\l+ Id\l+ Name\l+ Price\l+ Type\l|}"];
+    CatalogBrandEntityTypeConfiguration [label="{CatalogBrandEntityTypeConfiguration||+ Configure(EntityTypeBuilder<CatalogBrand> builder)\l}"];
+    CatalogItemEntityTypeConfiguration [label="{CatalogItemEntityTypeConfiguration||+ Configure(EntityTypeBuilder<CatalogItem> builder)\l}"];
+    CatalogTypeEntityTypeConfiguration [label="{CatalogTypeEntityTypeConfiguration||+ Configure(EntityTypeBuilder<CatalogType> builder)\l}"];
+    CatalogDomainException [label="{CatalogDomainException||+ CatalogDomainException()\l+ CatalogDomainException(string message)\l+ CatalogDomainException(string message, Exception innerException)\l}"];
+    Initial [label="{Initial||}"];
+    RemoveHiLoAndIndexCatalogName [label="{RemoveHiLoAndIndexCatalogName||}"];
+    Outbox [label="{Outbox||}"];
+    CatalogContextModelSnapshot [label="{CatalogContextModelSnapshot||}"];
+    CatalogBrand [label="{CatalogBrand|+ Brand\l+ Id\l|+ CatalogBrand(string brand)\l}"];
+    CatalogItem [label="{CatalogItem|+ AvailableStock\l+ CatalogBrand\l+ CatalogBrandId\l+ CatalogType\l+ CatalogTypeId\l+ Description\l+ Embedding\l+ Id\l+ MaxStockThreshold\l+ Name\l+ OnReorder\l+ PictureFileName\l+ Price\l+ RestockThreshold\l|+ AddStock(int quantity)\l+ CatalogItem(string name)\l+ RemoveStock(int quantityDesired)\l}"];
+    CatalogType [label="{CatalogType|+ Id\l+ Type\l|+ CatalogType(string type)\l}"];
+    Program [label="{Program||}"];
+    CatalogAI [label="{CatalogAI|+ EmbeddingDimensions\l+ IsEnabled\l# _embeddingGenerator\l# _environment\l# _logger\l+ item\l+ item\l|+ CatalogAI(IWebHostEnvironment environment, ILogger<CatalogAI> logger, IEmbeddingGenerator<string, Embedding<float>>? embeddingGenerator = null)\l+ GetEmbeddingAsync(string text)\l+ GetEmbeddingsAsync(IEnumerable<CatalogItem> items)\l}"];
+    JsonSerializerContext [label="{JsonSerializerContext||}"];
+    IValidatableObject [label="{IValidatableObject||}"];
+    DbContext [label="{DbContext||}"];
+    IEntityTypeConfiguration [label="{IEntityTypeConfiguration||}"];
+    Exception [label="{Exception||}"];
+    Migration [label="{Migration||}"];
+    ModelSnapshot [label="{ModelSnapshot||}"];
+    ICatalogAI [label="{ICatalogAI||}"];
+
+    IntegrationEventContext -> JsonSerializerContext [arrowhead=empty];
+    BasketItem -> IValidatableObject [arrowhead=empty];
+    BasketSerializationContext -> JsonSerializerContext [arrowhead=empty];
+    CatalogContext -> DbContext [arrowhead=empty];
+    CatalogBrandEntityTypeConfiguration -> IEntityTypeConfiguration [arrowhead=empty];
+    CatalogItemEntityTypeConfiguration -> IEntityTypeConfiguration [arrowhead=empty];
+    CatalogTypeEntityTypeConfiguration -> IEntityTypeConfiguration [arrowhead=empty];
+    CatalogDomainException -> Exception [arrowhead=empty];
+    Initial -> Migration [arrowhead=empty];
+    RemoveHiLoAndIndexCatalogName -> Migration [arrowhead=empty];
+    Outbox -> Migration [arrowhead=empty];
+    CatalogContextModelSnapshot -> ModelSnapshot [arrowhead=empty];
+    CatalogAI -> ICatalogAI [arrowhead=empty];
+}

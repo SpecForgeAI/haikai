@@ -1,0 +1,8 @@
+{
+  "model": "gpt-4.1-mini",
+  "provider": "openai",
+  "mode": "direct",
+  "limit": 5,
+  "total_in_dataset": 164,
+  "client": "direct_llm"
+}

@@ -1,0 +1,40 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Basket",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "CatalogItem",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "CatalogBrand",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "CatalogType",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Order",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "OrderItem",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "BasketItem",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,50 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "LoginRequest",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "password",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "LoginResponse",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "token",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "userId",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "login",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "validateSession",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /api/users/login",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

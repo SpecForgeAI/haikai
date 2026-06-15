@@ -1,0 +1,69 @@
+name: symfony
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - Symfony\Component\Routing
+    - Symfony\Component\HttpKernel
+    - Symfony\Bundle\FrameworkBundle
+  files_match:
+    - 'symfony.lock'
+    - 'config/routes.yaml'
+    - 'config/routes/**/*.yaml'
+  manifest_contains:
+    - {file: 'composer.json', substring: 'symfony/framework-bundle'}
+
+extract:
+  - id: yaml_routes
+    query: configs
+    parser: symfony_yaml
+    file_glob: '**/config/routes/**/*.yaml'
+  - id: yaml_routes_top
+    query: configs
+    parser: symfony_yaml
+    file_glob: '**/config/routes.yaml'
+  - id: bundle_routing
+    query: configs
+    parser: symfony_yaml
+    file_glob: '**/Resources/config/routing*.yaml'
+  - id: bundle_routing_yml
+    query: configs
+    parser: symfony_yaml
+    file_glob: '**/Resources/config/routing*.yml'
+  - id: php_route_attributes
+    query: annotations
+    file_filter: all
+    annotation_names: [Route]
+    target_kind: method
+  - id: php_route_class_attribute
+    query: annotations
+    file_filter: all
+    annotation_names: [Route]
+    target_kind: class
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: symfony
+
+verification:
+  - id: yaml_route_count
+    query: configs
+    parser: symfony_yaml
+    file_glob: '**/config/routes/**/*.yaml'
+    expected_count: same_as_output_count
+    tolerance_pct: 15
+
+path_only_annotations:
+  - Route
+
+verb_via_methods_arg:
+  - Route
+
+conflict_rules: []
+
+known_pitfalls:
+  - "PHP 8 #[Route] attributes need a separate annotations playbook (not handled here)"
+  - "Bundles ship their own routing.yaml — those need recursive globbing"
+  - "Resource imports (resource: ..., type: annotation) not followed"

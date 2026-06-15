@@ -1,0 +1,712 @@
+/**
+ * DB Schema + Data Migration Pack surface styles
+ *
+ * Spec: 2026-06-11 Source-Grade DB Schema + Data Migration Pack —
+ * Task Group 6. Follows the Migration Delivery Plan conventions
+ * (`MigrationBookOfWork.module.css` — plain CSS module, same palette).
+ */
+
+/* ------------------------------------------------------------------ */
+/* Surface layout */
+/* ------------------------------------------------------------------ */
+
+.surface {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #f9fafb;
+}
+
+.surfaceHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.surfaceTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.surfaceSubtitle {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0 0 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Coverage summary chips */
+/* ------------------------------------------------------------------ */
+
+.coverageChips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.coverageChip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #374151;
+}
+
+.coverageChipTranslated {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.coverageChipSkipped {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #4b5563;
+}
+
+.coverageChipFlagged {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+/* ------------------------------------------------------------------ */
+/* Stale banner + notices */
+/* ------------------------------------------------------------------ */
+
+.staleBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.errorBanner {
+  font-size: 13px;
+  color: #991b1b;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.noticeBanner {
+  font-size: 13px;
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Actions bar */
+/* ------------------------------------------------------------------ */
+
+.actionsBar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.actionButton {
+  font-size: 13px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+}
+
+.actionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actionButtonPrimary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.actionLink {
+  font-size: 13px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  color: #374151;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* ------------------------------------------------------------------ */
+/* Section tabs */
+/* ------------------------------------------------------------------ */
+
+.sectionTabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sectionTab {
+  font-size: 13px;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.sectionTabActive {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pack contents (file tree + preview + manifest sections) */
+/* ------------------------------------------------------------------ */
+
+.contentsLayout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.fileTree {
+  width: 340px;
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 12px;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  color: #374151;
+  font-family: 'SF Mono', Consolas, monospace;
+}
+
+.fileRow:hover {
+  background: #f3f4f6;
+}
+
+.fileRowSelected {
+  background: #dbeafe;
+}
+
+.fileKindBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.filePreview {
+  flex: 1;
+  min-width: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.filePreviewPath {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f2937;
+  font-family: 'SF Mono', Consolas, monospace;
+  margin: 0 0 8px 0;
+}
+
+.filePreviewContent {
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #374151;
+  margin: 0;
+}
+
+.manifestSection {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+
+.manifestSectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 8px 0;
+}
+
+.manifestNote {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 4px 0;
+}
+
+.orderedList {
+  margin: 4px 0;
+  padding-left: 20px;
+  font-size: 12px;
+  color: #374151;
+}
+
+/* ------------------------------------------------------------------ */
+/* Tables (disposition / delta strategies / decisions / drift) */
+/* ------------------------------------------------------------------ */
+
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dataTable th,
+.dataTable td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+  vertical-align: top;
+}
+
+.dataTable thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tableScroll {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.badgeTranslated {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.badgeSkipped {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #4b5563;
+}
+
+.badgeFlagged {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.badgeOpen {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.badgeResolved {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.badgeMatch {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.badgeMissing {
+  background: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.badgeMismatch {
+  background: #fef3c7;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.badgeUnexpected {
+  background: #e0e7ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
+}
+
+.refChip {
+  display: inline-block;
+  font-size: 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  padding: 1px 6px;
+  margin: 1px 3px 1px 0;
+  border-radius: 8px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ------------------------------------------------------------------ */
+/* Decision queue */
+/* ------------------------------------------------------------------ */
+
+.queueToolbar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 10px 0;
+}
+
+.filterGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filterLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filterSelect,
+.filterInput {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  min-width: 140px;
+}
+
+.bulkBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1e40af;
+}
+
+.inlineResolve {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Epic attachment */
+/* ------------------------------------------------------------------ */
+
+.epicChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #e0e7ff;
+  border: 1px solid #c7d2fe;
+  color: #3730a3;
+}
+
+/* ------------------------------------------------------------------ */
+/* Drift report */
+/* ------------------------------------------------------------------ */
+
+.driftRunRow {
+  cursor: pointer;
+}
+
+.driftRunRowSelected {
+  background: #eff6ff;
+}
+
+.driftChips {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ------------------------------------------------------------------ */
+/* Modal + drawer */
+/* ------------------------------------------------------------------ */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.modal {
+  background: #ffffff;
+  border-radius: 8px;
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(17, 24, 39, 0.3);
+}
+
+.modalHeader {
+  padding: 14px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modalTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.modalBody {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modalFooter {
+  padding: 12px 20px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.modalHint {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.fieldRow {
+  display: flex;
+  gap: 10px;
+}
+
+.fieldRow > * {
+  flex: 1;
+}
+
+.detailDrawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(480px, 90vw);
+  background: #ffffff;
+  border-left: 1px solid #e5e7eb;
+  box-shadow: -8px 0 24px rgba(17, 24, 39, 0.15);
+  z-index: 55;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.detailDrawerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detailDrawerTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+  font-family: 'SF Mono', Consolas, monospace;
+  word-break: break-word;
+}
+
+.emptyMessage {
+  font-size: 13px;
+  color: #6b7280;
+  padding: 20px 0;
+  text-align: center;
+}
+
+.filterToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+}
+
+/* ------------------------------------------------------------------ */
+/* Translations tab + side-by-side draft reviewer
+   (Spec 2026-06-11 LLM-Assisted DB Object Translation Drafts, Group 5) */
+/* ------------------------------------------------------------------ */
+
+.translationsTab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reviewerHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.reviewerLayout {
+  display: flex;
+  gap: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.reviewerPane {
+  flex: 1;
+  min-width: 0;
+  max-height: 420px;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.reviewerPane + .reviewerPane {
+  border-left: 1px solid #e5e7eb;
+}
+
+.reviewerPaneTitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 6px 10px;
+  position: sticky;
+  top: 0;
+}
+
+.reviewerLine {
+  font-size: 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #374151;
+  padding: 0 10px;
+  min-height: 18px;
+  line-height: 18px;
+}
+
+.reviewerLineRemoved {
+  background: #fee2e2;
+}
+
+.reviewerLineAdded {
+  background: #d1fae5;
+}
+
+.reviewerLineBlank {
+  background: #f9fafb;
+}
+
+.verdictPanel {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.reviewControls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.reviewNotes {
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  resize: vertical;
+  font-family: inherit;
+}

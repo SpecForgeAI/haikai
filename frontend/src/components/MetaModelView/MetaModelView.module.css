@@ -1,0 +1,108 @@
+/**
+ * MetaModelView Styles
+ *
+ * Task Group 4 & 6: Updated with domain selector row and enterprise density styling.
+ */
+
+.container {
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.mainContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Task Group 4: Domain selector row */
+.domainRow {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.headerLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  min-width: 85px;
+  white-space: nowrap;
+}
+
+.tabsContainer {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  align-items: center;
+}
+
+.tabBar {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+/* Task Group 6: Enterprise density tab styling */
+.tab {
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.activeTab {
+  color: #1976D2;
+  border-bottom-color: #1976D2;
+  background: white;
+}
+
+.domainSeparator {
+  padding: 0 6px;
+  color: #bbb;
+  font-weight: 300;
+  font-size: 14px;
+  user-select: none;
+}
+
+.gridContainer {
+  flex: 1;
+  overflow: hidden;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+}

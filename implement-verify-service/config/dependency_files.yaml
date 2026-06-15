@@ -1,0 +1,198 @@
+# Dependency File Definitions
+# Central configuration for all dependency file types
+# Maps filename patterns to their type, ecosystem, and purpose
+
+dependency_files:
+  # Node.js / JavaScript / TypeScript
+  package.json:
+    type: "Node.js package.json"
+    ecosystem: "javascript"
+    purpose: "both"  # Can be frontend or backend
+    description: "NPM package manifest"
+    
+  package-lock.json:
+    type: "Node.js package-lock.json"
+    ecosystem: "javascript"
+    purpose: "both"
+    description: "NPM dependency lock file"
+    
+  yarn.lock:
+    type: "Yarn lock file"
+    ecosystem: "javascript"
+    purpose: "both"
+    description: "Yarn dependency lock file"
+    
+  pnpm-lock.yaml:
+    type: "PNPM lock file"
+    ecosystem: "javascript"
+    purpose: "both"
+    description: "PNPM dependency lock file"
+  
+  # Python
+  requirements.txt:
+    type: "Python requirements.txt"
+    ecosystem: "python"
+    purpose: "backend"
+    description: "Pip requirements file"
+    
+  Pipfile:
+    type: "Python Pipfile"
+    ecosystem: "python"
+    purpose: "backend"
+    description: "Pipenv package manifest"
+    
+  Pipfile.lock:
+    type: "Python Pipfile.lock"
+    ecosystem: "python"
+    purpose: "backend"
+    description: "Pipenv lock file"
+    
+  pyproject.toml:
+    type: "Python pyproject.toml"
+    ecosystem: "python"
+    purpose: "backend"
+    description: "Python project configuration (Poetry, PDM, etc.)"
+    
+  setup.py:
+    type: "Python setup.py"
+    ecosystem: "python"
+    purpose: "backend"
+    description: "Python package setup script"
+    
+  poetry.lock:
+    type: "Poetry lock file"
+    ecosystem: "python"
+    purpose: "backend"
+    description: "Poetry dependency lock file"
+  
+  # Java
+  pom.xml:
+    type: "Maven pom.xml"
+    ecosystem: "java"
+    purpose: "backend"
+    description: "Maven project object model"
+    
+  build.gradle:
+    type: "Gradle build.gradle"
+    ecosystem: "java"
+    purpose: "backend"
+    description: "Gradle build script (Groovy)"
+    
+  build.gradle.kts:
+    type: "Gradle Kotlin build.gradle.kts"
+    ecosystem: "kotlin"
+    purpose: "backend"
+    description: "Gradle build script (Kotlin DSL)"
+    
+  settings.gradle:
+    type: "Gradle settings.gradle"
+    ecosystem: "java"
+    purpose: "backend"
+    description: "Gradle settings file"
+    
+  gradle.properties:
+    type: "Gradle properties"
+    ecosystem: "java"
+    purpose: "backend"
+    description: "Gradle configuration properties"
+  
+  # Rust
+  Cargo.toml:
+    type: "Rust Cargo.toml"
+    ecosystem: "rust"
+    purpose: "backend"
+    description: "Cargo package manifest"
+    
+  Cargo.lock:
+    type: "Rust Cargo.lock"
+    ecosystem: "rust"
+    purpose: "backend"
+    description: "Cargo dependency lock file"
+  
+  # Ruby
+  Gemfile:
+    type: "Ruby Gemfile"
+    ecosystem: "ruby"
+    purpose: "backend"
+    description: "Bundler gem manifest"
+    
+  Gemfile.lock:
+    type: "Ruby Gemfile.lock"
+    ecosystem: "ruby"
+    purpose: "backend"
+    description: "Bundler lock file"
+  
+  # PHP
+  composer.json:
+    type: "PHP composer.json"
+    ecosystem: "php"
+    purpose: "backend"
+    description: "Composer package manifest"
+    
+  composer.lock:
+    type: "PHP composer.lock"
+    ecosystem: "php"
+    purpose: "backend"
+    description: "Composer lock file"
+  
+  # Go
+  go.mod:
+    type: "Go go.mod"
+    ecosystem: "go"
+    purpose: "backend"
+    description: "Go module file"
+    
+  go.sum:
+    type: "Go go.sum"
+    ecosystem: "go"
+    purpose: "backend"
+    description: "Go checksum file"
+  
+  # Swift
+  Package.swift:
+    type: "Swift Package.swift"
+    ecosystem: "swift"
+    purpose: "mobile"
+    description: "Swift Package Manager manifest"
+  
+  # .NET / C#
+  packages.config:
+    type: ".NET packages.config"
+    ecosystem: "dotnet"
+    purpose: "backend"
+    description: "NuGet packages configuration"
+    
+  # Note: *.csproj would require pattern matching, handled in code
+  
+  # Dart / Flutter
+  pubspec.yaml:
+    type: "Dart pubspec.yaml"
+    ecosystem: "dart"
+    purpose: "mobile"
+    description: "Dart/Flutter package manifest"
+    
+  pubspec.lock:
+    type: "Dart pubspec.lock"
+    ecosystem: "dart"
+    purpose: "mobile"
+    description: "Dart/Flutter lock file"
+  
+  # Elixir
+  mix.exs:
+    type: "Elixir mix.exs"
+    ecosystem: "elixir"
+    purpose: "backend"
+    description: "Mix project configuration"
+    
+  mix.lock:
+    type: "Elixir mix.lock"
+    ecosystem: "elixir"
+    purpose: "backend"
+    description: "Mix dependency lock file"
+  
+  # Scala
+  build.sbt:
+    type: "Scala build.sbt"
+    ecosystem: "scala"
+    purpose: "backend"
+    description: "SBT build definition"

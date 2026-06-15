@@ -1,0 +1,4 @@
+Name: candidate-save-back-to-canonical-model
+Summary: Implement controlled save-back of 1d discovery candidates into the canonical architecture meta-model via MCP tools, with idempotent behavior, parent/relationship resolution, candidate-to-entity mapping storage, and confidence-based save selection — as increment 11 of 16 for the legacy/current-state discovery capability.
+
+Full description: Increment 11 of 16 for legacy/current-state discovery. Takes 1d discovery candidates and transforms them into valid architecture meta-model entities, persisting them via controlled MCP save operations. Includes candidate-to-meta-model mapping, controlled save via MCP, idempotent save behavior, parent/relationship resolution, candidate-to-entity mapping storage, save selection strategy, and save execution flow.

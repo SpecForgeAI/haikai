@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "Article",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "slug",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "title",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /api/articles",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /api/articles",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "DELETE /api/articles/${slug}",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

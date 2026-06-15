@@ -1,0 +1,29 @@
+name: stapler
+version: 1
+language: java
+
+# Jenkins / Hudson Stapler — public methods named doXxx are URL-addressable.
+detection:
+  imports_match:
+    - org.kohsuke.stapler
+    - hudson.model
+    - jenkins.model
+
+extract:
+  - id: do_methods
+    query: method_decls
+    file_filter: all
+    name_pattern: '^do[A-Z]\w*$'
+    path_from: method_name_strip
+    strip_prefix: do
+    verb: ANY
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: stapler
+
+conflict_rules: []
+known_pitfalls:
+  - "Stapler dispatches by method name — doIndex maps to URL /index"
+  - "do<Verb>Foo can also bind to verbs (doGetFoo) — not parsed yet"

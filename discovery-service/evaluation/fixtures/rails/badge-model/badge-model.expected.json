@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Badge",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Badge \u2192 Badge_type",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Badge \u2192 Badge_grouping",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Badge \u2192 Image_upload",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Badge \u2192 User_badge",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Badge \u2192 Upload_reference",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

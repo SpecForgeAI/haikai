@@ -1,0 +1,7 @@
+providers:
+  ctags:
+    enabled: true
+  lsp:
+    enabled: false
+  llm:
+    enabled: true

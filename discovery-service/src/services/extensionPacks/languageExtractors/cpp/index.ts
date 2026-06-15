@@ -1,0 +1,1 @@
+export { extractCppIR } from './extract';

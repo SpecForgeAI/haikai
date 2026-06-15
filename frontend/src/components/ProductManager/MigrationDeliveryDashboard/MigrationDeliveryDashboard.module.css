@@ -1,0 +1,1644 @@
+/**
+ * MigrationDeliveryDashboard styles
+ *
+ * Spec: 2026-05-19 Migration Delivery Progress and Evidence Tracking
+ * Task Groups 8 + 9 + 12 (dashboard shell + summary header + workstream
+ * progress + hierarchy tree + warnings retry placeholder).
+ *
+ * Mirrors the visual primitives used by Spec 1's MigrationDeliveryPlan
+ * progress summary (see MigrationDeliveryPlanProgressSummary.module.css) and
+ * Spec 2's MigrationShapeSpecGeneration workspace so the three Product
+ * Manager workspaces feel consistent. No new design tokens are introduced.
+ */
+
+/* ----- Workspace root ---------------------------------------------------- */
+
+.dashboardRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 22px;
+  max-width: 1280px;
+}
+
+.dashboardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.headerTitle {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.headerMeta {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: #555;
+  flex-wrap: wrap;
+}
+
+.headerMetaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.headerStatusBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 10px;
+  background: #eef2f7;
+  color: #2c3e50;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.headerNavLinks {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.headerNavLink {
+  font-size: 12px;
+  color: #1976d2;
+  text-decoration: none;
+  background: none;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.headerNavLink:hover {
+  text-decoration: underline;
+  border-color: #cfd8dc;
+}
+
+.refreshButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #1976d2;
+  color: #fff;
+  border: 0;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.refreshButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+.refreshTimestamp {
+  font-size: 12px;
+  color: #555;
+}
+
+.errorBanner {
+  background: #fdecea;
+  border: 1px solid #f5c2c0;
+  color: #b71c1c;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.warningBanner {
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #6d4c41;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.placeholder {
+  background: #f5f7fa;
+  border: 1px dashed #c0c8d0;
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #555;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.placeholderText {
+  color: #555;
+}
+
+.placeholderRetryButton {
+  background: none;
+  border: 1px solid #cfd8dc;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1976d2;
+  cursor: pointer;
+}
+
+.placeholderRetryButton:hover {
+  background: #eef4fb;
+  border-color: #90caf9;
+}
+
+/* ----- Summary cards row ------------------------------------------------- */
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.summaryCard {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summaryCardTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #607d8b;
+}
+
+.summaryCardValue {
+  font-size: 26px;
+  font-weight: 700;
+  color: #2c3e50;
+  line-height: 1;
+}
+
+.summaryCardBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+.summaryCardBreakdownItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: #eef2f7;
+  border-radius: 10px;
+}
+
+/* ----- Workstream progress strip ---------------------------------------- */
+
+.workstreamSection {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.workstreamTable {
+  display: grid;
+  grid-template-columns:
+    minmax(140px, 1.4fr)
+    repeat(6, minmax(80px, 1fr));
+  font-size: 13px;
+}
+
+.workstreamRow {
+  display: contents;
+}
+
+.workstreamHeaderCell,
+.workstreamCell {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eceff1;
+}
+
+.workstreamHeaderCell {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #607d8b;
+  background: #f8fafc;
+}
+
+.workstreamLabel {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+/* ----- Hierarchy tree --------------------------------------------------- */
+
+.hierarchySection {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.treeContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.treeNode {
+  display: flex;
+  flex-direction: column;
+}
+
+.nodeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.nodeRow:hover {
+  background: #f5f8fc;
+}
+
+.nodeToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: none;
+  border: 0;
+  font-family: monospace;
+  font-size: 14px;
+  color: #607d8b;
+  cursor: pointer;
+}
+
+.nodeType {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #607d8b;
+  min-width: 60px;
+}
+
+.nodeTitle {
+  flex: 1;
+  font-size: 13px;
+  color: #2c3e50;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badgeRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 10px;
+  background: #eef2f7;
+  color: #455a64;
+}
+
+.badgeSaved {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.badgeNotSaved {
+  background: #f5f5f5;
+  color: #757575;
+}
+
+.badgeSpecGenerated {
+  background: #e3f2fd;
+  color: #0d47a1;
+}
+
+.badgeSpecWarning {
+  background: #fff8e1;
+  color: #8d6e63;
+}
+
+.badgeSpecInsufficient {
+  background: #fff3e0;
+  color: #bf360c;
+}
+
+.badgeSpecFailed {
+  background: #ffebee;
+  color: #b71c1c;
+}
+
+.badgeConfidenceHigh {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.badgeConfidenceMedium {
+  background: #fff8e1;
+  color: #8d6e63;
+}
+
+.badgeConfidenceLow {
+  background: #ffebee;
+  color: #b71c1c;
+}
+
+.badgeNeedsAttention {
+  background: #fdecea;
+  color: #b71c1c;
+}
+
+.badgeMissingInputs {
+  background: #fbe9e7;
+  color: #bf360c;
+}
+
+/* In-Product Spec Editor + Confirm-Overwrite (2026-05-20, Task Group 8).
+   Subtle dashed-outline chip used on hierarchy story rows and the drawer header
+   to flag manually-edited specs. Intentionally low-saturation so it does not
+   compete with the quality-grade chip. */
+.badgeManuallyEdited {
+  background: #ffffff;
+  color: #5f6368;
+  border: 1px dashed #b0bec5;
+  padding: 0 5px;
+}
+
+/* Net-new backlog items + provenance (2026-06-14, D5). The provenance badge
+   on story rows + the provenance filter chips. net_new reads as a deliberate
+   additive marker (indigo); carry_over is the quiet like-for-like default. */
+.badgeNetNew {
+  background: #ede7f6;
+  color: #4527a0;
+  font-weight: 600;
+}
+
+.badgeCarryOver {
+  background: #eceff1;
+  color: #546e7a;
+}
+
+/* Drawer-header variant of the Edited indicator, used inline next to the
+   View/Edit toggle. */
+.editedIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #5f6368;
+  border: 1px dashed #b0bec5;
+}
+
+/* Drawer save-state pill: cycles "Save" / "Saving..." / "Saved". */
+.editorSaveStatus {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  border-radius: 10px;
+  background: #eceff1;
+  color: #455a64;
+}
+.editorSaveStatusDirty {
+  background: #fff8e1;
+  color: #8d6e63;
+}
+.editorSaveStatusSaving {
+  background: #e3f2fd;
+  color: #0d47a1;
+}
+.editorSaveStatusSaved {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+.editorErrorBanner {
+  padding: 8px 10px;
+  background: #ffebee;
+  color: #b71c1c;
+  border: 1px solid #ef9a9a;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* Drawer "View previous version" diff toggle button. */
+.diffToggleButton {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #cfd8dc;
+  background: #fff;
+  color: #455a64;
+  cursor: pointer;
+}
+
+/* Confirm-overwrite modal -- shared utility classes for the two new modals. */
+.modalDescription {
+  font-size: 13px;
+  color: #455a64;
+  margin: 0;
+}
+
+.modalBulkList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.modalBulkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #fafafa;
+}
+
+.modalBulkRowMeta {
+  font-size: 11px;
+  color: #607d8b;
+}
+
+.modalBulkHeaderToggleRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.treeChildren {
+  margin-left: 22px;
+  border-left: 1px dashed #e0e0e0;
+  padding-left: 8px;
+}
+
+/* ----- Needs-attention panel + filters --------------------------------- */
+
+.needsAttentionSection {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.needsAttentionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.needsAttentionActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterPanel {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e0e6ec;
+  border-radius: 6px;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filterFieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #607d8b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filterSelect {
+  padding: 4px 8px;
+  font-size: 13px;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.filterResetButton {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid #cfd8dc;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #455a64;
+}
+
+.bulkButton {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 4px;
+  background: #1976d2;
+  color: #fff;
+  cursor: pointer;
+}
+
+.bulkButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+.bulkInFlightBanner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #0d47a1;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.needsAttentionList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.needsAttentionRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid #eceff1;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.needsAttentionRow:hover {
+  background: #f5f8fc;
+}
+
+.needsAttentionRowHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.needsAttentionType {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: #fdecea;
+  color: #b71c1c;
+}
+
+.needsAttentionTypeInsufficient {
+  background: #fff3e0;
+  color: #bf360c;
+}
+
+.needsAttentionTypeBlocked {
+  background: #ede7f6;
+  color: #311b92;
+}
+
+.needsAttentionTypeNotSaved {
+  background: #f5f5f5;
+  color: #424242;
+}
+
+.needsAttentionTypeWarnings {
+  background: #fff8e1;
+  color: #6d4c41;
+}
+
+.needsAttentionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.needsAttentionWorkstream {
+  font-size: 12px;
+  color: #607d8b;
+}
+
+.needsAttentionReason {
+  font-size: 12px;
+  color: #555;
+}
+
+.needsAttentionMissingInputsInline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0 0;
+  padding: 6px 8px;
+  background: #fbe9e7;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #4e342e;
+}
+
+.needsAttentionMissingInputEntry {
+  display: flex;
+  gap: 6px;
+}
+
+.needsAttentionMissingInputKind {
+  font-weight: 600;
+  color: #bf360c;
+  min-width: 70px;
+}
+
+.emptyPanel {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #607d8b;
+  text-align: center;
+}
+
+/* ----- Story detail drawer --------------------------------------------- */
+
+.drawerBackdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 1000;
+}
+
+.drawer {
+  width: 520px;
+  max-width: 100vw;
+  height: 100vh;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18);
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.drawerTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.drawerCloseButton {
+  background: none;
+  border: 0;
+  font-size: 18px;
+  color: #607d8b;
+  cursor: pointer;
+}
+
+.drawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.drawerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drawerSectionTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.drawerSubtle {
+  margin: 0;
+  font-size: 12px;
+  color: #607d8b;
+}
+
+.drawerParagraph {
+  margin: 0;
+  font-size: 13px;
+  color: #2c3e50;
+  line-height: 1.4;
+}
+
+.drawerMissingGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  background: #fbe9e7;
+  border-radius: 4px;
+}
+
+.drawerMissingGroupTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #bf360c;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drawerMissingEntry {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: #4e342e;
+}
+
+.drawerMissingEntryId {
+  font-family: monospace;
+  font-size: 11px;
+  color: #6d4c41;
+}
+
+.drawerMissingEntryReason {
+  font-size: 12px;
+  color: #4e342e;
+  white-space: pre-wrap;
+}
+
+/* Follow-up #2 -- orphan repair button on a needs-attention row. */
+.needsAttentionRowAction {
+  align-self: flex-start;
+  margin-top: 6px;
+  background: none;
+  border: 1px solid #cfd8dc;
+  border-radius: 3px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1976d2;
+  cursor: pointer;
+}
+
+.needsAttentionRowAction:hover:not(:disabled) {
+  background: #eef4fb;
+  border-color: #90caf9;
+}
+
+.needsAttentionRowAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ============================================================================
+   Cross-Story Context Injection (2026-05-20) -- Task Group 7 additions
+   Pass-2 chips, inline diff, contradiction warnings, budget banners,
+   Generate-all dialog, workstream context panel, post-batch summary,
+   epic decisions summary, batch-in-progress banner.
+   ========================================================================= */
+
+/* ----- Drawer pass-2 chip row + pass-2 chips ----- */
+
+.drawerChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.badgePassTwo {
+  background: #ede7f6;
+  color: #311b92;
+}
+
+.badgeNoMeaningfulChange {
+  background: #eceff1;
+  color: #455a64;
+}
+
+.badgeContradiction {
+  background: #fdecea;
+  color: #b71c1c;
+}
+
+.badgeAlignedWithEpic {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+/* ----- Drawer inline diff ----- */
+
+.inlineDiffContainer {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  background: #fafafa;
+  font-family: monospace;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.inlineDiffEmpty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #607d8b;
+  background: #f5f7fa;
+  border: 1px dashed #c0c8d0;
+  border-radius: 4px;
+}
+
+.inlineDiffLineEqual,
+.inlineDiffLineAdded,
+.inlineDiffLineRemoved {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 1px 6px;
+  white-space: pre-wrap;
+}
+
+.inlineDiffLineEqual {
+  background: transparent;
+  color: #455a64;
+}
+
+.inlineDiffLineAdded {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.inlineDiffLineRemoved {
+  background: #fdecea;
+  color: #b71c1c;
+}
+
+.inlineDiffLinePrefix {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.inlineDiffLineText {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* ----- Drawer cross-story warnings ----- */
+
+.drawerWarningRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.drawerWarningText {
+  font-size: 12px;
+  color: #455a64;
+}
+
+/* ----- Workstream context panel ----- */
+
+.workstreamContextSection {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.workstreamContextHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workstreamContextGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e0e6ec;
+  border-radius: 4px;
+}
+
+.workstreamContextGroupTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #455a64;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.workstreamContextList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.workstreamContextItem {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px solid #eceff1;
+  border-radius: 3px;
+}
+
+.workstreamContextItemLabel {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.workstreamContextItemRefs {
+  font-size: 11px;
+  color: #607d8b;
+}
+
+/* ----- Active-batch banner ----- */
+
+.batchInProgressBanner {
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #0d47a1;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ----- Post-batch summary ----- */
+
+.postBatchSummarySection {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.postBatchSummaryRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+/* ----- Epic decisions summary ----- */
+
+.epicDecisionsSummarySection {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.epicDecisionsSummaryList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.epicDecisionsSummaryItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border: 1px solid #e0e6ec;
+  border-radius: 4px;
+}
+
+.epicDecisionsSummaryTitle {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 13px;
+  flex: 1;
+}
+
+.epicDecisionsSummaryCounts {
+  font-size: 12px;
+  color: #607d8b;
+}
+
+/* ----- Generate-all dialog ----- */
+
+.dialogBackdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+}
+
+.dialogPanel {
+  width: 520px;
+  max-width: 100vw;
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dialogHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.dialogBody {
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dialogToggleRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e0e6ec;
+  border-radius: 4px;
+}
+
+.dialogToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
+.dialogToggleDescription {
+  margin: 0;
+  font-size: 12px;
+  color: #607d8b;
+}
+
+.dialogCostPreview {
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dialogFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+}
+
+.dialogPrimaryButton {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 0;
+  border-radius: 4px;
+  background: #1976d2;
+  color: #fff;
+  cursor: pointer;
+}
+
+.dialogPrimaryButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+.dialogSecondaryButton {
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #cfd8dc;
+  background: #fff;
+  color: #455a64;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* ----------------------------------------------------------------------------
+ * Stale shape-specs panel (Target Architecture Authoring Flow, Task Group 9)
+ * -------------------------------------------------------------------------- */
+
+.staleSpecsSection {
+  margin: 12px 16px;
+}
+
+.staleSpecsPanel {
+  margin-top: 8px;
+  padding: 12px 16px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.staleSpecsPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.staleSpecsPanelHeader h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+  color: #455a64;
+}
+
+.staleSpecsList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.staleSpecsListItem {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: #263238;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.summaryCardValueButton {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.summaryCardValueButton:disabled {
+  cursor: default;
+}
+
+/* =========================================================================
+   Spec Quality Scoring (2026-05-20)
+   Per-grade colour ramp parallels the confidence-pill ramp. The disagreement
+   badge is a small superscript dot on top of the chip.
+   ========================================================================= */
+
+.badgeQualityWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.badgeQualityA {
+  background: #c8e6c9;
+  color: #1b5e20;
+}
+
+.badgeQualityB {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badgeQualityC {
+  background: #fff8e1;
+  color: #8d6e63;
+}
+
+.badgeQualityD {
+  background: #ffe0b2;
+  color: #bf360c;
+}
+
+.badgeQualityF {
+  background: #ffebee;
+  color: #b71c1c;
+}
+
+.badgeQualityNa {
+  background: #f5f5f5;
+  color: #9e9e9e;
+}
+
+.badgeQualityCompact {
+  padding: 0px 4px;
+  font-size: 10px;
+}
+
+.badgeQualityDisagreementDot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: #d32f2f;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 50%;
+  width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Drawer quality breakdown section */
+
+.qualityBreakdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.qualityBreakdownCompositeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.qualityBreakdownDeltaChip {
+  background: #ede7f6;
+  color: #311b92;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 10px;
+}
+
+.qualityBreakdownRow {
+  display: grid;
+  grid-template-columns: 1fr 50px 2fr;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px dashed #eceff1;
+}
+
+.qualityBreakdownDimensionName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #37474f;
+}
+
+.qualityBreakdownDimensionScore {
+  font-size: 11px;
+  color: #455a64;
+  background: #eceff1;
+  padding: 1px 6px;
+  border-radius: 8px;
+  display: inline-block;
+  text-align: center;
+}
+
+.qualityBreakdownDimensionReason {
+  font-size: 11px;
+  color: #607d8b;
+}
+
+.qualityRecomputeButton {
+  background: transparent;
+  border: 1px solid #cfd8dc;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #37474f;
+}
+
+.qualityRecomputeButton:hover:not(:disabled) {
+  background: #eceff1;
+}
+
+.qualityRecomputeButton:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Dashboard grade filter chip group */
+
+.gradeFilter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.gradeFilterLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #37474f;
+  margin-right: 4px;
+}
+
+.gradeFilterChip {
+  background: #f5f5f5;
+  color: #607d8b;
+  border: 1px solid transparent;
+  padding: 2px 10px;
+  font-size: 11px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.gradeFilterChipSelected {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border-color: #90caf9;
+}
+
+/* ==========================================================================
+   Holistic Integration/E2E TEST Work Items (Spec 2026-06-14, Task Group 4)
+   ========================================================================== */
+
+/* Distinct chip for `type === 'TEST'` sibling nodes in the hierarchy tree.
+   Teal so it does not collide with the saved/spec/quality badge palette and
+   reads clearly as an integration/E2E test deliverable. */
+.badgeTest {
+  background: #e0f2f1;
+  color: #00695c;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Per-node "Define Integration/E2E Tests" action button, rendered inline in
+   the FEATURE/EPIC node's badge row. Modelled on the dashboard header's
+   bulk-button affordance but sized for an inline tree row. */
+.nodeActionButton {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 11px;
+  border-radius: 10px;
+  border: 1px solid #b2dfdb;
+  background: #e0f2f1;
+  color: #00695c;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nodeActionButton:hover:not(:disabled) {
+  background: #b2dfdb;
+}
+
+.nodeActionButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Filter-toggle row holding the show/hide TEST checkbox above the tree. */
+.testFilterToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #455a64;
+  cursor: pointer;
+}
+
+/* The define-tests result banner (allow-with-warning + empty-plan + success).
+   Neutral surface; the inner skippedChildren list is muted. */
+.defineTestsBanner {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #b2dfdb;
+  background: #e0f2f1;
+  color: #00564d;
+  font-size: 13px;
+}
+
+.defineTestsBannerWarning {
+  border-color: #ffe0b2;
+  background: #fff8e1;
+  color: #8d6e63;
+}
+
+.defineTestsBannerList {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+
+/* Migrate Button + Migration Execution Driver (2026-06-14, Task Group 5). */
+
+/* Generic status/summary banner reused by the recompute summary + the Migrate
+   confirm + run-progress surfaces. Neutral info styling. */
+.summaryBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid #c5cae9;
+  background: #e8eaf6;
+  color: #283593;
+  font-size: 13px;
+}
+
+/* The distinct "Deferred" story badge (excluded from THIS Migrate run only;
+   stays in reconciliation scope). Muted amber so it reads as a deliberate,
+   reversible hold rather than an error. */
+.badgeDeferred {
+  background: #fff8e1;
+  color: #8d6e63;
+  border: 1px solid #ffe0b2;
+}
+
+/* Migration Reconciliation + Bug Loop (2026-06-14, Spec 4 of 4, Task Group 5).
+   The reconciliation REVIEW surface: the breaks table + the distinct
+   re-reconcile-outcome badges. The break == a drifting api_behaviour_diff_item;
+   the table mirrors the existing DriftReportTab styling, scoped to this module
+   so the panel does not depend on ApiBaselinesListPage.module.css. */
+.reconBreaksTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.reconBreaksTable th,
+.reconBreaksTable td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eceff1;
+  vertical-align: top;
+}
+
+.reconBreaksTable th {
+  font-weight: 600;
+  color: #546e7a;
+  border-bottom: 2px solid #cfd8dc;
+}
+
+/* Distinct re-reconcile-outcome badges (fixed_confirmed / still_broken /
+   circuit_broken_escalated). Greens read as resolved, ambers as still looping,
+   reds as escalated/terminal-needs-human -- consistent with the dashboard's
+   existing badge palette. */
+.badgeFixedConfirmed {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.badgeStillBroken {
+  background: #fff8e1;
+  color: #8d6e63;
+}
+
+.badgeCircuitBroken {
+  background: #ffebee;
+  color: #b71c1c;
+  border: 1px solid #ffcdd2;
+}
+/* D6 (Non-Reconciling Work at Reconcile Time): the recognised additive net_new
+   endpoint state. A target_only diff whose <METHOD> <path> matched a net_new
+   work item is auto-marked Expected -- reads as a deliberate, recognised state
+   (indigo, echoing the D5 net_new provenance badge), distinct from the
+   resolved/looping/escalated re-reconcile outcomes and from intentional_deviation. */
+.badgeExpectedNetNew {
+  background: #ede7f6;
+  color: #4527a0;
+  font-weight: 600;
+}

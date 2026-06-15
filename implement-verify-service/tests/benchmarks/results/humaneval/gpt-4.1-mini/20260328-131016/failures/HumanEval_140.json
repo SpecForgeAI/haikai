@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/140",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "import re\nreturn re.sub(r' {3,}', '-', re.sub(r' ', '_', text))",
+  "expected_output": "    new_text = \"\"\n    i = 0\n    start, end = 0, 0\n    while i < len(text):\n        if text[i] == \" \":\n            end += 1\n        else:\n            if end - start > 2:\n                new_text += \"-\"+text[i]\n            elif end - start > 0:\n                new_text += \"_\"*(end - start)+text[i]\n            else:\n                new_text += text[i]\n            start, end = i+1, i+1\n        i+=1\n    if end - start > 2:\n        new_text += \"-\"\n    elif end - start > 0:\n        new_text += \"_\"\n    return new_text\n",
+  "latency_seconds": 0.6678567118942738,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 154,
+    "output_tokens": 22,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "FlaggedTopicSerializer",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "id",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "title",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "fancy_title",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "slug",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "archived",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "closed",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "visible",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "archetype",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "relative_url",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

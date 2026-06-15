@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/3",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "balance = 0\nfor op in operations:\n    balance += op\n    if balance < 0:\n        return True\nreturn False",
+  "expected_output": "    balance = 0\n\n    for op in operations:\n        balance += op\n        if balance < 0:\n            return True\n\n    return False\n",
+  "latency_seconds": 1.027702037943527,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 166,
+    "output_tokens": 28,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

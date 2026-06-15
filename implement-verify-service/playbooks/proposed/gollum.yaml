@@ -1,0 +1,33 @@
+name: gollum
+version: 1
+language: ruby
+
+detection:
+  imports_match:
+    - "sinatra"
+    - "Gollum"
+  files_match:
+    - "lib/gollum/**/*.rb"
+
+extract:
+  - id: sinatra_route_calls
+    query: call_args
+    file_filter: all
+    file_extensions: [".rb"]
+    callee_pattern: '^(get|post|put|delete|patch)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: gollum
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Routes defined with a Regexp path (get /pattern/ do) instead of a string literal are not captured"
+  - "Named URL parameters (:page, :name) are captured as-is in the path string, not expanded"
+  - "Sinatra before/after filters that intercept and handle requests are not captured"
+  - "JSON API responses and HTML page responses are not distinguished; all routes emit as WEB"

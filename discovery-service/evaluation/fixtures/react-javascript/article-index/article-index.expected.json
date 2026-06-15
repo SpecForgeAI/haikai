@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "Article",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET $this.props.match.params.id",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

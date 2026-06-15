@@ -1,0 +1,1071 @@
+/**
+ * ImplementationAssistantPanel.module.css
+ *
+ * Spec 2026-01-03: Product Implement View (Stage 5 - Increment 4)
+ * Updated for Spec 2026-01-09: Implement Chat - Planner Conversation Loop (Iteration 2)
+ * Updated for Spec 2026-01-09: Implement Generate Specs - Iteration 4
+ * Task Group 5 & 6: Styles for the Implementation Assistant chat panel with specs display.
+ * Follows patterns from ChatPanel.module.css.
+ *
+ * Spec 2026-01-13: Implement Assistant Stage 3 - Bootstrap Phase
+ * Added bootstrap loading state styles.
+ *
+ * Spec 2026-01-22: Feature Shaping UI Consumes Planner JSON
+ * Task Group 6: Split Layout and Responsive Design
+ * - Added split panel layout (60% Feature / 40% Chat)
+ * - Added mobile tab bar
+ * - Added responsive breakpoints for tablet and mobile
+ *
+ * Spec 2026-01-23: Two-Flag Workflow State Machine
+ * Task Group 4: Implement Button Muted State
+ * - Added .implementButtonMuted for "In Implementation" state
+ *
+ * Spec 2026-01-24: Implement Screen Change 1 - Remove RHS WorkItemSummaryPanel
+ * Task Group 1: Updated split from 60/40 to 65/35
+ * - Changed .featurePanel from 60% to 65%
+ * - Changed .chatPanel from 40% to 35%
+ *
+ * Spec 2026-01-24: Implement Screen Information Density
+ * Task Group 1: Removed .header and .title classes (Implementation Assistant header bar)
+ * Task Group 2: Relocated chat composer to RHS panel only
+ * Task Group 3: Added .featureFooter for Implement button in LHS panel
+ *
+ * Spec 2026-02-06: Implement-Part Sequencing Workflow
+ * Task Group 6: Integration and Wiring
+ * - Added .workflowCompleteMessage for "All parts completed" state
+ * - Added .activePartIndicator for active part display in header
+ */
+
+/* Container */
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ============================================
+ * Split Panel Layout - Spec 2026-01-22
+ * Spec 2026-01-24: Updated to 65/35 split
+ * ============================================ */
+
+.splitContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Feature Definition Panel (Left - 65%)
+ * Spec 2026-01-24: Changed from 60% to 65%
+ */
+.featurePanel {
+  flex: 0 0 65%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #e0e0e0;
+}
+
+/**
+ * Spec 2026-01-24: Feature Footer for Implement Button
+ * Task Group 3: Implement button relocated to LHS footer
+ */
+.featureFooter {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+/* Team Chat Panel (Right - 35%)
+ * Spec 2026-01-24: Changed from 40% to 35%
+ */
+.chatPanel {
+  flex: 0 0 35%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chatPanelHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.chatPanelTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.chatContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ============================================
+ * Mobile Tab Bar - Spec 2026-01-22
+ * Hidden on desktop, visible on mobile
+ * ============================================ */
+
+.mobileTabBar {
+  display: none;
+  flex-shrink: 0;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  gap: 8px;
+}
+
+.mobileTab {
+  flex: 1;
+  padding: 10px 16px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.mobileTab:hover {
+  background: #f5f5f5;
+}
+
+.mobileTab.activeTab {
+  background: #1976d2;
+  color: #ffffff;
+  border-color: #1976d2;
+}
+
+/* Active panel state for mobile tabs */
+.activePanel {
+  display: flex;
+}
+
+/* ============================================
+ * Responsive Design - Spec 2026-01-22
+ * Spec 2026-01-24: Task Group 7 - Responsive Density Cascade
+ * ============================================ */
+
+/* Tablet: Stacked layout (max-width: 1024px) */
+@media (max-width: 1024px) {
+  .splitContainer {
+    flex-direction: column;
+  }
+
+  .featurePanel {
+    flex: 0 0 50%;
+    border-right: none;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .chatPanel {
+    flex: 0 0 50%;
+  }
+
+  /* Spec 2026-01-24: Task Group 7 - Tablet density for footer */
+  .featureFooter {
+    padding: 10px 14px;
+  }
+}
+
+/* Mobile: Tab layout (max-width: 768px) */
+@media (max-width: 768px) {
+  .mobileTabBar {
+    display: flex;
+  }
+
+  .splitContainer {
+    flex-direction: column;
+  }
+
+  .featurePanel,
+  .chatPanel {
+    flex: 1;
+    display: none;
+  }
+
+  .featurePanel.activePanel,
+  .chatPanel.activePanel {
+    display: flex;
+  }
+
+  /* Spec 2026-01-24: Task Group 7 - Mobile density for footer */
+  .featureFooter {
+    padding: 10px 12px;
+  }
+}
+
+/* ============================================
+ * Legacy Content Area (kept for backwards compatibility)
+ * ============================================ */
+
+/* Content area - for messages or empty state */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Messages container - takes full height of content */
+.messagesContainer {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+  min-height: 0;
+}
+
+/* Empty state styles */
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  overflow: auto;
+}
+
+.emptyStateIcon {
+  color: #bdbdbd;
+  margin-bottom: 20px;
+}
+
+.emptyStateText {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.emptyStateHint {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.5;
+  text-align: center;
+  max-width: 400px;
+}
+
+/* ============================================
+ * Bootstrap Loading State - Spec 2026-01-13
+ * ============================================ */
+
+.bootstrapLoading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  gap: 16px;
+}
+
+.loadingSpinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #1976d2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingText {
+  font-size: 14px;
+  color: #666;
+  font-style: italic;
+}
+
+/**
+ * Spec 2026-01-24: Task Group 2 - Input area relocated to RHS chat panel only
+ * Anchored at bottom with messages scrolling above
+ */
+.inputArea {
+  flex-shrink: 0;
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+  padding: 12px 16px;
+}
+
+/* Textarea styles */
+.textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 120px;
+  padding: 10px 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.textarea:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/**
+ * Spec 2026-01-24: Task Group 3 - Button row in RHS now contains only Send button
+ * Implement button moved to LHS .featureFooter
+ */
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+/* Send button */
+.sendButton {
+  padding: 10px 20px;
+  background: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.sendButton:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.sendButton:disabled {
+  background: #e0e0e0;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Implement button - distinct green styling */
+.implementButton {
+  padding: 10px 20px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.implementButton:hover:not(:disabled) {
+  background: #43A047;
+}
+
+.implementButton:disabled {
+  background: #e0e0e0;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/**
+ * Spec 2026-01-23: Two-Flag Workflow State Machine
+ * Task Group 4: Muted state when implementationMode is true
+ * Shows "In Implementation" with a muted green background
+ * Disabled state takes precedence via CSS specificity
+ */
+.implementButtonMuted {
+  background: #81c784;
+  color: white;
+}
+
+.implementButtonMuted:disabled {
+  background: #81c784;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: not-allowed;
+}
+
+/* Loading indicator */
+.loadingIndicator {
+  padding: 12px 20px;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* Error message */
+.errorMessage {
+  padding: 12px 20px;
+  color: #d32f2f;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ============================================
+ * Generated Specs Panel - Iteration 4
+ * ============================================ */
+
+.specsPanel {
+  flex-shrink: 0;
+  max-height: 300px;
+  overflow: auto;
+  border-top: 2px solid #4CAF50;
+  background: #f8fdf8;
+}
+
+.specsPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #e8f5e9;
+  border-bottom: 1px solid #c8e6c9;
+  position: sticky;
+  top: 0;
+}
+
+.specsPanelHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.copyButton {
+  padding: 6px 12px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.copyButton:hover {
+  background: #43A047;
+}
+
+.specsWarning {
+  padding: 8px 16px;
+  background: #fff8e1;
+  color: #f57c00;
+  font-size: 12px;
+  border-bottom: 1px solid #ffe082;
+}
+
+.specsContent {
+  padding: 12px 16px;
+}
+
+.specBlock {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 12px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.specBlock:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================
+ * Legacy placeholder styles - kept for backwards compatibility
+ * ============================================ */
+
+.placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 400px;
+}
+
+.placeholderIcon {
+  color: #bdbdbd;
+  margin-bottom: 20px;
+}
+
+.placeholderText {
+  font-size: 16px;
+  color: #666;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+
+.placeholderHint {
+  font-size: 13px;
+  color: #888;
+  line-height: 1.5;
+}
+
+.inputPlaceholder {
+  display: flex;
+  gap: 8px;
+}
+
+.disabledInput {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 14px;
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.disabledInput:disabled {
+  opacity: 0.7;
+}
+
+.disabledInput::placeholder {
+  color: #bbb;
+}
+
+.disabledSendButton {
+  padding: 10px 20px;
+  background: #e0e0e0;
+  color: #999;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: not-allowed;
+}
+
+.disabledSendButton:disabled {
+  opacity: 0.7;
+}
+
+/* ============================================
+ * Handoff Plan Preview Panel
+ * Spec 2026-01-14: Implement Assistant Stage 6a
+ * Purple/indigo accent theme for handoff phase
+ * ============================================ */
+
+.handoffPlanPanel {
+  flex-shrink: 0;
+  max-height: 350px;
+  overflow: auto;
+  border-top: 2px solid #673ab7;
+  background: #faf8ff;
+}
+
+.handoffPlanHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #ede7f6;
+  border-bottom: 1px solid #d1c4e9;
+  position: sticky;
+  top: 0;
+}
+
+.handoffPlanHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #512da8;
+}
+
+.handoffPlanSummary {
+  padding: 12px 16px;
+  background: #f3e5f5;
+  border-bottom: 1px solid #e1bee7;
+  font-size: 14px;
+  color: #6a1b9a;
+  line-height: 1.5;
+}
+
+.handoffIntentsList {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.handoffIntentCard {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #673ab7;
+  border-radius: 6px;
+  padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.handoffIntentCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.handoffIntentId {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 24px;
+  padding: 0 8px;
+  background: #673ab7;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.handoffIntentTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+  flex: 1;
+}
+
+.handoffIntentDescription {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.handoffIntentSection {
+  margin-top: 10px;
+}
+
+.handoffIntentSectionLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.handoffIntentList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.handoffIntentListItem {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #555;
+}
+
+.handoffIntentListItem.inScope {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.handoffIntentListItem.outOfScope {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.handoffIntentListItem.acceptance {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.handoffIntentListItem.dependency {
+  background: #ede7f6;
+  color: #512da8;
+}
+
+.handoffSingleIntent {
+  padding: 16px;
+  font-size: 14px;
+  color: #555;
+  text-align: center;
+  font-style: italic;
+}
+
+.handoffSplitBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #673ab7;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+.handoffNoSplitBadge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #9e9e9e;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+/* ============================================
+ * Execute Button and Execution Result Panels
+ * Spec 2026-01-14: Implement Assistant Stage 6b
+ * Orange/amber accent for execute action
+ * ============================================ */
+
+/* Execute button - distinct orange/amber styling */
+.executeButton {
+  padding: 10px 20px;
+  background: #ff9800;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.executeButton:hover:not(:disabled) {
+  background: #f57c00;
+}
+
+.executeButton:disabled {
+  background: #e0e0e0;
+  color: #999;
+  cursor: not-allowed;
+}
+
+/* Execution Result Panel - Success (green accent) */
+.executionResultPanel {
+  flex-shrink: 0;
+  max-height: 300px;
+  overflow: auto;
+  border-top: 2px solid #4CAF50;
+  background: #f8fdf8;
+}
+
+.executionResultPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #e8f5e9;
+  border-bottom: 1px solid #c8e6c9;
+  position: sticky;
+  top: 0;
+}
+
+.executionResultPanelHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.executionResultContent {
+  padding: 12px 16px;
+}
+
+/* Execution Error Panel (red accent) */
+.executionErrorPanel {
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow: auto;
+  border-top: 2px solid #f44336;
+  background: #fff8f7;
+}
+
+.executionErrorHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #ffebee;
+  border-bottom: 1px solid #ffcdd2;
+  position: sticky;
+  top: 0;
+}
+
+.executionErrorHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #c62828;
+}
+
+.executionErrorMessage {
+  padding: 12px 16px;
+  color: #d32f2f;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* JSON Viewer for formatted output */
+.jsonViewer {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+}
+
+/* ============================================
+ * Part Workflow Styles
+ * Spec 2026-02-06: Implement-Part Sequencing Workflow
+ * Task Group 6: Integration and Wiring
+ * ============================================ */
+
+/**
+ * Task 6.7: Workflow completion message
+ * Displayed when all parts reach COMPLETED status
+ * Green accent theme for success
+ */
+.workflowCompleteMessage {
+  padding: 16px 20px;
+  background: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  border-radius: 6px;
+  margin: 12px 16px;
+  text-align: center;
+  color: #2e7d32;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/**
+ * Task 6.5: Active part indicator in chat header
+ * Shows which part's transcript is being displayed
+ */
+.activePartIndicator {
+  font-weight: 400;
+  color: #666;
+  font-size: 13px;
+}
+
+/* ============================================
+ * Implementation Chat Header - matches Hub chat header
+ * Spec 2026-03-15: Chat Header Bar
+ * ============================================ */
+
+.chatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.chatHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chatHeaderTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.chatHeaderSection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chatHeaderLabel {
+  font-size: 13px;
+  font-weight: 400;
+  color: #888;
+}
+
+.chatHeaderSeparator {
+  color: #ccc;
+  margin: 0 4px;
+}
+
+.chatHeaderPersonaName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.chatHeaderPersonaIndicator {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.chatHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chatHeaderActionButton {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.chatHeaderActionButton:hover {
+  background: #f0f0f0;
+}
+
+/* ============================================
+ * Clear Conversation Confirmation Dialog
+ * Spec 2026-03-15: Clear Confirmation Modal
+ * ============================================ */
+
+.confirmOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.confirmDialog {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+}
+
+.confirmMessage {
+  font-size: 14px;
+  color: #333;
+  margin: 0 0 16px 0;
+  line-height: 1.4;
+}
+
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirmCancelButton {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #ffffff;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.confirmCancelButton:hover {
+  background: #f5f5f5;
+}
+
+.confirmClearButton {
+  padding: 6px 16px;
+  font-size: 13px;
+  border-radius: 4px;
+  border: none;
+  background: #d32f2f;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.confirmClearButton:hover {
+  background: #c62828;
+}
+
+/* ============================================================================
+ * Spec 2026-06-12: Implementation-Service Init and Integration Repair
+ * Live job progress indicator + persisted git outcome rows
+ * ============================================================================ */
+
+.jobProgressIndicator {
+  padding: 8px 16px;
+  background: #eef4fb;
+  border-top: 1px solid #d3e3f5;
+  border-bottom: 1px solid #d3e3f5;
+  color: #2b5d9b;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.outcomeRow {
+  padding: 2px 0;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.outcomeLabel {
+  font-weight: 600;
+}

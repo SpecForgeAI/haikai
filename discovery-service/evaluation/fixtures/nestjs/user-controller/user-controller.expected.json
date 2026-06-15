@@ -1,0 +1,100 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "UserController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /users/login",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /users",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /users/current",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "PUT /users",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "LoginDto",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "password",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "CreateUserDto",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "username",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "password",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "UpdateUserDto",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "bio",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "image",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "UserDto",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "username",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "token",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

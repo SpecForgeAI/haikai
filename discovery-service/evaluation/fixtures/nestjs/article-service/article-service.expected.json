@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "business_logics",
+      "name": "evaluateArticleScore",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "normalizeArticleSlug",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

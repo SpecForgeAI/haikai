@@ -1,0 +1,5 @@
+# pattern	confidence	symbol	file	evidence
+factory	0.8	AbstractFactoryTest	abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	class name contains factory pattern
+factory	0.8	FactoryMaker	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	class name contains factory pattern
+factory	0.8	ElfKingdomFactory	abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	factory methods: createArmy, createCastle, createKing; returns KingdomFactory subclasses
+factory	0.8	OrcKingdomFactory	abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java	factory methods: createArmy, createCastle, createKing; returns KingdomFactory subclasses

@@ -1,0 +1,436 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "54c2ee2d-9dd4-4125-9b16-f7867f5dd119",
+      "entity_type": "classes",
+      "entity_id": "Extensions",
+      "label": "Extensions",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "7f076b32-48b3-47f1-8463-be5626ed183f",
+      "entity_type": "classes",
+      "entity_id": "IntegrationEventContext",
+      "label": "IntegrationEventContext",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b16db352-4f4b-4d4a-9645-763eddaeecd3",
+      "entity_type": "classes",
+      "entity_id": "ServerCallContextIdentityExtensions",
+      "label": "ServerCallContextIdentityExtensions",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "649b991b-d310-406a-9cbb-c154d13eaa0d",
+      "entity_type": "classes",
+      "entity_id": "BasketItem",
+      "label": "BasketItem",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1efd0fc1-9cd6-468f-8532-6a6184731512",
+      "entity_type": "classes",
+      "entity_id": "CustomerBasket",
+      "label": "CustomerBasket",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "fa63d263-cd69-47c2-ac1e-87e95ba0c517",
+      "entity_type": "classes",
+      "entity_id": "BasketSerializationContext",
+      "label": "BasketSerializationContext",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9a2b9297-1488-45d0-a384-6310704e92d3",
+      "entity_type": "classes",
+      "entity_id": "CatalogApi",
+      "label": "CatalogApi",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2fb1593f-6fa8-4761-979a-b8187029033b",
+      "entity_type": "classes",
+      "entity_id": "CatalogOptions",
+      "label": "CatalogOptions",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6c2aef1e-96d2-4a0d-8977-ad35f053422a",
+      "entity_type": "classes",
+      "entity_id": "HostEnvironmentExtensions",
+      "label": "HostEnvironmentExtensions",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3b10326c-d0ab-41f8-8db7-d430473048b8",
+      "entity_type": "classes",
+      "entity_id": "CatalogContext",
+      "label": "CatalogContext",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "dde370be-2961-4898-87d8-fcb7ebbcc6d4",
+      "entity_type": "classes",
+      "entity_id": "CatalogSourceEntry",
+      "label": "CatalogSourceEntry",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1cb8e767-01c8-4f9a-8a4e-ac3c67f42f4a",
+      "entity_type": "classes",
+      "entity_id": "CatalogBrandEntityTypeConfiguration",
+      "label": "CatalogBrandEntityTypeConfiguration",
+      "pos_x": 750,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "08f51705-56bd-4671-a261-37c423e28918",
+      "entity_type": "classes",
+      "entity_id": "CatalogItemEntityTypeConfiguration",
+      "label": "CatalogItemEntityTypeConfiguration",
+      "pos_x": 0,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "832a0b60-8f39-4595-a6a4-2b2849b7a897",
+      "entity_type": "classes",
+      "entity_id": "CatalogTypeEntityTypeConfiguration",
+      "label": "CatalogTypeEntityTypeConfiguration",
+      "pos_x": 250,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d0fd3ce1-6aef-4e47-8cff-6fa18cf05ae6",
+      "entity_type": "classes",
+      "entity_id": "CatalogDomainException",
+      "label": "CatalogDomainException",
+      "pos_x": 500,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e9bd0bd7-d2b8-4363-ae84-939427fffa3d",
+      "entity_type": "classes",
+      "entity_id": "Initial",
+      "label": "Initial",
+      "pos_x": 750,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b9f53145-5359-4a1f-b8b9-845980109235",
+      "entity_type": "classes",
+      "entity_id": "RemoveHiLoAndIndexCatalogName",
+      "label": "RemoveHiLoAndIndexCatalogName",
+      "pos_x": 0,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "41790186-3b72-4c95-bc29-0d7fd9448df6",
+      "entity_type": "classes",
+      "entity_id": "Outbox",
+      "label": "Outbox",
+      "pos_x": 250,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2b1cfc3a-2764-49ee-8c9f-7c3825ec9003",
+      "entity_type": "classes",
+      "entity_id": "CatalogContextModelSnapshot",
+      "label": "CatalogContextModelSnapshot",
+      "pos_x": 500,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "eeb3693c-5dd0-49fe-a77e-4925b5ec4ae7",
+      "entity_type": "classes",
+      "entity_id": "CatalogBrand",
+      "label": "CatalogBrand",
+      "pos_x": 750,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f6877961-a8b7-4f1b-9dbc-1356e9e78503",
+      "entity_type": "classes",
+      "entity_id": "CatalogItem",
+      "label": "CatalogItem",
+      "pos_x": 0,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c23cdd50-812a-4c72-8eef-6b4309d72a0d",
+      "entity_type": "classes",
+      "entity_id": "CatalogType",
+      "label": "CatalogType",
+      "pos_x": 250,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1b2f969a-5ac0-4bd4-9d54-ad3d7bd48089",
+      "entity_type": "classes",
+      "entity_id": "Program",
+      "label": "Program",
+      "pos_x": 500,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d50f2b01-73af-4e22-90f5-67da77642497",
+      "entity_type": "classes",
+      "entity_id": "CatalogAI",
+      "label": "CatalogAI",
+      "pos_x": 750,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "786d7088-a265-4c6e-bc60-f613cb60e40b",
+      "entity_type": "classes",
+      "entity_id": "JsonSerializerContext",
+      "label": "JsonSerializerContext",
+      "pos_x": 0,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8f1bd5af-b4a2-405b-9c71-77b827f45e2c",
+      "entity_type": "classes",
+      "entity_id": "IValidatableObject",
+      "label": "IValidatableObject",
+      "pos_x": 250,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b5863061-94b6-4b44-9cfd-2cac0892f32d",
+      "entity_type": "classes",
+      "entity_id": "DbContext",
+      "label": "DbContext",
+      "pos_x": 500,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3d2d8596-bb51-4eec-909e-5f3fd186e8e5",
+      "entity_type": "classes",
+      "entity_id": "IEntityTypeConfiguration",
+      "label": "IEntityTypeConfiguration",
+      "pos_x": 750,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d142e6cf-59b3-4518-a940-7d7bb8cce6f6",
+      "entity_type": "classes",
+      "entity_id": "Exception",
+      "label": "Exception",
+      "pos_x": 0,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "483aedff-faa7-44ee-8947-52dc3d3ca5f6",
+      "entity_type": "classes",
+      "entity_id": "Migration",
+      "label": "Migration",
+      "pos_x": 250,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "27a0fb09-06ec-49c3-95fc-fb27cd3d1092",
+      "entity_type": "classes",
+      "entity_id": "ModelSnapshot",
+      "label": "ModelSnapshot",
+      "pos_x": 500,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2e4329e9-bd5d-4b64-af30-2c9c4ecb4a13",
+      "entity_type": "classes",
+      "entity_id": "ICatalogAI",
+      "label": "ICatalogAI",
+      "pos_x": 750,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "90319e9e-b81e-47c8-b805-3469ffaca7ad",
+      "source_node_id": "786d7088-a265-4c6e-bc60-f613cb60e40b",
+      "target_node_id": "7f076b32-48b3-47f1-8463-be5626ed183f",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "83cfad69-7e13-44f4-bbce-52099502504f",
+      "source_node_id": "8f1bd5af-b4a2-405b-9c71-77b827f45e2c",
+      "target_node_id": "649b991b-d310-406a-9cbb-c154d13eaa0d",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "f9a16cd6-9c72-455e-83f0-5c15d7a8dd83",
+      "source_node_id": "786d7088-a265-4c6e-bc60-f613cb60e40b",
+      "target_node_id": "fa63d263-cd69-47c2-ac1e-87e95ba0c517",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "cab79682-0f6b-4d46-9610-ef365be54209",
+      "source_node_id": "b5863061-94b6-4b44-9cfd-2cac0892f32d",
+      "target_node_id": "3b10326c-d0ab-41f8-8db7-d430473048b8",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "dc8e39a8-9f55-4359-b3e8-4507391592fd",
+      "source_node_id": "3d2d8596-bb51-4eec-909e-5f3fd186e8e5",
+      "target_node_id": "1cb8e767-01c8-4f9a-8a4e-ac3c67f42f4a",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "8f6194b2-c253-4150-bfa0-4e5c2e9a736a",
+      "source_node_id": "3d2d8596-bb51-4eec-909e-5f3fd186e8e5",
+      "target_node_id": "08f51705-56bd-4671-a261-37c423e28918",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "972faea4-a7c0-4557-919d-bf4c562f706e",
+      "source_node_id": "3d2d8596-bb51-4eec-909e-5f3fd186e8e5",
+      "target_node_id": "832a0b60-8f39-4595-a6a4-2b2849b7a897",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "4eb67ace-e189-4e14-8eb9-245c03143bda",
+      "source_node_id": "d142e6cf-59b3-4518-a940-7d7bb8cce6f6",
+      "target_node_id": "d0fd3ce1-6aef-4e47-8cff-6fa18cf05ae6",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "c8f43295-80c4-4130-9ae1-e2c6eeb3498a",
+      "source_node_id": "483aedff-faa7-44ee-8947-52dc3d3ca5f6",
+      "target_node_id": "e9bd0bd7-d2b8-4363-ae84-939427fffa3d",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "b6aba8c3-0174-43b2-8192-7395dabac341",
+      "source_node_id": "483aedff-faa7-44ee-8947-52dc3d3ca5f6",
+      "target_node_id": "b9f53145-5359-4a1f-b8b9-845980109235",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "c0277875-2a7a-42d9-948c-47cfee459331",
+      "source_node_id": "483aedff-faa7-44ee-8947-52dc3d3ca5f6",
+      "target_node_id": "41790186-3b72-4c95-bc29-0d7fd9448df6",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "0ed791dd-63f2-4208-a216-cb603db5417c",
+      "source_node_id": "27a0fb09-06ec-49c3-95fc-fb27cd3d1092",
+      "target_node_id": "2b1cfc3a-2764-49ee-8c9f-7c3825ec9003",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "258ce4ea-9394-4350-ad3e-49fd4bfe9215",
+      "source_node_id": "2e4329e9-bd5d-4b64-af30-2c9c4ecb4a13",
+      "target_node_id": "d50f2b01-73af-4e22-90f5-67da77642497",
+      "relationship_type": "extends"
+    }
+  ]
+}

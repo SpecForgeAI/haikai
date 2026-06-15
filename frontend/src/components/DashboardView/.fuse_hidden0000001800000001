@@ -1,0 +1,410 @@
+/**
+ * CandidateDetailsPanel Component
+ *
+ * Spec 2026-05-30 (Per-endpoint response-contract capture -- Spec 1) Task
+ * Group 4.2: a read-only, EXPANDABLE response-contract block + confidence
+ * badge is rendered for `endpoints` candidates, MIRRORING the Spec 2
+ * `business_logics` behaviour block. (Header doc trimmed in the mount copy;
+ * the authoritative Windows file carries the full multi-spec header.)
+ */
+
+import React, { useState } from 'react';
+import type { DiscoveryCandidateDto } from '../../api/discoveryApi';
+import { buildCandidateEvidenceDetails } from './candidateEvidenceBuilder';
+import { CandidateEvidenceSectionCard } from './CandidateEvidenceSectionCard';
+import {
+  buildEndpointDataEffectPathHops,
+  readEndpointDataEffectOperationHint,
+  readEndpointDataEffectTransactional,
+  buildBehaviourBlock,
+} from './codeDetectionMappers';
+import {
+  readCandidateOperation,
+  readEnrichTargetName,
+  readEnrichAddition,
+  readLinkEndpointNames,
+} from './candidateOperationSupport';
+import {
+  buildSoapFieldDisplay,
+  readSoapEntityProvenance,
+  buildResponseContractBlock,
+} from './candidateDetailsSupport';
+import type {
+  CandidateEvidenceSection,
+  RuntimeEvidenceContext,
+} from './candidateEvidenceTypes';
+import styles from './DiscoveryRunDetailView.module.css';
+
+export interface CandidateDetailsPanelProps {
+  candidate: DiscoveryCandidateDto;
+  runtimeEvidenceContext?: RuntimeEvidenceContext;
+}
+
+const EndpointDataEffectPathBlock: React.FC<{ candidate: DiscoveryCandidateDto }> = ({
+  candidate,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const hops = buildEndpointDataEffectPathHops(candidate);
+  const operationHint = readEndpointDataEffectOperationHint(candidate);
+  const transactional = readEndpointDataEffectTransactional(candidate);
+
+  if (hops.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid={`endpoint-data-effect-path-${candidate.id}`}
+      className={styles.detailsColumnBody}
+    >
+      <h4 className={styles.detailsColumnHeading}>Data-effect path</h4>
+
+      {operationHint !== undefined && (
+        <div data-testid={`endpoint-data-effect-operation-hint-${candidate.id}`}>
+          Operation hint: {operationHint}
+        </div>
+      )}
+      {transactional !== undefined && (
+        <div data-testid={`endpoint-data-effect-transactional-${candidate.id}`}>
+          Transactional: {String(transactional)}
+        </div>
+      )}
+
+      <button
+        type="button"
+        className={styles.actionButton}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((prev) => !prev)}
+        data-testid={`endpoint-data-effect-path-toggle-${candidate.id}`}
+      >
+        {expanded ? 'Hide path' : `Show path (${hops.length} hops)`}
+      </button>
+
+      {expanded && (
+        <ol data-testid={`endpoint-data-effect-path-list-${candidate.id}`}>
+          {hops.map((hop, index) => (
+            <li
+              key={`${index}-${hop.methodId}`}
+              data-testid={`endpoint-data-effect-path-hop-${index}`}
+            >
+              {hop.role && <span>{hop.role}: </span>}
+              <code>{hop.methodId}</code>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+};
+
+const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+const MEDIUM_CONFIDENCE_THRESHOLD = 0.45;
+
+const BehaviourConfidenceBadge: React.FC<{
+  candidateId: string;
+  confidence: number;
+}> = ({ candidateId, confidence }) => {
+  let label = 'Low';
+  let cls = styles.behaviourConfidenceLow;
+  if (confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+    label = 'High';
+    cls = styles.behaviourConfidenceHigh;
+  } else if (confidence >= MEDIUM_CONFIDENCE_THRESHOLD) {
+    label = 'Medium';
+    cls = styles.behaviourConfidenceMedium;
+  }
+  return (
+    <span
+      className={`${styles.behaviourConfidenceBadge} ${cls}`}
+      data-testid={`behaviour-confidence-badge-${candidateId}`}
+    >
+      Confidence: {label} ({confidence.toFixed(2)})
+    </span>
+  );
+};
+
+const BehaviourBlock: React.FC<{ candidate: DiscoveryCandidateDto }> = ({ candidate }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const block = buildBehaviourBlock(candidate);
+
+  if (!block) {
+    return null;
+  }
+
+  const { sections, confidence } = block;
+
+  return (
+    <div
+      data-testid={`behaviour-block-${candidate.id}`}
+      className={styles.detailsColumnBody}
+    >
+      <h4 className={styles.detailsColumnHeading}>Captured behaviour</h4>
+
+      {confidence !== undefined && (
+        <BehaviourConfidenceBadge candidateId={candidate.id} confidence={confidence} />
+      )}
+
+      <button
+        type="button"
+        className={styles.actionButton}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((prev) => !prev)}
+        data-testid={`behaviour-block-toggle-${candidate.id}`}
+      >
+        {expanded ? 'Hide behaviour' : `Show behaviour (${sections.length} sections)`}
+      </button>
+
+      {expanded && (
+        <div data-testid={`behaviour-block-sections-${candidate.id}`}>
+          {sections.map((section) => (
+            <div
+              key={section.key}
+              data-testid={`behaviour-section-${section.key}-${candidate.id}`}
+            >
+              <h5 className={styles.behaviourSectionHeading}>{section.label}</h5>
+              <ul className={styles.behaviourSectionList}>
+                {section.lines.map((line, index) => (
+                  <li key={`${section.key}-${index}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ResponseContractBlock: React.FC<{ candidate: DiscoveryCandidateDto }> = ({
+  candidate,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const block = buildResponseContractBlock(candidate);
+
+  if (!block) {
+    return null;
+  }
+
+  const { sections, confidence } = block;
+
+  return (
+    <div
+      data-testid={`response-contract-block-${candidate.id}`}
+      className={styles.detailsColumnBody}
+    >
+      <h4 className={styles.detailsColumnHeading}>Response contract</h4>
+
+      {confidence !== undefined && (
+        <BehaviourConfidenceBadge candidateId={candidate.id} confidence={confidence} />
+      )}
+
+      <button
+        type="button"
+        className={styles.actionButton}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((prev) => !prev)}
+        data-testid={`response-contract-block-toggle-${candidate.id}`}
+      >
+        {expanded ? 'Hide contract' : `Show contract (${sections.length} sections)`}
+      </button>
+
+      {expanded && (
+        <div data-testid={`response-contract-block-sections-${candidate.id}`}>
+          {sections.map((section) => (
+            <div
+              key={section.key}
+              data-testid={`response-contract-section-${section.key}-${candidate.id}`}
+            >
+              <h5 className={styles.behaviourSectionHeading}>{section.label}</h5>
+              <ul className={styles.behaviourSectionList}>
+                {section.lines.map((line, index) => (
+                  <li key={`${section.key}-${index}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const OperationTargetBlock: React.FC<{ candidate: DiscoveryCandidateDto }> = ({
+  candidate,
+}) => {
+  const operation = readCandidateOperation(candidate);
+
+  if (operation !== 'enrich' && operation !== 'link') {
+    return null;
+  }
+
+  if (operation === 'link') {
+    const { logicalName, physicalName } = readLinkEndpointNames(candidate);
+    return (
+      <div
+        data-testid={`operation-target-block-${candidate.id}`}
+        className={styles.detailsColumnBody}
+      >
+        <h4 className={styles.detailsColumnHeading}>Logical to physical link</h4>
+        <div data-testid={`operation-target-logical-${candidate.id}`}>
+          Logical entity: {logicalName ?? '(unresolved)'}
+        </div>
+        <div data-testid={`operation-target-physical-${candidate.id}`}>
+          Physical entity: {physicalName ?? '(unresolved)'}
+        </div>
+      </div>
+    );
+  }
+
+  const targetName = readEnrichTargetName(candidate);
+  const addition = readEnrichAddition(candidate);
+
+  return (
+    <div
+      data-testid={`operation-target-block-${candidate.id}`}
+      className={styles.detailsColumnBody}
+    >
+      <h4 className={styles.detailsColumnHeading}>Enrich existing entity</h4>
+      <div data-testid={`operation-target-entity-${candidate.id}`}>
+        Target entity: {targetName ?? '(unresolved)'}
+      </div>
+
+      {addition.attributeName !== undefined && (
+        <div data-testid={`operation-enrich-attribute-${candidate.id}`}>
+          Adds attribute: {addition.attributeName}
+          {addition.attributeDataType !== undefined
+            ? ` (${addition.attributeDataType})`
+            : ''}
+        </div>
+      )}
+
+      {addition.relatedEntityName !== undefined && (
+        <div data-testid={`operation-enrich-relationship-${candidate.id}`}>
+          Adds relationship to: {addition.relatedEntityName}
+          {addition.relationshipType !== undefined
+            ? ` [${addition.relationshipType}]`
+            : ''}
+          {addition.cardinality !== undefined ? ` (${addition.cardinality})` : ''}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SoapMessageShapeBlock: React.FC<{ candidate: DiscoveryCandidateDto }> = ({
+  candidate,
+}) => {
+  if (candidate.candidate_type === 'logical_data_attributes') {
+    const field = buildSoapFieldDisplay(candidate);
+    if (!field) {
+      return null;
+    }
+    return (
+      <div
+        data-testid={`soap-message-field-${candidate.id}`}
+        className={styles.detailsColumnBody}
+      >
+        <h4 className={styles.detailsColumnHeading}>Message field</h4>
+
+        {field.type !== undefined && (
+          <div data-testid={`soap-field-type-${candidate.id}`}>Type: {field.type}</div>
+        )}
+
+        {field.cardinalityLabel !== undefined && (
+          <div data-testid={`soap-field-cardinality-${candidate.id}`}>
+            Cardinality: {field.cardinalityLabel}
+            {field.optional === true ? ' (optional)' : ''}
+            {field.collection === true ? ' (collection)' : ''}
+          </div>
+        )}
+
+        {field.nullable !== undefined && (
+          <div data-testid={`soap-field-nullable-${candidate.id}`}>
+            Nullable: {String(field.nullable)}
+          </div>
+        )}
+
+        {field.complexTypeRef !== undefined && (
+          <div data-testid={`soap-field-complex-type-${candidate.id}`}>
+            References type: {field.complexTypeRef}
+          </div>
+        )}
+
+        {field.restrictionLines.length > 0 && (
+          <div data-testid={`soap-field-restrictions-${candidate.id}`}>
+            <h5 className={styles.behaviourSectionHeading}>Value-domain restrictions</h5>
+            <ul className={styles.behaviourSectionList}>
+              {field.restrictionLines.map((line, index) => (
+                <li key={`restriction-${index}`}>{line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (candidate.candidate_type === 'logical_data_entities') {
+    const provenance = readSoapEntityProvenance(candidate);
+    if (provenance === undefined) {
+      return null;
+    }
+    return (
+      <div
+        data-testid={`soap-message-entity-${candidate.id}`}
+        className={styles.detailsColumnBody}
+      >
+        <h4 className={styles.detailsColumnHeading}>Message provenance</h4>
+        <div data-testid={`soap-entity-provenance-${candidate.id}`}>
+          Provenance: {provenance}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+export const CandidateDetailsPanel: React.FC<CandidateDetailsPanelProps> = ({
+  candidate,
+  runtimeEvidenceContext,
+}) => {
+  const evidence = buildCandidateEvidenceDetails(candidate, runtimeEvidenceContext);
+
+  const columns: Array<{ section: CandidateEvidenceSection; prefix: string }> = [
+    { section: evidence.codeDetection, prefix: 'code-detection' },
+    { section: evidence.logScans, prefix: 'log-scans' },
+    { section: evidence.llmReview, prefix: 'llm-review' },
+  ];
+
+  const isEndpointDataEffect = candidate.candidate_type === 'endpoint_data_effects';
+  const isBusinessLogic = candidate.candidate_type === 'business_logics';
+  const isEndpoint = candidate.candidate_type === 'endpoints';
+
+  return (
+    <div
+      data-testid={`candidate-details-panel-${candidate.id}`}
+      className={styles.detailsPanel}
+    >
+      {columns.map(({ section, prefix }) => (
+        <div key={prefix} className={styles.detailsColumn}>
+          <h4 className={styles.detailsColumnHeading}>{section.title}</h4>
+          <CandidateEvidenceSectionCard section={section} testIdPrefix={prefix} />
+        </div>
+      ))}
+
+      {isEndpointDataEffect && <EndpointDataEffectPathBlock candidate={candidate} />}
+
+      {isBusinessLogic && <BehaviourBlock candidate={candidate} />}
+
+      {isEndpoint && <ResponseContractBlock candidate={candidate} />}
+
+      <SoapMessageShapeBlock candidate={candidate} />
+
+      <OperationTargetBlock candidate={candidate} />
+    </div>
+  );
+};

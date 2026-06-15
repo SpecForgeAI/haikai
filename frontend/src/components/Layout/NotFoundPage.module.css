@@ -1,0 +1,36 @@
+/* Spec 2026-05-04 Comprehensive Frontend Routing -- Task Group 2
+ * Minimal styling for the 404 page; intentionally plain to keep the
+ * surface small and unstyled-looking per spec.
+ */
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--background, #f5f6fa);
+}
+
+.content {
+  text-align: center;
+  max-width: 480px;
+}
+
+.title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+  margin: 0 0 12px 0;
+}
+
+.message {
+  font-size: 1rem;
+  color: var(--text-secondary, #6c6c8a);
+  margin: 0 0 24px 0;
+}
+
+.link {
+  color: var(--accent, #4a4ae0);
+  text-decoration: underline;
+  font-size: 1rem;
+}

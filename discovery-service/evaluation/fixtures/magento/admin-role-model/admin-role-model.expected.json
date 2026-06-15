@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Mage_Admin_Model_Role",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

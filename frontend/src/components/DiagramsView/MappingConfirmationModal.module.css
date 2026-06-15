@@ -1,0 +1,387 @@
+/**
+ * MappingConfirmationModal.module.css
+ *
+ * Spec: Mapping Confirmation Modal Framework (Increment 6)
+ * Task Group 3, Task 3.2: CSS Module for the MappingConfirmationModal component
+ *
+ * Follows the LogicalErCreateModal overlay/modal/header/content/footer pattern
+ * with wider max-width (900px) for three-column mapping rows.
+ */
+
+/* Overlay - semi-transparent backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - wider to accommodate mapping table rows */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 1200px;
+  width: 95%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header section */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f5f5f5;
+  border-radius: 8px 8px 0 0;
+  gap: 12px;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.closeButton:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Content section - scrollable form area */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Section grouping for Entities, Attributes, Relationships */
+.section {
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.section:last-child {
+  margin-bottom: 0;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+/* Mapping row - three-column layout: name, badge, select */
+.mappingRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.mappingRow:last-child {
+  border-bottom: none;
+}
+
+.mappingName {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status badge for auto-matched vs unresolved */
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.auto {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.unresolved {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffe0b2;
+}
+
+/* Select dropdown - reuse LogicalErCreateModal pattern */
+.select {
+  width: 280px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.select:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+  border-color: #e0e0e0;
+}
+
+/* Container for the three-dropdown layout on relationship rows */
+.edgeSelects {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+/* Narrower select used when three are laid out side-by-side */
+.selectSmall {
+  width: 200px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: white;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.selectSmall:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+.selectSmall:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+  border-color: #e0e0e0;
+}
+
+/* Disabled hint message for attribute/relationship rows where parent is not set */
+.disabledHint {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+  width: 280px;
+  flex-shrink: 0;
+}
+
+/* Warning row for mode_mismatch items */
+.warningRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff8e1;
+  border-radius: 4px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin: 2px 0;
+}
+
+.warningRow:last-child {
+  border-bottom: none;
+}
+
+.warningText {
+  font-size: 12px;
+  color: #f57f17;
+  font-style: italic;
+  flex: 1;
+}
+
+/* Sub-heading for attribute grouping under a parent node */
+.groupHeading {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  padding: 4px 0;
+}
+
+.groupHeading:first-child {
+  margin-top: 0;
+}
+
+/* Edge row source/target labels */
+.edgeLabel {
+  font-size: 13px;
+  color: #555;
+}
+
+.edgeArrow {
+  color: #999;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* Summary bar for "X of Y resolved" in footer */
+.summaryBar {
+  font-size: 13px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.summaryCount {
+  font-weight: 600;
+  color: #333;
+}
+
+.summaryAllResolved {
+  color: #2e7d32;
+}
+
+/* Disabled message when metaModel is not available */
+.disabledMessage {
+  padding: 40px 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+/* Footer section with action buttons and summary */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+.footerActions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Primary button (Confirm) */
+.primaryButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.primaryButton:disabled {
+  background: #bbb;
+  cursor: not-allowed;
+}
+
+/* Secondary button (Cancel) */
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.secondaryButton:disabled {
+  color: #999;
+  cursor: not-allowed;
+}

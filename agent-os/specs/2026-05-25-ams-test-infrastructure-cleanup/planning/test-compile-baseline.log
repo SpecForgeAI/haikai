@@ -1,0 +1,649 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ---------------< com.example:architecture-model-service >---------------
+[INFO] Building Architecture Model Service 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ architecture-model-service ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 160 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ architecture-model-service ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ architecture-model-service ---
+[INFO] Copying 10 resources from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ architecture-model-service ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 367 source files with javac [debug release 21] to target\test-classes
+[INFO] Annotation processing is enabled because one or more processors were found
+  on the class path. A future release of javac may disable annotation processing
+  unless at least one processor is specified by name (-processor), or a search
+  path is specified (--processor-path, --processor-module-path), or annotation
+  processing is enabled explicitly (-proc:only, -proc:full).
+  Use -Xlint:-options to suppress this message.
+  Use -proc:none to disable annotation processing.
+[INFO] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ArchitectureCrudControllerTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ArchitectureCrudControllerTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] Some messages have been simplified; recompile with -Xdiags:verbose to get full output
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ContextBundleExpansionServiceDiagramTest.java:[57,26] cannot find symbol
+  symbol:   class UUID
+  location: class com.example.architecturemodel.service.ContextBundleExpansionServiceDiagramTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[136,5] annotation interface not applicable to this kind of declaration
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceUserJourneyGapTest.java:[235,51] cannot find symbol
+  symbol:   method loadModelByProjectId(java.util.UUID)
+  location: variable modelService of type com.example.architecturemodel.service.ModelService
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneyLinkGapFillTest.java:[175,23] cannot find symbol
+  symbol:   variable objectMapper
+  location: class com.example.architecturemodel.service.UserJourneyLinkGapFillTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneyLinkGapFillTest.java:[188,50] cannot find symbol
+  symbol:   variable objectMapper
+  location: class com.example.architecturemodel.service.UserJourneyLinkGapFillTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[142,38] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[143,38] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[144,38] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[179,9] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[234,9] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[286,9] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[348,9] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[410,19] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[466,19] cannot find symbol
+  symbol:   variable modelService
+  location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/integration/BusinessLogicIntegrationTest.java:[499,17] incompatible types: java.util.List<com.example.architecturemodel.model.dto.entity.BusinessLogicDto> cannot be converted to java.util.List<com.example.architecturemodel.model.dto.entity.UIActionDto>
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/DataEntityPointFkColumnsMigrationTest.java:[231,13] cannot find symbol
+  symbol:   method dataEntityId(java.lang.String)
+  location: class com.example.architecturemodel.model.entity.DataMovementEntity.DataMovementEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/DataEntityPointFkColumnsMigrationTest.java:[297,13] cannot find symbol
+  symbol:   method dataEntityId(java.lang.String)
+  location: class com.example.architecturemodel.model.entity.DataMovementEntity.DataMovementEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/DataEntityPointFkColumnsMigrationTest.java:[374,13] cannot find symbol
+  symbol:   method dataEntityId(java.lang.String)
+  location: class com.example.architecturemodel.model.entity.DataMovementEntity.DataMovementEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/SequenceDiagramControllerTest.java:[150,17] constructor SequenceMessageDto in record com.example.architecturemodel.model.dto.entity.SequenceMessageDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.String
+  found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/SequenceDiagramControllerTest.java:[151,17] constructor SequenceMessageDto in record com.example.architecturemodel.model.dto.entity.SequenceMessageDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.String
+  found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[172,29] cannot find symbol
+  symbol:   variable ARCH_B
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[171,24] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[170,23] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[178,66] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[178,76] cannot find symbol
+  symbol:   variable ARCH_B
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[183,61] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[183,71] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[183,83] cannot find symbol
+  symbol:   variable ARCH_B
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[186,22] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[191,79] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[191,89] cannot find symbol
+  symbol:   variable ARCH_B
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[192,61] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[199,22] cannot find symbol
+  symbol:   variable ARCH_B
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[210,66] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[210,76] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[215,32] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[215,42] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[215,54] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[222,22] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[223,22] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[224,22] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[236,42] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[236,52] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[251,17] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[257,24] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[256,17] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[265,29] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[264,24] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[263,23] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[272,93] cannot find symbol
+  symbol:   variable PROJECT_ID
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[274,66] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[274,76] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[279,61] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[284,61] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[286,69] cannot find symbol
+  symbol:   variable FILENAME
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[286,79] cannot find symbol
+  symbol:   variable ARCH_A
+  location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[267,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[287,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[313,36] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[322,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[329,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[351,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[353,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[373,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[375,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ContextBundleExpansionServiceDiagramTest.java:[57,44] cannot find symbol
+  symbol:   variable UUID
+  location: class com.example.architecturemodel.service.ContextBundleExpansionServiceDiagramTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceSaveTest.java:[109,24] constructor ModelService in class com.example.architecturemodel.service.ModelService cannot be applied to given types;
+  required: com.example.architecturemodel.repository.ModelFileRepository,com.example.architecturemodel.repository.ProjectRepository,com.example.architecturemodel.repository.ArchitectureRepository,com.example.architecturemodel.repository.entity.BusinessUserRepository,com.example.architecturemodel.repository.entity.BusinessProcessRepository,com.example.architecturemodel.repository.entity.ProcessActivityRepository,com.example.architecturemodel.repository.entity.BusinessPointRepository,com.example.architecturemodel.repository.entity.ApplicationRepository,com.example.architecturemodel.repository.entity.ApplicationComponentRepository,com.example.architecturemodel.repository.entity.ServiceRepository,com.example.architecturemodel.repository.entity.InterfaceRepository,com.example.architecturemodel.repository.entity.EndpointRepository,com.example.architecturemodel.repository.entity.ClassRepository,com.example.architecturemodel.repository.entity.MethodRepository,com.example.architecturemodel.repository.entity.ApplicationPointRepository,com.example.architecturemodel.repository.entity.LogicalDataEntityRepository,com.example.architecturemodel.repository.entity.LogicalDataAttributeRepository,com.example.architecturemodel.repository.entity.PhysicalDataEntityRepository,com.example.architecturemodel.repository.entity.PhysicalDataAttributeRepository,com.example.architecturemodel.repository.entity.AppBusinessPointRepository,com.example.architecturemodel.repository.entity.InteractionRepository,com.example.architecturemodel.repository.entity.EventRepository,com.example.architecturemodel.repository.entity.StateRepository,com.example.architecturemodel.repository.entity.StateTransitionRepository,com.example.architecturemodel.repository.entity.ActivityRepository,com.example.architecturemodel.repository.entity.ActivityFlowRepository,com.example.architecturemodel.repository.entity.ActivityPartitionRepository,com.example.architecturemodel.repository.entity.UIScreenRepository,com.example.architecturemodel.repository.entity.UIWorkflowTransitionRepository,com.example.architecturemodel.repository.entity.UIContractRepository,com.example.architecturemodel.repository.entity.UIComponentRepository,com.example.architecturemodel.repository.entity.UIActionRepository,com.example.architecturemodel.repository.entity.UICharacteristicRepository,com.example.architecturemodel.repository.entity.BusinessLogicRepository,com.example.architecturemodel.repository.entity.PackageSetRepository,com.example.architecturemodel.repository.entity.PackageRepository,com.example.architecturemodel.repository.entity.PackageSetDefaultRuleRepository,com.example.architecturemodel.repository.entity.DataEntityPointRepository,com.example.architecturemodel.repository.entity.UserJourneyRepository,com.example.architecturemodel.repository.entity.ActivityStepRepository,com.example.architecturemodel.repository.entity.EnvironmentRepository,com.example.architecturemodel.repository.entity.CloudAccountRepository,com.example.architecturemodel.repository.entity.LocationRepository,com.example.architecturemodel.repository.entity.NetworkRepository,com.example.architecturemodel.repository.entity.SubnetRepository,com.example.architecturemodel.repository.entity.ComputeClusterRepository,com.example.architecturemodel.repository.entity.ComputeResourceRepository,com.example.architecturemodel.repository.entity.DeploymentUnitRepository,com.example.architecturemodel.repository.entity.LoadBalancerRepository,com.example.architecturemodel.repository.entity.ListenerRepository,com.example.architecturemodel.repository.entity.DataStoreInstanceRepository,com.example.architecturemodel.repository.entity.InfrastructureResourceRepository,com.example.architecturemodel.repository.entity.InfrastructurePointRepository,com.example.architecturemodel.repository.relationship.BusinessUserBusinessPointRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessPointRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityRelationshipRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityPhysicalDataEntityRepository,com.example.architecturemodel.repository.relationship.LogicalDataAttributePhysicalDataAttributeRepository,com.example.architecturemodel.repository.relationship.DataMovementRepository,com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessLogicRepository,com.example.architecturemodel.repository.relationship.UserJourneyLinkRepository,com.example.architecturemodel.repository.relationship.ResourceSubnetHostingRepository,com.example.architecturemodel.repository.relationship.DeploymentUnitComputeResourceRepository,com.example.architecturemodel.repository.relationship.LoadBalancerResourceRouteRepository,com.example.architecturemodel.repository.relationship.ApplicationComputeDeploymentRepository,com.example.architecturemodel.repository.relationship.DataEntityDataStoreHostingRepository,com.example.architecturemodel.repository.relationship.ApplicationInfrastructureResourceUseRepository,com.example.architecturemodel.repository.relationship.ApplicationLoadBalancerExposureRepository,com.example.architecturemodel.repository.entity.IaCSourceRepository,com.example.architecturemodel.repository.relationship.IaCResourceBindingRepository,com.example.architecturemodel.repository.entity.LibraryRepository,com.example.architecturemodel.repository.relationship.CodeUnitDependencyRepository,com.example.architecturemodel.repository.entity.DiscoveryRunRepository,com.example.architecturemodel.repository.diagram.DiagramRepository,com.example.architecturemodel.repository.diagram.DiagramNodeRepository,com.example.architecturemodel.repository.diagram.DiagramEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramInteractionEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramDecorationRepository,com.example.architecturemodel.mapper.EntityMapper,com.example.architecturemodel.mapper.DiagramMapper,com.example.architecturemodel.service.export.DiagramCanonicalizer,com.example.architecturemodel.service.export.DiagramSvgRenderer,com.example.architecturemodel.service.ProjectService,com.example.architecturemodel.service.DataEntityPointEnsureService
+  found:    com.example.architecturemodel.repository.ModelFileRepository,com.example.architecturemodel.repository.ProjectRepository,com.example.architecturemodel.repository.ArchitectureRepository,com.example.architecturemodel.repository.entity.BusinessUserRepository,com.example.architecturemodel.repository.entity.BusinessProcessRepository,com.example.architecturemodel.repository.entity.ProcessActivityRepository,com.example.architecturemodel.repository.entity.BusinessPointRepository,com.example.architecturemodel.repository.entity.ApplicationRepository,com.example.architecturemodel.repository.entity.ApplicationComponentRepository,com.example.architecturemodel.repository.entity.ServiceRepository,com.example.architecturemodel.repository.entity.InterfaceRepository,com.example.architecturemodel.repository.entity.EndpointRepository,com.example.architecturemodel.repository.entity.ClassRepository,com.example.architecturemodel.repository.entity.MethodRepository,com.example.architecturemodel.repository.entity.ApplicationPointRepository,com.example.architecturemodel.repository.entity.LogicalDataEntityRepository,com.example.architecturemodel.repository.entity.LogicalDataAttributeRepository,com.example.architecturemodel.repository.entity.PhysicalDataEntityRepository,com.example.architecturemodel.repository.entity.PhysicalDataAttributeRepository,com.example.architecturemodel.repository.entity.AppBusinessPointRepository,com.example.architecturemodel.repository.entity.InteractionRepository,com.example.architecturemodel.repository.entity.EventRepository,com.example.architecturemodel.repository.entity.StateRepository,com.example.architecturemodel.repository.entity.StateTransitionRepository,com.example.architecturemodel.repository.entity.ActivityRepository,com.example.architecturemodel.repository.entity.ActivityFlowRepository,com.example.architecturemodel.repository.entity.ActivityPartitionRepository,com.example.architecturemodel.repository.entity.UIScreenRepository,com.example.architecturemodel.repository.entity.UIWorkflowTransitionRepository,com.example.architecturemodel.repository.entity.UIContractRepository,com.example.architecturemodel.repository.entity.UIComponentRepository,com.example.architecturemodel.repository.entity.UIActionRepository,com.example.architecturemodel.repository.entity.UICharacteristicRepository,com.example.architecturemodel.repository.entity.BusinessLogicRepository,com.example.architecturemodel.repository.entity.PackageSetRepository,com.example.architecturemodel.repository.entity.PackageRepository,com.example.architecturemodel.repository.entity.PackageSetDefaultRuleRepository,com.example.architecturemodel.repository.entity.DataEntityPointRepository,com.example.architecturemodel.repository.entity.UserJourneyRepository,com.example.architecturemodel.repository.entity.ActivityStepRepository,com.example.architecturemodel.repository.relationship.BusinessUserBusinessPointRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessPointRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityRelationshipRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityPhysicalDataEntityRepository,com.example.architecturemodel.repository.relationship.LogicalDataAttributePhysicalDataAttributeRepository,com.example.architecturemodel.repository.relationship.DataMovementRepository,com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessLogicRepository,com.example.architecturemodel.repository.diagram.DiagramRepository,com.example.architecturemodel.repository.diagram.DiagramNodeRepository,com.example.architecturemodel.repository.diagram.DiagramEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramInteractionEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramDecorationRepository,com.example.architecturemodel.mapper.EntityMapper,com.example.architecturemodel.mapper.DiagramMapper,com.example.architecturemodel.service.export.DiagramCanonicalizer,com.example.architecturemodel.service.export.DiagramSvgRenderer,com.example.architecturemodel.service.ProjectService,com.example.architecturemodel.service.DataEntityPointEnsureService
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[87,21] constructor UserJourneyDiagramStepDto in record com.example.architecturemodel.model.dto.diagram.UserJourneyDiagramStepDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[107,31] method projectSingleJourney in class com.example.architecturemodel.service.UserJourneyDiagramProjectionService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[109,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[126,31] method projectSingleJourney in class com.example.architecturemodel.service.UserJourneyDiagramProjectionService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[128,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[142,31] method projectSingleJourney in class com.example.architecturemodel.service.UserJourneyDiagramProjectionService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[145,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[182,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+  required: java.util.UUID,java.util.UUID,java.lang.String
+  found:    java.util.UUID,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[199,17] constructor UserJourneyDiagramStepDto in record com.example.architecturemodel.model.dto.diagram.UserJourneyDiagramStepDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[201,17] constructor UserJourneyDiagramStepDto in record com.example.architecturemodel.model.dto.diagram.UserJourneyDiagramStepDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[90,30] constructor EnvironmentDto in record com.example.architecturemodel.model.dto.entity.EnvironmentDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.Boolean,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,java.lang.String,java.lang.String,boolean,boolean,<nulltype>,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[126,49] constructor DeploymentUnitComputeResourceDto in record com.example.architecturemodel.model.dto.relationship.DeploymentUnitComputeResourceDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.Integer,java.lang.Integer,java.lang.String,java.lang.String,java.math.BigDecimal,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[130,46] constructor LoadBalancerResourceRouteDto in record com.example.architecturemodel.model.dto.relationship.LoadBalancerResourceRouteDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,<nulltype>,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[134,41] constructor ResourceSubnetHostingDto in record com.example.architecturemodel.model.dto.relationship.ResourceSubnetHostingDto cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.math.BigDecimal,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+  found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ModelControllerTest.java:[43,38] constructor ModelController in class com.example.architecturemodel.controller.ModelController cannot be applied to given types;
+  required: com.example.architecturemodel.service.ModelService,com.example.architecturemodel.service.DiagramExportService
+  found:    com.example.architecturemodel.service.ModelService
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ModelControllerTest.java:[165,50] incompatible types: java.util.List<com.example.architecturemodel.model.dto.entity.InteractionDto> cannot be converted to java.util.List<com.example.architecturemodel.model.dto.entity.DataEntityPointDto>
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[41,43] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+  found:    java.lang.String,java.lang.String,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[135,13] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+  found:    java.lang.String,java.lang.String,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[136,13] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+  found:    java.lang.String,java.lang.String,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[223,45] constructor ExpandResolveResponseDto in record com.example.architecturemodel.model.dto.ExpandResolveResponseDto cannot be applied to given types;
+  required: java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary>,java.util.List<com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary>,boolean,java.lang.String,java.util.List<com.example.architecturemodel.model.dto.relationship.ResolvedRelationshipDto>
+  found:    java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary>,java.util.List<com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary>,boolean,java.lang.String
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[253,45] constructor ExpandResolveResponseDto in record com.example.architecturemodel.model.dto.ExpandResolveResponseDto cannot be applied to given types;
+  required: java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary>,java.util.List<com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary>,boolean,java.lang.String,java.util.List<com.example.architecturemodel.model.dto.relationship.ResolvedRelationshipDto>
+  found:    java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<java.lang.Object>,java.util.List<java.lang.Object>,boolean,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[300,43] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+  required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+  found:    java.lang.String,java.lang.String,<nulltype>
+  reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/integration/InterfaceDiscoveryIntegrationTest.java:[393,17] cannot find symbol
+  symbol:   method logicalEntityId(java.lang.String)
+  location: class com.example.architecturemodel.model.entity.InterfaceLogicalEntityEntity.InterfaceLogicalEntityEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[50,35] incompatible types: inference variable T has incompatible bounds
+    upper bounds: java.util.UUID,java.lang.Object
+    lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[72,35] incompatible types: inference variable T has incompatible bounds
+    upper bounds: java.util.UUID,java.lang.Object
+    lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[84,35] incompatible types: inference variable T has incompatible bounds
+    upper bounds: java.util.UUID,java.lang.Object
+    lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[108,35] incompatible types: inference variable T has incompatible bounds
+    upper bounds: java.util.UUID,java.lang.Object
+    lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[127,35] incompatible types: inference variable T has incompatible bounds
+    upper bounds: java.util.UUID,java.lang.Object
+    lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/WorkItemExternalUrlMigrationTest.java:[149,29] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/WorkItemExternalUrlMigrationTest.java:[163,29] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/DiscoveryRunServiceScopedConfigOptionalTest.java:[93,63] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/DiscoveryRunServiceScopedConfigOptionalTest.java:[123,63] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/DiscoveryRunServiceScopedConfigOptionalTest.java:[146,29] no suitable method found for createRun(java.util.UUID)
+    method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID) is not applicable
+      (actual and formal argument lists differ in length)
+    method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String) is not applicable
+      (actual and formal argument lists differ in length)
+    method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String,java.lang.String,java.lang.String,boolean) is not applicable
+      (actual and formal argument lists differ in length)
+    method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String,java.lang.String,java.lang.String,boolean,java.util.Map<java.lang.String,java.lang.Object>) is not applicable
+      (actual and formal argument lists differ in length)
+    method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String,java.lang.String,java.lang.String,boolean,java.util.Map<java.lang.String,java.lang.Object>,java.lang.String) is not applicable
+      (actual and formal argument lists differ in length)
+[INFO] 100 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  11.556 s
+[INFO] Finished at: 2026-05-25T14:42:01+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:testCompile (default-testCompile) on project architecture-model-service: Compilation failure: Compilation failure: 
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ContextBundleExpansionServiceDiagramTest.java:[57,26] cannot find symbol
+[ERROR]   symbol:   class UUID
+[ERROR]   location: class com.example.architecturemodel.service.ContextBundleExpansionServiceDiagramTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[136,5] annotation interface not applicable to this kind of declaration
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceUserJourneyGapTest.java:[235,51] cannot find symbol
+[ERROR]   symbol:   method loadModelByProjectId(java.util.UUID)
+[ERROR]   location: variable modelService of type com.example.architecturemodel.service.ModelService
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneyLinkGapFillTest.java:[175,23] cannot find symbol
+[ERROR]   symbol:   variable objectMapper
+[ERROR]   location: class com.example.architecturemodel.service.UserJourneyLinkGapFillTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneyLinkGapFillTest.java:[188,50] cannot find symbol
+[ERROR]   symbol:   variable objectMapper
+[ERROR]   location: class com.example.architecturemodel.service.UserJourneyLinkGapFillTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[142,38] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[143,38] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[144,38] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[179,9] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[234,9] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[286,9] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[348,9] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[410,19] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/TypedContentCreateSaveFlowTest.java:[466,19] cannot find symbol
+[ERROR]   symbol:   variable modelService
+[ERROR]   location: class com.example.architecturemodel.service.TypedContentCreateSaveFlowTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/integration/BusinessLogicIntegrationTest.java:[499,17] incompatible types: java.util.List<com.example.architecturemodel.model.dto.entity.BusinessLogicDto> cannot be converted to java.util.List<com.example.architecturemodel.model.dto.entity.UIActionDto>
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/DataEntityPointFkColumnsMigrationTest.java:[231,13] cannot find symbol
+[ERROR]   symbol:   method dataEntityId(java.lang.String)
+[ERROR]   location: class com.example.architecturemodel.model.entity.DataMovementEntity.DataMovementEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/DataEntityPointFkColumnsMigrationTest.java:[297,13] cannot find symbol
+[ERROR]   symbol:   method dataEntityId(java.lang.String)
+[ERROR]   location: class com.example.architecturemodel.model.entity.DataMovementEntity.DataMovementEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/DataEntityPointFkColumnsMigrationTest.java:[374,13] cannot find symbol
+[ERROR]   symbol:   method dataEntityId(java.lang.String)
+[ERROR]   location: class com.example.architecturemodel.model.entity.DataMovementEntity.DataMovementEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/SequenceDiagramControllerTest.java:[150,17] constructor SequenceMessageDto in record com.example.architecturemodel.model.dto.entity.SequenceMessageDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/SequenceDiagramControllerTest.java:[151,17] constructor SequenceMessageDto in record com.example.architecturemodel.model.dto.entity.SequenceMessageDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.Boolean,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[172,29] cannot find symbol
+[ERROR]   symbol:   variable ARCH_B
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[171,24] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[170,23] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[178,66] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[178,76] cannot find symbol
+[ERROR]   symbol:   variable ARCH_B
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[183,61] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[183,71] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[183,83] cannot find symbol
+[ERROR]   symbol:   variable ARCH_B
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[186,22] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[191,79] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[191,89] cannot find symbol
+[ERROR]   symbol:   variable ARCH_B
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[192,61] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[199,22] cannot find symbol
+[ERROR]   symbol:   variable ARCH_B
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[210,66] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[210,76] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[215,32] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[215,42] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[215,54] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[222,22] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[223,22] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[224,22] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[236,42] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[236,52] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[251,17] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[257,24] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[256,17] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[265,29] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[264,24] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[263,23] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[272,93] cannot find symbol
+[ERROR]   symbol:   variable PROJECT_ID
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[274,66] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[274,76] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[279,61] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[284,61] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[286,69] cannot find symbol
+[ERROR]   symbol:   variable FILENAME
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceArchitectureScopedSaveTest.java:[286,79] cannot find symbol
+[ERROR]   symbol:   variable ARCH_A
+[ERROR]   location: class com.example.architecturemodel.service.ModelServiceArchitectureScopedSaveTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[267,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[287,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[313,36] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[322,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[329,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[351,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[353,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[373,31] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ImplementContextResolutionServiceTest.java:[375,49] incompatible types: java.util.UUID cannot be converted to java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ContextBundleExpansionServiceDiagramTest.java:[57,44] cannot find symbol
+[ERROR]   symbol:   variable UUID
+[ERROR]   location: class com.example.architecturemodel.service.ContextBundleExpansionServiceDiagramTest
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/ModelServiceSaveTest.java:[109,24] constructor ModelService in class com.example.architecturemodel.service.ModelService cannot be applied to given types;
+[ERROR]   required: com.example.architecturemodel.repository.ModelFileRepository,com.example.architecturemodel.repository.ProjectRepository,com.example.architecturemodel.repository.ArchitectureRepository,com.example.architecturemodel.repository.entity.BusinessUserRepository,com.example.architecturemodel.repository.entity.BusinessProcessRepository,com.example.architecturemodel.repository.entity.ProcessActivityRepository,com.example.architecturemodel.repository.entity.BusinessPointRepository,com.example.architecturemodel.repository.entity.ApplicationRepository,com.example.architecturemodel.repository.entity.ApplicationComponentRepository,com.example.architecturemodel.repository.entity.ServiceRepository,com.example.architecturemodel.repository.entity.InterfaceRepository,com.example.architecturemodel.repository.entity.EndpointRepository,com.example.architecturemodel.repository.entity.ClassRepository,com.example.architecturemodel.repository.entity.MethodRepository,com.example.architecturemodel.repository.entity.ApplicationPointRepository,com.example.architecturemodel.repository.entity.LogicalDataEntityRepository,com.example.architecturemodel.repository.entity.LogicalDataAttributeRepository,com.example.architecturemodel.repository.entity.PhysicalDataEntityRepository,com.example.architecturemodel.repository.entity.PhysicalDataAttributeRepository,com.example.architecturemodel.repository.entity.AppBusinessPointRepository,com.example.architecturemodel.repository.entity.InteractionRepository,com.example.architecturemodel.repository.entity.EventRepository,com.example.architecturemodel.repository.entity.StateRepository,com.example.architecturemodel.repository.entity.StateTransitionRepository,com.example.architecturemodel.repository.entity.ActivityRepository,com.example.architecturemodel.repository.entity.ActivityFlowRepository,com.example.architecturemodel.repository.entity.ActivityPartitionRepository,com.example.architecturemodel.repository.entity.UIScreenRepository,com.example.architecturemodel.repository.entity.UIWorkflowTransitionRepository,com.example.architecturemodel.repository.entity.UIContractRepository,com.example.architecturemodel.repository.entity.UIComponentRepository,com.example.architecturemodel.repository.entity.UIActionRepository,com.example.architecturemodel.repository.entity.UICharacteristicRepository,com.example.architecturemodel.repository.entity.BusinessLogicRepository,com.example.architecturemodel.repository.entity.PackageSetRepository,com.example.architecturemodel.repository.entity.PackageRepository,com.example.architecturemodel.repository.entity.PackageSetDefaultRuleRepository,com.example.architecturemodel.repository.entity.DataEntityPointRepository,com.example.architecturemodel.repository.entity.UserJourneyRepository,com.example.architecturemodel.repository.entity.ActivityStepRepository,com.example.architecturemodel.repository.entity.EnvironmentRepository,com.example.architecturemodel.repository.entity.CloudAccountRepository,com.example.architecturemodel.repository.entity.LocationRepository,com.example.architecturemodel.repository.entity.NetworkRepository,com.example.architecturemodel.repository.entity.SubnetRepository,com.example.architecturemodel.repository.entity.ComputeClusterRepository,com.example.architecturemodel.repository.entity.ComputeResourceRepository,com.example.architecturemodel.repository.entity.DeploymentUnitRepository,com.example.architecturemodel.repository.entity.LoadBalancerRepository,com.example.architecturemodel.repository.entity.ListenerRepository,com.example.architecturemodel.repository.entity.DataStoreInstanceRepository,com.example.architecturemodel.repository.entity.InfrastructureResourceRepository,com.example.architecturemodel.repository.entity.InfrastructurePointRepository,com.example.architecturemodel.repository.relationship.BusinessUserBusinessPointRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessPointRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityRelationshipRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityPhysicalDataEntityRepository,com.example.architecturemodel.repository.relationship.LogicalDataAttributePhysicalDataAttributeRepository,com.example.architecturemodel.repository.relationship.DataMovementRepository,com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessLogicRepository,com.example.architecturemodel.repository.relationship.UserJourneyLinkRepository,com.example.architecturemodel.repository.relationship.ResourceSubnetHostingRepository,com.example.architecturemodel.repository.relationship.DeploymentUnitComputeResourceRepository,com.example.architecturemodel.repository.relationship.LoadBalancerResourceRouteRepository,com.example.architecturemodel.repository.relationship.ApplicationComputeDeploymentRepository,com.example.architecturemodel.repository.relationship.DataEntityDataStoreHostingRepository,com.example.architecturemodel.repository.relationship.ApplicationInfrastructureResourceUseRepository,com.example.architecturemodel.repository.relationship.ApplicationLoadBalancerExposureRepository,com.example.architecturemodel.repository.entity.IaCSourceRepository,com.example.architecturemodel.repository.relationship.IaCResourceBindingRepository,com.example.architecturemodel.repository.entity.LibraryRepository,com.example.architecturemodel.repository.relationship.CodeUnitDependencyRepository,com.example.architecturemodel.repository.entity.DiscoveryRunRepository,com.example.architecturemodel.repository.diagram.DiagramRepository,com.example.architecturemodel.repository.diagram.DiagramNodeRepository,com.example.architecturemodel.repository.diagram.DiagramEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramInteractionEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramDecorationRepository,com.example.architecturemodel.mapper.EntityMapper,com.example.architecturemodel.mapper.DiagramMapper,com.example.architecturemodel.service.export.DiagramCanonicalizer,com.example.architecturemodel.service.export.DiagramSvgRenderer,com.example.architecturemodel.service.ProjectService,com.example.architecturemodel.service.DataEntityPointEnsureService
+[ERROR]   found:    com.example.architecturemodel.repository.ModelFileRepository,com.example.architecturemodel.repository.ProjectRepository,com.example.architecturemodel.repository.ArchitectureRepository,com.example.architecturemodel.repository.entity.BusinessUserRepository,com.example.architecturemodel.repository.entity.BusinessProcessRepository,com.example.architecturemodel.repository.entity.ProcessActivityRepository,com.example.architecturemodel.repository.entity.BusinessPointRepository,com.example.architecturemodel.repository.entity.ApplicationRepository,com.example.architecturemodel.repository.entity.ApplicationComponentRepository,com.example.architecturemodel.repository.entity.ServiceRepository,com.example.architecturemodel.repository.entity.InterfaceRepository,com.example.architecturemodel.repository.entity.EndpointRepository,com.example.architecturemodel.repository.entity.ClassRepository,com.example.architecturemodel.repository.entity.MethodRepository,com.example.architecturemodel.repository.entity.ApplicationPointRepository,com.example.architecturemodel.repository.entity.LogicalDataEntityRepository,com.example.architecturemodel.repository.entity.LogicalDataAttributeRepository,com.example.architecturemodel.repository.entity.PhysicalDataEntityRepository,com.example.architecturemodel.repository.entity.PhysicalDataAttributeRepository,com.example.architecturemodel.repository.entity.AppBusinessPointRepository,com.example.architecturemodel.repository.entity.InteractionRepository,com.example.architecturemodel.repository.entity.EventRepository,com.example.architecturemodel.repository.entity.StateRepository,com.example.architecturemodel.repository.entity.StateTransitionRepository,com.example.architecturemodel.repository.entity.ActivityRepository,com.example.architecturemodel.repository.entity.ActivityFlowRepository,com.example.architecturemodel.repository.entity.ActivityPartitionRepository,com.example.architecturemodel.repository.entity.UIScreenRepository,com.example.architecturemodel.repository.entity.UIWorkflowTransitionRepository,com.example.architecturemodel.repository.entity.UIContractRepository,com.example.architecturemodel.repository.entity.UIComponentRepository,com.example.architecturemodel.repository.entity.UIActionRepository,com.example.architecturemodel.repository.entity.UICharacteristicRepository,com.example.architecturemodel.repository.entity.BusinessLogicRepository,com.example.architecturemodel.repository.entity.PackageSetRepository,com.example.architecturemodel.repository.entity.PackageRepository,com.example.architecturemodel.repository.entity.PackageSetDefaultRuleRepository,com.example.architecturemodel.repository.entity.DataEntityPointRepository,com.example.architecturemodel.repository.entity.UserJourneyRepository,com.example.architecturemodel.repository.entity.ActivityStepRepository,com.example.architecturemodel.repository.relationship.BusinessUserBusinessPointRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessPointRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityRelationshipRepository,com.example.architecturemodel.repository.relationship.LogicalDataEntityPhysicalDataEntityRepository,com.example.architecturemodel.repository.relationship.LogicalDataAttributePhysicalDataAttributeRepository,com.example.architecturemodel.repository.relationship.DataMovementRepository,com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository,com.example.architecturemodel.repository.relationship.ApplicationPointBusinessLogicRepository,com.example.architecturemodel.repository.diagram.DiagramRepository,com.example.architecturemodel.repository.diagram.DiagramNodeRepository,com.example.architecturemodel.repository.diagram.DiagramEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramInteractionEdgeRepository,com.example.architecturemodel.repository.diagram.DiagramDecorationRepository,com.example.architecturemodel.mapper.EntityMapper,com.example.architecturemodel.mapper.DiagramMapper,com.example.architecturemodel.service.export.DiagramCanonicalizer,com.example.architecturemodel.service.export.DiagramSvgRenderer,com.example.architecturemodel.service.ProjectService,com.example.architecturemodel.service.DataEntityPointEnsureService
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[87,21] constructor UserJourneyDiagramStepDto in record com.example.architecturemodel.model.dto.diagram.UserJourneyDiagramStepDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[107,31] method projectSingleJourney in class com.example.architecturemodel.service.UserJourneyDiagramProjectionService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[109,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[126,31] method projectSingleJourney in class com.example.architecturemodel.service.UserJourneyDiagramProjectionService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[128,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[142,31] method projectSingleJourney in class com.example.architecturemodel.service.UserJourneyDiagramProjectionService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[145,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[182,61] method checkSyncStatus in class com.example.architecturemodel.service.UserJourneySyncService cannot be applied to given types;
+[ERROR]   required: java.util.UUID,java.util.UUID,java.lang.String
+[ERROR]   found:    java.util.UUID,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[199,17] constructor UserJourneyDiagramStepDto in record com.example.architecturemodel.model.dto.diagram.UserJourneyDiagramStepDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/UserJourneySyncServiceTest.java:[201,17] constructor UserJourneyDiagramStepDto in record com.example.architecturemodel.model.dto.diagram.UserJourneyDiagramStepDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,int,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[90,30] constructor EnvironmentDto in record com.example.architecturemodel.model.dto.entity.EnvironmentDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.Boolean,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Boolean,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,java.lang.String,java.lang.String,boolean,boolean,<nulltype>,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[126,49] constructor DeploymentUnitComputeResourceDto in record com.example.architecturemodel.model.dto.relationship.DeploymentUnitComputeResourceDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.Integer,java.lang.Integer,java.lang.String,java.lang.String,java.math.BigDecimal,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[130,46] constructor LoadBalancerResourceRouteDto in record com.example.architecturemodel.model.dto.relationship.LoadBalancerResourceRouteDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.String,java.lang.String,java.lang.String,java.lang.Integer,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,<nulltype>,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/model/dto/MetaModelDtoExtensionTest.java:[134,41] constructor ResourceSubnetHostingDto in record com.example.architecturemodel.model.dto.relationship.ResourceSubnetHostingDto cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.math.BigDecimal,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String,java.lang.String,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ModelControllerTest.java:[43,38] constructor ModelController in class com.example.architecturemodel.controller.ModelController cannot be applied to given types;
+[ERROR]   required: com.example.architecturemodel.service.ModelService,com.example.architecturemodel.service.DiagramExportService
+[ERROR]   found:    com.example.architecturemodel.service.ModelService
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ModelControllerTest.java:[165,50] incompatible types: java.util.List<com.example.architecturemodel.model.dto.entity.InteractionDto> cannot be converted to java.util.List<com.example.architecturemodel.model.dto.entity.DataEntityPointDto>
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[41,43] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[135,13] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[136,13] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+[ERROR]   found:    java.lang.String,java.lang.String,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[223,45] constructor ExpandResolveResponseDto in record com.example.architecturemodel.model.dto.ExpandResolveResponseDto cannot be applied to given types;
+[ERROR]   required: java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary>,java.util.List<com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary>,boolean,java.lang.String,java.util.List<com.example.architecturemodel.model.dto.relationship.ResolvedRelationshipDto>
+[ERROR]   found:    java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary>,java.util.List<com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary>,boolean,java.lang.String
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[253,45] constructor ExpandResolveResponseDto in record com.example.architecturemodel.model.dto.ExpandResolveResponseDto cannot be applied to given types;
+[ERROR]   required: java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary>,java.util.List<com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary>,boolean,java.lang.String,java.util.List<com.example.architecturemodel.model.dto.relationship.ResolvedRelationshipDto>
+[ERROR]   found:    java.util.List<java.lang.String>,java.util.List<java.lang.String>,java.util.List<java.lang.Object>,java.util.List<java.lang.Object>,boolean,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/dto/ExpandResolveDtoTest.java:[300,43] constructor EntityBundleSelection in record com.example.architecturemodel.model.dto.EntityBundleSelection cannot be applied to given types;
+[ERROR]   required: java.lang.String,java.lang.String,java.lang.String,java.lang.Integer
+[ERROR]   found:    java.lang.String,java.lang.String,<nulltype>
+[ERROR]   reason: actual and formal argument lists differ in length
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/integration/InterfaceDiscoveryIntegrationTest.java:[393,17] cannot find symbol
+[ERROR]   symbol:   method logicalEntityId(java.lang.String)
+[ERROR]   location: class com.example.architecturemodel.model.entity.InterfaceLogicalEntityEntity.InterfaceLogicalEntityEntityBuilder
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[50,35] incompatible types: inference variable T has incompatible bounds
+[ERROR]     upper bounds: java.util.UUID,java.lang.Object
+[ERROR]     lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[72,35] incompatible types: inference variable T has incompatible bounds
+[ERROR]     upper bounds: java.util.UUID,java.lang.Object
+[ERROR]     lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[84,35] incompatible types: inference variable T has incompatible bounds
+[ERROR]     upper bounds: java.util.UUID,java.lang.Object
+[ERROR]     lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[108,35] incompatible types: inference variable T has incompatible bounds
+[ERROR]     upper bounds: java.util.UUID,java.lang.Object
+[ERROR]     lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/controller/ProductSummaryControllerTest.java:[127,35] incompatible types: inference variable T has incompatible bounds
+[ERROR]     upper bounds: java.util.UUID,java.lang.Object
+[ERROR]     lower bounds: java.lang.String
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/WorkItemExternalUrlMigrationTest.java:[149,29] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/migration/WorkItemExternalUrlMigrationTest.java:[163,29] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/DiscoveryRunServiceScopedConfigOptionalTest.java:[93,63] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/DiscoveryRunServiceScopedConfigOptionalTest.java:[123,63] incompatible types: java.lang.String cannot be converted to java.util.UUID
+[ERROR] /C:/Workspaces/SSD/architecture-store-and-diagrams/architecture-model-service/src/test/java/com/example/architecturemodel/service/DiscoveryRunServiceScopedConfigOptionalTest.java:[146,29] no suitable method found for createRun(java.util.UUID)
+[ERROR]     method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID) is not applicable
+[ERROR]       (actual and formal argument lists differ in length)
+[ERROR]     method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String) is not applicable
+[ERROR]       (actual and formal argument lists differ in length)
+[ERROR]     method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String,java.lang.String,java.lang.String,boolean) is not applicable
+[ERROR]       (actual and formal argument lists differ in length)
+[ERROR]     method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String,java.lang.String,java.lang.String,boolean,java.util.Map<java.lang.String,java.lang.Object>) is not applicable
+[ERROR]       (actual and formal argument lists differ in length)
+[ERROR]     method com.example.architecturemodel.service.DiscoveryRunService.createRun(java.util.UUID,java.util.UUID,java.lang.String,java.lang.String,java.lang.String,boolean,java.util.Map<java.lang.String,java.lang.Object>,java.lang.String) is not applicable
+[ERROR]       (actual and formal argument lists differ in length)
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

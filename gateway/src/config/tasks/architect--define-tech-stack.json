@@ -1,0 +1,51 @@
+{
+  "id": "architect--define-tech-stack",
+  "personaId": "architect",
+  "menuLabel": "Define Tech Stack",
+  "description": "Conducts structured tech stack discovery to establish a comprehensive technology stack definition. Guides the user through current landscape assessment, frontend and backend technology choices, data storage, infrastructure, developer tooling, design decisions, constraints review, and final review.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/architect.define-tech-stack.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "current_landscape",
+          "frontend_tech",
+          "backend_tech",
+          "data_storage",
+          "infrastructure",
+          "dev_tooling",
+          "design_decisions",
+          "constraints_review",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": ["mission", "architecture-baseline"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "tech-stack",
+      "filename": "TECH-STACK.MD",
+      "tool": "save_markdown_artifact",
+      "description": "Technology stack definition"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

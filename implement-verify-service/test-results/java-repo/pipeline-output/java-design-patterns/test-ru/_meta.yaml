@@ -1,0 +1,10 @@
+repo: java-design-patterns
+commit: test-run
+branch: test
+analyzed_at: '2026-03-31T10:54:57+00:00'
+provider: ctags
+file_count: 30
+symbol_count: 199
+languages:
+- 'Java: 30'
+remote: https://github.com/iluwatar/java-design-patterns.git

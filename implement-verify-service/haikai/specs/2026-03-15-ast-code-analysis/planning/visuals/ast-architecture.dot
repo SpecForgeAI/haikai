@@ -1,0 +1,218 @@
+digraph ast_implementation {
+    rankdir=TB;
+    compound=true;
+    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10];
+    edge [fontname="Helvetica", fontsize=8];
+    graph [fontname="Helvetica"];
+
+    // ════════════════════════════════════════
+    // PHASE 1 — ctags + Pipeline Integration
+    // ════════════════════════════════════════
+    subgraph cluster_phase1 {
+        label="Phase 1 — ctags + Pipeline Integration\n(6 tasks, TDD, ~3-4 days)";
+        style="rounded,filled";
+        fillcolor="#e8f5e9";
+        color="#2e7d32";
+        fontsize=12;
+        fontcolor="#2e7d32";
+
+        // Task 1
+        models [label="Task 1: src/ast/models.py\n─────────────\nStructuralAnalysis\nSymbolInfo, ImportInfo\nInheritanceInfo\n─────────────\nTest: tests/ast/test_models.py", fillcolor="#c8e6c9"];
+
+        // Task 2
+        provider [label="Task 2: src/ast/provider.py\n─────────────\nAnalysisProvider (ABC)\nProviderRegistry\nConfig + env var toggles\n─────────────\nTest: tests/ast/test_provider.py", fillcolor="#c8e6c9"];
+
+        // Task 3
+        ctags [label="Task 3: src/ast/ctags_provider.py\n─────────────\nCtagsProvider\nanalyze_batch() ONLY public API\n(single file → batch of one)\nCTAGS_KIND_MAP: ctags→canonical\n_map_tag(): contract boundary\n─────────────\nTest: tests/ast/test_ctags_provider.py\n  TestKindMapping (no ctags needed)\n  TestBatchAnalyze\n  TestContractCompliance", fillcolor="#a5d6a7"];
+
+        // Task 4
+        ast_chunker [label="Task 4: src/chunking/ast_chunker.py\n─────────────\nASTChunker\nsplit at symbol boundaries\nnever split mid-function\nGap regions: module-level code\nattached to next symbol chunk\nLine coverage: zero dropped lines\n─────────────\nTest: tests/chunking/test_ast_chunker.py\n  TestNoDroppedContent\n  TestSymbolBoundaries\n  TestScopeHandling", fillcolor="#c8e6c9"];
+
+        // Task 5
+        formatter [label="Task 5: Pipeline Integration\n─────────────\n5a: src/ast/formatter.py\n  format_structural_output()\n  grouped by scope, compact\n5b: src/file_analyzer.py\n  __init__: +ProviderRegistry\n  analyze_batch: pre-index all files\n  analyze_file: structural→prompt\n─────────────\nTest: tests/ast/test_formatter.py\nTest: tests/ast/test_pipeline_integration.py\n  structural_data_reduces_prompt\n  works_without_ctags\n  batch_pre_analyzes", fillcolor="#c8e6c9"];
+
+        // Task 6
+        config_docker [label="Task 6: Config + Docker\n─────────────\nconfig/analysis_providers.yaml\nDockerfile + universal-ctags\n─────────────\nTest: tests/ast/test_token_reduction.py", fillcolor="#c8e6c9"];
+    }
+
+    // ════════════════════════════════════════
+    // PHASE 1 VERIFICATION GATES
+    // ════════════════════════════════════════
+    subgraph cluster_gates1 {
+        label="Phase 1 — Verification Gates";
+        style="rounded,filled";
+        fillcolor="#e8f5e9";
+        color="#1b5e20";
+        fontsize=11;
+        fontcolor="#1b5e20";
+
+        gate11 [label="Gate 1.1\nctags → valid StructuralAnalysis\n≥200 symbols from 60 files\n<2s indexing time", shape=diamond, fillcolor="#a5d6a7"];
+        gate12 [label="Gate 1.2\nAST chunker never splits\nmid-function or mid-class\nInvariant: defs == returns per chunk", shape=diamond, fillcolor="#a5d6a7"];
+        gate13 [label="Gate 1.3\n≥80% per-file token reduction\nstructural prompt vs raw code\nMeasured: chars + tokens", shape=diamond, fillcolor="#a5d6a7"];
+        gate14 [label="Gate 1.4\nBackward compatibility\nAST_CTAGS_ENABLED=false\nAll existing tests pass", shape=diamond, fillcolor="#a5d6a7"];
+        gate15 [label="Gate 1.5\nDocker build + ctags\nctags --version in container", shape=diamond, fillcolor="#a5d6a7"];
+    }
+
+    // ════════════════════════════════════════
+    // PHASE 2 — Pattern Detection + Strategy
+    // ════════════════════════════════════════
+    subgraph cluster_phase2 {
+        label="Phase 2 — Pattern Detection + Strategy + Caching\n(4 tasks, TDD, ~2-3 days)";
+        style="rounded,filled";
+        fillcolor="#e3f2fd";
+        color="#1565c0";
+        fontsize=12;
+        fontcolor="#1565c0";
+
+        pattern [label="src/ast/pattern_detector.py\n─────────────\nPatternDetector\nFactory (0.8) | Repository (0.8)\nSingleton (0.5) | Observer (0.8)\nNegative evidence downgrades\n─────────────\nTest: tests/ast/test_pattern_detector.py\nFixture: tests/fixtures/patterns/", fillcolor="#bbdefb"];
+        ast_strategy [label="src/strategies/\nast_analysis_strategy.py\n─────────────\nPass 1: deterministic (ctags)\nPass 2: targeted LLM\nPass 3: synthesize\n─────────────\nTest: tests/strategies/test_ast_strategy.py", fillcolor="#bbdefb"];
+        triage [label="Triage Logic\n(in file_analyzer.py)\n─────────────\ncomplex → LLM\ntrivial → skip LLM\nboilerplate → skip LLM\n─────────────\nTest: tests/ast/test_triage.py", fillcolor="#90caf9"];
+        cache [label="cache_manager.py\n─────────────\n+ SHA-256(content) key\n+ per-provider cache\n.cache/ast/*.json\n─────────────\nTest: tests/ast/test_caching.py", fillcolor="#bbdefb"];
+    }
+
+    // ════════════════════════════════════════
+    // PHASE 2 VERIFICATION GATES
+    // ════════════════════════════════════════
+    subgraph cluster_gates2 {
+        label="Phase 2 — Verification Gates";
+        style="rounded,filled";
+        fillcolor="#e3f2fd";
+        color="#0d47a1";
+        fontsize=11;
+        fontcolor="#0d47a1";
+
+        gate21 [label="Gate 2.1\nPattern detection accuracy\nTrue positives ≥0.8 confidence\nFalse positives <0.5 confidence", shape=diamond, fillcolor="#90caf9"];
+        gate22 [label="Gate 2.2\nTriage reduces LLM calls\n≥75% files skipped\nComplex files targeted", shape=diamond, fillcolor="#90caf9"];
+        gate23 [label="Gate 2.3\nCache hit <100ms\nvs first analysis ~1.2s\nModified files re-analyzed", shape=diamond, fillcolor="#90caf9"];
+        gate24 [label="Gate 2.4\n≥90% project-level\ntoken reduction\n(per-file × triage combined)", shape=diamond, fillcolor="#90caf9"];
+    }
+
+    // ════════════════════════════════════════
+    // PHASE 3 — LSP Integration
+    // ════════════════════════════════════════
+    subgraph cluster_phase3 {
+        label="Phase 3 — LSP Deep Analysis\n(4 tasks, TDD, ~4-5 days)";
+        style="rounded,filled";
+        fillcolor="#fff3e0";
+        color="#e65100";
+        fontsize=12;
+        fontcolor="#e65100";
+
+        lsp_provider [label="src/ast/lsp_provider.py\n─────────────\nLSPProvider\nJSON-RPC client (stdio)\ndocumentSymbol\ncallHierarchy\nreferences, hover\n─────────────\nTest: tests/ast/test_lsp_provider.py", fillcolor="#ffe0b2"];
+        lsp_manager [label="src/ast/lsp_server_manager.py\n─────────────\nstart() → subprocess\ninitialize → query → shutdown\n30s/file, 5min/project timeout\nNo orphan processes\n─────────────\nTest: tests/ast/test_lsp_manager.py", fillcolor="#ffe0b2"];
+        lsp_yaml [label="config/lsp_servers.yaml\n─────────────\n13 languages\nauto_install toggle\ncorporate proxy support\ninstall_command override", fillcolor="#ffe0b2"];
+        docker_rich [label="Dockerfile.rich-analysis\n─────────────\n+ pyright\n+ typescript-language-server\n+ lsprotocol", fillcolor="#ffcc80"];
+    }
+
+    // ════════════════════════════════════════
+    // PHASE 3 VERIFICATION GATES
+    // ════════════════════════════════════════
+    subgraph cluster_gates3 {
+        label="Phase 3 — Verification Gates";
+        style="rounded,filled";
+        fillcolor="#fff3e0";
+        color="#bf360c";
+        fontsize=11;
+        fontcolor="#bf360c";
+
+        gate31 [label="Gate 3.1\nLSP server lifecycle\nStart <5s, query, shutdown\nNo zombie processes", shape=diamond, fillcolor="#ffcc80"];
+        gate32 [label="Gate 3.2\nLSP enriches confidence\nctags 0.8 → LSP 1.0\nCall graph evidence added", shape=diamond, fillcolor="#ffcc80"];
+        gate33 [label="Gate 3.3\nGraceful fallback\nLSP unavailable → ctags\nNo errors, warning logged", shape=diamond, fillcolor="#ffcc80"];
+    }
+
+    // ════════════════════════════════════════
+    // EXISTING PIPELINE (modified)
+    // ════════════════════════════════════════
+    subgraph cluster_existing {
+        label="Existing Pipeline (modified in Phase 1, Task 4-5)";
+        style="rounded,filled";
+        fillcolor="#f5f5f5";
+        color="#757575";
+        fontsize=12;
+        fontcolor="#757575";
+
+        file_scanner [label="file_scanner.py\ndiscover files\ndetect languages", fillcolor="#eeeeee"];
+        file_analyzer [label="file_analyzer.py\n─────────────\n+ ProviderRegistry in __init__\n+ analyze_batch: pre-index ALL\n  files via ctags (one subprocess)\n+ analyze_file: check cache →\n  format structural → LLM prompt\n+ fallback: raw code if no ctags", fillcolor="#e0e0e0"];
+        chunker_factory [label="chunker_factory.py\n─────────────\n+ StructuralAnalysis param\n+ AST → PkgJson →\n  Markdown → Generic", fillcolor="#e0e0e0"];
+        llm_client [label="llm_client.py\n(unchanged)", fillcolor="#eeeeee"];
+        strategies [label="strategies/*.py\ncoding_style, conventions\nerror_handling, etc.\n(unchanged)", fillcolor="#eeeeee"];
+        synthesizer [label="standards_synthesizer.py\n(unchanged)", fillcolor="#eeeeee"];
+    }
+
+    // ════════════════════════════════════════
+    // EXECUTION STRATEGY
+    // ════════════════════════════════════════
+    subgraph cluster_execution {
+        label="Execution Strategy (sp_subagent_dev)";
+        style="rounded,filled";
+        fillcolor="#fce4ec";
+        color="#880e4f";
+        fontsize=11;
+        fontcolor="#880e4f";
+
+        exec_flow [label="Per Task:\n─────────────\n1. Dispatch subagent\n   (model tier per task)\n2. TDD: test → fail → impl → pass\n3. Spec review (compliance)\n4. Code quality review\n5. sp_verification: show output\n6. Commit", fillcolor="#f8bbd0"];
+        model_tiers [label="Model Tiers:\n─────────────\nTask 1,2,6: Fast/cheap\n  (isolated, mechanical)\nTask 3,4: Standard\n  (subprocess, algorithm)\nTask 5: Most capable\n  (multi-file integration)", fillcolor="#f8bbd0"];
+    }
+
+    // ════════════════════════════════════════
+    // DATA FLOW EDGES
+    // ════════════════════════════════════════
+
+    // Phase 1 task dependencies (sequential)
+    models -> provider [label="Task 1→2", color="#2e7d32", penwidth=2];
+    provider -> ctags [label="Task 2→3", color="#2e7d32", penwidth=2];
+    models -> ctags [label="imports", color="#2e7d32"];
+    models -> ast_chunker [label="imports", color="#2e7d32"];
+    ctags -> ast_chunker [label="Task 3→4\nstructural data", color="#2e7d32", penwidth=2];
+    ctags -> formatter [label="Task 3→5\nStructuralAnalysis", color="#2e7d32", penwidth=2];
+    ast_chunker -> config_docker [label="Task 4→6", color="#2e7d32"];
+    formatter -> config_docker [label="Task 5→6", color="#2e7d32"];
+
+    // Phase 1 → gates
+    ctags -> gate11 [label="validates", color="#1b5e20", style=dashed];
+    ast_chunker -> gate12 [label="validates", color="#1b5e20", style=dashed];
+    formatter -> gate13 [label="validates", color="#1b5e20", style=dashed];
+    config_docker -> gate14 [label="validates", color="#1b5e20", style=dashed];
+    config_docker -> gate15 [label="validates", color="#1b5e20", style=dashed];
+
+    // Phase 1 → existing pipeline
+    file_scanner -> provider [label="file list", color="#424242"];
+    provider -> file_analyzer [label="analyze_batch()\none subprocess\nfor all files", color="#2e7d32", penwidth=2];
+    formatter -> file_analyzer [label="formatted output\n(compact, grouped by scope)", color="#2e7d32"];
+    file_analyzer -> chunker_factory [label="structural_analysis", color="#424242"];
+    chunker_factory -> ast_chunker [label="selects when\nstructural data\navailable", color="#2e7d32"];
+    file_analyzer -> llm_client [label="structural prompt\n(~200 tokens)\nor raw code\n(~2000 tokens)", color="#424242"];
+    file_analyzer -> strategies [color="#424242"];
+    strategies -> synthesizer [color="#424242"];
+
+    // Phase 2 connections
+    models -> pattern [label="imports", color="#1565c0"];
+    provider -> pattern [label="StructuralAnalysis", color="#1565c0", penwidth=2];
+    pattern -> triage [label="PatternMatch[]", color="#1565c0"];
+    triage -> file_analyzer [label="skip/target\ndecisions", color="#1565c0", style=dashed];
+    provider -> cache [label="cache check\nbefore analyze", color="#1565c0", style=dashed];
+    ast_strategy -> strategies [label="extends\nBaseGlobalStrategy", color="#1565c0", style=dashed];
+    pattern -> ast_strategy [label="pattern inventory", color="#1565c0"];
+
+    // Phase 2 → gates
+    pattern -> gate21 [label="validates", color="#0d47a1", style=dashed];
+    triage -> gate22 [label="validates", color="#0d47a1", style=dashed];
+    cache -> gate23 [label="validates", color="#0d47a1", style=dashed];
+    triage -> gate24 [label="validates", color="#0d47a1", style=dashed];
+
+    // Phase 3 connections
+    models -> lsp_provider [label="imports", color="#e65100"];
+    provider -> lsp_provider [label="registers", color="#e65100", style=dashed];
+    lsp_yaml -> lsp_manager [label="configures", color="#e65100"];
+    lsp_manager -> lsp_provider [label="server lifecycle", color="#e65100"];
+    lsp_provider -> docker_rich [label="pre-installs", color="#e65100", style=dashed];
+    lsp_provider -> pattern [label="upgrades confidence\n0.8 → 1.0\n+ call graphs", color="#e65100", style=dashed, penwidth=2];
+
+    // Phase 3 → gates
+    lsp_manager -> gate31 [label="validates", color="#bf360c", style=dashed];
+    lsp_provider -> gate32 [label="validates", color="#bf360c", style=dashed];
+    lsp_provider -> gate33 [label="validates", color="#bf360c", style=dashed];
+
+    // Execution strategy connections
+    exec_flow -> model_tiers [style=invis];
+}

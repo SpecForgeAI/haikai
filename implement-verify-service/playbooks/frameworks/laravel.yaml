@@ -1,0 +1,42 @@
+name: laravel
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - Illuminate\Routing
+    - Illuminate\Support\Facades\Route
+  files_match:
+    - 'artisan'
+    - 'routes/web.php'
+    - 'routes/api.php'
+  manifest_contains:
+    - {file: 'composer.json', substring: 'laravel/framework'}
+
+extract:
+  - id: route_facade_calls
+    query: call_args
+    file_filter: all
+    callee_pattern: '(Route|::)\s*::\s*(get|post|put|delete|patch|options|head|any|match|resource|apiResource)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^[/:]'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: laravel
+
+verification:
+  - id: route_call_count
+    query: call_args
+    callee_pattern: 'Route\s*::\s*(get|post|put|delete|patch)$'
+    expected_count: same_as_output_count
+    tolerance_pct: 25
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Route::group(['prefix' => 'admin'], fn) prefixes are NOT inlined"
+  - "Route::resource expands to 7 endpoints at runtime — current parser emits 1 per call"
+  - "Route::middleware()->group() chained calls counted as multiple Route:: calls"

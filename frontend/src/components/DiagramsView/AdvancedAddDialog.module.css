@@ -1,0 +1,384 @@
+/* AdvancedAddDialog.module.css
+ * Styles for the Advanced Add dialog component
+ * Following existing Modal.module.css patterns
+ */
+
+/* Modal overlay - same as Modal.module.css */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Dialog container - wider for tree depth */
+/* Task Group 1: Increased max-width from 700px to 900px for better visibility of deeply nested labels */
+.dialog {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 900px;
+  width: 90%;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Dialog header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+/* Scrollable content area */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 200px;
+}
+
+/* Dialog footer */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Spacing control container */
+.spacingControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spacingLabel {
+  font-size: 14px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.spacingSelect {
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  min-width: 100px;
+}
+
+.spacingSelect:hover {
+  border-color: #999;
+}
+
+.spacingSelect:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+/* Layout control container - for columns and width inputs */
+.layoutControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.layoutLabel {
+  font-size: 14px;
+  color: #666;
+  white-space: nowrap;
+}
+
+.layoutSelect {
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  min-width: 60px;
+}
+
+.layoutSelect:hover {
+  border-color: #999;
+}
+
+.layoutSelect:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.layoutInput {
+  padding: 6px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  width: 80px;
+}
+
+.layoutInput:hover {
+  border-color: #999;
+}
+
+.layoutInput:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.layoutInput:invalid {
+  border-color: #d32f2f;
+}
+
+/* Select All control container - following layoutControl pattern */
+/* Task Group 1: Added for Select All checkbox in footer */
+.selectAllControl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Footer spacer to push buttons to the right */
+.footerSpacer {
+  flex: 1;
+}
+
+/* Primary button (Add to Diagram) */
+.primaryButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}
+
+/* Secondary button (Cancel) */
+.secondaryButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.secondaryButton:hover {
+  background: #e0e0e0;
+}
+
+/* Loading spinner */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tree container */
+.tree {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+}
+
+/* Tree node */
+.treeNode {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tree node row (checkbox + label) */
+.nodeRow {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.nodeRow:hover {
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+/* Expand/collapse toggle */
+.expandToggle {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.expandToggle:hover {
+  color: #333;
+}
+
+.expandTogglePlaceholder {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* Checkbox styling */
+.checkbox {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #1976D2;
+}
+
+.checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Node label */
+.nodeLabel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entityType {
+  font-weight: 500;
+  color: #333;
+}
+
+.entityName {
+  color: #666;
+}
+
+.relationshipKind {
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+}
+
+/* Children container */
+.children {
+  margin-left: 20px;
+  border-left: 1px solid #e0e0e0;
+  padding-left: 8px;
+}
+
+/* Root node styling */
+.rootNode .entityType {
+  font-weight: 600;
+}
+
+.rootNode .checkbox {
+  opacity: 0.6;
+}
+
+/* Category header (for grouping relationships) */
+.categoryHeader {
+  display: flex;
+  align-items: center;
+  padding: 8px 0 4px 0;
+  gap: 8px;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+}
+
+.categoryHeader:hover {
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+.categoryLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.categoryKind {
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+  font-weight: normal;
+}
+
+/* Empty state */
+.emptyState {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  font-style: italic;
+}
+
+/* Error message */
+.error {
+  color: #d32f2f;
+  padding: 12px;
+  background: #ffebee;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}

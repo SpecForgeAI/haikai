@@ -1,0 +1,713 @@
+/**
+ * AdvancedAddDialog Component
+ *
+ * Modal dialog for the Advanced Add feature that allows users to
+ * add an entity along with related entities in a single operation.
+ * Uses a tree-based selection UI driven by meta-model relationships.
+ */
+
+import React, { useState, useMemo, useCallback } from 'react';
+import ReactDOM from 'react-dom';
+import { MetaModel, ENTITY_TYPES } from '../../types/model';
+import {
+  TreeNodeData,
+  TreeSelectionState,
+  SelectionDescriptor,
+} from '../../types/advancedAdd';
+import {
+  getExpandableRelationships,
+  getRelationshipKindLabel,
+  ExpandableRelationship,
+} from '../../utils/advancedAddRelationships';
+import styles from './AdvancedAddDialog.module.css';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface AdvancedAddDialogProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (selections: SelectionDescriptor[]) => void;
+  rootEntity: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  metaModel: MetaModel;
+  isLoading?: boolean;
+  error?: string | null;
+}
+
+interface TreeNodeComponentProps {
+  node: TreeNodeData;
+  selectionState: TreeSelectionState;
+  expandedState: Record<string, boolean>;
+  onToggleSelection: (nodeKey: string) => void;
+  onToggleExpand: (nodeKey: string) => void;
+  depth: number;
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Get entity display name from entity type constant
+ */
+function getEntityTypeDisplayName(entityType: string): string {
+  const displayNames: Record<string, string> = {
+    [ENTITY_TYPES.APPLICATION]: 'Application',
+    [ENTITY_TYPES.APP_COMPONENT]: 'App Component',
+    [ENTITY_TYPES.SERVICE]: 'Service',
+    [ENTITY_TYPES.INTERFACE]: 'Interface',
+    [ENTITY_TYPES.APPLICATION_POINT]: 'Application Point',
+    [ENTITY_TYPES.BUSINESS_USER]: 'Business User',
+    [ENTITY_TYPES.BUSINESS_PROCESS]: 'Business Process',
+    [ENTITY_TYPES.PROCESS_ACTIVITY]: 'Process Activity',
+    [ENTITY_TYPES.LOGICAL_DATA_ENTITY]: 'Logical Data Entity',
+    [ENTITY_TYPES.LOGICAL_DATA_ATTRIBUTE]: 'Logical Data Attribute',
+    [ENTITY_TYPES.PHYSICAL_DATA_ENTITY]: 'Physical Data Entity',
+    [ENTITY_TYPES.PHYSICAL_DATA_ATTRIBUTE]: 'Physical Data Attribute',
+  };
+  return displayNames[entityType] || entityType;
+}
+
+/**
+ * Find related entities from the meta-model based on relationship definition
+ */
+function findRelatedEntities(
+  metaModel: MetaModel,
+  rootEntityId: string,
+  rootEntityType: string,
+  relationship: ExpandableRelationship
+): Array<{ id: string; name: string }> {
+  const { targetEntityType, relationshipTableName, direction } = relationship;
+
+  // For parent/child relationships, query the target entity table directly
+  if (direction === 'CHILD') {
+    switch (targetEntityType) {
+      case ENTITY_TYPES.APP_COMPONENT:
+        return metaModel.entities.app_components
+          .filter((ac) => ac.application_id === rootEntityId)
+          .map((ac) => ({ id: ac.id, name: ac.name }));
+
+      case ENTITY_TYPES.SERVICE:
+        if (rootEntityType === ENTITY_TYPES.APPLICATION) {
+          return metaModel.entities.services
+            .filter((s) => s.application_id === rootEntityId)
+            .map((s) => ({ id: s.id, name: s.name }));
+        } else if (rootEntityType === ENTITY_TYPES.APP_COMPONENT) {
+          return metaModel.entities.services
+            .filter((s) => s.app_component_id === rootEntityId)
+            .map((s) => ({ id: s.id, name: s.name }));
+        }
+        break;
+
+      case ENTITY_TYPES.INTERFACE:
+        return metaModel.entities.interfaces
+          .filter((i) => i.service_id === rootEntityId)
+          .map((i) => ({ id: i.id, name: i.name }));
+
+      case ENTITY_TYPES.PROCESS_ACTIVITY:
+        return metaModel.entities.process_activities
+          .filter((pa) => pa.business_process_id === rootEntityId)
+          .map((pa) => ({ id: pa.id, name: pa.name }));
+
+      case ENTITY_TYPES.LOGICAL_DATA_ATTRIBUTE:
+        return metaModel.entities.logical_data_attributes
+          .filter((lda) => lda.logical_entity_id === rootEntityId)
+          .map((lda) => ({ id: lda.id, name: lda.name }));
+
+      case ENTITY_TYPES.PHYSICAL_DATA_ATTRIBUTE:
+        return metaModel.entities.physical_data_attributes
+          .filter((pda) => pda.physical_entity_id === rootEntityId)
+          .map((pda) => ({ id: pda.id, name: pda.name }));
+    }
+  }
+
+  // For association relationships, query via the relationship table
+  if (direction === 'ASSOCIATION') {
+    switch (relationshipTableName) {
+      case 'application_point_business_processes': {
+        // Find business processes linked to this application via application points
+        if (rootEntityType === ENTITY_TYPES.APPLICATION) {
+          const appPointIds = metaModel.entities.application_points
+            .filter((ap) => ap.application_id === rootEntityId)
+            .map((ap) => ap.id);
+
+          const bpIds = metaModel.relationships.application_point_business_processes
+            .filter((rel) => appPointIds.includes(rel.application_point_id))
+            .map((rel) => rel.business_process_id);
+
+          const uniqueBpIds = [...new Set(bpIds)];
+          return metaModel.entities.business_processes
+            .filter((bp) => uniqueBpIds.includes(bp.id))
+            .map((bp) => ({ id: bp.id, name: bp.name }));
+        }
+        // Find applications linked to this business process
+        else if (rootEntityType === ENTITY_TYPES.BUSINESS_PROCESS) {
+          const appPointIds = metaModel.relationships.application_point_business_processes
+            .filter((rel) => rel.business_process_id === rootEntityId)
+            .map((rel) => rel.application_point_id);
+
+          const appIds = metaModel.entities.application_points
+            .filter((ap) => appPointIds.includes(ap.id))
+            .map((ap) => ap.application_id);
+
+          const uniqueAppIds = [...new Set(appIds)];
+          return metaModel.entities.applications
+            .filter((app) => uniqueAppIds.includes(app.id))
+            .map((app) => ({ id: app.id, name: app.name }));
+        }
+        break;
+      }
+
+      case 'logical_data_entity_physical_data_entities': {
+        const pdeIds = metaModel.relationships.logical_data_entity_physical_data_entities
+          .filter((rel) => rel.logical_entity_id === rootEntityId)
+          .map((rel) => rel.physical_entity_id);
+
+        const uniquePdeIds = [...new Set(pdeIds)];
+        return metaModel.entities.physical_data_entities
+          .filter((pde) => uniquePdeIds.includes(pde.id))
+          .map((pde) => ({ id: pde.id, name: pde.name }));
+      }
+
+      case 'business_user_processes': {
+        const bpIds = metaModel.relationships.business_user_processes
+          .filter((rel) => rel.business_user_id === rootEntityId)
+          .map((rel) => rel.business_process_id);
+
+        const uniqueBpIds = [...new Set(bpIds)];
+        return metaModel.entities.business_processes
+          .filter((bp) => uniqueBpIds.includes(bp.id))
+          .map((bp) => ({ id: bp.id, name: bp.name }));
+      }
+
+      case 'interface_logical_entities': {
+        const ldeIds = metaModel.relationships.interface_logical_entities
+          .filter((rel) => rel.interface_id === rootEntityId)
+          .map((rel) => rel.logical_entity_id);
+
+        const uniqueLdeIds = [...new Set(ldeIds)];
+        return metaModel.entities.logical_data_entities
+          .filter((lde) => uniqueLdeIds.includes(lde.id))
+          .map((lde) => ({ id: lde.id, name: lde.name }));
+      }
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Build tree data from meta-model for the Advanced Add dialog
+ */
+function buildTreeData(
+  metaModel: MetaModel,
+  rootEntity: { id: string; name: string; type: string }
+): TreeNodeData {
+  const rootKey = `root-${rootEntity.id}`;
+
+  // Build root node
+  const rootNode: TreeNodeData = {
+    key: rootKey,
+    label: `${getEntityTypeDisplayName(rootEntity.type)}: ${rootEntity.name}`,
+    entityType: rootEntity.type,
+    entityId: rootEntity.id,
+    entityName: rootEntity.name,
+    isRoot: true,
+    children: [],
+  };
+
+  // Get expandable relationships for this entity type
+  const relationships = getExpandableRelationships(rootEntity.type);
+
+  // Build children for each relationship
+  relationships.forEach((relationship, relIndex) => {
+    const relatedEntities = findRelatedEntities(
+      metaModel,
+      rootEntity.id,
+      rootEntity.type,
+      relationship
+    );
+
+    // Create nodes for each related entity
+    relatedEntities.forEach((entity, entityIndex) => {
+      const childKey = `${rootKey}-${relIndex}-${entityIndex}`;
+      const childNode: TreeNodeData = {
+        key: childKey,
+        label: `${getEntityTypeDisplayName(relationship.targetEntityType)}: ${entity.name}`,
+        entityType: relationship.targetEntityType,
+        entityId: entity.id,
+        entityName: entity.name,
+        isRoot: false,
+        relationshipKind: relationship.relationshipKind,
+        parentKey: rootKey,
+        children: [],
+      };
+
+      // Recursively build children for this entity
+      const childRelationships = getExpandableRelationships(relationship.targetEntityType);
+      childRelationships.forEach((childRel, childRelIndex) => {
+        const grandchildEntities = findRelatedEntities(
+          metaModel,
+          entity.id,
+          relationship.targetEntityType,
+          childRel
+        );
+
+        grandchildEntities.forEach((grandchild, grandchildIndex) => {
+          const grandchildKey = `${childKey}-${childRelIndex}-${grandchildIndex}`;
+          const grandchildNode: TreeNodeData = {
+            key: grandchildKey,
+            label: `${getEntityTypeDisplayName(childRel.targetEntityType)}: ${grandchild.name}`,
+            entityType: childRel.targetEntityType,
+            entityId: grandchild.id,
+            entityName: grandchild.name,
+            isRoot: false,
+            relationshipKind: childRel.relationshipKind,
+            parentKey: childKey,
+            children: [],
+          };
+
+          // Add one more level of depth (3+ levels supported)
+          const grandchildRelationships = getExpandableRelationships(childRel.targetEntityType);
+          grandchildRelationships.forEach((gcRel, gcRelIndex) => {
+            const ggEntities = findRelatedEntities(
+              metaModel,
+              grandchild.id,
+              childRel.targetEntityType,
+              gcRel
+            );
+
+            ggEntities.forEach((gg, ggIndex) => {
+              const ggKey = `${grandchildKey}-${gcRelIndex}-${ggIndex}`;
+              grandchildNode.children.push({
+                key: ggKey,
+                label: `${getEntityTypeDisplayName(gcRel.targetEntityType)}: ${gg.name}`,
+                entityType: gcRel.targetEntityType,
+                entityId: gg.id,
+                entityName: gg.name,
+                isRoot: false,
+                relationshipKind: gcRel.relationshipKind,
+                parentKey: grandchildKey,
+                children: [],
+              });
+            });
+          });
+
+          childNode.children.push(grandchildNode);
+        });
+      });
+
+      rootNode.children.push(childNode);
+    });
+  });
+
+  return rootNode;
+}
+
+/**
+ * Get all ancestor keys for a node
+ */
+function getAncestorKeys(tree: TreeNodeData, targetKey: string): string[] {
+  const ancestors: string[] = [];
+
+  function findPath(node: TreeNodeData, path: string[]): boolean {
+    if (node.key === targetKey) {
+      ancestors.push(...path);
+      return true;
+    }
+    for (const child of node.children) {
+      if (findPath(child, [...path, node.key])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  findPath(tree, []);
+  return ancestors;
+}
+
+/**
+ * Get all descendant keys for a node
+ */
+function getDescendantKeys(node: TreeNodeData): string[] {
+  const descendants: string[] = [];
+  node.children.forEach((child) => {
+    descendants.push(child.key);
+    descendants.push(...getDescendantKeys(child));
+  });
+  return descendants;
+}
+
+/**
+ * Find a node by key in the tree
+ */
+function findNodeByKey(node: TreeNodeData, key: string): TreeNodeData | null {
+  if (node.key === key) return node;
+  for (const child of node.children) {
+    const found = findNodeByKey(child, key);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Compute indeterminate state for parent nodes
+ */
+function computeSelectionState(
+  tree: TreeNodeData,
+  selectedKeys: Set<string>
+): TreeSelectionState {
+  const state: TreeSelectionState = {};
+
+  function processNode(node: TreeNodeData): 'selected' | 'unselected' | 'indeterminate' {
+    if (node.children.length === 0) {
+      // Leaf node - directly selected or not
+      const nodeState = selectedKeys.has(node.key) ? 'selected' : 'unselected';
+      state[node.key] = nodeState;
+      return nodeState;
+    }
+
+    // Process children first
+    const childStates = node.children.map((child) => processNode(child));
+
+    // Determine this node's state based on children
+    const allSelected = childStates.every((s) => s === 'selected');
+    const allUnselected = childStates.every((s) => s === 'unselected');
+
+    let nodeState: 'selected' | 'unselected' | 'indeterminate';
+    if (selectedKeys.has(node.key)) {
+      nodeState = 'selected';
+    } else if (allSelected) {
+      nodeState = 'selected';
+    } else if (allUnselected) {
+      nodeState = 'unselected';
+    } else {
+      nodeState = 'indeterminate';
+    }
+
+    state[node.key] = nodeState;
+    return nodeState;
+  }
+
+  processNode(tree);
+
+  // Root is always selected
+  state[tree.key] = 'selected';
+
+  return state;
+}
+
+// ============================================================================
+// TreeNode Component
+// ============================================================================
+
+function TreeNodeComponent({
+  node,
+  selectionState,
+  expandedState,
+  onToggleSelection,
+  onToggleExpand,
+  depth,
+}: TreeNodeComponentProps) {
+  const isExpanded = expandedState[node.key] !== false; // Default to expanded
+  const hasChildren = node.children.length > 0;
+  const state = selectionState[node.key] || 'unselected';
+
+  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (!node.isRoot) {
+      onToggleSelection(node.key);
+    }
+  };
+
+  const handleExpandClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleExpand(node.key);
+  };
+
+  const indentation = depth * 20;
+
+  return (
+    <div className={`${styles.treeNode} ${node.isRoot ? styles.rootNode : ''}`}>
+      <div
+        className={styles.nodeRow}
+        style={{ paddingLeft: indentation }}
+        data-testid={`tree-node-${node.key}`}
+      >
+        {/* Expand/collapse toggle */}
+        {hasChildren ? (
+          <span
+            className={styles.expandToggle}
+            onClick={handleExpandClick}
+            data-testid={`expand-toggle-${node.key}`}
+          >
+            {isExpanded ? '\u25BC' : '\u25B6'}
+          </span>
+        ) : (
+          <span className={styles.expandTogglePlaceholder} />
+        )}
+
+        {/* Checkbox */}
+        <input
+          type="checkbox"
+          className={styles.checkbox}
+          checked={state === 'selected'}
+          ref={(input) => {
+            if (input) {
+              input.indeterminate = state === 'indeterminate';
+            }
+          }}
+          onChange={handleCheckboxChange}
+          disabled={node.isRoot}
+          data-testid={`checkbox-${node.key}`}
+        />
+
+        {/* Label */}
+        <div className={styles.nodeLabel}>
+          <span className={styles.entityType}>
+            {getEntityTypeDisplayName(node.entityType)}:
+          </span>
+          <span className={styles.entityName}>{node.entityName}</span>
+          {node.relationshipKind && (
+            <span className={styles.relationshipKind}>
+              {getRelationshipKindLabel(node.relationshipKind)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Children */}
+      {hasChildren && isExpanded && (
+        <div className={styles.children}>
+          {node.children.map((child) => (
+            <TreeNodeComponent
+              key={child.key}
+              node={child}
+              selectionState={selectionState}
+              expandedState={expandedState}
+              onToggleSelection={onToggleSelection}
+              onToggleExpand={onToggleExpand}
+              depth={depth + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// AdvancedAddDialog Component
+// ============================================================================
+
+export function AdvancedAddDialog({
+  isOpen,
+  onClose,
+  onAdd,
+  rootEntity,
+  metaModel,
+  isLoading = false,
+  error = null,
+}: AdvancedAddDialogProps) {
+  // Build tree data from meta-model
+  const treeData = useMemo(() => {
+    return buildTreeData(metaModel, rootEntity);
+  }, [metaModel, rootEntity]);
+
+  // Track selected node keys (root is always selected)
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => {
+    return new Set([treeData.key]);
+  });
+
+  // Track expanded nodes
+  const [expandedState, setExpandedState] = useState<Record<string, boolean>>({});
+
+  // Compute selection state including indeterminate
+  const selectionState = useMemo(() => {
+    return computeSelectionState(treeData, selectedKeys);
+  }, [treeData, selectedKeys]);
+
+  // Handle selection toggle
+  const handleToggleSelection = useCallback(
+    (nodeKey: string) => {
+      const node = findNodeByKey(treeData, nodeKey);
+      if (!node || node.isRoot) return;
+
+      setSelectedKeys((prev) => {
+        const newSelected = new Set(prev);
+        const currentState = selectionState[nodeKey];
+
+        if (currentState === 'selected') {
+          // Deselecting - deselect this node and all descendants
+          newSelected.delete(nodeKey);
+          const descendants = getDescendantKeys(node);
+          descendants.forEach((key) => newSelected.delete(key));
+        } else {
+          // Selecting - select this node and all ancestors
+          newSelected.add(nodeKey);
+          const ancestors = getAncestorKeys(treeData, nodeKey);
+          ancestors.forEach((key) => newSelected.add(key));
+        }
+
+        return newSelected;
+      });
+    },
+    [treeData, selectionState]
+  );
+
+  // Handle expand/collapse toggle
+  const handleToggleExpand = useCallback((nodeKey: string) => {
+    setExpandedState((prev) => ({
+      ...prev,
+      [nodeKey]: prev[nodeKey] === false ? true : false,
+    }));
+  }, []);
+
+  // Build selections for API call
+  const buildSelections = useCallback((): SelectionDescriptor[] => {
+    const selections: SelectionDescriptor[] = [];
+    const processedNodes = new Set<string>();
+
+    // Get all selected nodes (excluding root)
+    function processNode(node: TreeNodeData) {
+      if (!node.isRoot && selectedKeys.has(node.key) && !processedNodes.has(node.key)) {
+        processedNodes.add(node.key);
+
+        // Find the relationship info
+        const relationship = getExpandableRelationships(
+          findNodeByKey(treeData, node.parentKey || '')?.entityType || rootEntity.type
+        ).find((r) => r.targetEntityType === node.entityType);
+
+        if (relationship) {
+          selections.push({
+            relationshipType: relationship.relationshipTableName,
+            direction: relationship.direction,
+            depth: 1,
+            selectedEntityIds: [node.entityId],
+          });
+        }
+      }
+
+      node.children.forEach(processNode);
+    }
+
+    processNode(treeData);
+    return selections;
+  }, [treeData, selectedKeys, rootEntity.type]);
+
+  // Handle Add to Diagram click
+  const handleAdd = useCallback(() => {
+    const selections = buildSelections();
+    onAdd(selections);
+  }, [buildSelections, onAdd]);
+
+  // Handle close
+  const handleClose = useCallback(() => {
+    if (!isLoading) {
+      onClose();
+    }
+  }, [isLoading, onClose]);
+
+  // Handle overlay click
+  const handleOverlayClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.target === e.currentTarget && !isLoading) {
+        onClose();
+      }
+    },
+    [isLoading, onClose]
+  );
+
+  // Don't render if not open
+  if (!isOpen) return null;
+
+  const title = `Advanced Add: ${getEntityTypeDisplayName(rootEntity.type)} "${rootEntity.name}"`;
+
+  const dialogContent = (
+    <div
+      className={styles.overlay}
+      onClick={handleOverlayClick}
+      data-testid="advanced-add-dialog-overlay"
+    >
+      <div
+        className={styles.dialog}
+        onClick={(e) => e.stopPropagation()}
+        data-testid="advanced-add-dialog"
+      >
+        {/* Header */}
+        <div className={styles.header}>
+          <h2 className={styles.title} data-testid="advanced-add-dialog-title">
+            {title}
+          </h2>
+          <button
+            className={styles.closeButton}
+            onClick={handleClose}
+            disabled={isLoading}
+            data-testid="advanced-add-dialog-close"
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className={styles.content}>
+          {error && (
+            <div className={styles.error} data-testid="advanced-add-dialog-error">
+              {error}
+            </div>
+          )}
+
+          {treeData.children.length === 0 ? (
+            <div className={styles.emptyState}>
+              No related entities found for this {getEntityTypeDisplayName(rootEntity.type)}.
+            </div>
+          ) : (
+            <div className={styles.tree} data-testid="advanced-add-tree">
+              <TreeNodeComponent
+                node={treeData}
+                selectionState={selectionState}
+                expandedState={expandedState}
+                onToggleSelection={handleToggleSelection}
+                onToggleExpand={handleToggleExpand}
+                depth={0}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className={styles.footer}>
+          <button
+            className={styles.secondaryButton}
+            onClick={handleClose}
+            disabled={isLoading}
+            data-testid="advanced-add-dialog-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            className={styles.primaryButton}
+            onClick={handleAdd}
+            disabled={isLoading}
+            data-testid="advanced-add-dialog-add"
+          >
+            {isLoading && <span className={styles.spinner} />}
+            Add to Diagram
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render using portal to body
+  return ReactDOM.createPortal(dialogContent, document.body);
+}
+
+// Export helper for testing
+export { buildTreeData, getEntityTypeDisplayName };

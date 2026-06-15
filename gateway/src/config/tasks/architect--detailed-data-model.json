@@ -1,0 +1,143 @@
+{
+  "id": "architect--detailed-data-model",
+  "personaId": "architect",
+  "menuLabel": "Detailed Data Model",
+  "description": "Conducts structured data model discovery to define logical and physical entities with attributes, relationships, and entity mappings. Guides the user through existing model review, domain identification, entity refinement, attribute definition, relationship mapping, and final review.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/architect.detailed-data-model.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "existing_model_review",
+          "domain_identification",
+          "entity_refinement",
+          "attribute_definition",
+          "relationship_and_mapping",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      },
+      "logicalDataEntities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "attributes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "dataType": { "type": "string" },
+                  "isPrimaryKey": { "type": "boolean" },
+                  "isNullable": { "type": "boolean" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "physicalDataEntities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "physicalType": { "type": "string" },
+            "database": { "type": "string" },
+            "attributes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "dataType": { "type": "string" },
+                  "isPrimaryKey": { "type": "boolean" },
+                  "isNullable": { "type": "boolean" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "entityMappings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "logicalEntityName": { "type": "string" },
+            "physicalEntityName": { "type": "string" }
+          }
+        }
+      },
+      "dataEntityRelationships": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "fromEntityRef": { "type": "string" },
+            "fromEntityType": { "type": "string" },
+            "toEntityRef": { "type": "string" },
+            "toEntityType": { "type": "string" },
+            "cardinality": { "type": "string" },
+            "relationship": { "type": "string" },
+            "description": { "type": "string" },
+            "tags": { "type": "string" }
+          }
+        }
+      },
+      "entitiesToDelete": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "entityType": { "type": "string" },
+            "name": { "type": "string" }
+          }
+        }
+      },
+      "relationshipsToDelete": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "relationshipType": { "type": "string" },
+            "id": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "contextNeeds": ["mission", "tech-stack"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "data-model",
+      "tool": "save_architecture_baseline",
+      "description": "Detailed data model with entities and attributes",
+      "filename": "DATA_MODEL"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"],
+  "saveTargetResolution": "bound-by-system-prompt"
+}

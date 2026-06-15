@@ -1,0 +1,30 @@
+Repository: java-test-repo
+Analyzed: 2026-03-31T11:39:34+00:00
+Provider: ctags
+
+Files: 13
+Symbols: 92
+
+By Kind:
+  variable      34
+  method        27
+  module        13
+  class         9
+  interface     5
+  unknown       4
+
+By Language:
+  Java          13 files, 92 symbols
+
+Inheritance Depth:
+  max         2
+  avg         1.4
+
+Top-Level Classes: 9
+  with methods: 7
+  abstract: 0
+  avg methods per class: 3.0
+
+Async Methods: 0 (0% of all methods)
+
+Design Patterns: 0 detected

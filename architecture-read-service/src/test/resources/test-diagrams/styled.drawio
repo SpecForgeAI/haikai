@@ -1,0 +1,31 @@
+<mxfile host="app.diagrams.net" modified="2024-01-15T10:00:00.000Z" agent="Mozilla/5.0" version="22.1.0" etag="test" type="device">
+  <diagram id="styled1" name="Styled Elements">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="rect1" value="Rectangle" style="rounded=0;fillColor=#ffffff;strokeColor=#000000;fontColor=#000000;fontSize=14;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="50" y="50" width="100" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="rounded1" value="Rounded Box" style="rounded=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontColor=#9673a6;fontSize=12;fontFamily=Arial;" vertex="1" parent="1">
+          <mxGeometry x="200" y="50" width="120" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="ellipse1" value="Ellipse" style="ellipse;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="370" y="50" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="rhombus1" value="Diamond" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="50" y="150" width="100" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_solid" style="endArrow=classic;startArrow=none;strokeColor=#000000;" edge="1" source="rect1" target="rounded1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_dashed" style="endArrow=block;startArrow=oval;dashed=1;strokeColor=#ff0000;" edge="1" source="rounded1" target="ellipse1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="edge_no_arrow" style="endArrow=none;startArrow=none;strokeColor=#0000ff;" edge="1" source="ellipse1" target="rhombus1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,170 @@
+/**
+ * Driver-side, server-to-server orchestration submit (Spec 3, Task Group 2).
+ *
+ * Per spec, the Driver submits ONE spec per orchestration job SERVER-TO-SERVER
+ * (not via the browser client), POSTing to `/api/v2/jobs/orchestrations` with:
+ *   - `spec_intents` (the resolved `spec_name` folder + optional `session_id`),
+ *   - `context_files`, `options`,
+ *   - a per-request `callback_url` (CD-3 -- the gateway's build-results URL,
+ *     sent on EVERY submit), and
+ *   - `deploy_on_complete` (CD-3 -- TRUE only on the FINAL spec; big-bang).
+ *
+ * This reuses the `implementationLlmProxyClient.request(...)` JSON seam with the
+ * upstream Bearer auto-injected (the same seam `routes/orchestrations.ts` uses),
+ * and correlates the returned `{ job_id, status, created_at }` -> the run-item.
+ *
+ * The pinned on-disk contract
+ * (`docs/reconciliation-integration/migration-reconciliation-integration.openapi.yaml`)
+ * carries `callback_url` on `OrchestrationRequest` (added by this spec, CD-3
+ * drift fix) and `deploy_on_complete` already.
+ *
+ * Spec: Migrate Button + Migration Execution Driver + External Shape-Spec
+ * Auto-Answerer (2026-06-14, Spec 3 of 4) -- Task Group 2.
+ */
+
+import { request } from './implementationLlmProxyClient';
+import { logger } from './logger';
+
+/** Upstream orchestration endpoint path. */
+const JOBS_ORCHESTRATIONS_API_PATH = '/api/v2/jobs/orchestrations';
+
+/** User-Agent header value for proxy requests (matches orchestrations.ts). */
+const RIVVY_USER_AGENT = 'Rivvy-Portal-UI';
+
+/** Timeout for the orchestration submit in milliseconds (60 seconds). */
+const SUBMIT_TIMEOUT_MS = 60000;
+
+/** Inputs for a single-spec orchestration submit. */
+export interface OrchestrationSubmitInput {
+  /** Normalised organisation. */
+  company: string;
+  /** Normalised product. */
+  project: string;
+  /** The spec folder name (the shape-spec `folder` event) -> SpecIntent.spec_name. */
+  specName: string;
+  /** The shape-spec session id, ONLY for the orchestration handoff (CD-1). */
+  sessionId?: string | null;
+  /** TRUE only on the FINAL spec (big-bang deploy). */
+  deployOnComplete: boolean;
+  /** The gateway's build-results URL, sent per-request on every submit (CD-3). */
+  callbackUrl: string;
+}
+
+/** Result of a single-spec orchestration submit. */
+export interface OrchestrationSubmitResult {
+  /** True when the upstream accepted the job. */
+  ok: boolean;
+  /** The correlated orchestration job id (the build-results callback key). */
+  jobId: string | null;
+  /** The upstream job status, when present. */
+  status?: string | null;
+  /** Error detail on a non-accepted submit. */
+  error?: string | null;
+}
+
+/**
+ * Submit ONE spec to the external orchestration endpoint server-to-server,
+ * threading `callback_url` (every submit) + `deploy_on_complete` (final only).
+ * Returns the correlated `job_id`; never throws on an upstream error (returns
+ * `{ ok: false }` so the Driver can isolate the failure).
+ */
+export async function submitOrchestration(
+  input: OrchestrationSubmitInput
+): Promise<OrchestrationSubmitResult> {
+  const proxyBody = {
+    company: input.company,
+    project: input.project,
+    spec_intents: [
+      {
+        spec_name: input.specName,
+        ...(input.sessionId ? { session_id: input.sessionId } : {}),
+      },
+    ],
+    context_files: [] as string[],
+    // CD-3: the external round-2 service accepts callback_url on the
+    // orchestration request and posts build-results to it.
+    callback_url: input.callbackUrl,
+    // CD-3 / big-bang: deploy once everything is implemented.
+    deploy_on_complete: input.deployOnComplete,
+    options: {
+      stop_on_error: true,
+      retry_on_failure: false,
+      max_retries: 1,
+      timeout_seconds: 0,
+    },
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
+
+  try {
+    const response = await request(JOBS_ORCHESTRATIONS_API_PATH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': RIVVY_USER_AGENT,
+      },
+      body: proxyBody,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      try {
+        body = await response.text();
+      } catch {
+        body = undefined;
+      }
+    }
+
+    if (!response.ok) {
+      logger.warn('[diag-gateway] migration_execution_driver orchestration_submit_non_ok', {
+        company: input.company,
+        project: input.project,
+        specName: input.specName,
+        status: response.status,
+      });
+      return {
+        ok: false,
+        jobId: null,
+        error: `Orchestration submit returned status ${response.status}`,
+      };
+    }
+
+    const jobId =
+      body && typeof body === 'object'
+        ? ((body as Record<string, unknown>).job_id as string | undefined)
+        : undefined;
+    const status =
+      body && typeof body === 'object'
+        ? ((body as Record<string, unknown>).status as string | undefined)
+        : undefined;
+
+    if (!jobId) {
+      return { ok: false, jobId: null, error: 'Orchestration submit returned no job_id' };
+    }
+
+    logger.info('[diag-gateway] migration_execution_driver orchestration_submitted', {
+      company: input.company,
+      project: input.project,
+      specName: input.specName,
+      jobId,
+      deployOnComplete: input.deployOnComplete,
+    });
+    return { ok: true, jobId, status: status ?? null };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('[diag-gateway] migration_execution_driver orchestration_submit_failed', {
+      company: input.company,
+      project: input.project,
+      specName: input.specName,
+      error: message,
+    });
+    return { ok: false, jobId: null, error: message };
+  }
+}

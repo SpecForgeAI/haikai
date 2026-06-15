@@ -1,0 +1,244 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "63fda168-e36d-45b2-8d56-600688b15b18",
+      "entity_type": "classes",
+      "entity_id": "AbstractDocument",
+      "label": "AbstractDocument",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f81f10be-8c87-4b92-8df4-a0ed40e8f635",
+      "entity_type": "classes",
+      "entity_id": "App",
+      "label": "App",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "820d9671-93d7-4ac8-80e8-7b5af16b1070",
+      "entity_type": "classes",
+      "entity_id": "Car",
+      "label": "Car",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5be42d22-cd4b-4e15-bc96-2c083055d6a2",
+      "entity_type": "classes",
+      "entity_id": "Part",
+      "label": "Part",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6548bb6a-196c-48ab-871e-553807256b4f",
+      "entity_type": "classes",
+      "entity_id": "Property",
+      "label": "Property",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b9573e05-1ea0-4fa2-b3a8-6d2db1a73c87",
+      "entity_type": "classes",
+      "entity_id": "AbstractDocumentTest",
+      "label": "AbstractDocumentTest",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "64b00f3e-ee6d-4a83-a537-eb2f25048f91",
+      "entity_type": "classes",
+      "entity_id": "DocumentImplementation",
+      "label": "DocumentImplementation",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c00a0235-3e2c-4f78-b3b9-f35db7cb942d",
+      "entity_type": "classes",
+      "entity_id": "AppTest",
+      "label": "AppTest",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a1563fa0-4e2a-4ed0-8225-e150955246bf",
+      "entity_type": "classes",
+      "entity_id": "DomainTest",
+      "label": "DomainTest",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3783c711-991a-4cb8-b94a-ed2074b0b14b",
+      "entity_type": "classes",
+      "entity_id": "Document",
+      "label": "Document",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6c092395-ad70-42cc-b47f-9e10c2a5ba90",
+      "entity_type": "classes",
+      "entity_id": "HasModel",
+      "label": "HasModel",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c8e6e0d0-b850-49ff-9a05-e9d51c172a34",
+      "entity_type": "classes",
+      "entity_id": "HasPrice",
+      "label": "HasPrice",
+      "pos_x": 750,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1e2881e8-4b59-4e07-840d-5964e3c32187",
+      "entity_type": "classes",
+      "entity_id": "HasParts",
+      "label": "HasParts",
+      "pos_x": 0,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b05ab2c6-e9f6-4299-a216-6a4a2fde4be6",
+      "entity_type": "classes",
+      "entity_id": "HasType",
+      "label": "HasType",
+      "pos_x": 250,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "8cdf5530-233c-4405-b3f2-f30abe964a41",
+      "source_node_id": "3783c711-991a-4cb8-b94a-ed2074b0b14b",
+      "target_node_id": "63fda168-e36d-45b2-8d56-600688b15b18",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "e1b8b89e-6ca7-48dc-9116-76f7bf0d1710",
+      "source_node_id": "63fda168-e36d-45b2-8d56-600688b15b18",
+      "target_node_id": "820d9671-93d7-4ac8-80e8-7b5af16b1070",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "27977c4c-513a-447a-9c89-523343d2cca4",
+      "source_node_id": "6c092395-ad70-42cc-b47f-9e10c2a5ba90",
+      "target_node_id": "820d9671-93d7-4ac8-80e8-7b5af16b1070",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "fbcad041-e516-4bc0-b765-99d5fb36ddc4",
+      "source_node_id": "c8e6e0d0-b850-49ff-9a05-e9d51c172a34",
+      "target_node_id": "820d9671-93d7-4ac8-80e8-7b5af16b1070",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "cc9029f7-06e3-4353-9eb4-b7290d3ec1e1",
+      "source_node_id": "1e2881e8-4b59-4e07-840d-5964e3c32187",
+      "target_node_id": "820d9671-93d7-4ac8-80e8-7b5af16b1070",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "a731a27b-9c68-4a41-aed2-94f94df625df",
+      "source_node_id": "3783c711-991a-4cb8-b94a-ed2074b0b14b",
+      "target_node_id": "6c092395-ad70-42cc-b47f-9e10c2a5ba90",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "276d3dda-4a05-4212-97b5-98e98b86dd35",
+      "source_node_id": "3783c711-991a-4cb8-b94a-ed2074b0b14b",
+      "target_node_id": "1e2881e8-4b59-4e07-840d-5964e3c32187",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "2269b5aa-9b85-4e55-bf10-e7f807cdc26b",
+      "source_node_id": "3783c711-991a-4cb8-b94a-ed2074b0b14b",
+      "target_node_id": "c8e6e0d0-b850-49ff-9a05-e9d51c172a34",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "fba346f8-08d8-4d79-a2ff-24e7a11da2b7",
+      "source_node_id": "3783c711-991a-4cb8-b94a-ed2074b0b14b",
+      "target_node_id": "b05ab2c6-e9f6-4299-a216-6a4a2fde4be6",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "2c6fe304-6b59-4859-b30d-795c928a4424",
+      "source_node_id": "63fda168-e36d-45b2-8d56-600688b15b18",
+      "target_node_id": "5be42d22-cd4b-4e15-bc96-2c083055d6a2",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "ce4d1312-59f0-4b16-a92e-c3702393d4aa",
+      "source_node_id": "b05ab2c6-e9f6-4299-a216-6a4a2fde4be6",
+      "target_node_id": "5be42d22-cd4b-4e15-bc96-2c083055d6a2",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "c07e9997-3f69-4b87-9890-6570e911b1ed",
+      "source_node_id": "6c092395-ad70-42cc-b47f-9e10c2a5ba90",
+      "target_node_id": "5be42d22-cd4b-4e15-bc96-2c083055d6a2",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "63b9fab4-cf4d-4211-a1cd-7171b7831a58",
+      "source_node_id": "c8e6e0d0-b850-49ff-9a05-e9d51c172a34",
+      "target_node_id": "5be42d22-cd4b-4e15-bc96-2c083055d6a2",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "98d96c71-1353-4c30-a955-7942833279e1",
+      "source_node_id": "63fda168-e36d-45b2-8d56-600688b15b18",
+      "target_node_id": "64b00f3e-ee6d-4a83-a537-eb2f25048f91",
+      "relationship_type": "extends"
+    }
+  ]
+}

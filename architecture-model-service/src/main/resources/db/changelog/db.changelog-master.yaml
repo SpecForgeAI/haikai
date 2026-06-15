@@ -1,0 +1,4096 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-initial-schema
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: model_files
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/schema.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 002-classes-methods
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: classes
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/002-classes-methods.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 003-events
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: events
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/003-events.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 004-states-state-transitions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: states
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/004-states-state-transitions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 005-sequence-diagrams
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: sequence_diagrams
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/005-sequence-diagrams.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 006-activities-activity-flows-partitions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: activities
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/006-activities-activity-flows-partitions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 007-typed-content-json
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: diagrams
+              columnName: typed_content_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/007-typed-content-json.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 008-normalize-diagram-types
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: diagrams
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/008-normalize-diagram-types.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 009-logical-er-polymorphic-endpoints
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: logical_data_entity_relationships
+              columnName: from_ref_kind
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/009-logical-er-polymorphic-endpoints.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 010-ui-screens-ui-workflow-transitions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: ui_screens
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/010-ui-screens-ui-workflow-transitions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 011-ui-components-actions-contracts
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: ui_contracts
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/011-ui-components-actions-contracts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 012-work-items-project-artifacts
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: work_item
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/012-work-items-project-artifacts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 013-project-table
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: project
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/013-project-table.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 014-service-core-tech
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: services
+              columnName: core_tech
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/014-service-core-tech.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 015-business-logic
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: business_logics
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/015-business-logic.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 016-application-point-targeting
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: application_points
+              columnName: target_type
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/016-application-point-targeting.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 017-package-sets
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: package_sets
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/017-package-sets.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 018-package-set-standards-import
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: package_set_default_rules
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/018-package-set-standards-import.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 019-fix-packages-audit-columns
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: packages
+              columnName: created_at
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/019-fix-packages-audit-columns.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 020-data-entity-points
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: data_entity_points
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/020-data-entity-points.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Data Entity Point Backfill Migration
+  # Backfills Data Entity Points for all existing Logical and Physical Data Entities
+  # that do not already have corresponding points.
+  # This migration is idempotent - safe to run multiple times.
+  # Spec: Data Entity Point Backfill and Legacy Snapshot Compatibility
+  - changeSet:
+      id: 021-data-entity-points-backfill
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: data_entity_points
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/021-data-entity-points-backfill.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Data Entity Point FK Columns Migration
+  # Adds foreign key columns to logical_data_entity_relationships and data_movements
+  # that reference data_entity_points(id) for dual-write compatibility.
+  # Spec: Add Data Entity Point FK Columns to Logical ER and Data Movements
+  - changeSet:
+      id: 022-data-entity-point-fk-columns
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: logical_data_entity_relationships
+              columnName: from_data_entity_point_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/022-data-entity-point-fk-columns.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Data Entity Point FK Columns Backfill Migration
+  # Backfills the new FK columns for existing rows based on legacy fields.
+  # This migration is idempotent - safe to run multiple times.
+  # Spec: Add Data Entity Point FK Columns to Logical ER and Data Movements
+  - changeSet:
+      id: 023-data-entity-point-fk-backfill
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: data_entity_points
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/023-data-entity-point-fk-backfill.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Remove Legacy Data Entity Columns Migration - Precondition Checks
+  # Contains DO $$ blocks that verify all point-id columns are populated
+  # before proceeding with schema modifications.
+  # Uses endDelimiter: "$$;" to prevent Liquibase from splitting DO blocks at internal semicolons.
+  # Spec: Remove Legacy Data Entity Relationship Columns
+  - changeSet:
+      id: 024a-remove-legacy-data-entity-columns-preconditions
+      author: architecture-tool
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - columnExists:
+            tableName: logical_data_entity_relationships
+            columnName: from_ref_kind
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/024a-remove-legacy-data-entity-columns-preconditions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: false
+            endDelimiter: "$$;"
+
+  # Remove Legacy Data Entity Columns Migration - Schema Modifications
+  # Finalizes the Data Entity Point migration by:
+  # - Enforcing NOT NULL on point-id columns
+  # - Dropping legacy columns from logical_data_entity_relationships and data_movements
+  # Spec: Remove Legacy Data Entity Relationship Columns
+  - changeSet:
+      id: 024b-remove-legacy-data-entity-columns-apply
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/024b-remove-legacy-data-entity-columns-apply.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Class Application Point ID Migration
+  # Replaces the two-column ownership model (owned_by_ref_kind + owned_by_ref_id)
+  # with a single application_point_id foreign key.
+  # Spec: Class entity single Application Point owner picker
+  - changeSet:
+      id: 025-class-application-point-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: classes
+              columnName: application_point_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/025-class-application-point-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Work Item Implement Context Table
+  # Stores the selected architecture entities and diagrams for each work item's
+  # Implement context, enabling persistence across browser sessions and devices.
+  # Spec: Persist Implement Context per Work Item in Backend
+  - changeSet:
+      id: 026-work-item-implement-context
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: work_item_implement_context
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/026-work-item-implement-context.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Project Hierarchy Column
+  # Adds optional project_hierarchy column for logical one-level project grouping.
+  # Existing projects will have NULL hierarchy, displayed as "(No hierarchy)" in UI.
+  # Spec: Project Hierarchy Grouping
+  - changeSet:
+      id: 027-project-hierarchy
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: project
+              columnName: project_hierarchy
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/027-project-hierarchy.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Interface Entity Relationship Refactor Migration
+  # Spec 2026-01-11: Interface Entity Relationship Refactor
+  # - Adds data_entity_point_id column to interface_logical_entities
+  # - Migrates existing logical_entity_id to dataEntityPointId format
+  # - Drops legacy logical_entity_id column
+  - changeSet:
+      id: 028-interface-entity-relationship-refactor
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: interface_logical_entities
+              columnName: data_entity_point_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/020-interface-entity-relationship-refactor.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Data Movement Interface Schema Extension Migration
+  # Spec 2026-01-11: Data Movement Interface Schema Extension
+  # - Makes data_entity_point_id nullable (XOR with interface_with_schema_id)
+  # - Adds interface_with_schema_id column (FK to interfaces.id)
+  # - Adds bi_directional boolean column
+  - changeSet:
+      id: 029-data-movement-interface-schema
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: data_movements
+              columnName: interface_with_schema_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/020-data-movement-interface-schema.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Structured Selections for Work Item Implement Context
+  # Adds JSONB columns for structured entity and diagram selections with bundle_type and depth.
+  # Spec: Ensure Physical Data Entity Attributes Reach Planner LLM
+  - changeSet:
+      id: 030-structured-selections
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: work_item_implement_context
+              columnName: selected_entity_selections
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/028-structured-selections.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Organisations Table and Project FK
+  # Spec: Organisations Iteration 1 - Add Organisation Model + Project FK + APIs
+  # - Creates organisations table with unique name constraint
+  # - Adds nullable organisation_id FK column to project table
+  # Existing projects will have NULL organisation_id until manually backfilled.
+  - changeSet:
+      id: 031-organisations
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: organisations
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/029-organisations.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Organisation ID Type Change (UUID to TEXT)
+  # Spec: Organisation ID Type Change (UUID to TEXT)
+  # Changes organisation.id and project.organisation_id from UUID to TEXT
+  # to maintain consistency with existing database TEXT ID patterns.
+  - changeSet:
+      id: 032-organisation-id-text
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: organisations
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/030-organisation-id-text.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # UI Characteristics Table
+  # Spec: UI Characteristics
+  # Captures business features and UI/UX/technical characteristics associated
+  # with frontend UIs, linked to Application Points.
+  - changeSet:
+      id: 033-ui-characteristics
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: ui_characteristics
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/033-ui-characteristics.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Work Item Implement Workspace Table
+  # Spec 2026-01-23: Persist + Rehydrate Implement Workspace
+  # Stores the full workspace state as an atomic JSONB snapshot per work item.
+  # Enables persistence across browser sessions, tab switches, and app restarts.
+  - changeSet:
+      id: 034-work-item-implement-workspace
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: work_item_implement_workspace
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/034-work-item-implement-workspace.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Relationship Selections for Work Item Implement Context
+  # Spec: Implement Context Include Relationships and Propagate to Planner Payload
+  # Adds JSONB columns for relationship selections to work_item_implement_context.
+  # Enables user-selected relationships to be persisted and sent to the planner.
+  - changeSet:
+      id: 035-work-item-implement-context-relationships
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: work_item_implement_context
+              columnName: selected_relationship_ids
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/035-work-item-implement-context-relationships.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Internal Classification for Applications
+  # Spec: Liquibase Migrations - Add Internal Classification and Sequence Message Collection
+  # Adds is_internal column to applications table for internal/external classification.
+  - changeSet:
+      id: 036-add-internal-classification-applications
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: applications
+              columnName: is_internal
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/036-add-internal-classification-applications.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Internal Classification and Tech Type for Application Components
+  # Spec: Liquibase Migrations - Add Internal Classification and Sequence Message Collection
+  # Adds is_internal and tech_type columns to application_components table.
+  - changeSet:
+      id: 037-add-internal-classification-application-components
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: application_components
+              columnName: is_internal
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/037-add-internal-classification-application-components.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Internal Classification for Services
+  # Spec: Liquibase Migrations - Add Internal Classification and Sequence Message Collection
+  # Adds is_internal column to services table for internal/external classification.
+  - changeSet:
+      id: 038-add-internal-classification-services
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: services
+              columnName: is_internal
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/038-add-internal-classification-services.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Is Collection for Sequence Messages
+  # Spec: Liquibase Migrations - Add Internal Classification and Sequence Message Collection
+  # Adds is_collection column to sequence_messages table for loop/collection indicators.
+  - changeSet:
+      id: 039-add-sequence-messages-is-collection
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: sequence_messages
+              columnName: is_collection
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/039-add-sequence-messages-is-collection.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Request/Response Data Entity Point FK Columns for Endpoints
+  # Spec: Metamodel Interface Endpoint - Add Request/Response Data and Simplify Endpoints Table
+  # Adds two nullable VARCHAR(64) FK columns to endpoints table referencing data_entity_points(id)
+  # with ON DELETE SET NULL, enabling request/response data contract associations.
+  - changeSet:
+      id: 040-add-endpoint-request-response-data
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: endpoints
+              columnName: request_data_entity_point_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/040-add-endpoint-request-response-data-entity-point.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Endpoint Display Options for Sequence Messages
+  # Spec: Sequence Diagram Interface Endpoint Message Exchange Display and Endpoint Response
+  # Adds 3 boolean display flags and response_mode column to sequence_messages table
+  # for configurable multi-line InterfaceEndpoint label rendering.
+  - changeSet:
+      id: 041-seq-messages-interface-endpoint-display-options
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: sequence_messages
+              columnName: show_endpoint_name
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/041-seq-messages-interface-endpoint-display-options.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Organisation Standards Fields and Case-Insensitive Name Index
+  # Spec: Organisation Model + DB + API DTOs (Backend Foundation)
+  # Adds six TEXT columns for JSON-serialized List<String> document categorization,
+  # boolean tech_standards_generated flag, and replaces the name index with
+  # a case-insensitive unique index.
+  - changeSet:
+      id: 042-organisation-standards-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: organisations
+              columnName: docs_applied_to_all_sources
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/042-organisation-standards-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Product Definitions Table
+  # Spec: Increment 1 -- Add Product Tab + Minimal ProductDefinition (UI + DB only)
+  # Creates product_definitions table with 1:1 relationship to project.
+  # Each project can have at most one product definition (product name).
+  - changeSet:
+      id: 043-product-definitions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: product_definitions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/043-product-definitions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Delivery Teams Table
+  # Spec: RM Increment 3 -- DeliveryTeam Entity (DB Only, No UI)
+  # Creates delivery_teams table scoped to projects with type (INTERNAL/EXTERNAL).
+  # Each project can have multiple delivery teams with unique names per project.
+  - changeSet:
+      id: 044-delivery-teams
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: delivery_teams
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/044-delivery-teams.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Work Item Delivery Team ID Column
+  # Spec: RM Increment 3 -- DeliveryTeam Entity (DB Only, No UI)
+  # Adds nullable delivery_team_id FK column to work_item table.
+  # ON DELETE SET NULL ensures work items remain intact if the team is deleted.
+  - changeSet:
+      id: 045-work-item-delivery-team-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: work_item
+              columnName: delivery_team_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/045-work-item-delivery-team-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Work Item External URL Column and Partial Unique Index
+  # Spec: RM Increment 4 -- Jira Import for Roadmap Skeleton (Initiatives + Epics)
+  # Adds external_url TEXT column for Jira browse URLs and a partial unique index
+  # on (project_id, external_system, external_key) WHERE external_key IS NOT NULL
+  # to enforce uniqueness for externally-sourced work items.
+  - changeSet:
+      id: 046-work-item-external-url
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: work_item
+              columnName: external_url
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/046-work-item-external-url.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Fix work_item.project_id: TEXT (project name) → UUID (FK to project.id)
+  # Migrates existing data from project name to UUID, adds proper FK constraint.
+  - changeSet:
+      id: 047-work-item-project-id-uuid
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: work_item
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/047-work-item-project-id-uuid.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Fix project_artifact.project_id: TEXT (project name) → UUID (FK to project.id)
+  # Migrates existing data from project name to UUID with case-insensitive match.
+  - changeSet:
+      id: 048-project-artifact-project-id-uuid
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: project_artifact
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/048-project-artifact-project-id-uuid.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Fix work_item_implement_context.project_id: TEXT (project name) → UUID (FK to project.id)
+  # Migrates existing data from project name to UUID with case-insensitive match.
+  - changeSet:
+      id: 049-implement-context-project-id-uuid
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: work_item_implement_context
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/049-implement-context-project-id-uuid.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Fix work_item_implement_workspace.project_id: VARCHAR(255) (project name) → UUID (FK to project.id)
+  # Migrates existing data from project name to UUID with case-insensitive match.
+  - changeSet:
+      id: 050-implement-workspace-project-id-uuid
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: work_item_implement_workspace
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/050-implement-workspace-project-id-uuid.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Add project_id UUID column to model_files for project-based lookups.
+  # Nullable column with FK to project(id) ON DELETE SET NULL.
+  - changeSet:
+      id: 051-model-file-add-project-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: model_files
+              columnName: project_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/051-model-file-add-project-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # UI Screen Application Point FK
+  # Adds optional application_point_id FK column to ui_screens table,
+  # linking UI screens to the application/service that renders them.
+  - changeSet:
+      id: 052-ui-screen-application-point
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: ui_screens
+              columnName: application_point_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/052-ui-screen-application-point.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Project Repo URL
+  # Adds repo_url column to project table for storing the Git repository URL.
+  - changeSet:
+      id: 053-project-repo-url
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: project
+              columnName: repo_url
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/053-project-repo-url.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Temporary Diagrams Table
+  # Spec 2026-03-26: MCP Endpoint for Saving Temporary Architecture Diagrams (Increment 3)
+  # Stores LLM-generated temporary architecture diagram payloads as JSONB snapshots.
+  # Supports upsert by (project_id, temporary_diagram_id) composite key.
+  - changeSet:
+      id: 054-temporary-diagrams
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: temporary_diagrams
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/054-temporary-diagrams.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Linked Diagram ID
+  # Adds linked_diagram_id column to diagram_nodes, diagram_edges, and diagram_decorations
+  # for cross-diagram navigation links.
+  - changeSet:
+      id: 055-linked-diagram-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: diagram_nodes
+              columnName: linked_diagram_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/055-linked-diagram-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Decoration Text Decoration
+  # Adds text_text_decoration column to diagram_decorations for underline text styling.
+  - changeSet:
+      id: 056-decoration-text-decoration
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: diagram_decorations
+              columnName: text_text_decoration
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/056-decoration-text-decoration.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Decoration Opacity
+  # Adds background_opacity and border_opacity columns to diagram_decorations.
+  # Ensures opacity values are persisted and survive project reload.
+  - changeSet:
+      id: 057-decoration-opacity
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: diagram_decorations
+              columnName: background_opacity
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/057-decoration-opacity.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Node Line Weight
+  # Adds line_weight column to diagram_nodes for stroke/border thickness control.
+  - changeSet:
+      id: 058-node-line-weight
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: diagram_nodes
+              columnName: line_weight
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/058-node-line-weight.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # User Journeys and Activity Steps Tables
+  # Spec: User Journey Meta-Model Foundation
+  # Creates user_journeys and activity_steps tables for Business Architecture domain.
+  # User journeys model how specific users experience end-to-end business flows.
+  # Activity steps represent ordered steps within a journey, linking to existing
+  # process activities, business users, and applications.
+  - changeSet:
+      id: 059-user-journeys-activity-steps
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: user_journeys
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/059-user-journeys-activity-steps.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Business User Abbreviation
+  # Adds abbreviation column to business_users for compact display in diagrams.
+  # Stores a short abbreviation (typically initials) that may differ from simple
+  # first-letter extraction when multiple users share the same initials.
+  - changeSet:
+      id: 060-business-user-abbreviation
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: business_users
+              columnName: abbreviation
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/060-business-user-abbreviation.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Application Abbreviation
+  # Adds abbreviation column to applications for compact display in diagrams.
+  # Stores a short abbreviation (typically initials) that may differ from simple
+  # first-letter extraction when multiple applications share the same initials.
+  - changeSet:
+      id: 061-application-abbreviation
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: applications
+              columnName: abbreviation
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/061-application-abbreviation.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Activity Step Diagram Label
+  # Adds diagram_label column to activity_steps for compact display in diagrams.
+  # The diagram label is what appears in the activity step box in the diagram,
+  # typically just the activity name (since user role and app are shown elsewhere).
+  - changeSet:
+      id: 062-activity-step-diagram-label
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: activity_steps
+              columnName: diagram_label
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/062-activity-step-diagram-label.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Activity Step Issues Columns
+  # Adds activity_issues and ui_issues columns to activity_steps for tracking
+  # issues identified during user journey analysis (from XLSX worksheet data).
+  - changeSet:
+      id: 063-activity-step-issues
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: activity_steps
+              columnName: activity_issues
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/063-activity-step-issues.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Config Table
+  # Spec: Phase 0 Persistence Contract (Increment 2)
+  # Stores structured JSONB discovery config with one-per-project upsert semantics.
+  - changeSet:
+      id: 064-discovery-config
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_config
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/064-discovery-config.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Run Table
+  # Spec: Discovery Run Model and Orchestration (Increment 5)
+  - changeSet:
+      id: 065-discovery-run
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_run
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/065-discovery-run.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Evidence Table
+  # Spec: Phase 1a Universal Evidence Extraction (Increment 6)
+  # Stores individual evidence atoms extracted during Phase 1a universal extraction.
+  # Each atom is scoped to a discovery run and traceable to a specific repo, file, and type.
+  - changeSet:
+      id: 066-discovery-evidence
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_evidence
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/066-discovery-evidence.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Relationship Table
+  # Spec: Phase 1 Evidence Schema Backbone (Increment 7)
+  # Stores inferred relationships between 1a evidence atoms during Phase 1b
+  # relationship inference. Each relationship links a source atom to a target atom.
+  - changeSet:
+      id: 067-discovery-relationship
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_relationship
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/067-discovery-relationship.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Cluster Table
+  # Spec: Phase 1 Evidence Schema Backbone (Increment 7)
+  # Stores formed clusters that group atoms and relationships during Phase 1c
+  # cluster formation. Each cluster represents a coherent grouping within a run.
+  - changeSet:
+      id: 068-discovery-cluster
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_cluster
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/068-discovery-cluster.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Cluster Member Join Table
+  # Spec: Phase 1 Evidence Schema Backbone (Increment 7)
+  # Join table for cluster membership. Links clusters to atoms or relationships
+  # via a polymorphic reference pattern. No FK on member_id.
+  - changeSet:
+      id: 069-discovery-cluster-member
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_cluster_member
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/069-discovery-cluster-member.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Candidate Table
+  # Spec: Phase 1 Evidence Schema Backbone (Increment 7)
+  # Stores synthesized discovery candidates during Phase 1d candidate synthesis.
+  # Each candidate maps to a meta-model element type with a review workflow status.
+  - changeSet:
+      id: 070-discovery-candidate
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_candidate
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/070-discovery-candidate.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Decision Task Table
+  # Spec: Phase 1b Linker and DecisionTask Engine (Increment 8)
+  # Stores DecisionTask records produced during Phase 1b relationship inference
+  # triage. Tasks are created when ambiguous or competing candidate relationships
+  # require LLM resolution.
+  - changeSet:
+      id: 071-discovery-decision-task
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_decision_task
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/071-discovery-decision-task.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Candidate Parent Candidate ID
+  # Spec: Phase 1d Candidate Generation (Increment 10)
+  # Adds parent_candidate_id UUID column to discovery_candidate table for
+  # self-referencing parent-child hierarchy between candidates.
+  # ON DELETE SET NULL orphans children when parent is deleted.
+  - changeSet:
+      id: 072-candidate-parent-candidate-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_candidate
+              columnName: parent_candidate_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/072-candidate-parent-candidate-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Candidate Entity Mapping (Provenance Table)
+  # Spec: Candidate Save-Back to Canonical Model (Increment 11)
+  # Creates discovery_candidate_entity_mapping table for tracking provenance
+  # between discovery candidates and canonical meta-model entities.
+  # Records whether each entity was newly created or reused during save-back.
+  - changeSet:
+      id: 073-discovery-candidate-entity-mapping
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_candidate_entity_mapping
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/073-discovery-candidate-entity-mapping.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Candidate Review Fields
+  # Spec: Candidate Review and Approval Workflow (Increment 13)
+  # Adds review_status, reviewed_by, reviewed_at, previous_review_status columns
+  # to discovery_candidate table for user-governed review workflow.
+  # Defaults existing rows to review_status = 'pending_review'.
+  - changeSet:
+      id: 074-candidate-review-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_candidate
+              columnName: review_status
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/074-candidate-review-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Evidence Log Enrichment Fields
+  # Spec: Log-based Discovery Enrichment (Increment 14)
+  # Adds source, log_origin columns to discovery_evidence and log_enrichment column
+  # to discovery_candidate for log-based enrichment metadata.
+  # All new columns are nullable for backward compatibility.
+  - changeSet:
+      id: 075-evidence-log-enrichment-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_evidence
+              columnName: source
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/075-evidence-log-enrichment-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Upsert Constraints
+  # Spec: Discovery Refinement, Consolidation, and System Hardening (Increment 16)
+  # Adds explicit unique indexes on stable identifier columns for all four
+  # discovery entity types and documents the upsert contract.
+  - changeSet:
+      id: 076-discovery-upsert-constraints
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: discovery_evidence
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/076-discovery-upsert-constraints.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Classes Table Service ID Migration
+  # Spec: Extension Pack Framework & LLM File-Level Analysis (Increment 17)
+  # Replaces application_point_id FK with service_id FK on classes table.
+  # A class now belongs directly to a service, enabling LLM-driven candidate
+  # save-back to map class -> service_id without an intermediate application_point.
+  - changeSet:
+      id: 077-class-service-id-migration
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: classes
+              columnName: service_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/077-class-service-id-migration.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # User Journey Links Table
+  # Spec: User Journey Links Meta-Model Foundation (Increment 18)
+  # Creates user_journey_links table for directed relationships between
+  # User Journeys (e.g., PRECEDES, DEPENDS_ON, TRIGGERS).
+  # Managed through the existing whole-model load/save cycle.
+  - changeSet:
+      id: 078-user-journey-links
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: user_journey_links
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/078-user-journey-links.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Make actor_hint nullable on process_activities
+  # Process activities created via MCP save pipeline may not have actor_hint.
+  - changeSet:
+      id: 079-process-activity-actor-hint-nullable
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/079-process-activity-actor-hint-nullable.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Service Repo Location and Subfolder Columns
+  # Spec: Service-Scoped Discovery
+  # Adds repo_location and repo_subfolder columns to the services table.
+  # repo_location stores the Git repository URL or local folder path.
+  # repo_subfolder optionally narrows the scan scope to a specific directory.
+  - changeSet:
+      id: 080-service-repo-location-subfolder
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: services
+              columnName: repo_location
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/080-service-repo-location-subfolder.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Run Service ID Column
+  # Spec: Service-Scoped Discovery
+  # Adds service_id column to discovery_run table with FK reference to services(id)
+  # and index for query performance. Links a discovery run to a specific service
+  # for service-scoped discovery flows.
+  - changeSet:
+      id: 081-discovery-run-service-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: service_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/081-discovery-run-service-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Run Service ID FK Deferrable
+  # Spec: Service-Scoped Discovery (follow-up fix)
+  # Makes discovery_run.service_id FK DEFERRABLE INITIALLY DEFERRED so the
+  # ModelService DELETE ALL -> re-INSERT pattern does not fail mid-transaction.
+  - changeSet:
+      id: 082-discovery-run-service-id-deferrable
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/082-discovery-run-service-id-deferrable.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Run Mode Column
+  # Spec: V3 Discovery Pipeline Foundation
+  # Adds nullable mode VARCHAR(1) column to discovery_run table to persist the
+  # computed V3 pipeline tier (A/B/C). Column is nullable so legacy rows stay
+  # valid and new V3 runs populate it via runDiscoveryV3 -> computeTier(techHints).
+  - changeSet:
+      id: 083-discovery-run-mode
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: mode
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/083-discovery-run-mode.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Run Confirmed LLM-Solo Column
+  # Spec: V3 Tier UX
+  # Adds confirmed_llm_solo BOOLEAN NOT NULL DEFAULT FALSE column to discovery_run.
+  # Persists the explicit Tier C LLM-solo opt-in decision so audit traces show
+  # which runs were explicitly opted into LLM-solo mode via confirmLlmSolo: true.
+  - changeSet:
+      id: 084-discovery-run-confirmed-llm-solo
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: confirmed_llm_solo
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/084-discovery-run-confirmed-llm-solo.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Discovery Run Warnings Column
+  # Spec: V3 Tier UX
+  # Adds nullable warnings TEXT column to discovery_run storing a JSON-encoded
+  # string[] (e.g. ["Tier B warning"]) synthesized at the V3 gate.
+  # Architecture-model-service does not parse the JSON server-side; the
+  # discovery-service surfaces the payload verbatim on the DTO.
+  - changeSet:
+      id: 085-discovery-run-warnings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: warnings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/085-discovery-run-warnings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Tech Hints LLM Resolution: 5 Resolved Columns on Services
+  # Spec: Tech Hints LLM Resolution (2026-04-20)
+  # Adds five columns to the services table for the save-time, LLM-assisted
+  # resolution of the free-text core_tech hint:
+  #   - core_tech_resolved                  JSONB    (full resolver response)
+  #   - core_tech_language_pack             VARCHAR(100)
+  #   - core_tech_framework_packs           JSONB    (string array)
+  #   - core_tech_resolution_confidence     VARCHAR(20) CHECK IN 5 values
+  #   - core_tech_resolved_at               TIMESTAMPTZ
+  # All columns are nullable; existing rows default to NULL (unresolved). The
+  # discovery run tier gate uses the NULL marker to reject runs against
+  # unresolved services.
+  #
+  # Deviation from spec-writer text: core_tech_framework_packs is stored as
+  # JSONB (string array) rather than TEXT[]. Rationale: the existing codebase
+  # uses JSONB exclusively for list columns (zero TEXT[] usage) and the H2
+  # PostgreSQL-compat test DB supports JSONB but not TEXT[]. Functionally
+  # identical storage shape for the caller.
+  - changeSet:
+      id: 086-tech-hints-resolved
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: services
+              columnName: core_tech_resolved
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/2026-04-20-tech-hints-resolved.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Multi-Architecture Plumbing (Spec #1 -- 2026-05-01-multi-architecture-plumbing)
+  # The following four changesets together introduce the architecture entity
+  # and back-fill every in-scope meta-model row with a Default architecture id.
+  # Sequence:
+  #   087  create architecture + architecture_tag tables
+  #   088  insert one Default architecture per existing project
+  #   089  add nullable architecture_id column to every in-scope table
+  #   090  backfill architecture_id (zero-data-loss)
+  #   091  enforce NOT NULL + FK + composite indexes
+  # All four are idempotent (preCondition guards on first-run-only behaviour
+  # for 087 / 089 / 091; INSERT ... WHERE NOT EXISTS for 088; UPDATE ...
+  # WHERE architecture_id IS NULL for 090).
+  # ============================================================================
+
+  - changeSet:
+      id: 087-architecture-and-tags
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: architecture
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/087-architecture-and-tags.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 088-insert-default-architectures
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: architecture
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/088-insert-default-architectures.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 089-add-architecture-id-columns
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: applications
+              columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/089-add-architecture-id-columns.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 090-backfill-architecture-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - columnExists:
+            tableName: applications
+            columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/090-backfill-architecture-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 091-architecture-id-not-null-fk
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - columnExists:
+            tableName: applications
+            columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/091-architecture-id-not-null-fk.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Multi-Architecture CRUD + Tags (Spec #3 -- 2026-05-02-multi-architecture-crud-and-tags)
+  # ============================================================================
+
+  # Migration 092: Case-insensitive unique name constraint on architecture per project.
+  # Prevents (project_id, LOWER(name)) duplicates so the selector can never show
+  # two architectures with names that differ only by case.
+  - changeSet:
+      id: 092-architecture-name-unique-constraint
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: architecture
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/092-architecture-name-unique-constraint.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Discovery Service architectureId Integration (Spec #4 -- 2026-05-01-multi-architecture-discovery-integration)
+  # The following three changesets bind every Discovery run to exactly one
+  # architecture for life:
+  #   093  add nullable architecture_id column to discovery_run
+  #   094  backfill (architecture_id = project_id, exploits spec #1's deterministic Default rule)
+  #   095  enforce NOT NULL + FK + composite (project_id, architecture_id) index
+  # The architecture_id column is added ONLY to discovery_run; child tables
+  # (discovery_evidence, discovery_relationship, discovery_cluster,
+  # discovery_cluster_member, discovery_candidate, discovery_decision_task,
+  # discovery_candidate_entity_mapping) inherit the bound architecture via
+  # their run_id FK -- single source of truth, no drift risk.
+  # All three are idempotent (preCondition guards on first-run-only behaviour
+  # for 093 / 095; UPDATE ... WHERE architecture_id IS NULL for 094).
+  # ============================================================================
+
+  - changeSet:
+      id: 093-add-architecture-id-to-discovery-runs
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/093-add-architecture-id-to-discovery-runs.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Backfill exploits spec #1's deterministic Default rule: architecture.id =
+  # project.id (changeset 088). The SQL precondition asserts that every distinct
+  # project_id present in discovery_run has a matching architecture row keyed by
+  # id = project_id, so the simple UPDATE ... SET architecture_id = project_id is
+  # provably correct. If the precondition fails (e.g. 088 was skipped or manual
+  # data fixes broke the deterministic-id assumption), the migration HALTs loudly
+  # rather than leaving NULL architecture_ids that 095 would later reject.
+  - changeSet:
+      id: 094-backfill-discovery-runs-architecture-id
+      author: architecture-tool
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - columnExists:
+            tableName: discovery_run
+            columnName: architecture_id
+        - sqlCheck:
+            expectedResult: 0
+            sql: >-
+              SELECT COUNT(*) FROM (
+                SELECT DISTINCT dr.project_id
+                  FROM discovery_run dr
+                 WHERE NOT EXISTS (
+                   SELECT 1 FROM architecture a
+                    WHERE a.id = dr.project_id
+                 )
+              ) AS missing_default
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/094-backfill-discovery-runs-architecture-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 095-discovery-runs-architecture-id-not-null-fk
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - columnExists:
+            tableName: discovery_run
+            columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/095-discovery-runs-architecture-id-not-null-fk.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Multi-Architecture Full Clone (Spec #6 -- 2026-05-01-multi-architecture-full-clone)
+  # The full-clone workflow exposed a latent production bug: the original
+  # `model_files.filename TEXT NOT NULL UNIQUE` constraint (from schema.sql)
+  # blocks the clone path because clones preserve the source's filename
+  # verbatim. Changeset 096 relaxes the global constraint to a per-architecture
+  # composite (architecture_id, filename) constraint -- the conceptually-correct
+  # namespace given that every model_files row is now architecture-scoped.
+  # See sql/096 file header for full rationale.
+  # ============================================================================
+
+  - changeSet:
+      id: 096-model-files-filename-per-architecture-unique
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: model_files
+        - columnExists:
+            tableName: model_files
+            columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/096-model-files-filename-per-architecture-unique.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Hotfix for Spec #1 / Spec #6 / Spec #7: Auto-derive architecture_id trigger.
+  #
+  # Spec #1 / Spec #4 added `architecture_id NOT NULL` columns to ~58 tables but
+  # only added the JPA `architectureId` field to ModelFileEntity,
+  # TemporaryDiagramEntity, and DiscoveryRunEntity. The remaining 56 entities
+  # do not write the column on INSERT, which means any new entity (e.g. a new
+  # Application) created via JPA fails the NOT NULL constraint.
+  #
+  # Changeset 097 installs a BEFORE INSERT trigger on every affected table that
+  # derives architecture_id from the parent (model_files, sequence_diagrams, or
+  # sequence_fragments) when it is NULL. Explicit values from JPA / raw SQL
+  # still take priority -- the trigger only fires when the value is NULL.
+  #
+  # PostgreSQL-only (uses plpgsql functions). The test profile disables
+  # Liquibase entirely (H2 + ddl-auto=create-drop), so this changeset is a
+  # no-op in tests.
+  # ============================================================================
+
+  - changeSet:
+      id: 097-architecture-id-auto-derive-trigger
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - dbms:
+            type: postgresql
+        - tableExists:
+            tableName: applications
+        - columnExists:
+            tableName: applications
+            columnName: architecture_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/097-architecture-id-auto-derive-trigger.sql
+            relativeToChangelogFile: false
+            splitStatements: false
+            stripComments: false
+
+  # ============================================================================
+  # Infrastructure Domain Backend Foundation (Spec -- 2026-05-04-infrastructure-domain-backend-foundation)
+  # The following sixteen changesets together introduce the sixth Architecture
+  # domain (Infrastructure), comprising:
+  #   098 - 109  twelve entity tables (parents created before children)
+  #   110        infrastructure_points polymorphic supertype (12 typed FKs +
+  #              exactly-one-FK CHECK + 12 partial unique indexes + perf index)
+  #   111 - 113  three relationship tables, all using InfrastructurePoint on at
+  #              least one end (R1 source, R2 compute target, R3 route target)
+  # All sixteen are idempotent via preConditions: not.tableExists. Sibling FKs
+  # default to NO ACTION; only model_file_id cascades. JSONB is used exactly
+  # once -- on deployment_unit_compute_resources.runtime_config (Q5 deviation
+  # from the TEXT-blob tags convention).
+  # ============================================================================
+
+  - changeSet:
+      id: 098-environments
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: environments
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/098-environments.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 099-cloud-accounts
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: cloud_accounts
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/099-cloud-accounts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 100-locations
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: locations
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/100-locations.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 101-networks
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: networks
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/101-networks.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 102-subnets
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: subnets
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/102-subnets.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 103-compute-clusters
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: compute_clusters
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/103-compute-clusters.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 104-compute-resources
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: compute_resources
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/104-compute-resources.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 105-deployment-units
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: deployment_units
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/105-deployment-units.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 106-load-balancers
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: load_balancers
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/106-load-balancers.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 107-listeners
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: listeners
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/107-listeners.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 108-data-store-instances
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: data_store_instances
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/108-data-store-instances.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 109-infrastructure-resources
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: infrastructure_resources
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/109-infrastructure-resources.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 110-infrastructure-points
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: infrastructure_points
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/110-infrastructure-points.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 111-resource-subnet-hostings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: resource_subnet_hostings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/111-resource-subnet-hostings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 112-deployment-unit-compute-resources
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: deployment_unit_compute_resources
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/112-deployment-unit-compute-resources.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 113-load-balancer-resource-routes
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: load_balancer_resource_routes
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/113-load-balancer-resource-routes.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Infrastructure Cross-Domain Integration (Spec: 2026-05-05-infrastructure-cross-domain-integration)
+  # 4 new cross-domain relationship tables wiring Application/Data to the
+  # Infrastructure domain. environment_id is nullable on all 4 (Q7); description
+  # and tags are NOT NULL on all 4. NEW changesets only -- never edit applied
+  # changesets (<= 113).
+  # ============================================================================
+
+  - changeSet:
+      id: 114-application-compute-deployments
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: application_compute_deployments
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/114-application-compute-deployments.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 115-data-entity-data-store-hostings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: data_entity_data_store_hostings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/115-data-entity-data-store-hostings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 116-application-infrastructure-resource-uses
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: application_infrastructure_resource_uses
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/116-application-infrastructure-resource-uses.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 117-application-load-balancer-exposures
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: application_load_balancer_exposures
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/117-application-load-balancer-exposures.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Infrastructure Terraform & Discovery Readiness (Spec: 2026-05-05-infrastructure-terraform-discovery-readiness)
+  # 2 new tables (iac_sources entity, iac_resource_bindings relationship) plus
+  # 6 provenance columns on 12 entity tables + 3 Infra-internal relationship
+  # tables, and 5 readiness columns on 12 entity tables. NEW changesets only --
+  # never edit applied changesets (<= 117).
+  # ============================================================================
+
+  - changeSet:
+      id: 118-iac-sources
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: iac_sources
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/118-iac-sources.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 119-iac-resource-bindings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: iac_resource_bindings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/119-iac-resource-bindings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 120-infrastructure-provenance-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: environments
+              columnName: source_origin
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/120-infrastructure-provenance-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 121-infrastructure-terraform-readiness-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: environments
+              columnName: terraform_ready
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/121-infrastructure-terraform-readiness-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Library Backend Foundation (Spec: 2026-05-05-library-backend-foundation)
+  # Spec 1 of 3 in the Library arc. Adds:
+  #   - libraries (122): new entity table parallel to services with the same
+  #     5 tech-hints columns + 6 Infra spec-7 provenance columns + package_set FK.
+  #   - code_unit_dependencies (123): relationship table with polymorphic source
+  #     and target via the existing application_points supertype.
+  #   - application-points target_type CHECK relax (124): drops and recreates
+  #     chk_application_point_target_type to admit the new LIBRARY value.
+  # NEW changesets only -- never edit applied changesets (<= 121).
+  # ============================================================================
+
+  - changeSet:
+      id: 122-libraries
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: libraries
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/122-libraries.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 123-code-unit-dependencies
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: code_unit_dependencies
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/123-code-unit-dependencies.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 124-application-points-target-type-library
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: "0"
+            sql: SELECT COUNT(*) FROM information_schema.check_constraints WHERE constraint_name = 'chk_application_point_target_type' AND check_clause LIKE '%LIBRARY%'
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/124-application-points-target-type-library.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 125-discovery-candidate-library-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_candidate
+              columnName: library_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/125-discovery-candidate-library-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Discovery Run Robustness (Spec: 2026-05-11-discovery-run-robustness) -- Section 2
+  # Changeset 126 alters discovery_run.service_id FK action to ON DELETE SET NULL
+  # so a service deletion no longer blocks save with an FK violation. Pairs with
+  # an identity snapshot persisted into config_snapshot.serviceIdentitySnapshot
+  # at run-create time (DiscoveryRunService.createRun) so the frontend can still
+  # show the service name + a "Service deleted" chip on orphaned runs.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 125).
+  # ============================================================================
+
+  - changeSet:
+      id: 126-discovery-run-service-id-set-null
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: "0"
+            sql: >-
+              SELECT COUNT(*) FROM information_schema.referential_constraints
+              WHERE constraint_name = 'discovery_run_service_id_fkey'
+              AND delete_rule = 'SET NULL'
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/126-discovery-run-service-id-set-null.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Create Target Baseline from Current State (Spec: 2026-05-15) -- Task Group 1
+  # Changeset 127 creates the architecture_element_mappings table that persists
+  # explicit cross-architecture element mappings (source -> target) under a
+  # unique constraint per (project, arch pair, both element identities, mapping_type).
+  # The boxed Double confidence column allows null values that PATCH semantics
+  # preserve (see project memory: project_primitive_double_dto_overwrite.md).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 126).
+  # ============================================================================
+
+  - changeSet:
+      id: 127-architecture-element-mappings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: architecture_element_mappings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/127-architecture-element-mappings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # API Behaviour Baseline Capture Service (Spec: 2026-05-15) -- Task Group 1
+  # Changesets 128-134 introduce the seven api_behaviour_* tables that back the
+  # new microservice (capture sessions, OAS operations, scenarios, captures,
+  # diagnostics, saved baselines, baseline items). Secrets are NEVER persisted
+  # here -- only redacted JSONB. Session-owned children cascade-delete with the
+  # session; saved baselines survive session deletion (CASCADE only on project).
+  #
+  # NEW changesets only -- never edit applied changesets (<= 127).
+  # ============================================================================
+
+  - changeSet:
+      id: 128-api-behaviour-capture-sessions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_capture_sessions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/128-api-behaviour-capture-sessions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 129-api-behaviour-operations
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_operations
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/129-api-behaviour-operations.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 130-api-behaviour-scenarios
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_scenarios
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/130-api-behaviour-scenarios.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 131-api-behaviour-captures
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_captures
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/131-api-behaviour-captures.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 132-api-behaviour-diagnostics
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_diagnostics
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/132-api-behaviour-diagnostics.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 133-api-behaviour-baselines
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_baselines
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/133-api-behaviour-baselines.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 134-api-behaviour-baseline-items
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_baseline_items
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/134-api-behaviour-baseline-items.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Discovery Findings / Evidence as a First-Class Discovery Concept
+  # (Spec: 2026-05-16) -- Task Group 1
+  # Changesets 135-136 introduce discovery_findings + discovery_finding_links.
+  # Findings are run-scoped (FK -> discovery_run, ON DELETE CASCADE), carry
+  # reviewer status (D5 default 'new'), and link polymorphically to supporting
+  # discovery_* / architecture_element entities. See header comments in each
+  # changeset for the D6 cascade plan and the deferred parent-side cascade.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 134).
+  # ============================================================================
+
+  - changeSet:
+      id: 135-discovery-findings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_findings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/135-discovery-findings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 136-discovery-finding-links
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_finding_links
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/136-discovery-finding-links.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Database Discovery Packs (Sybase + PostgreSQL)
+  # (Spec: 2026-05-16) -- Task Group 1
+  # Changeset 137 adds a `discovery_kind` discriminator column ('code' |
+  # 'database' | 'combined', default 'code') to `discovery_run` so the same
+  # table can carry both code and database discovery runs. Distinct from the
+  # existing `mode` column (A/B/C V3 pipeline tier).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 136).
+  # ============================================================================
+
+  - changeSet:
+      id: 137-discovery-runs-kind
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: discovery_kind
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/137-discovery-runs-kind.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # SOAP Discovery -- Spring Classic Phase 1
+  # (Spec: 2026-05-17) -- Task Group 9
+  # Changeset 138 adds a `protocol_metadata_json` JSONB column to the
+  # `endpoints` table. All SOAP `data` fields (soap_action,
+  # request_root_element, request_namespace, response_root_element,
+  # request_dto_class, response_dto_class, wsdl_source) ride inside this
+  # blob. Promotion to explicit columns is deferred to a future spec.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 137).
+  # ============================================================================
+
+  - changeSet:
+      id: 138-endpoints-protocol-metadata-json
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: endpoints
+              columnName: protocol_metadata_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/138-endpoints-protocol-metadata-json.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # PM Migration Delivery Plan + Draft Book-of-Work Generation
+  # (Spec: 2026-05-17) -- Task Group 1
+  # Changeset 139 introduces `generated_migration_books_of_work`, the AMS-side
+  # persistence target for the new `product-manager--migration-delivery-plan`
+  # task. Each row is one generated draft book-of-work (Initiatives -> Epics ->
+  # Features -> Stories) for a given (projectId, currentArchitectureId,
+  # targetArchitectureId) tuple, with four sibling JSONB blobs:
+  # generation_inputs_json, generation_summary_json, quality_assessment_json,
+  # book_of_work_json. Status is constrained to draft | reviewed |
+  # partially_saved | saved | archived | failed.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 138).
+  # ============================================================================
+
+  - changeSet:
+      id: 139-generated-migration-books-of-work
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: generated_migration_books_of_work
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/139-generated-migration-books-of-work.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # PM Migration Shape-Spec Batch Generation (Spec 2)
+  # (Spec: 2026-05-19) -- Task Group 1
+  # Changeset 140 introduces `migration_story_spec_generations`, the AMS-side
+  # persistence target for the new
+  # `product-manager--migration-shape-spec-generation` task. Each row is one
+  # shape-spec-generation attempt for a single saved-story WorkItem
+  # (originating from a generated migration Book of Work in Spec 1).
+  # Status constrained to generated | generated_with_warnings |
+  # insufficient_context | failed | skipped_blocked (`not_attempted` is LAZY,
+  # never persisted -- A-6). Four sibling JSONB blobs: warnings_json,
+  # missing_inputs_json, focused_context_refs_json, evidence_refs_json.
+  #
+  # Path B chosen per R-1: existing WorkItemImplementWorkspace is an opaque
+  # JSONB workspace-state snapshot for Implement-tab UI rehydration -- a
+  # different concern. See planning/group-1-persistence-decision.txt.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 139).
+  # ============================================================================
+
+  - changeSet:
+      id: 140-migration-story-spec-generations
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: migration_story_spec_generations
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/140-migration-story-spec-generations.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Cross-Story Context Injection for Migration Shape-Spec Generation
+  # (Spec: 2026-05-20) -- Task Group 1
+  # Changeset 141 extends `migration_story_spec_generations` with the cross-
+  # story / two-pass columns: generation_pass (SMALLINT NOT NULL DEFAULT 1,
+  # CHECK 1..2), pass1_spec_text (TEXT), pass2_changes_summary (TEXT),
+  # budget_meta_json (JSONB), no_meaningful_change (BOOLEAN), decisions_json
+  # (JSONB), interfaces_json (JSONB), assumptions_json (JSONB). All boxed on
+  # the entity per project_primitive_double_dto_overwrite so PATCH preserves
+  # null.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 140).
+  # ============================================================================
+
+  - changeSet:
+      id: 141-migration-story-spec-generations-pass-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: generation_pass
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/141-migration-story-spec-generations-pass-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Cross-Story Context Injection -- Epic Captured Decisions table
+  # (Spec: 2026-05-20) -- Task Group 1
+  # Changeset 142 introduces `epic_captured_decisions`, the new first-class
+  # artifact carrying epic-level decisions that feed pass-2 parent_rollup.
+  # Auto-seeded from pass-1 parser output, curatable via the epic detail panel.
+  # Source enum {auto_extracted, user_edited, user_added}; status enum
+  # {draft, confirmed, superseded}. Unique on (project_id, epic_work_item_id,
+  # decision_key) for upsert semantics across pass-1 re-runs. FK on
+  # source_spec_generation_id with ON DELETE SET NULL (capture-and-restore
+  # awareness per project_pg_deferrable_set_null_action).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 141).
+  # ============================================================================
+
+  - changeSet:
+      id: 142-epic-captured-decisions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: epic_captured_decisions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/142-epic-captured-decisions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 143-project-spec-generation-config
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: project
+              columnName: per_story_context_token_cap
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/143-project-spec-generation-config.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Target Architecture Authoring Flow -- Schema Foundations
+  # (Spec: 2026-05-20) -- Task Group 1
+  #
+  # Changeset 144 adds two discriminator columns to `architecture`:
+  #   * draft_state VARCHAR(32) NOT NULL DEFAULT 'active', CHECK IN
+  #                 ('active', 'draft')
+  #   * kind        VARCHAR(32) NOT NULL DEFAULT 'current', CHECK IN
+  #                 ('current', 'target')
+  # An idempotent backfill flips any architecture_tag-tagged imported-target
+  # rows to kind='target'.
+  #
+  # Changeset 145 adds per-element authoring metadata on the four architecture
+  # element supertype tables (application_components, interfaces,
+  # data_entity_points, infrastructure_points):
+  #   * provenance             VARCHAR(32) NULL, CHECK IN
+  #     ('cloned-from', 'imported', 'user-authored', 'llm-suggested')
+  #   * decommissioning_status VARCHAR(32) NULL, CHECK IN
+  #     ('not-applicable', 'proposed', 'decommissioned')
+  # Both nullable so existing rows survive and boxed types on the entity layer
+  # preserve PATCH semantics per project_primitive_double_dto_overwrite.
+  #
+  # Changeset 146 extends `migration_story_spec_generations` (already touched
+  # by changesets 141, 142 from the cross-story-context spec) with:
+  #   * stale            BOOLEAN NULL                       -- nullable, boxed Boolean
+  #   * stale_marked_at  TIMESTAMP WITH TIME ZONE NULL
+  # Plus a new index `(project_id, stale)` for the dashboard count query.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 143).
+  # ============================================================================
+
+  - changeSet:
+      id: 144-architecture-draft-state-and-kind
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: architecture
+              columnName: draft_state
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/144-architecture-draft-state-and-kind.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 145-architecture-element-provenance-and-decom
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: application_components
+              columnName: provenance
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/145-architecture-element-provenance-and-decom.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 146-migration-story-spec-generations-stale
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: stale
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/146-migration-story-spec-generations-stale.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 147-architecture-last-marked-stale-at
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: architecture
+              columnName: last_marked_stale_at
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/147-architecture-last-marked-stale-at.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Missing Input Resolver Flow -- Schema Foundations
+  # (Spec: 2026-05-20) -- Task Group 1
+  #
+  # Changeset 148 introduces `missing_input_resolutions`, the new AMS-side
+  # persistence table recording user-supplied resolutions for missing-input
+  # keys surfaced by migration_story_spec_generations rows. One ACTIVE row
+  # per (project_id, missing_input_key) is enforced by a PARTIAL unique index
+  # `ux_mir_project_key_active` covering only soft_deleted=false rows.
+  # Soft-delete preserves audit history; the cross-story cascade walks
+  # missing_input_keys_json to find affected specs.
+  #
+  # Changeset 149 adds nullable JSONB `missing_input_keys_json` to
+  # `migration_story_spec_generations`. AMS populates this at spec-emit time
+  # whenever the row status is `insufficient_context`. Each entry is the
+  # 16-hex-char SHA-256 truncation produced by MissingInputKeyHasher; the
+  # cross-story matcher uses it for the ready-to-retry query.
+  #
+  # Changeset 150 adds nullable varchar `stale_reason` to
+  # `migration_story_spec_generations`. Pairs with the existing `stale`
+  # boolean (changeset 146 from the target-arch authoring spec) and CHECKs
+  # the vocabulary to `target_architecture_changed` (set by the target-arch
+  # mark-stale handler) or `resolution_reset` (set by THIS spec's soft-delete
+  # cascade). Both stale and stale_reason are cleared together on successful
+  # regeneration.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 147) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 148-missing-input-resolutions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: missing_input_resolutions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/148-missing-input-resolutions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 149-migration-story-spec-generations-missing-input-keys-json
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: missing_input_keys_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/149-migration-story-spec-generations-missing-input-keys-json.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 150-migration-story-spec-generations-stale-reason
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: stale_reason
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/150-migration-story-spec-generations-stale-reason.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Bulk-Resolve OAS/WSDL Parser -- Schema Foundations
+  # (Spec: 2026-05-20) -- Task Group 1
+  #
+  # Changeset 151 adds two provenance columns to the missing_input_resolutions
+  # table (changeset 148): resolution_source VARCHAR(32) NULL (open vocabulary,
+  # current values manual / oas_wsdl_upload -- no DB CHECK constraint by
+  # design; service layer enforces cooperatively) and project_artifact_id UUID
+  # NULL with FK to project_artifact(id) ON DELETE SET NULL. Pre-existing rows
+  # are backfilled to resolution_source = manual; project_artifact_id stays
+  # NULL on those rows because manual-entry never has a source artefact.
+  # ON DELETE SET NULL fires immediately at DELETE time per
+  # project_pg_deferrable_set_null_action.md -- capture-and-restore flows that
+  # DELETE+re-INSERT a project_artifact must capture+restore project_artifact_id
+  # in the same transaction.
+  #
+  # Changeset 152 adds max_contract_upload_file_size_mb INTEGER NULL DEFAULT 10
+  # to the project table. Boxed Integer on the entity per
+  # project_primitive_double_dto_overwrite.md. The parse-files endpoint and the
+  # gateway proxy both apply a defence-in-depth fallback of 10MB when the
+  # column is null. Additive only on the project table -- no overlap with the
+  # cross-story-context config columns added by changeset 143.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 150) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 151-missing-input-resolutions-source-and-artifact
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: missing_input_resolutions
+              columnName: resolution_source
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/151-missing-input-resolutions-source-and-artifact.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 152-project-max-contract-upload-size
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: project
+              columnName: max_contract_upload_file_size_mb
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/152-project-max-contract-upload-size.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Spec Quality Scoring -- Schema Foundations
+  # (Spec: 2026-05-20-spec-quality-scoring) -- Task Group 1
+  #
+  # Changeset 153 adds four nullable columns to migration_story_spec_generations
+  # to support the new deterministic rules-based spec quality score:
+  #   * quality_score             SMALLINT, CHECK 0..100
+  #   * quality_grade             VARCHAR(1), CHECK IN (A,B,C,D,F)
+  #   * quality_dimensions_json   JSONB (list of {dimension,score,reason})
+  #   * previous_quality_score    SMALLINT, CHECK 0..100
+  #
+  # All four columns are nullable: insufficient_context / failed rows store
+  # NULL (skip-scoring rule), pre-deploy rows store NULL until bulk recompute
+  # catches them up. Boxed entity types (Integer / String / List<Map>) per
+  # project_primitive_double_dto_overwrite.md.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 152) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 153-migration-story-spec-generations-quality-scoring
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: quality_score
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/153-migration-story-spec-generations-quality-scoring.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # In-Product Spec Editor + Confirm-Overwrite -- Schema Foundations
+  # (Spec: 2026-05-20-in-product-spec-editor-confirm-overwrite) -- Task Group 1
+  #
+  # Changeset 154 adds four columns to migration_story_spec_generations to
+  # support the new in-product Markdown editor + audit trail + single-slot
+  # prior-version history:
+  #   * manually_edited          BOOLEAN NOT NULL DEFAULT false
+  #   * last_manually_edited_at  TIMESTAMPTZ (nullable)
+  #   * last_manually_edited_by  VARCHAR(255) (nullable)
+  #   * previous_spec_text       TEXT (nullable)
+  #
+  # manually_edited is NOT NULL DEFAULT false at the DB level (mirrors the
+  # existing `archived` / boolean-flag pattern) but mapped as a BOXED Boolean
+  # on the entity per project_primitive_double_dto_overwrite.md. The other
+  # three columns are nullable (no edit yet = no audit identity / time / prior
+  # text).
+  #
+  # NEW changesets only -- never edit applied changesets (<= 153) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 154-migration-story-spec-generations-manual-edit
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: manually_edited
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/154-migration-story-spec-generations-manual-edit.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Target State Captured Decisions -- Data Plane
+  # (Spec: 2026-05-24-target-state-captured-decisions-data-plane) -- Task Group 1
+  #
+  # Changeset 155 creates the new target_state_captured_decisions table that
+  # carries architect-persona captured decisions for a target architecture.
+  # One row per answered concern question, scoped architecture-wide /
+  # per-service / per-interface / per-element. Insert-only at the data plane;
+  # supersession is implemented by writing a new row and atomically setting
+  # the prior matching-tuple row's superseded_by_id to the new row's id
+  # (see TargetStateCapturedDecisionService.createDecision).
+  #
+  # CHECK constraint chk_tscd_scope_invariant enforces the scope invariant:
+  #   * scope_kind='element' iff scope_ref_type IS NOT NULL
+  #   * scope_kind='architecture' iff scope_ref_id IS NULL
+  # Indexes cover (project, target), (project, target, decision_code,
+  # scope_kind, scope_ref_id), and (decision_code) per the spec.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 154) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 155-target-state-captured-decisions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: target_state_captured_decisions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/155-target-state-captured-decisions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # API Test Harness -- Target-Side Capture
+  # (Spec: 2026-05-25-api-test-harness-target-side-capture) -- Task Group 1
+  #
+  # Changeset 156 adds a `kind` discriminator + a `paired_with_baseline_id`
+  # self-FK to `api_behaviour_baselines` so a target-side baseline produced
+  # by replaying a current-state baseline against a target URL can point
+  # back at its source. Existing rows pick up `kind='current'` via the
+  # column default; NULL `paired_with_baseline_id` is the correct legacy
+  # value. FK pairing invariant validated at the service layer (target MUST
+  # have source; current MUST NOT). ON DELETE SET NULL on the self-FK keeps
+  # a target baseline alive if the source is later deleted (the diff engine
+  # in Spec #5 surfaces "source removed" as a finding rather than the
+  # target row vanishing). Partial index keeps the lookup index small.
+  #
+  # Changeset 157 adds the symmetric `kind` + `source_baseline_id` columns
+  # on `api_behaviour_capture_sessions`. Same defaults, same FK action, same
+  # service-layer invariant.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 155) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 156-api-behaviour-baselines-kind
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_baselines
+              columnName: kind
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/156-api-behaviour-baselines-kind.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 157-api-behaviour-capture-sessions-kind
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_capture_sessions
+              columnName: kind
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/157-api-behaviour-capture-sessions-kind.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # API Test Harness -- Diff Engine
+  # (Spec: 2026-05-25-api-test-harness-diff-engine) -- Task Group 1
+  #
+  # Changeset 158 creates `api_behaviour_diffs`: the per-pair (source_baseline,
+  # target_baseline) diff header. AMS is the system-of-record only; the
+  # deterministic JSON-shape diff itself is computed by diffRunner.ts in
+  # api-migration-validation-service. The six summary count columns are typed
+  # INT in the DB and BOXED Integer in the JPA entity / DTO so PATCH preserves
+  # null per project_primitive_double_dto_overwrite.md. UNIQUE on
+  # (source_baseline_id, target_baseline_id) gives the diff runner free
+  # "find existing diff for this pair" semantics for recompute. ON DELETE
+  # CASCADE on both source_baseline_id and target_baseline_id ensures the
+  # diff vanishes if either baseline is deleted.
+  #
+  # Changeset 159 creates `api_behaviour_diff_items`: per-scenario diff
+  # classification rows. status_classification / body_classification carry
+  # the discrete buckets (validated at service layer, no DB enum); the JSONB
+  # body_diff_json column carries the per-path annotation map from
+  # jsonShapeComparator.ts. source_baseline_item_id /
+  # target_baseline_item_id are LOGICAL references (no FK constraint) since
+  # the diff outlives item-level edits. CASCADE off api_behaviour_diffs.id
+  # closes the cleanup loop.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 157) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 158-api-behaviour-diffs
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_diffs
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/158-api-behaviour-diffs.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 159-api-behaviour-diff-items
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: api_behaviour_diff_items
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/159-api-behaviour-diff-items.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # API Test Harness -- Findings Integration
+  # (Spec: 2026-05-25-api-test-harness-findings-integration) -- Task Group 1
+  #
+  # Changeset 160 extends discovery_findings to support a SECOND origin: the
+  # api_behaviour_diff that produced the finding (alongside the existing
+  # run_id origin). Exactly one of run_id / api_behaviour_diff_id MUST be
+  # non-null per the new discovery_finding_exactly_one_origin CHECK (rejects
+  # both-set AND neither-set rows). FK to api_behaviour_diffs uses ON DELETE
+  # CASCADE so deleting a diff cleans up its findings; recompute, however,
+  # keeps the diff row alive while replacing diff_items -- diffRunner.ts
+  # MUST explicitly call deleteFindingsByApiBehaviourDiffId(diffId) BEFORE
+  # re-emit (load-bearing, NOT defensive -- accepted Q6). Partial index on
+  # api_behaviour_diff_id keeps the index size proportional to the new
+  # origin.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 159) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 160-discovery-findings-api-behaviour-diff-origin
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_findings
+              columnName: api_behaviour_diff_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/160-discovery-findings-api-behaviour-diff-origin.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Endpoint->Data-Effect Call Graph for Discovery
+  # (Spec: 2026-05-29-endpoint-data-effect-graph) -- Task Group 1
+  #
+  # Changeset 161 creates `endpoint_data_effects`: the NEW dedicated
+  # endpoint->data-entity data-effect relationship (one first-class reviewable
+  # edge per (endpoint, data-entity) pair). The data-entity side is referenced
+  # via the dep_log_<entityId> / dep_phy_<entityId> data-entity-point
+  # convention (no raw entity FK) -- modelled on
+  # interface_logical_entities.data_entity_point_id. path_metadata_json is
+  # JSONB (structured ordered hop list + operation hint + transactional flag);
+  # confidence is DOUBLE PRECISION / boxed Double in the JPA entity+DTO so
+  # PATCH preserves null per project_primitive_double_dto_overwrite.md. FK
+  # model_file_id -> model_files(id) ON DELETE CASCADE. Does NOT overload the
+  # endpoint payload columns nor interface_logical_entities (semantically
+  # distinct -- read/write data effect, not wire payload / interface level).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 160) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 161-endpoint-data-effects
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: endpoint_data_effects
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/161-endpoint-data-effects.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Business-logic behaviour capture for Discovery (Spec: 2026-05-29) -- Task
+  # Group 1: add the `behavior` JSONB column to the existing business_logics
+  # table. The block embeds its own schema_version + source_hash (loose JSONB,
+  # no migration as the shape evolves) and an embedded boxed-Double confidence;
+  # snake_case wire, no @CamelCaseWire. NEW changeset only -- never edit the
+  # applied 015-business-logic.sql or any changeset (<= 161) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 162-business-logic-behavior
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: business_logics
+              columnName: behavior
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/162-business-logic-behavior.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # DB Structural Fidelity for Discovery (Spec: 2026-05-29) -- Task Group 1:
+  # add nullable verbatim structural columns to the existing
+  # physical_data_attributes table (source_type / scale / precision /
+  # column_default / ordinal / is_identity). Numerics are boxed Integer and
+  # is_identity is a boxed Boolean in the JPA entity/DTO so PATCH preserves null
+  # rather than wiping to 0 / false; `default` is a SQL reserved word so the
+  # column is named column_default. snake_case wire, no @CamelCaseWire. NEW
+  # changeset only -- never edit an applied changeset (<= 162) per
+  # feedback_liquibase_immutable_changesets.md.
+  # ============================================================================
+
+  - changeSet:
+      id: 163-physical-attribute-structural-fidelity
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: physical_data_attributes
+              columnName: source_type
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/163-physical-attribute-structural-fidelity.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # DB Structural Fidelity for Discovery (Spec: 2026-05-29) -- Task Group 1:
+  # add ONE nullable constraints_metadata JSONB column to the existing
+  # physical_data_entities table. Carries the table's PK / unique / check /
+  # index truth as METADATA ON THE ENTITY (not separate entity types); loose
+  # JSONB so the shape evolves without a migration. Mirrors the 162 JSONB
+  # precedent (@Type(JsonType.class) Map<String,Object>); snake_case wire, no
+  # @CamelCaseWire. NEW changeset only -- never edit an applied changeset.
+  # ============================================================================
+
+  - changeSet:
+      id: 164-physical-entity-constraints-jsonb
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: physical_data_entities
+              columnName: constraints_metadata
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/164-physical-entity-constraints-jsonb.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # DB Structural Fidelity for Discovery (Spec: 2026-05-29) -- Task Group 1:
+  # add ONE nullable fk_columns JSONB column to the existing
+  # logical_data_entity_relationships table. Carries the FK join_columns +
+  # referenced_columns on each side of the relationship as a small structured
+  # block; the data_entity_points endpoints are unchanged. Mirrors the 162 JSONB
+  # precedent; snake_case wire, no @CamelCaseWire. NEW changeset only -- never
+  # edit an applied changeset.
+  # ============================================================================
+
+  - changeSet:
+      id: 165-relationship-fk-columns
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: logical_data_entity_relationships
+              columnName: fk_columns
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/165-relationship-fk-columns.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Model-Aware Discovery (Spec: 2026-05-30) -- Task Group 1: add ONE typed
+  # `operation` column (create / enrich / link, default 'create') to the
+  # existing discovery_candidate table, plus a (run_id, operation) index that
+  # parallels idx_discovery_candidate_run_id_type. `operation` is a DIMENSION on
+  # the candidate row, NOT a new entity/relationship TYPE. Mirrors the 165
+  # additive-column precedent; snake_case wire, no @CamelCaseWire. NEW changeset
+  # only -- never edit an applied changeset.
+  # ============================================================================
+
+  - changeSet:
+      id: 166-discovery-candidate-operation
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_candidate
+              columnName: operation
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/166-discovery-candidate-operation.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # SOAP/WSDL Message-Field Depth (Spec: 2026-05-30) -- Task Group 1: two
+  # additive, nullable columns on existing data-domain tables.
+  #   logical_data_attributes.field_metadata (JSONB) -- the SINGLE on-attribute
+  #     metadata blob: cardinality (min_occurs/max_occurs/is_collection) +
+  #     value-domain restrictions (enumeration/pattern/minLength/maxLength/
+  #     minInclusive/maxInclusive/totalDigits/fractionDigits) + the XSD
+  #     source-type string. is_nullable stays a real Boolean column (NOT touched).
+  #   logical_data_entities.source_provenance (TEXT) -- source namespace /
+  #     originating DTO class name on each minted SOAP message entity.
+  # Mirrors the 164-physical-entity-constraints-jsonb additive-JSONB-on-entity
+  # precedent; snake_case wire, no @CamelCaseWire. NEW changeset only -- never
+  # edit an applied changeset. One columnExists guard per new column.
+  # ============================================================================
+
+  - changeSet:
+      id: 167-soap-field-metadata
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: logical_data_attributes
+              columnName: field_metadata
+        - not:
+            columnExists:
+              tableName: logical_data_entities
+              columnName: source_provenance
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/167-soap-field-metadata.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Per-endpoint response-contract capture (Spec: 2026-05-30) -- Task Group 1:
+  # ONE additive, nullable JSONB column on the existing `endpoints` table.
+  #   endpoints.response_contract (JSONB) -- the per-endpoint RESPONSE CONTRACT
+  #     (what response status + body + headers each input produces): error_responses,
+  #     auth, validation, serialization, status_codes, conditional_variants,
+  #     provenance, a boxed-Double confidence, and an internal schema_version --
+  #     all INSIDE the one JSONB blob (no separate columns). Metadata ON the
+  #     endpoint entity, NOT a new entity/relationship type.
+  # Mirrors the 162-business-logic-behavior / 164-physical-entity-constraints-jsonb
+  # additive-JSONB-on-entity precedent; snake_case wire, no @CamelCaseWire. NEW
+  # changeset only -- never edit an applied changeset. One columnExists guard.
+  # ============================================================================
+
+  - changeSet:
+      id: 168-endpoint-response-contract
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: endpoints
+              columnName: response_contract
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/168-endpoint-response-contract.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Run-level advisory "degraded" signal for discovery_run.
+  # Spec: Oracle Integrity & Determinism (2026-05-30) -- Task Group 1
+  # Adds two nullable columns -- `degraded` (BOOLEAN) + `degraded_reasons`
+  # (TEXT, JSON-encoded string[]) -- mirroring the 085-discovery-run-warnings
+  # advisory-field precedent (nullable, no backfill, TEXT for portability). The
+  # flag rides ALONGSIDE the existing COMPLETED status; it is NOT a new terminal
+  # status value and the discovery-service state machine is untouched.
+  - changeSet:
+      id: 169-discovery-run-degraded
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_run
+              columnName: degraded
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/169-discovery-run-degraded.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Normalize Findings Review Actions (Spec F)
+  # Spec: Normalize Findings Review Actions (2026-06-02) -- Task Group 1
+  # Renames discovery_findings.status -> review_status (default 'pending_review'),
+  # adds nullable previous_review_status (audit trail, mirrors discovery_candidate),
+  # rebuilds the single status index on the renamed column, and value-migrates the
+  # legacy vocabulary to the candidate disposition set (accepted->approved,
+  # ignored->rejected, needs_review->deferred, new->pending_review,
+  # resolved->approved). NO CHECK constraint (preserve 135's free-text +
+  # pack-extensibility). NEW changeset only -- 135-discovery-findings.sql is
+  # immutable. Guard runs only while the OLD `status` column still exists.
+  - changeSet:
+      id: 170-discovery-findings-review-status
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - columnExists:
+            tableName: discovery_findings
+            columnName: status
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/170-discovery-findings-review-status.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Capture-session scenario outcome tallies (misleading-COMPLETED fix, 2026-06-11)
+  # A session is marked `completed` whenever there is no INFRASTRUCTURE error --
+  # every scenario can fail and it still reads COMPLETED with zero captures.
+  # Persist the orchestrator's per-run scenarios_attempted/completed/errored
+  # tallies so the dashboard can render "Completed -- 0 of N scenarios captured".
+  # Mirrors the 169 advisory-field precedent: nullable, no backfill, NOT a new
+  # status enum value (the session state machine is untouched).
+  - changeSet:
+      id: 171-capture-session-scenario-counts
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_capture_sessions
+              columnName: scenarios_attempted
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/171-capture-session-scenario-counts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # DB Schema + Data Migration Pack -- root pack table (2026-06-11, TG1)
+  # One active pack per (project_id, architecture_id); regeneration updates the
+  # row in place so pack-scoped decisions and drift history survive by pack id.
+  # status generated|stale, input_snapshot_hash staleness comparator, nullable
+  # work_item_id DB-epic link, boxed coverage counts + seed_margin, JSONB
+  # manifest. NEW changeset only -- changesets <= 171 are immutable.
+  - changeSet:
+      id: 172-db-migration-packs
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_migration_packs
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/172-db-migration-packs.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # DB Schema + Data Migration Pack -- generated files as text rows (TG1).
+  # file_path = zip entry path; zip assembled on demand, no filesystem
+  # artifacts. Replaced wholesale on regeneration. FK CASCADE off the pack.
+  - changeSet:
+      id: 173-db-migration-pack-files
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_migration_pack_files
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/173-db-migration-pack-files.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # DB Schema + Data Migration Pack -- pack-scoped decision queue (TG1).
+  # decision_key stable per object identity + question kind, UNIQUE per pack
+  # so regeneration re-links resolved decisions instead of duplicating.
+  - changeSet:
+      id: 174-db-migration-pack-decisions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_migration_pack_decisions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/174-db-migration-pack-decisions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # DB Schema + Data Migration Pack -- append-only drift-report history (TG1).
+  # One row per verification run (the DB sibling of the API drift report);
+  # never updated/overwritten; source free text so a future external
+  # verification service can append per-area runs without schema change.
+  - changeSet:
+      id: 175-db-migration-pack-drift-reports
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_migration_pack_drift_reports
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/175-db-migration-pack-drift-reports.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # DB Object Translation Drafts -- per-object translation rows (TG2).
+  # One row per requires_translation_spec_2 manifest object; durable across
+  # pack regeneration via translation_key (kind--object_ref) + source-body
+  # hash re-link. Drafts live ONLY here until explicitly approved.
+  - changeSet:
+      id: 176-db-migration-pack-translations
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_migration_pack_translations
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/176-db-migration-pack-translations.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # DB Object Translation Drafts -- extend chk_dmpf_file_kind with the 7th
+  # kind `translation` (emitted APPROVED translations only). Changeset 173 is
+  # immutable, so the CHECK is dropped + re-created in this NEW changeset.
+  - changeSet:
+      id: 177-db-migration-pack-file-kind-translation
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: db_migration_pack_files
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/177-db-migration-pack-file-kind-translation.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Model-Seeded Capture Inventory (2026-06-11, TG1) -- capture-session
+  # interface scope + Start coverage-override audit trio; operation
+  # exclusion_reason (exclude-with-reason accounting rows). All nullable,
+  # no backfill -- existing sessions/baselines untouched (D3/D8).
+  - changeSet:
+      id: 178-capture-session-scope-and-coverage-override
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_capture_sessions
+              columnName: scope_interface_ids_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/178-capture-session-scope-and-coverage-override.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Model-Seeded Capture Inventory (2026-06-11, TG1) -- THIRD finding origin
+  # api_behaviour_capture_session_id (reconciliation findings). The applied
+  # changeset-160 two-way exactly-one-of-origin CHECK is immutable, so it is
+  # dropped + re-created as the three-way constraint in this NEW changeset
+  # (changeset-160 second-origin precedent).
+  - changeSet:
+      id: 179-discovery-findings-capture-session-origin
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: discovery_findings
+              columnName: api_behaviour_capture_session_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/179-discovery-findings-capture-session-origin.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Implementation-Service Init and Integration Repair (2026-06-12, TG1) --
+  # workspace-registration persistence: project init-status columns
+  # (implementation_init_success / _mode / _project_dir), the NEW
+  # project_implementation_repos repo-map table (full-map replace sync
+  # target), and work_item implementation git-outcome columns
+  # (implementation_branch / _pr_url / _logs_url). All nullable, no backfill.
+  - changeSet:
+      id: 180-implementation-init-and-repo-map
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: project_implementation_repos
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/180-implementation-init-and-repo-map.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Implementation-Ready Migration Spec Generation (2026-06-14, Spec 1 of 4,
+  # TG1) -- two new nullable JSONB columns on migration_story_spec_generations:
+  # structured_tests_json (structured unit/functional test pack:
+  # { title, description, type in (unit, functional) }) and covered_endpoint_ids
+  # (forward-only endpoint-coverage groundwork, D9 -- empty for non-endpoint
+  # stories, not consumed in v1). Both nullable, no backfill -- existing rows
+  # untouched, read back with the new fields null. Follows the entity's
+  # established sibling-JSONB idiom (warnings_json / decisions_json etc.).
+  - changeSet:
+      id: 181-implementation-ready-spec-fields
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: structured_tests_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/181-implementation-ready-spec-fields.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Migration Execution Run-State (2026-06-14, Spec 3 of 4, TG1) -- the durable
+  # spine the gateway-hosted Migration Execution Driver advances over,
+  # event-driven so it survives a gateway restart. TWO new tables --
+  # migration_execution_run (one run over one book of work: status, current
+  # sequence position, the pinned kind='current' ApiBehaviourBaseline id for
+  # CD-7 baseline pinning, target_base_url, a run-level decision_log_json JSONB)
+  # and migration_execution_run_item (one row per dispatched spec: status,
+  # dispatched flag, job_id callback key, branch/pr_url, outcome,
+  # deploy_on_complete only-on-final flag, target_base_url, and the INLINE
+  # auto_answer_decision_log_json JSONB per CD-4) -- plus ONE new column
+  # work_item.deferred (BOOLEAN NOT NULL DEFAULT false): the implementation-
+  # exclusion-only defer flag (CD-7) read by the readiness predicate + the
+  # run-sequence builder. FK run-item -> run ON DELETE CASCADE; indexes on
+  # run_id + job_id (the callback lookup keys). All new nullable columns are
+  # boxed reference types on the Java side; no backfill.
+  - changeSet:
+      id: 182-migration-execution-run-state
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: migration_execution_run
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/182-migration-execution-run-state.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # Migration Reconciliation Break <-> Bug Lifecycle + Disposition Store
+  # (2026-06-14, Spec 4 of 4, TG1) -- the run-scoped store the gateway loop
+  # (Groups 2/3/4) reads and mutates after the final-spec deploy. ONE new table
+  # migration_reconciliation_break: one row per behavioural BREAK (a drifting
+  # api_behaviour_diff_item -- the target response diverged from the pinned
+  # current-state oracle for the same request). Carries the run FK
+  # (-> migration_execution_run ON DELETE CASCADE, run-scoped), the
+  # pinned_baseline_id oracle anchor (CD-1), the source_baseline_item_id
+  # scoped-re-reconcile resolution key (CD-6), a soft diff_item_id reference (no
+  # break-payload duplication), an inline detail_json JSONB (method/path/summary/
+  # diff for the review surface + bug BreakEvidence), the disposition_status
+  # lifecycle (machine: open|sent_as_bug|fixed_confirmed|still_broken|
+  # circuit_broken_escalated; human terminal: accepted|wont_report|
+  # intentional_deviation -- how intentional/deferred deviations are recorded
+  # WITHOUT changing the oracle, CD-A), the bug_id callback key, the
+  # attempt_count circuit-breaker counter, and the circuit_broken / needs_human
+  # escalation flags. Indexes on run_id + bug_id (the callback key) +
+  # source_baseline_item_id (the scope key). All new nullable columns are boxed
+  # reference types on the Java side; no backfill. NEW changeset only (182 is the
+  # highest on disk) -- never edit applied changesets.
+  - changeSet:
+      id: 183-migration-reconciliation-break
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: migration_reconciliation_break
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/183-migration-reconciliation-break.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # D2 -- Capability Synthesis + Batch Spines (Spec: 2026-06-14, Spec 2 of 6)
+  # -- Task Group 1
+  # Changeset 184 introduces the findings-side CAPABILITY grouping -- the single
+  # new model concept of the whole 6-spec discovery-completeness program. D1
+  # emits one operational finding PER FILE, but operational functionality is a
+  # GRAPH (a JIL box triggers shell scripts that invoke plain-Java main() batch
+  # classes that read/write Sybase tables and publish a downstream message). A
+  # capability is a cross-cutting CURRENT-STATE aggregation ("the Daily Risk
+  # Hierarchy Load Pipeline, composed of these parts, on this schedule") so the
+  # related findings become ONE migration story instead of thirty disconnected
+  # file findings. TWO new tables:
+  #   discovery_capability: one row per synthesised capability (run/project/
+  #     architecture read keys; LLM-named name + free-text kind, NO DB enum;
+  #     candidate/finding-parity review_status DEFAULT pending_review +
+  #     previous_review_status audit; boxed Double confidence; detail_json JSONB
+  #     carrying the JIL-DAG topology snapshot, the typed invocations[] edges,
+  #     schedule/trigger metadata, external systems + the aggregated
+  #     behaviourBearing hint -- the D4-gate forward seam). Membership lives in
+  #     the member table, never on this row (the Option-A -> Option-B graduation
+  #     path). Approving/rejecting a capability does NOT cascade to its members
+  #     in D2.
+  #   discovery_capability_member: the POLYMORPHIC membership (FK capability_id ->
+  #     discovery_capability ON DELETE CASCADE; member_type discriminator over
+  #     discovery_finding | discovery_candidate | architecture_element |
+  #     discovery_relationship + member_id). NOTE: discovery_finding is a valid
+  #     member_type HERE but is a DIFFERENT mechanism from DiscoveryFindingLink --
+  #     discovery_finding stays OUT of ALLOWED_LINK_TARGET_TYPES.
+  # Indexes on the capability read keys (run_id, project_id, architecture_id,
+  # review_status) + the member capability_id + (member_type, member_id) reverse
+  # lookup. All new nullable columns are boxed reference types on the Java side;
+  # no backfill. NEW changeset only (183 is the highest on disk) -- never edit
+  # applied changesets.
+  # ============================================================================
+  - changeSet:
+      id: 184-discovery-capability
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: discovery_capability
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/184-discovery-capability.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # D4 -- Carry-over Completeness Gate (Spec: 2026-06-14, Spec 4 of 6)
+  # -- Task Group 1
+  # Changeset 185 promotes D3's per-capability provenance link from a
+  # book_of_work_json blob field to a real work_item COLUMN so the D4 carry_over
+  # completeness gate's coverage query is an efficient structured JOIN
+  # (work_item.source_capability_id == discovery_capability.id), not a per-Migrate
+  # blob re-parse. ONE new nullable column work_item.source_capability_id (UUID):
+  # the discovery_capability a STORY was minted to cite (D3 append-capability-
+  # story); NULL for every ordinary work item. A capability is cited-by-story iff
+  # a work_item exists with source_capability_id == capability.id (D8). D3->D4
+  # handoff: D3 stamps the blob (stays changeset-free); D4 ADDS this column AND
+  # updates appendCapabilityStory to ALSO write it, so BOTH the blob and the
+  # column carry the provenance. Dismissal reuses the string-typed review_status /
+  # reviewerNotes -- NO DDL for it; this changeset adds the single
+  # source_capability_id column and NOTHING else (D10). D5 reserves changeset 186.
+  # New nullable column, boxed reference type on the Java side, no backfill.
+  # NEW changeset only (184 is the highest on disk) -- never edit applied
+  # changesets. Column-only ALTER -> the not-columnExists precondition idiom
+  # (mirrors 046-work-item-external-url).
+  # ============================================================================
+  - changeSet:
+      id: 185-work-item-source-capability-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: work_item
+              columnName: source_capability_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/185-work-item-source-capability-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # D5 -- Net-new backlog items + provenance (Spec: 2026-06-14, Spec 5 of 6)
+  # -- Task Group 1
+  # Changeset 186 adds the provenance marker to every work item so the migration
+  # owner can distinguish like-for-like carry_over work (the default; must match
+  # current-state) from genuinely-additive net_new work (deliberately OUTSIDE the
+  # like-for-like envelope). ONE new column work_item.provenance (VARCHAR NOT NULL
+  # DEFAULT 'carry_over'), values {carry_over (default), net_new}. The carry_over
+  # default means EVERY existing/discovered row is correct with NO backfill (every
+  # discovered item IS like-for-like). Allowed values are validated at the
+  # service/DTO layer (the column stays a plain VARCHAR -- no DB enum/CHECK,
+  # matching the AMS status-as-string convention). Column-authoritative AND
+  # column-only: dispatch ignores it; D6's reconcile reads rows directly -- no
+  # blob mirror unless the reconcile-shaping spec surfaces a need. Modelled EXACTLY
+  # on the deferred column (changeset 182): NOT NULL + DB DEFAULT, mirrored by an
+  # @PrePersist default + a null-guarded PATCH on the Java side per
+  # project_primitive_double_dto_overwrite.md. NEW changeset only (185 is the
+  # highest on disk; its header reserves 186 for D5) -- never edit applied
+  # changesets. Column-only ALTER -> the not-columnExists precondition idiom
+  # (mirrors 185 / 046-work-item-external-url).
+  # ============================================================================
+  - changeSet:
+      id: 186-work-item-provenance
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: work_item
+              columnName: provenance
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/186-work-item-provenance.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

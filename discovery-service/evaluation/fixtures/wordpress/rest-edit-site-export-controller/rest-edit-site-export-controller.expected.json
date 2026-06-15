@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "WP_REST_Edit_Site_Export_Controller",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

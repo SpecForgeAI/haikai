@@ -1,0 +1,232 @@
+"""
+Kiro CLI Executor for Haikai Orchestration.
+
+Drop-in replacement for ClaudeCLIExecutor that uses kiro-cli instead of
+Claude Code CLI for non-interactive command execution (write-spec,
+create-tasks, implement-tasks).
+
+Key differences from ClaudeCLIExecutor:
+- Uses kiro-cli chat --no-interactive --trust-all-tools
+- No --print or --output-format flags (kiro outputs ANSI text)
+- No --session-id (sessions are per-directory)
+- Skills loaded via .kiro/skills/ directory
+- Auth via SSO (no ANTHROPIC_API_KEY needed)
+"""
+
+import json
+import logging
+import os
+import platform
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Optional, Dict, Any
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+# ANSI escape sequence pattern
+_ANSI_RE = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\[\?[0-9;]*[a-zA-Z]')
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    return _ANSI_RE.sub('', text)
+
+
+class KiroCLIExecutor:
+    """
+    Wrapper class for executing Haikai commands via kiro-cli.
+
+    Same interface as ClaudeCLIExecutor so the orchestrator can use either.
+    """
+
+    def __init__(self, project_dir: str, anthropic_api_key: str = ""):
+        """
+        Initialize the Kiro CLI executor.
+
+        Args:
+            project_dir: Absolute path to the project directory
+            anthropic_api_key: Not used (kiro-cli uses SSO auth), kept for interface compat
+        """
+        self.project_dir = Path(project_dir)
+
+        if not self.project_dir.exists():
+            raise ValueError(f"Project directory does not exist: {project_dir}")
+
+        # Find kiro-cli
+        self.kiro_cli_path = self._find_kiro_cli()
+
+        # Setup skills
+        self._setup_skills()
+
+        logger.info(f"Initialized KiroCLIExecutor for project: {project_dir}")
+
+    def _find_kiro_cli(self) -> Path:
+        """Locate kiro-cli binary."""
+        kiro_path = shutil.which("kiro-cli")
+        if kiro_path:
+            return Path(kiro_path)
+
+        candidates = [
+            Path.home() / ".local" / "bin" / "kiro-cli",
+            Path("/usr/local/bin/kiro-cli"),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        raise ValueError(
+            "kiro-cli not found in PATH or common locations. "
+            "Install via the Kiro CLI install script "
+            "(see docs/ENABLING_KIRO_CLI.md for setup)."
+        )
+
+    def _setup_skills(self):
+        """Setup .kiro/skills/ directory with haikai command skills."""
+        project_root = Path(__file__).parent.parent
+        haikai_profiles = project_root / "haikai-profiles" / "default"
+        kiro_dir = self.project_dir / ".kiro"
+        skills_dir = kiro_dir / "skills" / "haikai"
+
+        if not haikai_profiles.exists():
+            logger.warning(f"haikai-profiles not found: {haikai_profiles}")
+            return
+
+        skills_dir.mkdir(parents=True, exist_ok=True)
+
+        commands = ["write-spec", "create-tasks", "implement-tasks", "shape-spec", "plan-product"]
+
+        for cmd_name in commands:
+            source = haikai_profiles / "commands" / cmd_name / "single-agent" / f"{cmd_name}.md"
+            if not source.exists():
+                continue
+
+            cmd_dir = skills_dir / cmd_name
+            cmd_dir.mkdir(parents=True, exist_ok=True)
+            skill_md = cmd_dir / "SKILL.md"
+
+            try:
+                raw = source.read_text(encoding='utf-8')
+                resolved = self._resolve_template(raw, haikai_profiles)
+                content = (
+                    f"---\n"
+                    f"name: {cmd_name}\n"
+                    f"description: Haikai {cmd_name} command\n"
+                    f"---\n\n"
+                    f"{resolved}\n"
+                )
+                skill_md.write_text(content, encoding='utf-8')
+            except Exception as e:
+                logger.warning(f"Failed to setup skill {cmd_name}: {e}")
+
+    def _resolve_template(self, content: str, profiles_dir: Path, depth: int = 0) -> str:
+        """Delegate to the shared resolver (see `src/chat/template_resolver.py`)."""
+        from .chat.template_resolver import resolve_template  # lazy
+        return resolve_template(content, profiles_dir, depth)
+
+    def execute(
+        self,
+        command: str,
+        system_prompt: Optional[str] = None,
+        timeout: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a command via kiro-cli in non-interactive mode.
+
+        Args:
+            command: The Haikai command (e.g., "/write-spec for login-endpoint")
+            system_prompt: Optional additional context prepended to the command
+            timeout: Command timeout in seconds. None = unlimited.
+
+        Returns:
+            Dictionary with: success, return_code, stdout, stderr, execution_time, timestamp
+        """
+        start_time = datetime.now()
+
+        # Build the full prompt
+        full_prompt = f"{system_prompt}\n\n{command}" if system_prompt else command
+
+        cli_args = [
+            str(self.kiro_cli_path),
+            "chat",
+            "--no-interactive",
+            "--trust-all-tools",
+            "--wrap", "never",
+            full_prompt,
+        ]
+
+        timeout_str = f"{timeout}s" if timeout else "unlimited"
+        logger.info(f"Executing: {command} (timeout: {timeout_str})")
+
+        try:
+            actual_timeout = None if timeout == 0 else timeout
+
+            result = subprocess.run(
+                cli_args,
+                cwd=str(self.project_dir),
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=actual_timeout,
+            )
+
+            end_time = datetime.now()
+            execution_time = (end_time - start_time).total_seconds()
+
+            # Strip ANSI from output
+            stdout_clean = _strip_ansi(result.stdout)
+            stderr_clean = _strip_ansi(result.stderr) if result.stderr else ""
+
+            execution_result = {
+                "success": result.returncode == 0,
+                "return_code": result.returncode,
+                "stdout": stdout_clean,
+                "stderr": stderr_clean,
+                "execution_time": execution_time,
+                "timestamp": start_time.isoformat(),
+                "command": command,
+                "cli_args": cli_args,
+            }
+
+            if result.returncode == 0:
+                logger.info(f"Command succeeded: {command} ({execution_time:.2f}s)")
+            else:
+                logger.error(f"Command failed (code {result.returncode}): {command}")
+                if stderr_clean:
+                    logger.error(f"stderr: {stderr_clean[:500]}")
+
+            return execution_result
+
+        except subprocess.TimeoutExpired:
+            end_time = datetime.now()
+            execution_time = (end_time - start_time).total_seconds()
+            logger.error(f"Command timed out after {timeout}s: {command}")
+            return {
+                "success": False,
+                "return_code": -1,
+                "stdout": "",
+                "stderr": f"Command timed out after {timeout} seconds",
+                "execution_time": execution_time,
+                "timestamp": start_time.isoformat(),
+                "command": command,
+                "cli_args": cli_args,
+            }
+
+        except Exception as e:
+            end_time = datetime.now()
+            execution_time = (end_time - start_time).total_seconds()
+            logger.error(f"Unexpected error: {command}", exc_info=True)
+            return {
+                "success": False,
+                "return_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+                "execution_time": execution_time,
+                "timestamp": start_time.isoformat(),
+                "command": command,
+                "cli_args": cli_args,
+            }
+

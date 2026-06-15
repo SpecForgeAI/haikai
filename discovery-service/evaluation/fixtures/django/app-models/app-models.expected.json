@@ -1,0 +1,130 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "AppToken",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AppToken \u2192 App",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "name",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "auth_token",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "token_last_4",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "AppExtension",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AppExtension \u2192 App",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "label",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "url",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "mount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "target",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AppExtension \u2192 Permission",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "http_target_method",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "settings",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "AppProblem",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AppProblem \u2192 App",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "created_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "updated_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "message",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "key",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "count",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "is_critical",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "dismissed",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "dismissed_by_user_email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AppProblem \u2192 account.User",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

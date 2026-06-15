@@ -1,0 +1,327 @@
+/* AddActionModal Styles
+ * Task Group 4: Modal for adding UI screen actions
+ * Task Group 3.6: Added styles for mutations list UI
+ */
+
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 550px;
+  width: 90%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Form styles */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.required {
+  color: #c62828;
+  margin-left: 2px;
+}
+
+.labelHint {
+  font-size: 12px;
+  font-weight: 400;
+  color: #666;
+  margin-left: 4px;
+}
+
+.select {
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+  color: #333;
+  cursor: pointer;
+  outline: none;
+}
+
+.select:focus {
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.select:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+  color: #999;
+}
+
+.input {
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+  color: #333;
+  outline: none;
+}
+
+.input:focus {
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.inputError {
+  border-color: #c62828;
+}
+
+.errorMessage {
+  font-size: 12px;
+  color: #c62828;
+}
+
+.hint {
+  font-size: 12px;
+  color: #666;
+}
+
+/* Divider between sections */
+.divider {
+  height: 1px;
+  background-color: #e0e0e0;
+  margin: 8px 0;
+}
+
+/* Section title */
+.sectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* Conditional fields container */
+.conditionalFields {
+  background: #f9f9f9;
+  border-radius: 4px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+/* Two-column row */
+.twoColumnRow {
+  display: flex;
+  gap: 12px;
+}
+
+.twoColumnRow > * {
+  flex: 1;
+}
+
+/* ============================================================================
+ * Task Group 3.6: Mutations List UI Styles
+ * Styles for multiple state mutations in SET_STATE effect
+ * ============================================================================ */
+
+/* Container for all mutation rows */
+.mutationsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* Individual mutation row container */
+.mutationRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Group containing key input, value input, and remove button */
+.mutationInputGroup {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Shared styles for mutation inputs */
+.mutationInput {
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background-color: white;
+  color: #333;
+  outline: none;
+}
+
+.mutationInput:focus {
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+/* Key input - slightly wider */
+.mutationKeyInput {
+  flex: 1.2;
+  min-width: 0;
+}
+
+/* Value input - standard width */
+.mutationValueInput {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Remove mutation button */
+.removeMutationButton {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #ffcdd2;
+  border-radius: 4px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.removeMutationButton:hover:not(:disabled) {
+  background: #ffcdd2;
+  border-color: #ef9a9a;
+}
+
+.removeMutationButton:disabled {
+  background: #f5f5f5;
+  color: #bdbdbd;
+  border-color: #e0e0e0;
+  cursor: not-allowed;
+}
+
+/* Add mutation button */
+.addMutationButton {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #bbdefb;
+  border-radius: 4px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.addMutationButton:hover {
+  background: #bbdefb;
+  border-color: #90caf9;
+}
+
+/* ============================================================================ */
+
+/* Footer with action buttons */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: #e0e0e0;
+}
+
+.addButton {
+  background: #388e3c;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.addButton:hover {
+  background: #2e7d32;
+}
+
+.addButton:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}

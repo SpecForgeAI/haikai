@@ -1,0 +1,182 @@
+/**
+ * QuestionsTableRow.module.css
+ *
+ * Spec 2026-01-23: Questions System v1
+ * Task Group 4: QuestionsTableRow Component
+ *
+ * Spec 2026-01-24: Implement Screen Information Density
+ * Task Group 5: Open Questions Table Density Reduction
+ * - Row padding: 12px 0 -> 8px 0
+ * - Input padding: 8px 12px -> 6px 10px
+ * - Font sizes reduced by one step where applicable
+ * Task Group 7: Responsive Layout Density Cascade
+ * - Mobile card padding: 16px -> 12px
+ *
+ * Styling for the QuestionsTableRow component:
+ * - Row styling with grid layout
+ * - Answered row styling (opacity: 0.6)
+ * - Status badge styling (Open: orange, Answered: green)
+ * - Answer input styling
+ *
+ * Responsive behavior:
+ * - Desktop (>1024px): 4-column grid layout
+ * - Tablet (768-1024px): Question/Answer stacked
+ * - Mobile (<768px): Full vertical stack card
+ */
+
+/* Row container - desktop default - Density reduction: padding 12px 0 -> 8px 0 */
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 100px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #E0E0E0;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+/* Answered row styling */
+.answered {
+  opacity: 0.6;
+}
+
+/* Question column */
+.questionCell {
+  min-width: 0;
+}
+
+/* Question text - Density reduction: font-size 14px -> 13px */
+.questionText {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #333333;
+  word-wrap: break-word;
+}
+
+/* Answer column */
+.answerCell {
+  min-width: 0;
+}
+
+/* Answer input - Density reduction: padding 8px 12px -> 6px 10px, font-size 14px -> 13px */
+.answerInput {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid #CCC;
+  border-radius: 4px;
+  background: #FFFFFF;
+  color: #333333;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.answerInput:focus {
+  outline: none;
+  border-color: #4A90D9;
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.2);
+}
+
+.answerInput:disabled {
+  background: #F5F5F5;
+  color: #666666;
+  cursor: not-allowed;
+}
+
+.answerInput::placeholder {
+  color: #999999;
+}
+
+/* Status column */
+.statusCell {
+  min-width: 0;
+  text-align: center;
+}
+
+/* Status badge - Density reduction: padding 4px 10px -> 3px 8px, font-size 12px -> 11px */
+.statusBadge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 12px;
+  text-transform: capitalize;
+}
+
+.statusOpen {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.statusAnswered {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+/* Tablet responsive (768-1024px) */
+@media (max-width: 1024px) and (min-width: 768px) {
+  .row {
+    grid-template-columns: 1fr 100px;
+    grid-template-rows: auto auto;
+  }
+
+  .questionCell {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .answerCell {
+    grid-column: 1;
+    grid-row: 2;
+    padding-top: 6px;
+  }
+
+  .statusCell {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
+  }
+}
+
+/* Mobile responsive (<768px) - Density reduction: padding 16px -> 12px */
+@media (max-width: 767px) {
+  .row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    background: #FAFAFA;
+    border-radius: 8px;
+    border: 1px solid #E0E0E0;
+    margin-bottom: 10px;
+  }
+
+  .row:last-child {
+    border-bottom: 1px solid #E0E0E0;
+    margin-bottom: 0;
+  }
+
+  .questionCell {
+    order: 1;
+  }
+
+  .questionText {
+    font-weight: 500;
+  }
+
+  .answerCell {
+    order: 2;
+    width: 100%;
+  }
+
+  .answerInput {
+    width: 100%;
+  }
+
+  .statusCell {
+    order: 3;
+    text-align: left;
+  }
+}

@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant 18 as 18
+    participant <module> as <module>
+    participant Extensions as Extensions
+    participant BasketItem as BasketItem
+    participant BasketService as BasketService
+    participant ServerCallContextIdentityExtensions as ServerCallContextIdentityExtensions
+    participant IBasketRepository as IBasketRepository
+    participant MapToCustomerBasketResponse as MapToCustomerBasketResponse
+    participant MapToCustomerBasket as MapToCustomerBasket
+    participant OrderStartedIntegrationEventHandler as OrderStartedIntegrationEventHandler
+    participant RedisBasketRepository as RedisBasketRepository
+    <module>->>Extensions: AddApplicationServices()
+    BasketService->>ServerCallContextIdentityExtensions: GetUserIdentity()
+    BasketService->>IBasketRepository: DeleteBasketAsync()
+    BasketService->>ServerCallContextIdentityExtensions: GetUserIdentity()
+    BasketService->>IBasketRepository: GetBasketAsync()
+    BasketService->>MapToCustomerBasketResponse: MapToCustomerBasketResponse()
+    BasketService->>ServerCallContextIdentityExtensions: GetUserIdentity()
+    BasketService->>MapToCustomerBasket: MapToCustomerBasket()
+    BasketService->>IBasketRepository: UpdateBasketAsync()
+    BasketService->>MapToCustomerBasketResponse: MapToCustomerBasketResponse()
+    OrderStartedIntegrationEventHandler->>IBasketRepository: DeleteBasketAsync()
+    RedisBasketRepository->>IBasketRepository: GetBasketAsync()

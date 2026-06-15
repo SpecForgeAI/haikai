@@ -1,0 +1,18 @@
+name: django-graphql
+version: 1
+
+detection:
+  imports_match:
+    - graphene_django
+    - strawberry.django
+  manifest_contains:
+    - {file: requirements.txt, substring: graphene-django}
+    - {file: pyproject.toml, substring: graphene-django}
+
+compose:
+  - django
+  - graphql
+
+known_pitfalls:
+  - "Used for repos that expose REST + GraphQL side-by-side (saleor, etc.)"
+  - "Each GraphQL operation becomes one logical endpoint under type=GraphQL"

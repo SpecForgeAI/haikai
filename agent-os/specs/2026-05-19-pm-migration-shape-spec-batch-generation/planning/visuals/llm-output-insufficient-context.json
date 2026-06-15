@@ -1,0 +1,30 @@
+{
+  "_provenance": "LLM-output fixture for Spec 2 PM migration shape-spec batch generation; consumed by gateway response-validator tests + batch-handler tests; implementer artefact per R-13 / A-7, not a user-supplied design asset.",
+  "_scenarioSummary": "Insufficient-context result for the 'Cut PricingService SOAP namespace over to v2' story derived from Spec 1 fixture-migration-delivery-plan-scenario.json. Story migrates the SOAP computePrice operation from legacy interface 55555555-...-aaaa1003 (namespace http://legacy.example.com/pricing/v1) to target interface 55555555-...-bbbb1003 (namespace http://services.example.com/pricing/v2). The fixture's high-severity unresolved decision task 77777777-...-7701 ('SOAP namespace cutover strategy is undecided') blocks generation, AND the target WSDL operation signature for the v2 namespace is not in the focused-context payload, so the LLM cannot honestly produce an implementation spec without inventing the operation shape.",
+  "status": "insufficient_context",
+  "missingInputs": [
+    {
+      "kind": "decision_task",
+      "id": "99999999-9999-9999-9999-999999999901",
+      "reason": "SOAP namespace cutover strategy is undecided (decision task open since 2026-05-15). The spec cannot describe whether the target service publishes both namespaces during cutover or whether an edge adapter rewrites the namespace on the boundary; the implementation differs substantially between those two strategies."
+    },
+    {
+      "kind": "contract",
+      "id": "66666666-6666-6666-6666-6666bbbb0001",
+      "reason": "Target WSDL (PricingService-v2.wsdl, namespace http://services.example.com/pricing/v2) is referenced in the target architecture but its operation signature for computePrice (request/response message shapes, fault definitions) is not present in the focused-context payload. Without the target operation contract the spec cannot describe the request/response transformation faithfully."
+    },
+    {
+      "kind": "finding",
+      "id": "77777777-7777-7777-7777-777777777701",
+      "reason": "High-severity unresolved decision-task finding for the same namespace cutover strategy is still in 'unresolved' status. This is the discovery surface of the same decision blocker; resolving the decision task is expected to also close this finding."
+    }
+  ],
+  "reason": "The story cannot be turned into an implementation spec while the SOAP namespace cutover strategy decision is unresolved AND the target WSDL operation signature for computePrice is absent from the focused-context payload. Producing a spec here would require fabricating either the cutover approach (dual-namespace publish vs edge-adapter rewrite) or the target operation shape, both of which are explicitly forbidden by prompt rule 2 (do not invent missing contracts).",
+  "recommendedNextAction": "Either (a) resolve decision task 99999999-...-9901 with an explicit cutover strategy AND upload the target PricingService-v2.wsdl operation signature for computePrice into the architecture model so it can be included in the focused-context payload, OR (b) mark this story 'needs_user_decision' in the book of work and re-attempt spec generation after the decision is recorded and the contract is uploaded.",
+  "evidenceRefs": [
+    { "type": "discovery_finding", "id": "77777777-7777-7777-7777-777777777701" },
+    { "type": "decision_task", "id": "99999999-9999-9999-9999-999999999901" },
+    { "type": "wsdl_evidence", "id": "88888888-8888-8888-8888-888888888801" },
+    { "type": "architecture_element_mapping", "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0004" }
+  ]
+}

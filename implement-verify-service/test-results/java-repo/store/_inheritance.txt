@@ -1,0 +1,15 @@
+# child	rel	parent	file
+AbstractDocument	extends	Document	src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java
+Car	extends	AbstractDocument	src/main/java/com/iluwatar/abstractdocument/domain/Car.java
+Car	extends	HasModel	src/main/java/com/iluwatar/abstractdocument/domain/Car.java
+Car	extends	HasPrice	src/main/java/com/iluwatar/abstractdocument/domain/Car.java
+Car	extends	HasParts	src/main/java/com/iluwatar/abstractdocument/domain/Car.java
+HasModel	extends	Document	src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java
+HasParts	extends	Document	src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java
+HasPrice	extends	Document	src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java
+HasType	extends	Document	src/main/java/com/iluwatar/abstractdocument/domain/HasType.java
+Part	extends	AbstractDocument	src/main/java/com/iluwatar/abstractdocument/domain/Part.java
+Part	extends	HasType	src/main/java/com/iluwatar/abstractdocument/domain/Part.java
+Part	extends	HasModel	src/main/java/com/iluwatar/abstractdocument/domain/Part.java
+Part	extends	HasPrice	src/main/java/com/iluwatar/abstractdocument/domain/Part.java
+DocumentImplementation	extends	AbstractDocument	src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java

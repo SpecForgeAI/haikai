@@ -1,0 +1,8 @@
+      {/* Task Group 4: Render fragment frames FIRST (behind messages) */}
+      {layout.fragmentLayouts.map((fragmentLayout) => (
+        <FragmentFrame
+          key={fragmentLayout.fragmentId}
+          layout={fragmentLayout}
+        />
+      ))}
+

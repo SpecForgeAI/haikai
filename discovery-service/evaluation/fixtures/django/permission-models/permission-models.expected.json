@@ -1,0 +1,45 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Permission",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "name",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Permission \u2192 ContentType",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "codename",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PermissionsMixin",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "is_superuser",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "PermissionsMixin \u2192 account.Group",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "PermissionsMixin \u2192 Permission",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

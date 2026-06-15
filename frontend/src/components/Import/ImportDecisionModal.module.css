@@ -1,0 +1,179 @@
+/**
+ * ImportDecisionModal Styles
+ *
+ * Spec 2026-03-05: Import Product Snapshot Redesign
+ * Task Group 4: Import Decision Modal (Save-and-Replace vs. Merge)
+ *
+ * Styling for the Import Decision Modal component.
+ * Follows the visual style of ImportProjectSnapshotModal.module.css for consistency.
+ */
+
+/* Overlay - same as ImportProjectSnapshotModal */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - same as ImportProjectSnapshotModal */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 500px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header - same as ImportProjectSnapshotModal */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+/* Content area */
+.content {
+  padding: 20px;
+}
+
+/* Read-only display field for imported project name */
+.projectNameGroup {
+  margin-bottom: 20px;
+}
+
+.projectNameLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+.projectNameDisplay {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background-color: #f5f5f5;
+  color: #555;
+}
+
+/* Radio button group */
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.radioOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.radioOption:hover {
+  border-color: #1976D2;
+  background-color: #f8f9ff;
+}
+
+.radioOptionSelected {
+  border-color: #1976D2;
+  background-color: #e3f2fd;
+}
+
+.radioInput {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.radioLabel {
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.4;
+}
+
+/* Footer - same as ImportProjectSnapshotModal */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: #e8e8e8;
+}
+
+.continueButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.continueButton:hover {
+  background: #1565C0;
+}
+
+.continueButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}

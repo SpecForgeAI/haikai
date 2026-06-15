@@ -1,0 +1,78 @@
+@startuml
+title Inheritance Tree
+
+class AbstractDocument
+class Document
+class Car
+class HasModel
+class HasPrice
+class HasParts
+class HasType
+class Part
+class DocumentImplementation
+class App
+class Runnable
+class ElfArmy
+class Army
+class ElfCastle
+class Castle
+class ElfKing
+class King
+class ElfKingdomFactory
+class KingdomFactory
+class OrcArmy
+class OrcCastle
+class OrcKing
+class OrcKingdomFactory
+class Orc
+class ActiveCreature
+class Actor
+class ExampleActor
+class ExampleActor2
+class AllModemVisitor
+class ZoomVisitor
+class HayesVisitor
+class ConfigureForDosVisitor
+class ConfigureForUnixVisitor
+class Hayes
+class Modem
+class ModemVisitor
+class Zoom
+
+Document <|-- AbstractDocument
+AbstractDocument <|-- Car
+HasModel <|-- Car
+HasPrice <|-- Car
+HasParts <|-- Car
+Document <|-- HasModel
+Document <|-- HasParts
+Document <|-- HasPrice
+Document <|-- HasType
+AbstractDocument <|-- Part
+HasType <|-- Part
+HasModel <|-- Part
+HasPrice <|-- Part
+AbstractDocument <|-- DocumentImplementation
+Runnable <|-- App
+Army <|-- ElfArmy
+Castle <|-- ElfCastle
+King <|-- ElfKing
+KingdomFactory <|-- ElfKingdomFactory
+Army <|-- OrcArmy
+Castle <|-- OrcCastle
+King <|-- OrcKing
+KingdomFactory <|-- OrcKingdomFactory
+Runnable <|-- App
+ActiveCreature <|-- Orc
+Runnable <|-- Actor
+Actor <|-- ExampleActor
+Actor <|-- ExampleActor2
+ZoomVisitor <|-- AllModemVisitor
+HayesVisitor <|-- AllModemVisitor
+AllModemVisitor <|-- ConfigureForDosVisitor
+ZoomVisitor <|-- ConfigureForUnixVisitor
+Modem <|-- Hayes
+ModemVisitor <|-- HayesVisitor
+Modem <|-- Zoom
+
+@enduml

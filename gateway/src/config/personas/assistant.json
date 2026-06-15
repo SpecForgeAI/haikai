@@ -1,0 +1,11 @@
+{
+  "id": "assistant",
+  "displayName": "Assistant",
+  "color": "#5C6BC0",
+  "identityPromptRef": "prompts/assistant.identity.md",
+  "tasks": [
+    "assistant--whats-next",
+    "assistant--freeform"
+  ],
+  "menuLabel": "Hi, what can I help you with?"
+}

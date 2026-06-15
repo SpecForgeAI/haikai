@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>lib-5</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <!-- This dep will hit the depth cap (depth+1 = 6 > 5). -->
+    <dependency>
+      <groupId>com.example</groupId>
+      <artifactId>lib-6</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+  </dependencies>
+</project>

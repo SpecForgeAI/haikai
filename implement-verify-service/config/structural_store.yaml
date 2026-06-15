@@ -1,0 +1,9 @@
+store:
+  enabled: true                          # AST_STORE_ENABLED env var
+  path: ".specforge/structural"          # AST_STORE_PATH env var
+  auto_snapshot: true                    # persist after every analysis run
+  max_snapshots: 20                      # per repo, oldest pruned
+
+  diagrams:
+    auto_generate: true                  # generate diagrams on snapshot
+    format: "mermaid"                    # mermaid, plantuml, dot

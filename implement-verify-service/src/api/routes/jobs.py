@@ -1,0 +1,323 @@
+"""Async-job routes (V1 + V2).
+
+Six endpoints lifted from `src/api/__init__.py` during Phase A.6c:
+
+  V1 (no git integration):
+    * POST   /api/v1/jobs/orchestrations  create_orchestration_job
+    * GET    /api/v1/jobs/{job_id}        get_job_status
+    * GET    /api/v1/jobs                 list_jobs
+    * DELETE /api/v1/jobs/{job_id}        cancel_job
+
+  V2 (git-integrated):
+    * POST   /api/v2/jobs/orchestrations  create_orchestration_job_v2
+    * GET    /api/v2/jobs/{job_id}        get_job_status_v2
+
+The `job_queue` singleton, `_require_git_manager`, and
+`_run_job_in_background` are all module-level state in
+`src/api/__init__.py`; they're imported lazily inside each endpoint
+body to avoid a load cycle.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    status,
+)
+
+from ...haikai_models import OrchestrationRequest
+from ...api_auth import verify_api_key
+from ...job_queue.job_models import (
+    Job,
+    JobDetailResponse,
+    JobResponse,
+    JobStatus,
+    JobType,
+)
+
+logger = logging.getLogger("src.api")
+
+router = APIRouter()
+
+
+@router.post(
+    "/api/v1/jobs/orchestrations",
+    tags=["Jobs"],
+    summary="Create async orchestration job",
+    response_model=JobResponse,
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        500: {"description": "Server error"},
+    },
+)
+async def create_orchestration_job(
+    request: OrchestrationRequest,
+    authenticated: bool = Depends(verify_api_key),
+) -> JobResponse:
+    """
+    Create an async orchestration job (**returns immediately** with a `job_id`).
+
+    Preferred over the synchronous `POST /api/v1/orchestrations` for long-running
+    workflows to avoid HTTP timeouts.
+
+    Poll `GET /api/v1/jobs/{job_id}` to check status and retrieve results.
+
+    **Prerequisites:** Run shape-spec first.
+    """
+    from .. import job_queue
+    try:
+        job = Job(
+            type=JobType.ORCHESTRATION,
+            company=request.company,
+            project=request.project,
+            request_payload=request.dict(),
+        )
+        job_id = job_queue.enqueue_job(job)
+        logger.info(
+            f"Created orchestration job {job_id} for {request.company}/{request.project}"
+        )
+        return JobResponse(
+            job_id=job_id,
+            status=JobStatus.QUEUED,
+            created_at=job.created_at,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create orchestration job: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create orchestration job: {str(e)}",
+        )
+
+
+@router.get(
+    "/api/v1/jobs/{job_id}",
+    tags=["Jobs"],
+    summary="Get job status and result",
+    response_model=JobDetailResponse,
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        404: {"description": "Job not found"},
+        500: {"description": "Server error"},
+    },
+)
+async def get_job_status(
+    job_id: str,
+    authenticated: bool = Depends(verify_api_key),
+) -> JobDetailResponse:
+    """
+    Poll this endpoint to check the status of an async job.
+
+    **Possible statuses:** `queued`, `running`, `completed`, `failed`, `cancelled`.
+
+    - When `status` is `completed`, the `result` field contains the full response.
+    - When `status` is `failed`, the `error` field contains the error message.
+    """
+    from .. import job_queue
+    job = job_queue.get_job_status(job_id)
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found",
+        )
+
+    return JobDetailResponse(
+        job_id=job.job_id,
+        type=job.type,
+        status=job.status,
+        company=job.company,
+        project=job.project,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        progress=job.progress,
+        result=job.result,
+        error=job.error,
+        logs_url=f"/api/v1/jobs/{job_id}/logs" if job.logs_path else None,
+    )
+
+
+@router.get(
+    "/api/v1/jobs",
+    tags=["Jobs"],
+    summary="List jobs with optional filters",
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        500: {"description": "Server error"},
+    },
+)
+async def list_jobs(
+    # `status_filter` (alias `status` for the URL) — the parameter name
+    # MUST NOT shadow `fastapi.status` (imported at module top), or the
+    # `status.HTTP_500_INTERNAL_SERVER_ERROR` reference in the except
+    # block below crashes with AttributeError. autoresearch:debug
+    # 260504-1635 finding B6.
+    status_filter: Optional[JobStatus] = Query(default=None, alias="status"),
+    company: Optional[str] = None,
+    project: Optional[str] = None,
+    limit: int = 100,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    List jobs with optional filters.
+
+    All query parameters are optional. Returns jobs sorted by creation time.
+    """
+    from .. import job_queue
+    try:
+        jobs = job_queue.storage.list_jobs(
+            status=status_filter,
+            company=company,
+            project=project,
+            limit=limit,
+        )
+        return {"jobs": [job.dict() for job in jobs], "count": len(jobs)}
+    except Exception as e:
+        logger.error(f"Failed to list jobs: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list jobs: {str(e)}",
+        )
+
+
+@router.delete(
+    "/api/v1/jobs/{job_id}",
+    tags=["Jobs"],
+    summary="Cancel a job",
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        404: {"description": "Job not found or cannot be cancelled"},
+    },
+)
+async def cancel_job(
+    job_id: str,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    Cancel a queued or running job.
+
+    Only jobs with status `queued` or `running` can be cancelled.
+    """
+    from .. import job_queue
+    success = job_queue.cancel_job(job_id)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found or cannot be cancelled",
+        )
+
+    logger.info(f"Cancelled job {job_id}")
+
+    return {"message": "Job cancelled", "job_id": job_id}
+
+
+@router.post(
+    "/api/v2/jobs/orchestrations",
+    tags=["Git Integration"],
+    summary="Create async orchestration job with git integration (V2)",
+    response_model=JobResponse,
+    responses={
+        400: {"description": "Missing prerequisites or git config"},
+        401: {"description": "Invalid or missing API key"},
+        500: {"description": "Server error"},
+    },
+)
+async def create_orchestration_job_v2(
+    request: OrchestrationRequest,
+    background_tasks: BackgroundTasks,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """
+    Git-integrated async orchestration. Creates a background job that runs
+    the full orchestration workflow with git commit/push/PR after completion.
+
+    Returns immediately with a `job_id`. Poll `GET /api/v2/jobs/{job_id}` for status.
+
+    Requires: `POST /projects/init` must have been called first.
+
+    **Multi-spec supported.** Each spec is committed to its OWN
+    `feature/<spec>` branch interleaved with generation (B2 fixed: the commit
+    happens before the next spec's files exist, so `git add -A` no longer aliases
+    them into the first spec's commit). Specs are treated as INDEPENDENT migration
+    units — each branches off default; `deploy_on_complete` consolidates the
+    per-spec branches into one served target.
+    """
+    from .. import _require_git_manager, _run_job_in_background, job_queue
+
+    _require_git_manager(request.company, request.project)
+
+    try:
+        job = Job(
+            type=JobType.ORCHESTRATION,
+            company=request.company,
+            project=request.project,
+            request_payload=request.model_dump(),
+        )
+        job_id = job_queue.enqueue_job(job)
+        background_tasks.add_task(_run_job_in_background, job_id)
+
+        logger.info(f"V2 orchestration job created and dispatched: {job_id}")
+
+        return JobResponse(
+            job_id=job_id,
+            status=JobStatus.QUEUED,
+            created_at=job.created_at,
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to create V2 orchestration job: {str(e)}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create orchestration job: {str(e)}",
+        )
+
+
+@router.get(
+    "/api/v2/jobs/{job_id}",
+    tags=["Git Integration"],
+    summary="Get V2 job status and result",
+    response_model=JobDetailResponse,
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        404: {"description": "Job not found"},
+    },
+)
+async def get_job_status_v2(
+    job_id: str,
+    authenticated: bool = Depends(verify_api_key),
+) -> JobDetailResponse:
+    """
+    Get the current status and result of an async V2 job.
+
+    Poll this endpoint after creating a job via `POST /api/v2/jobs/orchestrations`.
+    """
+    from .. import job_queue
+    job = job_queue.get_job_status(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found",
+        )
+
+    return JobDetailResponse(
+        job_id=job.job_id,
+        type=job.type,
+        status=job.status,
+        company=job.company,
+        project=job.project,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        progress=job.progress,
+        result=job.result,
+        error=job.error,
+        logs_url=job.logs_path,
+    )

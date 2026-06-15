@@ -1,0 +1,57 @@
+/**
+ * TaskMenu.module.css
+ *
+ * Spec 2026-02-28: Unified Chat Panel v1 (Frontend)
+ * Task Group 6, Task 6.3: TaskMenu styles
+ *
+ * Styled as outlined cards with hover state (background highlight),
+ * stacked vertically within the message bubble area.
+ */
+
+/* Container: vertical stack of task cards */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Task card: outlined clickable card */
+.taskCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  width: 100%;
+}
+
+.taskCard:hover {
+  background: #f5f5f5;
+  border-color: #bdbdbd;
+}
+
+.taskCard:active {
+  background: #eeeeee;
+}
+
+/* Primary text: task menu label */
+.menuLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333333;
+  line-height: 1.4;
+}
+
+/* Secondary text: task description */
+.description {
+  font-size: 12px;
+  font-weight: 400;
+  color: #666666;
+  line-height: 1.4;
+}

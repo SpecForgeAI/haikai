@@ -1,0 +1,1 @@
+Analyze the current project state and suggest the most logical next steps for the user. Consider what artifacts exist (mission statement, architecture baseline, roadmap, backlog items), what is missing, and what the natural progression would be. Provide actionable, prioritized recommendations.

@@ -1,0 +1,858 @@
+/**
+ * DB Schema + Data Migration Pack routes.
+ *
+ * Spec: 2026-06-11 Source-Grade DB Schema + Data Migration Pack —
+ * Task Group 4 (4.4 route surface, 4.5 zip download, 4.6 staleness) +
+ * Task Group 5 (verify -> diff -> persisted drift history).
+ *
+ * Mounted at `/api/v1` (see `server.ts`). Conventions follow
+ * `migrationBookOfWork.ts`: AMS errors round-trip status + body
+ * byte-for-byte, `[diag-gw]` route logs + `[diag-gateway]` stage markers,
+ * 503 on unreachable upstreams.
+ *
+ * Routes (all under `/projects/:projectId/db-migration-packs`):
+ *
+ *   POST  /generate                      — run the deterministic generation
+ *                                          pipeline (explicit user action).
+ *   POST  /regenerate                    — alias of generate; regeneration is
+ *                                          ALWAYS an explicit route call —
+ *                                          staleness NEVER auto-triggers it.
+ *   GET   /?architecture_id=             — list packs (AMS proxy).
+ *   GET   /:packId                       — pack + computed `is_stale` /
+ *                                          `staleness_reason` (Task 4.6).
+ *   GET   /:packId/files                 — file rows (AMS proxy).
+ *   GET   /:packId/manifest              — manifest_json only.
+ *   GET   /:packId/decisions             — decision queue (AMS proxy).
+ *   POST  /:packId/decisions/:decisionId/resolve      — AMS proxy (AMS marks
+ *                                          the pack stale on resolve).
+ *   POST  /:packId/decisions/resolve-bulk             — AMS proxy.
+ *   GET   /:packId/drift-reports         — verification history (AMS proxy).
+ *   PATCH /:packId                       — attach work item (work_item_id).
+ *   GET   /:packId/download              — on-demand zip from AMS file rows
+ *                                          (no filesystem artifacts).
+ *   POST  /:packId/refresh-seeds         — credentialed seed re-scan; updates
+ *                                          ONLY the sequences-seed changeset.
+ *   GET   /:packId/translations          — translation rows + coverage summary.
+ *   POST  /:packId/translations/translate-all          — translate pending+failed.
+ *   POST  /:packId/translations/:translationId/translate — translate ONE object.
+ *   POST  /:packId/translations/:translationId/retry     — retry failed/stale.
+ *   POST  /:packId/translations/:translationId/disposition — set disposition.
+ *   POST  /:packId/translations/:translationId/review    — approve/reject/needs-rework
+ *                                          (to/from approved re-runs emission).
+ *   POST  /:packId/verify                — credentialed verification scan ->
+ *                                          deterministic diff -> drift report
+ *                                          row APPENDED to history.
+ *
+ * Credentials (refresh-seeds / verify) live ONLY in the request body and the
+ * downstream discovery-service in-process secrets bundle — never persisted,
+ * never logged.
+ */
+
+import { Router, Request, Response } from 'express';
+import { getConfig } from '../config';
+import { logger } from '../services/logger';
+import {
+  AmsRoundTripError,
+  CoverageAssertionError,
+  generateDbMigrationPack,
+  refreshDbMigrationPackSeeds,
+  SeedScanSequence,
+  UnsupportedEnginePairError,
+} from '../services/dbMigrationPackHandler';
+import {
+  DriftAmsRoundTripError,
+  runDbMigrationPackVerification,
+} from '../services/dbMigrationPackDrift';
+import { evaluatePackStaleness } from '../services/dbMigrationPack/staleness';
+import { buildZipArchive } from '../services/dbMigrationPack/zip';
+import {
+  computeCoverageSummary,
+  defaultFetchTranslations,
+  defaultPatchTranslation,
+  runTranslationPipeline,
+  TranslationActionError,
+  TranslationCoverageError,
+  TranslationDisposition,
+  TranslationPatch,
+  TranslationReviewStatus,
+  TranslationsAmsError,
+} from '../services/dbMigrationPack/translations';
+import { runTranslationEmission } from '../services/dbMigrationPack/translationEmission';
+
+export const dbMigrationPackRouter = Router();
+
+const BASE = '/projects/:projectId/db-migration-packs';
+
+function amsBase(): string {
+  return getConfig().architectureModelServiceBaseUrl;
+}
+
+function discoveryBase(): string {
+  return getConfig().discoveryServiceBaseUrl;
+}
+
+// ---------------------------------------------------------------------------
+// Shared error mapping (migrationBookOfWork conventions)
+// ---------------------------------------------------------------------------
+
+function mapError(
+  error: unknown,
+  res: Response,
+  routeName: string,
+  context: Record<string, unknown>
+): void {
+  if (error instanceof AmsRoundTripError || error instanceof DriftAmsRoundTripError) {
+    logger.warn(`db-migration-pack ${routeName}: AMS error round-trip`, {
+      ...context,
+      status: error.status,
+    });
+    res.status(error.status);
+    res.setHeader('content-type', 'application/json');
+    res.send(
+      error.body ||
+        JSON.stringify({ error: { code: error.status, message: error.message } })
+    );
+    return;
+  }
+  if (error instanceof TranslationsAmsError) {
+    logger.warn(`db-migration-pack ${routeName}: AMS translations error round-trip`, {
+      ...context,
+      status: error.status,
+    });
+    res.status(error.status);
+    res.setHeader('content-type', 'application/json');
+    res.send(
+      error.body ||
+        JSON.stringify({ error: { code: error.status, message: error.message } })
+    );
+    return;
+  }
+  if (error instanceof TranslationActionError) {
+    res.status(error.status).json({ error: { code: error.status, message: error.message } });
+    return;
+  }
+  if (error instanceof TranslationCoverageError) {
+    res.status(500).json({
+      error: {
+        code: 500,
+        message: error.message,
+        unaccounted: error.unaccounted,
+        invalid: error.invalid,
+        unknown: error.unknown,
+      },
+    });
+    return;
+  }
+  if (error instanceof UnsupportedEnginePairError) {
+    res.status(422).json({ error: { code: 422, message: error.message } });
+    return;
+  }
+  if (error instanceof CoverageAssertionError) {
+    res.status(500).json({
+      error: {
+        code: 500,
+        message: error.message,
+        unaccounted: error.unaccounted,
+        duplicated: error.duplicated,
+        unknown: error.unknown,
+      },
+    });
+    return;
+  }
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  logger.error(`db-migration-pack ${routeName}: unexpected error`, {
+    ...context,
+    error: message,
+  });
+  res.status(500).json({
+    error: { code: 500, message: `db-migration-pack ${routeName} failed`, details: message },
+  });
+}
+
+/** Thin AMS pass-through proxy (status + body byte-for-byte). */
+async function proxyToAms(
+  res: Response,
+  routeName: string,
+  url: string,
+  init?: RequestInit
+): Promise<void> {
+  const start = Date.now();
+  try {
+    const upstream = await fetch(url, init);
+    const text = await upstream.text();
+    console.log(
+      `[diag-gw] route=db-migration-pack-${routeName} status=${upstream.status} ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    res.status(upstream.status);
+    const contentType = upstream.headers.get('content-type');
+    if (contentType) res.setHeader('content-type', contentType);
+    res.send(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`db-migration-pack ${routeName} proxy: upstream fetch failed`, {
+      url,
+      error: message,
+    });
+    console.warn(
+      `[diag-gw] route=db-migration-pack-${routeName} status=503 elapsed_ms=${Date.now() - start}`
+    );
+    res.status(503).json({
+      error: { code: 503, message: 'Architecture model service unavailable', details: message },
+    });
+  }
+}
+
+async function amsJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const text = await response.text().catch(() => '');
+  if (!response.ok) throw new AmsRoundTripError(response.status, text);
+  return JSON.parse(text) as T;
+}
+
+// ---------------------------------------------------------------------------
+// POST /generate + POST /regenerate — the ONLY paths that (re)generate.
+// Staleness never auto-triggers either (hard spec constraint).
+// ---------------------------------------------------------------------------
+
+async function handleGenerate(
+  req: Request,
+  res: Response,
+  routeName: 'generate' | 'regenerate'
+): Promise<void> {
+  const { projectId } = req.params;
+  const body = (req.body ?? {}) as { architecture_id?: string; seed_margin?: number };
+  if (!body.architecture_id || typeof body.architecture_id !== 'string') {
+    res.status(400).json({
+      error: { code: 400, message: 'architecture_id is required.' },
+    });
+    return;
+  }
+  const start = Date.now();
+  try {
+    const result = await generateDbMigrationPack({
+      projectId,
+      architectureId: body.architecture_id,
+      seedMargin: typeof body.seed_margin === 'number' ? body.seed_margin : undefined,
+    });
+    console.log(
+      `[diag-gw] route=db-migration-pack-${routeName} status=200 ` +
+        `files=${result.fileCount} decisions=${result.decisionCount} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({
+      pack: result.pack,
+      input_snapshot_hash: result.inputSnapshotHash,
+      counts: result.counts,
+      file_count: result.fileCount,
+      decision_count: result.decisionCount,
+    });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-${routeName} status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, routeName, { projectId });
+  }
+}
+
+dbMigrationPackRouter.post(`${BASE}/generate`, (req, res) =>
+  handleGenerate(req, res, 'generate')
+);
+
+// Regenerate is intentionally the same pipeline — a distinct route purely so
+// the EXPLICIT user action is visible at the HTTP surface (never automatic).
+dbMigrationPackRouter.post(`${BASE}/regenerate`, (req, res) =>
+  handleGenerate(req, res, 'regenerate')
+);
+
+// ---------------------------------------------------------------------------
+// GET / — list packs (AMS proxy)
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.get(BASE, async (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  const architectureId = typeof req.query.architecture_id === 'string'
+    ? req.query.architecture_id
+    : null;
+  const url =
+    `${amsBase()}/api/projects/${encodeURIComponent(projectId)}/db-migration-packs` +
+    (architectureId ? `?architecture_id=${encodeURIComponent(architectureId)}` : '');
+  await proxyToAms(res, 'list', url, { headers: { Accept: 'application/json' } });
+});
+
+// ---------------------------------------------------------------------------
+// GET /:packId — pack + staleness (Task 4.6). NEVER regenerates.
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.get(`${BASE}/:packId`, async (req: Request, res: Response) => {
+  const { projectId, packId } = req.params;
+  const start = Date.now();
+  try {
+    const pack = await amsJson<Record<string, unknown>>(
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    const staleness = await evaluatePackStaleness({
+      projectId,
+      architectureId: String(pack.architecture_id ?? ''),
+      storedHash: (pack.input_snapshot_hash as string | null) ?? null,
+      storedStatus: (pack.status as string | null) ?? null,
+      storedStaleReason: (pack.stale_reason as string | null) ?? null,
+    });
+    console.log(
+      `[diag-gw] route=db-migration-pack-get status=200 is_stale=${staleness.is_stale} ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({
+      ...pack,
+      is_stale: staleness.is_stale,
+      staleness_reason: staleness.staleness_reason,
+      current_input_snapshot_hash: staleness.current_input_snapshot_hash,
+      staleness_check_error: staleness.staleness_check_error,
+    });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-get status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'get', { projectId, packId });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /:packId/files, /:packId/manifest, /:packId/decisions,
+// /:packId/drift-reports — read proxies
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.get(`${BASE}/:packId/files`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  await proxyToAms(
+    res,
+    'files',
+    `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+      `/db-migration-packs/${encodeURIComponent(packId)}/files`,
+    { headers: { Accept: 'application/json' } }
+  );
+});
+
+dbMigrationPackRouter.get(`${BASE}/:packId/manifest`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  try {
+    const pack = await amsJson<{ manifest_json?: Record<string, unknown> | null }>(
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    res.status(200).json(pack.manifest_json ?? null);
+  } catch (error) {
+    mapError(error, res, 'manifest', { projectId, packId });
+  }
+});
+
+dbMigrationPackRouter.get(`${BASE}/:packId/decisions`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const params = new URLSearchParams();
+  if (typeof req.query.status === 'string') params.set('status', req.query.status);
+  if (typeof req.query.category === 'string') params.set('category', req.query.category);
+  const qs = params.toString();
+  await proxyToAms(
+    res,
+    'decisions-list',
+    `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+      `/db-migration-packs/${encodeURIComponent(packId)}/decisions${qs ? `?${qs}` : ''}`,
+    { headers: { Accept: 'application/json' } }
+  );
+});
+
+dbMigrationPackRouter.get(`${BASE}/:packId/drift-reports`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  await proxyToAms(
+    res,
+    'drift-reports-list',
+    `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+      `/db-migration-packs/${encodeURIComponent(packId)}/drift-reports`,
+    { headers: { Accept: 'application/json' } }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Decision resolve (single + bulk) — AMS proxies. Resolving marks the pack
+// stale AMS-side; the next pack GET exposes is_stale accordingly.
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/decisions/resolve-bulk`,
+  async (req, res) => {
+    const { projectId, packId } = req.params;
+    await proxyToAms(
+      res,
+      'decisions-resolve-bulk',
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}/decisions/resolve-bulk`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(req.body ?? {}),
+      }
+    );
+  }
+);
+
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/decisions/:decisionId/resolve`,
+  async (req, res) => {
+    const { projectId, packId, decisionId } = req.params;
+    await proxyToAms(
+      res,
+      'decision-resolve',
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}` +
+        `/decisions/${encodeURIComponent(decisionId)}/resolve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(req.body ?? {}),
+      }
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// PATCH /:packId — attach work item (DB-epic, `work_item_id`) — AMS proxy
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.patch(`${BASE}/:packId`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  await proxyToAms(
+    res,
+    'patch',
+    `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+      `/db-migration-packs/${encodeURIComponent(packId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(req.body ?? {}),
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// GET /:packId/download — on-demand zip (Task 4.5). Assembled in memory from
+// the AMS file rows; NO filesystem artifacts at any point.
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.get(`${BASE}/:packId/download`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const start = Date.now();
+  try {
+    const files = await amsJson<
+      Array<{ file_path: string; content: string; sort_order: number }>
+    >(
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}/files`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (!Array.isArray(files) || files.length === 0) {
+      res.status(404).json({
+        error: { code: 404, message: `Pack ${packId} has no files to download.` },
+      });
+      return;
+    }
+    const ordered = [...files].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    const archive = buildZipArchive(
+      ordered.map((f) => ({ path: f.file_path, content: f.content ?? '' }))
+    );
+    console.log(
+      `[diag-gw] route=db-migration-pack-download status=200 entries=${ordered.length} ` +
+        `bytes=${archive.length} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200);
+    res.setHeader('content-type', 'application/zip');
+    res.setHeader(
+      'content-disposition',
+      `attachment; filename="db-migration-pack-${packId}.zip"`
+    );
+    res.send(archive);
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-download status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'download', { projectId, packId });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /:packId/refresh-seeds — credentialed seed re-scan (discovery-service)
+// -> regenerate ONLY the sequences-seed changeset. Credentials pass through
+// per invocation; never persisted, never logged.
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.post(`${BASE}/:packId/refresh-seeds`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const body = (req.body ?? {}) as {
+    db?: Record<string, unknown>;
+    username?: string;
+    password?: string;
+  };
+  if (!body.db || typeof body.db !== 'object') {
+    res.status(400).json({
+      error: { code: 400, message: 'db connection details are required.' },
+    });
+    return;
+  }
+  if (!body.username || !body.password) {
+    res.status(400).json({
+      error: {
+        code: 400,
+        message: 'username and password are required (per-invocation; never persisted).',
+      },
+    });
+    return;
+  }
+  const start = Date.now();
+  try {
+    logger.info(
+      `[diag-gateway] db_migration_pack_refresh_seeds stage=scan projectId=${projectId} packId=${packId}`
+    );
+    const scanResponse = await fetch(`${discoveryBase()}/discovery/db/refresh-seeds-scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        ...body.db,
+        username: body.username,
+        password: body.password,
+      }),
+    });
+    const scanText = await scanResponse.text().catch(() => '');
+    if (!scanResponse.ok) {
+      console.warn(
+        `[diag-gw] route=db-migration-pack-refresh-seeds status=${scanResponse.status} ` +
+          `elapsed_ms=${Date.now() - start}`
+      );
+      res.status(scanResponse.status);
+      const contentType = scanResponse.headers.get('content-type');
+      if (contentType) res.setHeader('content-type', contentType);
+      res.send(scanText);
+      return;
+    }
+    const scan = JSON.parse(scanText) as { sequences?: SeedScanSequence[] };
+
+    const result = await refreshDbMigrationPackSeeds({
+      projectId,
+      packId,
+      scanSequences: scan.sequences ?? [],
+    });
+    console.log(
+      `[diag-gw] route=db-migration-pack-refresh-seeds status=200 ` +
+        `changed=${result.seedChangesetChanged} sequences=${result.scanSequenceCount} ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({
+      pack: result.pack,
+      updated_file_path: result.updatedFilePath,
+      seed_changeset_changed: result.seedChangesetChanged,
+      scan_sequence_count: result.scanSequenceCount,
+    });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-refresh-seeds status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'refresh-seeds', { projectId, packId });
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Translations (Spec 2026-06-11 LLM-Assisted DB Object Translation Drafts —
+// Task Group 3.7 + 4.3). Persistence proxies to the Group-2 AMS endpoints;
+// LLM appears ONLY inside the translate/judge pipeline calls. Review-status
+// changes to/from 'approved' (and disposition changes on an approved row)
+// re-run the approved-only emission so the executable path NEVER carries an
+// unapproved draft.
+// ---------------------------------------------------------------------------
+
+const REVIEW_STATUS_BY_ACTION: Record<string, TranslationReviewStatus> = {
+  approve: 'approved',
+  reject: 'rejected',
+  needs_rework: 'needs_rework',
+};
+
+const TRANSLATION_DISPOSITIONS: TranslationDisposition[] = [
+  'translate',
+  'rewrite_in_app',
+  'drop',
+];
+
+/** GET — list translation rows + the deterministic coverage summary. */
+dbMigrationPackRouter.get(`${BASE}/:packId/translations`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const start = Date.now();
+  try {
+    const rows = await defaultFetchTranslations(projectId, packId);
+    console.log(
+      `[diag-gw] route=db-migration-pack-translations-list status=200 ` +
+        `rows=${rows.length} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({ translations: rows, coverage: computeCoverageSummary(rows) });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-translations-list status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'translations-list', { projectId, packId });
+  }
+});
+
+/** POST translate-all — pending + failed ONLY (drafted/approved/dispositioned/needs_manual skipped). */
+dbMigrationPackRouter.post(`${BASE}/:packId/translations/translate-all`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const start = Date.now();
+  try {
+    const result = await runTranslationPipeline({ projectId, packId, scope: { mode: 'all' } });
+    console.log(
+      `[diag-gw] route=db-migration-pack-translate-all status=200 ` +
+        `outcomes=${result.outcomes.length} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({ outcomes: result.outcomes, coverage: result.coverage });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-translate-all status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'translate-all', { projectId, packId });
+  }
+});
+
+async function handleSingleTranslate(
+  req: Request,
+  res: Response,
+  mode: 'single' | 'retry'
+): Promise<void> {
+  const { projectId, packId, translationId } = req.params;
+  const routeName = mode === 'retry' ? 'translation-retry' : 'translation-translate';
+  const start = Date.now();
+  try {
+    const result = await runTranslationPipeline({
+      projectId,
+      packId,
+      scope: { mode, translationId },
+    });
+    console.log(
+      `[diag-gw] route=db-migration-pack-${routeName} status=200 elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({ outcomes: result.outcomes, coverage: result.coverage });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-${routeName} status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, routeName, { projectId, packId, translationId });
+  }
+}
+
+/** POST — translate / re-translate ONE object (re-translate resets review to unreviewed). */
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/translations/:translationId/translate`,
+  (req, res) => handleSingleTranslate(req, res, 'single')
+);
+
+/** POST — retry a failed (or stale 'translating') object. */
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/translations/:translationId/retry`,
+  (req, res) => handleSingleTranslate(req, res, 'retry')
+);
+
+/** POST — set disposition (translate | rewrite_in_app | drop + mandatory reason). */
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/translations/:translationId/disposition`,
+  async (req, res) => {
+    const { projectId, packId, translationId } = req.params;
+    const body = (req.body ?? {}) as { disposition?: string; drop_reason?: string };
+    const start = Date.now();
+    try {
+      if (
+        !body.disposition ||
+        !TRANSLATION_DISPOSITIONS.includes(body.disposition as TranslationDisposition)
+      ) {
+        throw new TranslationActionError(
+          400,
+          `disposition must be one of ${TRANSLATION_DISPOSITIONS.join(' | ')}.`
+        );
+      }
+      const disposition = body.disposition as TranslationDisposition;
+      if (disposition === 'drop' && (!body.drop_reason || body.drop_reason.trim().length === 0)) {
+        throw new TranslationActionError(
+          400,
+          'drop_reason is required when disposition is drop — dropped objects always carry an explicit reason.'
+        );
+      }
+      const rows = await defaultFetchTranslations(projectId, packId);
+      const row = rows.find((r) => r.id === translationId);
+      if (!row) {
+        throw new TranslationActionError(
+          404,
+          `Translation ${translationId} not found on pack ${packId}.`
+        );
+      }
+      const patch: TranslationPatch = { disposition };
+      if (disposition === 'drop') patch.drop_reason = body.drop_reason!.trim();
+      if (disposition === 'translate' && row.disposition !== 'translate') {
+        // Flipping back to translate returns the row to pending (or terminal
+        // needs_manual when the captured body is truncated).
+        patch.pipeline_state = row.truncated === true ? 'needs_manual' : 'pending';
+      }
+      const updated = await defaultPatchTranslation(projectId, packId, translationId, patch);
+      // An APPROVED row dispositioned away must leave the executable path
+      // immediately (and vice versa on return) — re-run the emission.
+      let emission = null;
+      if (row.review_status === 'approved') {
+        const emissionResult = await runTranslationEmission(projectId, packId);
+        emission = {
+          approved_count: emissionResult.approvedCount,
+          emitted_file_paths: emissionResult.emittedFilePaths,
+          changed: emissionResult.changed,
+        };
+      }
+      console.log(
+        `[diag-gw] route=db-migration-pack-translation-disposition status=200 ` +
+          `disposition=${disposition} elapsed_ms=${Date.now() - start}`
+      );
+      res.status(200).json({ translation: updated, emission });
+    } catch (error) {
+      console.warn(
+        `[diag-gw] route=db-migration-pack-translation-disposition status=err elapsed_ms=${Date.now() - start}`
+      );
+      mapError(error, res, 'translation-disposition', { projectId, packId, translationId });
+    }
+  }
+);
+
+/** POST — review action (approve / reject / needs_rework + optional notes). */
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/translations/:translationId/review`,
+  async (req, res) => {
+    const { projectId, packId, translationId } = req.params;
+    const body = (req.body ?? {}) as { action?: string; notes?: string };
+    const start = Date.now();
+    try {
+      const newStatus = body.action ? REVIEW_STATUS_BY_ACTION[body.action] : undefined;
+      if (!newStatus) {
+        throw new TranslationActionError(
+          400,
+          `action must be one of ${Object.keys(REVIEW_STATUS_BY_ACTION).join(' | ')}.`
+        );
+      }
+      const rows = await defaultFetchTranslations(projectId, packId);
+      const row = rows.find((r) => r.id === translationId);
+      if (!row) {
+        throw new TranslationActionError(
+          404,
+          `Translation ${translationId} not found on pack ${packId}.`
+        );
+      }
+      if (row.pipeline_state === 'needs_manual') {
+        throw new TranslationActionError(
+          400,
+          `Translation ${row.translation_key} needs manual translation (body truncated at capture) — no review is possible.`
+        );
+      }
+      if (
+        newStatus === 'approved' &&
+        (row.pipeline_state !== 'drafted' || !row.draft_content || !row.judge_verdict_json)
+      ) {
+        throw new TranslationActionError(
+          400,
+          `Only a drafted translation carrying its judge verdict can be approved (${row.translation_key} is '${row.pipeline_state}').`
+        );
+      }
+      const patch: TranslationPatch = { review_status: newStatus };
+      if (typeof body.notes === 'string') patch.reviewer_notes = body.notes;
+      const updated = await defaultPatchTranslation(projectId, packId, translationId, patch);
+      // Emission re-runs whenever review status changes to/from approved —
+      // the approved-only invariant on the executable path (Task 4.3).
+      let emission = null;
+      if (newStatus === 'approved' || row.review_status === 'approved') {
+        const emissionResult = await runTranslationEmission(projectId, packId);
+        emission = {
+          approved_count: emissionResult.approvedCount,
+          emitted_file_paths: emissionResult.emittedFilePaths,
+          changed: emissionResult.changed,
+        };
+      }
+      console.log(
+        `[diag-gw] route=db-migration-pack-translation-review status=200 ` +
+          `action=${body.action} elapsed_ms=${Date.now() - start}`
+      );
+      res.status(200).json({ translation: updated, emission });
+    } catch (error) {
+      console.warn(
+        `[diag-gw] route=db-migration-pack-translation-review status=err elapsed_ms=${Date.now() - start}`
+      );
+      mapError(error, res, 'translation-review', { projectId, packId, translationId });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /:packId/verify — credentialed verification scan -> deterministic
+// diff -> drift-report row APPENDED to history (Task Group 5).
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.post(`${BASE}/:packId/verify`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const body = (req.body ?? {}) as {
+    db?: {
+      host?: string;
+      port?: number;
+      databaseName?: string;
+      schemaName?: string | null;
+      queryTimeoutSeconds?: number;
+    };
+    username?: string;
+    password?: string;
+    scope?: { schemas?: string[]; tables?: string[] } | null;
+  };
+  if (!body.db || typeof body.db !== 'object' || !body.db.host) {
+    res.status(400).json({
+      error: { code: 400, message: 'db connection details (incl. host) are required.' },
+    });
+    return;
+  }
+  if (!body.username || !body.password) {
+    res.status(400).json({
+      error: {
+        code: 400,
+        message: 'username and password are required (per-invocation; never persisted).',
+      },
+    });
+    return;
+  }
+  const start = Date.now();
+  try {
+    const result = await runDbMigrationPackVerification({
+      projectId,
+      packId,
+      connection: {
+        host: body.db.host,
+        port: body.db.port ?? 5432,
+        databaseName: body.db.databaseName ?? '',
+        schemaName: body.db.schemaName ?? null,
+        queryTimeoutSeconds: body.db.queryTimeoutSeconds,
+        username: body.username,
+        password: body.password,
+      },
+      scope: body.scope ?? null,
+    });
+    console.log(
+      `[diag-gw] route=db-migration-pack-verify status=200 ` +
+        `match=${result.report.summary.match_count} ` +
+        `missing=${result.report.summary.missing_count} ` +
+        `mismatch=${result.report.summary.mismatch_count} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({
+      report: result.report,
+      drift_report: result.persisted,
+    });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-verify status=err elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'verify', { projectId, packId });
+  }
+});

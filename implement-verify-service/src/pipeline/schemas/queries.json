@@ -1,0 +1,13 @@
+{
+  "$comment": "New kind (D10). Anchor policy (C1): file+line MUST be the EXECUTING call site (or the enclosing symbol's definition line) — both exist in the AST index. String-literal lines are NOT in the index and will fail loc_not_in_index.",
+  "required": ["target", "mechanism", "file", "line"],
+  "fields": {
+    "target": {"type": "string"},
+    "statement_kind": {"type": "string", "enum": ["SELECT", "INSERT", "UPDATE", "DELETE", "DDL", "OTHER"], "default": "OTHER"},
+    "mechanism": {"type": "string"},
+    "file": {"type": "string"},
+    "line": {"type": "integer", "minimum": 1},
+    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.75}
+  },
+  "forbid": ["ambiguous", "alternatives"]
+}

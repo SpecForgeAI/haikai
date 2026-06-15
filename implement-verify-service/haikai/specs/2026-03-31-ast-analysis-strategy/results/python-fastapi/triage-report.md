@@ -1,0 +1,110 @@
+# Triage Report — python-fastapi
+
+Total files: 100
+
+
+## SKIP (82 files)
+
+- `/tmp/test-python-fastapi/docs_src/additional_responses/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/additional_responses/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/additional_responses/tutorial004_py310.py`
+- `/tmp/test-python-fastapi/docs_src/additional_status_codes/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/additional_status_codes/tutorial001_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/additional_status_codes/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/advanced_middleware/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/advanced_middleware/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/advanced_middleware/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/advanced_middleware/tutorial003_py310.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_a_py310/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_a_py310/main.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_a_py310/test_main.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_b_an_py310/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_b_py310/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/tutorial003_py310.py`
+- `/tmp/test-python-fastapi/docs_src/app_testing/tutorial004_py310.py`
+- `/tmp/test-python-fastapi/docs_src/async_tests/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/async_tests/app_a_py310/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/async_tests/app_a_py310/main.py`
+- `/tmp/test-python-fastapi/docs_src/async_tests/app_a_py310/test_main.py`
+- `/tmp/test-python-fastapi/docs_src/authentication_error_status_code/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/authentication_error_status_code/tutorial001_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/background_tasks/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/background_tasks/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/background_tasks/tutorial002_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/background_tasks/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/behind_a_proxy/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/behind_a_proxy/tutorial001_01_py310.py`
+- `/tmp/test-python-fastapi/docs_src/behind_a_proxy/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/behind_a_proxy/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/behind_a_proxy/tutorial003_py310.py`
+- `/tmp/test-python-fastapi/docs_src/behind_a_proxy/tutorial004_py310.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/dependencies.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/internal/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/internal/admin.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/main.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/routers/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/routers/items.py`
+- `/tmp/test-python-fastapi/docs_src/bigger_applications/app_an_py310/routers/users.py`
+- `/tmp/test-python-fastapi/docs_src/body/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/body/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body/tutorial003_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body/tutorial004_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_fields/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/body_fields/tutorial001_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_fields/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial001_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial005_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial005_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial003_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial008_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial009_py310.py`
+- `/tmp/test-python-fastapi/docs_src/body_updates/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/conditional_openapi/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/conditional_openapi/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/configure_swagger_ui/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/configure_swagger_ui/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/configure_swagger_ui/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/configure_swagger_ui/tutorial003_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_param_models/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_param_models/tutorial001_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_param_models/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_param_models/tutorial002_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_param_models/tutorial002_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_params/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_params/tutorial001_an_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cookie_params/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/cors/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/cors/tutorial001_py310.py`
+- `/tmp/test-python-fastapi/docs_src/custom_docs_ui/__init__.py`
+- `/tmp/test-python-fastapi/docs_src/custom_docs_ui/tutorial001_py310.py`
+
+## ANALYZE (18 files)
+
+- `/tmp/test-python-fastapi/docs_src/additional_responses/tutorial001_py310.py` (complexity: 0.32)
+- `/tmp/test-python-fastapi/docs_src/additional_responses/tutorial003_py310.py` (complexity: 0.32)
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_b_an_py310/main.py` (complexity: 0.39)
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_b_an_py310/test_main.py` (complexity: 0.33)
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_b_py310/main.py` (complexity: 0.38)
+- `/tmp/test-python-fastapi/docs_src/app_testing/app_b_py310/test_main.py` (complexity: 0.33)
+- `/tmp/test-python-fastapi/docs_src/app_testing/tutorial002_py310.py` (complexity: 0.31)
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial002_py310.py` (complexity: 0.31)
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial003_an_py310.py` (complexity: 0.35)
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial003_py310.py` (complexity: 0.34)
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial004_an_py310.py` (complexity: 0.37)
+- `/tmp/test-python-fastapi/docs_src/body_multiple_params/tutorial004_py310.py` (complexity: 0.36)
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial004_py310.py` (complexity: 0.33)
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial005_py310.py` (complexity: 0.33)
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial006_py310.py` (complexity: 0.33)
+- `/tmp/test-python-fastapi/docs_src/body_nested_models/tutorial007_py310.py` (complexity: 0.41)
+- `/tmp/test-python-fastapi/docs_src/body_updates/tutorial001_py310.py` (complexity: 0.3)
+- `/tmp/test-python-fastapi/docs_src/body_updates/tutorial002_py310.py` (complexity: 0.37)

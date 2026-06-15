@@ -1,0 +1,30 @@
+
+// ============================================================================
+// Task Group 4: Fragment Frame Constants
+// ============================================================================
+
+/** Stroke color for fragment frames */
+const FRAGMENT_STROKE_COLOR = '#333333';
+
+/** Stroke width for fragment frames */
+const FRAGMENT_STROKE_WIDTH = 1;
+
+/** Fill color for fragment frames (transparent) */
+const FRAGMENT_FILL_COLOR = 'rgba(245, 245, 245, 0.5)';
+
+/** Font size for fragment label */
+const FRAGMENT_LABEL_FONT_SIZE = 10;
+
+/** Font weight for fragment label */
+const FRAGMENT_LABEL_FONT_WEIGHT = 'bold';
+
+/** Background color for fragment label box */
+const FRAGMENT_LABEL_BG_COLOR = '#FFFFFF';
+
+/** Padding for fragment label */
+const FRAGMENT_LABEL_PADDING_X = 6;
+const FRAGMENT_LABEL_PADDING_Y = 2;
+
+/** Offset from frame corner for label */
+const FRAGMENT_LABEL_OFFSET_X = 4;
+const FRAGMENT_LABEL_OFFSET_Y = 4;

@@ -1,0 +1,40 @@
+{
+  "expected": [
+    {
+      "type": "business_logics",
+      "name": "login",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "register",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "authenticateSession",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /api/users/login",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /api/users",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /api/user",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "PUT /api/user",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

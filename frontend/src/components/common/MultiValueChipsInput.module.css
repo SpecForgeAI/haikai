@@ -1,0 +1,120 @@
+/**
+ * MultiValueChipsInput Styles
+ *
+ * Spec 2026-01-31: Create Organisation Modal
+ * Task Group 1: MultiValueChipsInput Component
+ *
+ * Styling for the MultiValueChipsInput component.
+ * Follows the color scheme from CreateProjectModal.module.css:
+ * - Primary: #1976D2
+ * - Error: #c62828
+ * - Borders: #ccc, #e0e0e0
+ */
+
+/* Wrapper containing label and input container */
+.wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Label styling - matches CreateProjectModal inputLabel */
+.label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+/* Container styled like a text input that holds chips and input */
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: white;
+  cursor: text;
+  box-sizing: border-box;
+}
+
+.container:focus-within {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.container.disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+/* Individual chip/bubble styling */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background-color: #e3f2fd;
+  border: 1px solid #1976D2;
+  border-radius: 16px;
+  font-size: 13px;
+  color: #1565C0;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.chipText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Remove button on each chip */
+.chipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #1976D2;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chipRemove:hover:not(:disabled) {
+  background-color: rgba(25, 118, 210, 0.2);
+  color: #0d47a1;
+}
+
+.chipRemove:disabled {
+  color: #90caf9;
+  cursor: not-allowed;
+}
+
+/* Input field within the container */
+.input {
+  flex: 1;
+  min-width: 60px;
+  padding: 2px 4px;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  background: transparent;
+}
+
+.input::placeholder {
+  color: #999;
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}

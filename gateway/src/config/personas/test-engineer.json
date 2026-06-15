@@ -1,0 +1,12 @@
+{
+  "id": "test-engineer",
+  "displayName": "Test Engineer",
+  "color": "#2E7D32",
+  "identityPromptRef": "prompts/test-engineer.identity.md",
+  "tasks": [
+    "test-engineer--test-strategy",
+    "test-engineer--feature-tests",
+    "test-engineer--verify-implementation"
+  ],
+  "menuLabel": "Hi, what can I help you with?"
+}

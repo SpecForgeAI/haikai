@@ -1,0 +1,32 @@
+name: php-mvc
+version: 1
+language: php
+
+# Generic legacy PHP-MVC: any class extending Controller has actionXxx OR
+# function-public method that maps to a route. Used as fallback for repos
+# without a recognised framework (kanboard, suitecrm, espocrm, opencart,
+# CodeIgniter-style projects).
+detection:
+  files_match:
+    - '**/Controller/**/*.php'
+    - '**/controllers/**/*.php'
+    - '**/Controllers/**/*.php'
+
+extract:
+  - id: controller_methods
+    query: method_decls
+    file_filter: all
+    name_pattern: '^(action|do|get|post|put|delete|index|view|create|update|destroy|show|edit)[A-Z]?\w*$'
+    path_from: method_name_strip
+    strip_prefix: ''
+    verb: ANY
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: php-mvc
+
+conflict_rules: []
+known_pitfalls:
+  - "Very broad — catches non-route methods. Tightly scope using framework-specific playbooks first."
+  - "Path is the snake_cased method name; controller class isn't combined yet."

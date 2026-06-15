@@ -1,0 +1,306 @@
+/**
+ * MigrationDeliveryPlanWizard styles
+ *
+ * Spec: 2026-05-17 PM Migration Delivery Plan + Draft Book-of-Work Generation
+ * Task Group 9.
+ *
+ * Mirrors the visual rhythm of `StartCaptureSessionWizard.module.css` so the
+ * wizard feels native alongside other PM-task launchers.
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 820px;
+  width: 94%;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+
+.closeButton:hover:not(:disabled) {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
+  color: #888;
+}
+
+.step {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #f0f0f0;
+}
+
+.stepActive {
+  background: #1976d2;
+  color: #fff;
+}
+
+.stepDone {
+  background: #4caf50;
+  color: #fff;
+}
+
+.stepSeparator {
+  align-self: center;
+}
+
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+}
+
+.helperText {
+  color: #555;
+  font-size: 13px;
+  margin: 0;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #333;
+}
+
+.select,
+.input {
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.readinessCard {
+  background: #f7f9fb;
+  border: 1px solid #d8e0e7;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.readinessRow {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  color: #333;
+}
+
+.readinessKey {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  background: #f0f0f0;
+  border: 1px solid transparent;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chipSelected {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1565c0;
+}
+
+.radioGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.radioOption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.summaryBox {
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 12px 14px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.warningBanner {
+  background: #fff3cd;
+  border: 1px solid #f0d56b;
+  color: #6b5400;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.errorBanner {
+  background: #fdecea;
+  border: 1px solid #f5c6c2;
+  color: #8a1f1f;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.button {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.buttonPrimary {
+  background: #1976d2;
+  border-color: #1565c0;
+  color: #fff;
+}
+
+.buttonPrimary:disabled,
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.subtle {
+  color: #777;
+  font-size: 12px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Gap wayfinding explanation cards (Spec 2026-06-11 Findings Coverage +
+ * Gap Wayfinding, Task Group 4.2). Extends the readinessCard /
+ * warningBanner conventions above — advisory cards, never blocking.
+ * -------------------------------------------------------------------------- */
+
+.gapCard {
+  border: 1px solid #ffe0b2;
+  background: #fff8f0;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gapCardTitle {
+  font-size: 13px;
+  color: #5d4037;
+}
+
+.gapCardExplanation {
+  margin: 0;
+  font-size: 12px;
+  color: #555;
+  line-height: 1.4;
+}
+
+.gapCardAction {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1565c0;
+  text-decoration: none;
+  align-self: flex-start;
+}
+
+.gapCardAction:hover {
+  text-decoration: underline;
+}
+
+.gapCardActionText {
+  font-size: 12px;
+  font-weight: 600;
+  color: #777;
+}

@@ -1,0 +1,2037 @@
+import { ArchitectureModel, DiagramNode, DiagramEdge, Diagram, AnyEntity, MetaModelEntities, EdgePoint, AnyRelationship, ApplicationPoint, BoxDecoration, LineDecoration, LineStyle, MetaModel, ProcessActivity, ENTITY_TYPES, BusinessPoint, Decoration, Interaction, AppBusinessPoint, ActivityFlow } from '../types/model';
+import { entityColors, relationshipColors, appConfig, diagramEditing, edgeRendering, DECORATION_DEFAULTS, getProcessActivityDefaultFill, businessPointColors } from '../config/defaults';
+import { isEntityVisibleInPeriod, isRelationshipVisibleInPeriod, isDiagramElementVisibleInPeriod } from './quarterUtils';
+import { applyOpacity } from './shapeRendering';
+
+import { DIAGRAM_NODE_ENTITY_TYPE_MAP, getKnownEntityTypes } from './entityTypeRegistry';
+// Constants for text rendering
+const TEXT_PADDING = 5;
+const LINE_SPACING = 5;
+
+// Use centralized entity type registry as the single source of truth
+// This alias maintains backward compatibility with existing code in this file
+const entityTypeMap: Record<string, keyof MetaModelEntities> = DIAGRAM_NODE_ENTITY_TYPE_MAP;
+
+// Relationship type mapping for relationship lookup
+const relationshipTypeMap: Record<string, keyof ArchitectureModel['metaModel']['relationships']> = {
+  // Business Point relationship types
+  USER_BUSINESS_POINT: 'business_user_business_points',
+  APP_POINT_BUSINESS_POINT: 'application_point_business_points',
+  // Other relationship types
+  LOGICAL_DATA_ENTITY_RELATIONSHIP: 'logical_data_entity_relationships',
+  LOGICAL_DATA_ENTITY_PHYSICAL_DATA_ENTITY: 'logical_data_entity_physical_data_entities',
+  LOGICAL_DATA_ATTRIBUTE_PHYSICAL_DATA_ATTRIBUTE: 'logical_data_attribute_physical_data_attributes',
+  DATA_MOVEMENT: 'data_movements',
+  INTERFACE_LOGICAL_ENTITY: 'interface_logical_entities',
+};
+
+// Stick man dimensions interface
+export interface StickManDimensions {
+  centerX: number;
+  headRadius: number;
+  headCenterY: number;
+  bodyStartY: number;
+  bodyEndY: number;
+  armY: number;
+  armSpan: number;
+  legEndY: number;
+  legSpan: number;
+}
+
+/**
+ * Get entity label from entity ID
+ * For APPLICATION_POINT nodes, resolves through to source entity name based on kind
+ * For BUSINESS_POINT nodes, resolves through to source entity name based on kind
+ */
+export function getEntityLabel(
+  entityType: string,
+  entityId: string,
+  model: ArchitectureModel
+): string {
+  const arrayKey = entityTypeMap[entityType];
+  if (!arrayKey) return entityId;
+
+  const entities = model.metaModel.entities[arrayKey] as AnyEntity[];
+  const entity = entities.find((e) => e.id === entityId);
+
+  // Special handling for APPLICATION_POINT: resolve to source entity name
+  if (entityType === 'APPLICATION_POINT' && entity) {
+    const ap = entity as ApplicationPoint;
+
+    // Resolve based on kind field
+    switch (ap.kind) {
+      case 'APPLICATION': {
+        const application = model.metaModel.entities.applications.find(
+          a => a.id === ap.application_id
+        );
+        if (application) {
+          return application.name;
+        }
+        break;
+      }
+      case 'APP_COMPONENT': {
+        const component = model.metaModel.entities.app_components.find(
+          ac => ac.id === ap.application_component_id
+        );
+        if (component) {
+          return component.name;
+        }
+        break;
+      }
+      case 'SERVICE': {
+        const service = model.metaModel.entities.services.find(
+          s => s.id === ap.service_id
+        );
+        if (service) {
+          return service.name;
+        }
+        break;
+      }
+    }
+
+    // Fallback to AP name if source entity not found
+    return ap.name || entityId;
+  }
+
+  // Special handling for BUSINESS_POINT: resolve to source entity name based on kind
+  if (entityType === 'BUSINESS_POINT' && entity) {
+    const bp = entity as BusinessPoint;
+
+    // Resolve based on kind field
+    switch (bp.kind) {
+      case 'BUSINESS_PROCESS': {
+        const businessProcess = model.metaModel.entities.business_processes.find(
+          p => p.id === bp.business_process_id
+        );
+        if (businessProcess) {
+          return businessProcess.name;
+        }
+        break;
+      }
+      case 'PROCESS_ACTIVITY': {
+        const processActivity = model.metaModel.entities.process_activities.find(
+          a => a.id === bp.process_activity_id
+        );
+        if (processActivity) {
+          return processActivity.name;
+        }
+        break;
+      }
+    }
+
+    // Fallback to BP name if source entity not found
+    return bp.name || entityId;
+  }
+
+  return (entity as { name?: string } | undefined)?.name || entityId;
+}
+
+/**
+ * Get entity from model by entity type and ID
+ * Used for time-based filtering
+ */
+export function getEntity(
+  entityType: string,
+  entityId: string,
+  model: ArchitectureModel
+): AnyEntity | undefined {
+  const arrayKey = entityTypeMap[entityType];
+  if (!arrayKey) return undefined;
+
+  const entities = model.metaModel.entities[arrayKey] as AnyEntity[];
+  return entities.find((e) => e.id === entityId);
+}
+
+/**
+ * Get relationship from model by relationship type and ID
+ * Used for time-based filtering
+ *
+ * Note: USER_INTERACTION is a special case - Interactions are stored in
+ * metaModel.entities.interactions, not in metaModel.relationships.
+ */
+export function getRelationship(
+  relationshipType: string,
+  relationshipId: string,
+  model: ArchitectureModel
+): AnyRelationship | undefined {
+  // Special case: USER_INTERACTION is stored in entities, not relationships
+  if (relationshipType === 'USER_INTERACTION') {
+    return model.metaModel.entities.interactions?.find(i => i.id === relationshipId) as AnyRelationship | undefined;
+  }
+
+  // Special case: STATE_TRANSITION is stored in entities, not relationships
+  if (relationshipType === 'STATE_TRANSITION') {
+    return model.metaModel.entities.state_transitions?.find(st => st.id === relationshipId) as AnyRelationship | undefined;
+  }
+
+  // Special case: ACTIVITY_FLOW is stored in entities, not relationships
+  if (relationshipType === 'ACTIVITY_FLOW') {
+    return model.metaModel.entities.activity_flows?.find(af => af.id === relationshipId) as AnyRelationship | undefined;
+  }
+
+  const arrayKey = relationshipTypeMap[relationshipType];
+  if (!arrayKey) return undefined;
+
+  const relationships = model.metaModel.relationships[arrayKey] as AnyRelationship[];
+  return relationships.find((r) => r.id === relationshipId);
+}
+
+/**
+ * Resolve the underlying entity from an AppBusinessPoint based on its kind.
+ * Used by getRelationshipEndpointEntities() to get the actual entity for temporal validation.
+ *
+ * @param abp - The AppBusinessPoint to resolve
+ * @param metaModel - The MetaModel containing all entities
+ * @returns The underlying entity, or undefined if not found
+ */
+function getEntityForAbp(abp: AppBusinessPoint, metaModel: MetaModel): AnyEntity | undefined {
+  switch (abp.kind) {
+    case 'APPLICATION':
+      return metaModel.entities.applications.find(e => e.id === abp.source_entity_id);
+    case 'APP_COMPONENT':
+      return metaModel.entities.app_components.find(e => e.id === abp.source_entity_id);
+    case 'SERVICE':
+      return metaModel.entities.services.find(e => e.id === abp.source_entity_id);
+    case 'INTERFACE':
+      return metaModel.entities.interfaces.find(e => e.id === abp.source_entity_id);
+    case 'BUSINESS_PROCESS':
+      return metaModel.entities.business_processes.find(e => e.id === abp.source_entity_id);
+    case 'PROCESS_ACTIVITY':
+      return metaModel.entities.process_activities.find(e => e.id === abp.source_entity_id);
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Get endpoint entities for a relationship that need temporal validation
+ *
+ * Each relationship type has specific endpoint fields that reference entities.
+ * This function resolves those references and returns the actual entities
+ * for temporal visibility checking.
+ *
+ * @param relationshipType - The SCREAMING_SNAKE_CASE relationship type
+ * @param relationship - The relationship object
+ * @param metaModel - The MetaModel containing all entities
+ * @returns Array of endpoint entities to validate for temporal visibility
+ */
+export function getRelationshipEndpointEntities(
+  relationshipType: string,
+  relationship: AnyRelationship,
+  metaModel: MetaModel
+): AnyEntity[] {
+  const endpoints: AnyEntity[] = [];
+
+  switch (relationshipType) {
+    case 'USER_BUSINESS_POINT': {
+      // business_user_id -> BusinessUser (timeless)
+      // business_point_id -> BusinessPoint (temporal)
+      const rel = relationship as { business_user_id: string; business_point_id: string };
+      const businessUser = metaModel.entities.business_users.find(e => e.id === rel.business_user_id);
+      const businessPoint = metaModel.entities.business_points.find(e => e.id === rel.business_point_id);
+      if (businessUser) endpoints.push(businessUser);
+      if (businessPoint) endpoints.push(businessPoint);
+      break;
+    }
+
+    case 'APP_POINT_BUSINESS_POINT': {
+      // application_point_id -> ApplicationPoint (temporal)
+      // business_point_id -> BusinessPoint (temporal)
+      const rel = relationship as { application_point_id: string; business_point_id: string };
+      const applicationPoint = metaModel.entities.application_points.find(e => e.id === rel.application_point_id);
+      const businessPoint = metaModel.entities.business_points.find(e => e.id === rel.business_point_id);
+      if (applicationPoint) endpoints.push(applicationPoint);
+      if (businessPoint) endpoints.push(businessPoint);
+      break;
+    }
+
+    case 'LOGICAL_DATA_ENTITY_RELATIONSHIP': {
+      // Logical ER Meta-Model Upgrade: Updated to use new field names
+      // from_ref_id -> LogicalDataEntity (temporal) (was source_entity_id)
+      // to_ref_id -> LogicalDataEntity (temporal) (was target_entity_id)
+      const rel = relationship as { from_ref_id: string; to_ref_id: string };
+      const sourceEntity = metaModel.entities.logical_data_entities.find(e => e.id === rel.from_ref_id);
+      const targetEntity = metaModel.entities.logical_data_entities.find(e => e.id === rel.to_ref_id);
+      if (sourceEntity) endpoints.push(sourceEntity);
+      if (targetEntity) endpoints.push(targetEntity);
+      break;
+    }
+
+    case 'LOGICAL_DATA_ENTITY_PHYSICAL_DATA_ENTITY': {
+      // logical_entity_id -> LogicalDataEntity (temporal)
+      // physical_entity_id -> PhysicalDataEntity (temporal)
+      const rel = relationship as { logical_entity_id: string; physical_entity_id: string };
+      const logicalEntity = metaModel.entities.logical_data_entities.find(e => e.id === rel.logical_entity_id);
+      const physicalEntity = metaModel.entities.physical_data_entities.find(e => e.id === rel.physical_entity_id);
+      if (logicalEntity) endpoints.push(logicalEntity);
+      if (physicalEntity) endpoints.push(physicalEntity);
+      break;
+    }
+
+    case 'LOGICAL_DATA_ATTRIBUTE_PHYSICAL_DATA_ATTRIBUTE': {
+      // logical_attribute_id -> LogicalDataAttribute (timeless)
+      // physical_attribute_id -> PhysicalDataAttribute (timeless)
+      const rel = relationship as { logical_attribute_id: string; physical_attribute_id: string };
+      const logicalAttribute = metaModel.entities.logical_data_attributes.find(e => e.id === rel.logical_attribute_id);
+      const physicalAttribute = metaModel.entities.physical_data_attributes.find(e => e.id === rel.physical_attribute_id);
+      if (logicalAttribute) endpoints.push(logicalAttribute);
+      if (physicalAttribute) endpoints.push(physicalAttribute);
+      break;
+    }
+
+    case 'DATA_MOVEMENT': {
+      // Data Movement now references Application Points instead of Applications
+      // source_application_point_id -> ApplicationPoint (temporal)
+      // target_application_point_id -> ApplicationPoint (temporal)
+      // Note: Logical data entity is used for label text only, not required on diagram
+      const rel = relationship as { source_application_point_id: string; target_application_point_id: string; data_entity_id: string };
+      const sourceAppPoint = metaModel.entities.application_points.find(e => e.id === rel.source_application_point_id);
+      const targetAppPoint = metaModel.entities.application_points.find(e => e.id === rel.target_application_point_id);
+      if (sourceAppPoint) endpoints.push(sourceAppPoint);
+      if (targetAppPoint) endpoints.push(targetAppPoint);
+      break;
+    }
+
+    case 'INTERFACE_LOGICAL_ENTITY': {
+      // interface_id -> Interface (temporal)
+      // logical_entity_id -> LogicalDataEntity (temporal)
+      const rel = relationship as { interface_id: string; logical_entity_id: string };
+      const interfaceEntity = metaModel.entities.interfaces.find(e => e.id === rel.interface_id);
+      const logicalEntity = metaModel.entities.logical_data_entities.find(e => e.id === rel.logical_entity_id);
+      if (interfaceEntity) endpoints.push(interfaceEntity);
+      if (logicalEntity) endpoints.push(logicalEntity);
+      break;
+    }
+
+    case 'USER_INTERACTION': {
+      // USER_INTERACTION endpoints are:
+      // - user_id -> BusinessUser (timeless)
+      // - primary_app_business_point_id -> Resolved via ABP to underlying entity
+      // - secondary_app_business_point_id -> Resolved via ABP to underlying entity (optional)
+      const interaction = relationship as unknown as Interaction;
+
+      // Add the user (timeless, but include for completeness)
+      const user = metaModel.entities.business_users.find(u => u.id === interaction.user_id);
+      if (user) endpoints.push(user);
+
+      // For ABP resolution, we need the underlying Application/Service/etc.
+      // The ABP itself is not temporal, but the underlying entity may be
+      const primaryAbp = metaModel.entities.app_business_points?.find(
+        abp => abp.id === interaction.primary_app_business_point_id
+      );
+      if (primaryAbp) {
+        const primaryEntity = getEntityForAbp(primaryAbp, metaModel);
+        if (primaryEntity) endpoints.push(primaryEntity);
+      }
+
+      if (interaction.secondary_app_business_point_id) {
+        const secondaryAbp = metaModel.entities.app_business_points?.find(
+          abp => abp.id === interaction.secondary_app_business_point_id
+        );
+        if (secondaryAbp) {
+          const secondaryEntity = getEntityForAbp(secondaryAbp, metaModel);
+          if (secondaryEntity) endpoints.push(secondaryEntity);
+        }
+      }
+
+      break;
+    }
+
+    default:
+      // Unknown relationship type - no endpoints to validate
+      break;
+  }
+
+  return endpoints;
+}
+
+// Get entity colors by entity type
+export function getEntityColor(entityType: string): { background: string; border: string } {
+  return entityColors[entityType] || { background: '#f5f5f5', border: '#616161' };
+}
+
+/**
+ * Get the background fill colour for a diagram node.
+ * For PROCESS_ACTIVITY nodes, the fill varies based on user_interaction_level.
+ * For BUSINESS_POINT nodes, uses the dedicated business point colors.
+ * Supports customisation via node.background_color override.
+ *
+ * @param node - The diagram node
+ * @param model - The architecture model (needed for PROCESS_ACTIVITY entity lookup)
+ * @returns Hex colour string for the fill
+ */
+export function getNodeFillColor(node: DiagramNode, model?: ArchitectureModel): string {
+  // Check for custom background color override first
+  if (node.background_color) {
+    return node.background_color;
+  }
+
+  // Special handling for PROCESS_ACTIVITY - color based on user_interaction_level
+  if (node.entity_type === ENTITY_TYPES.PROCESS_ACTIVITY && model) {
+    const activity = model.metaModel.entities.process_activities.find(
+      (a: ProcessActivity) => a.id === node.entity_id
+    );
+    if (activity) {
+      return getProcessActivityDefaultFill(activity);
+    }
+  }
+
+  // Special handling for BUSINESS_POINT - use dedicated business point colors
+  if (node.entity_type === ENTITY_TYPES.BUSINESS_POINT) {
+    return businessPointColors.fill;
+  }
+
+  // Use entity type default color
+  const colors = entityColors[node.entity_type];
+  return colors?.background || '#FFFFFF';
+}
+
+/**
+ * Get the border colour for a diagram node.
+ * For BUSINESS_POINT nodes, uses the dedicated business point colors.
+ * Supports customisation via node.line_color override.
+ *
+ * @param node - The diagram node
+ * @returns Hex colour string for the border
+ */
+export function getNodeBorderColor(node: DiagramNode): string {
+  // Check for custom line color override first
+  if (node.line_color) {
+    return node.line_color;
+  }
+
+  // Special handling for BUSINESS_POINT - use dedicated business point colors
+  if (node.entity_type === ENTITY_TYPES.BUSINESS_POINT) {
+    return businessPointColors.stroke;
+  }
+
+  // Use entity type default color
+  const colors = entityColors[node.entity_type];
+  return colors?.border || '#000000';
+}
+
+/**
+ * Get the text colour for a diagram node.
+ * For BUSINESS_POINT nodes, uses the dedicated business point text color.
+ *
+ * @param node - The diagram node
+ * @returns Hex colour string for the text
+ */
+export function getNodeTextColor(node: DiagramNode): string {
+  // Check for custom text color override first
+  if (node.text_color) {
+    return node.text_color;
+  }
+
+  // Special handling for BUSINESS_POINT - use dedicated business point text color
+  if (node.entity_type === ENTITY_TYPES.BUSINESS_POINT) {
+    return businessPointColors.text;
+  }
+
+  // Default text color
+  return '#333';
+}
+
+// Get edge color by relationship type
+export function getEdgeColor(relationshipType: string): string {
+  return relationshipColors[relationshipType] || '#616161';
+}
+
+/**
+ * Get edge styling defaults for a relationship type
+ * Used when creating new diagram edges from relationships
+ *
+ * @param relationshipType - The SCREAMING_SNAKE_CASE relationship type
+ * @returns Object with line_type and arrow_end defaults
+ */
+export function getRelationshipEdgeDefaults(relationshipType: string): {
+  line_type: 'SOLID' | 'DASHED' | 'DOTTED';
+  arrow_end: 'NONE' | 'ARROW';
+} {
+  switch (relationshipType) {
+    // User <-> Business Point: DASHED line, no arrow
+    case 'USER_BUSINESS_POINT':
+      return { line_type: 'DASHED', arrow_end: 'NONE' };
+
+    // App Point <-> Business Point: SOLID line, no arrow
+    case 'APP_POINT_BUSINESS_POINT':
+      return { line_type: 'SOLID', arrow_end: 'NONE' };
+
+    // Data Movement: SOLID line with arrow
+    case 'DATA_MOVEMENT':
+      return { line_type: 'SOLID', arrow_end: 'ARROW' };
+
+    // Spec 2026-05-05: Infrastructure Domain Diagram Support
+    // Deployment Unit -> Compute Resource: DASHED line, no arrow
+    case 'DEPLOYMENT_UNIT_COMPUTE_RESOURCE':
+      return { line_type: 'DASHED', arrow_end: 'NONE' };
+
+    // Spec 2026-05-05: Infrastructure Domain Diagram Support
+    // Load Balancer -> Resource: SOLID line with arrow at target
+    case 'LOAD_BALANCER_RESOURCE_ROUTE':
+      return { line_type: 'SOLID', arrow_end: 'ARROW' };
+
+    // Spec 2026-05-05: Infrastructure Cross-Domain Integration - 4 cross-domain edge types
+    // All cross-domain edges use SOLID line + ARROW at target end (Q9).
+    case 'APPLICATION_COMPUTE_DEPLOYMENT':
+      return { line_type: 'SOLID', arrow_end: 'ARROW' };
+    case 'DATA_ENTITY_DATA_STORE_HOSTING':
+      return { line_type: 'SOLID', arrow_end: 'ARROW' };
+    case 'APPLICATION_INFRASTRUCTURE_RESOURCE_USE':
+      return { line_type: 'SOLID', arrow_end: 'ARROW' };
+    case 'APPLICATION_LOAD_BALANCER_EXPOSURE':
+      return { line_type: 'SOLID', arrow_end: 'ARROW' };
+
+    // Default: SOLID line, no arrow
+    default:
+      return { line_type: 'SOLID', arrow_end: 'NONE' };
+  }
+}
+
+// Measure text width using canvas API for accurate measurements
+export function measureTextWidth(
+  text: string,
+  fontSize: number = 12,
+  fontWeight: string = 'normal',
+  fontStyle: string = 'normal'
+): number {
+  // Create a canvas for text measurement if not already available
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+
+  if (context) {
+    context.font = `${fontStyle} ${fontWeight} ${fontSize}px sans-serif`;
+    return context.measureText(text).width;
+  }
+
+  // Fallback: approximate width based on character count
+  // Average character width is roughly 0.6 * fontSize
+  return text.length * fontSize * 0.6;
+}
+
+// Wrap text into multiple lines based on max width
+export function wrapText(
+  text: string,
+  maxWidth: number,
+  fontSize: number = 12,
+  fontWeight: string = 'normal',
+  fontStyle: string = 'normal'
+): string[] {
+  if (!text) return [];
+
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    const testWidth = measureTextWidth(testLine, fontSize, fontWeight, fontStyle);
+
+    if (testWidth <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      // Check if current word alone is too long
+      const wordWidth = measureTextWidth(word, fontSize, fontWeight, fontStyle);
+
+      if (wordWidth > maxWidth) {
+        // Break the word mid-token
+        if (currentLine) {
+          lines.push(currentLine);
+          currentLine = '';
+        }
+
+        // Break long word into chunks
+        let remaining = word;
+        while (remaining) {
+          let breakPoint = remaining.length;
+
+          // Find the break point where text fits
+          for (let i = 1; i <= remaining.length; i++) {
+            if (measureTextWidth(remaining.substring(0, i), fontSize, fontWeight, fontStyle) > maxWidth) {
+              breakPoint = Math.max(1, i - 1);
+              break;
+            }
+          }
+
+          if (breakPoint === remaining.length) {
+            currentLine = remaining;
+            remaining = '';
+          } else {
+            lines.push(remaining.substring(0, breakPoint));
+            remaining = remaining.substring(breakPoint);
+          }
+        }
+      } else {
+        // Word fits on its own, start new line
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        currentLine = word;
+      }
+    }
+  }
+
+  // Don't forget the last line
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
+// Calculate total text block height
+export function calculateTextBlockHeight(
+  lineCount: number,
+  fontSize: number = 12,
+  lineSpacing: number = LINE_SPACING
+): number {
+  if (lineCount <= 0) return 0;
+  return (lineCount * fontSize) + ((lineCount - 1) * lineSpacing);
+}
+
+// Calculate text position within a node based on alignment
+export function calculateTextPosition(
+  node: DiagramNode,
+  lines: string[],
+  fontSize: number = 12
+): {
+  startY: number;
+  getLineX: (lineIndex: number, lineText: string) => number;
+  anchor: string;
+} {
+  const padding = TEXT_PADDING;
+  const lineSpacing = LINE_SPACING;
+
+  // Calculate text area
+  const textAreaX = node.pos_x + padding;
+  const textAreaY = node.pos_y + padding;
+  const textAreaWidth = node.width - (padding * 2);
+  const textAreaHeight = node.height - (padding * 2);
+
+  // Calculate total text block height
+  const blockHeight = calculateTextBlockHeight(lines.length, fontSize, lineSpacing);
+
+  // Determine vertical start position (baseline of first line)
+  let startY: number;
+  const vAlign = node.text_v_align || 'MIDDLE';
+
+  switch (vAlign) {
+    case 'TOP':
+      startY = textAreaY + fontSize;
+      break;
+    case 'BOTTOM':
+      startY = textAreaY + textAreaHeight - blockHeight + fontSize;
+      break;
+    case 'MIDDLE':
+    default:
+      startY = textAreaY + (textAreaHeight - blockHeight) / 2 + fontSize;
+      break;
+  }
+
+  // Determine horizontal position and anchor
+  const hAlign = node.text_h_align || 'CENTER';
+  let anchor: string;
+
+  const getLineX = (_lineIndex: number, _lineText: string): number => {
+    switch (hAlign) {
+      case 'LEFT':
+        return textAreaX;
+      case 'RIGHT':
+        return textAreaX + textAreaWidth;
+      case 'CENTER':
+      default:
+        return textAreaX + textAreaWidth / 2;
+    }
+  };
+
+  switch (hAlign) {
+    case 'LEFT':
+      anchor = 'start';
+      break;
+    case 'RIGHT':
+      anchor = 'end';
+      break;
+    case 'CENTER':
+    default:
+      anchor = 'middle';
+      break;
+  }
+
+  return { startY, getLineX, anchor };
+}
+
+// Get text rendering constants
+export function getTextRenderingConstants() {
+  return {
+    padding: TEXT_PADDING,
+    lineSpacing: LINE_SPACING,
+  };
+}
+
+// Calculate stick man dimensions based on node dimensions
+export function calculateStickManDimensions(node: DiagramNode): StickManDimensions {
+  const centerX = node.pos_x + node.width / 2;
+  const topY = node.pos_y;
+  const figureHeight = node.height;
+
+  // Head is 20% of total height (radius is 10%)
+  const headRadius = figureHeight * 0.1;
+  const headCenterY = topY + headRadius;
+
+  // Body starts after head and is 40% of height
+  const bodyStartY = headCenterY + headRadius;
+  const bodyEndY = topY + figureHeight * 0.6;
+
+  // Arms positioned at 20% down the body
+  const armY = bodyStartY + (bodyEndY - bodyStartY) * 0.2;
+  const armSpan = node.width * 0.3;
+
+  // Legs are 40% of height
+  const legEndY = topY + figureHeight;
+  const legSpan = node.width * 0.2;
+
+  return {
+    centerX,
+    headRadius,
+    headCenterY,
+    bodyStartY,
+    bodyEndY,
+    armY,
+    armSpan,
+    legEndY,
+    legSpan
+  };
+}
+
+// Calculate text position for BUSINESS_USER nodes (below stick man feet)
+export function calculateBusinessUserTextPosition(
+  node: DiagramNode,
+  _lines: string[],
+  fontSize: number = 12
+): {
+  startY: number;
+  getLineX: (lineIndex: number, lineText: string) => number;
+  anchor: string;
+} {
+  const dims = calculateStickManDimensions(node);
+
+  // Text starts 5px below feet
+  const textGapBelowFeet = 5;
+  const textStartY = dims.legEndY + textGapBelowFeet + fontSize;
+
+  // Use text_area_width or default to node width - 10px
+  const textAreaWidth = node.text_area_width || (node.width - 10);
+  const textAreaX = node.pos_x + (node.width - textAreaWidth) / 2;
+
+  // Determine horizontal alignment
+  const hAlign = node.text_h_align || 'CENTER';
+  let anchor: string;
+
+  const getLineX = (_lineIndex: number, _lineText: string): number => {
+    switch (hAlign) {
+      case 'LEFT':
+        return textAreaX;
+      case 'RIGHT':
+        return textAreaX + textAreaWidth;
+      case 'CENTER':
+      default:
+        return node.pos_x + node.width / 2;
+    }
+  };
+
+  switch (hAlign) {
+    case 'LEFT':
+      anchor = 'start';
+      break;
+    case 'RIGHT':
+      anchor = 'end';
+      break;
+    case 'CENTER':
+    default:
+      anchor = 'middle';
+      break;
+  }
+
+  return { startY: textStartY, getLineX, anchor };
+}
+
+// Get edge display label with DATA_MOVEMENT default support
+export function getEdgeDisplayLabel(edge: DiagramEdge, model: ArchitectureModel): string {
+  // If explicit label_text is provided, use it
+  if (edge.label_text) {
+    return edge.label_text;
+  }
+
+  // For DATA_MOVEMENT edges, look up the logical_data_entity name
+  if (edge.relationship_type === 'DATA_MOVEMENT') {
+    const dataMovement = model.metaModel.relationships.data_movements
+      .find(dm => dm.id === edge.relationship_id);
+
+    if (dataMovement) {
+      const lde = model.metaModel.entities.logical_data_entities
+        .find(e => e.id === dataMovement.data_entity_id);
+
+      if (lde) {
+        return lde.name;
+      }
+    }
+  }
+
+
+  // Spec 2026-01-01 (D): For ACTIVITY_FLOW edges, look up condition_expression or trigger_label_text
+  if (edge.relationship_type === 'ACTIVITY_FLOW') {
+    const activityFlow = model.metaModel.entities.activity_flows?.find(
+      (af: ActivityFlow) => af.id === edge.relationship_id
+    );
+
+    if (activityFlow) {
+      // Priority: condition_expression > trigger_label_text
+      if (activityFlow.condition_expression) {
+        return activityFlow.condition_expression;
+      }
+      if (activityFlow.trigger_label_text) {
+        return activityFlow.trigger_label_text;
+      }
+    }
+  }
+
+  return '';
+}
+
+// Calculate node size based on label and children
+export function calculateNodeSize(
+  node: DiagramNode,
+  allNodes: DiagramNode[],
+  model: ArchitectureModel
+): { width: number; height: number } {
+  const children = allNodes.filter((n) => n.parent_node_id === node.id);
+  const label = getEntityLabel(node.entity_type, node.entity_id, model);
+
+  const { minWidth, minHeight, padding, labelPadding } = appConfig.node;
+  const labelHeight = 20;
+
+  // Base case: leaf node
+  if (children.length === 0) {
+    const labelWidth = measureTextWidth(label);
+    return {
+      width: Math.max(minWidth, labelWidth + labelPadding * 2),
+      height: minHeight,
+    };
+  }
+
+  // Recursive case: calculate children first (bottom-up)
+  const childBounds = calculateChildBounds(children, allNodes, model);
+
+  // Parent must contain all children plus padding
+  const labelWidth = measureTextWidth(label);
+  const contentWidth = childBounds.maxX - childBounds.minX;
+  const contentHeight = childBounds.maxY - childBounds.minY;
+
+  return {
+    width: Math.max(labelWidth + labelPadding * 2, contentWidth + padding * 2),
+    height: contentHeight + labelHeight + padding * 2,
+  };
+}
+
+// Calculate bounding box of all children
+function calculateChildBounds(
+  children: DiagramNode[],
+  allNodes: DiagramNode[],
+  model: ArchitectureModel
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  if (children.length === 0) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  children.forEach((child) => {
+    const size = calculateNodeSize(child, allNodes, model);
+    minX = Math.min(minX, child.pos_x);
+    minY = Math.min(minY, child.pos_y);
+    maxX = Math.max(maxX, child.pos_x + size.width);
+    maxY = Math.max(maxY, child.pos_y + size.height);
+  });
+
+  return { minX, minY, maxX, maxY };
+}
+
+// Get diagram by ID
+export function getDiagramById(
+  diagramId: string,
+  model: ArchitectureModel
+): Diagram | undefined {
+  return model.diagrams.find((d) => d.id === diagramId);
+}
+
+/**
+ * Get all nodes for a diagram sorted by rendering order (parents first)
+ * With optional time-based filtering
+ *
+ * Time-based filtering applies TWO levels:
+ * 1. Entity visibility: Check if the underlying entity is valid at viewQuarter
+ * 2. Diagram node visibility: Check if the diagram node itself is valid at viewQuarter
+ *    (diagram-level temporality for layout versioning)
+ *
+ * @param diagramId - ID of the diagram
+ * @param model - Architecture model
+ * @param viewQuarter - Optional quarter string for time-based filtering (e.g., "2026-Q4")
+ * @returns Array of visible nodes in render order
+ */
+export function getNodesInRenderOrder(
+  diagramId: string,
+  model: ArchitectureModel,
+  viewQuarter?: string
+): DiagramNode[] {
+  const diagram = getDiagramById(diagramId, model);
+  if (!diagram) return [];
+
+  let nodes = diagram.diagram_nodes || [];
+
+  // Apply time-based filtering if viewQuarter is provided
+  if (viewQuarter) {
+    nodes = nodes.filter((node) => {
+      // Level 1: Check diagram node's own temporal validity (diagram-level temporality)
+      // This allows layout versioning - same entity can have different positions in different periods
+      if (!isDiagramElementVisibleInPeriod(node, viewQuarter)) {
+        return false;
+      }
+
+      // Level 2: Check if the underlying entity is visible in the given period
+      const entity = getEntity(node.entity_type, node.entity_id, model);
+      if (!entity) {
+        // If entity not found, don't render the node
+        return false;
+      }
+      // Check if entity is visible in the given period
+      return isEntityVisibleInPeriod(entity, viewQuarter);
+    });
+  }
+
+  // Build parent-child relationships
+  const result: DiagramNode[] = [];
+  const visited = new Set<string>();
+
+  // Recursive function to add node and its children
+  function addNodeWithChildren(node: DiagramNode) {
+    if (visited.has(node.id)) return;
+    visited.add(node.id);
+    result.push(node);
+
+    // Add children
+    const children = nodes.filter((n) => n.parent_node_id === node.id);
+    children.forEach(addNodeWithChildren);
+  }
+
+  // Start with root nodes (no parent)
+  const rootNodes = nodes.filter((n) => !n.parent_node_id);
+  rootNodes.forEach(addNodeWithChildren);
+
+  // Add any remaining nodes (in case of circular references)
+  nodes.forEach((node) => {
+    if (!visited.has(node.id)) {
+      result.push(node);
+    }
+  });
+
+  return result;
+}
+
+/**
+ * Get edges for a diagram with optional time-based filtering
+ *
+ * This function applies FOUR levels of filtering:
+ * 1. Diagram edge visibility: Check if the diagram edge itself is valid at viewQuarter
+ *    (diagram-level temporality for layout versioning)
+ * 2. Relationship visibility: Check if the relationship itself is valid at viewQuarter
+ * 3. Endpoint entity visibility: Check if ALL endpoint entities referenced by the relationship are valid at viewQuarter
+ * 4. Diagram node visibility: Check if both source and target diagram nodes are visible (via visibleNodeIds)
+ *
+ * @param diagramId - ID of the diagram
+ * @param model - Architecture model
+ * @param viewQuarter - Optional quarter string for time-based filtering
+ * @param visibleNodeIds - Optional set of visible node IDs for endpoint checking
+ * @returns Array of visible edges
+ */
+export function getEdgesForDiagram(
+  diagramId: string,
+  model: ArchitectureModel,
+  viewQuarter?: string,
+  visibleNodeIds?: Set<string>
+): DiagramEdge[] {
+  const diagram = getDiagramById(diagramId, model);
+  if (!diagram) return [];
+
+  let edges = diagram.diagram_edges || [];
+
+  // Apply time-based filtering if viewQuarter is provided
+  if (viewQuarter) {
+    edges = edges.filter((edge) => {
+      // Level 1: Check diagram edge's own temporal validity (diagram-level temporality)
+      // This allows layout versioning - same relationship can have different positions in different periods
+      if (!isDiagramElementVisibleInPeriod(edge, viewQuarter)) {
+        return false;
+      }
+
+      // Level 2: Check if the relationship itself is valid
+      const relationship = getRelationship(edge.relationship_type, edge.relationship_id, model);
+
+      // If relationship not found, treat as timeless (don't filter based on relationship)
+      // but still check endpoint visibility below
+      if (!relationship) {
+        console.warn('Filtered out edge', { edgeId: edge.id, relationshipType: edge.relationship_type, reason: 'relationship_not_found' });
+        return false;
+      }
+
+      // Check if relationship is visible in the given period
+      const relationshipVisible = isRelationshipVisibleInPeriod(relationship, viewQuarter);
+      if (!relationshipVisible) {
+        console.warn('Filtered out edge', { edgeId: edge.id, relationshipType: edge.relationship_type, reason: 'relationship_not_visible' });
+        return false;
+      }
+
+      // Level 3: Check if all endpoint entities are visible at the viewQuarter
+      const endpointEntities = getRelationshipEndpointEntities(
+        edge.relationship_type,
+        relationship,
+        model.metaModel
+      );
+
+      // If ANY endpoint entity is not visible, filter out this edge
+      for (const endpointEntity of endpointEntities) {
+        if (!isEntityVisibleInPeriod(endpointEntity, viewQuarter)) {
+          console.warn('Filtered out edge', { edgeId: edge.id, relationshipType: edge.relationship_type, reason: 'endpoint_entity_not_visible' });
+          return false;
+        }
+      }
+
+      // Level 4: If visibleNodeIds is provided, check that both diagram node endpoints are visible
+      if (visibleNodeIds) {
+        const sourceVisible = visibleNodeIds.has(edge.source_node_id);
+        const targetVisible = visibleNodeIds.has(edge.target_node_id);
+        if (!sourceVisible) {
+          console.warn('Filtered out edge', { edgeId: edge.id, relationshipType: edge.relationship_type, reason: 'source_node_not_on_diagram' });
+          return false;
+        }
+        if (!targetVisible) {
+          console.warn('Filtered out edge', { edgeId: edge.id, relationshipType: edge.relationship_type, reason: 'target_node_not_on_diagram' });
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }
+
+  return edges;
+}
+
+/**
+ * Get decorations for a diagram with optional time-based filtering
+ *
+ * This function applies diagram-level temporal filtering to decorations.
+ * Decorations with valid_from/valid_to fields are filtered based on the viewQuarter.
+ * Decorations without temporal fields (null/undefined) are always visible (timeless).
+ *
+ * @param diagramId - ID of the diagram
+ * @param model - Architecture model
+ * @param viewQuarter - Optional quarter string for time-based filtering (e.g., "2026-Q4")
+ * @returns Array of visible decorations
+ */
+export function getDecorationsForDiagram(
+  diagramId: string,
+  model: ArchitectureModel,
+  viewQuarter?: string
+): Decoration[] {
+  const diagram = getDiagramById(diagramId, model);
+  if (!diagram) return [];
+
+  let decorations = diagram.decorations || [];
+
+  // Apply time-based filtering if viewQuarter is provided
+  if (viewQuarter) {
+    decorations = decorations.filter((decoration) => {
+      // Check diagram decoration's temporal validity (diagram-level temporality)
+      // This allows visual elements to appear/disappear in different time periods
+      return isDiagramElementVisibleInPeriod(decoration, viewQuarter);
+    });
+  }
+
+  return decorations;
+}
+
+// Calculate edge points - returns ONLY edge_points, no node center points
+export function getEdgePoints(
+  edge: DiagramEdge
+): { x: number; y: number }[] {
+  // Return only the edge_points sorted by sequence order
+  // Do NOT add node center points
+  const waypoints = (edge.edge_points || [])
+    .sort((a, b) => a.sequence_order - b.sequence_order);
+
+  return waypoints.map((wp) => ({ x: wp.pos_x, y: wp.pos_y }));
+}
+
+// Calculate arrowhead points
+export function calculateArrowhead(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  size: number = 8
+): string {
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const arrowAngle = Math.PI / 6; // 30 degrees
+
+  const x1 = toX - size * Math.cos(angle - arrowAngle);
+  const y1 = toY - size * Math.sin(angle - arrowAngle);
+  const x2 = toX - size * Math.cos(angle + arrowAngle);
+  const y2 = toY - size * Math.sin(angle + arrowAngle);
+
+  return `M ${toX} ${toY} L ${x1} ${y1} L ${x2} ${y2} Z`;
+}
+
+// Get relationship type abbreviation
+export function getRelationshipAbbreviation(relType: string): string {
+  const abbreviations: Record<string, string> = {
+    business_user_business_points: 'uses',
+    application_point_business_points: 'supports',
+    logical_data_entity_relationships: 'relates',
+    logical_data_entity_physical_data_entities: 'maps',
+    logical_data_attribute_physical_data_attributes: 'maps',
+    data_movements: 'moves',
+    interface_logical_entities: 'exposes',
+  };
+  return abbreviations[relType] || relType;
+}
+
+// Calculate bounding box of all nodes in a diagram
+export function getDiagramBounds(
+  diagramId: string,
+  model: ArchitectureModel
+): { minX: number; minY: number; maxX: number; maxY: number; width: number; height: number } {
+  const diagram = getDiagramById(diagramId, model);
+  if (!diagram) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+  }
+
+  const nodes = diagram.diagram_nodes || [];
+
+  if (nodes.length === 0) {
+    return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  nodes.forEach((node) => {
+    minX = Math.min(minX, node.pos_x);
+    minY = Math.min(minY, node.pos_y);
+    maxX = Math.max(maxX, node.pos_x + node.width);
+    maxY = Math.max(maxY, node.pos_y + node.height);
+  });
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+}
+
+// Calculate zoom level to fit diagram in viewport
+export function calculateDiagramFitZoom(
+  diagramId: string,
+  model: ArchitectureModel,
+  viewportWidth: number,
+  viewportHeight: number
+): { zoom: number; panX: number; panY: number } {
+  const bounds = getDiagramBounds(diagramId, model);
+
+  if (bounds.width === 0 || bounds.height === 0) {
+    return { zoom: 1, panX: 0, panY: 0 };
+  }
+
+  // Add padding around the diagram
+  const padding = 40;
+  const contentWidth = bounds.width + padding * 2;
+  const contentHeight = bounds.height + padding * 2;
+
+  // Calculate zoom to fit
+  const zoomX = viewportWidth / contentWidth;
+  const zoomY = viewportHeight / contentHeight;
+  const zoom = Math.min(zoomX, zoomY, appConfig.zoom.max);
+
+  // Clamp to min/max
+  const clampedZoom = Math.max(appConfig.zoom.min, Math.min(zoom, appConfig.zoom.max));
+
+  // Calculate pan to center the diagram
+  const panX = (viewportWidth - bounds.width * clampedZoom) / 2 - bounds.minX * clampedZoom;
+  const panY = (viewportHeight - bounds.height * clampedZoom) / 2 - bounds.minY * clampedZoom;
+
+  return { zoom: clampedZoom, panX, panY };
+}
+
+// Validate diagram node references
+export function validateDiagramNodes(
+  diagramId: string,
+  model: ArchitectureModel
+): string[] {
+  const errors: string[] = [];
+  const diagram = getDiagramById(diagramId, model);
+  if (!diagram) {
+    errors.push(`Error loading diagram: Diagram ${diagramId} not found`);
+    return errors;
+  }
+
+  const nodes = diagram.diagram_nodes || [];
+
+  nodes.forEach((node) => {
+    const targetType = entityTypeMap[node.entity_type];
+    if (targetType) {
+      const targetArray = model.metaModel.entities[targetType] as AnyEntity[];
+      if (!targetArray.find((e) => e.id === node.entity_id)) {
+        errors.push(
+          `Error loading diagram: Node ${node.id} references non-existent entity ${node.entity_id}`
+        );
+      }
+    } else {
+      // Include list of known types in error message to aid debugging
+      const knownTypes = getKnownEntityTypes().join(', ');
+      errors.push(
+        `Error loading diagram: Node ${node.id} has unknown entity type ${node.entity_type} (known types: ${knownTypes})`
+      );
+    }
+  });
+
+  return errors;
+}
+
+// ========== CASCADE UTILITY FUNCTIONS ==========
+
+/**
+ * Get all descendant nodes of a given node (children, grandchildren, etc.)
+ * @param nodeId - The ID of the parent node
+ * @param allNodes - Array of all nodes in the diagram
+ * @returns Array of all descendant nodes
+ */
+export function getDescendantNodes(nodeId: string, allNodes: DiagramNode[]): DiagramNode[] {
+  const children = allNodes.filter(n => n.parent_node_id === nodeId);
+  const descendants = [...children];
+
+  for (const child of children) {
+    descendants.push(...getDescendantNodes(child.id, allNodes));
+  }
+
+  return descendants;
+}
+
+/**
+ * Check if a point is attached to a node within tolerance
+ * @param point - The point to check (with pos_x, pos_y)
+ * @param node - The node to check against
+ * @param tolerance - The tolerance in pixels (defaults to config value)
+ * @returns True if the point is within tolerance of the node's bounding box
+ */
+export function isPointAttachedToNode(
+  point: { pos_x: number; pos_y: number },
+  node: DiagramNode,
+  tolerance: number = diagramEditing.attachmentTolerance
+): boolean {
+  const nodeLeft = node.pos_x - tolerance;
+  const nodeRight = node.pos_x + node.width + tolerance;
+  const nodeTop = node.pos_y - tolerance;
+  const nodeBottom = node.pos_y + node.height + tolerance;
+
+  return (
+    point.pos_x >= nodeLeft &&
+    point.pos_x <= nodeRight &&
+    point.pos_y >= nodeTop &&
+    point.pos_y <= nodeBottom
+  );
+}
+
+/**
+ * Get all edge points that are attached to a given node
+ * @param node - The node to check attachment against
+ * @param allEdges - Array of all edges in the diagram
+ * @returns Array of edge points that are attached to the node
+ */
+export function getAttachedEdgePoints(
+  node: DiagramNode,
+  allEdges: DiagramEdge[]
+): EdgePoint[] {
+  const attachedPoints: EdgePoint[] = [];
+
+  for (const edge of allEdges) {
+    for (const point of edge.edge_points || []) {
+      if (isPointAttachedToNode(point, node)) {
+        attachedPoints.push(point);
+      }
+    }
+  }
+
+  return attachedPoints;
+}
+
+// ========== BOX-SELECT UTILITY FUNCTIONS ==========
+
+/**
+ * Normalize rectangle coordinates to ensure minX/minY/maxX/maxY regardless of drag direction
+ * Handles cases where user drags right-to-left or bottom-to-top
+ * @param x1 - Start X coordinate
+ * @param y1 - Start Y coordinate
+ * @param x2 - End X coordinate
+ * @param y2 - End Y coordinate
+ * @returns Normalized rectangle with minX, minY, maxX, maxY
+ */
+export function normalizeRect(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  return {
+    minX: Math.min(x1, x2),
+    minY: Math.min(y1, y2),
+    maxX: Math.max(x1, x2),
+    maxY: Math.max(y1, y2),
+  };
+}
+
+/**
+ * Check if a node is fully inside a selection rectangle
+ * Node must be entirely contained within the rectangle (not just intersecting)
+ * @param node - The node to check
+ * @param rect - Rectangle with x1, y1, x2, y2 (may be inverted)
+ * @returns True if the node's entire bounding box is inside the rectangle
+ */
+export function isNodeInsideRect(
+  node: DiagramNode,
+  rect: { x1: number; y1: number; x2: number; y2: number }
+): boolean {
+  // Normalize rectangle coordinates (handle inverted drag directions)
+  const { minX, minY, maxX, maxY } = normalizeRect(rect.x1, rect.y1, rect.x2, rect.y2);
+
+  // Calculate node bounds
+  const nodeLeft = node.pos_x;
+  const nodeRight = node.pos_x + node.width;
+  const nodeTop = node.pos_y;
+  const nodeBottom = node.pos_y + node.height;
+
+  // Node must be fully inside rectangle
+  return (
+    nodeLeft >= minX &&
+    nodeRight <= maxX &&
+    nodeTop >= minY &&
+    nodeBottom <= maxY
+  );
+}
+
+/**
+ * Compute the bounding box of an edge from its edge_points
+ * @param edge - The edge to compute bounding box for
+ * @returns Bounding box with minX, minY, maxX, maxY
+ */
+export function computeEdgeBoundingBox(
+  edge: DiagramEdge
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  const points = edge.edge_points || [];
+
+  if (points.length === 0) {
+    // Return empty/invalid bounding box for edges with no points
+    return { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const point of points) {
+    minX = Math.min(minX, point.pos_x);
+    minY = Math.min(minY, point.pos_y);
+    maxX = Math.max(maxX, point.pos_x);
+    maxY = Math.max(maxY, point.pos_y);
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
+/**
+ * Check if an edge is fully inside a selection rectangle
+ * Edge's entire bounding box (from edge_points) must be contained within the rectangle
+ * @param edge - The edge to check
+ * @param rect - Rectangle with x1, y1, x2, y2 (may be inverted)
+ * @returns True if the edge's entire bounding box is inside the rectangle
+ */
+export function isEdgeInsideRect(
+  edge: DiagramEdge,
+  rect: { x1: number; y1: number; x2: number; y2: number }
+): boolean {
+  // Compute edge bounding box
+  const edgeBounds = computeEdgeBoundingBox(edge);
+
+  // Check for empty/invalid edge (no points)
+  if (edgeBounds.minX === Infinity) {
+    return false;
+  }
+
+  // Normalize rectangle coordinates (handle inverted drag directions)
+  const { minX: rectMinX, minY: rectMinY, maxX: rectMaxX, maxY: rectMaxY } = normalizeRect(
+    rect.x1,
+    rect.y1,
+    rect.x2,
+    rect.y2
+  );
+
+  // Edge bounding box must be fully inside rectangle
+  return (
+    edgeBounds.minX >= rectMinX &&
+    edgeBounds.maxX <= rectMaxX &&
+    edgeBounds.minY >= rectMinY &&
+    edgeBounds.maxY <= rectMaxY
+  );
+}
+
+// ========== EDGE INTERACTION HIT TESTING FUNCTIONS ==========
+
+/**
+ * Calculate distance from a point to a line segment
+ * @param px - Point X coordinate
+ * @param py - Point Y coordinate
+ * @param x1 - Line segment start X
+ * @param y1 - Line segment start Y
+ * @param x2 - Line segment end X
+ * @param y2 - Line segment end Y
+ * @returns Distance from point to nearest point on line segment
+ */
+export function distanceToLineSegment(
+  px: number,
+  py: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lengthSq = dx * dx + dy * dy;
+
+  // Handle zero-length segment (point at endpoint)
+  if (lengthSq === 0) {
+    return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+  }
+
+  // Calculate projection parameter t clamped to [0,1]
+  let t = ((px - x1) * dx + (py - y1) * dy) / lengthSq;
+  t = Math.max(0, Math.min(1, t));
+
+  // Find nearest point on segment
+  const nearestX = x1 + t * dx;
+  const nearestY = y1 + t * dy;
+
+  // Return Euclidean distance to nearest point
+  return Math.sqrt((px - nearestX) ** 2 + (py - nearestY) ** 2);
+}
+
+/**
+ * Check if a point is near a polyline (within tolerance of any segment)
+ * @param px - Point X coordinate
+ * @param py - Point Y coordinate
+ * @param points - Array of points forming the polyline
+ * @param tolerance - Maximum distance from line to be considered "near" (default 5px)
+ * @returns True if point is within tolerance of any segment
+ */
+export function isPointNearPolyline(
+  px: number,
+  py: number,
+  points: Array<{ pos_x: number; pos_y: number }>,
+  tolerance: number = 5
+): boolean {
+  // Need at least 2 points to form a line
+  if (points.length < 2) return false;
+
+  // Check each segment
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+
+    if (distanceToLineSegment(px, py, p1.pos_x, p1.pos_y, p2.pos_x, p2.pos_y) <= tolerance) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check if a point is on a handle (within radius)
+ * @param clickX - Click X coordinate
+ * @param clickY - Click Y coordinate
+ * @param handleX - Handle center X coordinate
+ * @param handleY - Handle center Y coordinate
+ * @param radius - Handle hit radius (default 6px)
+ * @returns True if click is within radius of handle center
+ */
+export function isPointOnHandle(
+  clickX: number,
+  clickY: number,
+  handleX: number,
+  handleY: number,
+  radius: number = 6
+): boolean {
+  const dx = clickX - handleX;
+  const dy = clickY - handleY;
+  return (dx * dx + dy * dy) <= (radius * radius);
+}
+
+/**
+ * Check if a point is on a label (within bounding box)
+ * @param clickX - Click X coordinate
+ * @param clickY - Click Y coordinate
+ * @param labelX - Label X coordinate (center position with middle anchor)
+ * @param labelY - Label Y coordinate (baseline position)
+ * @param textWidth - Measured text width
+ * @param textHeight - Text height (typically font size)
+ * @returns True if click is within label bounding box
+ */
+export function isPointOnLabel(
+  clickX: number,
+  clickY: number,
+  labelX: number,
+  labelY: number,
+  textWidth: number,
+  textHeight: number
+): boolean {
+  // For middle-anchored text, the label is centered at labelX
+  const halfWidth = textWidth / 2;
+
+  return (
+    clickX >= labelX - halfWidth &&
+    clickX <= labelX + halfWidth &&
+    clickY >= labelY - textHeight &&
+    clickY <= labelY
+  );
+}
+
+// ========== EDGE STROKE STYLE PARSING FUNCTIONS ==========
+
+/**
+ * Parse line weight from CSS-style string (e.g., "3px") to numeric value
+ * @param weight - CSS pixel width string (e.g., "1px", "2px", "3px")
+ * @returns Numeric pixel value, defaults to 2 if invalid/missing
+ */
+export function parseLineWeight(weight?: string): number {
+  if (!weight) return edgeRendering.defaultLineWeight;
+  const match = weight.match(/^(\d+(?:\.\d+)?)\s*px$/i);
+  return match ? parseFloat(match[1]) : edgeRendering.defaultLineWeight;
+}
+
+/**
+ * Parse line dashes from space-separated pixel string to numeric array
+ * @param dashes - Space-separated pixel values (e.g., "6px 4px", "10 5")
+ * @returns Array of numeric values for SVG stroke-dasharray
+ */
+export function parseLineDashes(dashes?: string): number[] {
+  if (!dashes) return [];
+  return dashes
+    .split(/\s+/)
+    .map(s => parseFloat(s.replace(/px$/i, '')))
+    .filter(n => !isNaN(n) && n >= 0);
+}
+
+/**
+ * Get complete edge stroke style for SVG rendering
+ *
+ * Task Group 4: Updated to also apply line_dashes directly when set,
+ * regardless of line_type. This enables USER_INTERACTION edges with
+ * line_dashes: '4,4' to render as dotted lines without requiring line_type.
+ *
+ * @param edge - DiagramEdge with line_weight, line_type, and line_dashes
+ * @returns Object with strokeWidth and strokeDasharray for SVG path
+ */
+export function getEdgeStrokeStyle(edge: DiagramEdge): {
+  strokeWidth: number;
+  strokeDasharray: string;
+} {
+  // Parse weight
+  const strokeWidth = parseLineWeight(edge.line_weight);
+
+  // Determine dash pattern
+  let strokeDasharray = '';
+  const lineType = edge.line_type || 'SOLID';
+
+  if (lineType === 'DASHED') {
+    const dashes = edge.line_dashes
+      ? parseLineDashes(edge.line_dashes)
+      : edgeRendering.defaultDashedPattern;
+    strokeDasharray = dashes.join(' ');
+  } else if (lineType === 'DOTTED') {
+    const dashes = edge.line_dashes
+      ? parseLineDashes(edge.line_dashes)
+      : edgeRendering.defaultDottedPattern;
+    strokeDasharray = dashes.join(' ');
+  } else if (edge.line_dashes) {
+    // Task Group 4: Apply line_dashes directly when set, even if line_type is SOLID
+    // This enables USER_INTERACTION edges with line_dashes: '4,4' to render as dotted
+    const dashes = parseLineDashes(edge.line_dashes);
+    if (dashes.length > 0) {
+      strokeDasharray = dashes.join(' ');
+    }
+  }
+  // SOLID without line_dashes: strokeDasharray remains ''
+
+  return { strokeWidth, strokeDasharray };
+}
+
+/**
+ * Update edge points with label adjustment for straight-line edges
+ * This applies when node movement causes edge points to move
+ * @param edge - The edge to update (will be mutated)
+ * @param pointUpdates - Array of point movements with index and delta
+ * @returns Updated edge with adjusted label position
+ */
+export function updateEdgePointsWithLabelAdjust(
+  edge: DiagramEdge,
+  pointUpdates: Array<{ index: number; dx: number; dy: number }>
+): DiagramEdge {
+  // Create a copy to avoid direct mutation
+  const updatedEdge = {
+    ...edge,
+    edge_points: edge.edge_points.map(p => ({ ...p })),
+    label_pos_x: edge.label_pos_x,
+    label_pos_y: edge.label_pos_y,
+  };
+
+  // Apply all point updates
+  for (const update of pointUpdates) {
+    if (updatedEdge.edge_points[update.index]) {
+      updatedEdge.edge_points[update.index].pos_x += update.dx;
+      updatedEdge.edge_points[update.index].pos_y += update.dy;
+    }
+  }
+
+  // Label adjustment for straight-line edges only
+  if (updatedEdge.edge_points.length === 2 && updatedEdge.label_pos_x !== undefined && updatedEdge.label_pos_y !== undefined) {
+    if (pointUpdates.length === 1) {
+      // One endpoint moved - half adjustment
+      const { dx, dy } = pointUpdates[0];
+      updatedEdge.label_pos_x += dx / 2;
+      updatedEdge.label_pos_y += dy / 2;
+    } else if (pointUpdates.length === 2) {
+      // Check if both moved by same delta (translation)
+      const [u1, u2] = pointUpdates;
+      if (u1.dx === u2.dx && u1.dy === u2.dy) {
+        // Full translation
+        updatedEdge.label_pos_x += u1.dx;
+        updatedEdge.label_pos_y += u1.dy;
+      } else {
+        // Different deltas - use average
+        updatedEdge.label_pos_x += (u1.dx + u2.dx) / 2;
+        updatedEdge.label_pos_y += (u1.dy + u2.dy) / 2;
+      }
+    }
+  }
+
+  return updatedEdge;
+}
+
+// ========== DECORATION RENDERING FUNCTIONS ==========
+
+/**
+ * Interface for text element rendering data
+ */
+export interface TextElementData {
+  content: string;
+  lines: string[];
+  lineHeight: number;
+  x: number;
+  y: number;
+  textAnchor: 'start' | 'middle' | 'end';
+  fontSize: number;
+  fontWeight: string;
+  fontStyle: string;
+  textDecoration: string;
+  fill: string;
+}
+
+/**
+ * Interface for BOX decoration rendering output
+ */
+export interface BoxDecorationRenderResult {
+  rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    fill: string;
+    stroke: string;
+    strokeWidth: number;
+    strokeDasharray: string;
+  };
+  textElement?: TextElementData;
+  isSelected: boolean;
+}
+
+/**
+ * Interface for LINE decoration rendering output
+ */
+export interface LineDecorationRenderResult {
+  pathData: string;
+  stroke: string;
+  strokeWidth: number;
+  strokeDasharray: string;
+  arrowStartPath?: string;
+  arrowEndPath?: string;
+  labelElement?: TextElementData;
+  isSelected: boolean;
+}
+
+/**
+ * Get stroke style for decoration line rendering
+ * @param lineStyle - The line style (SOLID, DASHED, DOTTED)
+ * @param lineWeight - Optional line weight as CSS string (e.g., "2px")
+ * @returns Object with strokeWidth and strokeDasharray
+ */
+export function getDecorationStrokeStyle(
+  lineStyle?: LineStyle,
+  lineWeight?: string
+): {
+  strokeWidth: number;
+  strokeDasharray: string;
+} {
+  // Parse weight (use default if not provided)
+  const strokeWidth = lineWeight ? parseLineWeight(lineWeight) : edgeRendering.defaultLineWeight;
+
+  // Determine dash pattern based on line style
+  let strokeDasharray = '';
+  const style = lineStyle || 'SOLID';
+
+  if (style === 'DASHED') {
+    strokeDasharray = edgeRendering.defaultDashedPattern.join(' ');
+  } else if (style === 'DOTTED') {
+    strokeDasharray = edgeRendering.defaultDottedPattern.join(' ');
+  }
+  // SOLID: strokeDasharray remains ''
+
+  return { strokeWidth, strokeDasharray };
+}
+
+/**
+ * Calculate text position for BOX decoration based on alignment
+ * @param box - The BOX decoration
+ * @param fontSize - Font size to use
+ * @returns Text position and anchor
+ */
+function calculateBoxTextPosition(
+  box: BoxDecoration,
+  fontSize: number,
+  numLines: number = 1,
+  lineHeight: number = fontSize * 1.3
+): { x: number; y: number; textAnchor: 'start' | 'middle' | 'end' } {
+  const padding = TEXT_PADDING;
+
+  // Calculate text area
+  const textAreaX = box.pos_x + padding;
+  const textAreaY = box.pos_y + padding;
+  const textAreaWidth = box.width - (padding * 2);
+  const textAreaHeight = box.height - (padding * 2);
+
+  // Determine horizontal position and anchor
+  const hAlign = box.text_h_align || DECORATION_DEFAULTS.BOX.text_h_align;
+  let x: number;
+  let textAnchor: 'start' | 'middle' | 'end';
+
+  switch (hAlign) {
+    case 'LEFT':
+      x = textAreaX;
+      textAnchor = 'start';
+      break;
+    case 'RIGHT':
+      x = textAreaX + textAreaWidth;
+      textAnchor = 'end';
+      break;
+    case 'CENTER':
+    default:
+      x = box.pos_x + box.width / 2;
+      textAnchor = 'middle';
+      break;
+  }
+
+  // Determine vertical position (baseline of first line)
+  const vAlign = box.text_v_align || DECORATION_DEFAULTS.BOX.text_v_align;
+  let y: number;
+  const textBlockHeight = (numLines - 1) * lineHeight;
+
+  switch (vAlign) {
+    case 'TOP':
+      y = textAreaY + fontSize;
+      break;
+    case 'BOTTOM':
+      y = textAreaY + textAreaHeight - textBlockHeight;
+      break;
+    case 'MIDDLE':
+    default:
+      y = textAreaY + textAreaHeight / 2 + fontSize / 3 - textBlockHeight / 2;
+      break;
+  }
+
+  return { x, y, textAnchor };
+}
+
+/**
+ * Render a BOX decoration to SVG element data
+ * @param box - The BOX decoration to render
+ * @param isSelected - Whether the decoration is selected
+ * @returns Rendering data for the BOX decoration
+ */
+export function renderBoxDecoration(
+  box: BoxDecoration,
+  isSelected: boolean
+): BoxDecorationRenderResult {
+  const defaults = DECORATION_DEFAULTS[(box as any).type] || DECORATION_DEFAULTS.BOX;
+  const bgOpacity = box.background_opacity ?? defaults.background_opacity;
+  const borderOpacity = box.border_opacity ?? defaults.border_opacity;
+
+  // Get stroke style
+  const { strokeWidth, strokeDasharray } = getDecorationStrokeStyle(
+    box.line_style || defaults.line_style,
+    box.line_weight || defaults.line_weight
+  );
+
+  // Build rect data with opacity applied
+  const rect = {
+    x: box.pos_x,
+    y: box.pos_y,
+    width: box.width,
+    height: box.height,
+    fill: applyOpacity(box.background_color || defaults.background_color, bgOpacity),
+    stroke: applyOpacity(box.line_color || defaults.line_color, borderOpacity),
+    strokeWidth,
+    strokeDasharray,
+  };
+
+  // Build text element if text is provided
+  let textElement: TextElementData | undefined;
+  if (box.text && box.text.trim() !== '') {
+    const fontSize = box.text_font_size || defaults.text_font_size;
+    const lines = box.text.split('\n');
+    const lineHeight = fontSize * 1.3;
+    const { x, y, textAnchor } = calculateBoxTextPosition(box, fontSize, lines.length, lineHeight);
+
+    textElement = {
+      content: box.text,
+      lines,
+      lineHeight,
+      x,
+      y,
+      textAnchor,
+      fontSize,
+      fontWeight: box.text_font_weight || defaults.text_font_weight,
+      fontStyle: box.text_font_style || defaults.text_font_style,
+      textDecoration: box.text_text_decoration || 'none',
+      fill: box.text_color || defaults.text_color,
+    };
+  }
+
+  return {
+    rect,
+    textElement,
+    isSelected,
+  };
+}
+
+/**
+ * Render a LINE decoration to SVG element data
+ * @param line - The LINE decoration to render
+ * @param isSelected - Whether the decoration is selected
+ * @returns Rendering data for the LINE decoration
+ */
+export function renderLineDecoration(
+  line: LineDecoration,
+  isSelected: boolean
+): LineDecorationRenderResult {
+  const defaults = DECORATION_DEFAULTS.LINE;
+  const points = line.line_points;
+
+  // Build path data from points
+  let pathData = '';
+  if (points.length >= 1) {
+    pathData = points
+      .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`)
+      .join(' ');
+  }
+
+  // Get stroke style
+  const { strokeWidth, strokeDasharray } = getDecorationStrokeStyle(
+    line.line_style || defaults.line_style,
+    line.line_weight || defaults.line_weight
+  );
+
+  const stroke = line.line_color || defaults.line_color;
+
+  // Calculate arrow paths if needed
+  let arrowStartPath: string | undefined;
+  let arrowEndPath: string | undefined;
+
+  const arrowSize = appConfig.edge.arrowSize;
+
+  if (points.length >= 2) {
+    // Arrow at start (points[0] is the tip)
+    if (line.arrow_start === 'ARROW') {
+      const tipPoint = points[0];
+      const nextPoint = points[1];
+      arrowStartPath = calculateArrowhead(
+        nextPoint.x,
+        nextPoint.y,
+        tipPoint.x,
+        tipPoint.y,
+        arrowSize
+      );
+    }
+
+    // Arrow at end (last point is the tip)
+    if (line.arrow_end === 'ARROW') {
+      const tipPoint = points[points.length - 1];
+      const prevPoint = points[points.length - 2];
+      arrowEndPath = calculateArrowhead(
+        prevPoint.x,
+        prevPoint.y,
+        tipPoint.x,
+        tipPoint.y,
+        arrowSize
+      );
+    }
+  }
+
+  // Build label element if text is provided
+  let labelElement: TextElementData | undefined;
+  if (line.text && line.text.trim() !== '') {
+    const fontSize = line.text_font_size || defaults.text_font_size;
+
+    // Determine label position
+    let labelX: number;
+    let labelY: number;
+
+    if (line.label_pos_x !== undefined && line.label_pos_y !== undefined) {
+      // Use explicit position
+      labelX = line.label_pos_x;
+      labelY = line.label_pos_y;
+    } else {
+      // Calculate midpoint (average of all points)
+      const sumX = points.reduce((sum, p) => sum + p.x, 0);
+      const sumY = points.reduce((sum, p) => sum + p.y, 0);
+      labelX = points.length > 0 ? sumX / points.length : 0;
+      labelY = points.length > 0 ? sumY / points.length : 0;
+    }
+
+    const lines = line.text.split('\n');
+    const lineHeight = fontSize * 1.3;
+
+    labelElement = {
+      content: line.text,
+      lines,
+      lineHeight,
+      x: labelX,
+      y: labelY,
+      textAnchor: 'middle', // LINE labels are always centered
+      fontSize,
+      fontWeight: line.text_font_weight || defaults.text_font_weight,
+      fontStyle: line.text_font_style || defaults.text_font_style,
+      textDecoration: line.text_text_decoration || 'none',
+      fill: line.text_color || defaults.text_color,
+    };
+  }
+
+  return {
+    pathData,
+    stroke,
+    strokeWidth,
+    strokeDasharray,
+    arrowStartPath,
+    arrowEndPath,
+    labelElement,
+    isSelected,
+  };
+}
+
+// ========== MULTIPLICITY LABEL UTILITIES ==========
+
+/**
+ * Get multiplicity labels based on cardinality type
+ * Used for Logical ER relationships to display "1" or "m" near endpoints
+ *
+ * @param relationshipType - Cardinality type (ONE_TO_ONE, ONE_TO_MANY, MANY_TO_ONE, MANY_TO_MANY)
+ * @returns Object with source and target label strings
+ */
+export function getMultiplicityLabels(relationshipType: string): { source: string; target: string } {
+  switch (relationshipType) {
+    case 'ONE_TO_ONE':
+      return { source: '1', target: '1' };
+    case 'ONE_TO_MANY':
+      return { source: '1', target: 'm' };
+    case 'MANY_TO_ONE':
+      return { source: 'm', target: '1' };
+    case 'MANY_TO_MANY':
+      return { source: 'm', target: 'm' };
+    default:
+      // Default to one-to-one if unknown
+      return { source: '1', target: '1' };
+  }
+}
+
+// ========== CONTAINMENT AND PARENT-CHILD UTILITIES ==========
+
+/**
+ * Check if a node type supports child containment
+ *
+ * @param entityType - The entity type to check
+ * @returns True if the entity type can contain child nodes
+ */
+export function supportsChildNodes(entityType: string): boolean {
+  // APPLICATION can contain APP_COMPONENT nodes
+  // BUSINESS_PROCESS can contain PROCESS_ACTIVITY nodes
+  // SERVICE can contain INTERFACE nodes (new)
+  return entityType === ENTITY_TYPES.APPLICATION ||
+         entityType === ENTITY_TYPES.BUSINESS_PROCESS ||
+         entityType === ENTITY_TYPES.SERVICE;
+}
+
+/**
+ * Get the parent entity type for a given child entity type
+ *
+ * @param childEntityType - The child entity type
+ * @returns The parent entity type, or null if not a child type
+ */
+export function getParentEntityType(childEntityType: string): string | null {
+  switch (childEntityType) {
+    case ENTITY_TYPES.APP_COMPONENT:
+      return ENTITY_TYPES.APPLICATION;
+    case ENTITY_TYPES.PROCESS_ACTIVITY:
+      return ENTITY_TYPES.BUSINESS_PROCESS;
+    case ENTITY_TYPES.INTERFACE:
+      return ENTITY_TYPES.SERVICE;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Check if an entity type is a child type that should be contained
+ *
+ * @param entityType - The entity type to check
+ * @returns True if the entity type should be contained within a parent
+ */
+export function isChildEntityType(entityType: string): boolean {
+  return entityType === ENTITY_TYPES.APP_COMPONENT ||
+         entityType === ENTITY_TYPES.PROCESS_ACTIVITY ||
+         entityType === ENTITY_TYPES.INTERFACE;
+}

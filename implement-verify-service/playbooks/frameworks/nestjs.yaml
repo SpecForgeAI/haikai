@@ -1,0 +1,46 @@
+name: nestjs
+version: 1
+language: typescript
+
+detection:
+  imports_match:
+    - '@nestjs/common'
+    - '@nestjs/core'
+  manifest_contains:
+    - {file: 'package.json', substring: '@nestjs/core'}
+
+extract:
+  - id: controller_class
+    query: annotations
+    file_filter: routing_imports
+    annotation_names: [Controller]
+    target_kind: class
+  - id: method_verbs
+    query: annotations
+    file_filter: routing_imports
+    annotation_names: [Get, Post, Put, Delete, Patch, Head, Options, All]
+    target_kind: method
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: nestjs
+
+verb_annotations:
+  Get:     GET
+  Post:    POST
+  Put:     PUT
+  Delete:  DELETE
+  Patch:   PATCH
+  Head:    HEAD
+  Options: OPTIONS
+  All:     ANY
+
+path_only_annotations:
+  - Controller
+
+conflict_rules: []
+
+known_pitfalls:
+  - "@Controller('users') sets the class-level prefix — combined with method @Get(':id')"
+  - "@Controller() with no arg = no prefix"

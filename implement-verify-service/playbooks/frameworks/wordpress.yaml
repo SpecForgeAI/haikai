@@ -1,0 +1,30 @@
+name: wordpress
+version: 1
+language: php
+
+detection:
+  files_match:
+    - 'wp-config.php'
+    - 'wp-config-sample.php'
+    - 'wp-load.php'
+  manifest_contains:
+    - {file: 'wp-includes/version.php', substring: 'wp_version'}
+
+extract:
+  - id: register_rest_route_calls
+    query: call_args
+    file_filter: all
+    callee_pattern: '^register_rest_route$'
+    path_arg_index: 1   # register_rest_route( $namespace, $route, $args )
+    verb: ANY
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: wordpress
+
+conflict_rules: []
+known_pitfalls:
+  - "$namespace prefix not joined to route — emitted bare path only"
+  - "$args['methods'] is an array of HTTP verbs — currently emits ANY"
+  - "admin-post.php / admin-ajax.php hooks are NOT counted (action handlers only)"

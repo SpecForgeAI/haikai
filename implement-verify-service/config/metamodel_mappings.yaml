@@ -1,0 +1,59 @@
+# Metamodel Mappings
+# Maps canonical SymbolKind → architecture.json entity types.
+# Versioned by metamodel version_id. Hard stop on unknown version.
+#
+# Two mapping types:
+#   1. Direct: SymbolKind → entity_type (1:1)
+#   2. Heuristic: detection rules for higher-level entities (services, components)
+
+"1":
+  # Direct entity mappings: source_kind → entity_type
+  entity_mappings:
+    classes:
+      source_kind: class
+      id_prefix: "class"
+    methods:
+      source_kind: method
+      id_prefix: "method"
+      parent_ref: true  # link to parent class
+    interfaces:
+      source_kind: interface
+      id_prefix: "iface"
+
+  # Heuristic detection mappings
+  heuristic_mappings:
+    services:
+      detect_by:
+        - has_dockerfile
+        - has_main_entrypoint
+        - has_api_routes
+      id_prefix: "svc"
+    app_components:
+      detect_by:
+        - top_level_directory_with_sources
+      id_prefix: "comp"
+    endpoints:
+      detect_by:
+        - has_route_decorator
+      id_prefix: "ep"
+    physical_data_entities:
+      detect_by:
+        - extends_orm_base
+        - has_entity_decorator
+      id_prefix: "pde"
+    logical_data_entities:
+      detect_by:
+        - is_pydantic_model
+        - is_dto_class
+      id_prefix: "lde"
+
+  # Relationship mappings
+  relationship_mappings:
+    interactions:
+      source_rel: imports
+      between: services
+      id_prefix: "interaction"
+    inheritance:
+      source_rel: inheritance
+      maps_to: class_hierarchy
+      id_prefix: "inh"

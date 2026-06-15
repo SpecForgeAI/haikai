@@ -1,0 +1,59 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Visit",
+      "tag": "pack",
+      "description": "@Entity/@Table(\"visit\") core OpenMRS aggregation entity."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "visitId",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Visit \u2192 Patient",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Visit \u2192 VisitType",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Visit \u2192 Concept",
+      "tag": "pack",
+      "description": "indication \u2014 the clinical reason for the visit."
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Visit \u2192 Location",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "startDatetime",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "stopDatetime",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Visit \u2192 Encounter",
+      "tag": "pack",
+      "description": "@OneToMany Set<Encounter> encounters."
+    },
+    {
+      "type": "business_logics",
+      "name": "addEncounter",
+      "tag": "gap-fill",
+      "description": "Business-logic method the pack misses: mutates the encounter set and back-sets the visit. Gap-fill should surface this from the Javadoc + method body."
+    }
+  ],
+  "shouldNotEmit": []
+}

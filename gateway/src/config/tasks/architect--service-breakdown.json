@@ -1,0 +1,14 @@
+{
+  "id": "architect--service-breakdown",
+  "personaId": "architect",
+  "menuLabel": "Service Breakdown",
+  "description": "Assists with detailed service decomposition including responsibilities, API contracts, communication patterns, and dependency analysis for the system's service architecture.",
+  "mode": "advisory",
+  "taskPromptRef": "prompts/architect.service-breakdown.task.md",
+  "responseFormat": null,
+  "contextNeeds": ["mission", "tech-stack"],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

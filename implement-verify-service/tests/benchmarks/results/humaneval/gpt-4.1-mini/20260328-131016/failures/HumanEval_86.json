@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/86",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "import re\nparts = re.findall(r'\\S+|\\s+', s)\nresult = []\nfor part in parts:\n    if part.isspace():\n        result.append(part)\n    else:\n        # Separate trailing punctuation\n        match = re.match(r'([A-Za-z]+)([^A-Za-z]*)', part)\n        if match:\n            word, punct = match.groups()\n            sorted_word = ''.join(sorted(word))\n            result.append(sorted_word + punct)\n        else:\n            # If no letters, just append as is\n            result.append(part)\nreturn ''.join(result)",
+  "expected_output": "    return ' '.join([''.join(sorted(list(i))) for i in s.split(' ')])\n",
+  "latency_seconds": 2.177976629929617,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 176,
+    "output_tokens": 119,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

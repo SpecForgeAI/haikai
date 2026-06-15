@@ -1,0 +1,78 @@
+spring:
+  application:
+    name: architecture-model-service-test
+
+  datasource:
+    # Use MODE=PostgreSQL for JSONB support in H2 (requires H2 2.3.x; pinned in pom.xml).
+    # NON_KEYWORDS=KEY: ui_characteristics has a "key" column; KEY is an H2 reserved word.
+    # ${random.uuid}: each cached Spring test context gets its OWN in-memory DB. With a
+    # single shared name (testdb + DB_CLOSE_DELAY=-1), a cached context being closed ran
+    # its create-drop "drop" against the database still in use by sibling contexts,
+    # wiping their tables mid-suite. The placeholder is resolved once per context when
+    # DataSourceProperties binds, so the URL is stable within a context but unique across
+    # contexts. Tests needing a deterministic DB name still override per-class via
+    # @TestPropertySource (many do).
+    url: jdbc:h2:mem:testdb-${random.uuid};DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=PostgreSQL;NON_KEYWORDS=KEY
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  liquibase:
+    enabled: false
+
+  # Stop @DataJpaTest from swapping in Spring Boot's auto-generated embedded H2
+  # URL, which carries no MODE=PostgreSQL / NON_KEYWORDS=KEY flags and therefore
+  # rejects JSONB columns and the ui_characteristics "key" column. With replace
+  # disabled, slice tests use the configured datasource URL above. (The
+  # @AutoConfigureTestDatabase 'replace' attribute skips property-mapping on its
+  # default value, so this yml property is honoured unless a class sets the
+  # attribute explicitly.)
+  test:
+    database:
+      replace: none
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+  # Multipart limits raised from Spring Boot defaults to mirror production.
+  # Spec: Runtime Log Input at Discovery Run Start (2026-05-10) -- Task Group 1.
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 2000MB
+
+server:
+  port: 0
+
+logging:
+  level:
+    com.example.architecturemodel: DEBUG
+
+# Application configuration
+app:
+  projectRootDir: .
+
+  # Data Entity Point startup backfill - disabled by default in tests
+  # to avoid interference with specific test scenarios
+  data-entity-points:
+    startup-ensure: false
+
+  # Feature toggles - database enabled by default for tests
+  # Override with @TestPropertySource(properties = {"app.features.include-database=false"})
+  # to test no-db mode. The DatabaseAutoConfigurationImportFilter will automatically
+  # exclude database auto-configurations when the property is false.
+  features:
+    include-database: true

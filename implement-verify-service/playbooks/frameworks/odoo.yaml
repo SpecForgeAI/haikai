@@ -1,0 +1,29 @@
+name: odoo
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - odoo
+    - odoo.http
+    - openerp
+  manifest_contains:
+    - {file: 'odoo-bin', substring: ''}
+    - {file: 'requirements.txt', substring: 'odoo'}
+
+extract:
+  - id: http_route_decorator
+    query: annotations
+    file_filter: all
+    annotation_names: [http.route, route]
+    target_kind: method
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: odoo
+
+conflict_rules: []
+known_pitfalls:
+  - "@http.route('/web/foo', auth='public', type='http') — path is first positional arg"
+  - "Odoo dispatches by method, not verb — emitted as ANY"

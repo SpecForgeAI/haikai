@@ -1,0 +1,62 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "7c0014fe-b136-434a-8e37-3c0dc0a4578f",
+      "entity_type": "packages",
+      "entity_id": "src_main_java_com_iluwatar_abstractdocument",
+      "label": "src/main/java/com/iluwatar/abstractdocument",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "674a8165-84e5-4e62-b55b-ea5ed5c0f731",
+      "entity_type": "packages",
+      "entity_id": "src_main_java_com_iluwatar_abstractdocument_domain",
+      "label": "src/main/java/com/iluwatar/abstractdocument/domain",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "744d81f4-81ea-4c5e-aae0-0bbf419c5446",
+      "entity_type": "packages",
+      "entity_id": "src_main_java_com_iluwatar_abstractdocument_domain_enums",
+      "label": "src/main/java/com/iluwatar/abstractdocument/domain/enums",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "740c873a-4859-48e3-8a30-3960eef89b27",
+      "entity_type": "packages",
+      "entity_id": "src_test_java_com_iluwatar_abstractdocument",
+      "label": "src/test/java/com/iluwatar/abstractdocument",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "8335c6dc-ba1f-406f-90f9-6153b7af0ac7",
+      "source_node_id": "7c0014fe-b136-434a-8e37-3c0dc0a4578f",
+      "target_node_id": "674a8165-84e5-4e62-b55b-ea5ed5c0f731",
+      "relationship_type": "contains"
+    },
+    {
+      "id": "7ae0f142-0fda-4704-8775-1b646dd19620",
+      "source_node_id": "674a8165-84e5-4e62-b55b-ea5ed5c0f731",
+      "target_node_id": "744d81f4-81ea-4c5e-aae0-0bbf419c5446",
+      "relationship_type": "contains"
+    }
+  ]
+}

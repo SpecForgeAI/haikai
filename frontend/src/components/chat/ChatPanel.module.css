@@ -1,0 +1,133 @@
+/* Collapsed Tab */
+.collapsedTab {
+  width: 32px;
+  height: calc(100vh - 75px);
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 16px;
+  gap: 8px;
+  background: #f5f5f5;
+  border-right: 1px solid #e0e0e0;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.collapsedTab:hover {
+  background: #e8e8e8;
+}
+
+.chatIcon {
+  color: #666;
+}
+
+.tabLabel {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+
+/* Expanded Panel */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 75px);
+  min-height: 0;
+  align-self: stretch;
+  border-right: 1px solid #e0e0e0;
+  background: white;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Header */
+.header {
+  height: 48px;
+  min-height: 48px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+  flex: 0 0 auto;
+}
+
+.headerTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.collapseButton {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #666;
+  transition: background 0.2s, color 0.2s;
+}
+
+.collapseButton:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+
+/* Error Banner */
+.errorBanner {
+  padding: 8px 12px;
+  background: #FFEBEE;
+  color: #C62828;
+  font-size: 13px;
+  border-top: 1px solid #FFCDD2;
+  flex: 0 0 auto;
+}
+
+/* Input Drag Handle (vertical resize) */
+.inputDragHandle {
+  height: 8px;
+  cursor: ns-resize;
+  background: transparent;
+  flex: 0 0 auto;
+  transition: background 0.2s;
+}
+
+.inputDragHandle:hover {
+  background: rgba(25, 118, 210, 0.1);
+}
+
+.inputDragHandle:active {
+  background: rgba(25, 118, 210, 0.2);
+}
+
+/* Resize Handle (horizontal - panel width) */
+.resizeHandle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.resizeHandle:hover {
+  background: rgba(25, 118, 210, 0.1);
+}
+
+.resizeHandle:active {
+  background: rgba(25, 118, 210, 0.2);
+}

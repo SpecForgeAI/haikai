@@ -1,0 +1,345 @@
+/**
+ * DiffFindingDetailDrawer Styles
+ *
+ * Spec: 2026-05-25 API Test Harness -- Findings Integration -- Task Group 4
+ * sub-task 4.4.
+ *
+ * Copy-modify of `frontend/src/components/Discovery/FindingDetailDrawer.module.css`
+ * per accepted Q4 (acceptable duplication for lower risk to the existing
+ * reviewer flow; v2 may refactor to a shared base if surfaces diverge).
+ *
+ * Lives under `DashboardView/` (NOT `Discovery/`) -- colocates with the
+ * parent `DriftReportTab.tsx` per the spec's location rule.
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drawer {
+  width: min(720px, 100vw);
+  height: 100vh;
+  background: #ffffff;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.headerTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+  flex: 1;
+}
+
+.closeButton {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #475569;
+}
+
+.closeButton:hover {
+  background: #f1f5f9;
+}
+
+.diffItemContext {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #475569;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.diffItemContextLabel {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.diffItemMethod {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-weight: 600;
+  color: #1976d2;
+}
+
+.diffItemPath {
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: #1f2937;
+  word-break: break-all;
+}
+
+.diffItemScenario {
+  font-style: italic;
+  color: #64748b;
+}
+
+.findingsListNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.findingsListNavButton {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #475569;
+}
+
+.findingsListNavButton:hover {
+  background: #f1f5f9;
+}
+
+.findingsListNavButtonActive {
+  background: #e3f2fd;
+  border-color: #1976d2;
+  color: #1976d2;
+  font-weight: 600;
+}
+
+.badgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.badgeSeverityCritical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badgeSeverityHigh {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.badgeSeverityMedium {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.badgeSeverityLow {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badgeSeverityInfo {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.badgeStatusAccepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badgeStatusIgnored {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.badgeStatusNeedsReview {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.badgeStatusResolved {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.summaryText {
+  font-size: 13px;
+  color: #1f2937;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.detailJson {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 11px;
+  color: #1e293b;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.metaCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metaLabel {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.metaValue {
+  font-size: 13px;
+  color: #1f2937;
+  word-break: break-word;
+}
+
+.notesTextarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid #e0e0e0;
+  background: #f8fafc;
+}
+
+.actionButton {
+  border: 1px solid #1976d2;
+  background: #1976d2;
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.actionButton:hover {
+  background: #1565c0;
+}
+
+.actionButton:disabled {
+  background: #cbd5e1;
+  border-color: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.actionButtonSecondary {
+  background: transparent;
+  color: #1976d2;
+}
+
+.actionButtonSecondary:hover {
+  background: #e3f2fd;
+}
+
+.actionButtonDanger {
+  background: transparent;
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.actionButtonDanger:hover {
+  background: #fee2e2;
+}
+
+.errorMessage {
+  color: #b91c1c;
+  font-size: 12px;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.emptyFindingsMessage {
+  font-size: 13px;
+  color: #64748b;
+  font-style: italic;
+  padding: 16px;
+  text-align: center;
+}

@@ -1,0 +1,94 @@
+/**
+ * GridRowContextMenu Styles
+ * Task Group 7: Styles for grid row context menu
+ */
+
+.contextMenu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 260px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.menuHeader {
+  padding: 10px 12px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.menuTitle {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menuSubtitle {
+  display: block;
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.menuDivider {
+  height: 1px;
+  background: #e0e0e0;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease;
+}
+
+.menuItem:hover {
+  background: #f0f7ff;
+}
+
+.menuItem:active {
+  background: #e3f2fd;
+}
+
+/* Spec 2026-06-06: greyed-out discovery items (mutual exclusivity between the
+   two code items and the Database item, driven by the Service's Core Tech). */
+.menuItem:disabled {
+  opacity: 0.45;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.menuItem:disabled:hover,
+.menuItem:disabled:active {
+  background: none;
+}
+
+.menuItem:disabled .menuItemIcon {
+  color: #aaa;
+}
+
+.menuItemIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #1976d2;
+}

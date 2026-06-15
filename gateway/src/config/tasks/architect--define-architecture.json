@@ -1,0 +1,53 @@
+{
+  "id": "architect--define-architecture",
+  "personaId": "architect",
+  "menuLabel": "Define Architecture",
+  "description": "Conducts structured architecture discovery to establish a comprehensive architecture baseline. Guides the user through document intake, context and boundaries, UI and channels, integrations, data model, service decomposition, business logic, non-functional requirements, artefact review, and final review.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/architect.define-architecture.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "document_intake",
+          "context_and_boundaries",
+          "ui_and_channels",
+          "integrations",
+          "data_model",
+          "service_decomposition",
+          "business_logic",
+          "non_functional",
+          "artefact_review",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": ["mission", "tech-stack"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "architecture-baseline",
+      "filename": "ARCHITECTURE_BASELINE",
+      "tool": "save_architecture_baseline",
+      "description": "Architecture baseline meta-model"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"],
+  "saveTargetResolution": "bound-by-system-prompt"
+}

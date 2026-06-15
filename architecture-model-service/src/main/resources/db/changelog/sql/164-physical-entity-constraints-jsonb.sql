@@ -1,0 +1,28 @@
+-- ============================================================================
+-- Physical-entity constraint/index metadata for Discovery (Spec: 2026-05-29 DB
+-- Structural Fidelity) -- Task Group 1.
+--
+-- Adds ONE nullable `constraints_metadata` JSONB column to the EXISTING
+-- physical_data_entities table (created by an applied changeset, which is NEVER
+-- edited -- this is a NEW changeset only). Mirrors the 162-business-logic-
+-- behavior.sql precedent (a nullable JSONB column on an existing table, via the
+-- Hypersistence @Type(JsonType.class) Map<String,Object> idiom in the JPA
+-- entity).
+--
+-- constraints_metadata carries the table's structural constraint/index truth as
+-- METADATA ON THE ENTITY -- NOT as separate entity types. Shape:
+--   {
+--     primary_key:        { name, columns[] },
+--     unique_constraints: [ { name, columns[] } ],
+--     check_constraints:  [ { name, expression } ],
+--     indexes:            [ { name, columns[], is_unique } ]
+--   }
+--
+-- Views stay as physical_data_entities (physical_type='View'); their defining
+-- SQL goes to a Finding, NOT onto this entity.
+--
+-- Additive + nullable: existing physical_data_entities rows carry no metadata,
+-- so a null/absent block round-trips cleanly.
+-- ============================================================================
+
+ALTER TABLE physical_data_entities ADD COLUMN constraints_metadata JSONB;

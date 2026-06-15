@@ -1,0 +1,60 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "Article",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "slug",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "title",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "body",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "description",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "author",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "favoritesCount",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "Comment",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "id",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "body",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "createdAt",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

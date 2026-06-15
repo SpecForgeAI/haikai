@@ -1,0 +1,78 @@
+name: spring-boot
+version: 1
+language: java
+
+detection:
+  imports_match:
+    - org.springframework.web.bind.annotation
+    - org.springframework.stereotype
+    - org.springframework.boot.autoconfigure
+  files_match:
+    - "**/*Controller.java"
+    - "**/*Resource.java"
+  manifest_contains:
+    - {file: pom.xml, substring: spring-boot-starter-web}
+    - {file: build.gradle, substring: spring-boot-starter-web}
+    - {file: pom.xml, substring: spring-webmvc}
+    - {file: build.gradle, substring: spring-webmvc}
+
+extract:
+  - id: method_annotations
+    query: annotations
+    file_filter: routing_imports
+    annotation_names:
+      - GetMapping
+      - PostMapping
+      - PutMapping
+      - DeleteMapping
+      - PatchMapping
+      - RequestMapping
+    target_kind: method
+  - id: class_prefixes
+    query: annotations
+    file_filter: routing_imports
+    annotation_names: [RequestMapping]
+    target_kind: class
+
+expansion_rules:
+  - rule: prefix_class_path
+    description: "Class-level @RequestMapping value is path prefix; combine with method annotation paths"
+  - rule: drop_class_only
+    description: "A class with @RequestMapping but no method-level mappings emits 0 endpoints"
+  - rule: derive_method_from_annotation
+    description: "Annotation name implies HTTP verb (GetMapping=GET, PostMapping=POST, etc.)"
+  - rule: requestmapping_default_methods
+    description: "If RequestMapping has no methods= argument, treat as supporting all HTTP methods (skip — too noisy in practice; extract single endpoint)"
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: spring-boot
+
+verification:
+  - id: method_annotation_count
+    query: annotations
+    annotation_names: [GetMapping, PostMapping, PutMapping, DeleteMapping, PatchMapping]
+    target_kind: method
+    expected_count: same_as_output_count
+    tolerance_abs: 5
+    tolerance_pct: 10
+
+verb_annotations:
+  GetMapping:    GET
+  PostMapping:   POST
+  PutMapping:    PUT
+  DeleteMapping: DELETE
+  PatchMapping:  PATCH
+
+path_only_annotations:
+  - RequestMapping
+
+verb_via_methods_arg:
+  - RequestMapping
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Class-level @RequestMapping is path prefix, not endpoint itself"
+  - "@RequestMapping without method= arg is one endpoint, not five"

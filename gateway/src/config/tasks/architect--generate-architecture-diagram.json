@@ -1,0 +1,35 @@
+{
+  "id": "architect--generate-architecture-diagram",
+  "personaId": "architect",
+  "menuLabel": "Generate ER Diagram",
+  "description": "Generates an ER diagram from the project's saved data model using a structured 4-question flow. Produces a TemporaryArchitectureDiagram JSON payload covering entity selection, attribute visibility, and relationship cardinality preferences, then saves via MCP tool invocation.",
+  "mode": "workflow",
+  "taskPromptRef": "prompts/architect.generate-architecture-diagram.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": ["configuration", "confirmation"]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": [],
+  "persistence": "panel",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["panel"],
+  "saveTargetResolution": "bound-by-system-prompt"
+}

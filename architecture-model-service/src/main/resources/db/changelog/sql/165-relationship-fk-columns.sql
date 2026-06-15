@@ -1,0 +1,27 @@
+-- ============================================================================
+-- Relationship FK join/referenced columns for Discovery (Spec: 2026-05-29 DB
+-- Structural Fidelity) -- Task Group 1.
+--
+-- Adds ONE nullable `fk_columns` JSONB column to the EXISTING
+-- logical_data_entity_relationships table (created by an applied changeset,
+-- which is NEVER edited -- this is a NEW changeset only). Mirrors the
+-- 162-business-logic-behavior.sql precedent (a nullable JSONB column on an
+-- existing table, via the Hypersistence @Type(JsonType.class) Map<String,Object>
+-- idiom in the JPA entity).
+--
+-- fk_columns carries the FK column list on each side of the relationship as a
+-- small structured block. Shape:
+--   {
+--     join_columns:       [ <column names on the "from"/referencing side> ],
+--     referenced_columns: [ <column names on the "to"/referenced side> ]
+--   }
+--
+-- The relationship already connects physical entities via data_entity_points
+-- (from_data_entity_point_id / to_data_entity_point_id) -- those endpoints are
+-- UNCHANGED; fk_columns just adds the column-level FK detail.
+--
+-- Additive + nullable: existing logical_data_entity_relationships rows carry no
+-- FK column detail, so a null/absent block round-trips cleanly.
+-- ============================================================================
+
+ALTER TABLE logical_data_entity_relationships ADD COLUMN fk_columns JSONB;

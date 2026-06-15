@@ -1,0 +1,14 @@
+{
+  "problem_id": "HumanEval/2",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "",
+  "expected_output": "    return number % 1.0\n",
+  "latency_seconds": 0.008480355842038989,
+  "mode": "direct",
+  "model": "claude-sonnet-4-5-20250929",
+  "metadata": {
+    "retries": 0
+  }
+}

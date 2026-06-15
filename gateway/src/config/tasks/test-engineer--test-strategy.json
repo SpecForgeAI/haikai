@@ -1,0 +1,50 @@
+{
+  "id": "test-engineer--test-strategy",
+  "personaId": "test-engineer",
+  "menuLabel": "Test Strategy",
+  "description": "Assists with defining the overall test strategy including test levels, coverage targets, tooling choices, and quality gates for the project.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/test-engineer.test-strategy.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "project_context",
+          "test_levels",
+          "coverage_targets",
+          "tooling",
+          "quality_gates",
+          "testing_principles",
+          "strategy_review",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": ["mission", "roadmap", "tech-stack"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "test-strategy",
+      "filename": "TEST-STRATEGY.MD",
+      "tool": "save_markdown_artifact",
+      "description": "Test strategy definition"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

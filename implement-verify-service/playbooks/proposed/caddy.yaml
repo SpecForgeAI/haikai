@@ -1,0 +1,42 @@
+name: caddy
+version: 1
+language: go
+
+detection:
+  imports_match:
+    - "github.com/go-chi/chi"
+    - "github.com/caddyserver/caddy"
+  manifest_contains:
+    - {file: go.mod, substring: "github.com/caddyserver/caddy/v2"}
+
+extract:
+  - id: chi_verb_routes
+    query: call_args
+    file_filter: all
+    file_extensions: [".go"]
+    callee_pattern: '\.(Get|Post|Put|Patch|Delete|Head|Options)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+  - id: chi_handle_routes
+    query: call_args
+    file_filter: all
+    file_extensions: [".go"]
+    callee_pattern: '\.Handle$'
+    path_arg_index: 0
+    verb: ANY
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: caddy
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Only the internal admin API routes are captured; all proxied and served application traffic is runtime-configured via Caddyfile/JSON and is not statically analyzable"
+  - "r.Method(method, path, handler) has path at arg index 1, not 0 — not captured by either step"
+  - "Chi sub-router mount prefixes (r.Route('/prefix', fn)) are not inlined into child route paths"
+  - "Module-registered admin routes via the AdminRouter interface may not appear as direct Chi method calls"

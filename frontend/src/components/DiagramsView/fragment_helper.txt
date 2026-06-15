@@ -1,0 +1,19 @@
+
+// ============================================================================
+// Task Group 4: Fragment Helper Functions
+// ============================================================================
+
+/**
+ * Converts a FragmentKind to its display label (lowercase, with abbreviations).
+ * Loop -> "loop"
+ * Optional -> "opt"
+ * Alternative -> "alt"
+ *
+ * @param fragmentKind - The kind of fragment
+ * @returns The display label string
+ */
+export function getFragmentLabel(fragmentKind: FragmentKind | string): string {
+  if (fragmentKind === 'Optional') return 'opt';
+  if (fragmentKind === 'Alternative') return 'alt';
+  return fragmentKind.toLowerCase();
+}

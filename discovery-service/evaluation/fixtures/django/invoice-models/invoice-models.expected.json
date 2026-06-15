@@ -1,0 +1,45 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "InvoiceEvent",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "date",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "type",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "InvoiceEvent \u2192 Invoice",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "InvoiceEvent \u2192 Order",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "InvoiceEvent \u2192 settings.AUTH_USER_MODEL",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "InvoiceEvent \u2192 App",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "parameters",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

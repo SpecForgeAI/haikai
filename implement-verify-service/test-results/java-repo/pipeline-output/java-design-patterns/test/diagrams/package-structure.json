@@ -1,0 +1,139 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "8b167b35-41ec-4683-aa71-b7df5ec8e31e",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "bdb7466c-a823-4839-b0d5-1744f2de0624",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "00ebefee-3b1f-4fc4-8574-99f44d4da283",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_enums",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/enums",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6faf8c75-8f8b-4b47-af61-8c61ce947e69",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_test_java_com_iluwatar_abstractdocument",
+      "label": "abstract-document/src/test/java/com/iluwatar/abstractdocument",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c600de41-e334-4129-b659-f149968ee666",
+      "entity_type": "packages",
+      "entity_id": "abstract_factory_src_main_java_com_iluwatar_abstractfactory",
+      "label": "abstract-factory/src/main/java/com/iluwatar/abstractfactory",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ed4b753e-42e9-4a6c-a340-f5e7c11851a2",
+      "entity_type": "packages",
+      "entity_id": "abstract_factory_src_test_java_com_iluwatar_abstractfactory",
+      "label": "abstract-factory/src/test/java/com/iluwatar/abstractfactory",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "68771f9c-1d14-4f66-b8f2-0226cc88b620",
+      "entity_type": "packages",
+      "entity_id": "active_object_src_main_java_com_iluwatar_activeobject",
+      "label": "active-object/src/main/java/com/iluwatar/activeobject",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4822f692-de6e-4427-8167-c7543581e6d0",
+      "entity_type": "packages",
+      "entity_id": "active_object_src_test_java_com_iluwatar_activeobject",
+      "label": "active-object/src/test/java/com/iluwatar/activeobject",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8fdb49d5-4873-46ce-a3b0-f336fccc3c09",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_main_java_com_iluwatar_actormodel",
+      "label": "actor-model/src/main/java/com/iluwatar/actormodel",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "19e28adc-902d-405d-bbf9-3bbdc7fbdb95",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_test_java_com_iluwatar_actor",
+      "label": "actor-model/src/test/java/com/iluwatar/actor",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ca199ad5-6e25-4929-a4cc-a24cc6fd4207",
+      "entity_type": "packages",
+      "entity_id": "acyclic_visitor_src_main_java_com_iluwatar_acyclicvisitor",
+      "label": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "4348fe1a-1f91-4d40-983e-c8bfb8019962",
+      "source_node_id": "8b167b35-41ec-4683-aa71-b7df5ec8e31e",
+      "target_node_id": "bdb7466c-a823-4839-b0d5-1744f2de0624",
+      "relationship_type": "contains"
+    },
+    {
+      "id": "1bb146a7-9f7d-49ac-a253-2126b74de6ac",
+      "source_node_id": "bdb7466c-a823-4839-b0d5-1744f2de0624",
+      "target_node_id": "00ebefee-3b1f-4fc4-8574-99f44d4da283",
+      "relationship_type": "contains"
+    }
+  ]
+}

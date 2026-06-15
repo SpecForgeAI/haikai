@@ -1,0 +1,30 @@
+{
+  "expected": [
+    {
+      "type": "endpoints",
+      "name": "GET /login",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /logout",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /register",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /reset_password_request",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /reset_password/<token>",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

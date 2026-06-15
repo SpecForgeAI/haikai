@@ -1,0 +1,89 @@
+@startuml
+title Class Diagram
+
+class AbstractDocument {
+    +AbstractDocument(Map<String, Object> properties)
+    +buildStringRepresentation()
+    +children(String key, Function<Map<String, Object>, T> childConstructor)
+    +documentProperties
+    +get(String key)
+    +put(String key, Object value)
+    +toString()
+}
+
+class App {
+    +main(String[] args)
+}
+
+class Car {
+    +Car(Map<String, Object> properties)
+}
+
+class Part {
+    +Part(Map<String, Object> properties)
+}
+
+class Property {
+}
+
+class AbstractDocumentTest {
+    +KEY
+    +VALUE
+    +document
+    +shouldHandleExceptionDuringConstruction()
+    +shouldIncludePropsInToString()
+    +shouldPutAndGetNestedDocument()
+    +shouldPutAndGetValue()
+    +shouldRetrieveChildren()
+    +shouldRetrieveEmptyStreamForNonExistingChildren()
+    +shouldUpdateExistingValue()
+}
+
+class DocumentImplementation {
+}
+
+class AppTest {
+    +shouldExecuteAppWithoutException()
+}
+
+class DomainTest {
+    +TEST_CAR_MODEL
+    +TEST_CAR_PRICE
+    +TEST_PART_MODEL
+    +TEST_PART_PRICE
+    +TEST_PART_TYPE
+    +shouldConstructCar()
+    +shouldConstructPart()
+}
+
+class Document {
+}
+
+class HasModel {
+}
+
+class HasPrice {
+}
+
+class HasParts {
+}
+
+class HasType {
+}
+
+Document <|-- AbstractDocument
+AbstractDocument <|-- Car
+HasModel <|-- Car
+HasPrice <|-- Car
+HasParts <|-- Car
+Document <|-- HasModel
+Document <|-- HasParts
+Document <|-- HasPrice
+Document <|-- HasType
+AbstractDocument <|-- Part
+HasType <|-- Part
+HasModel <|-- Part
+HasPrice <|-- Part
+AbstractDocument <|-- DocumentImplementation
+
+@enduml

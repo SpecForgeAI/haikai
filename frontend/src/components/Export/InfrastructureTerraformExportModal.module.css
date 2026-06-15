@@ -1,0 +1,186 @@
+/**
+ * InfrastructureTerraformExportModal Styles
+ *
+ * Spec 2026-05-08: Infrastructure Terraform Export (GCP)
+ * Task Group 7: Frontend Modal + Menu + API Client
+ *
+ * Mirrors the visual style of ExportProjectNameModal.module.css for consistency.
+ */
+
+/* Overlay - same as ExportProjectNameModal */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - slightly wider for multi-field form */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 560px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover {
+  color: #333;
+}
+
+/* Content area */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* Input group */
+.inputGroup {
+  margin-bottom: 16px;
+}
+
+.inputLabel {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+.required {
+  color: #c62828;
+  margin-left: 2px;
+}
+
+.select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background-color: white;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #1976D2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+/* Inline empty-state message (e.g. no environments defined) */
+.emptyState {
+  background-color: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #6d4c00;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+/* Error message */
+.errorMessage {
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* Success / completion message */
+.successMessage {
+  background-color: #e8f5e9;
+  border: 1px solid #c8e6c9;
+  color: #2e7d32;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* Hint text under fields */
+.hint {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* Footer */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  background: #e8e8e8;
+}
+
+.exportButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.exportButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.exportButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}

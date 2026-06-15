@@ -1,0 +1,4 @@
+[
+  {"type": "REST", "operation": "GET", "path": "/a", "framework": "test"},
+  {"type": "REST", "operation": "POST", "path": "/b", "framework": "test"}
+]

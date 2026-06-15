@@ -1,0 +1,16 @@
+task_groups:
+  - name: PostgreSQL Database Setup
+  - name: Maven Project Initialization
+  - name: Core and Container DTOs
+  - name: Entity DTOs
+  - name: Relationship DTOs
+  - name: Diagram DTOs
+  - name: JPA Entities - Core and Business Domain
+  - name: JPA Entities - Application and Data Domain
+  - name: JPA Entities - Relationships and Diagrams
+  - name: JPA Repositories
+  - name: Model Service - Load Operations
+  - name: Model Service - Save Operations
+  - name: REST Controllers
+  - name: Test Review and Gap Analysis
+  - name: Integration Verification

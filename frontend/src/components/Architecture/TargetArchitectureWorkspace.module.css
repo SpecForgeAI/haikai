@@ -1,0 +1,815 @@
+/**
+ * TargetArchitectureWorkspace styles.
+ *
+ * Spec 2026-05-20 Target Architecture Authoring Flow -- Task Group 6
+ *
+ * Layout mirrors the panel + list aesthetics of
+ * `ApiBaselinesListPage.module.css` so the workspace fits in visually
+ * alongside the other architecture-scoped pages.
+ */
+
+.workspace {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Fill the height-bounded parent (ArchitectureDesignTargetStatePage wraps
+     this in a `flex: 1; overflow: hidden` container) so the panels below can
+     scroll internally instead of overflowing and being clipped. box-sizing
+     keeps the 16px padding inside the 100% height. */
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: #fff;
+  border: 1px solid #1976d2;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  border-color: #b0bec5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: #fff;
+  color: #444;
+  border: 1px solid #ccc;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.secondaryButton:disabled {
+  background: #f5f5f5;
+  color: #999;
+  border-color: #ddd;
+  cursor: not-allowed;
+}
+
+.layout {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  /* Consume the remaining vertical space under the header + view tabs and
+     allow shrinking below content height (min-height: 0) so the child panels'
+     own overflow-y can take over. */
+  flex: 1;
+  min-height: 0;
+}
+
+.draftsPanel {
+  flex: 0 0 280px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fafafa;
+  /* Scroll a long drafts list within the bounded layout height. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.draftsPanel h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #444;
+}
+
+.draftsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.draftRow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.draftRowActive {
+  border-color: #1976d2;
+  background: #e3f2fd;
+}
+
+.draftName {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  outline: none;
+}
+
+.draftName:focus {
+  border: 1px solid #1976d2;
+  border-radius: 3px;
+  background: #fff;
+}
+
+/* Second row of each draft card: status badge / promote + delete, laid out
+   left-to-right and fully contained within the card's blue boundary so the
+   delete control is comfortably clickable (no longer crowded off the edge). */
+.draftRowMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.activeBadge {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.deleteButton {
+  background: transparent;
+  color: #c62828;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.deleteButton:hover:not(:disabled) {
+  border-color: #c62828;
+}
+
+.deleteButton:disabled {
+  color: #bbb;
+  cursor: not-allowed;
+}
+
+.editorPanel {
+  flex: 1;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Scroll the (often long) suggested-elements list within the bounded
+     layout height instead of overflowing the clipped parent. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.editorPanel h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #444;
+}
+
+.editorEmpty {
+  padding: 24px;
+  color: #888;
+  font-style: italic;
+  text-align: center;
+}
+
+.groupHeader {
+  margin: 8px 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+}
+
+.rowsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.rowsTable th,
+.rowsTable td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.rowsTable th {
+  font-weight: 600;
+  color: #555;
+  background: #fafafa;
+}
+
+.errorBanner {
+  padding: 8px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 6px;
+  padding: 16px;
+  width: 420px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modeOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.modeOption:has(input:disabled) {
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.modeOption input {
+  margin-top: 3px;
+}
+
+.modeLabel {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.modeHint {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  font-weight: normal;
+}
+
+.modeOptionDisabled {
+  color: #999;
+}
+
+.modalActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.emptyMessage {
+  padding: 12px;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Group 7 additions: unmapped panel, add-element inline row, promote modal */
+/* ----------------------------------------------------------------------- */
+
+.groupHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.unmappedPanel {
+  flex: 0 0 280px;
+  border: 1px solid #ffe0b2;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff8e1;
+  /* Scroll a long unmapped-elements list within the bounded layout height. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.unmappedPanel h3 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #6d4c00;
+}
+
+.unmappedList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unmappedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.unmappedRowMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.unmappedRowName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.unmappedRowType {
+  font-size: 11px;
+  color: #888;
+}
+
+.unmappedRowActions {
+  display: flex;
+  gap: 4px;
+}
+
+.addElementRow {
+  background: #f5f5f5;
+}
+
+.addElementForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.addElementForm input[type='text'] {
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+.mappingPicker {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mappingPickerLegend {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+}
+
+.llmHintChip {
+  align-self: flex-start;
+  background: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #90caf9;
+  border-radius: 14px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.llmHintChip:hover {
+  background: #bbdefb;
+}
+
+.addElementActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Group 8 additions: view tabs, suggest button + spinner, provenance      */
+/* chips, compare table.                                                    */
+/* ----------------------------------------------------------------------- */
+
+.viewTabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e0e0e0;
+  margin-bottom: 8px;
+}
+
+.viewTab {
+  background: transparent;
+  color: #555;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.viewTab:hover {
+  background: #f5f5f5;
+}
+
+.viewTabActive {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+  font-weight: 600;
+}
+
+.draftsHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.draftsHeader h3 {
+  margin: 0;
+}
+
+.suggestSpinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.suggestSpinner::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #ccc;
+  border-top-color: #1976d2;
+  border-radius: 50%;
+  animation: target-arch-spin 0.8s linear infinite;
+}
+
+@keyframes target-arch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  color: #1976d2;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.provenanceChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.provenanceChipLlm {
+  background: #ede7f6;
+  color: #4527a0;
+  border: 1px solid #b39ddb;
+}
+
+.provenanceChipCloned {
+  background: #e8f5e9;
+  color: #1b5e20;
+  border: 1px solid #a5d6a7;
+}
+
+.provenanceChipImported {
+  background: #e3f2fd;
+  color: #0d47a1;
+  border: 1px solid #90caf9;
+}
+
+.provenanceChipUser {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ffcc80;
+}
+
+.provenanceChipDefault {
+  background: #f5f5f5;
+  color: #444;
+  border: 1px solid #ccc;
+}
+
+.decommissionChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #ffebee;
+  color: #b71c1c;
+  border: 1px solid #ef9a9a;
+}
+
+.decomInTargetChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #fce4ec;
+  color: #880e4f;
+  border: 1px solid #f48fb1;
+}
+
+.decomChipReason {
+  font-weight: normal;
+  font-size: 11px;
+  color: #6d1b3a;
+}
+
+.brandNewChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #e0f7fa;
+  color: #006064;
+  border: 1px solid #80deea;
+}
+
+.compareViewPanel {
+  flex: 1;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-x: auto;
+  /* Scroll the (often long) compare table within the bounded layout height. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.compareGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.compareTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.compareTable th,
+.compareTable td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.compareTable th {
+  font-weight: 600;
+  color: #555;
+  background: #fafafa;
+}
+
+.compareRowName {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.compareRowType {
+  font-size: 11px;
+  color: #888;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Spec 2026-05-24 additions: empty-state card + empty-draft inline badge  */
+/* ----------------------------------------------------------------------- */
+
+.emptyStateCard {
+  margin: 48px auto;
+  max-width: 520px;
+  padding: 24px 28px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+}
+
+.emptyStateCopy {
+  margin: 0;
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+}
+
+.emptyBadge {
+  background: #fff3e0;
+  color: #b26a00;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Spec 2026-05-26: Compare View captured-decision chip + popover styles.  */
+/* ----------------------------------------------------------------------- */
+
+.capturedDecisionChipWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.capturedDecisionChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f5f5f5;
+  color: #444;
+  border: 1px solid #ccc;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+.capturedDecisionChip:hover {
+  background: #ececec;
+  border-color: #b8b8b8;
+}
+
+.capturedDecisionChip:focus-visible {
+  outline: 2px solid #1976d2;
+  outline-offset: 1px;
+}
+
+.capturedDecisionChipGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.capturedDecisionPopover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #cfcfcf;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  font-size: 12px;
+  color: #333;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Right-edge clamp guard: if the chip is near the viewport edge, the
+     max-width keeps the popover from overflowing horizontally; long content
+     wraps. */
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.capturedDecisionPopoverSummary {
+  font-weight: 700;
+  font-size: 12px;
+  color: #222;
+}
+
+.capturedDecisionPopoverValue {
+  font-size: 12px;
+  color: #444;
+  white-space: pre-wrap;
+}
+
+.capturedDecisionPopoverStandards {
+  font-size: 11px;
+  color: #1565c0;
+  background: #e3f2fd;
+  border: 1px solid #90caf9;
+  border-radius: 4px;
+  padding: 2px 6px;
+  display: inline-block;
+  align-self: flex-start;
+}
+
+.capturedDecisionPopoverLink {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1976d2;
+  background: none;
+  border: none;
+  padding: 4px 0 0 0;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.capturedDecisionPopoverLink:hover {
+  text-decoration: underline;
+}
+
+.architectureScopeDecisionsBanner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.architectureScopeDecisionsBannerLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-right: 4px;
+}
+
+/* The Architect Conversation right-side panel chrome now lives in the shared
+   RightHandPanelShell (which reuses UnifiedChatPanel.module.css), so the bespoke
+   .conversationOverlay styles that used to live here were removed. */

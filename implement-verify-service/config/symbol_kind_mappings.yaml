@@ -1,0 +1,85 @@
+# Symbol Kind Mappings
+# Maps provider-specific kind labels to canonical SymbolKind values.
+#
+# Versioned per provider+version. No fallback — hard stop on unknown version.
+# When a new provider version is installed, add an entry here before running.
+#
+# Canonical SymbolKind values:
+#   class, function, method, variable, constant, interface,
+#   decorator, module, property, unknown
+
+ctags:
+  # Universal Ctags 6.1 — most common current version
+  "6.1":
+    class: class
+    function: function
+    member: method
+    method: method
+    property: property
+    constant: constant
+    generator: function
+    interface: interface
+    field: variable
+    enum: class
+    struct: class
+    variable: variable
+    local: variable
+    module: module
+    namespace: module
+    package: module
+    decorator: decorator
+
+  # Universal Ctags 5.9
+  "5.9":
+    class: class
+    function: function
+    member: method
+    method: method
+    property: property
+    constant: constant
+    generator: function
+    interface: interface
+    field: variable
+    enum: class
+    struct: class
+    variable: variable
+    local: variable
+    module: module
+    namespace: module
+    package: module
+    decorator: decorator
+
+  # Universal Ctags 6.0
+  "6.0":
+    class: class
+    function: function
+    member: method
+    method: method
+    property: property
+    constant: constant
+    generator: function
+    interface: interface
+    field: variable
+    enum: class
+    struct: class
+    variable: variable
+    local: variable
+    module: module
+    namespace: module
+    package: module
+    decorator: decorator
+
+# LSP provider mappings — add when LSP provider is implemented
+# lsp:
+#   pyright:
+#     "1.1.380":
+#       Class: class
+#       Method: method
+#       Function: function
+#       Field: variable
+#       Property: property
+#       Interface: interface
+#       Variable: variable
+#       Constant: constant
+#       Module: module
+#       Enum: class

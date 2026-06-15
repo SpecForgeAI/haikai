@@ -1,0 +1,39 @@
+digraph Components {
+    rankdir=LR;
+    compound=true;
+
+    subgraph cluster_0 {
+        label="abstract-document";
+        abstract_document_src_main_java_com_iluwatar_abstractdocument [label="abstract-document/src/main/java/com/iluwatar/abstractdocument", shape=box3d];
+        abstract_document_src_main_java_com_iluwatar_abstractdocument_domain [label="abstract-document/src/main/java/com/iluwatar/abstractdocument/domain", shape=box3d];
+        abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_enums [label="abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/enums", shape=box3d];
+        abstract_document_src_test_java_com_iluwatar_abstractdocument [label="abstract-document/src/test/java/com/iluwatar/abstractdocument", shape=box3d];
+    }
+
+    subgraph cluster_1 {
+        label="abstract-factory";
+        abstract_factory_src_main_java_com_iluwatar_abstractfactory [label="abstract-factory/src/main/java/com/iluwatar/abstractfactory", shape=box3d];
+        abstract_factory_src_test_java_com_iluwatar_abstractfactory [label="abstract-factory/src/test/java/com/iluwatar/abstractfactory", shape=box3d];
+    }
+
+    subgraph cluster_2 {
+        label="active-object";
+        active_object_src_main_java_com_iluwatar_activeobject [label="active-object/src/main/java/com/iluwatar/activeobject", shape=box3d];
+        active_object_src_test_java_com_iluwatar_activeobject [label="active-object/src/test/java/com/iluwatar/activeobject", shape=box3d];
+    }
+
+    subgraph cluster_3 {
+        label="actor-model";
+        actor_model_src_main_java_com_iluwatar_actormodel [label="actor-model/src/main/java/com/iluwatar/actormodel", shape=box3d];
+        actor_model_src_test_java_com_iluwatar_actor [label="actor-model/src/test/java/com/iluwatar/actor", shape=box3d];
+    }
+
+    subgraph cluster_4 {
+        label="acyclic-visitor";
+        acyclic_visitor_src_main_java_com_iluwatar_acyclicvisitor [label="acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor", shape=box3d];
+    }
+
+
+    abstract_document_src_main_java_com_iluwatar_abstractdocument -> abstract_document_src_main_java_com_iluwatar_abstractdocument_domain;
+    abstract_document_src_main_java_com_iluwatar_abstractdocument_domain -> abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_enums;
+}

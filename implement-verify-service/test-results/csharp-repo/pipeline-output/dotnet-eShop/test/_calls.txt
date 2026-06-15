@@ -1,0 +1,1097 @@
+# caller_file	caller	callee_file	callee	line	confidence
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddDefaultAuthentication	12	0.20
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRedisClient	14	0.20
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddSingleton<IBasketRepository, RedisBasketRepository>	16	0.20
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus("eventbus")
+               .AddSubscription<OrderStartedIntegrationEvent, OrderStartedIntegrationEventHandler>().ConfigureJsonOptions	18	0.20
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus("eventbus").AddSubscription<OrderStartedIntegrationEvent, OrderStartedIntegrationEventHandler>	18	0.20
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus	18	0.20
+src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	options.TypeInfoResolverChain.Add	20	0.20
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	-	context.GetHttpContext().User.FindFirst	7	0.20
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	-	context.GetHttpContext	7	0.20
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserName	-	context.GetHttpContext().User.FindFirst	8	0.20
+src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserName	-	context.GetHttpContext	8	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.GetBasket	src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	15	0.70
+src/Basket.API/Grpc/BasketService.cs	BasketService.GetBasket	-	string.IsNullOrEmpty	16	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.GetBasket	-	logger.IsEnabled	21	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.GetBasket	-	logger.LogDebug	23	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.GetBasket	src/Basket.API/Repositories/IBasketRepository.cs	IBasketRepository.GetBasketAsync	26	0.40
+src/Basket.API/Grpc/BasketService.cs	BasketService.GetBasket	src/Basket.API/Grpc/BasketService.cs	MapToCustomerBasketResponse	30	0.70
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	38	0.70
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	-	string.IsNullOrEmpty	39	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	-	ThrowNotAuthenticated	41	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	-	logger.IsEnabled	44	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	-	logger.LogDebug	46	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	src/Basket.API/Grpc/BasketService.cs	MapToCustomerBasket	49	0.70
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	src/Basket.API/Repositories/IBasketRepository.cs	IBasketRepository.UpdateBasketAsync	50	0.40
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	-	ThrowBasketDoesNotExist	53	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.UpdateBasket	src/Basket.API/Grpc/BasketService.cs	MapToCustomerBasketResponse	56	0.70
+src/Basket.API/Grpc/BasketService.cs	BasketService.DeleteBasket	src/Basket.API/Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	61	0.70
+src/Basket.API/Grpc/BasketService.cs	BasketService.DeleteBasket	-	string.IsNullOrEmpty	62	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.DeleteBasket	-	ThrowNotAuthenticated	64	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.DeleteBasket	src/Basket.API/Repositories/IBasketRepository.cs	IBasketRepository.DeleteBasketAsync	67	0.40
+src/Basket.API/Grpc/BasketService.cs	BasketService.ThrowNotAuthenticated	-	new RpcException	72	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.ThrowNotAuthenticated	-	new Status	72	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.ThrowBasketDoesNotExist	-	new RpcException	75	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.ThrowBasketDoesNotExist	-	new Status	75	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.MapToCustomerBasketResponse	-	new CustomerBasketResponse	79	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.MapToCustomerBasketResponse	-	response.Items.Add	83	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.MapToCustomerBasketResponse	-	new BasketItem	83	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.MapToCustomerBasket	-	new CustomerBasket	95	0.20
+src/Basket.API/Grpc/BasketService.cs	BasketService.MapToCustomerBasket	-	response.Items.Add	102	0.20
+src/Basket.API/IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	OrderStartedIntegrationEventHandler.Handle	-	logger.LogInformation	12	0.20
+src/Basket.API/IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	OrderStartedIntegrationEventHandler.Handle	src/Basket.API/Repositories/IBasketRepository.cs	IBasketRepository.DeleteBasketAsync	14	0.40
+src/Basket.API/Model/BasketItem.cs	BasketItem.Validate	-	new List	15	0.20
+src/Basket.API/Model/BasketItem.cs	BasketItem.Validate	-	results.Add	19	0.20
+src/Basket.API/Model/BasketItem.cs	BasketItem.Validate	-	new ValidationResult	19	0.20
+src/Basket.API/Program.cs	<module>	-	WebApplication.CreateBuilder	1	0.20
+src/Basket.API/Program.cs	<module>	-	builder.AddBasicServiceDefaults	3	0.20
+src/Basket.API/Program.cs	<module>	src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	4	0.40
+src/Basket.API/Program.cs	<module>	-	builder.Services.AddGrpc	6	0.20
+src/Basket.API/Program.cs	<module>	-	builder.Build	8	0.20
+src/Basket.API/Program.cs	<module>	-	app.MapDefaultEndpoints	10	0.20
+src/Basket.API/Program.cs	<module>	-	app.MapGrpcService<BasketService>	12	0.20
+src/Basket.API/Program.cs	<module>	-	app.Run	14	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository	-	redis.GetDatabase	8	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository	-	"/basket/"u8.ToArray	13	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketKey	-	BasketKeyPrefix.Append	16	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.DeleteBasketAsync	-	_database.KeyDeleteAsync	20	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.DeleteBasketAsync	-	GetBasketKey	20	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketAsync	-	_database.StringGetLeaseAsync	25	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketAsync	-	GetBasketKey	25	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketAsync	-	JsonSerializer.Deserialize	31	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	JsonSerializer.SerializeToUtf8Bytes	36	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	_database.StringSetAsync	37	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	GetBasketKey	37	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	logger.LogInformation	41	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	logger.LogInformation	46	0.20
+src/Basket.API/Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	src/Basket.API/Repositories/IBasketRepository.cs	IBasketRepository.GetBasketAsync	47	0.40
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	app.NewVersionedApi	15	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup("api/catalog").HasApiVersion(1, 0).HasApiVersion	16	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup("api/catalog").HasApiVersion	16	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup	16	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup("api/catalog").HasApiVersion	17	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup	17	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup("api/catalog").HasApiVersion	18	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	vApi.MapGroup	18	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items", GetAllItemsV1)
+            .WithName("ListItems")
+            .WithSummary("List catalog items")
+            .WithDescription("Get a paginated list of items in the catalog.").WithTags	21	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items", GetAllItemsV1)
+            .WithName("ListItems")
+            .WithSummary("List catalog items").WithDescription	21	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items", GetAllItemsV1)
+            .WithName("ListItems").WithSummary	21	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items", GetAllItemsV1).WithName	21	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet	21	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items", GetAllItems)
+            .WithName("ListItems-V2")
+            .WithSummary("List catalog items")
+            .WithDescription("Get a paginated list of items in the catalog.").WithTags	26	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items", GetAllItems)
+            .WithName("ListItems-V2")
+            .WithSummary("List catalog items").WithDescription	26	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items", GetAllItems)
+            .WithName("ListItems-V2").WithSummary	26	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items", GetAllItems).WithName	26	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet	26	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/by", GetItemsByIds)
+            .WithName("BatchGetItems")
+            .WithSummary("Batch get catalog items")
+            .WithDescription("Get multiple items from the catalog").WithTags	31	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/by", GetItemsByIds)
+            .WithName("BatchGetItems")
+            .WithSummary("Batch get catalog items").WithDescription	31	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/by", GetItemsByIds)
+            .WithName("BatchGetItems").WithSummary	31	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/by", GetItemsByIds).WithName	31	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet	31	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}", GetItemById)
+            .WithName("GetItem")
+            .WithSummary("Get catalog item")
+            .WithDescription("Get an item from the catalog").WithTags	36	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}", GetItemById)
+            .WithName("GetItem")
+            .WithSummary("Get catalog item").WithDescription	36	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}", GetItemById)
+            .WithName("GetItem").WithSummary	36	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}", GetItemById).WithName	36	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet	36	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/by/{name:minlength(1)}", GetItemsByName)
+            .WithName("GetItemsByName")
+            .WithSummary("Get catalog items by name")
+            .WithDescription("Get a paginated list of catalog items with the specified name.").WithTags	41	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/by/{name:minlength(1)}", GetItemsByName)
+            .WithName("GetItemsByName")
+            .WithSummary("Get catalog items by name").WithDescription	41	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/by/{name:minlength(1)}", GetItemsByName)
+            .WithName("GetItemsByName").WithSummary	41	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/by/{name:minlength(1)}", GetItemsByName).WithName	41	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet	41	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}/pic", GetItemPictureById)
+            .WithName("GetItemPicture")
+            .WithSummary("Get catalog item picture")
+            .WithDescription("Get the picture for a catalog item").WithTags	46	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}/pic", GetItemPictureById)
+            .WithName("GetItemPicture")
+            .WithSummary("Get catalog item picture").WithDescription	46	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}/pic", GetItemPictureById)
+            .WithName("GetItemPicture").WithSummary	46	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/items/{id:int}/pic", GetItemPictureById).WithName	46	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet	46	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/withsemanticrelevance/{text:minlength(1)}", GetItemsBySemanticRelevanceV1)
+            .WithName("GetRelevantItems")
+            .WithSummary("Search catalog for relevant items")
+            .WithDescription("Search the catalog for items related to the specified text").WithTags	53	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/withsemanticrelevance/{text:minlength(1)}", GetItemsBySemanticRelevanceV1)
+            .WithName("GetRelevantItems")
+            .WithSummary("Search catalog for relevant items").WithDescription	53	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/withsemanticrelevance/{text:minlength(1)}", GetItemsBySemanticRelevanceV1)
+            .WithName("GetRelevantItems").WithSummary	53	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/withsemanticrelevance/{text:minlength(1)}", GetItemsBySemanticRelevanceV1).WithName	53	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet	53	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items/withsemanticrelevance", GetItemsBySemanticRelevance)
+            .WithName("GetRelevantItems-V2")
+            .WithSummary("Search catalog for relevant items")
+            .WithDescription("Search the catalog for items related to the specified text").WithTags	60	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items/withsemanticrelevance", GetItemsBySemanticRelevance)
+            .WithName("GetRelevantItems-V2")
+            .WithSummary("Search catalog for relevant items").WithDescription	60	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items/withsemanticrelevance", GetItemsBySemanticRelevance)
+            .WithName("GetRelevantItems-V2").WithSummary	60	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet("/items/withsemanticrelevance", GetItemsBySemanticRelevance).WithName	60	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapGet	60	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/{typeId}/brand/{brandId?}", GetItemsByBrandAndTypeId)
+            .WithName("GetItemsByTypeAndBrand")
+            .WithSummary("Get catalog items by type and brand")
+            .WithDescription("Get catalog items of the specified type and brand").WithTags	67	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/{typeId}/brand/{brandId?}", GetItemsByBrandAndTypeId)
+            .WithName("GetItemsByTypeAndBrand")
+            .WithSummary("Get catalog items by type and brand").WithDescription	67	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/{typeId}/brand/{brandId?}", GetItemsByBrandAndTypeId)
+            .WithName("GetItemsByTypeAndBrand").WithSummary	67	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/{typeId}/brand/{brandId?}", GetItemsByBrandAndTypeId).WithName	67	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet	67	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/all/brand/{brandId:int?}", GetItemsByBrandId)
+            .WithName("GetItemsByBrand")
+            .WithSummary("List catalog items by brand")
+            .WithDescription("Get a list of catalog items for the specified brand").WithTags	72	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/all/brand/{brandId:int?}", GetItemsByBrandId)
+            .WithName("GetItemsByBrand")
+            .WithSummary("List catalog items by brand").WithDescription	72	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/all/brand/{brandId:int?}", GetItemsByBrandId)
+            .WithName("GetItemsByBrand").WithSummary	72	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet("/items/type/all/brand/{brandId:int?}", GetItemsByBrandId).WithName	72	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapGet	72	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogtypes",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogTypes.OrderBy(x => x.Type).ToListAsync())
+            .WithName("ListItemTypes")
+            .WithSummary("List catalog item types")
+            .WithDescription("Get a list of the types of catalog items").WithTags	77	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogtypes",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogTypes.OrderBy(x => x.Type).ToListAsync())
+            .WithName("ListItemTypes")
+            .WithSummary("List catalog item types").WithDescription	77	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogtypes",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogTypes.OrderBy(x => x.Type).ToListAsync())
+            .WithName("ListItemTypes").WithSummary	77	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogtypes",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogTypes.OrderBy(x => x.Type).ToListAsync()).WithName	77	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet	77	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	context.CatalogTypes.OrderBy(x => x.Type).ToListAsync	79	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	context.CatalogTypes.OrderBy	79	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogbrands",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogBrands.OrderBy(x => x.Brand).ToListAsync())
+            .WithName("ListItemBrands")
+            .WithSummary("List catalog item brands")
+            .WithDescription("Get a list of the brands of catalog items").WithTags	84	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogbrands",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogBrands.OrderBy(x => x.Brand).ToListAsync())
+            .WithName("ListItemBrands")
+            .WithSummary("List catalog item brands").WithDescription	84	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogbrands",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogBrands.OrderBy(x => x.Brand).ToListAsync())
+            .WithName("ListItemBrands").WithSummary	84	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet("/catalogbrands",
+            [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+            async (CatalogContext context) => await context.CatalogBrands.OrderBy(x => x.Brand).ToListAsync()).WithName	84	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapGet	84	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	context.CatalogBrands.OrderBy(x => x.Brand).ToListAsync	86	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	context.CatalogBrands.OrderBy	86	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapPut("/items", UpdateItemV1)
+            .WithName("UpdateItem")
+            .WithSummary("Create or replace a catalog item")
+            .WithDescription("Create or replace a catalog item").WithTags	93	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapPut("/items", UpdateItemV1)
+            .WithName("UpdateItem")
+            .WithSummary("Create or replace a catalog item").WithDescription	93	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapPut("/items", UpdateItemV1)
+            .WithName("UpdateItem").WithSummary	93	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapPut("/items", UpdateItemV1).WithName	93	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v1.MapPut	93	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapPut("/items/{id:int}", UpdateItem)
+            .WithName("UpdateItem-V2")
+            .WithSummary("Create or replace a catalog item")
+            .WithDescription("Create or replace a catalog item").WithTags	98	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapPut("/items/{id:int}", UpdateItem)
+            .WithName("UpdateItem-V2")
+            .WithSummary("Create or replace a catalog item").WithDescription	98	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapPut("/items/{id:int}", UpdateItem)
+            .WithName("UpdateItem-V2").WithSummary	98	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapPut("/items/{id:int}", UpdateItem).WithName	98	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	v2.MapPut	98	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapPost("/items", CreateItem)
+            .WithName("CreateItem")
+            .WithSummary("Create a catalog item").WithDescription	103	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapPost("/items", CreateItem)
+            .WithName("CreateItem").WithSummary	103	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapPost("/items", CreateItem).WithName	103	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapPost	103	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapDelete("/items/{id:int}", DeleteItemById)
+            .WithName("DeleteItem")
+            .WithSummary("Delete catalog item").WithDescription	107	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapDelete("/items/{id:int}", DeleteItemById)
+            .WithName("DeleteItem").WithSummary	107	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapDelete("/items/{id:int}", DeleteItemById).WithName	107	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	-	api.MapDelete	107	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItemsV1	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	120	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root.Where	138	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	c.Name.StartsWith	138	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root.Where	142	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root.Where	146	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root.LongCountAsync	149	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root
+            .OrderBy(c => c.Name)
+            .Skip(pageSize * pageIndex)
+            .Take(pageSize).ToListAsync	152	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root
+            .OrderBy(c => c.Name)
+            .Skip(pageSize * pageIndex).Take	152	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root
+            .OrderBy(c => c.Name).Skip	152	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	root.OrderBy	152	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	TypedResults.Ok	158	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	-	new PaginatedItems	158	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByIds	-	services.Context.CatalogItems.Where(item => ids.Contains(item.Id)).ToListAsync	166	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByIds	-	services.Context.CatalogItems.Where	166	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByIds	-	ids.Contains	166	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByIds	-	TypedResults.Ok	167	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemById	-	TypedResults.BadRequest<ProblemDetails>	178	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemById	-	services.Context.CatalogItems.Include(ci => ci.CatalogBrand).SingleOrDefaultAsync	183	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemById	-	services.Context.CatalogItems.Include	183	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemById	-	TypedResults.NotFound	187	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemById	-	TypedResults.Ok	190	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByName	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	199	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	-	context.CatalogItems.FindAsync	210	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	-	TypedResults.NotFound	214	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetFullPath	217	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	-	Path.GetExtension	219	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetImageMimeTypeFromImageFileExtension	220	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	-	File.GetLastWriteTimeUtc	221	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemPictureById	-	TypedResults.PhysicalFile	223	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevanceV1	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	233	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByName	247	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	251	0.40
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByName	255	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems.LongCountAsync	259	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Logger.IsEnabled	264	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .Select(c => new { Item = c, Distance = c.Embedding!.CosineDistance(vector) })
+                .OrderBy(c => c.Distance)
+                .Skip(pageSize * pageIndex)
+                .Take(pageSize).ToListAsync	266	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .Select(c => new { Item = c, Distance = c.Embedding!.CosineDistance(vector) })
+                .OrderBy(c => c.Distance)
+                .Skip(pageSize * pageIndex).Take	266	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .Select(c => new { Item = c, Distance = c.Embedding!.CosineDistance(vector) })
+                .OrderBy(c => c.Distance).Skip	266	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .Select(c => new { Item = c, Distance = c.Embedding!.CosineDistance(vector) }).OrderBy	266	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null).Select	266	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems.Where	266	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	c.Embedding!.CosineDistance	268	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Logger.LogDebug	274	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	string.Join	274	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	itemsWithDistance.Select	274	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	itemsWithDistance.Select(i => i.Item).ToList	276	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	itemsWithDistance.Select	276	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .OrderBy(c => c.Embedding!.CosineDistance(vector))
+                .Skip(pageSize * pageIndex)
+                .Take(pageSize).ToListAsync	280	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .OrderBy(c => c.Embedding!.CosineDistance(vector))
+                .Skip(pageSize * pageIndex).Take	280	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null)
+                .OrderBy(c => c.Embedding!.CosineDistance(vector)).Skip	280	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems
+                .Where(c => c.Embedding != null).OrderBy	280	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	services.Context.CatalogItems.Where	280	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	c.Embedding!.CosineDistance	282	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	TypedResults.Ok	288	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsBySemanticRelevance	-	new PaginatedItems	288	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByBrandAndTypeId	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	298	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetItemsByBrandId	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetAllItems	307	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItemV1	-	TypedResults.BadRequest<ProblemDetails>	317	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItemV1	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	321	0.70
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	services.Context.CatalogItems.SingleOrDefaultAsync	330	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	TypedResults.NotFound<ProblemDetails>	334	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	services.Context.Entry	340	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	catalogEntry.CurrentValues.SetValues	341	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	343	0.40
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	catalogEntry.Property	345	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	new ProductPriceChangedIntegrationEvent	350	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	SaveEventAndCatalogContextChangesAsync	353	0.40
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	PublishThroughEventBusAsync	356	0.40
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	services.Context.SaveChangesAsync	360	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.UpdateItem	-	TypedResults.Created	362	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.CreateItem	-	new CatalogItem	370	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.CreateItem	src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	382	0.40
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.CreateItem	-	services.Context.CatalogItems.Add	384	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.CreateItem	-	services.Context.SaveChangesAsync	385	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.CreateItem	-	TypedResults.Created	387	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.DeleteItemById	-	services.Context.CatalogItems.SingleOrDefault	394	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.DeleteItemById	-	TypedResults.NotFound	398	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.DeleteItemById	-	services.Context.CatalogItems.Remove	401	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.DeleteItemById	-	services.Context.SaveChangesAsync	402	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.DeleteItemById	-	TypedResults.NoContent	403	0.20
+src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.GetFullPath	-	Path.Combine	421	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	src/Catalog.API/Extensions/HostEnvironmentExtensions.cs	HostEnvironmentExtensions.IsBuild	9	0.70
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddDbContext<CatalogContext>	11	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddNpgsqlDbContext<CatalogContext>	15	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	dbContextOptionsBuilder.UseNpgsql	17	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.UseVector	19	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddMigration<CatalogContext, CatalogContextSeed>	24	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddTransient<IIntegrationEventLogService, IntegrationEventLogService<CatalogContext>>	27	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddTransient<ICatalogIntegrationEventService, CatalogIntegrationEventService>	29	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus("eventbus")
+               .AddSubscription<OrderStatusChangedToAwaitingValidationIntegrationEvent, OrderStatusChangedToAwaitingValidationIntegrationEventHandler>().AddSubscription<OrderStatusChangedToPaidIntegrationEvent, OrderStatusChangedToPaidIntegrationEventHandler>	31	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus("eventbus").AddSubscription<OrderStatusChangedToAwaitingValidationIntegrationEvent, OrderStatusChangedToAwaitingValidationIntegrationEventHandler>	31	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus	31	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddOptions<CatalogOptions>().BindConfiguration	35	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddOptions<CatalogOptions>	35	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	nameof	36	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	bool.Parse	38	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddOllamaApiClient("embedding").AddEmbeddingGenerator	40	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddOllamaApiClient	40	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	string.IsNullOrWhiteSpace	43	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Configuration.GetConnectionString	43	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddOpenAIClientFromConfiguration("textEmbeddingModel").AddEmbeddingGenerator	45	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddOpenAIClientFromConfiguration	45	0.20
+src/Catalog.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddScoped<ICatalogAI, CatalogAI>	49	0.20
+src/Catalog.API/Extensions/HostEnvironmentExtensions.cs	HostEnvironmentExtensions.IsBuild	-	hostEnvironment.IsEnvironment	12	0.20
+src/Catalog.API/Extensions/HostEnvironmentExtensions.cs	HostEnvironmentExtensions.IsBuild	-	Assembly.GetEntryAssembly	12	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	builder.HasPostgresExtension	20	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	builder.ApplyConfiguration	21	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	new CatalogBrandEntityTypeConfiguration	21	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	builder.ApplyConfiguration	22	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	new CatalogTypeEntityTypeConfiguration	22	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	builder.ApplyConfiguration	23	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	new CatalogItemEntityTypeConfiguration	23	0.20
+src/Catalog.API/Infrastructure/CatalogContext.cs	CatalogContext.OnModelCreating	-	builder.UseIntegrationEventLogs	26	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.Database.OpenConnection	20	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	((NpgsqlConnection)context.Database.GetDbConnection()).ReloadTypes	21	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.Database.GetDbConnection	21	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogItems.Any	23	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	Path.Combine	25	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	File.ReadAllText	26	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	JsonSerializer.Deserialize<CatalogSourceEntry[]>	27	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	Array.Empty<CatalogSourceEntry>	27	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogBrands.RemoveRange	29	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogBrands.AddRangeAsync	30	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select(x => x.Brand).Distinct()
+                .Where(brandName => brandName != null).Select	30	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select(x => x.Brand).Distinct().Where	30	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select(x => x.Brand).Distinct	30	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select	30	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	new CatalogBrand	32	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	logger.LogInformation	33	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogBrands.Count	33	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogTypes.RemoveRange	35	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogTypes.AddRangeAsync	36	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select(x => x.Type).Distinct()
+                .Where(typeName => typeName != null).Select	36	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select(x => x.Type).Distinct().Where	36	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select(x => x.Type).Distinct	36	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Select	36	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	new CatalogType	38	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	logger.LogInformation	39	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogTypes.Count	39	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.SaveChangesAsync	41	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogBrands.ToDictionaryAsync	43	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogTypes.ToDictionaryAsync	44	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems
+                .Where(source => source.Name != null && source.Brand != null && source.Type != null)
+                .Select(source => new CatalogItem(source.Name!)
+            {
+                Id = source.Id,
+                Description = source.Description,
+                Price = source.Price,
+                CatalogBrandId = brandIdsByName[source.Brand!],
+                CatalogTypeId = typeIdsByName[source.Type!],
+                AvailableStock = 100,
+                MaxStockThreshold = 200,
+                RestockThreshold = 10,
+                PictureFileName = $"{source.Id}.webp",
+            }).ToArray	46	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems
+                .Where(source => source.Name != null && source.Brand != null && source.Type != null).Select	46	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	sourceItems.Where	46	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	new CatalogItem	48	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	logger.LogInformation	63	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	64	0.40
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogItems.AddRangeAsync	71	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	logger.LogInformation	72	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.CatalogItems.Count	72	0.20
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	CatalogContextSeed.SeedAsync	-	context.SaveChangesAsync	73	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs	CatalogBrandEntityTypeConfiguration.Configure	-	builder.ToTable	8	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs	CatalogBrandEntityTypeConfiguration.Configure	-	builder.Property(cb => cb.Brand).HasMaxLength	10	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs	CatalogBrandEntityTypeConfiguration.Configure	-	builder.Property	10	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.ToTable	8	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.Property(ci => ci.Name).HasMaxLength	10	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.Property	10	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.Property(ci => ci.Embedding).HasColumnType	13	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.Property	13	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.HasOne(ci => ci.CatalogBrand).WithMany	16	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.HasOne	16	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.HasOne(ci => ci.CatalogType).WithMany	19	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.HasOne	19	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs	CatalogItemEntityTypeConfiguration.Configure	-	builder.HasIndex	22	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs	CatalogTypeEntityTypeConfiguration.Configure	-	builder.ToTable	8	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs	CatalogTypeEntityTypeConfiguration.Configure	-	builder.Property(cb => cb.Type).HasMaxLength	10	0.20
+src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs	CatalogTypeEntityTypeConfiguration.Configure	-	builder.Property	10	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.11").HasAnnotation	22	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasAnnotation	22	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	NpgsqlModelBuilderExtensions.HasPostgresExtension	26	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns	27	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasSequence("catalog_brand_hilo").IncrementsBy	29	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasSequence	29	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasSequence("catalog_hilo").IncrementsBy	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasSequence	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasSequence("catalog_type_hilo").IncrementsBy	35	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.HasSequence	35	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.Entity	38	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	40	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	40	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	40	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseHiLo	44	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	44	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Brand")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	46	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Brand")
+                        .IsRequired().HasMaxLength	46	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Brand").IsRequired	46	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>	46	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasKey	51	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.ToTable	53	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.Entity	56	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	58	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	58	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	58	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseHiLo	62	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	62	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("AvailableStock").HasColumnType	64	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	64	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("CatalogBrandId").HasColumnType	67	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	67	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("CatalogTypeId").HasColumnType	70	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	70	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Description").HasColumnType	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<Vector>("Embedding").HasColumnType	76	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<Vector>	76	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("MaxStockThreshold").HasColumnType	79	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	79	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50).HasColumnType	82	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Name")
+                        .IsRequired().HasMaxLength	82	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Name").IsRequired	82	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>	82	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<bool>("OnReorder").HasColumnType	87	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<bool>	87	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("PictureFileName").HasColumnType	90	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>	90	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<decimal>("Price").HasColumnType	93	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<decimal>	93	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("RestockThreshold").HasColumnType	96	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	96	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasKey	99	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasIndex	101	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasIndex	103	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.ToTable	105	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.Entity	108	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseHiLo	114	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<int>	114	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	116	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Type")
+                        .IsRequired().HasMaxLength	116	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>("Type").IsRequired	116	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Property<string>	116	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasKey	121	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.ToTable	123	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	modelBuilder.Entity	126	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	128	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId").OnDelete	128	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany().HasForeignKey	128	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand").WithMany	128	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne	128	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	134	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId").OnDelete	134	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany().HasForeignKey	134	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType").WithMany	134	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.HasOne	134	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Navigation	140	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Initial.BuildTargetModel	-	b.Navigation	142	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.AlterDatabase().Annotation	14	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.AlterDatabase	14	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateSequence	17	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateSequence	21	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateSequence	25	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateTable	29	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	33	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<string>	34	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.PrimaryKey	38	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateTable	41	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	45	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<string>	46	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.PrimaryKey	50	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateTable	53	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	57	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<string>	58	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<string>	59	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<decimal>	60	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<string>	61	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	62	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	63	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	64	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	65	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<int>	66	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<Vector>	67	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.Column<bool>	68	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.PrimaryKey	72	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.ForeignKey	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	table.ForeignKey	79	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateIndex	87	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Up	-	migrationBuilder.CreateIndex	92	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Down	-	migrationBuilder.DropTable	101	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Down	-	migrationBuilder.DropTable	104	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Down	-	migrationBuilder.DropTable	107	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Down	-	migrationBuilder.DropSequence	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Down	-	migrationBuilder.DropSequence	113	0.20
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Initial.Down	-	migrationBuilder.DropSequence	116	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	modelBuilder
+                .HasAnnotation("ProductVersion", "8.0.0-rc.2.23480.1").HasAnnotation	22	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	modelBuilder.HasAnnotation	22	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	NpgsqlModelBuilderExtensions.HasPostgresExtension	26	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns	27	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	modelBuilder.Entity	29	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	31	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	31	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	31	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	35	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	35	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Brand")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	37	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Brand")
+                        .IsRequired().HasMaxLength	37	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Brand").IsRequired	37	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>	37	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasKey	42	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.ToTable	44	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	modelBuilder.Entity	47	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	49	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	49	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	49	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	53	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	53	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("AvailableStock").HasColumnType	55	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	55	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("CatalogBrandId").HasColumnType	58	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	58	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("CatalogTypeId").HasColumnType	61	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	61	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Description").HasColumnType	64	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>	64	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<Vector>("Embedding").HasColumnType	67	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<Vector>	67	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("MaxStockThreshold").HasColumnType	70	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	70	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50).HasColumnType	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Name")
+                        .IsRequired().HasMaxLength	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Name").IsRequired	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>	73	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<bool>("OnReorder").HasColumnType	78	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<bool>	78	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("PictureFileName").HasColumnType	81	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>	81	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<decimal>("Price").HasColumnType	84	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<decimal>	84	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("RestockThreshold").HasColumnType	87	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	87	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasKey	90	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasIndex	92	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasIndex	94	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasIndex	96	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.ToTable	98	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	modelBuilder.Entity	101	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	103	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	103	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	103	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	107	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<int>	107	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	109	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Type")
+                        .IsRequired().HasMaxLength	109	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>("Type").IsRequired	109	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Property<string>	109	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasKey	114	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.ToTable	116	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	modelBuilder.Entity	119	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	121	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId").OnDelete	121	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany().HasForeignKey	121	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand").WithMany	121	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne	121	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	127	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId").OnDelete	127	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany().HasForeignKey	127	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType").WithMany	127	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.HasOne	127	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Navigation	133	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	RemoveHiLoAndIndexCatalogName.BuildTargetModel	-	b.Navigation	135	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.DropSequence	14	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.DropSequence	17	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.DropSequence	20	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.AlterColumn<int>(
+                name: "Id",
+                table: "CatalogType",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer").Annotation	23	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.AlterColumn<int>	23	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.AlterColumn<int>(
+                name: "Id",
+                table: "CatalogBrand",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer").Annotation	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.AlterColumn<int>	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.AlterColumn<int>(
+                name: "Id",
+                table: "Catalog",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer").Annotation	41	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.AlterColumn<int>	41	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Up	-	migrationBuilder.CreateIndex	50	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.DropIndex	59	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.CreateSequence	63	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.CreateSequence	67	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.CreateSequence	71	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.AlterColumn<int>(
+                name: "Id",
+                table: "CatalogType",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer").OldAnnotation	75	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.AlterColumn<int>	75	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.AlterColumn<int>(
+                name: "Id",
+                table: "CatalogBrand",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer").OldAnnotation	84	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.AlterColumn<int>	84	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.AlterColumn<int>(
+                name: "Id",
+                table: "Catalog",
+                type: "integer",
+                nullable: false,
+                oldClrType: typeof(int),
+                oldType: "integer").OldAnnotation	93	0.20
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	RemoveHiLoAndIndexCatalogName.Down	-	migrationBuilder.AlterColumn<int>	93	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder
+                .HasAnnotation("ProductVersion", "8.0.0-rtm.23512.13").HasAnnotation	23	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder.HasAnnotation	23	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	NpgsqlModelBuilderExtensions.HasPostgresExtension	27	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns	28	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder.Entity	30	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	32	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	36	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	36	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Brand")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	38	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Brand")
+                        .IsRequired().HasMaxLength	38	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Brand").IsRequired	38	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	38	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasKey	43	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.ToTable	45	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder.Entity	48	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	50	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	50	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	50	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	54	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	54	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("AvailableStock").HasColumnType	56	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	56	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("CatalogBrandId").HasColumnType	59	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	59	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("CatalogTypeId").HasColumnType	62	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	62	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Description").HasColumnType	65	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	65	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Vector>("Embedding").HasColumnType	68	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Vector>	68	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("MaxStockThreshold").HasColumnType	71	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	71	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50).HasColumnType	74	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Name")
+                        .IsRequired().HasMaxLength	74	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Name").IsRequired	74	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	74	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<bool>("OnReorder").HasColumnType	79	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<bool>	79	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("PictureFileName").HasColumnType	82	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	82	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<decimal>("Price").HasColumnType	85	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<decimal>	85	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("RestockThreshold").HasColumnType	88	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	88	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasKey	91	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasIndex	93	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasIndex	95	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasIndex	97	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.ToTable	99	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder.Entity	102	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	104	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	104	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	104	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	108	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	108	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Type")
+                        .IsRequired().HasMaxLength	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Type").IsRequired	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	110	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasKey	115	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.ToTable	117	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder.Entity	120	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Guid>("EventId")
+                        .ValueGeneratedOnAdd().HasColumnType	122	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Guid>("EventId").ValueGeneratedOnAdd	122	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Guid>	122	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Content")
+                        .IsRequired().HasColumnType	126	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("Content").IsRequired	126	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	126	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<DateTime>("CreationTime").HasColumnType	130	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<DateTime>	130	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("EventTypeName")
+                        .IsRequired().HasColumnType	133	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>("EventTypeName").IsRequired	133	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<string>	133	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("State").HasColumnType	137	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	137	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>("TimesSent").HasColumnType	140	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<int>	140	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Guid>("TransactionId").HasColumnType	143	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Property<Guid>	143	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasKey	146	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.ToTable	148	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	modelBuilder.Entity	151	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	153	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId").OnDelete	153	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany().HasForeignKey	153	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand").WithMany	153	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne	153	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	159	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId").OnDelete	159	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany().HasForeignKey	159	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType").WithMany	159	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.HasOne	159	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Navigation	165	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Outbox.BuildTargetModel	-	b.Navigation	167	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	migrationBuilder.CreateTable	14	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<Guid>	18	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<string>	19	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<int>	20	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<int>	21	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<DateTime>	22	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<string>	23	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.Column<Guid>	24	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Up	-	table.PrimaryKey	28	0.20
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Outbox.Down	-	migrationBuilder.DropTable	35	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder
+                .HasAnnotation("ProductVersion", "8.0.0-rtm.23512.13").HasAnnotation	20	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder.HasAnnotation	20	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	NpgsqlModelBuilderExtensions.HasPostgresExtension	24	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns	25	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder.Entity	27	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	29	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	29	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	29	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	33	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	33	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Brand")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	35	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Brand")
+                        .IsRequired().HasMaxLength	35	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Brand").IsRequired	35	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	35	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasKey	40	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.ToTable	42	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder.Entity	45	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	47	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	47	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	47	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	51	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	51	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("AvailableStock").HasColumnType	53	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	53	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("CatalogBrandId").HasColumnType	56	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	56	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("CatalogTypeId").HasColumnType	59	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	59	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Description").HasColumnType	62	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	62	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Vector>("Embedding").HasColumnType	65	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Vector>	65	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("MaxStockThreshold").HasColumnType	68	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	68	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50).HasColumnType	71	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Name")
+                        .IsRequired().HasMaxLength	71	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Name").IsRequired	71	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	71	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<bool>("OnReorder").HasColumnType	76	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<bool>	76	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("PictureFileName").HasColumnType	79	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	79	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<decimal>("Price").HasColumnType	82	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<decimal>	82	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("RestockThreshold").HasColumnType	85	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	85	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasKey	88	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasIndex	90	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasIndex	92	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasIndex	94	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.ToTable	96	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder.Entity	99	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("Id")
+                        .ValueGeneratedOnAdd().HasColumnType	101	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("Id").ValueGeneratedOnAdd	101	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	101	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn	105	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	105	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(100).HasColumnType	107	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Type")
+                        .IsRequired().HasMaxLength	107	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Type").IsRequired	107	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	107	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasKey	112	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.ToTable	114	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder.Entity	117	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Guid>("EventId")
+                        .ValueGeneratedOnAdd().HasColumnType	119	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Guid>("EventId").ValueGeneratedOnAdd	119	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Guid>	119	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Content")
+                        .IsRequired().HasColumnType	123	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("Content").IsRequired	123	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	123	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<DateTime>("CreationTime").HasColumnType	127	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<DateTime>	127	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("EventTypeName")
+                        .IsRequired().HasColumnType	130	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>("EventTypeName").IsRequired	130	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<string>	130	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("State").HasColumnType	134	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	134	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>("TimesSent").HasColumnType	137	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<int>	137	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Guid>("TransactionId").HasColumnType	140	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Property<Guid>	140	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasKey	143	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.ToTable	145	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	modelBuilder.Entity	148	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	150	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany()
+                        .HasForeignKey("CatalogBrandId").OnDelete	150	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand")
+                        .WithMany().HasForeignKey	150	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogBrand", "CatalogBrand").WithMany	150	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne	150	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId")
+                        .OnDelete(DeleteBehavior.Cascade).IsRequired	156	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany()
+                        .HasForeignKey("CatalogTypeId").OnDelete	156	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType")
+                        .WithMany().HasForeignKey	156	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne("eShop.Catalog.API.Model.CatalogType", "CatalogType").WithMany	156	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.HasOne	156	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Navigation	162	0.20
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	CatalogContextModelSnapshot.BuildModel	-	b.Navigation	164	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.PublishThroughEventBusAsync	-	logger.LogInformation	15	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.PublishThroughEventBusAsync	-	integrationEventLogService.MarkEventAsInProgressAsync	17	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.PublishThroughEventBusAsync	-	eventBus.PublishAsync	18	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.PublishThroughEventBusAsync	-	integrationEventLogService.MarkEventAsPublishedAsync	19	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.PublishThroughEventBusAsync	-	logger.LogError	23	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.PublishThroughEventBusAsync	-	integrationEventLogService.MarkEventAsFailedAsync	24	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.SaveEventAndCatalogContextChangesAsync	-	logger.LogInformation	30	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.SaveEventAndCatalogContextChangesAsync	-	ResilientTransaction.New(catalogContext).ExecuteAsync	34	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.SaveEventAndCatalogContextChangesAsync	-	ResilientTransaction.New	34	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.SaveEventAndCatalogContextChangesAsync	-	catalogContext.SaveChangesAsync	37	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.SaveEventAndCatalogContextChangesAsync	-	integrationEventLogService.SaveEventAsync	38	0.20
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.Dispose	src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	Dispose	57	0.40
+src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	CatalogIntegrationEventService.Dispose	-	GC.SuppressFinalize	58	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	logger.LogInformation	11	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	new List	13	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	catalogContext.CatalogItems.Find	17	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	new ConfirmedOrderStockItem	21	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	confirmedOrderStockItems.Add	23	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	confirmedOrderStockItems.Any	27	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	new OrderStockRejectedIntegrationEvent	28	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	-	new OrderStockConfirmedIntegrationEvent	29	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	SaveEventAndCatalogContextChangesAsync	31	0.40
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs	OrderStatusChangedToAwaitingValidationIntegrationEventHandler.Handle	src/Catalog.API/IntegrationEvents/CatalogIntegrationEventService.cs	PublishThroughEventBusAsync	32	0.40
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs	OrderStatusChangedToPaidIntegrationEventHandler.Handle	-	logger.LogInformation	10	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs	OrderStatusChangedToPaidIntegrationEventHandler.Handle	-	catalogContext.CatalogItems.Find	15	0.20
+src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs	OrderStatusChangedToPaidIntegrationEventHandler.Handle	-	catalogContext.SaveChangesAsync	20	0.20
+src/Catalog.API/Model/CatalogItem.cs	CatalogItem.RemoveStock	-	new CatalogDomainException	66	0.20
+src/Catalog.API/Model/CatalogItem.cs	CatalogItem.RemoveStock	-	new CatalogDomainException	71	0.20
+src/Catalog.API/Model/CatalogItem.cs	CatalogItem.RemoveStock	-	Math.Min	74	0.20
+src/Catalog.API/Program.cs	<module>	-	WebApplication.CreateBuilder	4	0.20
+src/Catalog.API/Program.cs	<module>	-	builder.AddServiceDefaults	6	0.20
+src/Catalog.API/Program.cs	<module>	src/Basket.API/Extensions/Extensions.cs	Extensions.AddApplicationServices	7	0.40
+src/Catalog.API/Program.cs	<module>	-	builder.Services.AddProblemDetails	8	0.20
+src/Catalog.API/Program.cs	<module>	-	builder.Services.AddApiVersioning	10	0.20
+src/Catalog.API/Program.cs	<module>	-	builder.AddDefaultOpenApi	12	0.20
+src/Catalog.API/Program.cs	<module>	-	builder.Build	14	0.20
+src/Catalog.API/Program.cs	<module>	-	app.MapDefaultEndpoints	16	0.20
+src/Catalog.API/Program.cs	<module>	-	app.UseStatusCodePages	18	0.20
+src/Catalog.API/Program.cs	<module>	src/Catalog.API/Apis/CatalogApi.cs	CatalogApi.MapCatalogApi	20	0.70
+src/Catalog.API/Program.cs	<module>	-	app.UseDefaultOpenApi	22	0.20
+src/Catalog.API/Program.cs	<module>	-	app.Run	23	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	30	0.40
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	CatalogItemToString	30	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	ValueTask.FromResult<Vector?>	31	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	Stopwatch.GetTimestamp	38	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	_embeddingGenerator!.GenerateAsync	40	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	items.Select	40	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	embeddings.Select(m => new Vector(m.Vector[0..EmbeddingDimensions])).ToList	41	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	embeddings.Select	41	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	new Vector	41	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	_logger.IsEnabled	43	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	_logger.LogTrace	45	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingsAsync	-	Stopwatch.GetElapsedTime	45	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	Stopwatch.GetTimestamp	59	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	_embeddingGenerator!.GenerateVectorAsync	61	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	_logger.IsEnabled	64	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	_logger.LogTrace	66	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	Stopwatch.GetElapsedTime	66	0.20
+src/Catalog.API/Services/CatalogAI.cs	CatalogAI.GetEmbeddingAsync	-	new Vector	69	0.20

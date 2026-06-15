@@ -1,0 +1,202 @@
+/**
+ * OrganisationGroupedProjectList Styles
+ *
+ * Spec 2026-01-18: Organisations Iteration 3 - Update Project Open Modal
+ *
+ * Styling for the OrganisationGroupedProjectList component.
+ * Provides 2-level visual hierarchy:
+ * - Organisation header: 0px indent, font-weight: 600
+ * - Hierarchy header: 16-20px indent, font-weight: 500
+ * - Project row: 32-40px indent, standard weight
+ *
+ * Based on GroupedProjectList.module.css styling patterns.
+ */
+
+/* Container for the grouped list */
+.groupedList {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Organisation section container */
+.organisationSection {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.organisationSection:last-child {
+  border-bottom: none;
+}
+
+/* Organisation header - top level, bolder treatment */
+.organisationHeader {
+  display: flex;
+  align-items: center;
+  padding: 12px 12px;
+  background: #f5f5f5;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+  gap: 8px;
+  border-left: 3px solid #1976D2;
+}
+
+.organisationHeader:hover {
+  background: #e8e8e8;
+}
+
+.organisationHeader:focus {
+  outline: none;
+  background: #e3f2fd;
+}
+
+.organisationHeader:focus-visible {
+  outline: 2px solid #1976D2;
+  outline-offset: -2px;
+}
+
+/* Organisation name - bolder */
+.organisationName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  flex: 1;
+}
+
+/* Organisation content area */
+.organisationContent {
+  animation: expandIn 0.15s ease;
+}
+
+/* Hierarchy section container */
+.hierarchySection {
+  border-top: 1px solid #f0f0f0;
+}
+
+/* Hierarchy header - indented, slightly lighter treatment */
+.hierarchyHeader {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  padding-left: 20px; /* 16-20px indent for hierarchy level */
+  background: #f9f9f9;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease;
+  gap: 8px;
+}
+
+.hierarchyHeader:hover {
+  background: #f0f0f0;
+}
+
+.hierarchyHeader:focus {
+  outline: none;
+  background: #e8f4fc;
+}
+
+.hierarchyHeader:focus-visible {
+  outline: 2px solid #1976D2;
+  outline-offset: -2px;
+}
+
+/* Hierarchy name */
+.hierarchyName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  flex: 1;
+}
+
+/* Hierarchy content area */
+.hierarchyContent {
+  animation: expandIn 0.15s ease;
+}
+
+/* Chevron icon for expand/collapse */
+.chevron {
+  font-size: 10px;
+  color: #666;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  width: 12px;
+  display: inline-block;
+  text-align: center;
+}
+
+.chevron.expanded {
+  transform: rotate(0deg);
+}
+
+/* Section count badge - used by both org and hierarchy headers */
+.sectionCount {
+  font-size: 12px;
+  color: #888;
+  flex-shrink: 0;
+}
+
+/* Project row - further indented */
+.projectRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  padding-left: 40px; /* 32-40px indent for project level */
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.projectRow:last-child {
+  border-bottom: none;
+}
+
+.projectRow:hover {
+  background: #f5f5f5;
+}
+
+/* Selected row styling */
+.projectRow.selected {
+  background: #e3f2fd;
+}
+
+/* Project name */
+.projectName {
+  font-size: 14px;
+  color: #333;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Project date */
+.projectDate {
+  font-size: 12px;
+  color: #888;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+/* Empty message */
+.emptyMessage {
+  padding: 40px 20px;
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+/* Animation for expanding content */
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}

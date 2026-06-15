@@ -1,0 +1,25 @@
+name: jee-servlet
+version: 1
+language: java
+
+detection:
+  files_match:
+    - '**/WEB-INF/web.xml'
+    - '**/src/main/webapp/WEB-INF/web.xml'
+
+extract:
+  - id: servlet_mappings
+    query: configs
+    parser: web_xml
+    file_glob: '**/WEB-INF/web.xml'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: jee-servlet
+
+conflict_rules: []
+known_pitfalls:
+  - "servlet-filter chains not emitted (we only read servlet-mapping)"
+  - "JSP page paths not inferred"
+  - "Wildcard mappings like '*.do' are emitted as-is"

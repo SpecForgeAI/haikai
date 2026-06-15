@@ -1,0 +1,22 @@
+digraph EnrichmentLoop {
+  rankdir=TB;
+  fontname="Arial";
+
+  node [shape=box, style="rounded", fontname="Arial"];
+
+  start [label="Unresolved target/data_entity"];
+  hypothesize [label="Form / update hypothesis\n(best current entity guess)"];
+  choose_probe [label="Choose next probe\n(best evidence source)"];
+  run_probe [label="Run one tool call\n(source / calls / index /\ncaller / inheritance)"];
+  assess [label="Assess evidence\nconfirm / weaken / contradict / no signal"];
+  resolved [label="RESOLVED", style="rounded,filled", fillcolor="#e8f5e9"];
+  stop [label="LEAVE EMPTY\n(max hops / no useful probes)", style="rounded,filled", fillcolor="#fff3e0"];
+
+  start -> hypothesize;
+  hypothesize -> choose_probe;
+  choose_probe -> run_probe;
+  run_probe -> assess;
+  assess -> resolved [label="high confidence"];
+  assess -> stop [label="hop limit / exhausted"];
+  assess -> hypothesize [label="refine and continue"];
+}

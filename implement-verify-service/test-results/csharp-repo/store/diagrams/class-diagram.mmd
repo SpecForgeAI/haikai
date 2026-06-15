@@ -1,0 +1,35 @@
+classDiagram
+    class Extensions {
+        +AddApplicationServices(this IHostApplicationBuilder builder)
+    }
+    class IntegrationEventContext {
+    }
+    class ServerCallContextIdentityExtensions {
+        +GetUserIdentity(this ServerCallContext context)
+        +GetUserName(this ServerCallContext context)
+    }
+    class BasketItem {
+        +Id
+        +OldUnitPrice
+        +PictureUrl
+        +ProductId
+        +ProductName
+        +Quantity
+        +UnitPrice
+        +Validate(ValidationContext validationContext)
+    }
+    class CustomerBasket {
+        +BuyerId
+        +CustomerBasket()
+        +CustomerBasket(string customerId)
+        +Items
+    }
+    class BasketSerializationContext {
+    }
+    class JsonSerializerContext {
+    }
+    class IValidatableObject {
+    }
+    JsonSerializerContext <|-- IntegrationEventContext
+    IValidatableObject <|-- BasketItem
+    JsonSerializerContext <|-- BasketSerializationContext

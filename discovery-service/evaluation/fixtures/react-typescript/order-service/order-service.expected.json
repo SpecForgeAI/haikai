@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "OrderItem",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "sku",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "price",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "quantity",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "calculateOrderTotal",
+      "tag": "pack"
+    },
+    {
+      "type": "business_logics",
+      "name": "applyDiscount",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

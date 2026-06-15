@@ -1,0 +1,50 @@
+{
+  "benchmark": "humaneval",
+  "model": "gpt-4.1-mini",
+  "mode": "direct",
+  "timestamp": "20260328-130917",
+  "total": 5,
+  "passed": 2,
+  "failed": 3,
+  "errors": 0,
+  "pass_rate": 0.4,
+  "avg_latency_seconds": 1.348,
+  "total_latency_seconds": 6.738,
+  "problems": [
+    {
+      "problem_id": "HumanEval/0",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 2.333,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/1",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.633,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/2",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.658,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/3",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.028,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/4",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.087,
+      "error": null
+    }
+  ]
+}

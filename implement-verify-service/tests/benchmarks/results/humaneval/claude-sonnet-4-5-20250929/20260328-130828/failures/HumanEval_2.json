@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/2",
+  "passed": false,
+  "score": 0.0,
+  "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkETEEq8C1Ta1VWDnJ'}",
+  "generated_output": "",
+  "expected_output": "    return number % 1.0\n",
+  "latency_seconds": 0.1350248409435153,
+  "mode": "direct",
+  "model": "claude-sonnet-4-5-20250929",
+  "metadata": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "actual_model": ""
+  }
+}

@@ -1,0 +1,286 @@
+# caller_file	caller	callee_file	callee	line	confidence
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.<init:AbstractDocument>	-	Objects.requireNonNull	40	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	46	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	52	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el)
+        .findAny()
+        .stream()
+        .flatMap(Collection::stream).map	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el)
+        .findAny()
+        .stream().flatMap	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el)
+        .findAny().stream	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull)
+        .map(el -> (List<Map<String, Object>>) el).findAny	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key))
+        .filter(Objects::nonNull).map	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable(get(key)).filter	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	-	Stream.ofNullable	57	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	57	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	68	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	new StringBuilder	72	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append(getClass().getName()).append	73	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	73	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	getClass().getName	73	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	getClass	73	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	documentProperties.size	79	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	documentProperties.entrySet	85	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	entry.getKey	86	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	entry.getValue	87	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append(key).append(" : ").append(value).append	90	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append(key).append(" : ").append	90	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append(key).append	90	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append("[").append	90	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	90	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	94	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	-	builder.append	98	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.buildStringRepresentation	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	99	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	50	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	Map.of	53	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	54	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	55	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	56	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	Map.of	59	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	60	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	61	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	62	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	Map.of	65	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	66	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	68	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	70	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	List.of	71	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	new Car	73	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	75	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	76	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	car.getModel().orElseThrow	76	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	76	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	77	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	car.getPrice().orElseThrow	77	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	77	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	78	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	car.getParts().forEach	79	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	79	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	LOGGER.info	82	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	p.getType().orElse	84	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	84	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	p.getModel().orElse	85	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	85	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	-	p.getPrice().orElse	86	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	86	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	-	Optional.ofNullable	35	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	35	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	35	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	-	Optional.ofNullable	35	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	35	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	-	Optional.ofNullable	35	0.20
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	35	0.40
+abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	35	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest	-	new DocumentImplementation	47	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest	-	new HashMap	47	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetValue	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	51	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetValue	-	assertEquals	52	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetValue	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	52	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	List.of	57	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	Map.of	57	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	Map.of	57	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	59	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	61	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	assertNotNull	62	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	assertEquals	63	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveChildren	-	childrenStream.count	63	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.children	68	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	-	assertNotNull	69	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	-	assertEquals	70	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldRetrieveEmptyStreamForNonExistingChildren	-	children.count	70	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	Map.of	75	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	new DocumentImplementation	76	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	assertTrue	77	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	document.toString().contains	77	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	77	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	assertTrue	78	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	-	document.toString().contains	78	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldIncludePropsInToString	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	78	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldHandleExceptionDuringConstruction	-	assertThrows	87	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldHandleExceptionDuringConstruction	-	new DocumentImplementation	91	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	new DocumentImplementation	98	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	new HashMap	98	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	99	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	101	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	105	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	assertNotNull	107	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	-	assertEquals	108	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldPutAndGetNestedDocument	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	108	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	119	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	-	assertEquals	122	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	122	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	125	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	-	assertEquals	128	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	AbstractDocumentTest.shouldUpdateExistingValue	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.get	128	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java	AppTest.shouldExecuteAppWithoutException	-	assertDoesNotThrow	42	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java	AppTest.shouldExecuteAppWithoutException	abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	42	0.40
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	Map.of	49	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	50	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	51	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	52	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	new Part	53	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	assertEquals	54	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	part.getType().orElseThrow	54	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	HasType.getType	54	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	assertEquals	55	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	part.getModel().orElseThrow	55	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	55	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	assertEquals	56	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	-	part.getPrice().orElseThrow	56	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructPart	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	56	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	Map.of	62	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	63	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	64	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.toString	65	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	List.of	65	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	Map.of	65	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	Map.of	65	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	new Car	66	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	assertEquals	67	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	car.getModel().orElseThrow	67	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	HasModel.getModel	67	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	assertEquals	68	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	car.getPrice().orElseThrow	68	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	HasPrice.getPrice	68	0.70
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	assertEquals	69	0.85
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	-	car.getParts().count	69	0.20
+abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	DomainTest.shouldConstructCar	abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	HasParts.getParts	69	0.70
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App	-	new Kingdom	48	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.main	-	new App	56	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.main	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	57	0.70
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	62	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	63	0.70
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	64	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	64	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getArmy	64	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	65	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	65	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getCastle	65	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	66	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	66	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getKing	66	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	68	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	69	0.70
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	70	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	70	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getArmy	70	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	71	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	71	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getCastle	71	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	-	LOGGER.info	72	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	72	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getKing	72	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.FactoryMaker.makeFactory	81	0.70
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.setKing	82	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	ElfKingdomFactory.createKing	82	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.setCastle	83	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	ElfKingdomFactory.createCastle	83	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.setArmy	84	0.30
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	ElfKingdomFactory.createArmy	84	0.40
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	ElfKingdomFactory.createCastle	-	new ElfCastle	32	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	ElfKingdomFactory.createKing	-	new ElfKing	37	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/ElfKingdomFactory.java	ElfKingdomFactory.createArmy	-	new ElfArmy	42	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	FactoryMaker.makeFactory	-	new ElfKingdomFactory	51	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	FactoryMaker.makeFactory	-	new OrcKingdomFactory	52	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java	OrcKingdomFactory.createCastle	-	new OrcCastle	32	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java	OrcKingdomFactory.createKing	-	new OrcKing	37	0.20
+abstract-factory/src/main/java/com/iluwatar/abstractfactory/OrcKingdomFactory.java	OrcKingdomFactory.createArmy	-	new OrcArmy	42	0.20
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest	-	new App	35	0.20
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	39	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.getKingdom	40	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getKing	42	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	-	assertTrue	43	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	-	assertEquals	44	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	44	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	46	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getKing	47	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	-	assertTrue	48	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	-	assertEquals	49	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyKingCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	49	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	54	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.getKingdom	55	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getCastle	57	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	-	assertTrue	58	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	-	assertEquals	59	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	59	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	61	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getCastle	62	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	-	assertTrue	63	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	-	assertEquals	64	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyCastleCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	64	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	69	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.getKingdom	70	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getArmy	72	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	-	assertTrue	73	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	-	assertEquals	74	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	74	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	76	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getArmy	77	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	-	assertTrue	78	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	-	assertEquals	79	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyArmyCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	79	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	84	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.getKingdom	85	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getKing	87	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getCastle	88	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getArmy	89	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	-	assertTrue	90	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	-	assertEquals	91	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	91	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	-	assertTrue	92	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	-	assertEquals	93	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	93	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	-	assertTrue	94	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	-	assertEquals	95	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyElfKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	95	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.createKingdom	100	0.70
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.getKingdom	101	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getKing	103	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getCastle	104	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	Kingdom.getArmy	105	0.30
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	-	assertTrue	106	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	-	assertEquals	107	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	107	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	-	assertTrue	108	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	-	assertEquals	109	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	109	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	-	assertTrue	110	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	-	assertEquals	111	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	AbstractFactoryTest.verifyOrcKingdomCreation	abstract-factory/src/main/java/com/iluwatar/abstractfactory/Army.java	Army.getDescription	111	0.40
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java	AppTest.shouldExecuteApplicationWithoutException	-	assertDoesNotThrow	37	0.85
+abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java	AppTest.shouldExecuteApplicationWithoutException	abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	App.main	37	0.40
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature	-	LoggerFactory.getLogger	35	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature	-	ActiveCreature.class.getName	35	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	new LinkedBlockingQueue	49	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	new Thread	51	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	App.run	56	0.70
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	requests.take	56	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	logger.error	59	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	e.getMessage	59	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	Thread.currentThread().interrupt	62	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	Thread.currentThread	62	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.<init:ActiveCreature>	-	thread.start	66	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.eat	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	75	0.40
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.eat	-	logger.info	77	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.eat	active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.name	77	0.70
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.eat	-	logger.info	78	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.eat	active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.name	78	0.70
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.roam	abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	AbstractDocument.put	88	0.40
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.roam	-	logger.info	88	0.20
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.roam	active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.name	88	0.70
+active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	ActiveCreature.kill	-	this.thread.interrupt	107	0.20

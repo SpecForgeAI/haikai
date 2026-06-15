@@ -1,0 +1,33 @@
+name: gitea
+version: 1
+language: go
+
+detection:
+  imports_match:
+    - "code.gitea.io"
+    - "gitea.com/go-chi"
+  files_match:
+    - "routers/**/*.go"
+  manifest_contains:
+    - {file: "go.mod", substring: "gitea.com/go-chi"}
+
+extract:
+  - id: chi_router_calls
+    query: call_args
+    file_extensions: [".go"]
+    callee_pattern: '\.(Get|Post|Put|Delete|Patch|Options|Head|get|post|put|delete|patch|options|head)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: gitea
+
+conflict_rules: []
+known_pitfalls:
+  - "ConnectRPC/gRPC endpoints not extracted (only HTTP)"
+  - "Route groups with dynamic prefixes not fully inlined"
+  - "Middleware-wrapped routes may not be captured"
+  - "Programmatically constructed paths not extracted"

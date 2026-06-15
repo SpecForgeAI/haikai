@@ -1,0 +1,45 @@
+<!--
+  Test fixture: Mixed legacy structured-macro and ADF-based draw.io macros
+
+  This fixture tests backward compatibility when a page contains both:
+  - Legacy ac:structured-macro format (Confluence Server/Data Center or older Cloud)
+  - New ADF-based format (Confluence Cloud with Forge draw.io app)
+
+  Both macro types should be detected and matched to attachments.
+-->
+<ac:layout><ac:layout-section ac:type="single"><ac:layout-cell>
+<h1>Migration Documentation</h1>
+<p>This page has diagrams in both legacy and new ADF format.</p>
+
+<h2>Legacy Diagram (Structured Macro)</h2>
+<p>This diagram was created before the Forge migration:</p>
+<ac:structured-macro ac:name="drawio" ac:schema-version="1" ac:macro-id="legacy-001">
+    <ac:parameter ac:name="diagramName">legacy-architecture.drawio</ac:parameter>
+    <ac:parameter ac:name="width">800</ac:parameter>
+    <ac:parameter ac:name="height">600</ac:parameter>
+</ac:structured-macro>
+
+<h2>New Diagram (ADF Macro)</h2>
+<p>This diagram was created using the new Forge-based draw.io:</p>
+<ac:adf-extension>
+  <ac:adf-node type="extension">
+    <ac:adf-attribute key="extension-key">com.mxgraph.confluence.plugins.diagramly:drawio-sketch</ac:adf-attribute>
+    <ac:adf-attribute key="extension-title">draw.io Board</ac:adf-attribute>
+    <ac:adf-node type="extension-properties">
+      <ac:adf-parameter key="migration-key">com.mxgraph.confluence.plugins.diagramly</ac:adf-parameter>
+    </ac:adf-node>
+    <ac:adf-node type="guest-params">
+      <ac:adf-parameter key="diagram-name">New Cloud Architecture</ac:adf-parameter>
+      <ac:adf-parameter key="cust-content-id">300001</ac:adf-parameter>
+    </ac:adf-node>
+  </ac:adf-node>
+</ac:adf-extension>
+
+<h2>Another Legacy Diagram</h2>
+<ac:structured-macro ac:name="diagrams.net" ac:schema-version="1" ac:macro-id="legacy-002">
+    <ac:parameter ac:name="diagramName">data-model.drawio</ac:parameter>
+    <ac:parameter ac:name="width">750</ac:parameter>
+</ac:structured-macro>
+
+<p>End of documentation.</p>
+</ac:layout-cell></ac:layout-section></ac:layout>

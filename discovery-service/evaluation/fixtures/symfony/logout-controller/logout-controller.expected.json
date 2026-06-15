@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "LogoutController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "ui_components",
+      "name": "SettingsForm",
+      "tag": "pack"
+    },
+    {
+      "type": "ui_components",
+      "name": "Settings",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

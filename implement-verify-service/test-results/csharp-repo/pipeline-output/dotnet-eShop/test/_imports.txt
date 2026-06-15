@@ -1,0 +1,106 @@
+# file	imports	names
+src/Basket.API/Extensions/Extensions.cs	System.Text.Json	Serialization
+src/Basket.API/Extensions/Extensions.cs	eShop.Basket.API	Repositories
+src/Basket.API/Extensions/Extensions.cs	eShop.Basket.API.IntegrationEvents	EventHandling
+src/Basket.API/Extensions/Extensions.cs	eShop.Basket.API.IntegrationEvents.EventHandling	Events
+src/Basket.API/GlobalUsings.cs	global System.ComponentModel	DataAnnotations
+src/Basket.API/GlobalUsings.cs	global System.Security	Claims
+src/Basket.API/GlobalUsings.cs	global System.Text	Json
+src/Basket.API/GlobalUsings.cs	global Grpc	Core
+src/Basket.API/GlobalUsings.cs	global Microsoft.AspNetCore	Authorization
+src/Basket.API/GlobalUsings.cs	global eShop.Basket.API	Extensions
+src/Basket.API/GlobalUsings.cs	global eShop.Basket.API	Grpc
+src/Basket.API/GlobalUsings.cs	global eShop.EventBus	Abstractions
+src/Basket.API/GlobalUsings.cs	global eShop.EventBus	Events
+src/Basket.API/GlobalUsings.cs	global eShop	ServiceDefaults
+src/Basket.API/GlobalUsings.cs	global StackExchange	Redis
+src/Basket.API/Grpc/BasketService.cs	System.Diagnostics	CodeAnalysis
+src/Basket.API/Grpc/BasketService.cs	eShop.Basket.API	Repositories
+src/Basket.API/Grpc/BasketService.cs	eShop.Basket.API	Extensions
+src/Basket.API/Grpc/BasketService.cs	eShop.Basket.API	Model
+src/Basket.API/IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	eShop.Basket.API	Repositories
+src/Basket.API/IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	eShop.Basket.API.IntegrationEvents.EventHandling	Events
+src/Basket.API/Repositories/IBasketRepository.cs	eShop.Basket.API	Model
+src/Basket.API/Repositories/RedisBasketRepository.cs	System.Text.Json	Serialization
+src/Basket.API/Repositories/RedisBasketRepository.cs	eShop.Basket.API	Model
+src/Catalog.API/Apis/CatalogApi.cs	System	ComponentModel
+src/Catalog.API/Apis/CatalogApi.cs	System.ComponentModel	DataAnnotations
+src/Catalog.API/Apis/CatalogApi.cs	Microsoft.AspNetCore.Http	HttpResults
+src/Catalog.API/Apis/CatalogApi.cs	Microsoft.AspNetCore	Mvc
+src/Catalog.API/Apis/CatalogApi.cs	Microsoft.AspNetCore.Mvc	Infrastructure
+src/Catalog.API/Apis/CatalogApi.cs	Pgvector	EntityFrameworkCore
+src/Catalog.API/Extensions/Extensions.cs	eShop.Catalog.API	Services
+src/Catalog.API/Extensions/HostEnvironmentExtensions.cs	System	Reflection
+src/Catalog.API/GlobalUsings.cs	global Asp	Versioning
+src/Catalog.API/GlobalUsings.cs	global Asp.Versioning	Conventions
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog	API
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API	Infrastructure
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API.Infrastructure	EntityConfigurations
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API.Infrastructure	Exceptions
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API	IntegrationEvents
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API.IntegrationEvents	EventHandling
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API.IntegrationEvents	Events
+src/Catalog.API/GlobalUsings.cs	global eShop.Catalog.API	Model
+src/Catalog.API/GlobalUsings.cs	global eShop.EventBus	Abstractions
+src/Catalog.API/GlobalUsings.cs	global eShop.EventBus	Events
+src/Catalog.API/GlobalUsings.cs	global eShop	IntegrationEventLogEF
+src/Catalog.API/GlobalUsings.cs	global eShop.IntegrationEventLogEF	Services
+src/Catalog.API/GlobalUsings.cs	global eShop.IntegrationEventLogEF	Utilities
+src/Catalog.API/GlobalUsings.cs	global eShop	ServiceDefaults
+src/Catalog.API/GlobalUsings.cs	global Microsoft	EntityFrameworkCore
+src/Catalog.API/GlobalUsings.cs	global Microsoft.EntityFrameworkCore.Metadata	Builders
+src/Catalog.API/GlobalUsings.cs	global Microsoft.Extensions	Options
+src/Catalog.API/GlobalUsings.cs	global Npgsql	global Npgsql
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	System.Text	Json
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	eShop.Catalog.API	Services
+src/Catalog.API/Infrastructure/CatalogContextSeed.cs	Pgvector	Pgvector
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Microsoft	EntityFrameworkCore
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Microsoft.EntityFrameworkCore	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Microsoft.EntityFrameworkCore	Migrations
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Microsoft.EntityFrameworkCore.Storage	ValueConversion
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	eShop.Catalog.API	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Npgsql.EntityFrameworkCore.PostgreSQL	Metadata
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs	Pgvector	Pgvector
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Microsoft.EntityFrameworkCore	Migrations
+src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs	Pgvector	Pgvector
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	Microsoft	EntityFrameworkCore
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	Microsoft.EntityFrameworkCore	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	Microsoft.EntityFrameworkCore	Migrations
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	Microsoft.EntityFrameworkCore.Storage	ValueConversion
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	eShop.Catalog.API	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	Npgsql.EntityFrameworkCore.PostgreSQL	Metadata
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs	Pgvector	Pgvector
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	Microsoft.EntityFrameworkCore	Migrations
+src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs	Npgsql.EntityFrameworkCore.PostgreSQL	Metadata
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	System	System
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Microsoft	EntityFrameworkCore
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Microsoft.EntityFrameworkCore	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Microsoft.EntityFrameworkCore	Migrations
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Microsoft.EntityFrameworkCore.Storage	ValueConversion
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	eShop.Catalog.API	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Npgsql.EntityFrameworkCore.PostgreSQL	Metadata
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs	Pgvector	Pgvector
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	System	System
+src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs	Microsoft.EntityFrameworkCore	Migrations
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	System	System
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	Microsoft	EntityFrameworkCore
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	Microsoft.EntityFrameworkCore	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	Microsoft.EntityFrameworkCore.Storage	ValueConversion
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	eShop.Catalog.API	Infrastructure
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	Npgsql.EntityFrameworkCore.PostgreSQL	Metadata
+src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs	Pgvector	Pgvector
+src/Catalog.API/Model/CatalogBrand.cs	System.ComponentModel	DataAnnotations
+src/Catalog.API/Model/CatalogItem.cs	System.ComponentModel	DataAnnotations
+src/Catalog.API/Model/CatalogItem.cs	System.Text.Json	Serialization
+src/Catalog.API/Model/CatalogItem.cs	Pgvector	Pgvector
+src/Catalog.API/Model/CatalogServices.cs	eShop.Catalog.API	Services
+src/Catalog.API/Model/CatalogServices.cs	Microsoft.AspNetCore	Mvc
+src/Catalog.API/Model/CatalogType.cs	System.ComponentModel	DataAnnotations
+src/Catalog.API/Model/PaginatedItems.cs	System.Text.Json	Serialization
+src/Catalog.API/Model/PaginationRequest.cs	System	ComponentModel
+src/Catalog.API/Program.cs	Asp.Versioning	Builder
+src/Catalog.API/Program.cs	System	Reflection
+src/Catalog.API/Services/CatalogAI.cs	System	Diagnostics
+src/Catalog.API/Services/CatalogAI.cs	Microsoft.Extensions	AI
+src/Catalog.API/Services/CatalogAI.cs	Pgvector	Pgvector
+src/Catalog.API/Services/ICatalogAI.cs	Pgvector	Pgvector

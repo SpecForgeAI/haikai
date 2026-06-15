@@ -1,0 +1,498 @@
+/**
+ * FeatureDefinitionPanel.module.css
+ *
+ * Spec 2026-01-22: Feature Shaping UI Consumes Planner JSON
+ * Task Group 4: Create FeatureDefinitionPanel Component
+ *
+ * Styling for the FeatureDefinitionPanel component:
+ * - Panel container (scrollable)
+ * - Bullet list styling
+ * - Numbered list styling
+ * - Section content styling
+ *
+ * Spec 2026-01-24: Implement Screen Change 1 - Remove RHS WorkItemSummaryPanel
+ * Task Group 3: Context Section Styling
+ * - Added context card styling matching FeatureSectionCard pattern
+ * - Context header with title and button (flex with justify-content: space-between)
+ * - Chip styling for entity, diagram, and relationship chips
+ *
+ * Spec 2026-01-24: Implement Screen Information Density
+ * Task Group 4: Feature Definition Cards Density Reduction
+ * - Context card padding: 16px -> 10px
+ * - Context card margin-bottom: 16px -> 10px
+ * - Context title font-size: 14px -> 13px
+ * - Context content font-size: 14px -> 13px
+ * Task Group 7: Responsive Layout Density Cascade
+ * - Tablet breakpoint (max-width: 1024px): content padding 14px
+ * - Mobile breakpoint (max-width: 768px): content padding 12px, context card padding 12px
+ *
+ * Spec 2026-01-25: Feature LHS Collapse and Provenance Icons
+ * Task Group 2: Combined "Initial Description & Context" Section
+ * - Added .topSectionCard class for distinct styling (background + left border)
+ * - Added .descriptionContextSeparator class for line break spacing
+ * Task Group 3: Combined Scope Section with 2-Column Layout
+ * - Added .scopeGrid for 2-column grid layout
+ * - Added .scopeColumn for individual column styling
+ * - Added .scopeColumnTitle for column title with border-bottom underline
+ * - Added .scopeNoneDefined for empty column "None defined" message
+ * Task Group 4: Section Reordering and Icon Application
+ * - Added .openQuestionsHeader class for flex layout with dual icons
+ * - Added .ampersand class for muted ampersand styling
+ */
+
+/* Panel container */
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #F5F5F5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Zone 3 header: non-collapsible "Work Item Details" bar */
+.zone3Header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  min-height: 28px;
+  background: #e8f5e9;
+  border-bottom: 1px solid #E0E0E0;
+  flex-shrink: 0;
+}
+
+.zone3HeaderTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333333;
+}
+
+/* Scrollable content area */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+
+/* Description text */
+.description {
+  margin: 0;
+  line-height: 1.6;
+  color: #444444;
+}
+
+/* Product Owner Understanding text */
+.understanding {
+  margin: 0;
+  line-height: 1.6;
+  color: #444444;
+}
+
+/* Bullet list styling */
+.bulletList {
+  margin: 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+
+.bulletList li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+  color: #444444;
+}
+
+.bulletList li:last-child {
+  margin-bottom: 0;
+}
+
+/* Test description text */
+.testDescription {
+  color: var(--text-secondary, #666);
+  font-size: 0.9em;
+}
+
+/* Numbered list styling */
+.numberedList {
+  margin: 0;
+  padding-left: 20px;
+  list-style-type: decimal;
+}
+
+.numberedList li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+  color: #444444;
+}
+
+.numberedList li:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+ * Top Section Card Distinct Styling
+ * Spec 2026-01-25: Task Group 2 - Combined "Initial Description & Context" Section
+ * - Subtle background tint (#FAFAFA)
+ * - Colored left border accent (4px solid #1976d2)
+ * - Maintains existing card styling (border-radius, padding, margin)
+ * ============================================================================ */
+
+/**
+ * Top section card with distinct styling for user-authored content.
+ * Applied to the combined "Initial Description & Context" section.
+ */
+.topSectionCard {
+  background: #FAFAFA;
+  border-left: 4px solid #1976d2;
+}
+
+/**
+ * Separator element between Description and Context content.
+ * Provides visual line break without a horizontal rule.
+ */
+.descriptionContextSeparator {
+  height: 12px;
+}
+
+/* ============================================================================
+ * Combined Scope Section Styles
+ * Spec 2026-01-25: Feature LHS Collapse and Provenance Icons
+ * Task Group 3: Combined Scope Section with 2-Column Layout
+ * ============================================================================ */
+
+/**
+ * Grid container for 2-column scope layout.
+ * Equal width columns (50%/50%) with 16px gap.
+ */
+.scopeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/**
+ * Individual column container within the scope grid.
+ */
+.scopeColumn {
+  min-width: 0;
+}
+
+/**
+ * Column title styling for "In Scope" and "Out of Scope" headers.
+ * Has border-bottom underline for visual separation.
+ */
+.scopeColumnTitle {
+  font-weight: 600;
+  font-size: 12px;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #E0E0E0;
+  color: #333333;
+}
+
+/**
+ * Empty column message styling.
+ * Italic, muted appearance for "None defined" message.
+ */
+.scopeNoneDefined {
+  font-size: 13px;
+  color: #888888;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* ============================================================================
+ * Open Questions Dual Icon Header Styles
+ * Spec 2026-01-25: Feature LHS Collapse and Provenance Icons
+ * Task Group 4: Section Reordering and Icon Application
+ * ============================================================================ */
+
+/**
+ * Flex container for Open Questions header with dual icons.
+ * Layout: [Bot icon] & [SquareUserRound icon] Open Questions
+ */
+.openQuestionsHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/**
+ * Ampersand styling between Bot and SquareUserRound icons.
+ * Muted appearance: #888888 color at 70% opacity.
+ */
+.ampersand {
+  color: #888888;
+  opacity: 0.7;
+  margin: 0 4px;
+  font-size: 13px;
+}
+
+/* ============================================================================
+ * Context Section Styles (now used within combined section)
+ * Spec 2026-01-24: Task Group 3 - Context Selector Relocation
+ * Styled to match FeatureSectionCard pattern
+ *
+ * Spec 2026-01-24: Task Group 4 - Density Reduction
+ * - Padding: 16px -> 10px
+ * - Margin-bottom: 16px -> 10px
+ * - Font-size: 14px -> 13px
+ *
+ * Spec 2026-01-25: Task Group 2 - These styles now used within combined section
+ * ============================================================================ */
+
+/* Context card container - matches FeatureSectionCard styling with density reduction */
+.contextCard {
+  background: #ffffff;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+/* Context header - flex layout with title left, button right */
+.contextHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+/* Context title - matches FeatureSectionCard .sectionHeader with density reduction */
+.contextTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333333;
+  margin: 0;
+}
+
+/* Add context button - positioned on right side of header */
+.addContextButton {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1976d2;
+  background: white;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.addContextButton:hover {
+  background: #e3f2fd;
+}
+
+.addContextButton:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.2);
+}
+
+.addContextButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Context content area - with density reduction */
+.contextContent {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #444444;
+}
+
+/* Container for chips */
+.chipContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Base chip styles */
+.entityChip,
+.diagramChip,
+.relationshipChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 16px;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 200px;
+}
+
+/* Entity chip - subtle blue tint */
+.entityChip {
+  background-color: #e3f2fd;
+  color: #1565c0;
+  border: 1px solid #bbdefb;
+}
+
+/* Diagram chip - subtle purple tint */
+.diagramChip {
+  background-color: #f3e5f5;
+  color: #7b1fa2;
+  border: 1px solid #e1bee7;
+}
+
+/* Relationship chip - subtle green tint */
+.relationshipChip {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+/* Chip label (text) */
+.chipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Chip remove button */
+.chipRemove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 0;
+  width: 16px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.1);
+  border: none;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chipRemove:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.chipRemove:focus {
+  outline: none;
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* No context message - with density reduction */
+.noContext {
+  font-size: 13px;
+  color: #888888;
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* Context loading state - with density reduction */
+.contextLoading {
+  font-size: 13px;
+  color: #666;
+  font-style: italic;
+  padding: 8px 0;
+}
+
+/* ============================================================================
+ * Zone 2: Collapsible Clarifying Questions
+ * Spec 2026-02-11: 3-Zone LHS Layout
+ * ============================================================================ */
+
+/* Questions zone container */
+.questionsZone {
+  background: #ffffff;
+  border-bottom: 1px solid #E0E0E0;
+  flex-shrink: 0;
+}
+
+/* Questions zone collapsible header bar */
+.questionsZoneHeader {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  min-height: 28px;
+  background: #e8f5e9;
+}
+
+.questionsZoneHeader:hover {
+  background: #c8e6c9;
+}
+
+/* Questions chevron */
+.questionsChevron {
+  font-size: 10px;
+  color: #666666;
+  margin-right: 6px;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.questionsChevronExpanded {
+  transform: rotate(90deg);
+}
+
+/* Questions zone title */
+.questionsZoneTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333333;
+  flex: 1;
+}
+
+/* Questions count badge */
+.questionsZoneCount {
+  font-size: 10px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #b45309;
+  border-radius: 8px;
+  padding: 1px 6px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* Questions zone body - contains QuestionsTable cards */
+.questionsZoneBody {
+  padding: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Questions group - wrapper for each QuestionsTable */
+.questionsGroup {
+  margin-bottom: 4px;
+}
+
+.questionsGroup:last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================================================
+ * Responsive Layout Density Cascade
+ * Spec 2026-01-24: Task Group 7
+ * ============================================================================ */
+
+/* Tablet: Stacked layout (max-width: 1024px) */
+@media (max-width: 1024px) {
+  .content {
+    padding: 14px;
+  }
+}
+
+/* Mobile: Tab layout (max-width: 768px) */
+@media (max-width: 768px) {
+  .content {
+    padding: 12px;
+  }
+
+  .contextCard {
+    padding: 12px;
+  }
+}

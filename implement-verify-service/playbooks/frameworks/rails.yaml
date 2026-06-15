@@ -1,0 +1,42 @@
+name: rails
+version: 1
+language: ruby
+
+detection:
+  imports_match:
+    - rails
+    - actionpack
+    - action_controller
+  files_match:
+    - 'config/routes.rb'
+    - '**/config/routes.rb'
+  manifest_contains:
+    - {file: 'Gemfile',     substring: "gem 'rails'"}
+    - {file: 'Gemfile.lock', substring: 'rails ('}
+
+extract:
+  - id: routes_dsl
+    query: configs
+    parser: rails_dsl
+    file_glob: '**/config/routes.rb'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: rails
+
+verification:
+  - id: route_dsl_count
+    query: configs
+    parser: rails_dsl
+    file_glob: '**/config/routes.rb'
+    expected_count: same_as_output_count
+    tolerance_pct: 15
+
+conflict_rules: []
+
+known_pitfalls:
+  - "resources :users expands to 7 RESTful endpoints; resource (singular) skips :id (6 endpoints)"
+  - "namespace :admin do ... end nests prefix; only `do` blocks nest currently"
+  - "scope path: '/api' isn't fully parsed (treated as namespace if `do` follows)"
+  - "Plugin/engine routes (Rails::Engine) not auto-traversed"

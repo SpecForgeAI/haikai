@@ -1,0 +1,7 @@
+# Auto Configuration Import Filter
+# This filter conditionally excludes database auto-configurations when
+# app.features.include-database=false is set.
+#
+# Spec 2026-01-19: Fix db-disabled.yml Activation
+org.springframework.boot.autoconfigure.AutoConfigurationImportFilter=\
+  com.example.architecturemodel.config.DatabaseAutoConfigurationImportFilter

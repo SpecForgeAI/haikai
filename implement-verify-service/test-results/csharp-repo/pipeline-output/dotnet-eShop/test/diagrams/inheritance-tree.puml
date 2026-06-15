@@ -1,0 +1,40 @@
+@startuml
+title Inheritance Tree
+
+class IntegrationEventContext
+class JsonSerializerContext
+class BasketItem
+class IValidatableObject
+class BasketSerializationContext
+class CatalogContext
+class DbContext
+class CatalogBrandEntityTypeConfiguration
+class IEntityTypeConfiguration
+class CatalogItemEntityTypeConfiguration
+class CatalogTypeEntityTypeConfiguration
+class CatalogDomainException
+class Exception
+class Initial
+class Migration
+class RemoveHiLoAndIndexCatalogName
+class Outbox
+class CatalogContextModelSnapshot
+class ModelSnapshot
+class CatalogAI
+class ICatalogAI
+
+JsonSerializerContext <|-- IntegrationEventContext
+IValidatableObject <|-- BasketItem
+JsonSerializerContext <|-- BasketSerializationContext
+DbContext <|-- CatalogContext
+IEntityTypeConfiguration <|-- CatalogBrandEntityTypeConfiguration
+IEntityTypeConfiguration <|-- CatalogItemEntityTypeConfiguration
+IEntityTypeConfiguration <|-- CatalogTypeEntityTypeConfiguration
+Exception <|-- CatalogDomainException
+Migration <|-- Initial
+Migration <|-- RemoveHiLoAndIndexCatalogName
+Migration <|-- Outbox
+ModelSnapshot <|-- CatalogContextModelSnapshot
+ICatalogAI <|-- CatalogAI
+
+@enduml

@@ -1,0 +1,22 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "ConceptAttribute",
+      "tag": "pack",
+      "description": "@Entity/@Table(\"concept_attribute\") \u2014 typed attribute for concepts."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "conceptAttributeId",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "ConceptAttribute \u2192 Concept",
+      "tag": "gap-fill",
+      "description": "Edge case: the Concept relationship is declared via @AssociationOverride on a generic BaseAttribute<ConceptAttributeType, Concept> superclass, not as a direct @ManyToOne on this class. The pack's relationship detector only inspects direct annotations and misses the generic-parameter override. Gap-fill should recover this by reading @AssociationOverride + the generic supertype."
+    }
+  ],
+  "shouldNotEmit": []
+}

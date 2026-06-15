@@ -1,0 +1,30 @@
+Repository: csharp-test-repo
+Analyzed: 2026-03-31T11:39:48+00:00
+Provider: ctags
+
+Files: 10
+Symbols: 57
+
+By Kind:
+  method        27
+  variable      13
+  property      9
+  class         6
+  unknown       1
+  interface     1
+
+By Language:
+  C#            10 files, 57 symbols
+
+Inheritance Depth:
+  max         1
+  avg         1.0
+
+Top-Level Classes: 6
+  with methods: 4
+  abstract: 0
+  avg methods per class: 4.5
+
+Async Methods: 0 (0% of all methods)
+
+Design Patterns: 0 detected

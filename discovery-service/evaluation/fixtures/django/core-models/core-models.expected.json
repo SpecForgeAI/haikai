@@ -1,0 +1,180 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "SortableModel",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "sort_order",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "PublishableModel",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "published_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "is_published",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "ModelWithMetadata",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "private_metadata",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "metadata",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "ModelWithExternalReference",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "external_reference",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "Job",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "status",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "message",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "created_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "updated_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "EventPayload",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "payload",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "payload_file",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "created_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "EventDelivery",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "created_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "status",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "event_type",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "EventDelivery \u2192 EventPayload",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "EventDelivery \u2192 webhook.Webhook",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "EventDeliveryAttempt",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "EventDeliveryAttempt \u2192 EventDelivery",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "created_at",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "task_id",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "duration",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "response",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "response_headers",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "response_status_code",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "request_headers",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "status",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,32 @@
+name: opencart
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - "OpenCart\\"
+  files_match:
+    - "upload/*/controller/**/*.php"
+  manifest_contains:
+    - {file: "composer.json", substring: "opencart/opencart"}
+
+extract:
+  - id: opencart_router_calls
+    query: call_args
+    file_extensions: [".php"]
+    callee_pattern: '(->|::)(get|post|put|delete|patch|options|head)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: opencart
+
+conflict_rules: []
+known_pitfalls:
+  - "Convention-based routing via file path structure not extracted"
+  - "Request method overrides via query/POST parameters not captured"
+  - "Module-based route prefixes not fully inlined"
+  - "Middleware/permission constraints not represented"

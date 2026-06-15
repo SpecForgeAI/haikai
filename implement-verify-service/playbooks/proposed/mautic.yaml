@@ -1,0 +1,31 @@
+name: mautic
+version: 1
+language: php
+
+detection:
+  imports_match:
+    - "Mautic\\"
+    - "Symfony\\Component\\Routing"
+  files_match:
+    - "app/**/*.php"
+  manifest_contains:
+    - {file: "composer.json", substring: "mautic/core-lib"}
+
+extract:
+  - id: symfony_route_attributes
+    query: annotations
+    file_extensions: [".php"]
+    annotation_names: [Route, Get, Post, Put, Delete, Patch, Options, Head, Connect, Trace]
+    target_kind: method
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: mautic
+
+conflict_rules: []
+known_pitfalls:
+  - "YAML/XML route definitions in config/ not extracted"
+  - "Route class-level prefixes not inlined into method routes"
+  - "Middleware/security constraints not captured"
+  - "Dynamic route generation not extracted"

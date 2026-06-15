@@ -1,0 +1,108 @@
+.item {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px 8px 36px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.item:hover {
+  background: #f5f5f5;
+}
+
+.itemDuplicate {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.itemDuplicate:hover {
+  background: transparent;
+}
+
+.itemDisabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.itemDisabled:hover {
+  background: transparent;
+}
+
+/* Relationship-specific styles */
+.itemRelationship {
+  padding-left: 36px;
+}
+
+.itemRelationshipEnabled {
+  cursor: pointer;
+}
+
+.itemRelationshipEnabled:hover {
+  background: #e3f2fd;
+}
+
+.itemRelationshipDisabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.itemRelationshipDisabled:hover {
+  background: transparent;
+}
+
+/* DEPRECATED: Removed in standardise-user-interaction-palette-ui spec
+ * Delete action styling for interaction rows - no longer applied to maintain
+ * visual consistency with other relationship sections.
+ *
+.itemRelationshipDelete {
+  background-color: #fff3f3;
+}
+
+.itemRelationshipDelete:hover {
+  background: #ffebeb;
+}
+*/
+
+/* Item content layout - flex row for name and action indicator */
+.itemContent {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.name {
+  font-size: 12px;
+  color: #333;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* DEPRECATED: Removed in standardise-user-interaction-palette-ui spec
+ * Action indicator styles - no longer rendered. Use context menu for Add/Delete actions.
+ *
+.actionIndicatorAdd {
+  font-size: 10px;
+  color: #1976d2;
+  background-color: #e3f2fd;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.actionIndicatorDelete {
+  font-size: 10px;
+  color: #d32f2f;
+  background-color: #ffebee;
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+*/

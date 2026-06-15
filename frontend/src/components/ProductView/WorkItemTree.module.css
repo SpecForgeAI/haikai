@@ -1,0 +1,283 @@
+/**
+ * WorkItemTree.module.css
+ *
+ * Spec 2026-01-03: Product Backlog Tree View (Stage 4)
+ * Spec 2026-01-04: Product Roadmap Stage 3 - ARCHIVED Status and Expandable Descriptions
+ * Styles for the hierarchical work item tree component.
+ */
+
+/* Container */
+.container {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Tree node row */
+.treeRow {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.15s ease;
+}
+
+.treeRow:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Selected node */
+.treeRowSelected {
+  background-color: #e3f2fd;
+}
+
+.treeRowSelected:hover {
+  background-color: #bbdefb;
+}
+
+/* Chevron/toggle button */
+.chevron {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: #666;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.chevron:hover {
+  color: #333;
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+/* Placeholder for items without children (keeps alignment) */
+.chevronPlaceholder {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+/* Node content */
+.nodeContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Title text */
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Type badge */
+.typeBadge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Type-specific badge colors */
+.typeInitiative {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.typeEpic {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+
+.typeFeature {
+  background-color: #fff3e0;
+  color: #e65100;
+}
+
+.typeStory {
+  background-color: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.typeDefault {
+  background-color: #f5f5f5;
+  color: #616161;
+}
+
+/* DONE status - strikethrough on type badge */
+.typeDone {
+  text-decoration: line-through;
+}
+
+/* Children container */
+.childrenContainer {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty tree message */
+.emptyMessage {
+  padding: 24px;
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+}
+
+/* ============================================================================
+ * Task Group 1: ARCHIVED Badge and Row Styles
+ * Spec 2026-01-04: Product Roadmap Stage 3
+ * ============================================================================ */
+
+/**
+ * ARCHIVED badge - displays alongside type badge for archived items
+ * Grey color scheme to indicate archived/inactive status
+ */
+.archivedBadge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background-color: #9e9e9e;
+  color: #424242;
+  margin-left: 4px;
+}
+
+/* External system key (e.g. Jira "KAN-5") shown as a muted monospace suffix on the tree row */
+.externalKey {
+  font-size: 10px;
+  font-family: 'Menlo', 'Consolas', monospace;
+  color: #6366f1;
+  background-color: #eef2ff;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+/**
+ * Archived row - muted styling for archived items
+ * Applies reduced opacity to indicate inactive status
+ */
+.archivedRow {
+  opacity: 0.6;
+}
+
+.archivedRow:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+  opacity: 0.7;
+}
+
+.archivedRow.treeRowSelected {
+  opacity: 0.7;
+}
+
+/* ============================================================================
+ * Task Group 2: Description Preview and Expand/Collapse Styles
+ * Spec 2026-01-04: Product Roadmap Stage 3
+ * ============================================================================ */
+
+/**
+ * Description container - wraps the description section below title row
+ */
+.descriptionContainer {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/**
+ * Description preview - truncated to 2 lines with ellipsis
+ * Uses CSS line-clamp for multi-line truncation
+ */
+.descriptionPreview {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+/**
+ * Description expanded - shows full text without truncation
+ * Preserves line breaks with pre-wrap
+ */
+.descriptionExpanded {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+/**
+ * Show more/less link - clickable toggle for description expansion
+ * Link blue color with hover underline effect
+ */
+.showMoreLink {
+  color: #1976d2;
+  font-size: 11px;
+  cursor: pointer;
+  display: inline;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+
+.showMoreLink:hover {
+  text-decoration: underline;
+}
+
+/* ============================================================================
+ * Task Group 7: Empty Epic Placeholder
+ * Spec 2026-01-04: Product Roadmap Stage 3
+ * ============================================================================ */
+
+/**
+ * Empty children placeholder - shown when initiative has no epics
+ */
+.emptyChildrenPlaceholder {
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+  padding: 8px 12px;
+}
+
+/* Holistic Integration/E2E TEST Work Items (Spec 2026-06-14, Task Group 4):
+   distinct teal badge for `TEST` siblings so an integration/E2E test item is
+   visually separable from stories/features in the flat backlog. */
+.typeTest {
+  background-color: #e0f2f1;
+  color: #00695c;
+}

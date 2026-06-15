@@ -1,0 +1,12 @@
+{
+  "_doc": "Canonical ScopeRefType members. Gateway (questionLibrary.ts) derives both `ALLOWED_SCOPE_REF_TYPES` and the `ScopeRefType` literal-string union from this file. The frontend (architectConversationApi.ts) keeps its own literal mirror of the same union for now; drift between the two TS declarations and this JSON file is enforced at test-time by `frontend/src/api/__tests__/scopeRefType.contractWithGateway.test.ts`. Update this file when adding or removing a scope type; both packages derive their constants from this single source of truth.",
+  "values": [
+    "service",
+    "interface",
+    "endpoint",
+    "physical_data_entity",
+    "physical_data_attribute",
+    "method",
+    "class"
+  ]
+}

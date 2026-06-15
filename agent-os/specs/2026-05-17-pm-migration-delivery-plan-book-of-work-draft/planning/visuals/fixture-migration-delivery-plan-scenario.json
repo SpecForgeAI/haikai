@@ -1,0 +1,684 @@
+{
+  "_provenance": "PM-flow fixture; cites Phase 1 (reference-jaxws-document-literal-wrapped.wsdl), Phase 2 (fixture-hand-rolled-soap-servlet/), and Phase 3 (auto-linking) fixtures for shape consistency, but is purpose-built for this spec and is not a verbatim reuse of any prior fixture. Conforms to the MigrationDiscoveryContext DTO declared in gateway/src/services/migrationDiscoveryContextClient.ts (TS interface) and the Java MigrationDiscoveryContextDto returned by POST /api/projects/{projectId}/migration-discovery-context. If the DTO shape evolves, this fixture is the source of truth that has to follow.",
+  "_scenarioSummary": "Small realistic monolith (LegacyOrderService -> order-system-monolith / OrderMonolith) split into 2 target services (CustomerService owns Customer + Orders/REST; PricingService owns Pricing/SOAP + Audit). Includes 4 source interfaces, 6 source REST endpoints, 1 SOAP WSDL, 1 source data store with 5 entities, 6 target endpoints, 1 target data store per service, 6 ArchitectureElementMappings, API Behaviour Baselines (success + 404) for the REST endpoints, 2 unresolved discovery findings (1 high-severity decision task, 1 medium-severity data-quality finding), and a minimal DB discovery profile.",
+
+  "projectId": "11111111-1111-1111-1111-111111111111",
+  "currentArchitectureId": "22222222-2222-2222-2222-22222222aaaa",
+  "targetArchitectureId": "22222222-2222-2222-2222-22222222bbbb",
+  "discoveryRunIds": [
+    "33333333-3333-3333-3333-333333333301",
+    "33333333-3333-3333-3333-333333333302"
+  ],
+  "apiBehaviourBaselineIds": [
+    "44444444-4444-4444-4444-444444444401"
+  ],
+  "generatedAt": "2026-05-17T10:15:00Z",
+  "summary": "Migration Discovery Context for the LegacyOrderService monolith -> two-target-services split (CustomerService + PricingService). Discovery is complete enough to draft a book of work: 4 source interfaces and 5 data entities are mapped; one unresolved high-severity decision (PricingService SOAP namespace cutover strategy) and one medium-severity Customer-data-quality finding remain and should drive prerequisite / refinement stories.",
+
+  "currentArchitectureSummary": {
+    "architectureId": "22222222-2222-2222-2222-22222222aaaa",
+    "name": "LegacyOrderService",
+    "applicationCount": 1,
+    "serviceCount": 1,
+    "interfaceCount": 4,
+    "dataEntityCount": 5,
+    "dataStoreCount": 1,
+    "businessUserCount": 2,
+    "processActivityCount": 4,
+    "uiScreenCount": 3,
+    "userJourneyCount": 1,
+    "hasModel": true,
+    "_inlineDetail": {
+      "_note": "Out-of-DTO scenario detail kept inside an underscore-prefixed field so it travels with the fixture without breaking strict DTO consumers. The Migration Discovery Context resolver in production returns only counts here; the inline detail below lets fixture-driven tests inspect the elements the counts roll up.",
+      "application": {
+        "id": "55555555-5555-5555-5555-5555aaaa0001",
+        "name": "order-system-monolith"
+      },
+      "services": [
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa0002",
+          "name": "OrderMonolith",
+          "applicationId": "55555555-5555-5555-5555-5555aaaa0001"
+        }
+      ],
+      "interfaces": [
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa1001",
+          "name": "OrdersAPI",
+          "protocol": "REST",
+          "serviceId": "55555555-5555-5555-5555-5555aaaa0002"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa1002",
+          "name": "CustomersAPI",
+          "protocol": "REST",
+          "serviceId": "55555555-5555-5555-5555-5555aaaa0002"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa1003",
+          "name": "PricingService",
+          "protocol": "SOAP",
+          "serviceId": "55555555-5555-5555-5555-5555aaaa0002",
+          "wsdlReference": {
+            "wsdlId": "66666666-6666-6666-6666-6666aaaa0001",
+            "targetNamespace": "http://legacy.example.com/pricing/v1",
+            "wsdlFile": "PricingService.wsdl",
+            "citesPhase1Fixture": "reference-jaxws-document-literal-wrapped.wsdl"
+          }
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa1004",
+          "name": "AuditLog",
+          "protocol": "internal",
+          "serviceId": "55555555-5555-5555-5555-5555aaaa0002"
+        }
+      ],
+      "endpoints": [
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2001",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1001",
+          "operation": "GET /orders/{id}",
+          "method": "GET"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2002",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1001",
+          "operation": "POST /orders",
+          "method": "POST"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2003",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1001",
+          "operation": "GET /orders",
+          "method": "GET"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2004",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1002",
+          "operation": "GET /customers/{id}",
+          "method": "GET"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2005",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1002",
+          "operation": "POST /customers",
+          "method": "POST"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2006",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1002",
+          "operation": "PUT /customers/{id}",
+          "method": "PUT"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa2007",
+          "interfaceId": "55555555-5555-5555-5555-5555aaaa1003",
+          "operation": "computePrice",
+          "method": "SOAP"
+        }
+      ],
+      "dataStores": [
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa3001",
+          "name": "orders_db",
+          "kind": "postgres",
+          "serviceId": "55555555-5555-5555-5555-5555aaaa0002"
+        }
+      ],
+      "dataEntities": [
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa4001",
+          "name": "Customer",
+          "dataStoreId": "55555555-5555-5555-5555-5555aaaa3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa4002",
+          "name": "Order",
+          "dataStoreId": "55555555-5555-5555-5555-5555aaaa3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa4003",
+          "name": "OrderLine",
+          "dataStoreId": "55555555-5555-5555-5555-5555aaaa3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa4004",
+          "name": "Product",
+          "dataStoreId": "55555555-5555-5555-5555-5555aaaa3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555aaaa4005",
+          "name": "Pricing",
+          "dataStoreId": "55555555-5555-5555-5555-5555aaaa3001"
+        }
+      ]
+    }
+  },
+
+  "targetArchitectureSummary": {
+    "architectureId": "22222222-2222-2222-2222-22222222bbbb",
+    "name": "OrderServicesTargetArchitecture",
+    "applicationCount": 1,
+    "serviceCount": 2,
+    "interfaceCount": 4,
+    "dataEntityCount": 5,
+    "dataStoreCount": 2,
+    "businessUserCount": 2,
+    "processActivityCount": 4,
+    "uiScreenCount": 3,
+    "userJourneyCount": 1,
+    "hasModel": true,
+    "_inlineDetail": {
+      "_note": "Same out-of-DTO scenario detail convention as currentArchitectureSummary._inlineDetail.",
+      "application": {
+        "id": "55555555-5555-5555-5555-5555bbbb0001",
+        "name": "order-system-target"
+      },
+      "services": [
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb0002",
+          "name": "CustomerService",
+          "applicationId": "55555555-5555-5555-5555-5555bbbb0001",
+          "ownsDomains": ["Customer", "Order", "OrderLine", "Product"]
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb0003",
+          "name": "PricingService",
+          "applicationId": "55555555-5555-5555-5555-5555bbbb0001",
+          "ownsDomains": ["Pricing", "Audit"]
+        }
+      ],
+      "interfaces": [
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb1001",
+          "name": "CustomerService.OrdersAPI",
+          "protocol": "REST",
+          "serviceId": "55555555-5555-5555-5555-5555bbbb0002"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb1002",
+          "name": "CustomerService.CustomersAPI",
+          "protocol": "REST",
+          "serviceId": "55555555-5555-5555-5555-5555bbbb0002"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb1003",
+          "name": "PricingService.PricingAPI",
+          "protocol": "SOAP",
+          "serviceId": "55555555-5555-5555-5555-5555bbbb0003",
+          "wsdlReference": {
+            "wsdlId": "66666666-6666-6666-6666-6666bbbb0001",
+            "targetNamespace": "http://services.example.com/pricing/v2",
+            "wsdlFile": "PricingService-v2.wsdl"
+          }
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb1004",
+          "name": "PricingService.AuditLog",
+          "protocol": "internal",
+          "serviceId": "55555555-5555-5555-5555-5555bbbb0003"
+        }
+      ],
+      "endpoints": [
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb2001",
+          "interfaceId": "55555555-5555-5555-5555-5555bbbb1001",
+          "operation": "GET /orders/{id}",
+          "method": "GET"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb2002",
+          "interfaceId": "55555555-5555-5555-5555-5555bbbb1001",
+          "operation": "POST /orders",
+          "method": "POST"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb2003",
+          "interfaceId": "55555555-5555-5555-5555-5555bbbb1001",
+          "operation": "GET /orders",
+          "method": "GET"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb2004",
+          "interfaceId": "55555555-5555-5555-5555-5555bbbb1002",
+          "operation": "GET /customers/{id}",
+          "method": "GET"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb2005",
+          "interfaceId": "55555555-5555-5555-5555-5555bbbb1002",
+          "operation": "POST /customers",
+          "method": "POST"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb2006",
+          "interfaceId": "55555555-5555-5555-5555-5555bbbb1003",
+          "operation": "computePrice",
+          "method": "SOAP"
+        }
+      ],
+      "dataStores": [
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb3001",
+          "name": "customer_service_db",
+          "kind": "postgres",
+          "serviceId": "55555555-5555-5555-5555-5555bbbb0002"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb3002",
+          "name": "pricing_service_db",
+          "kind": "postgres",
+          "serviceId": "55555555-5555-5555-5555-5555bbbb0003"
+        }
+      ],
+      "dataEntities": [
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb4001",
+          "name": "Customer",
+          "dataStoreId": "55555555-5555-5555-5555-5555bbbb3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb4002",
+          "name": "Order",
+          "dataStoreId": "55555555-5555-5555-5555-5555bbbb3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb4003",
+          "name": "OrderLine",
+          "dataStoreId": "55555555-5555-5555-5555-5555bbbb3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb4004",
+          "name": "Product",
+          "dataStoreId": "55555555-5555-5555-5555-5555bbbb3001"
+        },
+        {
+          "id": "55555555-5555-5555-5555-5555bbbb4005",
+          "name": "Pricing",
+          "dataStoreId": "55555555-5555-5555-5555-5555bbbb3002"
+        }
+      ]
+    }
+  },
+
+  "discoveryRunsSummary": {
+    "totalRuns": 2,
+    "completedRuns": 2,
+    "runs": [
+      {
+        "runId": "33333333-3333-3333-3333-333333333301",
+        "architectureId": "22222222-2222-2222-2222-22222222aaaa",
+        "status": "completed",
+        "discoveryKind": "code-and-config",
+        "createdAt": "2026-05-15T09:30:00Z",
+        "updatedAt": "2026-05-15T09:55:00Z"
+      },
+      {
+        "runId": "33333333-3333-3333-3333-333333333302",
+        "architectureId": "22222222-2222-2222-2222-22222222aaaa",
+        "status": "completed",
+        "discoveryKind": "database",
+        "createdAt": "2026-05-15T10:10:00Z",
+        "updatedAt": "2026-05-15T10:20:00Z"
+      }
+    ]
+  },
+
+  "findingsSummary": {
+    "totalFindings": 2,
+    "countsByStatus": {
+      "unresolved": 2,
+      "resolved": 0
+    },
+    "countsBySeverity": {
+      "high": 1,
+      "medium": 1
+    },
+    "countsByCategory": {
+      "decision_task": 1,
+      "data_quality": 1
+    },
+    "highSeverityUnreviewedCount": 1,
+    "sampleDataHintCount": 1
+  },
+
+  "highPriorityFindings": [
+    {
+      "findingId": "77777777-7777-7777-7777-777777777701",
+      "runId": "33333333-3333-3333-3333-333333333301",
+      "findingType": "decision_task",
+      "category": "decision_task",
+      "severity": "high",
+      "status": "unresolved",
+      "title": "PricingService SOAP namespace cutover strategy is undecided",
+      "summary": "PricingService is moving from namespace http://legacy.example.com/pricing/v1 to http://services.example.com/pricing/v2. No decision exists yet on whether the target service publishes both namespaces during cutover or whether an edge adapter handles the rewrite. This needs a user decision before the SOAP migration stories can be made spec-ready.",
+      "source": "wsdl-analyzer",
+      "confidence": 0.92
+    },
+    {
+      "findingId": "77777777-7777-7777-7777-777777777702",
+      "runId": "33333333-3333-3333-3333-333333333302",
+      "findingType": "data_quality",
+      "category": "data_quality",
+      "severity": "medium",
+      "status": "unresolved",
+      "title": "Customer.email column has 3.4% NULLs in production sample",
+      "summary": "Sample profile of orders_db.Customer.email shows 3.4% NULLs across 50k rows. Target CustomerService schema currently models email as NOT NULL. Either the target schema relaxes the constraint, or the data migration story needs a backfill/cleanup pre-step.",
+      "source": "db-profiler",
+      "confidence": 0.78
+    }
+  ],
+
+  "findingsByCategory": {
+    "decision_task": 1,
+    "data_quality": 1
+  },
+
+  "evidenceHighlights": [
+    {
+      "evidenceId": "88888888-8888-8888-8888-888888888801",
+      "runId": "33333333-3333-3333-3333-333333333301",
+      "type": "wsdl",
+      "source": "PricingService.wsdl",
+      "filePath": "src/main/resources/wsdl/PricingService.wsdl",
+      "linkedFindingIds": ["77777777-7777-7777-7777-777777777701"]
+    },
+    {
+      "evidenceId": "88888888-8888-8888-8888-888888888802",
+      "runId": "33333333-3333-3333-3333-333333333302",
+      "type": "db_profile",
+      "source": "orders_db.Customer",
+      "filePath": null,
+      "linkedFindingIds": ["77777777-7777-7777-7777-777777777702"]
+    },
+    {
+      "evidenceId": "88888888-8888-8888-8888-888888888803",
+      "runId": "33333333-3333-3333-3333-333333333301",
+      "type": "openapi",
+      "source": "OrdersAPI",
+      "filePath": "src/main/resources/openapi/orders-api.yaml",
+      "linkedFindingIds": []
+    }
+  ],
+
+  "candidateSummary": {
+    "totalCandidates": 9,
+    "countsByType": {
+      "service": 2,
+      "interface": 4,
+      "data_entity": 3
+    },
+    "countsByStatus": {
+      "approved": 6,
+      "proposed": 3
+    }
+  },
+
+  "unresolvedDecisionTasks": [
+    {
+      "taskId": "99999999-9999-9999-9999-999999999901",
+      "runId": "33333333-3333-3333-3333-333333333301",
+      "taskType": "soap_namespace_cutover_strategy",
+      "status": "open",
+      "createdAt": "2026-05-15T09:50:00Z"
+    }
+  ],
+
+  "runtimeUsageSummary": {
+    "runtimeEvidenceCount": 0,
+    "runtimeFindingCount": 0,
+    "hasRuntimeEvidence": false
+  },
+
+  "databaseDiscoverySummary": {
+    "databaseFindingCount": 1,
+    "databaseRunCount": 1,
+    "sampleDataHintCount": 1,
+    "hasDatabaseDiscovery": true,
+    "_inlineDetail": {
+      "_note": "Minimal DB discovery profile inlined for fixture-driven tests. The production DTO returns only the counts above; tests that need column-level detail can read this.",
+      "tableProfiles": [
+        {
+          "dataEntityId": "55555555-5555-5555-5555-5555aaaa4001",
+          "tableName": "customer",
+          "sampledRowCount": 50000,
+          "estimatedTotalRowCount": 124300,
+          "columns": [
+            {
+              "name": "id",
+              "type": "uuid",
+              "nullPercent": 0.0
+            },
+            {
+              "name": "email",
+              "type": "varchar(255)",
+              "nullPercent": 3.4,
+              "qualityFindingId": "77777777-7777-7777-7777-777777777702"
+            },
+            {
+              "name": "created_at",
+              "type": "timestamp",
+              "nullPercent": 0.0
+            }
+          ]
+        },
+        {
+          "dataEntityId": "55555555-5555-5555-5555-5555aaaa4002",
+          "tableName": "orders",
+          "sampledRowCount": 50000,
+          "estimatedTotalRowCount": 412800,
+          "columns": [
+            {
+              "name": "id",
+              "type": "uuid",
+              "nullPercent": 0.0
+            },
+            {
+              "name": "customer_id",
+              "type": "uuid",
+              "nullPercent": 0.0
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  "apiBehaviourBaselineSummary": {
+    "totalBaselines": 1,
+    "activeBaselineCount": 1,
+    "draftBaselineCount": 0,
+    "baselines": [
+      {
+        "baselineId": "44444444-4444-4444-4444-444444444401",
+        "architectureId": "22222222-2222-2222-2222-22222222aaaa",
+        "sessionId": "44444444-4444-4444-4444-4444session01",
+        "name": "OrdersAPI + CustomersAPI baseline (pre-migration)",
+        "status": "active",
+        "operationCount": 6,
+        "acceptedCaptureCount": 12,
+        "createdAt": "2026-05-16T11:00:00Z",
+        "_inlineDetail": {
+          "_note": "Per-operation success + 404 envelopes kept brief, just enough to demonstrate baselines exist. Tests that need full envelopes can extend; the production DTO never inlines these.",
+          "operations": [
+            {
+              "endpointId": "55555555-5555-5555-5555-5555aaaa2001",
+              "operation": "GET /orders/{id}",
+              "captures": [
+                {
+                  "envelope": "success",
+                  "status": 200,
+                  "bodyShape": "{ id, customerId, lines[], total, status }"
+                },
+                {
+                  "envelope": "not_found",
+                  "status": 404,
+                  "bodyShape": "{ error: 'order_not_found', orderId }"
+                }
+              ]
+            },
+            {
+              "endpointId": "55555555-5555-5555-5555-5555aaaa2002",
+              "operation": "POST /orders",
+              "captures": [
+                {
+                  "envelope": "success",
+                  "status": 201,
+                  "bodyShape": "{ id, customerId, lines[], total, status: 'created' }"
+                }
+              ]
+            },
+            {
+              "endpointId": "55555555-5555-5555-5555-5555aaaa2003",
+              "operation": "GET /orders",
+              "captures": [
+                {
+                  "envelope": "success",
+                  "status": 200,
+                  "bodyShape": "{ items[], page, pageSize, total }"
+                }
+              ]
+            },
+            {
+              "endpointId": "55555555-5555-5555-5555-5555aaaa2004",
+              "operation": "GET /customers/{id}",
+              "captures": [
+                {
+                  "envelope": "success",
+                  "status": 200,
+                  "bodyShape": "{ id, email, name, createdAt }"
+                },
+                {
+                  "envelope": "not_found",
+                  "status": 404,
+                  "bodyShape": "{ error: 'customer_not_found', customerId }"
+                }
+              ]
+            },
+            {
+              "endpointId": "55555555-5555-5555-5555-5555aaaa2005",
+              "operation": "POST /customers",
+              "captures": [
+                {
+                  "envelope": "success",
+                  "status": 201,
+                  "bodyShape": "{ id, email, name, createdAt }"
+                }
+              ]
+            },
+            {
+              "endpointId": "55555555-5555-5555-5555-5555aaaa2006",
+              "operation": "PUT /customers/{id}",
+              "captures": [
+                {
+                  "envelope": "success",
+                  "status": 200,
+                  "bodyShape": "{ id, email, name, updatedAt }"
+                },
+                {
+                  "envelope": "not_found",
+                  "status": 404,
+                  "bodyShape": "{ error: 'customer_not_found', customerId }"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+
+  "architectureMappingsSummary": {
+    "totalMappings": 6,
+    "countsBySourceType": {
+      "service": 1,
+      "interface": 3,
+      "data_entity": 2
+    },
+    "countsByTargetType": {
+      "service": 2,
+      "interface": 3,
+      "data_entity": 2
+    },
+    "countsByMappingType": {
+      "split": 1,
+      "rehome": 5
+    },
+    "_inlineDetail": {
+      "_note": "ArchitectureElementMappings inlined for fixture-driven tests so save-to-backlog flows can resolve mapping IDs deterministically. The production DTO returns only the counts above.",
+      "mappings": [
+        {
+          "mappingId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001",
+          "mappingType": "split",
+          "sourceElementId": "55555555-5555-5555-5555-5555aaaa0002",
+          "sourceElementType": "service",
+          "targetElementIds": [
+            "55555555-5555-5555-5555-5555bbbb0002",
+            "55555555-5555-5555-5555-5555bbbb0003"
+          ],
+          "rationale": "OrderMonolith splits into CustomerService (Customer + Orders + OrderLine + Product) and PricingService (Pricing + Audit)."
+        },
+        {
+          "mappingId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0002",
+          "mappingType": "rehome",
+          "sourceElementId": "55555555-5555-5555-5555-5555aaaa1001",
+          "sourceElementType": "interface",
+          "targetElementIds": ["55555555-5555-5555-5555-5555bbbb1001"],
+          "rationale": "OrdersAPI rehomes verbatim to CustomerService.OrdersAPI; baseline preserved."
+        },
+        {
+          "mappingId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0003",
+          "mappingType": "rehome",
+          "sourceElementId": "55555555-5555-5555-5555-5555aaaa1002",
+          "sourceElementType": "interface",
+          "targetElementIds": ["55555555-5555-5555-5555-5555bbbb1002"],
+          "rationale": "CustomersAPI rehomes verbatim to CustomerService.CustomersAPI; baseline preserved."
+        },
+        {
+          "mappingId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0004",
+          "mappingType": "rehome",
+          "sourceElementId": "55555555-5555-5555-5555-5555aaaa1003",
+          "sourceElementType": "interface",
+          "targetElementIds": ["55555555-5555-5555-5555-5555bbbb1003"],
+          "rationale": "Legacy PricingService SOAP interface rehomes to PricingService.PricingAPI; SOAP namespace cutover strategy is the open decision task (finding 77777777-...-7701)."
+        },
+        {
+          "mappingId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0005",
+          "mappingType": "rehome",
+          "sourceElementId": "55555555-5555-5555-5555-5555aaaa4001",
+          "sourceElementType": "data_entity",
+          "targetElementIds": ["55555555-5555-5555-5555-5555bbbb4001"],
+          "rationale": "Customer entity rehomes to customer_service_db; the email-NULL data-quality finding (77777777-...-7702) drives a prerequisite data-migration story."
+        },
+        {
+          "mappingId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0006",
+          "mappingType": "rehome",
+          "sourceElementId": "55555555-5555-5555-5555-5555aaaa4005",
+          "sourceElementType": "data_entity",
+          "targetElementIds": ["55555555-5555-5555-5555-5555bbbb4005"],
+          "rationale": "Pricing entity rehomes from orders_db to pricing_service_db."
+        }
+      ]
+    }
+  },
+
+  "readinessAssessment": {
+    "overallStatus": "ready_with_gaps",
+    "apiReadiness": "ready",
+    "dataReadiness": "needs_focused_context",
+    "infrastructureReadiness": "ready",
+    "discoveryReadiness": "ready",
+    "mappingReadiness": "ready",
+    "baselineReadiness": "ready",
+    "decisionReadiness": "needs_user_decision",
+    "gaps": [
+      "SOAP namespace cutover strategy is undecided (decision task 99999999-...-9901; finding 77777777-...-7701).",
+      "Customer.email NULL rate (3.4%) is incompatible with the proposed target NOT NULL constraint (finding 77777777-...-7702)."
+    ]
+  },
+
+  "contextWarnings": [
+    "Runtime evidence is not yet captured for this scope; runtime usage roll-up reflects zeros, not absence of traffic.",
+    "Only one API Behaviour Baseline session has been accepted; PUT /customers/{id} has only the success + 404 envelopes captured."
+  ]
+}

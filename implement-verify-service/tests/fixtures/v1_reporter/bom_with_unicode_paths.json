@@ -1,0 +1,6 @@
+﻿[
+  {"type": "REST", "operation": "GET", "path": "/api/Café", "framework": "test"},
+  {"type": "REST", "operation": "POST", "path": "/api/日本", "framework": "test"},
+  {"type": "REST", "operation": "GET", "path": "/api/Müller", "framework": "test"},
+  {"type": "REST", "operation": "DELETE", "path": "/api/✓", "framework": "test"}
+]

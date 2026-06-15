@@ -1,0 +1,71 @@
+-- ============================================================================
+-- Migration 096: model_files.filename uniqueness scoped per-architecture
+-- Spec: Multi-Architecture Full Clone (Spec #6 -- Task Group 8)
+--
+-- BACKGROUND
+-- The original `model_files` table (created in `schema.sql`, changeset
+-- `001-initial-schema`) declared:
+--
+--     filename TEXT NOT NULL UNIQUE
+--
+-- That global UNIQUE constraint pre-dates the multi-architecture work
+-- (Spec #1's changeset 089 added `architecture_id` to model_files; Spec #1
+-- also seeded one Default architecture per project so each project's
+-- filename remained globally unique by accident -- one architecture per
+-- project meant one filename per project).
+--
+-- Spec #6's full-clone workflow exposes the latent bug: a clone duplicates
+-- every model_files row under a brand-new architecture_id, but PRESERVES
+-- the source row's filename verbatim (filenames are arbitrary identifiers,
+-- not architecture-scoped FKs that the clone's id-rewriter knows about).
+-- The clone therefore tries to insert a second model_files row sharing the
+-- source's filename, which the global UNIQUE blocks at the database level
+-- with a 500-class error in production.
+--
+-- DECISION (Option B from Task 8.2):
+-- Rather than mangling the cloned filename (Option A: surface-only;
+-- breaks any caller that indexes files by name) or refusing to clone
+-- (Option C: blocks the core legacy-migration use case), we change the
+-- schema constraint to match the conceptual model: each architecture has
+-- its own filename namespace. Two architectures within the same project
+-- (or across different projects) may both have a model file called
+-- e.g. "default.json"; what would NOT be allowed is two model_files rows
+-- with the same filename under the SAME architecture_id.
+--
+-- WHY THIS IS SAFE
+-- 1. The architecture_id column is now NOT NULL on every model_files row
+--    (Spec #1's changeset 091 enforced this), so the composite key is
+--    fully populated for every existing row -- there are no NULLs that
+--    would weaken the constraint.
+-- 2. The lookup callers that previously treated `filename` as a global
+--    identifier (e.g. project-name-based lookups in
+--    `051-model-file-add-project-id.sql`) have been migrated to
+--    `project_id` lookups since 051 ran. No live code relies on filename
+--    being globally unique.
+-- 3. The default architecture-per-project still has a unique
+--    (architecture_id, filename) pair within itself -- the only thing
+--    that's relaxed is cross-architecture filename collision, which is
+--    exactly what we want for the clone use case.
+--
+-- IDEMPOTENCY
+-- The DROP and CREATE both use IF EXISTS / IF NOT EXISTS so re-running
+-- the changeset is a safe no-op. The drop name `model_files_filename_key`
+-- is the PostgreSQL auto-generated constraint name for the original
+-- `filename TEXT NOT NULL UNIQUE` declaration in schema.sql; if the
+-- constraint was renamed by a downstream tool, the IF EXISTS keeps this
+-- migration from failing.
+-- ============================================================================
+
+-- Step 1: Drop the original global UNIQUE constraint on model_files.filename.
+-- PostgreSQL auto-named it `model_files_filename_key` for the inline
+-- `filename TEXT NOT NULL UNIQUE` declaration in schema.sql.
+ALTER TABLE model_files DROP CONSTRAINT IF EXISTS model_files_filename_key;
+
+-- Step 2: Add the new composite UNIQUE INDEX on (architecture_id, filename).
+-- This is the architecture-scoped filename namespace -- two architectures
+-- can now share a filename, but a single architecture cannot have two
+-- model_files rows with the same filename.
+--
+-- Index name follows the project's existing convention (table_columns_uidx).
+CREATE UNIQUE INDEX IF NOT EXISTS model_files_architecture_id_filename_uidx
+  ON model_files (architecture_id, filename);

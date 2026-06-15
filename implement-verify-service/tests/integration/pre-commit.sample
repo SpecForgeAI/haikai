@@ -1,0 +1,27 @@
+#!/bin/sh
+# Git Pre-Commit Hook - Standards Extractor
+# Automatically runs integration tests before allowing commit
+#
+# To install:
+#   1. Make executable: chmod +x .git/hooks/pre-commit
+#   2. Copy this file: cp tests/integration/pre-commit.sample .git/hooks/pre-commit
+#
+# To bypass (emergency only):
+#   git commit --no-verify
+
+echo "Running integration test harness before commit..."
+
+# Run PowerShell test harness
+pwsh -File tests/integration/test-harness.ps1 -Port 8003 -SkipArchive
+
+# Capture exit code
+TEST_EXIT_CODE=$?
+
+if [ $TEST_EXIT_CODE -eq 0 ]; then
+    echo "✅ All tests passed - proceeding with commit"
+    exit 0
+else
+    echo "❌ Tests failed - commit blocked"
+    echo "Fix failing tests or use 'git commit --no-verify' to bypass (not recommended)"
+    exit 1
+fi

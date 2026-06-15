@@ -1,0 +1,34 @@
+name: directus
+version: 1
+language: typescript
+
+detection:
+  imports_match:
+    - "directus"
+    - "express"
+  files_match:
+    - "api/**/*.ts"
+    - "api/**/*.js"
+  manifest_contains:
+    - {file: "package.json", substring: "directus"}
+
+extract:
+  - id: express_router_calls
+    query: call_args
+    file_extensions: [".ts", ".js"]
+    callee_pattern: '\.(get|post|put|delete|patch|options|head)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: directus
+
+conflict_rules: []
+known_pitfalls:
+  - "GraphQL endpoints not extracted (Directus is REST/GraphQL hybrid)"
+  - "Route middleware and authentication guards not captured"
+  - "Dynamic route generation not extracted"
+  - "Router middleware chains not fully represented"

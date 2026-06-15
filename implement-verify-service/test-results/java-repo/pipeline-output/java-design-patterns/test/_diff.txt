@@ -1,0 +1,165 @@
+Diff: test-ru → test
+Date: 2026-03-31T10:55:24+00:00
+
+Added Symbols:
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	class	App	-
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	method	main	App
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	method	run	App
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	module	com.iluwatar.activeobject	-
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	variable	NUM_CREATURES	App
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	variable	app	-
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	variable	creatures	-
+  active-object/src/main/java/com/iluwatar/activeobject/App.java	variable	logger	App
+  active-object/src/main/java/com/iluwatar/activeobject/Orc.java	class	Orc	-
+  active-object/src/main/java/com/iluwatar/activeobject/Orc.java	method	Orc	Orc
+  active-object/src/main/java/com/iluwatar/activeobject/Orc.java	module	com.iluwatar.activeobject	-
+  active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java	class	ActiveCreatureTest	-
+  active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java	method	executionTest	ActiveCreatureTest
+  active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java	module	com.iluwatar.activeobject	-
+  active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java	variable	orc	-
+  active-object/src/test/java/com/iluwatar/activeobject/AppTest.java	class	AppTest	-
+  active-object/src/test/java/com/iluwatar/activeobject/AppTest.java	method	shouldExecuteApplicationWithoutException	AppTest
+  active-object/src/test/java/com/iluwatar/activeobject/AppTest.java	module	com.iluwatar.activeobject	-
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	class	Actor	-
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	method	onReceive	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	method	run	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	method	send	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	method	stop	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	module	com.iluwatar.actormodel	-
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	variable	active	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	variable	actorId	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	variable	mailbox	Actor
+  actor-model/src/main/java/com/iluwatar/actormodel/Actor.java	variable	message	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	class	ActorSystem	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	method	getActorById	ActorSystem
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	method	shutdown	ActorSystem
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	method	startActor	ActorSystem
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	module	com.iluwatar.actormodel	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	variable	actorId	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	variable	actorRegister	ActorSystem
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	variable	executor	ActorSystem
+  actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java	variable	idCounter	ActorSystem
+  actor-model/src/main/java/com/iluwatar/actormodel/App.java	class	App	-
+  actor-model/src/main/java/com/iluwatar/actormodel/App.java	method	main	App
+  actor-model/src/main/java/com/iluwatar/actormodel/App.java	module	com.iluwatar.actormodel	-
+  actor-model/src/main/java/com/iluwatar/actormodel/App.java	variable	ansh	-
+  actor-model/src/main/java/com/iluwatar/actormodel/App.java	variable	srijan	-
+  actor-model/src/main/java/com/iluwatar/actormodel/App.java	variable	system	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	class	ExampleActor	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	method	ExampleActor	ExampleActor
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	method	onReceive	ExampleActor
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	module	com.iluwatar.actormodel	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	variable	actorSystem	ExampleActor
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	variable	receivedMessages	ExampleActor
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java	variable	sender	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java	class	ExampleActor2	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java	method	ExampleActor2	ExampleActor2
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java	method	onReceive	ExampleActor2
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java	module	com.iluwatar.actormodel	-
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java	variable	actorSystem	ExampleActor2
+  actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java	variable	receivedMessages	ExampleActor2
+  actor-model/src/main/java/com/iluwatar/actormodel/Message.java	class	Message	-
+  actor-model/src/main/java/com/iluwatar/actormodel/Message.java	module	com.iluwatar.actormodel	-
+  actor-model/src/main/java/com/iluwatar/actormodel/Message.java	variable	content	Message
+  actor-model/src/main/java/com/iluwatar/actormodel/Message.java	variable	senderId	Message
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	class	ActorModelTest	-
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	method	testMainMethod	ActorModelTest
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	method	testMessagePassing	ActorModelTest
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	module	com.iluwatar.actor	-
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	variable	ansh	-
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	variable	srijan	-
+  actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java	variable	system	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/AllModemVisitor.java	interface	AllModemVisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/AllModemVisitor.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	class	App	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	method	main	App
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	variable	conDos	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	variable	conUnix	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	variable	hayes	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/App.java	variable	zoom	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForDosVisitor.java	class	ConfigureForDosVisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForDosVisitor.java	method	visit	ConfigureForDosVisitor
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForDosVisitor.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForUnixVisitor.java	class	ConfigureForUnixVisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForUnixVisitor.java	method	visit	ConfigureForUnixVisitor
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForUnixVisitor.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java	class	Hayes	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java	method	accept	Hayes
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java	method	toString	Hayes
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/HayesVisitor.java	interface	HayesVisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/HayesVisitor.java	method	visit	HayesVisitor
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/HayesVisitor.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Modem.java	interface	Modem	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Modem.java	method	accept	Modem
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Modem.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ModemVisitor.java	interface	ModemVisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ModemVisitor.java	module	com.iluwatar.acyclicvisitor	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java	class	Zoom	-
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java	method	accept	Zoom
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java	method	toString	Zoom
+  acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java	module	com.iluwatar.acyclicvisitor	-
+
+Added Inheritance:
+  Actor extends Runnable
+  AllModemVisitor extends HayesVisitor
+  AllModemVisitor extends ZoomVisitor
+  ConfigureForDosVisitor extends AllModemVisitor
+  ConfigureForUnixVisitor extends ZoomVisitor
+  ExampleActor extends Actor
+  ExampleActor2 extends Actor
+  Hayes extends Modem
+  HayesVisitor extends ModemVisitor
+  Orc extends ActiveCreature
+  Zoom extends Modem
+
+Removed Imports:
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	no longer imports	java.util.function
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java	no longer imports	java.util.stream
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	no longer imports	com.iluwatar.abstractdocument.domain
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	no longer imports	com.iluwatar.abstractdocument.domain.enums
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java	no longer imports	lombok.extern.slf4j
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/Document.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/Document.java	no longer imports	java.util.function
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/Document.java	no longer imports	java.util.stream
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/Car.java	no longer imports	com.iluwatar.abstractdocument
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/Car.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	no longer imports	com.iluwatar.abstractdocument
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	no longer imports	com.iluwatar.abstractdocument.domain.enums
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	no longer imports	com.iluwatar.abstractdocument
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	no longer imports	com.iluwatar.abstractdocument.domain.enums
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java	no longer imports	java.util.stream
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	no longer imports	com.iluwatar.abstractdocument
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	no longer imports	com.iluwatar.abstractdocument.domain.enums
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	no longer imports	com.iluwatar.abstractdocument
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	no longer imports	com.iluwatar.abstractdocument.domain.enums
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java	no longer imports	java.util
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/Part.java	no longer imports	com.iluwatar.abstractdocument
+  abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/Part.java	no longer imports	java.util
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	no longer imports	java.util
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	no longer imports	org.junit.jupiter.api
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java	no longer imports	org.junit.jupiter.api.Assertions
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java	no longer imports	org.junit.jupiter.api
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java	no longer imports	org.junit.jupiter.api.Assertions
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	no longer imports	com.iluwatar.abstractdocument.domain
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	no longer imports	com.iluwatar.abstractdocument.domain.enums
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	no longer imports	java.util
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	no longer imports	org.junit.jupiter.api
+  abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java	no longer imports	org.junit.jupiter.api.Assertions
+  abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	no longer imports	lombok
+  abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java	no longer imports	lombok.extern.slf4j
+  abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java	no longer imports	lombok
+  abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	no longer imports	org.junit.jupiter.api
+  abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java	no longer imports	org.junit.jupiter.api.Assertions
+  abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java	no longer imports	org.junit.jupiter.api
+  abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java	no longer imports	org.junit.jupiter.api.Assertions
+  active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	no longer imports	java.util.concurrent
+  active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java	no longer imports	org.slf4j
+
+Summary:
+  +98 symbols, +11 inheritance, -45 imports

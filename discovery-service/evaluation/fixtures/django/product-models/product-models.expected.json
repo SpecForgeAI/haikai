@@ -1,0 +1,120 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "ProductVariantChannelListing",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "ProductVariantChannelListing \u2192 ProductVariant",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "ProductVariantChannelListing \u2192 Channel",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "currency",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "price_amount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "price",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "cost_price_amount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "cost_price",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "prior_price_amount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "prior_price",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "discounted_price_amount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "discounted_price",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "ProductVariantChannelListing \u2192 PromotionRule",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "preorder_quantity_threshold",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "VariantChannelListingPromotionRule",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "VariantChannelListingPromotionRule \u2192 ProductVariantChannelListing",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "VariantChannelListingPromotionRule \u2192 PromotionRule",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "discount_amount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "discount",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "currency",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_entities",
+      "name": "VariantMedia",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "VariantMedia \u2192 ProductVariant",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "VariantMedia \u2192 ProductMedia",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

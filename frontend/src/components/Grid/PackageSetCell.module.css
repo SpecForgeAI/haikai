@@ -1,0 +1,81 @@
+/**
+ * PackageSetCell Component Styles
+ * Spec: Service Package Set Assignment Dropdown
+ */
+
+/* Container for the cell value with dropdown arrow */
+.packageSetValue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  min-width: 100px;
+}
+
+/* Dropdown arrow indicator */
+.dropdownArrow {
+  font-size: 10px;
+  color: #666;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* Styling for "Default (Auto)" text in display mode */
+.defaultOption {
+  color: #666;
+  font-style: italic;
+}
+
+/* Dropdown container override for package set specific styling */
+.packageSetDropdown {
+  min-width: 200px;
+}
+
+/* Default option item styling */
+.defaultOptionItem {
+  font-style: italic;
+  color: #555;
+}
+
+/* Selected option highlighting */
+.selectedOption {
+  background: #e3f2fd !important;
+  font-weight: 500;
+}
+
+/* Divider line between sections */
+.divider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
+/* Action items styling */
+.actionItem {
+  color: #1976D2;
+  font-weight: 500;
+}
+
+.actionItem:hover {
+  background: #e3f2fd !important;
+}
+
+/* Disabled action item */
+.actionItemDisabled {
+  color: #bdbdbd !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.actionItemDisabled:hover {
+  background: transparent !important;
+}
+
+/* Empty state message */
+.noPackageSets {
+  padding: 8px 12px;
+  color: #999;
+  font-size: 13px;
+  font-style: italic;
+  text-align: center;
+}

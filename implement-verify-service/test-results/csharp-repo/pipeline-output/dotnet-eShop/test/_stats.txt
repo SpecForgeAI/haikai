@@ -1,0 +1,31 @@
+Repository: dotnet-eShop
+Analyzed: 2026-03-31T10:55:24+00:00
+Provider: ctags
+
+Files: 48
+Symbols: 262
+
+By Kind:
+  method        103
+  variable      72
+  property      48
+  class         28
+  module        7
+  interface     3
+  unknown       1
+
+By Language:
+  C#            48 files, 262 symbols
+
+Inheritance Depth:
+  max         1
+  avg         1.0
+
+Top-Level Classes: 28
+  with methods: 16
+  abstract: 0
+  avg methods per class: 3.7
+
+Async Methods: 0 (0% of all methods)
+
+Design Patterns: 0 detected

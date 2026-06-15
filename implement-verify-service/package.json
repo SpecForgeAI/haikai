@@ -1,0 +1,14 @@
+{
+  "name": "standards-extractor-local",
+  "version": "1.0.0",
+  "description": "Local containerized environment for Standards Extractor",
+  "private": true,
+  "dependencies": {
+    "@anthropic-ai/claude-code": "^2.1.9"
+  },
+  "scripts": {
+    "postinstall": "echo 'Claude Code CLI installed successfully'"
+  },
+  "author": "SpecForgeAI",
+  "license": "MIT"
+}

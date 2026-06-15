@@ -1,0 +1,1054 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_AbstractDocument_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/AbstractDocument.java",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "entity_type": "packages",
+      "entity_id": "java_util",
+      "label": "java.util",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "39ccc7d1-5033-4d55-b575-fda1ba281897",
+      "entity_type": "packages",
+      "entity_id": "java_util_function",
+      "label": "java.util.function",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "637b77a6-db89-47d1-9d93-f8392cc58d6f",
+      "entity_type": "packages",
+      "entity_id": "java_util_stream",
+      "label": "java.util.stream",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5f77493e-8989-4a45-bb9b-6dac7756efa8",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_App_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/App.java",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "72bf7334-27ae-4656-8f86-71b9cf17afc0",
+      "entity_type": "packages",
+      "entity_id": "com_iluwatar_abstractdocument_domain",
+      "label": "com.iluwatar.abstractdocument.domain",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "entity_type": "packages",
+      "entity_id": "com_iluwatar_abstractdocument_domain_enums",
+      "label": "com.iluwatar.abstractdocument.domain.enums",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "entity_type": "packages",
+      "entity_id": "lombok_extern_slf4j",
+      "label": "lombok.extern.slf4j",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d8bc57ae-3ccc-44d8-8c53-e976d0d8aa14",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_Document_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/Document.java",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6f45fcce-19d3-4c86-9741-f8372f6cb06d",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_Car_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/Car.java",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "entity_type": "packages",
+      "entity_id": "com_iluwatar_abstractdocument",
+      "label": "com.iluwatar.abstractdocument",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b31434ba-c3aa-4963-8d32-8ceb35f7c31f",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_HasModel_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasModel.java",
+      "pos_x": 750,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3ecbe7ea-585e-4cae-b7c5-baa7de619613",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_HasParts_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasParts.java",
+      "pos_x": 0,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "938ca0a7-56ae-46d4-adaf-3f88953973ab",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_HasPrice_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasPrice.java",
+      "pos_x": 250,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "12deeca6-b196-415d-a4b1-241f5fed52bd",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_HasType_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/HasType.java",
+      "pos_x": 500,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "7c8c051b-fb23-46ac-800d-2c1d9fc50c75",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_main_java_com_iluwatar_abstractdocument_domain_Part_java",
+      "label": "abstract-document/src/main/java/com/iluwatar/abstractdocument/domain/Part.java",
+      "pos_x": 750,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "299642d4-bd97-4bd0-b6e4-00c7c8e3092d",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_test_java_com_iluwatar_abstractdocument_AbstractDocumentTest_java",
+      "label": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AbstractDocumentTest.java",
+      "pos_x": 0,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "entity_type": "packages",
+      "entity_id": "org_junit_jupiter_api_Assertions",
+      "label": "org.junit.jupiter.api.Assertions",
+      "pos_x": 250,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "entity_type": "packages",
+      "entity_id": "org_junit_jupiter_api",
+      "label": "org.junit.jupiter.api",
+      "pos_x": 500,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f4f8f46e-6966-419d-83a0-e9b4d4b11ce3",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_test_java_com_iluwatar_abstractdocument_AppTest_java",
+      "label": "abstract-document/src/test/java/com/iluwatar/abstractdocument/AppTest.java",
+      "pos_x": 750,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "entity_type": "packages",
+      "entity_id": "abstract_document_src_test_java_com_iluwatar_abstractdocument_DomainTest_java",
+      "label": "abstract-document/src/test/java/com/iluwatar/abstractdocument/DomainTest.java",
+      "pos_x": 0,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8e7b8d6a-862a-4d33-9116-999211c011f3",
+      "entity_type": "packages",
+      "entity_id": "abstract_factory_src_main_java_com_iluwatar_abstractfactory_App_java",
+      "label": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/App.java",
+      "pos_x": 250,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "entity_type": "packages",
+      "entity_id": "lombok",
+      "label": "lombok",
+      "pos_x": 500,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "492d3c6f-3ec3-414e-9a7e-eb3098c27288",
+      "entity_type": "packages",
+      "entity_id": "abstract_factory_src_main_java_com_iluwatar_abstractfactory_Kingdom_java",
+      "label": "abstract-factory/src/main/java/com/iluwatar/abstractfactory/Kingdom.java",
+      "pos_x": 750,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a7e538d2-4d87-4003-a70e-bcfd535ade36",
+      "entity_type": "packages",
+      "entity_id": "abstract_factory_src_test_java_com_iluwatar_abstractfactory_AbstractFactoryTest_java",
+      "label": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AbstractFactoryTest.java",
+      "pos_x": 0,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9581806a-391c-46bf-9abd-40e924bea3d2",
+      "entity_type": "packages",
+      "entity_id": "abstract_factory_src_test_java_com_iluwatar_abstractfactory_AppTest_java",
+      "label": "abstract-factory/src/test/java/com/iluwatar/abstractfactory/AppTest.java",
+      "pos_x": 250,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2ac97e93-d502-4c75-b790-1c007b2414de",
+      "entity_type": "packages",
+      "entity_id": "active_object_src_main_java_com_iluwatar_activeobject_ActiveCreature_java",
+      "label": "active-object/src/main/java/com/iluwatar/activeobject/ActiveCreature.java",
+      "pos_x": 500,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "entity_type": "packages",
+      "entity_id": "java_util_concurrent",
+      "label": "java.util.concurrent",
+      "pos_x": 750,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "97ccc189-3ee6-4016-af73-47c1d0eef968",
+      "entity_type": "packages",
+      "entity_id": "org_slf4j",
+      "label": "org.slf4j",
+      "pos_x": 0,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6ef7d743-4944-4514-879d-e68b5d19ac29",
+      "entity_type": "packages",
+      "entity_id": "active_object_src_main_java_com_iluwatar_activeobject_App_java",
+      "label": "active-object/src/main/java/com/iluwatar/activeobject/App.java",
+      "pos_x": 250,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "aff37755-1e71-486e-8479-a8eebdfd4708",
+      "entity_type": "packages",
+      "entity_id": "active_object_src_test_java_com_iluwatar_activeobject_ActiveCreatureTest_java",
+      "label": "active-object/src/test/java/com/iluwatar/activeobject/ActiveCreatureTest.java",
+      "pos_x": 500,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "61987307-4664-43c8-b576-b387c269b775",
+      "entity_type": "packages",
+      "entity_id": "active_object_src_test_java_com_iluwatar_activeobject_AppTest_java",
+      "label": "active-object/src/test/java/com/iluwatar/activeobject/AppTest.java",
+      "pos_x": 750,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c3bb6052-7c80-408b-ae15-ad4c75d33f54",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_main_java_com_iluwatar_actormodel_Actor_java",
+      "label": "actor-model/src/main/java/com/iluwatar/actormodel/Actor.java",
+      "pos_x": 0,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "01d7d1fa-990d-444d-bce9-4b594e38acff",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_main_java_com_iluwatar_actormodel_ActorSystem_java",
+      "label": "actor-model/src/main/java/com/iluwatar/actormodel/ActorSystem.java",
+      "pos_x": 250,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4b619220-fbf0-4b0f-b660-c81faf45bb22",
+      "entity_type": "packages",
+      "entity_id": "java_util_concurrent_atomic",
+      "label": "java.util.concurrent.atomic",
+      "pos_x": 500,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c6e25b71-9395-4548-9a08-c9bafbb55e41",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_main_java_com_iluwatar_actormodel_ExampleActor_java",
+      "label": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor.java",
+      "pos_x": 750,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "54e3f725-7262-4097-8851-7a12b6e221c0",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_main_java_com_iluwatar_actormodel_ExampleActor2_java",
+      "label": "actor-model/src/main/java/com/iluwatar/actormodel/ExampleActor2.java",
+      "pos_x": 0,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "b43163bc-8295-4619-a0b7-0dfc64e754c2",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_main_java_com_iluwatar_actormodel_Message_java",
+      "label": "actor-model/src/main/java/com/iluwatar/actormodel/Message.java",
+      "pos_x": 250,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "entity_type": "packages",
+      "entity_id": "actor_model_src_test_java_com_iluwatar_actor_ActorModelTest_java",
+      "label": "actor-model/src/test/java/com/iluwatar/actor/ActorModelTest.java",
+      "pos_x": 500,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "bf912e81-ea5f-4742-867c-d3cc667b61ec",
+      "entity_type": "packages",
+      "entity_id": "com_iluwatar_actormodel",
+      "label": "com.iluwatar.actormodel",
+      "pos_x": 750,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8cbe0b3f-0068-4820-b91a-bcab577da487",
+      "entity_type": "packages",
+      "entity_id": "acyclic_visitor_src_main_java_com_iluwatar_acyclicvisitor_ConfigureForDosVisitor_java",
+      "label": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForDosVisitor.java",
+      "pos_x": 0,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "58f55273-3674-449c-b475-ddd7675d2f70",
+      "entity_type": "packages",
+      "entity_id": "acyclic_visitor_src_main_java_com_iluwatar_acyclicvisitor_ConfigureForUnixVisitor_java",
+      "label": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/ConfigureForUnixVisitor.java",
+      "pos_x": 250,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8d2d208b-4852-4787-87cf-1bfe1651d46e",
+      "entity_type": "packages",
+      "entity_id": "acyclic_visitor_src_main_java_com_iluwatar_acyclicvisitor_Hayes_java",
+      "label": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Hayes.java",
+      "pos_x": 500,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6485a487-ccef-49ff-995c-7f98c2ca1651",
+      "entity_type": "packages",
+      "entity_id": "acyclic_visitor_src_main_java_com_iluwatar_acyclicvisitor_Zoom_java",
+      "label": "acyclic-visitor/src/main/java/com/iluwatar/acyclicvisitor/Zoom.java",
+      "pos_x": 750,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "c121b887-b9c1-41bf-9f71-04bc86af014f",
+      "source_node_id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6e225e08-a97b-424e-b557-eb10fb96264b",
+      "source_node_id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9ff7bbeb-8b99-4d62-a974-706d7a75d124",
+      "source_node_id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2ec4f924-bec6-4a79-922a-6580e5d43526",
+      "source_node_id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a9afd92d-796e-4259-ad5f-42f93c0ea9ba",
+      "source_node_id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "target_node_id": "39ccc7d1-5033-4d55-b575-fda1ba281897",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "27b4732a-0a6c-4113-b0d4-0f6b496b59b0",
+      "source_node_id": "f65ea2ab-439e-41d3-b4d2-1880808c418c",
+      "target_node_id": "637b77a6-db89-47d1-9d93-f8392cc58d6f",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5179860f-b78a-4158-9f9a-77c75f1d520a",
+      "source_node_id": "5f77493e-8989-4a45-bb9b-6dac7756efa8",
+      "target_node_id": "72bf7334-27ae-4656-8f86-71b9cf17afc0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a4b7e3be-1fb8-4def-b243-61a48849ee06",
+      "source_node_id": "5f77493e-8989-4a45-bb9b-6dac7756efa8",
+      "target_node_id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "e66f2ffb-8825-4194-bc97-c997cea09f7f",
+      "source_node_id": "5f77493e-8989-4a45-bb9b-6dac7756efa8",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2fa64132-269d-492d-9e35-21519dec42a0",
+      "source_node_id": "5f77493e-8989-4a45-bb9b-6dac7756efa8",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "d52f9393-531a-43f0-9055-92faf383e94d",
+      "source_node_id": "5f77493e-8989-4a45-bb9b-6dac7756efa8",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4d201598-8142-4856-a738-d213be126fbb",
+      "source_node_id": "d8bc57ae-3ccc-44d8-8c53-e976d0d8aa14",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "e3272318-8560-49b6-9ee9-1891a99a52e5",
+      "source_node_id": "d8bc57ae-3ccc-44d8-8c53-e976d0d8aa14",
+      "target_node_id": "39ccc7d1-5033-4d55-b575-fda1ba281897",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a7c1d696-79af-4dbc-8c38-ddd8fea0b8f0",
+      "source_node_id": "d8bc57ae-3ccc-44d8-8c53-e976d0d8aa14",
+      "target_node_id": "637b77a6-db89-47d1-9d93-f8392cc58d6f",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "82f5c4e2-546d-4b06-ba11-d538763cf611",
+      "source_node_id": "6f45fcce-19d3-4c86-9741-f8372f6cb06d",
+      "target_node_id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6b18e03b-2243-465c-a913-b159981eb687",
+      "source_node_id": "6f45fcce-19d3-4c86-9741-f8372f6cb06d",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "56242b6d-684e-47f6-b7df-4cc4dc025eda",
+      "source_node_id": "b31434ba-c3aa-4963-8d32-8ceb35f7c31f",
+      "target_node_id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9e3673f3-9304-4bdc-ae98-4401792f9650",
+      "source_node_id": "b31434ba-c3aa-4963-8d32-8ceb35f7c31f",
+      "target_node_id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "feb680fa-1d18-4ee7-80fa-44f60b523376",
+      "source_node_id": "b31434ba-c3aa-4963-8d32-8ceb35f7c31f",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b43e4e4c-445c-48ca-8d20-40dfffb941d9",
+      "source_node_id": "3ecbe7ea-585e-4cae-b7c5-baa7de619613",
+      "target_node_id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6ff5b503-598c-4fef-b2ea-4d4838d82fb1",
+      "source_node_id": "3ecbe7ea-585e-4cae-b7c5-baa7de619613",
+      "target_node_id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0005369a-f6f6-4de1-b217-0834c91125a7",
+      "source_node_id": "3ecbe7ea-585e-4cae-b7c5-baa7de619613",
+      "target_node_id": "637b77a6-db89-47d1-9d93-f8392cc58d6f",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "094b4c68-0860-41e3-840f-2c9634990daf",
+      "source_node_id": "938ca0a7-56ae-46d4-adaf-3f88953973ab",
+      "target_node_id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "59d0878b-45af-442f-a6d4-b91fdd92a031",
+      "source_node_id": "938ca0a7-56ae-46d4-adaf-3f88953973ab",
+      "target_node_id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "77b5244b-3f25-4016-be5e-588428fac9c7",
+      "source_node_id": "938ca0a7-56ae-46d4-adaf-3f88953973ab",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "73d2e133-8edb-48eb-99a4-4f468a30fe03",
+      "source_node_id": "12deeca6-b196-415d-a4b1-241f5fed52bd",
+      "target_node_id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9fbee347-7a4b-4f8c-96c7-6707fb6973bf",
+      "source_node_id": "12deeca6-b196-415d-a4b1-241f5fed52bd",
+      "target_node_id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7d60a16a-354c-4308-8f2e-b3aa6bb95f99",
+      "source_node_id": "12deeca6-b196-415d-a4b1-241f5fed52bd",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "49897aa5-20bd-4ce4-b03a-39e9034cc9c2",
+      "source_node_id": "7c8c051b-fb23-46ac-800d-2c1d9fc50c75",
+      "target_node_id": "d04b7bfd-7a72-435d-ae70-138043edee5a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "e8288457-d551-45c4-a1aa-e221051c3f29",
+      "source_node_id": "7c8c051b-fb23-46ac-800d-2c1d9fc50c75",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b04e4f79-f95d-4e07-9e90-1701a475c0ac",
+      "source_node_id": "299642d4-bd97-4bd0-b6e4-00c7c8e3092d",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "cea5e6a8-5147-41c1-9ee0-48d24a29f182",
+      "source_node_id": "299642d4-bd97-4bd0-b6e4-00c7c8e3092d",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "effe8f9c-18f2-406d-9daf-c059f7c5e733",
+      "source_node_id": "299642d4-bd97-4bd0-b6e4-00c7c8e3092d",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "169e5c5c-7ac2-4358-bdf4-fa48871a6ae0",
+      "source_node_id": "299642d4-bd97-4bd0-b6e4-00c7c8e3092d",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0688966f-c15c-4bcc-b550-492a5caf4328",
+      "source_node_id": "299642d4-bd97-4bd0-b6e4-00c7c8e3092d",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9171be8d-237b-48c9-9ddc-9af5f4daf616",
+      "source_node_id": "f4f8f46e-6966-419d-83a0-e9b4d4b11ce3",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2987c9e4-8ec2-4dc9-9b26-3366e005edac",
+      "source_node_id": "f4f8f46e-6966-419d-83a0-e9b4d4b11ce3",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "886aca84-ea26-4000-8eaf-9632930e86a7",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "c49c36a1-3598-412a-9380-9e632710d3bd",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "72bf7334-27ae-4656-8f86-71b9cf17afc0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "1ad983bf-1f9c-42e5-9fc4-8993bb20ec4c",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "72bf7334-27ae-4656-8f86-71b9cf17afc0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "36d7e4c2-162e-471c-b2c7-2cd8093919a0",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "2dfcb3ff-a83d-48c1-a29e-867efb2ca576",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "67b24158-c41e-416d-a06f-9be98f4ba601",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "87bef94f-a5b6-4583-b83c-381bd8ad58f7",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2cae3f11-7080-44a5-b1e4-6d2e823b30bc",
+      "source_node_id": "caa2833c-eede-4453-a2d6-dbd673a5445f",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "081b9302-39d7-4e4c-aafa-ffa62de2b74e",
+      "source_node_id": "8e7b8d6a-862a-4d33-9116-999211c011f3",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "61a8553e-995e-42ae-879e-19b3805d955a",
+      "source_node_id": "8e7b8d6a-862a-4d33-9116-999211c011f3",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3b05cd33-f083-416b-9733-0dfdd7b51f55",
+      "source_node_id": "492d3c6f-3ec3-414e-9a7e-eb3098c27288",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6c1dcb33-0854-4669-a60c-d5ab9142d7c6",
+      "source_node_id": "492d3c6f-3ec3-414e-9a7e-eb3098c27288",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "bfd47852-44ef-493b-95eb-84092a427ee6",
+      "source_node_id": "a7e538d2-4d87-4003-a70e-bcfd535ade36",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7473bb92-c772-4fde-b274-7823393ed54e",
+      "source_node_id": "a7e538d2-4d87-4003-a70e-bcfd535ade36",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b8b7f9f7-0f11-4404-83d3-636a22ee2355",
+      "source_node_id": "a7e538d2-4d87-4003-a70e-bcfd535ade36",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "70597ff0-14ab-4623-82f0-e79adaf1d53f",
+      "source_node_id": "9581806a-391c-46bf-9abd-40e924bea3d2",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "794ae770-0f5d-44ef-a613-ab734445d211",
+      "source_node_id": "9581806a-391c-46bf-9abd-40e924bea3d2",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "35857c70-13c8-4031-95d6-4aa67b3cc6a5",
+      "source_node_id": "2ac97e93-d502-4c75-b790-1c007b2414de",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6382ffdd-6ab3-47ee-b958-8cf4894895d4",
+      "source_node_id": "2ac97e93-d502-4c75-b790-1c007b2414de",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "c7654ab5-a445-4848-be04-08c303cb7c7b",
+      "source_node_id": "2ac97e93-d502-4c75-b790-1c007b2414de",
+      "target_node_id": "97ccc189-3ee6-4016-af73-47c1d0eef968",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "fc3c3f77-efdd-462e-86f1-aa05898ab776",
+      "source_node_id": "2ac97e93-d502-4c75-b790-1c007b2414de",
+      "target_node_id": "97ccc189-3ee6-4016-af73-47c1d0eef968",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7891d106-52b3-49e5-81f8-827fbedb84e0",
+      "source_node_id": "6ef7d743-4944-4514-879d-e68b5d19ac29",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9c8991e6-5439-4b48-9acc-25f0fe19c8d1",
+      "source_node_id": "6ef7d743-4944-4514-879d-e68b5d19ac29",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7a32a291-1dea-4941-82a5-df7619e8a480",
+      "source_node_id": "6ef7d743-4944-4514-879d-e68b5d19ac29",
+      "target_node_id": "97ccc189-3ee6-4016-af73-47c1d0eef968",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "dc33494f-d311-45ea-a161-9314b9217304",
+      "source_node_id": "6ef7d743-4944-4514-879d-e68b5d19ac29",
+      "target_node_id": "97ccc189-3ee6-4016-af73-47c1d0eef968",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "aa70ff2f-b558-4e3f-a0d8-21f7f0295c61",
+      "source_node_id": "aff37755-1e71-486e-8479-a8eebdfd4708",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "31331b4a-e2b3-4a91-a6e6-1fe7174537d6",
+      "source_node_id": "aff37755-1e71-486e-8479-a8eebdfd4708",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7cb72489-42d1-47be-b1bd-fe8797df0d76",
+      "source_node_id": "61987307-4664-43c8-b576-b387c269b775",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "25f5dc62-95b5-45ac-8c16-8344eee56b36",
+      "source_node_id": "61987307-4664-43c8-b576-b387c269b775",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "8c14f762-96a5-463d-b15a-61e26e67df64",
+      "source_node_id": "c3bb6052-7c80-408b-ae15-ad4c75d33f54",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "24e0c7ba-8bf0-4f77-b099-90788f15875b",
+      "source_node_id": "c3bb6052-7c80-408b-ae15-ad4c75d33f54",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6e9ab3b0-9972-40e8-906b-d9577fbcb592",
+      "source_node_id": "c3bb6052-7c80-408b-ae15-ad4c75d33f54",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4b596c0d-1949-4013-941e-26b1f36e50df",
+      "source_node_id": "c3bb6052-7c80-408b-ae15-ad4c75d33f54",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "d703c164-562b-4d89-8000-75391b455c79",
+      "source_node_id": "01d7d1fa-990d-444d-bce9-4b594e38acff",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2eea0179-3b12-42ab-93bd-27d415ddd1d6",
+      "source_node_id": "01d7d1fa-990d-444d-bce9-4b594e38acff",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7f862349-cf61-460b-8efe-f9a1b4bee7ca",
+      "source_node_id": "01d7d1fa-990d-444d-bce9-4b594e38acff",
+      "target_node_id": "c306aa4d-b068-4556-ba81-43b13557b9f1",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7ffd7d34-c333-45d4-98f4-a0f89a7480a1",
+      "source_node_id": "01d7d1fa-990d-444d-bce9-4b594e38acff",
+      "target_node_id": "4b619220-fbf0-4b0f-b660-c81faf45bb22",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9b66de21-f1ca-49df-9893-7a451273cfbf",
+      "source_node_id": "c6e25b71-9395-4548-9a08-c9bafbb55e41",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "823b00d9-a7dc-4d81-99d6-de3e555ebe54",
+      "source_node_id": "c6e25b71-9395-4548-9a08-c9bafbb55e41",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a4a13258-ceee-4bf6-ad04-15bfbb54eee7",
+      "source_node_id": "c6e25b71-9395-4548-9a08-c9bafbb55e41",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "471ad656-3677-43bd-af22-fb35c7a9f77b",
+      "source_node_id": "c6e25b71-9395-4548-9a08-c9bafbb55e41",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "130c734c-c50d-4b89-8296-0fac5d4e28ca",
+      "source_node_id": "54e3f725-7262-4097-8851-7a12b6e221c0",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "92ed70b2-672e-4479-8173-ec7f700a2eeb",
+      "source_node_id": "54e3f725-7262-4097-8851-7a12b6e221c0",
+      "target_node_id": "eaf96ed7-0c8b-4fb8-85ef-1fc2ed4d0ec9",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "51a9222b-4292-4134-84b7-88d00bac8d6c",
+      "source_node_id": "54e3f725-7262-4097-8851-7a12b6e221c0",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0c4e9c35-e304-4710-9e88-b46938f6b75f",
+      "source_node_id": "54e3f725-7262-4097-8851-7a12b6e221c0",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4aa80c27-48c8-41e8-94cd-2feaffcd113d",
+      "source_node_id": "b43163bc-8295-4619-a0b7-0dfc64e754c2",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7a0a8d06-fcce-4c34-b229-7372941d342f",
+      "source_node_id": "b43163bc-8295-4619-a0b7-0dfc64e754c2",
+      "target_node_id": "e9f6ab36-9d04-4e87-8e22-8680f37262c8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3cd9b7ff-5e6c-4f25-8da7-cceb6db0e43b",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "687fd5af-1b64-4553-98f1-4a3d0e009558",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "de8e81ff-fbcb-422b-93b9-5caf5bbb7a62",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "bf912e81-ea5f-4742-867c-d3cc667b61ec",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "199046b6-566d-4541-979c-5cf6bf41c514",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "bf912e81-ea5f-4742-867c-d3cc667b61ec",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3cec70ab-b217-4d99-b3d9-9dd54e197a3c",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "bf912e81-ea5f-4742-867c-d3cc667b61ec",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a298471c-48c0-4de9-9155-c21826040556",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "bf912e81-ea5f-4742-867c-d3cc667b61ec",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "01ab5ce7-a24a-424f-933d-8a56e179e284",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "bf912e81-ea5f-4742-867c-d3cc667b61ec",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3c2ba531-a6da-4bf4-9d98-b289804c964a",
+      "source_node_id": "cc2fed7f-0e93-4f07-866f-21adca25a01e",
+      "target_node_id": "5e7aec70-c27e-4788-918d-9fc0c06e3ead",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6b3c3942-c90d-4d38-a52d-6a03a692bb1a",
+      "source_node_id": "8cbe0b3f-0068-4820-b91a-bcab577da487",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "851c1b82-0bd7-4bac-ae52-ce185eec3ddc",
+      "source_node_id": "58f55273-3674-449c-b475-ddd7675d2f70",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "fc51ac44-af90-49f8-bf4d-8508fb7f71fb",
+      "source_node_id": "8d2d208b-4852-4787-87cf-1bfe1651d46e",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0010e110-8142-483a-b5b6-ac000f1f595d",
+      "source_node_id": "6485a487-ccef-49ff-995c-7f98c2ca1651",
+      "target_node_id": "ebd96e3a-4702-4c8d-8174-e854e5bbe1d0",
+      "relationship_type": "imports"
+    }
+  ]
+}

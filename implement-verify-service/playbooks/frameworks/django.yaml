@@ -1,0 +1,40 @@
+name: django
+version: 1
+language: python
+
+detection:
+  imports_match:
+    - django
+    - django.urls
+    - django.conf.urls
+  files_match:
+    - 'manage.py'
+  manifest_contains:
+    - {file: 'requirements.txt', substring: 'Django'}
+    - {file: 'pyproject.toml',   substring: 'django ='}
+
+extract:
+  - id: urls_py
+    query: configs
+    parser: django_urls
+    file_glob: '**/urls.py'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: django
+
+verification:
+  - id: urls_py_count
+    query: configs
+    parser: django_urls
+    file_glob: '**/urls.py'
+    expected_count: same_as_output_count
+    tolerance_pct: 15
+
+conflict_rules: []
+
+known_pitfalls:
+  - "include() mounts are not yet recursively expanded — child URLs missed"
+  - "DRF routers (DefaultRouter().register) generate endpoints at runtime — not parsed"
+  - "URL patterns dispatch by request.method internally; we emit operation=ANY"

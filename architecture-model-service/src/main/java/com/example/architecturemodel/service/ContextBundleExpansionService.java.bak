@@ -1,0 +1,855 @@
+package com.example.architecturemodel.service;
+
+import com.example.architecturemodel.exception.ResourceNotFoundException;
+import com.example.architecturemodel.model.dto.DiagramBundleSelection;
+import com.example.architecturemodel.model.dto.EntityBundleSelection;
+import com.example.architecturemodel.model.dto.ExpandResolveResponseDto;
+import com.example.architecturemodel.model.dto.diagram.ResolvedDiagramSummary;
+import com.example.architecturemodel.model.dto.entity.ResolvedEntitySummary;
+import com.example.architecturemodel.model.entity.EndpointEntity;
+import com.example.architecturemodel.model.entity.InterfaceEntity;
+import com.example.architecturemodel.model.entity.InterfaceLogicalEntityEntity;
+import com.example.architecturemodel.model.entity.LogicalDataEntityRelationshipEntity;
+import com.example.architecturemodel.model.entity.ModelFileEntity;
+import com.example.architecturemodel.model.entity.PhysicalDataAttributeEntity;
+import com.example.architecturemodel.model.entity.ServiceEntity;
+import com.example.architecturemodel.repository.ModelFileRepository;
+import com.example.architecturemodel.repository.diagram.DiagramNodeRepository;
+import com.example.architecturemodel.repository.diagram.DiagramRepository;
+import com.example.architecturemodel.repository.entity.EndpointRepository;
+import com.example.architecturemodel.repository.entity.InterfaceRepository;
+import com.example.architecturemodel.repository.entity.PhysicalDataAttributeRepository;
+import com.example.architecturemodel.repository.entity.ServiceRepository;
+import com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository;
+import com.example.architecturemodel.repository.relationship.LogicalDataEntityRelationshipRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+/**
+ * Service for expanding context bundle selections into related entities/diagrams
+ * and resolving them into human-readable summaries.
+ *
+ * This service takes entity and diagram bundle selections with bundle_type indicators
+ * and expands them according to the bundle expansion rules, then resolves the expanded
+ * IDs into detailed summaries for LLM context enrichment.
+ *
+ * Key features:
+ * - De-duplication of expanded entity IDs using LinkedHashSet
+ * - Deterministic ordering (sorted by entityType then entityId)
+ * - Configurable truncation limits with truncation reason reporting
+ *
+ * Bundle expansion rules implemented:
+ * - interface_only: returns only the interface entity
+ * - interface_with_endpoints: includes all endpoints via EndpointRepository.findByInterfaceId()
+ * - interface_with_endpoints_and_schemas: includes endpoints AND data entities via InterfaceLogicalEntityRepository
+ * - service_only: returns only the service entity
+ * - service_with_parents_and_children: includes Application/ApplicationComponent parents and child interfaces
+ * - entity_only: returns only the data entity (logical or physical)
+ * - entity_with_attributes_and_relationships: includes attributes (for physical) and depth=1 relationships
+ * - diagram_only: returns only the diagram ID (does NOT auto-expand node references)
+ *
+ * Spec: Context Bundles Backend Expansion - Task Groups 3, 4, 5, 6 & 7
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class ContextBundleExpansionService {
+
+    private final ModelFileRepository modelFileRepository;
+    private final ImplementContextResolutionService resolutionService;
+
+    // Repositories for traversal (Task Group 3.3)
+    private final EndpointRepository endpointRepository;
+    private final InterfaceRepository interfaceRepository;
+    private final PhysicalDataAttributeRepository physicalDataAttributeRepository;
+    private final LogicalDataEntityRelationshipRepository logicalDataEntityRelationshipRepository;
+    private final DiagramNodeRepository diagramNodeRepository;
+    private final DiagramRepository diagramRepository;
+    private final ServiceRepository serviceRepository;
+
+    // Repository for interface-to-data-entity relationships (Task Group 4)
+    private final InterfaceLogicalEntityRepository interfaceLogicalEntityRepository;
+
+    // Configurable truncation limits (Task Group 3.6)
+    @Value("${context.expansion.maxEntities:250}")
+    private int maxExpandedEntities;
+
+    @Value("${context.expansion.maxDiagrams:50}")
+    private int maxExpandedDiagrams;
+
+    // Bundle type constants for interface expansion (Task Group 4)
+    private static final String BUNDLE_INTERFACE_ONLY = "interface_only";
+    private static final String BUNDLE_INTERFACE_WITH_ENDPOINTS = "interface_with_endpoints";
+    private static final String BUNDLE_INTERFACE_WITH_ENDPOINTS_AND_SCHEMAS = "interface_with_endpoints_and_schemas";
+
+    // Bundle type constants for service expansion (Task Group 5)
+    private static final String BUNDLE_SERVICE_ONLY = "service_only";
+    private static final String BUNDLE_SERVICE_WITH_PARENTS_AND_CHILDREN = "service_with_parents_and_children";
+
+    // Bundle type constants for data entity expansion (Task Group 6)
+    private static final String BUNDLE_ENTITY_ONLY = "entity_only";
+    private static final String BUNDLE_ENTITY_WITH_ATTRIBUTES_AND_RELATIONSHIPS = "entity_with_attributes_and_relationships";
+
+    // Bundle type constant for diagram expansion (Task Group 7)
+    private static final String BUNDLE_DIAGRAM_ONLY = "diagram_only";
+
+    // Data entity point ID prefixes (Task Group 4.5 & 6)
+    private static final String DEP_LOGICAL_PREFIX = "dep_log_";
+    private static final String DEP_PHYSICAL_PREFIX = "dep_phy_";
+
+    // Entity type constants for data entities (Task Group 6)
+    private static final String ENTITY_TYPE_LOGICAL_DATA_ENTITIES = "logicalDataEntities";
+    private static final String ENTITY_TYPE_PHYSICAL_DATA_ENTITIES = "physicalDataEntities";
+    private static final String ENTITY_TYPE_PHYSICAL_DATA_ATTRIBUTES = "physicalDataAttributes";
+
+    /**
+     * Expands bundle selections and resolves them into detailed summaries.
+     *
+     * This method:
+     * 1. Validates inputs and looks up the model file
+     * 2. Expands entity selections based on bundle_type
+     * 3. Expands diagram selections based on bundle_type
+     * 4. De-duplicates and sorts expanded IDs deterministically
+     * 5. Truncates if limits are exceeded
+     * 6. Resolves expanded IDs into human-readable summaries
+     *
+     * @param projectId the project ID (filename)
+     * @param selectedEntities list of entity bundle selections to expand
+     * @param selectedDiagrams list of diagram bundle selections to expand
+     * @return ExpandResolveResponseDto with expanded IDs and resolved summaries
+     * @throws ResourceNotFoundException if project/model file not found
+     */
+    @Transactional(readOnly = true)
+    public ExpandResolveResponseDto expandAndResolve(
+            String projectId,
+            List<EntityBundleSelection> selectedEntities,
+            List<DiagramBundleSelection> selectedDiagrams) {
+
+        log.debug("Expanding and resolving context for project: {}, entities: {}, diagrams: {}",
+            projectId,
+            selectedEntities != null ? selectedEntities.size() : 0,
+            selectedDiagrams != null ? selectedDiagrams.size() : 0);
+
+        // Validate inputs and lookup model file (Task Group 3.4)
+        ModelFileEntity modelFile = modelFileRepository.findByFilename(projectId)
+            .orElseThrow(() -> new ResourceNotFoundException("Model file not found: " + projectId));
+
+        String modelFileId = modelFile.getId();
+
+        // Initialize tracking for truncation
+        boolean truncated = false;
+        List<String> truncationReasons = new ArrayList<>();
+
+        // Step 1: Expand entity selections
+        // Use LinkedHashSet for de-duplication while preserving insertion order initially
+        LinkedHashSet<String> expandedEntityIdSet = new LinkedHashSet<>();
+        if (selectedEntities != null) {
+            for (EntityBundleSelection selection : selectedEntities) {
+                List<String> expanded = expandEntity(selection, modelFileId);
+                expandedEntityIdSet.addAll(expanded);
+            }
+        }
+
+        // Step 2: Expand diagram selections
+        LinkedHashSet<String> expandedDiagramIdSet = new LinkedHashSet<>();
+        if (selectedDiagrams != null) {
+            for (DiagramBundleSelection selection : selectedDiagrams) {
+                List<String> expanded = expandDiagram(selection, modelFileId);
+                expandedDiagramIdSet.addAll(expanded);
+            }
+        }
+
+        // Step 3: Apply deterministic ordering (sort by entityType then entityId)
+        List<String> sortedEntityIds = sortCanonicalIds(expandedEntityIdSet);
+        List<String> sortedDiagramIds = new ArrayList<>(expandedDiagramIdSet);
+        Collections.sort(sortedDiagramIds);
+
+        // Step 4: Apply truncation if limits exceeded
+        if (sortedEntityIds.size() > maxExpandedEntities) {
+            truncated = true;
+            truncationReasons.add(String.format(
+                "Truncated entities from %d to %d (limit: %d)",
+                sortedEntityIds.size(), maxExpandedEntities, maxExpandedEntities
+            ));
+            sortedEntityIds = sortedEntityIds.subList(0, maxExpandedEntities);
+            log.warn("Entity expansion exceeded limit: truncated from {} to {}",
+                expandedEntityIdSet.size(), maxExpandedEntities);
+        }
+
+        if (sortedDiagramIds.size() > maxExpandedDiagrams) {
+            truncated = true;
+            truncationReasons.add(String.format(
+                "Truncated diagrams from %d to %d (limit: %d)",
+                sortedDiagramIds.size(), maxExpandedDiagrams, maxExpandedDiagrams
+            ));
+            sortedDiagramIds = sortedDiagramIds.subList(0, maxExpandedDiagrams);
+            log.warn("Diagram expansion exceeded limit: truncated from {} to {}",
+                expandedDiagramIdSet.size(), maxExpandedDiagrams);
+        }
+
+        // Step 5: Resolve expanded IDs into summaries
+        List<ResolvedEntitySummary> resolvedEntities = resolveEntities(sortedEntityIds, modelFileId);
+        List<ResolvedDiagramSummary> resolvedDiagrams = resolveDiagrams(sortedDiagramIds, modelFileId);
+
+        // Build truncation reason string
+        String truncationReason = truncated ? String.join("; ", truncationReasons) : null;
+
+        log.debug("Expansion complete: {} entities, {} diagrams, truncated: {}",
+            sortedEntityIds.size(), sortedDiagramIds.size(), truncated);
+
+        return new ExpandResolveResponseDto(
+            sortedEntityIds,
+            sortedDiagramIds,
+            resolvedEntities,
+            resolvedDiagrams,
+            truncated,
+            truncationReason,
+            Collections.emptyList()
+        );
+    }
+
+    /**
+     * Expands a single entity selection based on its bundle_type.
+     *
+     * Dispatches to the appropriate expansion method based on entity type and bundle type:
+     * - For interfaces: expandInterface()
+     * - For services: expandService()
+     * - For data entities (logical/physical): expandDataEntity()
+     * - For other entity types: placeholder expansion returning just the entity itself
+     *
+     * @param selection the entity bundle selection
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of expanded canonical entity IDs (format: entityType::entityId)
+     */
+    private List<String> expandEntity(EntityBundleSelection selection, String modelFileId) {
+        if (selection == null || selection.entityType() == null || selection.entityId() == null) {
+            return List.of();
+        }
+
+        String entityType = selection.entityType();
+        String entityId = selection.entityId();
+        String bundleType = selection.bundleType();
+
+        log.trace("Expanding entity: {}::{} with bundleType: {}", entityType, entityId, bundleType);
+
+        // Dispatch to appropriate expansion method based on entity type
+        if ("interfaces".equals(entityType)) {
+            return expandInterface(entityId, bundleType, modelFileId);
+        }
+
+        if ("services".equals(entityType)) {
+            return expandService(entityId, bundleType, modelFileId);
+        }
+
+        // Handle data entity types (Task Group 6)
+        if (ENTITY_TYPE_LOGICAL_DATA_ENTITIES.equals(entityType) ||
+            ENTITY_TYPE_PHYSICAL_DATA_ENTITIES.equals(entityType)) {
+            return expandDataEntity(entityId, entityType, bundleType, modelFileId);
+        }
+
+        // Default: return the entity itself in canonical format
+        // Full expansion logic for other entity types will be implemented in future task groups
+        String canonicalId = formatCanonicalId(entityType, entityId);
+        return List.of(canonicalId);
+    }
+
+    // ============================================================================
+    // Interface Bundle Expansion (Task Group 4)
+    // ============================================================================
+
+    /**
+     * Expands an interface based on its bundle_type.
+     *
+     * Task Group 4.2: Main dispatch method for interface expansion.
+     *
+     * @param interfaceId the interface ID to expand
+     * @param bundleType the bundle type determining expansion scope
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of expanded entity IDs in canonical format
+     */
+    private List<String> expandInterface(String interfaceId, String bundleType, String modelFileId) {
+        log.trace("Expanding interface: {} with bundleType: {}", interfaceId, bundleType);
+
+        if (bundleType == null) {
+            // Default to interface_only if no bundle type specified
+            return expandInterfaceOnly(interfaceId);
+        }
+
+        switch (bundleType) {
+            case BUNDLE_INTERFACE_ONLY:
+                return expandInterfaceOnly(interfaceId);
+            case BUNDLE_INTERFACE_WITH_ENDPOINTS:
+                return expandInterfaceWithEndpoints(interfaceId);
+            case BUNDLE_INTERFACE_WITH_ENDPOINTS_AND_SCHEMAS:
+                return expandInterfaceWithEndpointsAndSchemas(interfaceId);
+            default:
+                log.warn("Unknown bundle type '{}' for interface, defaulting to interface_only", bundleType);
+                return expandInterfaceOnly(interfaceId);
+        }
+    }
+
+    /**
+     * Expands interface with bundle_type = interface_only.
+     *
+     * Task Group 4.3: Returns only the interface entity itself.
+     *
+     * @param interfaceId the interface ID
+     * @return single-element list containing "interfaces::<interfaceId>"
+     */
+    private List<String> expandInterfaceOnly(String interfaceId) {
+        log.trace("Expanding interface_only for: {}", interfaceId);
+        return List.of(formatCanonicalId("interfaces", interfaceId));
+    }
+
+    /**
+     * Expands interface with bundle_type = interface_with_endpoints.
+     *
+     * Task Group 4.4: Returns the interface plus all its endpoints.
+     * Queries EndpointRepository.findByInterfaceId() to get all endpoints.
+     *
+     * @param interfaceId the interface ID
+     * @return list containing interface and all endpoint IDs in canonical format
+     */
+    private List<String> expandInterfaceWithEndpoints(String interfaceId) {
+        log.trace("Expanding interface_with_endpoints for: {}", interfaceId);
+
+        List<String> expandedIds = new ArrayList<>();
+
+        // Include the interface itself
+        expandedIds.add(formatCanonicalId("interfaces", interfaceId));
+
+        // Query and include all endpoints for this interface
+        List<EndpointEntity> endpoints = endpointRepository.findByInterfaceId(interfaceId);
+        for (EndpointEntity endpoint : endpoints) {
+            expandedIds.add(formatCanonicalId("endpoints", endpoint.getId()));
+        }
+
+        log.trace("interface_with_endpoints expanded to {} entities (1 interface + {} endpoints)",
+            expandedIds.size(), endpoints.size());
+
+        return expandedIds;
+    }
+
+    /**
+     * Expands interface with bundle_type = interface_with_endpoints_and_schemas.
+     *
+     * Task Group 4.5: Returns the interface, all endpoints, AND all related data entities.
+     * - Queries EndpointRepository.findByInterfaceId() for endpoints
+     * - Queries InterfaceLogicalEntityRepository.findByInterfaceId() for data entity relationships
+     * - Parses dataEntityPointId format to determine logical vs physical entity type
+     *
+     * @param interfaceId the interface ID
+     * @return list containing interface, endpoints, and data entity IDs in canonical format
+     */
+    private List<String> expandInterfaceWithEndpointsAndSchemas(String interfaceId) {
+        log.trace("Expanding interface_with_endpoints_and_schemas for: {}", interfaceId);
+
+        List<String> expandedIds = new ArrayList<>();
+
+        // Include the interface itself
+        expandedIds.add(formatCanonicalId("interfaces", interfaceId));
+
+        // Include all endpoints for this interface
+        List<EndpointEntity> endpoints = endpointRepository.findByInterfaceId(interfaceId);
+        for (EndpointEntity endpoint : endpoints) {
+            expandedIds.add(formatCanonicalId("endpoints", endpoint.getId()));
+        }
+
+        // Include all data entities related to this interface
+        List<InterfaceLogicalEntityEntity> dataEntityRelations =
+            interfaceLogicalEntityRepository.findByInterfaceId(interfaceId);
+
+        for (InterfaceLogicalEntityEntity relation : dataEntityRelations) {
+            String dataEntityCanonicalId = parseDataEntityPointId(relation.getDataEntityPointId());
+            if (dataEntityCanonicalId != null) {
+                expandedIds.add(dataEntityCanonicalId);
+            }
+        }
+
+        log.trace("interface_with_endpoints_and_schemas expanded to {} entities " +
+            "(1 interface + {} endpoints + {} data entities)",
+            expandedIds.size(), endpoints.size(), dataEntityRelations.size());
+
+        return expandedIds;
+    }
+
+    /**
+     * Parses a dataEntityPointId into its canonical entity ID format.
+     *
+     * Task Group 4.5: Handles the data entity point ID format used by interface-to-data-entity relationships.
+     * - "dep_log_<id>" -> "logicalDataEntities::<id>"
+     * - "dep_phy_<id>" -> "physicalDataEntities::<id>"
+     *
+     * @param dataEntityPointId the data entity point ID (e.g., "dep_log_entity-123" or "dep_phy_table-456")
+     * @return canonical entity ID or null if format is invalid/unrecognized
+     */
+    private String parseDataEntityPointId(String dataEntityPointId) {
+        if (dataEntityPointId == null || dataEntityPointId.isEmpty()) {
+            log.trace("Skipping null/empty dataEntityPointId");
+            return null;
+        }
+
+        if (dataEntityPointId.startsWith(DEP_LOGICAL_PREFIX)) {
+            String entityId = dataEntityPointId.substring(DEP_LOGICAL_PREFIX.length());
+            return formatCanonicalId(ENTITY_TYPE_LOGICAL_DATA_ENTITIES, entityId);
+        }
+
+        if (dataEntityPointId.startsWith(DEP_PHYSICAL_PREFIX)) {
+            String entityId = dataEntityPointId.substring(DEP_PHYSICAL_PREFIX.length());
+            return formatCanonicalId(ENTITY_TYPE_PHYSICAL_DATA_ENTITIES, entityId);
+        }
+
+        log.trace("Unrecognized dataEntityPointId format: {}", dataEntityPointId);
+        return null;
+    }
+
+    // ============================================================================
+    // Service Bundle Expansion (Task Group 5)
+    // ============================================================================
+
+    /**
+     * Expands a service based on its bundle_type.
+     *
+     * Task Group 5.2: Main dispatch method for service expansion.
+     *
+     * @param serviceId the service ID to expand
+     * @param bundleType the bundle type determining expansion scope
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of expanded entity IDs in canonical format
+     */
+    private List<String> expandService(String serviceId, String bundleType, String modelFileId) {
+        log.trace("Expanding service: {} with bundleType: {}", serviceId, bundleType);
+
+        if (bundleType == null) {
+            // Default to service_only if no bundle type specified
+            return expandServiceOnly(serviceId);
+        }
+
+        switch (bundleType) {
+            case BUNDLE_SERVICE_ONLY:
+                return expandServiceOnly(serviceId);
+            case BUNDLE_SERVICE_WITH_PARENTS_AND_CHILDREN:
+                return expandServiceWithParentsAndChildren(serviceId, modelFileId);
+            default:
+                log.warn("Unknown bundle type '{}' for service, defaulting to service_only", bundleType);
+                return expandServiceOnly(serviceId);
+        }
+    }
+
+    /**
+     * Expands service with bundle_type = service_only.
+     *
+     * Task Group 5.3: Returns only the service entity itself.
+     *
+     * @param serviceId the service ID
+     * @return single-element list containing "services::<serviceId>"
+     */
+    private List<String> expandServiceOnly(String serviceId) {
+        log.trace("Expanding service_only for: {}", serviceId);
+        return List.of(formatCanonicalId("services", serviceId));
+    }
+
+    /**
+     * Expands service with bundle_type = service_with_parents_and_children.
+     *
+     * Task Group 5.4: Returns the service plus its parent Application/ApplicationComponent
+     * and all child interfaces.
+     *
+     * - Looks up ServiceEntity to get applicationId and applicationComponentId
+     * - If applicationId present: adds "applications::<applicationId>"
+     * - If applicationComponentId present: adds "appComponents::<applicationComponentId>"
+     * - Queries InterfaceRepository.findByModelFileId() and filters by serviceId
+     * - Adds child interfaces: "interfaces::<interfaceId>"
+     *
+     * @param serviceId the service ID
+     * @param modelFileId the model file ID for scoping queries
+     * @return list containing service, parent entities, and child interfaces in canonical format
+     */
+    private List<String> expandServiceWithParentsAndChildren(String serviceId, String modelFileId) {
+        log.trace("Expanding service_with_parents_and_children for: {}", serviceId);
+
+        List<String> expandedIds = new ArrayList<>();
+
+        // Include the service itself
+        expandedIds.add(formatCanonicalId("services", serviceId));
+
+        // Lookup service entity to get parent references
+        Optional<ServiceEntity> serviceEntityOpt = serviceRepository.findById(serviceId);
+        if (serviceEntityOpt.isEmpty()) {
+            log.warn("Service entity not found for ID: {}, returning only service canonical ID", serviceId);
+            return expandedIds;
+        }
+
+        ServiceEntity serviceEntity = serviceEntityOpt.get();
+
+        // Add application parent if present
+        String applicationId = serviceEntity.getApplicationId();
+        if (applicationId != null && !applicationId.isEmpty()) {
+            expandedIds.add(formatCanonicalId("applications", applicationId));
+            log.trace("Added application parent: {}", applicationId);
+        }
+
+        // Add application component parent if present
+        String applicationComponentId = serviceEntity.getApplicationComponentId();
+        if (applicationComponentId != null && !applicationComponentId.isEmpty()) {
+            expandedIds.add(formatCanonicalId("appComponents", applicationComponentId));
+            log.trace("Added appComponent parent: {}", applicationComponentId);
+        }
+
+        // Query all interfaces in this model file and filter by serviceId
+        List<InterfaceEntity> allInterfaces = interfaceRepository.findByModelFileId(modelFileId);
+        List<InterfaceEntity> childInterfaces = allInterfaces.stream()
+            .filter(iface -> serviceId.equals(iface.getServiceId()))
+            .collect(Collectors.toList());
+
+        for (InterfaceEntity childInterface : childInterfaces) {
+            expandedIds.add(formatCanonicalId("interfaces", childInterface.getId()));
+        }
+
+        log.trace("service_with_parents_and_children expanded to {} entities " +
+            "(1 service + parents + {} child interfaces)",
+            expandedIds.size(), childInterfaces.size());
+
+        return expandedIds;
+    }
+
+    // ============================================================================
+    // Data Entity Bundle Expansion (Task Group 6)
+    // ============================================================================
+
+    /**
+     * Expands a data entity (logical or physical) based on its bundle_type.
+     *
+     * Task Group 6.2: Main dispatch method for data entity expansion.
+     * Handles both logicalDataEntities and physicalDataEntities types.
+     *
+     * @param entityId the data entity ID to expand
+     * @param entityType the entity type ("logicalDataEntities" or "physicalDataEntities")
+     * @param bundleType the bundle type determining expansion scope
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of expanded entity IDs in canonical format
+     */
+    private List<String> expandDataEntity(String entityId, String entityType, String bundleType, String modelFileId) {
+        log.trace("Expanding data entity: {}::{} with bundleType: {}", entityType, entityId, bundleType);
+
+        if (bundleType == null) {
+            // Default to entity_only if no bundle type specified
+            return expandDataEntityOnly(entityId, entityType);
+        }
+
+        switch (bundleType) {
+            case BUNDLE_ENTITY_ONLY:
+                return expandDataEntityOnly(entityId, entityType);
+            case BUNDLE_ENTITY_WITH_ATTRIBUTES_AND_RELATIONSHIPS:
+                return expandDataEntityWithAttributesAndRelationships(entityId, entityType, modelFileId);
+            default:
+                log.warn("Unknown bundle type '{}' for data entity, defaulting to entity_only", bundleType);
+                return expandDataEntityOnly(entityId, entityType);
+        }
+    }
+
+    /**
+     * Expands data entity with bundle_type = entity_only.
+     *
+     * Task Group 6.3: Returns only the data entity itself in canonical format.
+     *
+     * @param entityId the data entity ID
+     * @param entityType the entity type ("logicalDataEntities" or "physicalDataEntities")
+     * @return single-element list containing the canonical ID
+     */
+    private List<String> expandDataEntityOnly(String entityId, String entityType) {
+        log.trace("Expanding entity_only for: {}::{}", entityType, entityId);
+        return List.of(formatCanonicalId(entityType, entityId));
+    }
+
+    /**
+     * Expands data entity with bundle_type = entity_with_attributes_and_relationships.
+     *
+     * Task Group 6.4: Returns the data entity plus:
+     * - For physical entities: includes attributes via PhysicalDataAttributeRepository.findByPhysicalEntityId()
+     * - For all entities: includes depth=1 relationships via LogicalDataEntityRelationshipRepository
+     *
+     * Relationship traversal stops at depth=1 - no multi-hop traversal is performed.
+     * Only relationships where the entity is directly the source or target are included.
+     *
+     * @param entityId the data entity ID
+     * @param entityType the entity type ("logicalDataEntities" or "physicalDataEntities")
+     * @param modelFileId the model file ID for scoping queries
+     * @return list containing entity, attributes (if physical), and related entities at depth=1
+     */
+    private List<String> expandDataEntityWithAttributesAndRelationships(
+            String entityId, String entityType, String modelFileId) {
+        log.trace("Expanding entity_with_attributes_and_relationships for: {}::{}", entityType, entityId);
+
+        List<String> expandedIds = new ArrayList<>();
+
+        // Include the entity itself
+        expandedIds.add(formatCanonicalId(entityType, entityId));
+
+        // For physical entities, include attributes
+        if (ENTITY_TYPE_PHYSICAL_DATA_ENTITIES.equals(entityType)) {
+            List<PhysicalDataAttributeEntity> attributes =
+                physicalDataAttributeRepository.findByPhysicalEntityId(entityId);
+
+            for (PhysicalDataAttributeEntity attribute : attributes) {
+                expandedIds.add(formatCanonicalId(ENTITY_TYPE_PHYSICAL_DATA_ATTRIBUTES, attribute.getId()));
+            }
+
+            log.trace("Added {} attributes for physical entity: {}", attributes.size(), entityId);
+        }
+
+        // Build the data entity point ID for this entity to find relationships
+        String dataEntityPointId = buildDataEntityPointId(entityId, entityType);
+
+        // Query all relationships in the model file
+        List<LogicalDataEntityRelationshipEntity> allRelationships =
+            logicalDataEntityRelationshipRepository.findByModelFileId(modelFileId);
+
+        // Filter for relationships where this entity is source or target (depth=1 only)
+        for (LogicalDataEntityRelationshipEntity relationship : allRelationships) {
+            String fromPointId = relationship.getFromDataEntityPointId();
+            String toPointId = relationship.getToDataEntityPointId();
+
+            // Check if this entity is the source (fromDataEntityPointId matches)
+            if (dataEntityPointId.equals(fromPointId)) {
+                // Add the target entity (depth=1)
+                String targetCanonicalId = parseDataEntityPointId(toPointId);
+                if (targetCanonicalId != null) {
+                    expandedIds.add(targetCanonicalId);
+                    log.trace("Added related entity (outbound): {}", targetCanonicalId);
+                }
+            }
+
+            // Check if this entity is the target (toDataEntityPointId matches)
+            if (dataEntityPointId.equals(toPointId)) {
+                // Add the source entity (depth=1)
+                String sourceCanonicalId = parseDataEntityPointId(fromPointId);
+                if (sourceCanonicalId != null) {
+                    expandedIds.add(sourceCanonicalId);
+                    log.trace("Added related entity (inbound): {}", sourceCanonicalId);
+                }
+            }
+        }
+
+        log.trace("entity_with_attributes_and_relationships expanded to {} entities for {}::{}",
+            expandedIds.size(), entityType, entityId);
+
+        return expandedIds;
+    }
+
+    /**
+     * Builds a data entity point ID from an entity ID and type.
+     *
+     * This is the inverse of parseDataEntityPointId():
+     * - "logicalDataEntities" + entityId -> "dep_log_<entityId>"
+     * - "physicalDataEntities" + entityId -> "dep_phy_<entityId>"
+     *
+     * @param entityId the entity ID
+     * @param entityType the entity type
+     * @return the data entity point ID format
+     */
+    private String buildDataEntityPointId(String entityId, String entityType) {
+        if (ENTITY_TYPE_LOGICAL_DATA_ENTITIES.equals(entityType)) {
+            return DEP_LOGICAL_PREFIX + entityId;
+        }
+        if (ENTITY_TYPE_PHYSICAL_DATA_ENTITIES.equals(entityType)) {
+            return DEP_PHYSICAL_PREFIX + entityId;
+        }
+        // Fallback (shouldn't happen for valid data entity types)
+        log.warn("Unknown entity type for building data entity point ID: {}", entityType);
+        return DEP_LOGICAL_PREFIX + entityId;
+    }
+
+    // ============================================================================
+    // Diagram Bundle Expansion (Task Group 7)
+    // ============================================================================
+
+    /**
+     * Expands a single diagram selection based on its bundle_type.
+     *
+     * Task Group 7.2: Main dispatch method for diagram expansion.
+     *
+     * Currently supported bundle types:
+     * - diagram_only: Returns only the diagram ID (does NOT auto-expand node references)
+     *
+     * Per the spec: "Do not auto-expand beyond the diagram's direct node references"
+     * The DiagramNodeRepository.findByDiagramId() method is available for optional
+     * node reference lookup, but diagram_only does NOT add those entities to the
+     * expanded entity list.
+     *
+     * @param selection the diagram bundle selection
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of expanded diagram IDs
+     */
+    private List<String> expandDiagram(DiagramBundleSelection selection, String modelFileId) {
+        if (selection == null || selection.diagramId() == null) {
+            return List.of();
+        }
+
+        String diagramId = selection.diagramId();
+        String bundleType = selection.bundleType();
+
+        log.trace("Expanding diagram: {} with bundleType: {}", diagramId, bundleType);
+
+        // Dispatch based on bundle type
+        // Currently only diagram_only is supported
+        // Unknown or null bundle types default to diagram_only behavior
+        return expandDiagramOnly(diagramId, modelFileId);
+    }
+
+    /**
+     * Expands diagram with bundle_type = diagram_only.
+     *
+     * Task Group 7.3: Returns only the diagram ID.
+     *
+     * Per the spec requirements:
+     * - "diagram_only: include the diagram entity"
+     * - "Optionally resolve referenced entities from DiagramNodeRepository.findByDiagramId()
+     *    if they are not already included by other bundle expansions"
+     * - "Do not auto-expand beyond the diagram's direct node references"
+     *
+     * This implementation returns ONLY the diagram ID. The node references are available
+     * via DiagramNodeRepository.findByDiagramId() but are NOT automatically expanded.
+     * This behavior ensures that diagram expansion does not auto-expand beyond direct nodes.
+     *
+     * @param diagramId the diagram ID
+     * @param modelFileId the model file ID for scoping queries (available for optional node lookup)
+     * @return single-element list containing just the diagram ID
+     */
+    private List<String> expandDiagramOnly(String diagramId, String modelFileId) {
+        log.trace("Expanding diagram_only for: {}", diagramId);
+
+        // Per spec: "diagram_only: include the diagram entity"
+        // Return only the diagram ID - do NOT auto-expand node references to entity IDs
+
+        // Note: DiagramNodeRepository.findByDiagramId(diagramId) is available for optional
+        // node reference lookup, but per spec we do NOT auto-expand beyond direct diagram
+        // node references. The nodes referenced by the diagram can be looked up separately
+        // if needed, but they are not automatically included in the expanded entity list.
+
+        return List.of(diagramId);
+    }
+
+    // ============================================================================
+    // Utility Methods
+    // ============================================================================
+
+    /**
+     * Formats an entity type and ID into canonical format.
+     *
+     * @param entityType the entity type
+     * @param entityId the entity ID
+     * @return canonical format string: entityType::entityId
+     */
+    private String formatCanonicalId(String entityType, String entityId) {
+        return entityType + "::" + entityId;
+    }
+
+    /**
+     * Sorts canonical entity IDs deterministically by entityType (alphabetically) then entityId.
+     *
+     * This ensures consistent ordering of output regardless of input order,
+     * which is important for reproducibility and testing.
+     *
+     * @param canonicalIds set of canonical IDs to sort
+     * @return sorted list of canonical IDs
+     */
+    private List<String> sortCanonicalIds(Set<String> canonicalIds) {
+        return canonicalIds.stream()
+            .sorted((a, b) -> {
+                // Parse both IDs
+                String[] partsA = parseCanonicalId(a);
+                String[] partsB = parseCanonicalId(b);
+
+                // Compare by entityType first
+                int typeCompare = partsA[0].compareTo(partsB[0]);
+                if (typeCompare != 0) {
+                    return typeCompare;
+                }
+
+                // Then compare by entityId
+                return partsA[1].compareTo(partsB[1]);
+            })
+            .collect(Collectors.toList());
+    }
+
+    /**
+     * Parses a canonical ID into its component parts.
+     *
+     * @param canonicalId the canonical ID (format: entityType::entityId)
+     * @return array of [entityType, entityId]
+     */
+    private String[] parseCanonicalId(String canonicalId) {
+        int delimiterIndex = canonicalId.indexOf("::");
+        if (delimiterIndex > 0) {
+            return new String[] {
+                canonicalId.substring(0, delimiterIndex),
+                canonicalId.substring(delimiterIndex + 2)
+            };
+        }
+        // Fallback for malformed IDs
+        return new String[] { canonicalId, "" };
+    }
+
+    /**
+     * Resolves a list of canonical entity IDs into detailed summaries.
+     *
+     * Delegates to ImplementContextResolutionService for the actual resolution logic.
+     *
+     * @param canonicalIds list of canonical entity IDs
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of resolved entity summaries
+     */
+    private List<ResolvedEntitySummary> resolveEntities(List<String> canonicalIds, String modelFileId) {
+        List<ResolvedEntitySummary> resolved = new ArrayList<>();
+        for (String canonicalId : canonicalIds) {
+            ResolvedEntitySummary summary = resolutionService.resolveEntity(canonicalId, modelFileId);
+            if (summary != null) {
+                resolved.add(summary);
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Resolves a list of diagram IDs into detailed summaries.
+     *
+     * Delegates to ImplementContextResolutionService for the actual resolution logic.
+     *
+     * @param diagramIds list of diagram IDs
+     * @param modelFileId the model file ID for scoping queries
+     * @return list of resolved diagram summaries
+     */
+    private List<ResolvedDiagramSummary> resolveDiagrams(List<String> diagramIds, String modelFileId) {
+        List<ResolvedDiagramSummary> resolved = new ArrayList<>();
+        for (String diagramId : diagramIds) {
+            ResolvedDiagramSummary summary = resolutionService.resolveDiagram(diagramId, modelFileId);
+            if (summary != null) {
+                resolved.add(summary);
+            }
+        }
+        return resolved;
+    }
+
+    /**
+     * Returns the configured maximum number of expanded entities.
+     * Used for testing and configuration verification.
+     */
+    public int getMaxExpandedEntities() {
+        return maxExpandedEntities;
+    }
+
+    /**
+     * Returns the configured maximum number of expanded diagrams.
+     * Used for testing and configuration verification.
+     */
+    public int getMaxExpandedDiagrams() {
+        return maxExpandedDiagrams;
+    }
+}

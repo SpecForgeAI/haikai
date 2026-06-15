@@ -1,0 +1,397 @@
+/**
+ * SelectiveCopyWizardModal.module.css
+ *
+ * Spec 2026-05-01 Multi-Architecture Selective Cross-Architecture Copy
+ * (Spec #7) -- Task Group 9
+ *
+ * Styles for the multi-step Selective Copy wizard. Mirrors the visual rhythm
+ * of `CloneArchitectureModal.module.css` (overlay, header, scrollable content,
+ * footer with Cancel + primary buttons) so the two modals feel consistent.
+ *
+ * The body grows wider than the Clone modal because step 2 hosts a tree
+ * picker and step 3 hosts the conflict resolution table -- both need more
+ * horizontal real-estate than a name + description form.
+ */
+
+/* Overlay - semi-transparent backdrop */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container -- wider than the Clone modal (the picker tree + conflict
+ * table both need more horizontal room). */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 880px;
+  width: 92%;
+  display: flex;
+  flex-direction: column;
+  max-height: 90vh;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  border-radius: 8px 8px 0 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 12px;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.closeButton:hover:not(:disabled) {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.closeButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Stepper indicator */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #efefef;
+  background: #fafbfc;
+  font-size: 12px;
+  color: #555;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: transparent;
+  color: #777;
+}
+
+.stepActive {
+  background: #e3f2fd;
+  color: #0d47a1;
+  font-weight: 600;
+}
+
+.stepDone {
+  color: #2e7d32;
+}
+
+.stepSeparator {
+  color: #bbb;
+}
+
+/* Scrollable content area */
+.content {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 240px;
+}
+
+.helperText {
+  font-size: 13px;
+  color: #555;
+  margin: 0 0 4px 0;
+}
+
+.loadingState {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  font-size: 13px;
+  color: #666;
+  font-style: italic;
+}
+
+/* Footer */
+.footer {
+  padding: 14px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  background: #f9f9f9;
+  border-radius: 0 0 8px 8px;
+}
+
+.footerError {
+  color: #d32f2f;
+  font-size: 12px;
+  margin-right: auto;
+  align-self: center;
+  max-width: 540px;
+  line-height: 1.4;
+}
+
+.secondaryButton {
+  background: white;
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #1565c0;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Spec 2026-05-15 Create Target Baseline from Current State -- Task Group 6
+ * autoMap checkbox + helper text on step 2 (Review & resolve). */
+.autoMapBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  background: #fafbfc;
+  border-radius: 4px;
+}
+
+.autoMapLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+
+.autoMapHelper {
+  font-size: 12px;
+  color: #555;
+  margin: 0;
+  padding-left: 22px;
+}
+
+/* Mapping Review step (4. Review mappings). */
+.mappingReviewFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #efefef;
+}
+
+.mappingReviewFilters select,
+.mappingReviewFilters input {
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.mappingTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.mappingTable th,
+.mappingTable td {
+  border-bottom: 1px solid #efefef;
+  padding: 6px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.mappingTable th {
+  background: #fafbfc;
+  font-weight: 600;
+  color: #555;
+}
+
+.mappingTable input,
+.mappingTable select {
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mappingRowError {
+  color: #d32f2f;
+  font-size: 11px;
+  padding: 2px 6px;
+}
+
+.mappingActionsCell {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.mappingActionsCell button {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+}
+
+.mappingActionsCell button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.mappingReviewLoading,
+.mappingReviewEmpty {
+  font-size: 12px;
+  color: #777;
+  padding: 12px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Spec 2026-05-26 Mapping-Notes Pretty Rendering -- Task Groups 2 + 3.
+ *
+ * Per-row Notes cell: read mode shows LinkifiedText + a small pencil
+ * icon button; edit mode swaps in a multi-line auto-grow <textarea>.
+ * The manual-add row reuses .notesEditTextarea for its permanent
+ * always-on textarea.
+ * ============================================================================
+ */
+
+/* Flex row aligning the read-mode LinkifiedText content with the pencil
+ * icon button at the top of multi-line content (align-items: flex-start
+ * so the pencil sits at the top rather than the vertical centre). */
+.notesReadModeCell {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.notesReadModeCell > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Flex column wrapping the edit-mode textarea. The Cancel button itself
+ * lives in the row's Actions cell (alongside the existing Save button)
+ * -- this wrapper just owns the textarea layout. */
+.notesEditCellWrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Small icon button (pencil). Transparent background, no border, link
+ * colour, small padding. Matches the visual rhythm of the existing
+ * mappingActionsCell buttons. */
+.notesPencilButton {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: #1976d2;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.notesPencilButton:hover:not(:disabled) {
+  background: #f0f4f8;
+  border-radius: 3px;
+}
+
+.notesPencilButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Edit-mode textarea + manual-add textarea. Primary auto-grow via the
+ * native `field-sizing: content` (Chrome 123+, Edge 123+, Safari 17.4+,
+ * Firefox recent). CSS-only fallback for older browsers: rows={3} on
+ * the element + min-height + max-height + resize:vertical so the user
+ * can drag to grow manually. NO JS auto-grow shim. */
+.notesEditTextarea {
+  width: 100%;
+  min-height: 3em;
+  max-height: 12em;
+  resize: vertical;
+  field-sizing: content;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+}

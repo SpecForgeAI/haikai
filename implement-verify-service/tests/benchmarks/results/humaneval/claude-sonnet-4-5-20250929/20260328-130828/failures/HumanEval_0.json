@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/0",
+  "passed": false,
+  "score": 0.0,
+  "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkDJ2QwQepGagof76n'}",
+  "generated_output": "",
+  "expected_output": "    for idx, elem in enumerate(numbers):\n        for idx2, elem2 in enumerate(numbers):\n            if idx != idx2:\n                distance = abs(elem - elem2)\n                if distance < threshold:\n                    return True\n\n    return False\n",
+  "latency_seconds": 0.6107077770866454,
+  "mode": "direct",
+  "model": "claude-sonnet-4-5-20250929",
+  "metadata": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "actual_model": ""
+  }
+}

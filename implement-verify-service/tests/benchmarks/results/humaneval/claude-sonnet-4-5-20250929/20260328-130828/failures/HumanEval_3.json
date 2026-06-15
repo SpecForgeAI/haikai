@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/3",
+  "passed": false,
+  "score": 0.0,
+  "error": "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Error'}, 'request_id': 'req_011CZVXkF2hgLBQKyWnwR3eG'}",
+  "generated_output": "",
+  "expected_output": "    balance = 0\n\n    for op in operations:\n        balance += op\n        if balance < 0:\n            return True\n\n    return False\n",
+  "latency_seconds": 0.14074028003960848,
+  "mode": "direct",
+  "model": "claude-sonnet-4-5-20250929",
+  "metadata": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "actual_model": ""
+  }
+}

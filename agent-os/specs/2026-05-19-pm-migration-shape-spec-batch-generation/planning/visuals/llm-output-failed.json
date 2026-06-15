@@ -1,0 +1,6 @@
+{
+  "_provenance": "LLM-output fixture for Spec 2 PM migration shape-spec batch generation; consumed by gateway response-validator tests + batch-handler tests; implementer artefact per R-13 / A-7, not a user-supplied design asset.",
+  "_scenarioSummary": "Technical-failure result. Models a per-story technical error path where the LLM response stream terminated mid-object and the gateway response validator could not parse the payload as JSON. Per R-12, this per-story failure is recorded and persisted; the batch is NOT aborted.",
+  "status": "failed",
+  "errorMessage": "LLM response could not be parsed as JSON: unexpected token at position 1247 (response appears truncated mid-object after the 'specText' field opened with an unterminated string literal). The upstream completion call returned finish_reason='length' on attempt 1 and a 503 Service Unavailable on retry attempt 2. Retry recommended once upstream availability is restored; consider lowering the per-story focused-context payload size if the truncation recurs."
+}

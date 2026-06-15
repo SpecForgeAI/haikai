@@ -1,0 +1,126 @@
+{
+  "id": "architect--discovery-framing",
+  "personaId": "architect",
+  "menuLabel": "Discovery Framing",
+  "description": "Conducts a structured discovery framing conversation to gather applications, app_components, repos, technology hints, and exclusions before Phase 1 code scanning. Guides the user through scope definition, anchor entity confirmation, repo identification, repo-to-application mapping, technology hints, exclusions, and final review.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/architect.discovery-framing.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "context_and_scope",
+          "applications_and_components",
+          "repo_identification",
+          "repo_application_mapping",
+          "technology_hints",
+          "exclusions_and_notes",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      },
+      "applications": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        }
+      },
+      "appComponents": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "applicationName": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        }
+      },
+      "repos": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" },
+            "branch": { "type": "string" },
+            "includePaths": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "excludePaths": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      },
+      "repoApplicationMappings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "repoUrl": { "type": "string" },
+            "path": { "type": "string" },
+            "applicationName": { "type": "string" }
+          }
+        }
+      },
+      "techHints": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "repoUrl": { "type": "string" },
+            "path": { "type": "string" },
+            "technology": { "type": "string" },
+            "language": { "type": "string" }
+          }
+        }
+      },
+      "exclusions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "pattern": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        }
+      },
+      "notes": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "contextNeeds": ["mission", "meta-model-summary"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "discovery-framing",
+      "filename": "DISCOVERY_BRIEF",
+      "tool": "save_discovery_config",
+      "description": "Discovery brief with confirmed scope, anchor entities, repos, and config"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"],
+  "saveTargetResolution": "bound-by-system-prompt"
+}

@@ -1,0 +1,35 @@
+<mxfile host="app.diagrams.net" modified="2024-01-15T10:00:00.000Z" agent="Mozilla/5.0" version="22.1.0" etag="test" type="device">
+  <diagram id="tab1" name="Overview">
+    <mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="n1" value="Flow Pricing" style="rounded=1;fillColor=#aaffaa;strokeColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="100" y="200" width="120" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="n2" value="Order Management" style="rounded=0;fillColor=#bbccff;strokeColor=#0000ff;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="300" y="200" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="n3" value="Risk Engine" style="ellipse;fillColor=#ffcccc;strokeColor=#cc0000;" vertex="1" parent="1">
+          <mxGeometry x="200" y="350" width="100" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1" value="Enquiry" style="endArrow=classic;strokeColor=#666666;" edge="1" source="n1" target="n2" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="220" y="230" as="sourcePoint"/>
+            <mxPoint x="300" y="230" as="targetPoint"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" value="Risk Check" style="endArrow=classic;dashed=1;strokeColor=#cc0000;" edge="1" source="n2" target="n3" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="370" y="260" as="sourcePoint"/>
+            <mxPoint x="250" y="350" as="targetPoint"/>
+            <Array as="points">
+              <mxPoint x="400" y="300"/>
+              <mxPoint x="350" y="350"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

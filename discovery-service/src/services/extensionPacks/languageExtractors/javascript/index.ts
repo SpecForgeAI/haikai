@@ -1,0 +1,1 @@
+export { extractJavaScriptIR } from './extract';

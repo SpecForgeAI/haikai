@@ -1,0 +1,236 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`DashboardSkeleton Component > snapshot test 1`] = `
+<div
+  data-testid="dashboard-skeleton"
+>
+  <div
+    class="skeletonHeaderBar"
+  />
+  <div
+    class="skeletonSectionHeading"
+  />
+  <div
+    class="subSectionGroup"
+  >
+    <span
+      class="subSectionGroupLabel"
+    >
+      Product
+    </span>
+    <div
+      class="detailGrid"
+    >
+      <div
+        class="skeletonCard"
+      >
+        <div
+          class="skeletonBar skeletonBarTitle"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric1"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric2"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric3"
+        />
+      </div>
+      <div
+        class="skeletonCard"
+      >
+        <div
+          class="skeletonBar skeletonBarTitle"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric1"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric2"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric3"
+        />
+      </div>
+    </div>
+  </div>
+  <div
+    class="subSectionGroup"
+  >
+    <span
+      class="subSectionGroupLabel"
+    >
+      Technical
+    </span>
+    <div
+      class="detailGrid"
+    >
+      <div
+        class="skeletonCard"
+      >
+        <div
+          class="skeletonBar skeletonBarTitle"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric1"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric2"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric3"
+        />
+      </div>
+      <div
+        class="skeletonCard"
+      >
+        <div
+          class="skeletonBar skeletonBarTitle"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric1"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric2"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric3"
+        />
+      </div>
+      <div
+        class="skeletonCard"
+      >
+        <div
+          class="skeletonBar skeletonBarTitle"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric1"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric2"
+        />
+        <div
+          class="skeletonBar skeletonBarMetric3"
+        />
+      </div>
+    </div>
+  </div>
+  <div
+    class="skeletonScopeBar"
+  />
+  <div
+    class="skeletonSectionHeading"
+  />
+  <div
+    class="skeletonSectionHeading"
+  />
+  <div
+    class="detailGrid"
+  >
+    <div
+      class="skeletonCard"
+    >
+      <div
+        class="skeletonBar skeletonBarTitle"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric1"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric2"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric3"
+      />
+    </div>
+    <div
+      class="skeletonCard"
+    >
+      <div
+        class="skeletonBar skeletonBarTitle"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric1"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric2"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric3"
+      />
+    </div>
+    <div
+      class="skeletonCard"
+    >
+      <div
+        class="skeletonBar skeletonBarTitle"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric1"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric2"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric3"
+      />
+    </div>
+  </div>
+  <div
+    class="skeletonSectionHeading"
+  />
+  <div
+    class="detailGrid"
+  >
+    <div
+      class="skeletonCard"
+    >
+      <div
+        class="skeletonBar skeletonBarTitle"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric1"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric2"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric3"
+      />
+    </div>
+    <div
+      class="skeletonCard"
+    >
+      <div
+        class="skeletonBar skeletonBarTitle"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric1"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric2"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric3"
+      />
+    </div>
+    <div
+      class="skeletonCard"
+    >
+      <div
+        class="skeletonBar skeletonBarTitle"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric1"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric2"
+      />
+      <div
+        class="skeletonBar skeletonBarMetric3"
+      />
+    </div>
+  </div>
+</div>
+`;

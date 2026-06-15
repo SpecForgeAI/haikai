@@ -1,0 +1,16 @@
+server:
+  port: 8079
+
+archtool:
+  confluence:
+    api-base-url:
+    username:
+    api-token:
+    connect-timeout-ms: 10000
+    read-timeout-ms: 60000
+    max-page-depth: 5
+
+logging:
+  level:
+    root: INFO
+    org.springframework.web: DEBUG

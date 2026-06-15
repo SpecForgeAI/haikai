@@ -1,0 +1,18 @@
+@startuml
+title Component Diagram
+
+[abstract-document] --> [java]
+[abstract-document] --> [com]
+[abstract-document] --> [lombok]
+[abstract-document] --> [org]
+[abstract-factory] --> [lombok]
+[abstract-factory] --> [org]
+[active-object] --> [java]
+[active-object] --> [org]
+[actor-model] --> [java]
+[actor-model] --> [lombok]
+[actor-model] --> [org]
+[actor-model] --> [com]
+[acyclic-visitor] --> [lombok]
+
+@enduml

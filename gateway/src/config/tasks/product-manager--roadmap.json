@@ -1,0 +1,75 @@
+{
+  "id": "product-manager--roadmap",
+  "personaId": "product-manager",
+  "menuLabel": "Build Roadmap",
+  "description": "Conducts structured roadmap discovery to define Initiatives (L1) and Epics (L2) for the product roadmap. Guides the user through outcome alignment, sequencing strategy, initiative structure, epic structure, and final review.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/product-manager.roadmap.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary", "proposedInitiatives", "assumptions", "openItems"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "outcome_alignment",
+          "sequencing_strategy",
+          "initiative_structure",
+          "epic_structure",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      },
+      "proposedInitiatives": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "epics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "openItems": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "contextNeeds": ["mission", "existing-roadmap", "roadmap-summary", "meta-model-summary"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "roadmap",
+      "filename": "ROADMAP",
+      "tool": "save_roadmap_structure",
+      "description": "Roadmap structure with initiatives and epics"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

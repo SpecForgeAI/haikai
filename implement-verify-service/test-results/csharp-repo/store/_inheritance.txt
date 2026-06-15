@@ -1,0 +1,4 @@
+# child	rel	parent	file
+IntegrationEventContext	extends	JsonSerializerContext	Extensions/Extensions.cs
+BasketItem	extends	IValidatableObject	Model/BasketItem.cs
+BasketSerializationContext	extends	JsonSerializerContext	Repositories/RedisBasketRepository.cs

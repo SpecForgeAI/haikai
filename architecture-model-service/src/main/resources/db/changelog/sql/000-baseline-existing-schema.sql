@@ -1,0 +1,62 @@
+-- Baseline script: marks all pre-existing changesets (001-051) as already executed.
+-- Run this ONCE against the database before starting the application with Liquibase enabled.
+-- This is needed because the schema was managed manually before Liquibase was enabled.
+
+-- Clean up any partially-recorded entries from failed Liquibase starts
+DELETE FROM databasechangelog WHERE author = 'architecture-tool';
+
+-- Insert all 001-051 changesets as MARK_RAN
+INSERT INTO databasechangelog (id, author, filename, dateexecuted, orderexecuted, exectype, md5sum, description, comments, liquibase)
+VALUES
+  ('001-initial-schema',                                'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  1, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('002-classes-methods',                               'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  2, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('003-events',                                        'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  3, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('004-states-state-transitions',                      'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  4, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('005-sequence-diagrams',                             'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  5, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('006-activities-activity-flows-partitions',           'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  6, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('007-typed-content-json',                            'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  7, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('008-normalize-diagram-types',                       'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  8, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('009-logical-er-polymorphic-endpoints',              'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(),  9, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('010-ui-screens-ui-workflow-transitions',            'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 10, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('011-ui-components-actions-contracts',               'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 11, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('012-work-items-project-artifacts',                  'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 12, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('013-project-table',                                 'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 13, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('014-service-core-tech',                             'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 14, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('015-business-logic',                                'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 15, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('016-application-point-targeting',                   'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 16, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('017-package-sets',                                  'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 17, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('018-package-set-standards-import',                  'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 18, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('019-fix-packages-audit-columns',                    'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 19, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('020-data-entity-points',                            'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 20, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('021-data-entity-points-backfill',                   'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 21, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('022-data-entity-point-fk-columns',                  'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 22, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('023-data-entity-point-fk-backfill',                 'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 23, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('024a-remove-legacy-data-entity-columns-preconditions','architecture-tool','classpath:db/changelog/db.changelog-master.yaml', NOW(), 24, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('024b-remove-legacy-data-entity-columns-apply',      'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 25, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('025-class-application-point-id',                    'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 26, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('026-work-item-implement-context',                   'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 27, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('027-project-hierarchy',                             'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 28, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('028-interface-entity-relationship-refactor',        'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 29, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('029-data-movement-interface-schema',                'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 30, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('030-structured-selections',                         'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 31, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('031-organisations',                                 'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 32, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('032-organisation-id-text',                          'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 33, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('033-ui-characteristics',                            'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 34, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('034-work-item-implement-workspace',                 'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 35, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('035-work-item-implement-context-relationships',     'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 36, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('036-add-internal-classification-applications',      'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 37, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('037-add-internal-classification-application-components','architecture-tool','classpath:db/changelog/db.changelog-master.yaml', NOW(), 38, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('038-add-internal-classification-services',          'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 39, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('039-add-sequence-messages-is-collection',           'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 40, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('040-add-endpoint-request-response-data',            'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 41, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('041-seq-messages-interface-endpoint-display-options','architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 42, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('042-organisation-standards-fields',                 'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 43, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('043-product-definitions',                           'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 44, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('044-delivery-teams',                                'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 45, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('045-work-item-delivery-team-id',                    'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 46, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('046-work-item-external-url',                        'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 47, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('047-work-item-project-id-uuid',                     'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 48, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('048-project-artifact-project-id-uuid',              'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 49, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('049-implement-context-project-id-uuid',             'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 50, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('050-implement-workspace-project-id-uuid',           'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 51, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0'),
+  ('051-model-file-add-project-id',                     'architecture-tool', 'classpath:db/changelog/db.changelog-master.yaml', NOW(), 52, 'MARK_RAN', NULL, 'sqlFile', 'baseline', '4.24.0');

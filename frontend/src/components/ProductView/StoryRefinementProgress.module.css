@@ -1,0 +1,60 @@
+.container {
+  padding: 8px 16px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border-bottom: 1px solid var(--vscode-editorWidget-border, #454545);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #cccccc);
+}
+
+.itemTitle {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #9e9e9e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+  text-align: right;
+}
+
+.trackContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.track {
+  flex: 1;
+  height: 4px;
+  background: var(--vscode-progressBar-background, #333333);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  background: var(--vscode-progressBar-background, #0078d4);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.fillComplete {
+  background: #2e7d32;
+}
+
+.count {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #9e9e9e);
+  min-width: 30px;
+  text-align: right;
+}

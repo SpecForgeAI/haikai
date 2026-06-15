@@ -1,0 +1,35 @@
+{
+  "description": "Shared trust-chain fixture (Spec 2026-06-11 Findings Coverage + Gap Wayfinding, Task Group 5). The gateway test (migrationBookOfWorkFindingsCoverage.test.ts) asserts the snapshot the REAL default fetcher + handler persist into generationSummary deep-equals `generationSummary.findingsCoverage` here; the frontend test (findingsCoverage.test.ts) feeds the SAME generationSummary + items through computeFindingsCoverage. Any drift between the gateway wire shape and the frontend parser breaks one of the two suites.",
+  "discoveryRunIds": ["run-1", "run-2"],
+  "generationSummary": {
+    "findingsCoverage": {
+      "findings": [
+        {
+          "id": "fnd-a",
+          "title": "Stored procedure writes audit rows",
+          "severity": "critical",
+          "runId": "run-1"
+        },
+        {
+          "id": "fnd-b",
+          "title": "Trigger cascade on customer delete",
+          "severity": "high",
+          "runId": "run-1"
+        },
+        {
+          "id": "fnd-c",
+          "title": "View SQL relies on implicit conversion",
+          "severity": "high",
+          "runId": "run-2"
+        }
+      ]
+    }
+  },
+  "items": [
+    { "id": "s-1", "discoveryFindingReferences": [" FND-A "] },
+    { "id": "s-2", "discoveryFindingReferences": [] }
+  ],
+  "expansionAppendedItems": [
+    { "id": "s-3", "discoveryFindingReferences": ["FND-B"] }
+  ]
+}

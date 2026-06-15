@@ -1,0 +1,34 @@
+name: gin
+version: 1
+language: go
+
+detection:
+  imports_match:
+    - github.com/gin-gonic/gin
+
+extract:
+  - id: route_calls
+    query: call_args
+    file_filter: all
+    callee_pattern: '\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Any|Handle)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^[/:*]'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: gin
+
+verification:
+  - id: route_call_count
+    query: call_args
+    callee_pattern: '\.(GET|POST|PUT|DELETE|PATCH)$'
+    expected_count: same_as_output_count
+    tolerance_pct: 15
+
+conflict_rules: []
+
+known_pitfalls:
+  - "gin.Group('/api') prefixes are NOT yet inlined into child routes"
+  - "router.Handle('METHOD', path, handler) — verb is the FIRST string arg, not callee suffix"

@@ -1,0 +1,25 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "SettingsForm",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "username",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "ui_screens",
+      "name": "SettingsScreen",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

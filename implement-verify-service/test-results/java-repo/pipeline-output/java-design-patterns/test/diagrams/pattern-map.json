@@ -1,0 +1,89 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "163fb39d-8e2c-435c-9ff8-3ce359bc5bc4",
+      "entity_type": "classes",
+      "entity_id": "factory",
+      "label": "factory",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ac306b9f-0bdd-47b3-bba1-3e86660783e8",
+      "entity_type": "classes",
+      "entity_id": "factory_AbstractFactoryTest",
+      "label": "AbstractFactoryTest",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1,
+      "parent_node_id": "factory"
+    },
+    {
+      "id": "7858d7f5-013e-4bd2-929e-87c9c892d760",
+      "entity_type": "classes",
+      "entity_id": "factory_FactoryMaker",
+      "label": "FactoryMaker",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1,
+      "parent_node_id": "factory"
+    },
+    {
+      "id": "18f5794b-38ef-4bed-b08f-2324e2865471",
+      "entity_type": "classes",
+      "entity_id": "factory_ElfKingdomFactory",
+      "label": "ElfKingdomFactory",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1,
+      "parent_node_id": "factory"
+    },
+    {
+      "id": "7a11431c-a180-45c0-baf6-07baa86708fc",
+      "entity_type": "classes",
+      "entity_id": "factory_OrcKingdomFactory",
+      "label": "OrcKingdomFactory",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1,
+      "parent_node_id": "factory"
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "5123bb0a-cd99-4733-b664-6fd3181d3be2",
+      "source_node_id": "163fb39d-8e2c-435c-9ff8-3ce359bc5bc4",
+      "target_node_id": "ac306b9f-0bdd-47b3-bba1-3e86660783e8",
+      "relationship_type": "has_instance"
+    },
+    {
+      "id": "950b760a-3dd2-49b4-b0a4-3f8d972f7aa2",
+      "source_node_id": "163fb39d-8e2c-435c-9ff8-3ce359bc5bc4",
+      "target_node_id": "7858d7f5-013e-4bd2-929e-87c9c892d760",
+      "relationship_type": "has_instance"
+    },
+    {
+      "id": "2ffa3fa1-86ca-4a28-a0e3-b215117e0cfb",
+      "source_node_id": "163fb39d-8e2c-435c-9ff8-3ce359bc5bc4",
+      "target_node_id": "18f5794b-38ef-4bed-b08f-2324e2865471",
+      "relationship_type": "has_instance"
+    },
+    {
+      "id": "ea108779-1a8a-4c6d-908c-1a5432d29ac9",
+      "source_node_id": "163fb39d-8e2c-435c-9ff8-3ce359bc5bc4",
+      "target_node_id": "7a11431c-a180-45c0-baf6-07baa86708fc",
+      "relationship_type": "has_instance"
+    }
+  ]
+}

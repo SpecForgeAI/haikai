@@ -1,0 +1,17 @@
+# Test configuration
+
+server:
+  port: 0
+
+archtool:
+  confluence:
+    api-base-url: https://test.atlassian.net/wiki
+    username: test-user
+    api-token: test-token
+    connect-timeout-ms: 1000
+    read-timeout-ms: 5000
+    max-page-depth: 5
+
+logging:
+  level:
+    root: WARN

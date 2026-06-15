@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "endpoints",
+      "name": "GET /users/<int:id>",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /users",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /users/<int:id>/followers",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /users/<int:id>/following",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /users",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "PUT /users/<int:id>",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

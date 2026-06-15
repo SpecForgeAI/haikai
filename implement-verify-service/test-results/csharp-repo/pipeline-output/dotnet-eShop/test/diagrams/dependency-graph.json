@@ -1,0 +1,1362 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "3ace3195-4704-4502-9baa-3c34f796282f",
+      "entity_type": "packages",
+      "entity_id": "src_Basket_API_Extensions_Extensions_cs",
+      "label": "src/Basket.API/Extensions/Extensions.cs",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4c56ec55-4f57-4f1c-8f05-614fb12deab8",
+      "entity_type": "packages",
+      "entity_id": "System_Text_Json",
+      "label": "System.Text.Json",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "entity_type": "packages",
+      "entity_id": "eShop_Basket_API",
+      "label": "eShop.Basket.API",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "15999a80-2ffa-442a-850e-6bed0ddd4621",
+      "entity_type": "packages",
+      "entity_id": "eShop_Basket_API_IntegrationEvents",
+      "label": "eShop.Basket.API.IntegrationEvents",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "12bc2fa7-dce5-4e59-8303-1ff2113cfe03",
+      "entity_type": "packages",
+      "entity_id": "eShop_Basket_API_IntegrationEvents_EventHandling",
+      "label": "eShop.Basket.API.IntegrationEvents.EventHandling",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "entity_type": "packages",
+      "entity_id": "src_Basket_API_GlobalUsings_cs",
+      "label": "src/Basket.API/GlobalUsings.cs",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e54d54c3-e5b8-4441-8528-98bb93717e44",
+      "entity_type": "packages",
+      "entity_id": "global_System_ComponentModel",
+      "label": "global System.ComponentModel",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "eeb84c22-e004-4395-a757-7fc81b1cd36f",
+      "entity_type": "packages",
+      "entity_id": "global_System_Security",
+      "label": "global System.Security",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "079d8e05-0616-450d-a438-e0d4eb940a56",
+      "entity_type": "packages",
+      "entity_id": "global_System_Text",
+      "label": "global System.Text",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ee30514d-2b60-4ff1-b12b-98e012167891",
+      "entity_type": "packages",
+      "entity_id": "global_Grpc",
+      "label": "global Grpc",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f025f984-4811-4645-b644-720c4767dfcf",
+      "entity_type": "packages",
+      "entity_id": "global_Microsoft_AspNetCore",
+      "label": "global Microsoft.AspNetCore",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1eccfb5e-0699-46da-bb5b-4edfd7044d55",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_Basket_API",
+      "label": "global eShop.Basket.API",
+      "pos_x": 750,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "713d7b82-53aa-423a-b5ac-28912d2792e3",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_EventBus",
+      "label": "global eShop.EventBus",
+      "pos_x": 0,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f906c3ce-ae8e-4892-afdb-aed6ba7a6dfe",
+      "entity_type": "packages",
+      "entity_id": "global_eShop",
+      "label": "global eShop",
+      "pos_x": 250,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "53fd9a2f-4cb9-4246-8f74-f1aafe0c8825",
+      "entity_type": "packages",
+      "entity_id": "global_StackExchange",
+      "label": "global StackExchange",
+      "pos_x": 500,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "9b8239b0-9cc7-448d-8633-2e8b8c0545df",
+      "entity_type": "packages",
+      "entity_id": "src_Basket_API_Grpc_BasketService_cs",
+      "label": "src/Basket.API/Grpc/BasketService.cs",
+      "pos_x": 750,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "73ac81b2-4156-433f-812b-52b0f45c9745",
+      "entity_type": "packages",
+      "entity_id": "System_Diagnostics",
+      "label": "System.Diagnostics",
+      "pos_x": 0,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "fee7162c-1b72-4cdd-b2b5-c25df221636a",
+      "entity_type": "packages",
+      "entity_id": "src_Basket_API_IntegrationEvents_EventHandling_OrderStartedIntegrationEventHandler_cs",
+      "label": "src/Basket.API/IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs",
+      "pos_x": 250,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "47b99a21-9c5a-4584-80a7-7acd8f60f17e",
+      "entity_type": "packages",
+      "entity_id": "src_Basket_API_Repositories_IBasketRepository_cs",
+      "label": "src/Basket.API/Repositories/IBasketRepository.cs",
+      "pos_x": 500,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "e3433fd3-5ab5-4476-94ca-4c286b8bf2ae",
+      "entity_type": "packages",
+      "entity_id": "src_Basket_API_Repositories_RedisBasketRepository_cs",
+      "label": "src/Basket.API/Repositories/RedisBasketRepository.cs",
+      "pos_x": 750,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Apis_CatalogApi_cs",
+      "label": "src/Catalog.API/Apis/CatalogApi.cs",
+      "pos_x": 0,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "entity_type": "packages",
+      "entity_id": "System",
+      "label": "System",
+      "pos_x": 250,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "74b0b7cb-f49d-4aba-8c8d-f3c0b7d80363",
+      "entity_type": "packages",
+      "entity_id": "System_ComponentModel",
+      "label": "System.ComponentModel",
+      "pos_x": 500,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ec6948c7-ecf1-4f59-8516-15e00a1160cc",
+      "entity_type": "packages",
+      "entity_id": "Microsoft_AspNetCore_Http",
+      "label": "Microsoft.AspNetCore.Http",
+      "pos_x": 750,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "be4ef995-2b50-4ae0-bf6f-a10f153e3dee",
+      "entity_type": "packages",
+      "entity_id": "Microsoft_AspNetCore",
+      "label": "Microsoft.AspNetCore",
+      "pos_x": 0,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a69c9abf-e4fa-40a4-a910-df24909c270f",
+      "entity_type": "packages",
+      "entity_id": "Microsoft_AspNetCore_Mvc",
+      "label": "Microsoft.AspNetCore.Mvc",
+      "pos_x": 250,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "entity_type": "packages",
+      "entity_id": "Pgvector",
+      "label": "Pgvector",
+      "pos_x": 500,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2c375b69-268b-468d-9104-d14a35e93d6d",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Extensions_Extensions_cs",
+      "label": "src/Catalog.API/Extensions/Extensions.cs",
+      "pos_x": 750,
+      "pos_y": 1080,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "entity_type": "packages",
+      "entity_id": "eShop_Catalog_API",
+      "label": "eShop.Catalog.API",
+      "pos_x": 0,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "05d6dc3d-36ae-427d-a738-f88694bc8ee1",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Extensions_HostEnvironmentExtensions_cs",
+      "label": "src/Catalog.API/Extensions/HostEnvironmentExtensions.cs",
+      "pos_x": 250,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_GlobalUsings_cs",
+      "label": "src/Catalog.API/GlobalUsings.cs",
+      "pos_x": 500,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1380f449-efd8-45c7-980f-7d69bf41d4b4",
+      "entity_type": "packages",
+      "entity_id": "global_Asp",
+      "label": "global Asp",
+      "pos_x": 750,
+      "pos_y": 1260,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c64742de-0d7a-4d41-a066-2fca3fc2a534",
+      "entity_type": "packages",
+      "entity_id": "global_Asp_Versioning",
+      "label": "global Asp.Versioning",
+      "pos_x": 0,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "74823c39-825e-4b8c-9523-78c296dcfb19",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_Catalog",
+      "label": "global eShop.Catalog",
+      "pos_x": 250,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "48dd153e-baae-4233-b2f9-d2d543022cc8",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_Catalog_API",
+      "label": "global eShop.Catalog.API",
+      "pos_x": 500,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f5d95cbb-481a-40d6-b7b2-ce680ad27d31",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_Catalog_API_Infrastructure",
+      "label": "global eShop.Catalog.API.Infrastructure",
+      "pos_x": 750,
+      "pos_y": 1440,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "018ab19e-28bd-4966-b629-303dca6e4d38",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_Catalog_API_IntegrationEvents",
+      "label": "global eShop.Catalog.API.IntegrationEvents",
+      "pos_x": 0,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f953d736-3295-4a5d-812d-620a49548d67",
+      "entity_type": "packages",
+      "entity_id": "global_eShop_IntegrationEventLogEF",
+      "label": "global eShop.IntegrationEventLogEF",
+      "pos_x": 250,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "bef868ec-2714-4914-9753-2124781ab4cf",
+      "entity_type": "packages",
+      "entity_id": "global_Microsoft",
+      "label": "global Microsoft",
+      "pos_x": 500,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8adc40ca-9621-4d53-9e47-9df0215d8b83",
+      "entity_type": "packages",
+      "entity_id": "global_Microsoft_EntityFrameworkCore_Metadata",
+      "label": "global Microsoft.EntityFrameworkCore.Metadata",
+      "pos_x": 750,
+      "pos_y": 1620,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "d8c4c185-af06-4b9c-a142-a97bbf190d10",
+      "entity_type": "packages",
+      "entity_id": "global_Microsoft_Extensions",
+      "label": "global Microsoft.Extensions",
+      "pos_x": 0,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6fa02e17-30f3-4018-9460-c4cf194d7f7c",
+      "entity_type": "packages",
+      "entity_id": "global_Npgsql",
+      "label": "global Npgsql",
+      "pos_x": 250,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "2c4e48db-5ae7-452c-a683-12f48069e37e",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_CatalogContextSeed_cs",
+      "label": "src/Catalog.API/Infrastructure/CatalogContextSeed.cs",
+      "pos_x": 500,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "3dc001bd-3c4b-422d-93e7-25e733291d86",
+      "entity_type": "packages",
+      "entity_id": "System_Text",
+      "label": "System.Text",
+      "pos_x": 750,
+      "pos_y": 1800,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_20231009153249_Initial_Designer_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.Designer.cs",
+      "pos_x": 0,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "211e49a7-4a8c-4b5a-b807-d6c5f2a7172b",
+      "entity_type": "packages",
+      "entity_id": "Microsoft",
+      "label": "Microsoft",
+      "pos_x": 250,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "entity_type": "packages",
+      "entity_id": "Microsoft_EntityFrameworkCore",
+      "label": "Microsoft.EntityFrameworkCore",
+      "pos_x": 500,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "af47cc7e-e49a-4918-84f9-a48420c92f9c",
+      "entity_type": "packages",
+      "entity_id": "Microsoft_EntityFrameworkCore_Storage",
+      "label": "Microsoft.EntityFrameworkCore.Storage",
+      "pos_x": 750,
+      "pos_y": 1980,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ae3da1c0-b726-41d4-82bd-f36d0c4c307b",
+      "entity_type": "packages",
+      "entity_id": "Npgsql_EntityFrameworkCore_PostgreSQL",
+      "label": "Npgsql.EntityFrameworkCore.PostgreSQL",
+      "pos_x": 0,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "58c9eb05-2646-4e45-95b0-501e792e55e8",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_20231009153249_Initial_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/20231009153249_Initial.cs",
+      "pos_x": 250,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_20231018163051_RemoveHiLoAndIndexCatalogName_Designer_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.Designer.cs",
+      "pos_x": 500,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "7097acd7-b901-48b1-81cd-22a0528ee031",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_20231018163051_RemoveHiLoAndIndexCatalogName_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/20231018163051_RemoveHiLoAndIndexCatalogName.cs",
+      "pos_x": 750,
+      "pos_y": 2160,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_20231026091140_Outbox_Designer_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.Designer.cs",
+      "pos_x": 0,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f453cb18-42fa-41d4-9ad2-aea3b24074fb",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_20231026091140_Outbox_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/20231026091140_Outbox.cs",
+      "pos_x": 250,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Infrastructure_Migrations_CatalogContextModelSnapshot_cs",
+      "label": "src/Catalog.API/Infrastructure/Migrations/CatalogContextModelSnapshot.cs",
+      "pos_x": 500,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "7dd2fb03-90d2-46b9-9822-455c86a490fb",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Model_CatalogBrand_cs",
+      "label": "src/Catalog.API/Model/CatalogBrand.cs",
+      "pos_x": 750,
+      "pos_y": 2340,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "45ef44a2-ff3b-4c79-9b4f-8beefd011bca",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Model_CatalogItem_cs",
+      "label": "src/Catalog.API/Model/CatalogItem.cs",
+      "pos_x": 0,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "288aa9e3-9f2a-427d-a1b5-8133ee47972d",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Model_CatalogServices_cs",
+      "label": "src/Catalog.API/Model/CatalogServices.cs",
+      "pos_x": 250,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1127cb30-225e-40ee-a084-f0dbf71ac5db",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Model_CatalogType_cs",
+      "label": "src/Catalog.API/Model/CatalogType.cs",
+      "pos_x": 500,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "65e029dc-7e9b-4e23-a2e8-b606831fe5a1",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Model_PaginatedItems_cs",
+      "label": "src/Catalog.API/Model/PaginatedItems.cs",
+      "pos_x": 750,
+      "pos_y": 2520,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "1318573c-0062-47c6-b3b3-71d681e7f1ea",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Model_PaginationRequest_cs",
+      "label": "src/Catalog.API/Model/PaginationRequest.cs",
+      "pos_x": 0,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "f5b494b7-512b-4923-8112-4d4bb1e08a68",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Program_cs",
+      "label": "src/Catalog.API/Program.cs",
+      "pos_x": 250,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a72991da-31e4-4a49-b05d-809282b6a51b",
+      "entity_type": "packages",
+      "entity_id": "Asp_Versioning",
+      "label": "Asp.Versioning",
+      "pos_x": 500,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "0d15e016-b558-4e1d-bf2b-1346c63d6a4d",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Services_CatalogAI_cs",
+      "label": "src/Catalog.API/Services/CatalogAI.cs",
+      "pos_x": 750,
+      "pos_y": 2700,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "15d4c1b1-4698-4ec6-81bc-e2a9a31d58f6",
+      "entity_type": "packages",
+      "entity_id": "Microsoft_Extensions",
+      "label": "Microsoft.Extensions",
+      "pos_x": 0,
+      "pos_y": 2880,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "aee753e8-553a-4f0e-b039-5c9de8f89391",
+      "entity_type": "packages",
+      "entity_id": "src_Catalog_API_Services_ICatalogAI_cs",
+      "label": "src/Catalog.API/Services/ICatalogAI.cs",
+      "pos_x": 250,
+      "pos_y": 2880,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "a04d96c7-fbb1-439f-b209-682f7616037b",
+      "source_node_id": "3ace3195-4704-4502-9baa-3c34f796282f",
+      "target_node_id": "4c56ec55-4f57-4f1c-8f05-614fb12deab8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "f407691a-8d5a-40ea-97c2-8881e310b54d",
+      "source_node_id": "3ace3195-4704-4502-9baa-3c34f796282f",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "387029a9-aaa8-48ca-9df5-0bfca8da5313",
+      "source_node_id": "3ace3195-4704-4502-9baa-3c34f796282f",
+      "target_node_id": "15999a80-2ffa-442a-850e-6bed0ddd4621",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "96828289-464f-4c76-8bf6-a5407c56056d",
+      "source_node_id": "3ace3195-4704-4502-9baa-3c34f796282f",
+      "target_node_id": "12bc2fa7-dce5-4e59-8303-1ff2113cfe03",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "e23e143f-4e37-464c-b5d1-557ffcd4db22",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "e54d54c3-e5b8-4441-8528-98bb93717e44",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "46234865-a0d3-4722-bdd8-89f95a4b93be",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "eeb84c22-e004-4395-a757-7fc81b1cd36f",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "8c3eddb5-28e5-4f6d-8f44-87e1b990cd22",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "079d8e05-0616-450d-a438-e0d4eb940a56",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "20a13c02-115f-4d35-8c9c-251d902583f1",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "ee30514d-2b60-4ff1-b12b-98e012167891",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "f6b7e253-7d88-423b-a8c6-a31cc54f8636",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "f025f984-4811-4645-b644-720c4767dfcf",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7c433821-b3cb-47e3-a124-cb840e9bc247",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "1eccfb5e-0699-46da-bb5b-4edfd7044d55",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4019566d-fabe-41f5-a108-5e490d4f874e",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "1eccfb5e-0699-46da-bb5b-4edfd7044d55",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a7ab575c-288c-4975-88a3-298a8c7efe80",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "713d7b82-53aa-423a-b5ac-28912d2792e3",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "389c998a-aebc-4a8f-a72e-5cda34d6ae5a",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "713d7b82-53aa-423a-b5ac-28912d2792e3",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "fd262d8c-536b-4957-b444-ce964b4419f7",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "f906c3ce-ae8e-4892-afdb-aed6ba7a6dfe",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "368c8e9a-1aff-433b-a184-b036c554256d",
+      "source_node_id": "89ae2493-fd71-405d-90ec-1f3ab761f7d5",
+      "target_node_id": "53fd9a2f-4cb9-4246-8f74-f1aafe0c8825",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "ce0ef85f-e359-46b4-9390-b9d0c9529ba1",
+      "source_node_id": "9b8239b0-9cc7-448d-8633-2e8b8c0545df",
+      "target_node_id": "73ac81b2-4156-433f-812b-52b0f45c9745",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b839a0ab-6710-4be8-8343-e0cd0bf4047a",
+      "source_node_id": "9b8239b0-9cc7-448d-8633-2e8b8c0545df",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "daefee06-5de5-4143-b377-86233478bb81",
+      "source_node_id": "9b8239b0-9cc7-448d-8633-2e8b8c0545df",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5abbd04c-521b-4d91-ace5-2774d33a6570",
+      "source_node_id": "9b8239b0-9cc7-448d-8633-2e8b8c0545df",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "178ada6f-1583-4efd-978d-f5daea3242a9",
+      "source_node_id": "fee7162c-1b72-4cdd-b2b5-c25df221636a",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b17c8f80-f431-4050-b17c-cfa9a66234b2",
+      "source_node_id": "fee7162c-1b72-4cdd-b2b5-c25df221636a",
+      "target_node_id": "12bc2fa7-dce5-4e59-8303-1ff2113cfe03",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "da525c8e-0caa-4475-8dfc-9f8b6dbbeef1",
+      "source_node_id": "47b99a21-9c5a-4584-80a7-7acd8f60f17e",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "58ef6d5b-7387-4a8f-92ac-a10a45d10210",
+      "source_node_id": "e3433fd3-5ab5-4476-94ca-4c286b8bf2ae",
+      "target_node_id": "4c56ec55-4f57-4f1c-8f05-614fb12deab8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "32e6c088-6efa-4a6c-86e7-92e874631e5f",
+      "source_node_id": "e3433fd3-5ab5-4476-94ca-4c286b8bf2ae",
+      "target_node_id": "f9fb737a-2e10-47e0-accd-0092cc5ca058",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2c0662c8-8a11-4dc6-8888-2cb3c70f0789",
+      "source_node_id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "ec395e4e-a52b-4f7c-923a-6b123f360825",
+      "source_node_id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "target_node_id": "74b0b7cb-f49d-4aba-8c8d-f3c0b7d80363",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "ad57dc4c-a311-44be-bd91-f99a7aea10c3",
+      "source_node_id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "target_node_id": "ec6948c7-ecf1-4f59-8516-15e00a1160cc",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "cbabc100-90b4-44ae-b613-f410f07d2ae5",
+      "source_node_id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "target_node_id": "be4ef995-2b50-4ae0-bf6f-a10f153e3dee",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6f61fe3a-977a-4a72-ab3f-19c2503c72c8",
+      "source_node_id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "target_node_id": "a69c9abf-e4fa-40a4-a910-df24909c270f",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a9748ce1-3b67-4c23-b07e-85abcbc73718",
+      "source_node_id": "6735fffa-415d-4691-9ab7-264e135ac94d",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "861e5d47-58a3-4685-ada0-30fc97158807",
+      "source_node_id": "2c375b69-268b-468d-9104-d14a35e93d6d",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "da0ce468-7138-4c92-93d2-9042f3504a4d",
+      "source_node_id": "05d6dc3d-36ae-427d-a738-f88694bc8ee1",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0a6a5751-e5b4-4286-9885-7ed4c72cbbca",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "1380f449-efd8-45c7-980f-7d69bf41d4b4",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5789d9e2-7180-4796-8137-666cae0357c9",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "c64742de-0d7a-4d41-a066-2fca3fc2a534",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "07f7f416-9512-4649-9329-c9e916fe99fc",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "74823c39-825e-4b8c-9523-78c296dcfb19",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4406ee7b-3330-4135-b56b-1956287887b1",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "48dd153e-baae-4233-b2f9-d2d543022cc8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2b162afc-f8bc-4a48-8130-e6781447c82a",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "f5d95cbb-481a-40d6-b7b2-ce680ad27d31",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2a22445e-f575-44b5-9633-ab123544e31d",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "f5d95cbb-481a-40d6-b7b2-ce680ad27d31",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0165f11d-6786-4c2b-9649-e344d7603f76",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "48dd153e-baae-4233-b2f9-d2d543022cc8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "537f8643-4f58-4b4b-bfad-b1bb60761853",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "018ab19e-28bd-4966-b629-303dca6e4d38",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6e64da69-7c27-485b-a3a3-54302de10b42",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "018ab19e-28bd-4966-b629-303dca6e4d38",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0677b4af-e241-4bd5-ad74-f588f6e6b9bd",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "48dd153e-baae-4233-b2f9-d2d543022cc8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "59e0db7a-5ccd-4f68-81ec-0992e7302abb",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "713d7b82-53aa-423a-b5ac-28912d2792e3",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0cd2f425-34fe-4e9d-b887-ceef33aad435",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "713d7b82-53aa-423a-b5ac-28912d2792e3",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "759db7aa-1836-47a5-b4b4-3de5ace8030a",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "f906c3ce-ae8e-4892-afdb-aed6ba7a6dfe",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "540025dc-8043-4480-9594-3cd184f168b3",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "f953d736-3295-4a5d-812d-620a49548d67",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7ee47170-d553-4b63-9e12-649461fbd758",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "f953d736-3295-4a5d-812d-620a49548d67",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b1eda3d0-726a-46cc-82f5-98a15f705d9f",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "f906c3ce-ae8e-4892-afdb-aed6ba7a6dfe",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "32897837-38c7-4efa-91f1-fec001c36630",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "bef868ec-2714-4914-9753-2124781ab4cf",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "d78801a4-a00d-4c77-877a-c1f269c361cb",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "8adc40ca-9621-4d53-9e47-9df0215d8b83",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "20d7178e-3c4f-46db-b978-94489002aca1",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "d8c4c185-af06-4b9c-a142-a97bbf190d10",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "356c6ad7-cabe-460f-92e9-77d07a1cd8c4",
+      "source_node_id": "254e32d5-c44b-45db-bd7e-a969fbe64f45",
+      "target_node_id": "6fa02e17-30f3-4018-9460-c4cf194d7f7c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3b2dabf0-66ff-4902-a8a2-eb37390c0ce0",
+      "source_node_id": "2c4e48db-5ae7-452c-a683-12f48069e37e",
+      "target_node_id": "3dc001bd-3c4b-422d-93e7-25e733291d86",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "17aa797e-f07d-4176-967b-14ebec146582",
+      "source_node_id": "2c4e48db-5ae7-452c-a683-12f48069e37e",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "a876382b-cf39-4463-9e85-bf716694090d",
+      "source_node_id": "2c4e48db-5ae7-452c-a683-12f48069e37e",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "18dced3c-5e76-4583-87d6-dae8b7e31492",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "211e49a7-4a8c-4b5a-b807-d6c5f2a7172b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5d8a1ee1-8f12-40fa-bd31-7b48e6ed3409",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4f198555-873a-4792-a07a-0acc53a748b2",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "d184eb92-359d-4225-bb05-0aaf056be30f",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "af47cc7e-e49a-4918-84f9-a48420c92f9c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2bd41d7e-0955-4dbc-8d12-9d0fc3490bcd",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "9a0d23d3-9af2-4ca3-871a-d0ca4ba1f563",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "ae3da1c0-b726-41d4-82bd-f36d0c4c307b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3047e665-01bf-42f3-8a97-95ff44050818",
+      "source_node_id": "bfda5a76-3f2c-44c4-872c-455fd28fa9c1",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "c1253e59-5da2-40a2-bbc0-8bb519c8106d",
+      "source_node_id": "58c9eb05-2646-4e45-95b0-501e792e55e8",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "6aa5a113-9a21-43b8-aaf1-6955e61a8427",
+      "source_node_id": "58c9eb05-2646-4e45-95b0-501e792e55e8",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "d0224569-24da-4540-b755-c2ed41bd9448",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "211e49a7-4a8c-4b5a-b807-d6c5f2a7172b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "00b9c630-9f5b-4d0d-bfcc-8e51c378576f",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2f7b1cad-408a-47ad-a7c7-a504a51005a8",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5f3db501-8048-4d80-8289-b2b53baa99d5",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "af47cc7e-e49a-4918-84f9-a48420c92f9c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "ee58e39b-0e65-4930-b7df-bb83f2f41311",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4d005805-a9bc-4edf-a132-15fe07f5f35f",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "ae3da1c0-b726-41d4-82bd-f36d0c4c307b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "f13982d6-f586-4ded-b965-af3a43bddd68",
+      "source_node_id": "fd6574b9-6ced-4b0e-bc08-e5b7c623995b",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "475e01b5-268c-4c9e-a91f-9a1f5a3bffa3",
+      "source_node_id": "7097acd7-b901-48b1-81cd-22a0528ee031",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "18bf4c27-d0bc-43d4-bac4-78730f4b0837",
+      "source_node_id": "7097acd7-b901-48b1-81cd-22a0528ee031",
+      "target_node_id": "ae3da1c0-b726-41d4-82bd-f36d0c4c307b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3b597e34-30fb-470f-a934-e8ee7eedb424",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "738a99e0-13a4-487f-88db-a4bf3f8b00c2",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "211e49a7-4a8c-4b5a-b807-d6c5f2a7172b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5a9fe7b7-83b6-4ce6-93d9-040b33d83685",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4842f2b8-fa56-4357-8815-a1f15352c627",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "098319a8-b643-4cb8-bfa1-e974b63bde54",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "af47cc7e-e49a-4918-84f9-a48420c92f9c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "4baf4fd1-8945-4edc-bd54-daa903a03d2d",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "5d9df6ad-2f4f-4267-a612-81839ae124a5",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "ae3da1c0-b726-41d4-82bd-f36d0c4c307b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "c275d3b1-0fb0-444a-af39-34adf4faef3c",
+      "source_node_id": "4e801b73-ef94-4fd2-9928-27f582f14e20",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b8cff25f-8da5-44ee-ab9e-f509f0620d0d",
+      "source_node_id": "f453cb18-42fa-41d4-9ad2-aea3b24074fb",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "c0717fc1-c70f-43c4-8434-57b26c5a59c4",
+      "source_node_id": "f453cb18-42fa-41d4-9ad2-aea3b24074fb",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "ee4b3124-d4ac-4910-a5e1-4a3d412d62e8",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "59db4fbf-b1ed-47b3-b174-5d3641ca9b1e",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "211e49a7-4a8c-4b5a-b807-d6c5f2a7172b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "e7116188-a06a-4a64-9ea6-e3555bd0e947",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "f334be9c-74db-4b1d-a257-ad26f3f9337c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "c9f528cd-7961-46e2-a585-2ecb9958b539",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "af47cc7e-e49a-4918-84f9-a48420c92f9c",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "0feffa94-308c-4531-8fc4-f7e95f735f83",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "180ba2cf-0c1d-46af-b80d-deff3428b7f6",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "ae3da1c0-b726-41d4-82bd-f36d0c4c307b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "1d5280d1-2e32-43f0-8f28-c949ce18e6dd",
+      "source_node_id": "dacd008e-183a-4674-9370-454fd3335fe1",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "dd866d2c-4684-4dc5-b16d-991c8fbc9f58",
+      "source_node_id": "7dd2fb03-90d2-46b9-9822-455c86a490fb",
+      "target_node_id": "74b0b7cb-f49d-4aba-8c8d-f3c0b7d80363",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "fd139a13-0a22-4cdd-9bb8-c04ce36347bc",
+      "source_node_id": "45ef44a2-ff3b-4c79-9b4f-8beefd011bca",
+      "target_node_id": "74b0b7cb-f49d-4aba-8c8d-f3c0b7d80363",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "48b92471-9eb8-4bac-ad47-9e6c072e2c85",
+      "source_node_id": "45ef44a2-ff3b-4c79-9b4f-8beefd011bca",
+      "target_node_id": "4c56ec55-4f57-4f1c-8f05-614fb12deab8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "f003e073-7fb2-48fc-904e-144cdd4385f7",
+      "source_node_id": "45ef44a2-ff3b-4c79-9b4f-8beefd011bca",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "7510998b-82a5-4a3d-a534-fc525460ea38",
+      "source_node_id": "288aa9e3-9f2a-427d-a1b5-8133ee47972d",
+      "target_node_id": "ea2ca4cd-97e7-4305-b646-db85389ee447",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "3927b0c9-5fd9-4678-b884-0c5654977cf4",
+      "source_node_id": "288aa9e3-9f2a-427d-a1b5-8133ee47972d",
+      "target_node_id": "be4ef995-2b50-4ae0-bf6f-a10f153e3dee",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b47170d0-9133-47b9-9362-14285f669c3e",
+      "source_node_id": "1127cb30-225e-40ee-a084-f0dbf71ac5db",
+      "target_node_id": "74b0b7cb-f49d-4aba-8c8d-f3c0b7d80363",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "b0c80f66-8509-4647-8e3d-f47e55e7cb60",
+      "source_node_id": "65e029dc-7e9b-4e23-a2e8-b606831fe5a1",
+      "target_node_id": "4c56ec55-4f57-4f1c-8f05-614fb12deab8",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "80f1701d-1d22-4d74-a63a-dde6f833fffd",
+      "source_node_id": "1318573c-0062-47c6-b3b3-71d681e7f1ea",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "ed787e6c-f87f-417d-958f-85f18aaaf13c",
+      "source_node_id": "f5b494b7-512b-4923-8112-4d4bb1e08a68",
+      "target_node_id": "a72991da-31e4-4a49-b05d-809282b6a51b",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "1b542950-2362-430f-acb8-da23a3dc8415",
+      "source_node_id": "f5b494b7-512b-4923-8112-4d4bb1e08a68",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "d5c04adb-e1d8-41af-b331-0e45f7a6094d",
+      "source_node_id": "0d15e016-b558-4e1d-bf2b-1346c63d6a4d",
+      "target_node_id": "6cad5226-efb8-46cb-adbd-067392e33b3a",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "91fd54f1-d58b-4607-ae32-8a1fb03829ae",
+      "source_node_id": "0d15e016-b558-4e1d-bf2b-1346c63d6a4d",
+      "target_node_id": "15d4c1b1-4698-4ec6-81bc-e2a9a31d58f6",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "2d06373d-0a40-4d9a-bbd8-75bec485694f",
+      "source_node_id": "0d15e016-b558-4e1d-bf2b-1346c63d6a4d",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    },
+    {
+      "id": "48337f80-2d9b-492f-811c-7195675fcf4d",
+      "source_node_id": "aee753e8-553a-4f0e-b039-5c9de8f89391",
+      "target_node_id": "1a3b3829-c64c-40dd-915b-5933278dffe5",
+      "relationship_type": "imports"
+    }
+  ]
+}

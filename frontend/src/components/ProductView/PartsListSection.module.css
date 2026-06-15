@@ -1,0 +1,212 @@
+/**
+ * PartsListSection.module.css
+ *
+ * Spec 2026-02-06: Implement-Part Sequencing Workflow
+ * Task Group 5: Frontend API Functions and Parts List UI
+ * Task 5.5: Implement part card styling with status chip colors
+ *
+ * Styling for the PartsListSection component:
+ * - Section container with vertical spacing matching FeatureSectionCard
+ * - Section title: "Implementation Parts" heading
+ * - Subtitle showing part count
+ * - Part card list container
+ * - Status chips with 6 color variants for part workflow states
+ * - Manual intervention buttons for FAILED parts
+ */
+
+/* Section container - matches FeatureSectionCard margins */
+.section {
+  background: #ffffff;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+/* Section title - "Implementation Parts" heading */
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333333;
+  margin: 0 0 4px 0;
+}
+
+/* Subtitle showing part count */
+.subtitle {
+  font-size: 12px;
+  color: #666666;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+/* Parts list container */
+.partsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Base part card styling */
+.partCard {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Hover state for non-active cards */
+.partCard:hover:not(.partCardActive) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-color: #bdbdbd;
+}
+
+/* Focus state for accessibility */
+.partCard:focus {
+  outline: 2px solid #2196F3;
+  outline-offset: 2px;
+}
+
+/* Active state styling - same pattern as IncrementCard */
+.partCardActive {
+  border-left: 4px solid #2196F3;
+  background-color: #E3F2FD;
+  border-top: 1px solid #e0e0e0;
+  border-right: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+/* Card header with part index and status chip */
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+/* Part index styling */
+.partIndex {
+  font-size: 12px;
+  font-weight: 500;
+  color: #666666;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
+}
+
+/* Part title styling */
+.partTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333333;
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* Base status chip styling - pill shape */
+.statusChip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+/* PENDING status - gray chip
+ * Spec 2026-02-06: Task 5.5
+ */
+.statusPending {
+  color: #666666;
+  background-color: #f0f0f0;
+}
+
+/* QA_IN_PROGRESS status - blue chip
+ * Spec 2026-02-06: Task 5.5
+ */
+.statusQaInProgress {
+  color: #2563eb;
+  background-color: #dbeafe;
+}
+
+/* READY_TO_RUN status - green chip
+ * Spec 2026-02-06: Task 5.5
+ */
+.statusReadyToRun {
+  color: #166534;
+  background-color: #dcfce7;
+}
+
+/* ORCHESTRATING status - amber chip
+ * Spec 2026-02-06: Task 5.5
+ */
+.statusOrchestrating {
+  color: #b45309;
+  background-color: #fef3c7;
+}
+
+/* COMPLETED status - green chip with distinct styling
+ * Spec 2026-02-06: Task 5.5
+ */
+.statusCompleted {
+  color: #166534;
+  background-color: #dcfce7;
+}
+
+/* FAILED status - red chip
+ * Spec 2026-02-06: Task 5.5
+ */
+.statusFailed {
+  color: #dc2626;
+  background-color: #fee2e2;
+}
+
+/* Manual intervention buttons container
+ * Spec 2026-02-06: Task 5.7
+ */
+.interventionButtons {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #F0F0F0;
+}
+
+/* Retry orchestration button
+ * Spec 2026-02-06: Task 5.7
+ */
+.retryButton {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #dc2626;
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #dc2626;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.retryButton:hover {
+  background-color: #fee2e2;
+}
+
+/* Resume Q&A button
+ * Spec 2026-02-06: Task 5.7
+ */
+.resumeButton {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  background-color: #ffffff;
+  color: #2563eb;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.resumeButton:hover {
+  background-color: #dbeafe;
+}

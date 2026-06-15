@@ -1,0 +1,56 @@
+/**
+ * FileAttachmentBar.module.css
+ *
+ * Spec 2026-02-28: Unified Chat Panel v1 (Frontend)
+ * Task Group 6, Task 6.5: FileAttachmentBar styles
+ *
+ * Follows the chip pattern from ProductManagerChatPanel.module.css
+ * (.fileChipsContainer, .fileChip, .fileChipRemove).
+ */
+
+/* Container: horizontal row of file chips */
+.container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+/* File chip: compact pill showing attached filename */
+.fileChip {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 10px;
+  font-size: 11px;
+  padding: 3px 8px 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Filename text within the chip */
+.fileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+/* Remove button: small X within the chip */
+.removeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #1565c0;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.removeButton:hover {
+  color: #0d47a1;
+}

@@ -1,0 +1,48 @@
+name: kibana
+version: 1
+language: typescript
+
+detection:
+  imports_match:
+    - "@kbn/core/server"
+    - "@kbn/core-http-router-server-api"
+    - "kibana/server"
+  files_match:
+    - "**/server/routes/**/*.ts"
+    - "**/kibana.json"
+  manifest_contains:
+    - {file: "package.json", substring: "\"name\": \"kibana\""}
+
+extract:
+  # Authoritative: Kibana ships its own OpenAPI spec at oas_docs/output/.
+  # When this file matches, we use it as the single source of truth — it's
+  # what the project itself agrees its endpoints are (~596 ops).
+  - id: openapi_spec
+    query: configs
+    parser: openapi_spec
+    file_glob: 'oas_docs/output/kibana.yaml'
+
+  # Fallback when the spec isn't present: derive routes from source.
+  # Object-arg path extraction handles router.versioned.get({path:'/...'}).
+  - id: router_http_method_calls
+    query: call_args
+    file_filter: all
+    file_extensions: [ts]
+    callee_pattern: '\.(get|post|put|delete|patch)$'
+    path_arg_index: 0
+    verb_from: callee_suffix
+    path_must_match: '^/'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: kibana
+
+conflict_rules: []
+known_pitfalls:
+  - "Route path is nested inside an object literal at arg 0 (router.get({ path: '/api/...' }, handler)) — executor must extract the 'path' property, not treat arg 0 as a bare string"
+  - "Versioned router chains .addVersion() after the verb call; path lives on the parent .get()/.post() node, not on addVersion"
+  - "Plugin-scoped path prefixes (e.g. /api/<plugin-id>/) are set at registration time and not inlined into individual route path strings"
+  - "Internal routes under /internal/ are non-public and may need separate filtering"
+  - "apidoc.json is advisory documentation; its schema may not conform to strapi_routes_json — verify before relying on that step"
+  - "Dynamic segments use Hapi-style {param} syntax, not Express :param"

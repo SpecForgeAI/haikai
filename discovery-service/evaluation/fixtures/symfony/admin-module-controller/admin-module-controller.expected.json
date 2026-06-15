@@ -1,0 +1,10 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "AdminModuleController",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

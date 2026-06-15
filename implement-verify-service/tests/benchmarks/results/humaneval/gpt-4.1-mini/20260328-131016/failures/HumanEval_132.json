@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/132",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "stack = []\nfor char in string:\n    if char == '[':\n        stack.append(char)\n    else:  # char == ']'\n        if stack:\n            stack.pop()\n            if stack:\n                return True\nreturn False",
+  "expected_output": "    opening_bracket_index = []\n    closing_bracket_index = []\n    for i in range(len(string)):\n        if string[i] == '[':\n            opening_bracket_index.append(i)\n        else:\n            closing_bracket_index.append(i)\n    closing_bracket_index.reverse()\n    cnt = 0\n    i = 0\n    l = len(closing_bracket_index)\n    for idx in opening_bracket_index:\n        if i < l and idx < closing_bracket_index[i]:\n            cnt += 1\n            i += 1\n    return cnt >= 2\n\n    \n",
+  "latency_seconds": 1.6574219970498234,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 181,
+    "output_tokens": 46,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

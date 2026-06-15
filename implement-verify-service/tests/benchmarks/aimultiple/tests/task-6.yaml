@@ -1,0 +1,234 @@
+name: "Task 6 - Helpdesk Ticket System"
+backend_url: "http://localhost:9000"
+steps:
+  # --- Health Check ---
+  - name: "Health check"
+    method: GET
+    path: /health
+    expect:
+      status: "200"
+
+  # --- Auth: Login seeded users ---
+  - name: "Login agent"
+    method: POST
+    path: /login
+    body:
+      email: "agent@example.com"
+      password: "agent123"
+    expect:
+      status: "200"
+      json_has: [access_token]
+    save:
+      token_as: agent_token
+
+  - name: "Login customer"
+    method: POST
+    path: /login
+    body:
+      email: "customer@example.com"
+      password: "customer123"
+    expect:
+      status: "200"
+      json_has: [access_token]
+    save:
+      token_as: customer_token
+
+  # --- Registration ---
+  - name: "Register new customer"
+    method: POST
+    path: /register
+    body:
+      email: "newcustomer@test.com"
+      password: "test123"
+      name: "New Customer"
+      role: "customer"
+    expect:
+      status: "200|201"
+
+  - name: "Login new customer"
+    method: POST
+    path: /login
+    body:
+      email: "newcustomer@test.com"
+      password: "test123"
+    expect:
+      status: "200"
+      json_has: [access_token]
+    save:
+      token_as: new_customer_token
+
+  # --- Ticket Creation ---
+  - name: "Customer creates ticket"
+    method: POST
+    path: /tickets
+    auth: customer_token
+    body:
+      subject: "Smoke Test Issue"
+      description: "Something is not working"
+      priority: "high"
+    expect:
+      status: "200|201"
+      json_has: [id, subject, status]
+    save:
+      json_as: created_ticket
+
+  - name: "Customer creates second ticket"
+    method: POST
+    path: /tickets
+    auth: customer_token
+    body:
+      subject: "Another Issue"
+      description: "This also needs help"
+      priority: "medium"
+    expect:
+      status: "200|201"
+    save:
+      json_as: second_ticket
+
+  # --- Ticket Listing ---
+  - name: "Customer sees own tickets"
+    method: GET
+    path: /tickets
+    auth: customer_token
+    expect:
+      status: "200"
+      min_length: 2
+
+  - name: "Agent sees all tickets"
+    method: GET
+    path: /tickets
+    auth: agent_token
+    expect:
+      status: "200"
+      min_length: 2
+
+  - name: "New customer sees empty list"
+    method: GET
+    path: /tickets
+    auth: new_customer_token
+    expect:
+      status: "200"
+      max_length: 0
+
+  # --- Data Isolation ---
+  - name: "New customer cannot see other customer ticket (expect 404)"
+    method: GET
+    path: /tickets/$created_ticket.id
+    auth: new_customer_token
+    expect:
+      status: "404"
+
+  # --- Ticket Detail ---
+  - name: "Customer views own ticket"
+    method: GET
+    path: /tickets/$created_ticket.id
+    auth: customer_token
+    expect:
+      status: "200"
+      json_has: [id, subject, status, description]
+
+  - name: "Agent views any ticket"
+    method: GET
+    path: /tickets/$created_ticket.id
+    auth: agent_token
+    expect:
+      status: "200"
+      json_has: [id, subject, status]
+
+  # --- Agent Actions ---
+  - name: "Agent assigns ticket to self"
+    method: PUT
+    path: /tickets/$created_ticket.id/assign
+    auth: agent_token
+    body:
+      agent_id: "self"
+    expect:
+      status: "200"
+
+  - name: "Agent updates status to in_progress"
+    method: PUT
+    path: /tickets/$created_ticket.id/status
+    auth: agent_token
+    body:
+      status: "in_progress"
+    expect:
+      status: "200"
+
+  - name: "Agent updates status to waiting_on_customer"
+    method: PUT
+    path: /tickets/$created_ticket.id/status
+    auth: agent_token
+    body:
+      status: "waiting_on_customer"
+    expect:
+      status: "200"
+
+  - name: "Agent updates status back to in_progress"
+    method: PUT
+    path: /tickets/$created_ticket.id/status
+    auth: agent_token
+    body:
+      status: "in_progress"
+    expect:
+      status: "200"
+
+  - name: "Agent resolves ticket"
+    method: PUT
+    path: /tickets/$created_ticket.id/status
+    auth: agent_token
+    body:
+      status: "resolved"
+    expect:
+      status: "200"
+
+  # --- Status Workflow Validation ---
+  - name: "Reopen resolved ticket"
+    method: PUT
+    path: /tickets/$created_ticket.id/status
+    auth: agent_token
+    body:
+      status: "reopened"
+    expect:
+      status: "200"
+
+  # --- Replies ---
+  - name: "Customer adds reply"
+    method: POST
+    path: /tickets/$created_ticket.id/replies
+    auth: customer_token
+    body:
+      content: "I still see the issue after the fix"
+    expect:
+      status: "200|201"
+
+  - name: "Agent adds reply"
+    method: POST
+    path: /tickets/$created_ticket.id/replies
+    auth: agent_token
+    body:
+      content: "Let me investigate further"
+    expect:
+      status: "200|201"
+
+  - name: "Ticket detail includes replies"
+    method: GET
+    path: /tickets/$created_ticket.id
+    auth: customer_token
+    expect:
+      status: "200"
+      json_has: [replies]
+
+  # --- Status Filter ---
+  - name: "Agent filters tickets by status"
+    method: GET
+    path: /tickets?status=open
+    auth: agent_token
+    expect:
+      status: "200"
+
+  # --- Auth Protection ---
+  - name: "Unauthenticated request rejected"
+    method: GET
+    path: /tickets
+    expect:
+      status: "401|403|422"

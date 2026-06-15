@@ -1,0 +1,65 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Upload",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Access_control_post",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Post_hotlinked_media",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Optimized_image",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Optimized_video",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Optimized_video_upload",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 User_upload",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Upload_reference",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Post",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Topic_thumbnail",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Upload \u2192 Badge",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

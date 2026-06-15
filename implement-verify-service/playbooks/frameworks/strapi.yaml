@@ -1,0 +1,25 @@
+name: strapi
+version: 1
+language: javascript
+
+detection:
+  files_match:
+    - 'packages/core/strapi/package.json'
+    - 'src/api/**/routes/*.json'
+  manifest_contains:
+    - {file: 'package.json', substring: '@strapi/strapi'}
+
+extract:
+  - id: routes_json
+    query: configs
+    parser: strapi_routes_json
+    file_glob: '**/routes/*.json'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: strapi
+
+conflict_rules: []
+known_pitfalls:
+  - "Strapi v4 places routes in src/api/<entity>/routes/*.json"

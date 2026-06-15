@@ -1,0 +1,56 @@
+/**
+ * PackageSetPreview Component Styles
+ * Spec: Service Package Set Assignment Dropdown - Task Group 2 (Optional)
+ */
+
+.previewContainer {
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.previewHeader {
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.packageList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.packageItem {
+  padding: 3px 0;
+  display: flex;
+  align-items: baseline;
+  color: #333;
+}
+
+.packageName {
+  font-weight: 500;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: #1565C0;
+}
+
+.packagePurpose {
+  color: #666;
+  margin-left: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.emptyState {
+  color: #999;
+  font-style: italic;
+  padding: 4px 0;
+}

@@ -1,0 +1,31 @@
+{
+  "id": "ux-designer--users-interactions",
+  "personaId": "ux-designer",
+  "menuLabel": "Define User Journeys",
+  "description": "Ingests structured spreadsheet input to define user journeys, activity steps, and pain points. Validates structure, identifies gaps, and prepares data for persistence into the Business Architecture meta-model.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/ux-designer.users-interactions.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": ["mission"],
+  "persistence": "hub",
+  "artifacts": [{ "artifactId": "user-journeys", "tool": "save_user_journeys", "description": "User journeys and activity steps", "filename": "USER_JOURNEYS" }],
+  "phases": null,
+  "availableFrom": ["hub", "panel"],
+  "saveTargetResolution": "clarify-at-save"
+}

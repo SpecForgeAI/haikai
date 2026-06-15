@@ -1,0 +1,32 @@
+-- ============================================================================
+-- Migration 093: Add Nullable architecture_id Column to discovery_run
+-- Spec: Discovery Service architectureId Integration (Spec #4)
+--
+-- Adds a nullable `architecture_id UUID` column to the `discovery_run` table.
+-- The column is nullable in this changeset; backfill happens in changeset 094,
+-- and NOT NULL + FK enforcement (plus the composite index) happens in
+-- changeset 095.
+--
+-- ============================================================================
+-- IN-SCOPE TABLE
+-- ============================================================================
+--   discovery_run            -- root table; bound architecture per run.
+--
+-- ============================================================================
+-- EXPLICITLY EXCLUDED (architecture is inherited via run_id FK)
+-- ============================================================================
+--   discovery_evidence
+--   discovery_relationship
+--   discovery_cluster
+--   discovery_cluster_member
+--   discovery_candidate
+--   discovery_decision_task
+--   discovery_candidate_entity_mapping
+--
+-- These children inherit the bound architecture through their run_id FK.
+-- Adding the column to children would create a drift risk (a child row could
+-- be persisted against a different architecture than its parent run); the
+-- single-source-of-truth-on-the-run design avoids that class of bug entirely.
+-- ============================================================================
+
+ALTER TABLE discovery_run ADD COLUMN architecture_id UUID NULL;

@@ -1,0 +1,602 @@
+/*
+ * DiscoveryReviewRoom styles (Spec 3 — capstone, Task Group 4; four-button rich
+ * cascade chunk + terminal Save by 2026-06-06-discovery-review-room-agenda-redesign-2).
+ *
+ * Net-new room chrome: the scan-selection opener, the per-run-count bar, the
+ * chunk/agenda renderer (ALWAYS-ACTIONABLE — per-item Approve/Reject/Defer +
+ * live-conflict source pickers, plus the FAMILY four-button rich-cascade summary),
+ * the terminal Save surface, and the degrade-in-place deterministic agenda. The
+ * transcript / input-bar / chip surfaces are RE-SKINNED from the chassis
+ * `ArchitectConversation.module.css` (imported as `chassis` in the component)
+ * rather than re-built.
+ */
+
+.room {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ---- Authoritative whole-run count bar (re-read-after-write) ------------ */
+.countsBar {
+  display: flex;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  color: #57606a;
+  border-bottom: 1px solid #e1e4e8;
+  background: #f6f8fa;
+}
+
+/* ---- Scan-selection opening turn --------------------------------------- */
+.scanSelection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.scanSelectionTitle {
+  margin: 0;
+  font-size: 1rem;
+  color: #24292f;
+}
+
+.scanSelectionHelp {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #57606a;
+  line-height: 1.4;
+}
+
+.scanLoading,
+.scanEmpty {
+  font-size: 0.85rem;
+  color: #57606a;
+}
+
+.scanError {
+  font-size: 0.85rem;
+  color: #c62828;
+}
+
+.scanGroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.scanGroup {
+  flex: 1 1 200px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.scanGroup legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #24292f;
+  padding: 0 0.35rem;
+}
+
+/* Per-service scan selection (2026-06-05-per-service-scan-selection, TG 4.10):
+   the optional architectural TECHNOLOGY-tier annotation on a service group's
+   legend (UI/Service/Persistence/Unknown). Purely informational -- never gates
+   selection (an "Unknown" tier is fully selectable). */
+.scanGroupTier {
+  font-weight: 400;
+  color: #57606a;
+}
+
+.scanOption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  color: #24292f;
+  cursor: pointer;
+}
+
+.beginButton {
+  align-self: flex-start;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  background: #7b1fa2;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.beginButton:disabled {
+  background: #c4b5cd;
+  cursor: not-allowed;
+}
+
+/* ---- Chunk / agenda renderer ------------------------------------------- */
+.chunk {
+  margin: 0.5rem 0;
+  border: 1px solid #d0d7de;
+  border-left: 3px solid #7b1fa2;
+  border-radius: 6px;
+  background: #faf7fc;
+  padding: 0.6rem 0.75rem;
+}
+
+.chunkHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.chunkSection {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6a1b9a;
+}
+
+.chunkScope {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8250df;
+  background: #efe5f6;
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+
+.chunkProgress {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #57606a;
+}
+
+/* ---- Rich multi-line cascade summary (2026-06-06 feature i) -------------- */
+.chunkCascadeSummary {
+  margin: 0 0 0.5rem 0;
+  padding: 0.4rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid #e3d4ef;
+}
+
+.chunkCascadeHeader {
+  margin: 0 0 0.3rem 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #24292f;
+}
+
+.chunkCascadeList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.chunkCascadeLine {
+  font-size: 0.82rem;
+  color: #3a3f45;
+  line-height: 1.4;
+}
+
+/* The cross-layer (logical↔physical) mapping note (Spec 2026-06-08): an
+   informational strip preserving the connection the cascade intentionally does not
+   cross. Distinct (blue) from the cascade summary so it reads as context, not an
+   action. */
+.chunkCrossLayerNote {
+  margin: 0 0 0.5rem 0;
+  padding: 0.4rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(221, 244, 255, 0.7);
+  border: 1px solid #b6e0fe;
+  font-size: 0.82rem;
+  color: #0b4f6c;
+  line-height: 1.4;
+}
+
+/* ---- Family-level bulk control (Approve-all / Reject-all / Defer-all) ---- */
+.chunkFamilyBulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  background: #efe5f6;
+}
+
+.chunkFamilyBulkLabel {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #6a1b9a;
+}
+
+.chunkFamilyBulkButton {
+  padding: 0.18rem 0.6rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #fff;
+  background: #7b1fa2;
+  border: 1px solid #6a1b9a;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chunkFamilyBulkButton:hover:not(:disabled) {
+  background: #6a1b9a;
+}
+
+.chunkFamilyBulkButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A family CHILD row renders indented beneath its parent (the first item). */
+.chunkItemChild {
+  margin-left: 1.1rem;
+  border-left: 2px solid #d8c4e6;
+  padding-left: 0.5rem;
+}
+
+.chunkList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.chunkItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #efe5f6;
+}
+
+.chunkItem:last-child {
+  border-bottom: none;
+}
+
+/* One item's name/detail/actions row. */
+.chunkItemRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.chunkItemName {
+  font-weight: 500;
+  color: #24292f;
+}
+
+.chunkItemDetail {
+  font-size: 0.75rem;
+  color: #57606a;
+}
+
+/* The always-on per-item action cluster (Approve / Reject / Defer). */
+.chunkItemActions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.chunkActionButton {
+  padding: 0.18rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: #6a1b9a;
+  background: #fff;
+  border: 1px solid #c4a9d6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chunkActionButton:hover:not(:disabled) {
+  background: #f3eefb;
+  border-color: #8250df;
+}
+
+.chunkActionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Live-conflict source pickers (per conflicting attribute) ---------- */
+.chunkConflicts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.35rem 0.5rem;
+  margin-left: 0.25rem;
+  border-left: 2px solid #d4a72c;
+  background: rgba(255, 248, 225, 0.5);
+  border-radius: 0 4px 4px 0;
+}
+
+.chunkConflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+}
+
+.chunkConflictAttr {
+  font-weight: 600;
+  color: #9a6700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chunkConflictSources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chunkConflictSourceGroup {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.chunkConflictPick {
+  padding: 0.16rem 0.5rem;
+  font-size: 0.74rem;
+  color: #9a6700;
+  background: #fff;
+  border: 1px solid #d4a72c;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chunkConflictPick:hover:not(:disabled) {
+  background: #fff8e1;
+}
+
+.chunkConflictPick:disabled,
+.chunkConflictPickAll:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chunkConflictPickAll {
+  padding: 0.16rem 0.5rem;
+  font-size: 0.72rem;
+  color: #fff;
+  background: #b7791f;
+  border: 1px solid #9a6700;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chunkConflictPickAll:hover:not(:disabled) {
+  background: #9a6700;
+}
+
+/* The legacy "Show next chunk" advance control (retired from the in-chunk
+   layout by the 2026-06-06 disposition auto-advance; the rule is retained for
+   the degraded agenda's analogous control + any historic markup). */
+.chunkAdvance {
+  margin-top: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  color: #6a1b9a;
+  background: #fff;
+  border: 1px solid #8250df;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chunkAdvance:hover:not(:disabled) {
+  background: #f3eefb;
+}
+
+.chunkAdvance:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Terminal Save surface (the ONE surviving confirm gate) ------------- */
+.pending {
+  margin: 0.5rem 0;
+  border: 1px solid #d4a72c;
+  border-radius: 6px;
+  background: #fff8e1;
+  padding: 0.7rem 0.85rem;
+}
+
+.pendingLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9a6700;
+  margin-bottom: 0.35rem;
+}
+
+.pendingSummary {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: #24292f;
+}
+
+/* The two-figure off-screen overage block (back-compat replay only): "+N beyond
+   this family" / "+N relationships dropped". */
+.pendingOverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.55rem 0;
+}
+
+.pendingOverageFigure {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #9a6700;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid #d4a72c;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+}
+
+.pendingCounts {
+  list-style: none;
+  margin: 0 0 0.6rem 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.85rem;
+  color: #24292f;
+}
+
+.pendingCounts strong {
+  color: #9a6700;
+}
+
+.pendingPattern {
+  margin-bottom: 0.6rem;
+  font-size: 0.88rem;
+  color: #24292f;
+  line-height: 1.4;
+}
+
+.pendingPattern code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0 0.25rem;
+  border-radius: 3px;
+}
+
+/* The terminal Save Yes/No action row. */
+.pendingActions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.confirmButton {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fff;
+  background: #1a7f37;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.confirmButton:disabled {
+  background: #94d3a2;
+  cursor: not-allowed;
+}
+
+.dismissButton {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #57606a;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dismissButton:hover:not(:disabled) {
+  background: #f6f8fa;
+}
+
+.dismissButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Degrade-in-place deterministic agenda ----------------------------- */
+.degraded {
+  margin: 0.5rem 0.75rem;
+  border: 1px dashed #8250df;
+  border-radius: 6px;
+  background: #f3eefb;
+  padding: 0.7rem 0.85rem;
+}
+
+.degradedNote {
+  font-size: 0.82rem;
+  color: #6a1b9a;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.degradedList {
+  list-style: none;
+  margin: 0 0 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.degradedItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.degradedItemName {
+  font-weight: 500;
+  color: #24292f;
+}
+
+.degradedItemDetail {
+  font-size: 0.75rem;
+  color: #57606a;
+}
+
+.degradedApprove {
+  margin-left: auto;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+  color: #6a1b9a;
+  background: #fff;
+  border: 1px solid #8250df;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.degradedApprove:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.degradedAdvance {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  color: #6a1b9a;
+  background: #fff;
+  border: 1px solid #8250df;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.degradedAdvance:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

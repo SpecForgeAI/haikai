@@ -1,0 +1,315 @@
+{
+  "diagram_nodes": [
+    {
+      "id": "38882e11-2300-406c-8017-f124cff779e1",
+      "entity_type": "classes",
+      "entity_id": "IntegrationEventContext",
+      "label": "IntegrationEventContext",
+      "pos_x": 0,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5583ada0-172a-4d1d-8696-4853a210f0ae",
+      "entity_type": "classes",
+      "entity_id": "JsonSerializerContext",
+      "label": "JsonSerializerContext",
+      "pos_x": 250,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5b092c36-ff0d-4419-a0b9-e45fec6080b2",
+      "entity_type": "classes",
+      "entity_id": "BasketItem",
+      "label": "BasketItem",
+      "pos_x": 500,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "beccb937-ac03-4b1d-9d23-acf651dea22e",
+      "entity_type": "classes",
+      "entity_id": "IValidatableObject",
+      "label": "IValidatableObject",
+      "pos_x": 750,
+      "pos_y": 0,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "5bc671e9-bcfb-4e8f-8725-461006a3714c",
+      "entity_type": "classes",
+      "entity_id": "BasketSerializationContext",
+      "label": "BasketSerializationContext",
+      "pos_x": 0,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6f8f15b0-889c-43cc-8e5a-62a87afedb33",
+      "entity_type": "classes",
+      "entity_id": "CatalogContext",
+      "label": "CatalogContext",
+      "pos_x": 250,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8f077d08-e332-4aae-bdd9-2ee3636e51f3",
+      "entity_type": "classes",
+      "entity_id": "DbContext",
+      "label": "DbContext",
+      "pos_x": 500,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ebb7265a-04fd-423b-a03b-0727746bef6d",
+      "entity_type": "classes",
+      "entity_id": "CatalogBrandEntityTypeConfiguration",
+      "label": "CatalogBrandEntityTypeConfiguration",
+      "pos_x": 750,
+      "pos_y": 180,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a9609aa4-2009-432b-a304-c8867733292e",
+      "entity_type": "classes",
+      "entity_id": "IEntityTypeConfiguration",
+      "label": "IEntityTypeConfiguration",
+      "pos_x": 0,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6250abde-3986-4c60-b9e0-4bcfabce0d74",
+      "entity_type": "classes",
+      "entity_id": "CatalogItemEntityTypeConfiguration",
+      "label": "CatalogItemEntityTypeConfiguration",
+      "pos_x": 250,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6b9883f9-7037-4a08-9a3a-781c09792fa8",
+      "entity_type": "classes",
+      "entity_id": "CatalogTypeEntityTypeConfiguration",
+      "label": "CatalogTypeEntityTypeConfiguration",
+      "pos_x": 500,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c782ccbb-0389-4f5b-8913-84b04164e94e",
+      "entity_type": "classes",
+      "entity_id": "CatalogDomainException",
+      "label": "CatalogDomainException",
+      "pos_x": 750,
+      "pos_y": 360,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "8b7e5c60-e71f-4644-890e-a452eed008b6",
+      "entity_type": "classes",
+      "entity_id": "Exception",
+      "label": "Exception",
+      "pos_x": 0,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a948d84d-91c2-49fa-b5ff-8bea34aac6cb",
+      "entity_type": "classes",
+      "entity_id": "Initial",
+      "label": "Initial",
+      "pos_x": 250,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a8c7664c-ab47-474d-a6b2-de92c9b474b7",
+      "entity_type": "classes",
+      "entity_id": "Migration",
+      "label": "Migration",
+      "pos_x": 500,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "fae3b9c8-e0f4-41c4-b4b3-76ce6749b115",
+      "entity_type": "classes",
+      "entity_id": "RemoveHiLoAndIndexCatalogName",
+      "label": "RemoveHiLoAndIndexCatalogName",
+      "pos_x": 750,
+      "pos_y": 540,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "831aef0d-5943-4dd8-85ba-b7a843da9766",
+      "entity_type": "classes",
+      "entity_id": "Outbox",
+      "label": "Outbox",
+      "pos_x": 0,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "c708ee88-7368-44fd-9439-a72c07e4d475",
+      "entity_type": "classes",
+      "entity_id": "CatalogContextModelSnapshot",
+      "label": "CatalogContextModelSnapshot",
+      "pos_x": 250,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "ab5878c1-3b3a-4040-a620-d85fbb1f9662",
+      "entity_type": "classes",
+      "entity_id": "ModelSnapshot",
+      "label": "ModelSnapshot",
+      "pos_x": 500,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "a7af9b82-9074-4cf9-bac7-2aab717a9535",
+      "entity_type": "classes",
+      "entity_id": "CatalogAI",
+      "label": "CatalogAI",
+      "pos_x": 750,
+      "pos_y": 720,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    },
+    {
+      "id": "6a106b01-e791-459b-be4e-2c36a91feb9c",
+      "entity_type": "classes",
+      "entity_id": "ICatalogAI",
+      "label": "ICatalogAI",
+      "pos_x": 0,
+      "pos_y": 900,
+      "width": 200,
+      "height": 120,
+      "z_index": 1
+    }
+  ],
+  "diagram_edges": [
+    {
+      "id": "0a40088c-8800-4b0a-b311-51b884da1558",
+      "source_node_id": "5583ada0-172a-4d1d-8696-4853a210f0ae",
+      "target_node_id": "38882e11-2300-406c-8017-f124cff779e1",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "746a8682-ddf7-4d20-9915-179246c24dc3",
+      "source_node_id": "beccb937-ac03-4b1d-9d23-acf651dea22e",
+      "target_node_id": "5b092c36-ff0d-4419-a0b9-e45fec6080b2",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "a028c910-66aa-4b63-8647-b4b94fe7e8bf",
+      "source_node_id": "5583ada0-172a-4d1d-8696-4853a210f0ae",
+      "target_node_id": "5bc671e9-bcfb-4e8f-8725-461006a3714c",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "9f41b37d-7ff5-42bd-9cad-c07136ba135d",
+      "source_node_id": "8f077d08-e332-4aae-bdd9-2ee3636e51f3",
+      "target_node_id": "6f8f15b0-889c-43cc-8e5a-62a87afedb33",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "0d0abbb8-d8b7-4994-85c1-168067f3493c",
+      "source_node_id": "a9609aa4-2009-432b-a304-c8867733292e",
+      "target_node_id": "ebb7265a-04fd-423b-a03b-0727746bef6d",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "55308099-c240-417e-a621-5cdcd2ad723a",
+      "source_node_id": "a9609aa4-2009-432b-a304-c8867733292e",
+      "target_node_id": "6250abde-3986-4c60-b9e0-4bcfabce0d74",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "47fcbe06-7e49-43e8-b269-22f7eabb9708",
+      "source_node_id": "a9609aa4-2009-432b-a304-c8867733292e",
+      "target_node_id": "6b9883f9-7037-4a08-9a3a-781c09792fa8",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "5602920c-7417-43a2-8da6-06c9ba57fb8b",
+      "source_node_id": "8b7e5c60-e71f-4644-890e-a452eed008b6",
+      "target_node_id": "c782ccbb-0389-4f5b-8913-84b04164e94e",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "93fc1d9c-7338-42f8-8ace-20973638278a",
+      "source_node_id": "a8c7664c-ab47-474d-a6b2-de92c9b474b7",
+      "target_node_id": "a948d84d-91c2-49fa-b5ff-8bea34aac6cb",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "90960cdd-c622-4ab7-a598-eefbb0932bdb",
+      "source_node_id": "a8c7664c-ab47-474d-a6b2-de92c9b474b7",
+      "target_node_id": "fae3b9c8-e0f4-41c4-b4b3-76ce6749b115",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "bbe697b5-ce22-482d-9cca-c0c3e1563963",
+      "source_node_id": "a8c7664c-ab47-474d-a6b2-de92c9b474b7",
+      "target_node_id": "831aef0d-5943-4dd8-85ba-b7a843da9766",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "c7a754b6-7d20-4cf1-8863-331322c3e7cf",
+      "source_node_id": "ab5878c1-3b3a-4040-a620-d85fbb1f9662",
+      "target_node_id": "c708ee88-7368-44fd-9439-a72c07e4d475",
+      "relationship_type": "extends"
+    },
+    {
+      "id": "fc102b4b-2cb5-40e8-b787-ff5418ab0f19",
+      "source_node_id": "6a106b01-e791-459b-be4e-2c36a91feb9c",
+      "target_node_id": "a7af9b82-9074-4cf9-bac7-2aab717a9535",
+      "relationship_type": "extends"
+    }
+  ]
+}

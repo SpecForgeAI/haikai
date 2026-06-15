@@ -1,0 +1,84 @@
+/**
+ * DiagramAutocomplete.module.css
+ *
+ * Styles for the grouped autocomplete selector component.
+ * Follows the typeahead visual pattern from Grid.module.css (lines 194-246)
+ * and ApplicationPointPickerCell inline style pattern for group headers.
+ */
+
+/* Container: position relative for dropdown positioning */
+.container {
+  position: relative;
+}
+
+/* Input field */
+.input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  min-width: 250px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+/* Disabled input */
+.inputDisabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+/* Dropdown: follows Grid.module.css typeahead pattern */
+.dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  margin-top: 2px;
+}
+
+/* Group headers: follows ApplicationPointPickerCell inline style pattern */
+.groupHeader {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #ddd;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Option rows */
+.option {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+
+.option:hover {
+  background: #f5f5f5;
+}
+
+/* No-results message */
+.noResults {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}

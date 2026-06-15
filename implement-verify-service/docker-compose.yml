@@ -1,0 +1,82 @@
+# Docker Compose for Standards Extractor API - Production
+# Usage: docker-compose up --build -d
+# Note: Edit .env and set your API keys before starting
+
+services:
+  standards-extractor-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: standards-extractor-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Pin the shared queue/state paths so the API and worker use the SAME
+      # db on the shared volume (the worker's default differs otherwise).
+      API_WORKSPACE_DIR: /app/workspace
+      JOBS_DB_PATH: /app/workspace/jobs.db
+      VERIFICATION_DB_PATH: /app/workspace/verify.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ~/.haikai:/app/workspace:delegated
+    networks:
+      - standards-extractor-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # The job worker — runs the queued jobs (verify-task-group, bug-investigation,
+  # ...). WITHOUT this, the API enqueues jobs that never execute (predict C5).
+  # Shares the SAME image, env, and workspace volume so jobs.db is the one the
+  # API writes to. No ports — it's a background consumer.
+  standards-extractor-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: standards-extractor-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      API_WORKSPACE_DIR: /app/workspace
+      JOBS_DB_PATH: /app/workspace/jobs.db
+      VERIFICATION_DB_PATH: /app/workspace/verify.db
+      WORKER_ID: worker-1
+    volumes:
+      - ~/.haikai:/app/workspace:delegated
+    networks:
+      - standards-extractor-network
+    depends_on:
+      - standards-extractor-api
+    command: ["python3", "-m", "src.job_queue.worker"]
+
+  # haibox local sandbox runner — "warm a box, serve the target, replay against it".
+  # The worker provisions serving targets here via src.haibox.integration.
+  haiboxd:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: haiboxd
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      API_WORKSPACE_DIR: /app/workspace
+      HAIBOX_HOST: 0.0.0.0          # in-container; reachable only on the compose network
+      HAIBOX_PORT: "8780"
+      HAIBOX_WORK_ROOT: /app/workspace/haibox
+      HAIBOX_MAX_BOXES: "8"
+    volumes:
+      - ~/.haikai:/app/workspace:delegated
+    networks:
+      - standards-extractor-network
+    command: ["python3", "-m", "src.haibox.service"]
+
+networks:
+  standards-extractor-network:
+    driver: bridge

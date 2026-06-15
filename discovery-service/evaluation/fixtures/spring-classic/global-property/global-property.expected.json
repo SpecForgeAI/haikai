@@ -1,0 +1,23 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "GlobalProperty",
+      "tag": "gap-fill",
+      "description": "Blind spot: this IS an OpenMRS entity but uses legacy HBM XML mapping \u2014 no @Entity annotation on the class. The deterministic Jakarta-Persistence detector misses it entirely. An LLM reading the Javadoc (\"simple key-value pairs persisted in the database\") and the @Cacheable + @Audited annotations should classify it as a physical entity."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "property",
+      "tag": "gap-fill",
+      "description": "The GP key column \u2014 canonical identifier for an OpenMRS global property."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "propertyValue",
+      "tag": "gap-fill",
+      "description": "The GP value column \u2014 a stringified value with optional custom-datatype coercion."
+    }
+  ],
+  "shouldNotEmit": []
+}

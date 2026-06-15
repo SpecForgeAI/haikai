@@ -1,0 +1,74 @@
+/**
+ * CompletionChip.module.css
+ *
+ * Spec 2026-02-28: Hub Bootstrap 1 -- Product Definition (PM) End-to-End
+ * Task Group 5, Task 5.5: CompletionChip styles
+ *
+ * Styles for the completion chip component:
+ * - Horizontal pill with persona-colored left border
+ * - Subtle background, compact padding
+ * - Bold task label, muted artifact name
+ * - Icon download button with hover highlight
+ */
+
+/* ============================================================================
+ * Chip: horizontal pill with persona-colored left border
+ * ============================================================================ */
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #fafafa;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  margin: 8px 0;
+}
+
+/* ============================================================================
+ * Task Label: bold text
+ * ============================================================================ */
+
+.taskLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+/* ============================================================================
+ * Artifact Name: muted secondary text
+ * ============================================================================ */
+
+.artifactName {
+  font-size: 12px;
+  color: #757575;
+}
+
+/* ============================================================================
+ * Download Button: icon button with hover highlight
+ * ============================================================================ */
+
+.downloadButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #5C6BC0;
+  padding: 4px;
+  border-radius: 4px;
+  margin-left: auto;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.downloadButton:hover {
+  background: #E8EAF6;
+  color: #3949AB;
+}
+
+.downloadButton:focus-visible {
+  outline: 2px solid #5C6BC0;
+  outline-offset: 2px;
+}

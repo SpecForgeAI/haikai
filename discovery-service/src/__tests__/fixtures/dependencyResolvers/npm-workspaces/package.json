@@ -1,0 +1,6 @@
+{
+  "name": "@example/workspace-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["packages/pkg-a", "packages/pkg-b"]
+}

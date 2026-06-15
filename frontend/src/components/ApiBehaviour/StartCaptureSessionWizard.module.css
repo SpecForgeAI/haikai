@@ -1,0 +1,369 @@
+/**
+ * StartCaptureSessionWizard styles
+ *
+ * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 7
+ *
+ * Mirrors the visual rhythm of `StartDiscoveryRunModal.module.css` and
+ * `SelectiveCopyWizardModal.module.css` so the wizard feels native alongside
+ * the rest of the dashboard's modal surface.
+ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 760px;
+  width: 92%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+}
+
+.closeButton:hover:not(:disabled) {
+  color: #333;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 12px;
+  color: #888;
+}
+
+.step {
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: #f0f0f0;
+}
+
+.stepActive {
+  background: #1976d2;
+  color: #fff;
+}
+
+.stepDone {
+  background: #4caf50;
+  color: #fff;
+}
+
+.stepSeparator {
+  align-self: center;
+}
+
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+}
+
+.input,
+.select,
+.textarea {
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.input:disabled,
+.select:disabled,
+.textarea:disabled,
+.checkbox:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.helperText {
+  font-size: 12px;
+  color: #666;
+}
+
+.errorBanner {
+  padding: 10px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.primaryButton,
+.secondaryButton {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1976d2;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  border-color: #b0bec5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: #fff;
+  color: #444;
+  border-color: #ccc;
+}
+
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.interfaceList,
+.operationList {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.interfaceItem,
+.operationItem {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f5f5f5;
+  font-size: 13px;
+}
+
+.operationMutatingExcluded {
+  color: #c62828;
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.summarySection {
+  background: #fafafa;
+  padding: 10px 12px;
+  border-radius: 4px;
+  border: 1px solid #eee;
+  font-size: 12px;
+}
+
+.summaryKey {
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Discovery Context section (Spec 2026-05-16 -- Task Group 4)
+ *
+ * A collapsed-by-default section sitting between Step 1's helper text and the
+ * Interface list. Expanded view shows the per-run summary panel + checkbox
+ * toggles; collapsed view shows a single line subtitle plus a small chevron.
+ * --------------------------------------------------------------------------*/
+
+.discoverySection {
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fafafa;
+  margin-bottom: 4px;
+}
+
+.discoverySectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.discoverySectionTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.discoverySectionSubtitle {
+  font-size: 12px;
+  color: #666;
+  margin-left: 8px;
+}
+
+.discoverySectionBody {
+  padding: 10px 12px;
+  border-top: 1px solid #e8e8e8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.discoveryRunList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.discoveryRunItem {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.discoverySummaryBox {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #444;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.discoveryWarningBanner {
+  padding: 8px 10px;
+  background-color: #fff8e1;
+  border: 1px solid #ffe082;
+  color: #6d4c00;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Inventory reconciliation sections (Model-Seeded Capture Inventory spec,
+ * 2026-06-11 -- Task Group 4)
+ *
+ * Step 4 extensions below the existing inclusion table: the two coverage
+ * figures, the unmatched-committed-endpoints rows with their per-row
+ * Include / Exclude-with-reason controls, and the Step 5 409-override dialog.
+ * --------------------------------------------------------------------------*/
+
+.coverageFigures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+.coverageFigure {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.reconciliationSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.endpointActions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.overrideDialog {
+  border: 1px solid #ffcdd2;
+  background: #fff8f8;
+  border-radius: 4px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: #333;
+}
+
+.overrideActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

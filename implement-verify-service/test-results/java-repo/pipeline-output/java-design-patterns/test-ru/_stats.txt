@@ -1,0 +1,31 @@
+Repository: java-design-patterns
+Analyzed: 2026-03-31T10:54:57+00:00
+Provider: ctags
+
+Files: 30
+Symbols: 199
+
+By Kind:
+  variable      69
+  method        61
+  module        30
+  class         24
+  interface     9
+  unknown       6
+
+By Language:
+  Java          30 files, 199 symbols
+
+Inheritance Depth:
+  max         2
+  avg         1.2
+
+Top-Level Classes: 24
+  with methods: 19
+  abstract: 0
+  avg methods per class: 2.5
+
+Async Methods: 0 (0% of all methods)
+
+Design Patterns: 4 detected
+  factory       4 instances (avg confidence 0.8)

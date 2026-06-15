@@ -1,0 +1,18 @@
+{
+  "$comment": "Derives from src/ast/models.py::EndpointInfo (D10). file+line anchor must round-trip ast_index.has().",
+  "required": ["type", "path", "operation", "handler_class", "handler_method", "file", "line"],
+  "fields": {
+    "type": {"type": "string", "enum": ["REST", "WEBSOCKET", "MQ_CONSUMER", "MQ_PRODUCER", "GRPC", "SCHEDULED"]},
+    "path": {"type": "string"},
+    "operation": {"type": "string", "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "SUBSCRIBE", "PUBLISH", "RPC", "CRON"]},
+    "handler_class": {"type": "string"},
+    "handler_method": {"type": "string"},
+    "file": {"type": "string"},
+    "line": {"type": "integer", "minimum": 1},
+    "direction": {"type": "string", "enum": ["INBOUND", "OUTBOUND", "INTERNAL"], "default": "INBOUND"},
+    "protocol": {"type": "string", "default": "HTTP"},
+    "framework": {"type": "string", "default": ""},
+    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.8}
+  },
+  "forbid": ["ambiguous", "alternatives"]
+}

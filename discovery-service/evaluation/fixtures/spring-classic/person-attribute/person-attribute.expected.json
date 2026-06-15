@@ -1,0 +1,53 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "PersonAttribute",
+      "tag": "pack",
+      "description": "@Entity/@Table(\"person_attribute\") \u2014 typed key-value attached to a Person."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "personAttributeId",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "PersonAttribute \u2192 Person",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "PersonAttribute \u2192 PersonAttributeType",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "value",
+      "tag": "pack",
+      "description": "Stringified attribute value; hydrated lazily via PersonAttributeType's format/hydrator."
+    },
+    {
+      "type": "business_logics",
+      "name": "equalsContent",
+      "tag": "gap-fill",
+      "description": "Domain equality \u2014 compares the hydrated values of two PersonAttribute instances rather than their identity. The pack's structural detectors miss it; gap-fill should surface it from the Javadoc (\"compares the inner fields of each attribute for equality\")."
+    },
+    {
+      "type": "business_logics",
+      "name": "getHydratedObject",
+      "tag": "gap-fill",
+      "description": "Lazily hydrates the stringified value into a typed object via the attribute type's format. Real business logic, not detected by the pack."
+    }
+  ],
+  "shouldNotEmit": [
+    {
+      "type": "business_logics",
+      "name": "toString"
+    },
+    {
+      "type": "business_logics",
+      "name": "hashCode"
+    }
+  ]
+}

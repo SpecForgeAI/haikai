@@ -1,0 +1,261 @@
+{
+  "project_id": "CloudDataPlatform",
+  "metaModel": {
+    "entities": {
+      "business_users": [],
+      "business_processes": [],
+      "process_activities": [],
+      "business_points": [],
+      "applications": [
+        {
+          "id": "app-cdp-platform",
+          "name": "Cloud Data Platform",
+          "description": "Enterprise-scale cloud-native data platform for real-time analytics and ML",
+          "app_type": "Data Platform",
+          "status": "Active",
+          "tags": "cloud-native,data-platform,real-time",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        }
+      ],
+      "app_components": [
+        {
+          "id": "comp-cdp-ingestion",
+          "name": "Data Ingestion Layer",
+          "description": "Real-time and batch data ingestion from multiple sources",
+          "application_id": "app-cdp-platform",
+          "tags": "ingestion,streaming,batch",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        },
+        {
+          "id": "comp-cdp-processing",
+          "name": "Data Processing Layer",
+          "description": "Distributed data processing and transformation engine",
+          "application_id": "app-cdp-platform",
+          "tags": "processing,etl,spark",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        },
+        {
+          "id": "comp-cdp-storage",
+          "name": "Data Storage Layer",
+          "description": "Multi-tier data storage (hot/warm/cold)",
+          "application_id": "app-cdp-platform",
+          "tags": "storage,lakehouse,s3",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        },
+        {
+          "id": "comp-cdp-api",
+          "name": "API Gateway",
+          "description": "REST/GraphQL API layer for data access",
+          "application_id": "app-cdp-platform",
+          "tags": "api,gateway,rest",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        },
+        {
+          "id": "comp-cdp-ml",
+          "name": "ML & Analytics",
+          "description": "Machine learning model training and serving",
+          "application_id": "app-cdp-platform",
+          "tags": "ml,ai,analytics",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        },
+        {
+          "id": "comp-cdp-ui",
+          "name": "Data Portal",
+          "description": "Web-based data exploration and visualization portal",
+          "application_id": "app-cdp-platform",
+          "tags": "ui,portal,react",
+          "valid_from": "2026-01-01",
+          "valid_to": null
+        }
+      ],
+      "services": [
+        {
+          "id": "svc-kafka-ingestion",
+          "name": "Kafka Streaming Service",
+          "description": "Real-time event streaming ingestion",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-ingestion",
+          "service_type": "Event Streaming",
+          "core_tech": "Kafka,Java,Spring Boot",
+          "tags": "streaming,kafka,real-time",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-batch-ingestion",
+          "name": "Batch Ingestion Service",
+          "description": "Scheduled batch data imports",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-ingestion",
+          "service_type": "Batch ETL",
+          "core_tech": "Python,Apache Airflow",
+          "tags": "batch,airflow,etl",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-spark-processing",
+          "name": "Spark Processing Engine",
+          "description": "Distributed data transformation with Spark",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-processing",
+          "service_type": "Data Processing",
+          "core_tech": "Python,PySpark,Scala",
+          "tags": "spark,distributed,processing",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-data-quality",
+          "name": "Data Quality Service",
+          "description": "Data validation and quality checks",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-processing",
+          "service_type": "Data Quality",
+          "core_tech": "Python,Great Expectations",
+          "tags": "quality,validation,testing",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-lakehouse",
+          "name": "Delta Lake Storage",
+          "description": "ACID-compliant data lake storage",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-storage",
+          "service_type": "Data Lake",
+          "core_tech": "Delta Lake,S3,Parquet",
+          "tags": "storage,lake,delta",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-rest-api",
+          "name": "Data Access API",
+          "description": "RESTful API for data queries",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-api",
+          "service_type": "REST API",
+          "core_tech": "Node.js,TypeScript,Express",
+          "tags": "api,rest,node",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-graphql-api",
+          "name": "GraphQL Query Service",
+          "description": "GraphQL API for flexible data queries",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-api",
+          "service_type": "GraphQL API",
+          "core_tech": "Node.js,TypeScript,Apollo Server",
+          "tags": "api,graphql,apollo",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-ml-training",
+          "name": "ML Model Training",
+          "description": "Distributed ML model training pipeline",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-ml",
+          "service_type": "ML Training",
+          "core_tech": "Python,PyTorch,MLflow",
+          "tags": "ml,training,pytorch",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-ml-serving",
+          "name": "ML Model Serving",
+          "description": "Real-time model inference API",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-ml",
+          "service_type": "ML Inference",
+          "core_tech": "Python,FastAPI,TensorFlow Serving",
+          "tags": "ml,inference,serving",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-data-portal-ui",
+          "name": "Data Portal UI",
+          "description": "React-based data exploration interface",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-ui",
+          "service_type": "Web UI",
+          "core_tech": "React,TypeScript,Tailwind CSS",
+          "tags": "ui,react,typescript",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        },
+        {
+          "id": "svc-visualization",
+          "name": "Data Visualization Service",
+          "description": "Interactive dashboards and charts",
+          "application_id": "app-cdp-platform",
+          "app_component_id": "comp-cdp-ui",
+          "service_type": "Visualization",
+          "core_tech": "React,D3.js,Plotly",
+          "tags": "visualization,charts,dashboards",
+          "valid_from": "2026-01-01",
+          "valid_to": null,
+          "package_set_id": null
+        }
+      ],
+      "interfaces": [],
+      "endpoints": [],
+      "classes": [],
+      "methods": [],
+      "application_points": [],
+      "logical_data_entities": [],
+      "logical_data_attributes": [],
+      "physical_data_entities": [],
+      "physical_data_attributes": [],
+      "interactions": [],
+      "app_business_points": [],
+      "events": [],
+      "states": [],
+      "state_transitions": [],
+      "activities": [],
+      "activity_flows": [],
+      "activity_partitions": [],
+      "ui_screens": [],
+      "ui_contracts": [],
+      "ui_components": [],
+      "ui_actions": [],
+      "business_logics": [],
+      "package_sets": [],
+      "packages": [],
+      "package_set_default_rules": []
+    },
+    "relationships": {
+      "business_user_business_points": [],
+      "application_point_business_points": [],
+      "logical_data_entity_relationships": [],
+      "logical_data_entity_physical_data_entities": [],
+      "logical_data_attribute_physical_data_attributes": [],
+      "data_movements": [],
+      "interface_logical_entities": [],
+      "ui_workflow_transitions": [],
+      "application_point_business_logics": []
+    }
+  },
+  "diagrams": []
+}

@@ -1,0 +1,45 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "UserDto",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "id",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "firstName",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "lastName",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "email",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "CreateUserRequest",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "firstName",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "lastName",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

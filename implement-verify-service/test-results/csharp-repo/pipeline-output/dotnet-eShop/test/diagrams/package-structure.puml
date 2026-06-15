@@ -1,0 +1,20 @@
+@startuml
+title Package Structure
+
+[src/Basket.API] --> [src/Basket.API/Extensions]
+[src/Basket.API] --> [src/Basket.API/Grpc]
+[src/Basket.API] --> [src/Basket.API/Model]
+[src/Basket.API] --> [src/Basket.API/Repositories]
+[src/Catalog.API] --> [src/Catalog.API/Apis]
+[src/Catalog.API] --> [src/Catalog.API/Extensions]
+[src/Catalog.API] --> [src/Catalog.API/Infrastructure]
+[src/Catalog.API/Infrastructure] --> [src/Catalog.API/Infrastructure/EntityConfigurations]
+[src/Catalog.API/Infrastructure] --> [src/Catalog.API/Infrastructure/Exceptions]
+[src/Catalog.API/Infrastructure] --> [src/Catalog.API/Infrastructure/Migrations]
+[src/Catalog.API] --> [src/Catalog.API/IntegrationEvents]
+[src/Catalog.API/IntegrationEvents] --> [src/Catalog.API/IntegrationEvents/EventHandling]
+[src/Catalog.API/IntegrationEvents] --> [src/Catalog.API/IntegrationEvents/Events]
+[src/Catalog.API] --> [src/Catalog.API/Model]
+[src/Catalog.API] --> [src/Catalog.API/Services]
+
+@enduml

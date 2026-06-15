@@ -1,0 +1,33 @@
+name: textpattern
+version: 1
+language: php
+
+detection:
+  files_match:
+    - "textpattern/textpattern.php"
+  manifest_contains:
+    - {file: composer.json, substring: "textpattern/textpattern"}
+
+extract:
+  - id: plugin_event_callbacks
+    query: call_args
+    file_filter: all
+    file_extensions: [".php"]
+    callee_pattern: 'register_callback$'
+    path_arg_index: 1
+    verb: ANY
+    path_must_match: '^\w+'
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: textpattern
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Frontend URL routing is database-driven (sections/pages table); not statically analyzable"
+  - "Core admin panels are dispatched via a hardcoded ?event= table, not register_callback — not captured"
+  - "Extracted 'paths' are event names (e.g. 'article', 'file'), which are ?event= GET parameter values, not URL path segments"
+  - "XML-RPC endpoints in rpc/ use a different protocol and are not captured"
+  - "register_callback is a plugin hook system; coverage is limited to plugin code that hooks into existing events"

@@ -1,0 +1,39 @@
+digraph Inheritance_Tree {
+    rankdir=TB;
+
+    IntegrationEventContext [label="IntegrationEventContext", shape=record];
+    JsonSerializerContext [label="JsonSerializerContext", shape=record];
+    BasketItem [label="BasketItem", shape=record];
+    IValidatableObject [label="IValidatableObject", shape=record];
+    BasketSerializationContext [label="BasketSerializationContext", shape=record];
+    CatalogContext [label="CatalogContext", shape=record];
+    DbContext [label="DbContext", shape=record];
+    CatalogBrandEntityTypeConfiguration [label="CatalogBrandEntityTypeConfiguration", shape=record];
+    IEntityTypeConfiguration [label="IEntityTypeConfiguration", shape=record];
+    CatalogItemEntityTypeConfiguration [label="CatalogItemEntityTypeConfiguration", shape=record];
+    CatalogTypeEntityTypeConfiguration [label="CatalogTypeEntityTypeConfiguration", shape=record];
+    CatalogDomainException [label="CatalogDomainException", shape=record];
+    Exception [label="Exception", shape=record];
+    Initial [label="Initial", shape=record];
+    Migration [label="Migration", shape=record];
+    RemoveHiLoAndIndexCatalogName [label="RemoveHiLoAndIndexCatalogName", shape=record];
+    Outbox [label="Outbox", shape=record];
+    CatalogContextModelSnapshot [label="CatalogContextModelSnapshot", shape=record];
+    ModelSnapshot [label="ModelSnapshot", shape=record];
+    CatalogAI [label="CatalogAI", shape=record];
+    ICatalogAI [label="ICatalogAI", shape=record];
+
+    JsonSerializerContext -> IntegrationEventContext [];
+    IValidatableObject -> BasketItem [];
+    JsonSerializerContext -> BasketSerializationContext [];
+    DbContext -> CatalogContext [];
+    IEntityTypeConfiguration -> CatalogBrandEntityTypeConfiguration [];
+    IEntityTypeConfiguration -> CatalogItemEntityTypeConfiguration [];
+    IEntityTypeConfiguration -> CatalogTypeEntityTypeConfiguration [];
+    Exception -> CatalogDomainException [];
+    Migration -> Initial [];
+    Migration -> RemoveHiLoAndIndexCatalogName [];
+    Migration -> Outbox [];
+    ModelSnapshot -> CatalogContextModelSnapshot [];
+    ICatalogAI -> CatalogAI [];
+}

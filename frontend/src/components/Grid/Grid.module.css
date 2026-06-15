@@ -1,0 +1,378 @@
+.gridWrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.addButton,
+.deleteButton {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.addButton {
+  background: #1976D2;
+  color: white;
+  border-color: #1976D2;
+}
+
+.addButton:hover {
+  background: #1565C0;
+}
+
+.deleteButton {
+  background: white;
+  color: #d32f2f;
+  border-color: #d32f2f;
+}
+
+.deleteButton:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.deleteButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Spec 2026-01-05: Attach button style for Application Point Targeting */
+.attachButton {
+  padding: 8px 16px;
+  border: 1px solid #C2185B;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+  color: #C2185B;
+  margin-left: auto;
+}
+
+.attachButton:hover:not(:disabled) {
+  background: #C2185B;
+  color: white;
+}
+
+.attachButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: #ccc;
+  color: #999;
+}
+
+.gridContainer {
+  flex: 1;
+  overflow-y: auto;
+  background-color: #f5f5f5;
+  min-height: 200px;
+}
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  background: white;
+}
+
+.headerRow {
+  background: #f5f5f5;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.headerCell {
+  padding: 12px 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+  border-bottom: 2px solid #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.required {
+  color: #d32f2f;
+  margin-left: 2px;
+}
+
+.dataRow {
+  cursor: pointer;
+  transition: background-color 0.1s;
+  background: white;
+}
+
+.dataRow:hover {
+  background: #f5f5f5;
+}
+
+.selectedRow {
+  background: #e3f2fd !important;
+}
+
+.dataCell {
+  padding: 4px 8px;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+  height: 36px;
+  vertical-align: middle;
+}
+
+.cellValue {
+  padding: 4px;
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 20px;
+  border-radius: 2px;
+}
+
+.cellValue:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.readonly {
+  color: #666;
+  cursor: default;
+}
+
+.readonly:hover {
+  background: transparent;
+}
+
+.cellError {
+  border: 2px solid #d32f2f;
+  border-radius: 2px;
+}
+
+.cellInput {
+  width: 100%;
+  padding: 4px 6px;
+  border: 2px solid #1976D2;
+  border-radius: 2px;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.cellSelect {
+  width: 100%;
+  padding: 4px;
+  border: 1px solid #ddd;
+  border-radius: 2px;
+  font-size: 13px;
+  background: white;
+  cursor: pointer;
+}
+
+.cellCheckbox {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.typeaheadContainer {
+  position: relative;
+}
+
+.typeaheadDropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.typeaheadDropdownBelow {
+  top: 100%;
+}
+
+.typeaheadDropdownAbove {
+  bottom: 100%;
+}
+
+.typeaheadOption {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+
+.typeaheadOption:hover {
+  background: #f5f5f5;
+}
+
+.optionName {
+  font-size: 13px;
+  color: #333;
+}
+
+.optionId {
+  font-size: 11px;
+  color: #999;
+  margin-left: 4px;
+}
+
+.noResults {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+
+/* ============================================================================
+ * Search input in toolbar
+ * ============================================================================ */
+
+.searchInput {
+  padding: 7px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  outline: none;
+  flex-grow: 1;
+  max-width: 250px;
+  transition: border-color 0.2s;
+}
+
+.searchInput:focus {
+  border-color: #1976D2;
+}
+
+.searchInput::placeholder {
+  color: #999;
+}
+
+/* ============================================================================
+ * Drag handle column and row dragging state
+ * ============================================================================ */
+
+.dragHandleCell {
+  width: 30px;
+  text-align: center;
+  padding: 4px 0 !important;
+}
+
+.dragHandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.4;
+  cursor: grab;
+  padding: 2px;
+  border-radius: 2px;
+  transition: opacity 0.15s;
+}
+
+.dragHandle:hover {
+  opacity: 1;
+}
+
+.draggingRow {
+  opacity: 0.6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================================================
+ * Spec: Business Logic Type Suggestions (Non-Enforcing)
+ * Styles for text_with_suggestions cell type
+ * ============================================================================ */
+
+/* Container wrapper for text input with suggestions */
+.textWithSuggestionsContainer {
+  position: relative;
+}
+
+/* Container for the row of suggestion chips below the input */
+.suggestionChipsContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 0;
+}
+
+/* Individual suggestion chip - following badge pattern from SequenceEditorPanel */
+.suggestionChip {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #e3f2fd;
+  color: #1565C0;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  border: none;
+}
+
+.suggestionChip:hover {
+  background: #bbdefb;
+}
+
+/* ============================================================================
+ * Spec: Method Parameters/Returns/Throws Type-Oriented Input
+ * Styles for free_text_typeahead_single_token cell type inline error
+ * ============================================================================ */
+
+/* Inline error message displayed below input during validation failure */
+.inlineError {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  padding: 4px 8px;
+  background: #ffebee;
+  color: #d32f2f;
+  font-size: 11px;
+  border: 1px solid #ffcdd2;
+  border-radius: 2px;
+  margin-top: 2px;
+  z-index: 101;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================================================
+ * Spec: Discovery Results Visibility (Increment 12) - Task Group 6
+ * Badge for entities that originated from discovery
+ * ============================================================================ */
+
+.discoveredBadge {
+  display: inline-block;
+  padding: 1px 6px;
+  margin-left: 6px;
+  background: #e8eaf6;
+  color: #3949ab;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 3px;
+  line-height: 16px;
+  vertical-align: middle;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}

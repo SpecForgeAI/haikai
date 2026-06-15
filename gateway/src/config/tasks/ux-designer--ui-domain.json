@@ -1,0 +1,15 @@
+{
+  "id": "ux-designer--ui-domain",
+  "personaId": "ux-designer",
+  "menuLabel": "UI Domain Design",
+  "description": "Assists with defining the UI domain model including screens, components, navigation flows, design tokens, and interaction patterns for the product's user interfaces.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/ux-designer.ui-domain.task.md",
+  "responseFormat": null,
+  "contextNeeds": ["mission", "tech-stack"],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub", "panel"],
+  "saveTargetResolution": "clarify-at-save"
+}

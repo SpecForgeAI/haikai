@@ -1,0 +1,113 @@
+/**
+ * FeatureSectionCard.module.css
+ *
+ * Spec 2026-01-22: Feature Shaping UI Consumes Planner JSON
+ * Task Group 2: Create FeatureSectionCard Component
+ *
+ * Styling for the FeatureSectionCard component:
+ * - Card container with white background and subtle border
+ * - Section header with semi-bold styling and bottom border
+ * - Empty state with italic, muted styling
+ *
+ * Spec 2026-01-24: Implement Screen Information Density
+ * Task Group 4: Feature Definition Cards Density Reduction
+ * - Card padding: 16px -> 10px
+ * - Card margin-bottom: 16px -> 10px
+ * - Section header font-size: 14px -> 13px
+ * - Content font-size: 14px -> 13px
+ *
+ * Spec 2026-01-25: Feature LHS Collapse and Provenance Icons
+ * Task Group 1: FeatureSectionCard Enhancement
+ * - Added .sectionHeaderWithIcon class for icon + title flex layout
+ * - Added .sectionHeaderRow class for header with right content
+ * - Added .sectionIcon class for icon sizing/alignment
+ * - Added .headerRightContent class for right-aligned header content
+ */
+
+/* Card container */
+.card {
+  background: #ffffff;
+  border: 1px solid #E0E0E0;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+/* Section header */
+.sectionHeader {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333333;
+  margin: 0 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+/**
+ * Header row container for layouts with right-aligned content.
+ * Uses flex with space-between to push headerRightContent to the right.
+ */
+.sectionHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+/**
+ * When inside sectionHeaderRow, remove the margin/padding/border
+ * from sectionHeader since the row handles it.
+ */
+.sectionHeaderRow .sectionHeader {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/**
+ * Flex container for icon + title layout.
+ * Aligns icon and title text vertically centered with 8px gap.
+ */
+.sectionHeaderWithIcon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/**
+ * Icon container for consistent sizing and alignment.
+ * Icons should be 16px and vertically aligned with text baseline.
+ */
+.sectionIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/**
+ * Container for right-aligned header content (e.g., action buttons).
+ */
+.headerRightContent {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* Content area */
+.content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #444444;
+}
+
+/* Empty state placeholder */
+.emptyState {
+  font-size: 13px;
+  font-style: italic;
+  color: #888888;
+  padding: 8px 0;
+}

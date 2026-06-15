@@ -1,0 +1,61 @@
+/**
+ * FileMenu Styles
+ *
+ * Styling for the File menu dropdown.
+ * Matches the visual style of ElementContextMenu.
+ *
+ * Spec 2026-01-11: Add Project Save Menu Item
+ * - Added .menuItemDisabled style for disabled menu items
+ */
+
+.menu {
+  position: fixed;
+  min-width: 180px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  padding: 4px 0;
+}
+
+.menuItem {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  user-select: none;
+}
+
+.menuItem:hover {
+  background: #f5f5f5;
+}
+
+.menuItem:active {
+  background: #e8e8e8;
+}
+
+/**
+ * Spec 2026-01-11: Disabled menu item style
+ * Applied when Save is disabled (no project open or save in progress)
+ */
+.menuItemDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.menuItemDisabled:hover {
+  background: transparent;
+}
+
+.menuItemDisabled:active {
+  background: transparent;
+}
+
+.separator {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}

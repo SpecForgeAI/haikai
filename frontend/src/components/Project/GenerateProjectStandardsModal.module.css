@@ -1,0 +1,165 @@
+/**
+ * GenerateProjectStandardsModal Styles
+ *
+ * Spec 2026-01-31: Project-level Standards Generation
+ * Task Group 3: GenerateProjectStandardsModal Component
+ *
+ * Styling for the Generate Project Standards Modal component.
+ * Follows the visual style of CreateOrganisationModal.module.css for consistency.
+ *
+ * Color scheme:
+ * - Primary: #1976D2
+ * - Error: #c62828
+ * - Borders: #ccc, #e0e0e0
+ * - Note text: #666
+ */
+
+/* Overlay - same as CreateOrganisationModal */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* Modal container - same as CreateOrganisationModal */
+.modal {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header - same as CreateOrganisationModal */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.closeButton {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.closeButton:hover:not(:disabled) {
+  color: #333;
+}
+
+.closeButton:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Content area with scroll */
+.content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Primary body text instruction */
+.bodyText {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #333;
+  line-height: 1.5;
+}
+
+/* Note text - smaller font, grey color */
+.noteText {
+  margin: 0 0 20px 0;
+  font-size: 0.9em;
+  color: #666;
+  line-height: 1.4;
+}
+
+/* Sources field container */
+.sourcesField {
+  margin-bottom: 16px;
+}
+
+/* General error message */
+.errorMessage {
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-top: 12px;
+}
+
+/* Footer - same as CreateOrganisationModal */
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.cancelButton {
+  background: #f5f5f5;
+  color: #333;
+  border: 1px solid #ccc;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.cancelButton:hover:not(:disabled) {
+  background: #e8e8e8;
+}
+
+.cancelButton:disabled {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.generateButton {
+  background: #1976D2;
+  color: white;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.generateButton:hover:not(:disabled) {
+  background: #1565C0;
+}
+
+.generateButton:disabled {
+  background: #b0bec5;
+  cursor: not-allowed;
+}

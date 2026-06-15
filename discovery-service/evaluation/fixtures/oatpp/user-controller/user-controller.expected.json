@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "UserController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST users",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "PUT users/{userId}",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET users/{userId}",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET users/offset/{offset}/limit/{limit}",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "DELETE users/{userId}",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,17 @@
+{
+  "id": "architect",
+  "displayName": "Architect",
+  "color": "#7B1FA2",
+  "identityPromptRef": "prompts/architect.identity.md",
+  "tasks": [
+    "architect--discovery-framing",
+    "architect--discovery-qa",
+    "architect--tech-standards",
+    "architect--define-architecture",
+    "architect--detailed-data-model",
+    "architect--service-breakdown",
+    "architect--oas-spec",
+    "architect--generate-architecture-diagram"
+  ],
+  "menuLabel": "Hi, what can I help you with?"
+}

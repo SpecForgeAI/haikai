@@ -1,0 +1,9 @@
+{
+  "expected": [],
+  "shouldNotEmit": [
+    {
+      "type": "physical_data_entities",
+      "name": "AllergenType"
+    }
+  ]
+}

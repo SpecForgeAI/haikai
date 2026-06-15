@@ -1,0 +1,120 @@
+/**
+ * IncrementCard.module.css
+ *
+ * Spec 2026-02-11: Compact Single-Row Increment Display
+ * - Single-row layout: INC-X — Title... [Badge]
+ * - Reduced padding (6px 10px) and font sizes (12px)
+ * - Title truncates with ellipsis
+ * - Active state: blue left border + light blue background
+ * - Status badge pill with 7 color variants
+ */
+
+/* Single-row layout */
+.row {
+  display: flex;
+  align-items: center;
+  padding: 5px 10px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background-color 0.15s ease;
+  min-height: 28px;
+}
+
+.row:hover:not(.rowActive) {
+  background-color: #f5f5f5;
+}
+
+.row:focus {
+  outline: 2px solid #2196F3;
+  outline-offset: -2px;
+}
+
+/* Active row */
+.rowActive {
+  border-left: 3px solid #2196F3;
+  background-color: #E3F2FD;
+}
+
+/* Increment ID (e.g., INC-1) */
+.rowId {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666666;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Em-dash separator */
+.rowSeparator {
+  font-size: 11px;
+  color: #999999;
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+/* Title - truncates with ellipsis */
+.rowTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: #333333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Base status badge - compact pill */
+.statusBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* NOT_STARTED - gray */
+.statusNotStarted {
+  color: #666666;
+  background-color: #f0f0f0;
+}
+
+/* SPEC_READY - teal */
+.statusSpecReady {
+  color: #0369a1;
+  background-color: #e0f2fe;
+}
+
+/* IN_CLARIFICATION - purple */
+.statusInClarification {
+  color: #7c3aed;
+  background-color: #f3e8ff;
+}
+
+/* READY_TO_EXECUTE - blue */
+.statusReadyToExecute {
+  color: #2563eb;
+  background-color: #dbeafe;
+}
+
+/* EXECUTING - amber */
+.statusExecuting {
+  color: #b45309;
+  background-color: #fef3c7;
+}
+
+/* COMPLETED - green */
+.statusCompleted {
+  color: #166534;
+  background-color: #dcfce7;
+}
+
+/* FAILED - red */
+.statusFailed {
+  color: #dc2626;
+  background-color: #fee2e2;
+}

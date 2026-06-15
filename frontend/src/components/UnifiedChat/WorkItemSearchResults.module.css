@@ -1,0 +1,126 @@
+/**
+ * WorkItemSearchResults.module.css
+ *
+ * Spec 2026-03-04: What's Next v1-C -- Work Item Picker
+ * Task Group 7, Task 7.2: WorkItemSearchResults styles
+ *
+ * Styled as outlined cards with hover state (background highlight),
+ * stacked vertically within the message bubble area.
+ * Follows the card styling from WhatsNextActionList.module.css.
+ */
+
+/* Header: query summary text */
+.header {
+  font-size: 12px;
+  font-weight: 400;
+  color: #666666;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+/* Container: vertical stack of result cards */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Result card: outlined clickable card (same sizing as .actionCard in WhatsNextActionList) */
+.resultCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  width: 100%;
+}
+
+.resultCard:hover {
+  background: #f5f5f5;
+  border-color: #bdbdbd;
+}
+
+.resultCard:active {
+  background: #eeeeee;
+}
+
+/* Primary text: work item title */
+.resultTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333333;
+  line-height: 1.4;
+}
+
+/* Secondary line: type, status, parent title */
+.resultMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #666666;
+  line-height: 1.4;
+}
+
+/* Small inline badge for FEATURE/STORY type */
+.typeBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+/* Small inline badge for status */
+.statusBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #f5f5f5;
+  color: #616161;
+}
+
+/* Subtle "In scope" tag */
+.scopeTag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+/* Cancel button: text-only, muted, no border/background */
+.cancelButton {
+  display: inline-block;
+  padding: 6px 14px;
+  margin-top: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  color: #999999;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.cancelButton:hover {
+  color: #666666;
+  text-decoration: underline;
+}

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<application xmlns="http://wadl.dev.java.net/2009/02">
+    <doc xmlns:jersey="http://jersey.java.net/" jersey:generatedBy="Jersey: 1.16 11/28/2012 03:18 PM"/>
+    <doc title="SampleSvc Service Version" version="1.6.4">SampleSvc REST API surface for hierarchy and reference data lookups.</doc>
+    <grammars>
+        <include href="xsd0.xsd">
+            <doc title="Generated" xml:lang="en"/>
+        </include>
+    </grammars>
+    <resources base="http://example.invalid:8080/samplesvc/">
+        <resource path="/hierarchynodes">
+            <doc title="Hierarchy Nodes" xml:lang="en">Collection resource for org hierarchy node lookups.</doc>
+            <resource path="{grdOrgId}">
+                <param name="grdOrgId" style="template" type="xs:int"/>
+                <method id="getHierarchyForOrgId" name="POST">
+                    <doc title="Get hierarchy for org id" xml:lang="en">Returns the filtered hierarchy graph rooted at the supplied org id.</doc>
+                    <request>
+                        <param name="system" style="header" type="xs:string"/>
+                        <param name="subSystem" style="header" type="xs:string"/>
+                        <param name="userName" style="header" type="xs:string"/>
+                        <param name="ssoToken" style="header" type="xs:string"/>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="filteredHierarchyRequestInfo" mediaType="application/json"/>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="filteredHierarchyRequestInfo" mediaType="application/xml"/>
+                    </request>
+                    <response>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="nodeResponse" mediaType="application/json"/>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="nodeResponse" mediaType="application/xml"/>
+                    </response>
+                </method>
+                <method id="getHierarchyMeta" name="GET">
+                    <doc title="Get hierarchy meta" xml:lang="en">Returns descriptive metadata for the hierarchy at the given org id.</doc>
+                    <request>
+                        <param name="includeInactive" style="query" type="xs:boolean"/>
+                    </request>
+                    <response>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="nodeResponse" mediaType="application/json"/>
+                    </response>
+                </method>
+            </resource>
+        </resource>
+        <resource path="/refdata">
+            <doc title="Reference Data" xml:lang="en">Collection resource for reference data lookups.</doc>
+            <resource path="{lookupKey}">
+                <param name="lookupKey" style="template" type="xs:string"/>
+                <method id="getReferenceDataByKey" name="GET">
+                    <doc title="Get reference data by key" xml:lang="en">Returns reference data for a single key.</doc>
+                    <request>
+                        <param name="locale" style="query" type="xs:string"/>
+                        <param name="userName" style="header" type="xs:string"/>
+                    </request>
+                    <response>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="referenceDataItem" mediaType="application/json"/>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="referenceDataItem" mediaType="application/xml"/>
+                    </response>
+                </method>
+                <method id="upsertReferenceDataByKey" name="PUT">
+                    <doc title="Upsert reference data by key" xml:lang="en">Inserts or updates reference data for a single key.</doc>
+                    <request>
+                        <param name="userName" style="header" type="xs:string"/>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="referenceDataItem" mediaType="application/json"/>
+                    </request>
+                    <response>
+                        <ns2:representation xmlns:ns2="http://wadl.dev.java.net/2009/02" element="referenceDataItem" mediaType="application/json"/>
+                    </response>
+                </method>
+            </resource>
+        </resource>
+    </resources>
+</application>

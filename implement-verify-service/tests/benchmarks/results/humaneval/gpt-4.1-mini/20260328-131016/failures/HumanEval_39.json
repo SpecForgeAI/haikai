@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/39",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "def is_prime(num):\n    if num < 2:\n        return False\n    if num == 2:\n        return True\n    if num % 2 == 0:\n        return False\n    for i in range(3, int(num**0.5) + 1, 2):\n        if num % i == 0:\n            return False\n    return True\n\na, b = 0, 1\ncount = 0\nwhile True:\n    a, b = b, a + b\n    if is_prime(a):\n        count += 1\n        if count == n:\n            return a",
+  "expected_output": "    import math\n\n    def is_prime(p):\n        if p < 2:\n            return False\n        for k in range(2, min(int(math.sqrt(p)) + 1, p - 1)):\n            if p % k == 0:\n                return False\n        return True\n    f = [0, 1]\n    while True:\n        f.append(f[-1] + f[-2])\n        if is_prime(f[-1]):\n            n -= 1\n        if n == 0:\n            return f[-1]\n",
+  "latency_seconds": 2.547047240892425,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 144,
+    "output_tokens": 130,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

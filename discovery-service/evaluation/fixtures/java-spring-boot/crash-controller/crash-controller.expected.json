@@ -1,0 +1,15 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "CrashController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /oups",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

@@ -1,0 +1,70 @@
+{
+  "expected": [
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /explore",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /user/<username>",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /user/<username>/popup",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /edit_profile",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /follow/<username>",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /unfollow/<username>",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /translate",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /search",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /send_message/<recipient>",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /messages",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /export_posts",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /notifications",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

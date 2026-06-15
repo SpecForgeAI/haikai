@@ -1,0 +1,51 @@
+/**
+ * TierBadge Styles
+ *
+ * Spec 2026-04-20: V3 Tier UX -- Task Group 6 (frontend)
+ *
+ * Reuses the existing status palette from DiscoveryRunDetailView.module.css:
+ *   success (green): #e8f5e9 / #2e7d32  (matches .statusCompleted)
+ *   warning (yellow): #fff8e1 / #f57f17 (matches .statusRunning)
+ *   danger (red):   #ffebee / #c62828  (matches .statusFailed)
+ *   neutral (grey): #f5f5f5 / #757575   (matches .statusPending)
+ *
+ * One new token introduced per spec allowance: caution (orange) for the
+ * llm-ir-guided badge variant.
+ */
+
+.tierBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.tierBadgeSuccess {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.tierBadgeWarning {
+  background: #fff8e1;
+  color: #f57f17;
+}
+
+/* NEW token: caution (orange) for llm-ir-guided. Single new variable per spec. */
+.tierBadgeCaution {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.tierBadgeDanger {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.tierBadgeNeutral {
+  background: #f5f5f5;
+  color: #757575;
+}

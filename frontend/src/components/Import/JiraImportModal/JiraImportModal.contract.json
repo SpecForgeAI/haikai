@@ -1,0 +1,77 @@
+{
+  "component": "JiraImportModal",
+  "version": "1.0.0",
+  "description": "Modal dialog for searching, selecting, and importing Jira issues into the current product backlog. Controlled by parent (isOpen/onClose). Fetches issues from the gateway Jira proxy based on user search input.",
+  "folder": "frontend/src/components/Import/JiraImportModal",
+  "children": [
+    {
+      "component": "JiraIssueRow",
+      "description": "Displays a single Jira issue in the search results list with checkbox, issue key, summary, and issue type."
+    }
+  ],
+  "props": {
+    "JiraImportModal": {
+      "isOpen": { "type": "boolean", "required": true, "description": "Whether the modal is visible" },
+      "onClose": { "type": "() => void", "required": true, "description": "Callback when modal is closed" },
+      "onImport": { "type": "(items: WorkItem[]) => void", "required": true, "description": "Callback with selected Jira issues mapped to WorkItem format for backlog insertion" },
+      "projectId": { "type": "string", "required": true, "description": "Current project ID, passed through to imported WorkItems" },
+      "jiraProjectKey": { "type": "string", "required": false, "description": "Optional Jira project key to pre-filter search results" }
+    },
+    "JiraIssueRow": {
+      "issue": { "type": "WorkItem", "required": true, "description": "The Jira issue mapped to WorkItem format" },
+      "selected": { "type": "boolean", "required": true, "description": "Whether this row is currently selected" },
+      "onToggle": { "type": "(id: string) => void", "required": true, "description": "Callback when selection checkbox is toggled" }
+    }
+  },
+  "events": {
+    "onClose": "Fired when user clicks Cancel, overlay, close button, or presses Escape",
+    "onImport": "Fired when user clicks Import with selected issues; payload is WorkItem[]",
+    "onToggle": "Fired when user clicks a row checkbox; payload is the issue id"
+  },
+  "invariants": [
+    "Import button is disabled when no issues are selected",
+    "Import button is disabled while a search is in progress",
+    "Selecting a row must not trigger import",
+    "Escape closes the modal unless a fetch is in progress",
+    "Search input is auto-focused when the modal opens"
+  ],
+  "stateStories": [
+    { "name": "Default", "description": "Modal open, empty search field, no results shown yet" },
+    { "name": "Loading", "description": "Search in progress, spinner visible, results area shows loading state" },
+    { "name": "EmptyResults", "description": "Search completed, zero results returned" },
+    { "name": "Error", "description": "Search failed, error message displayed" },
+    { "name": "WithSelections", "description": "Results visible, some rows checked, Import button enabled" },
+    { "name": "LongList", "description": "Many results (20+), list scrolls, header/footer remain fixed" }
+  ],
+  "visual": {
+    "layout": [
+      "Header: title 'Import from Jira' + close button",
+      "Search bar: text input with search icon, full width",
+      "Results area: scrollable list of JiraIssueRow components",
+      "Footer: Cancel button (left-aligned in flex-end group) + Import button"
+    ],
+    "scrolling": "Results area scrolls vertically; header and footer are fixed",
+    "elements": {
+      "searchInput": "Text input with Search icon (lucide-react) as adornment",
+      "issueRow": "Checkbox | Issue key (bold, monospace) | Issue type badge | Summary text (truncated)",
+      "emptyState": "Centered message when no results",
+      "loadingState": "Centered spinner or shimmer in results area",
+      "errorState": "Red error banner in results area"
+    },
+    "density": "Compact rows (~40px height), comfortable padding",
+    "truncation": "Summary text truncated with ellipsis at row boundary"
+  },
+  "accessibility": {
+    "roles": {
+      "modal": "dialog with aria-modal=true",
+      "searchInput": "searchbox role",
+      "resultsList": "list role",
+      "issueRow": "listitem with checkbox"
+    },
+    "keyboard": {
+      "Escape": "Close modal",
+      "Enter": "Trigger search when search input is focused",
+      "Space": "Toggle selection on focused row"
+    }
+  }
+}

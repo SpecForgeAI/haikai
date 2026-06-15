@@ -1,0 +1,46 @@
+{
+  "id": "architect--discovery-qa",
+  "personaId": "architect",
+  "menuLabel": "Discovery Q&A",
+  "description": "Presents hypothesis-driven validation questions derived from weak, ambiguous, or incomplete discovery results. Guides the user through confirming, denying, or elaborating on each hypothesis so that candidate confidence scores, cluster membership, and evidence can be refined before the review/approval workflow.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/architect.discovery-qa.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "verdicts", "questions", "summary"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "done"]
+      },
+      "verdicts": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["hypothesisId", "verdict", "notes"],
+          "properties": {
+            "hypothesisId": { "type": "string" },
+            "verdict": {
+              "type": "string",
+              "enum": ["confirmed", "denied", "partially_confirmed", "needs_more_info"]
+            },
+            "notes": { "type": "string" }
+          }
+        }
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      }
+    }
+  },
+  "contextNeeds": ["discovery-run-id", "project-id"],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub"],
+  "saveTargetResolution": "bound-by-system-prompt"
+}

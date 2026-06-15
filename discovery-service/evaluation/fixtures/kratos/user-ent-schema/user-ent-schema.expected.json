@@ -1,0 +1,60 @@
+{
+  "expected": [
+    {
+      "type": "logical_data_entities",
+      "name": "User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "ID",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Username",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "PasswordHash",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "CreatedAt",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "UpdatedAt",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Edges",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entities",
+      "name": "UserEdges",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Addresses",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "Cards",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_attributes",
+      "name": "loadedTypes",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

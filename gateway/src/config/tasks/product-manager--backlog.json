@@ -1,0 +1,98 @@
+{
+  "id": "product-manager--backlog",
+  "personaId": "product-manager",
+  "menuLabel": "Manage Backlog",
+  "description": "Conducts structured backlog discovery for a selected epic. Guides the user through epic selection (with optional priority discussion), feature identification, story decomposition, acceptance criteria, and final review. Saves features and stories as work items under the chosen epic.",
+  "mode": "discovery",
+  "taskPromptRef": "prompts/product-manager.backlog.task.md",
+  "responseFormat": {
+    "type": "object",
+    "required": ["phase", "section", "questions", "summary", "selectedEpic", "proposedFeatures", "epicPriorityUpdates", "assumptions", "openItems"],
+    "properties": {
+      "phase": {
+        "type": "string",
+        "enum": ["questions", "ready"]
+      },
+      "section": {
+        "type": "string",
+        "enum": [
+          "epic_selection",
+          "feature_identification",
+          "story_decomposition",
+          "acceptance_criteria",
+          "final_review"
+        ]
+      },
+      "questions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "summary": {
+        "type": "string"
+      },
+      "selectedEpic": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "initiativeTitle": { "type": "string" }
+        }
+      },
+      "proposedFeatures": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "stories": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "acceptanceCriteria": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "epicPriorityUpdates": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "priority": { "type": "integer" }
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "openItems": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    }
+  },
+  "contextNeeds": ["mission"],
+  "persistence": "hub",
+  "artifacts": [
+    {
+      "artifactId": "backlog",
+      "tool": "save_backlog_items",
+      "description": "Features and stories for a selected epic",
+      "filename": "BACKLOG"
+    }
+  ],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}

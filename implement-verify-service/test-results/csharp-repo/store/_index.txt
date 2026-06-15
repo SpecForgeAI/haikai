@@ -1,0 +1,58 @@
+# file	kind	name	scope	signature	line	flags
+Extensions/Extensions.cs	method	AddApplicationServices	Extensions	(this IHostApplicationBuilder builder)	10	-
+Extensions/Extensions.cs	class	Extensions	-	-	8	-
+Extensions/Extensions.cs	class	IntegrationEventContext	-	-	25	extends:JsonSerializerContext
+Extensions/ServerCallContextIdentityExtensions.cs	method	GetUserIdentity	ServerCallContextIdentityExtensions	(this ServerCallContext context)	7	-
+Extensions/ServerCallContextIdentityExtensions.cs	method	GetUserName	ServerCallContextIdentityExtensions	(this ServerCallContext context)	8	-
+Extensions/ServerCallContextIdentityExtensions.cs	class	ServerCallContextIdentityExtensions	-	-	5	-
+Grpc/BasketService.cs	method	BasketService	-	( IBasketRepository repository, ILogger<BasketService> logger)	8	-
+Grpc/BasketService.cs	method	DeleteBasket	-	(DeleteBasketRequest request, ServerCallContext context)	59	-
+Grpc/BasketService.cs	method	GetBasket	-	(GetBasketRequest request, ServerCallContext context)	13	-
+Grpc/BasketService.cs	method	MapToCustomerBasket	-	(string userId, UpdateBasketRequest customerBasketRequest)	93	-
+Grpc/BasketService.cs	method	MapToCustomerBasketResponse	-	(CustomerBasket customerBasket)	77	-
+Grpc/BasketService.cs	method	UpdateBasket	-	(UpdateBasketRequest request, ServerCallContext context)	36	-
+Grpc/BasketService.cs	variable	customerBasket	-	-	49	-
+Grpc/BasketService.cs	variable	data	-	-	26	-
+Grpc/BasketService.cs	variable	response	-	-	50	-
+Grpc/BasketService.cs	variable	response	-	-	95	-
+Grpc/BasketService.cs	variable	response	-	-	79	-
+Grpc/BasketService.cs	variable	userId	-	-	15	-
+Grpc/BasketService.cs	variable	userId	-	-	38	-
+Grpc/BasketService.cs	variable	userId	-	-	61	-
+IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	method	OrderStartedIntegrationEventHandler	-	( IBasketRepository repository, ILogger<OrderStartedIntegrationEventHandler> logger)	6	-
+IntegrationEvents/Events/OrderStartedIntegrationEvent.cs	method	OrderStartedIntegrationEvent	-	(string UserId)	6	-
+Model/BasketItem.cs	class	BasketItem	-	-	3	extends:IValidatableObject
+Model/BasketItem.cs	property	Id	BasketItem	-	5	-
+Model/BasketItem.cs	property	OldUnitPrice	BasketItem	-	9	-
+Model/BasketItem.cs	property	PictureUrl	BasketItem	-	11	-
+Model/BasketItem.cs	property	ProductId	BasketItem	-	6	-
+Model/BasketItem.cs	property	ProductName	BasketItem	-	7	-
+Model/BasketItem.cs	property	Quantity	BasketItem	-	10	-
+Model/BasketItem.cs	property	UnitPrice	BasketItem	-	8	-
+Model/BasketItem.cs	method	Validate	BasketItem	(ValidationContext validationContext)	13	-
+Model/BasketItem.cs	variable	results	-	-	15	-
+Model/CustomerBasket.cs	property	BuyerId	CustomerBasket	-	5	-
+Model/CustomerBasket.cs	method	CustomerBasket	CustomerBasket	()	9	-
+Model/CustomerBasket.cs	method	CustomerBasket	CustomerBasket	(string customerId)	11	-
+Model/CustomerBasket.cs	class	CustomerBasket	-	-	3	-
+Model/CustomerBasket.cs	property	Items	CustomerBasket	-	7	-
+Program.cs	method	app.MapDefaultEndpoints	-	()	10	-
+Program.cs	method	app.MapGrpcService	-	()	12	-
+Program.cs	method	app.Run	-	()	14	-
+Program.cs	method	builder.AddApplicationServices	-	()	4	-
+Program.cs	method	builder.AddBasicServiceDefaults	-	()	3	-
+Program.cs	method	builder.Services.AddGrpc	-	()	6	-
+Repositories/IBasketRepository.cs	method	DeleteBasketAsync	IBasketRepository	(string id)	9	-
+Repositories/IBasketRepository.cs	method	GetBasketAsync	IBasketRepository	(string customerId)	7	-
+Repositories/IBasketRepository.cs	interface	IBasketRepository	-	-	5	-
+Repositories/IBasketRepository.cs	method	UpdateBasketAsync	IBasketRepository	(CustomerBasket basket)	8	-
+Repositories/RedisBasketRepository.cs	variable	BasketKeyPrefix	-	-	13	-
+Repositories/RedisBasketRepository.cs	class	BasketSerializationContext	-	-	53	extends:JsonSerializerContext
+Repositories/RedisBasketRepository.cs	method	DeleteBasketAsync	-	(string id)	18	-
+Repositories/RedisBasketRepository.cs	method	GetBasketAsync	-	(string customerId)	23	-
+Repositories/RedisBasketRepository.cs	method	RedisBasketRepository	-	(ILogger<RedisBasketRepository> logger, IConnectionMultiplexer redis)	6	-
+Repositories/RedisBasketRepository.cs	method	UpdateBasketAsync	-	(CustomerBasket basket)	34	-
+Repositories/RedisBasketRepository.cs	variable	_database	-	-	8	-
+Repositories/RedisBasketRepository.cs	variable	created	-	-	37	-
+Repositories/RedisBasketRepository.cs	unknown	data	-	-	25	-
+Repositories/RedisBasketRepository.cs	variable	json	-	-	36	-

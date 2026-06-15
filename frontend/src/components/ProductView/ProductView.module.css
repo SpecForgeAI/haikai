@@ -1,0 +1,264 @@
+/**
+ * ProductView Styles
+ *
+ * Spec 2026-01-03: Task Group 3 - ProductView component styling
+ * Stage 4: Updated for ProductBacklogPage integration
+ * Follows MetaModelView.module.css patterns for consistency
+ *
+ * Spec 2026-01-05: Simplify Product Layout and Compact Roadmap Controls
+ * - Removed .header and .title classes (Task Group 1.3)
+ * - Added .roadmapControlRow and related styles (Task Group 1.4, 2.5)
+ *
+ * Spec 2026-01-10: Upload Book of Work from Markdown
+ * - Added .controlRowButtonGroup for multiple buttons
+ * - Added .controlRowButtonSecondary for secondary action button
+ * - Added .errorBanner and related error display styles
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Spec 2026-01-05: .header and .title classes removed - Task Group 1.3 */
+
+.tabBar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+/* Task Group 3: Tab styling matching MetaModelView patterns */
+.tab {
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.activeTab {
+  color: #1976D2;
+  border-bottom-color: #1976D2;
+  background: white;
+}
+
+/* Stage 4: Content area updated for flex child components */
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Task Group 3: Placeholder content styling (for Implement tab) */
+.placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #888;
+  font-size: 16px;
+  padding: 40px;
+}
+
+/* ============================================================================
+ * Spec 2026-01-05: Roadmap Control Row Styles
+ * Task Group 1.4, Task Group 2.5
+ * ============================================================================ */
+
+.roadmapControlRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  min-height: 36px;
+}
+
+/* Spec 2026-01-10: Button group container for multiple buttons */
+.controlRowButtonGroup {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Task Group 2.5: Button styling for merged import/refresh button */
+.controlRowButton {
+  padding: 6px 12px;
+  background: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease;
+}
+
+.controlRowButton:hover {
+  background: #1565c0;
+}
+
+.controlRowButton:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3);
+}
+
+.controlRowButton:active {
+  background: #0d47a1;
+}
+
+.controlRowButtonDisabled {
+  padding: 6px 12px;
+  background: #b0bec5;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: not-allowed;
+  white-space: nowrap;
+}
+
+/* Spec 2026-01-10: Secondary button styling for Upload Book of Work */
+.controlRowButtonSecondary {
+  padding: 6px 12px;
+  background: #ffffff;
+  color: #1976d2;
+  border: 1px solid #1976d2;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.controlRowButtonSecondary:hover {
+  background: #e3f2fd;
+  border-color: #1565c0;
+  color: #1565c0;
+}
+
+.controlRowButtonSecondary:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3);
+}
+
+.controlRowButtonSecondary:active {
+  background: #bbdefb;
+}
+
+/* Task Group 2.5: Inline status container */
+.inlineStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inlineStatusMuted {
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+}
+
+/* Task Group 2.5: Badge styles (reused from ProductRoadmapPage.module.css patterns) */
+.revisionBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: #666;
+}
+
+.sourceBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.loadingStatus {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+}
+
+/* ============================================================================
+ * Spec 2026-01-10: Error Banner Styles
+ * Task Group 5.5: Error display for Book of Work upload
+ * ============================================================================ */
+
+.errorBanner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #fff3f3;
+  border-bottom: 1px solid #ffcdd2;
+  flex-shrink: 0;
+}
+
+.errorMessage {
+  color: #c62828;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.dismissErrorButton {
+  padding: 4px 10px;
+  background: transparent;
+  color: #c62828;
+  border: 1px solid #c62828;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dismissErrorButton:hover {
+  background: #ffebee;
+}
+
+.dismissErrorButton:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(198, 40, 40, 0.3);
+}

@@ -1,0 +1,35 @@
+name: e107
+version: 1
+language: php
+
+detection:
+  files_match:
+    - "e107_core/**"
+    - "e107_plugins/**"
+    - "e107_admin/**"
+  manifest_contains:
+    - {file: composer.json, substring: "e107inc/e107"}
+
+extract:
+  - id: admin_action_methods
+    query: method_decls
+    file_filter: all
+    file_extensions: [".php"]
+    name_pattern: '^action[A-Z]\w*$'
+    strip_prefix: "action"
+    verb: ANY
+    path_from: method_name_strip
+
+emit:
+  type: WEB
+  protocol: HTTP
+  framework: e107
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Primary routing is file-based (URL → PHP file under e107_admin/ and e107_plugins/); not captured by any available query type"
+  - "Plugin URL classes (e_url subclasses) define routes as PHP arrays returned from config(), not as individually named methods — not captured"
+  - "Admin dispatcher classes register routes as array data in config(), not as call_args or annotations — not captured"
+  - "SEF (Search Engine Friendly) URL rewrites are stored in the database and are not statically analyzable"
+  - "action* method_decls extraction will produce sparse results; e107 admin methods do not consistently follow this naming convention"

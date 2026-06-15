@@ -1,0 +1,442 @@
+{
+  "metaModel": {
+    "entities": {
+      "business_users": [
+        {
+          "id": "bu-1",
+          "name": "Customer Service Rep",
+          "description": "Handles customer inquiries",
+          "tags": "front-office"
+        }
+      ],
+      "business_processes": [
+        {
+          "id": "bp-1",
+          "name": "Order Processing",
+          "description": "End-to-end order processing workflow",
+          "tags": "core",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "process_activities": [
+        {
+          "id": "pa-1",
+          "business_process_id": "bp-1",
+          "name": "Receive Order",
+          "description": "Initial order intake",
+          "sequence_order": 1,
+          "frequency": "DAILY",
+          "actor_hint": "END_USER",
+          "user_interaction_level": "SIGNIFICANT",
+          "tags": "intake",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "business_points": [
+        {
+          "id": "bpt-1",
+          "name": "Order Processing",
+          "description": "Business point for order processing",
+          "kind": "BUSINESS_PROCESS",
+          "business_process_id": "bp-1",
+          "process_activity_id": null,
+          "tags": "auto-created",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "applications": [
+        {
+          "id": "app-1",
+          "name": "Order Management System",
+          "description": "Central order management application",
+          "app_type": "WEB",
+          "status": "ACTIVE",
+          "tags": "core",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "app_components": [
+        {
+          "id": "ac-1",
+          "name": "Order API",
+          "description": "REST API for orders",
+          "application_id": "app-1",
+          "tags": "api",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "services": [
+        {
+          "id": "svc-1",
+          "name": "Order Service",
+          "description": "Core order service",
+          "application_id": "app-1",
+          "app_component_id": "ac-1",
+          "service_type": "REST",
+          "tags": "microservice",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "interfaces": [
+        {
+          "id": "if-1",
+          "name": "Orders API",
+          "description": "RESTful API for order operations",
+          "service_id": "svc-1",
+          "interface_type": "REST_API",
+          "spec_link": "https://api.example.com/orders/spec",
+          "tags": "public",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "endpoints": [
+        {
+          "id": "ep-1",
+          "name": "Create Order",
+          "description": "Create a new order",
+          "interface_id": "if-1",
+          "endpoint_type": "HTTP_REST",
+          "path_or_address": "/api/v1/orders",
+          "protocol": "HTTPS",
+          "operation_verb": "POST",
+          "direction": "INBOUND",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "application_points": [
+        {
+          "id": "ap-1",
+          "name": "Order Management System",
+          "description": "Application point for OMS",
+          "kind": "APPLICATION",
+          "application_id": "app-1",
+          "application_component_id": null,
+          "service_id": null,
+          "point_type": "APPLICATION",
+          "tags": "auto-created",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "logical_data_entities": [
+        {
+          "id": "lde-1",
+          "name": "Order",
+          "description": "Logical representation of an order",
+          "tags": "core",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "logical_data_attributes": [
+        {
+          "id": "lda-1",
+          "name": "order_id",
+          "description": "Unique order identifier",
+          "logical_entity_id": "lde-1",
+          "data_type": "string_uuid",
+          "is_primary_key": true,
+          "is_nullable": false,
+          "tags": "pk"
+        },
+        {
+          "id": "lda-2",
+          "name": "total_amount",
+          "description": "Total order amount",
+          "logical_entity_id": "lde-1",
+          "data_type": "number",
+          "is_primary_key": false,
+          "is_nullable": false,
+          "tags": "amount"
+        }
+      ],
+      "physical_data_entities": [
+        {
+          "id": "pde-1",
+          "name": "orders",
+          "description": "Orders table in PostgreSQL",
+          "physical_type": "TABLE",
+          "database": "order_db",
+          "tags": "postgres",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "physical_data_attributes": [
+        {
+          "id": "pda-1",
+          "name": "id",
+          "description": "Primary key",
+          "physical_entity_id": "pde-1",
+          "data_type": "VARCHAR",
+          "is_primary_key": true,
+          "is_nullable": false,
+          "tags": "pk"
+        }
+      ],
+      "interactions": [
+        {
+          "id": "int-1",
+          "name": "Create Order Flow",
+          "description": "User creates an order",
+          "user_id": "bu-1",
+          "primary_app_business_point_id": "abp-app-1",
+          "secondary_app_business_point_id": null
+        }
+      ],
+      "app_business_points": [
+        {
+          "id": "abp-app-1",
+          "name": "Order Management System",
+          "kind": "APPLICATION",
+          "source_entity_id": "app-1"
+        }
+      ]
+    },
+    "relationships": {
+      "business_user_business_points": [
+        {
+          "id": "bubp-1",
+          "business_user_id": "bu-1",
+          "business_point_id": "bpt-1",
+          "description": "CSR performs order processing",
+          "tags": "primary",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "application_point_business_points": [
+        {
+          "id": "apbp-1",
+          "application_point_id": "ap-1",
+          "business_point_id": "bpt-1",
+          "description": "OMS supports order processing",
+          "tags": "implements",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "logical_data_entity_relationships": [
+        {
+          "id": "lder-1",
+          "fromDataEntityPointId": "dep_log_lde-1",
+          "toDataEntityPointId": "dep_log_lde-1",
+          "cardinality": "ONE_TO_MANY",
+          "relationship": "ASSOCIATION",
+          "description": "Self-reference for linked orders",
+          "tags": "self-ref",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "logical_data_entity_physical_data_entities": [
+        {
+          "id": "ldepde-1",
+          "logical_entity_id": "lde-1",
+          "physical_entity_id": "pde-1",
+          "description": "Order mapped to orders table",
+          "tags": "mapping",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "logical_data_attribute_physical_data_attributes": [
+        {
+          "id": "ldapda-1",
+          "logical_attribute_id": "lda-1",
+          "physical_attribute_id": "pda-1",
+          "description": "order_id mapped to id column",
+          "tags": "mapping",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "data_movements": [
+        {
+          "id": "dm-1",
+          "source_application_point_id": "ap-1",
+          "target_application_point_id": "ap-1",
+          "dataEntityPointId": "dep_log_lde-1",
+          "movement_type": "SYNC",
+          "description": "Internal data flow",
+          "tags": "internal",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "interface_logical_entities": [
+        {
+          "id": "ile-1",
+          "interface_id": "if-1",
+          "dataEntityPointId": "dep_log_lde-1",
+          "description": "Orders API exposes Order entity",
+          "tags": "exposed",
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ]
+    }
+  },
+  "diagrams": [
+    {
+      "id": "diag-1",
+      "name": "Order System Overview",
+      "description": "High-level view of order system",
+      "diagram_type": "LANDSCAPE",
+      "settings": {
+        "showGrid": true,
+        "snapToGrid": true
+      },
+      "view_quarter": "2024-Q4",
+      "diagram_nodes": [
+        {
+          "id": "dn-1",
+          "entity_type": "APPLICATION",
+          "entity_id": "app-1",
+          "pos_x": 100.0,
+          "pos_y": 100.0,
+          "width": 200.0,
+          "height": 100.0,
+          "auto_size": true,
+          "z_index": 0,
+          "parent_node_id": null,
+          "style_override": null,
+          "text_h_align": "CENTER",
+          "text_v_align": "MIDDLE",
+          "text_area_width": null,
+          "text_font_size": null,
+          "text_font_weight": null,
+          "text_font_style": null,
+          "text_text_decoration": null,
+          "background_color": "#4287f5",
+          "line_color": null,
+          "text_color": null,
+          "render_style": "standard",
+          "embedded_attribute_ids": null,
+          "selected_attribute_ids": null,
+          "embedded_endpoint_ids": null,
+          "embedded_entity_ids": null,
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "diagram_edges": [
+        {
+          "id": "de-1",
+          "relationship_type": "APP_POINT_BUSINESS_POINT",
+          "relationship_id": "apbp-1",
+          "source_node_id": "dn-1",
+          "target_node_id": "dn-1",
+          "label_text": "implements",
+          "label_pos_x": 200.0,
+          "label_pos_y": 150.0,
+          "line_weight": null,
+          "line_type": null,
+          "line_dashes": null,
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": null,
+          "edge_points": [
+            {
+              "id": "ep-de1-1",
+              "sequence_order": 0,
+              "pos_x": 100.0,
+              "pos_y": 100.0
+            },
+            {
+              "id": "ep-de1-2",
+              "sequence_order": 1,
+              "pos_x": 300.0,
+              "pos_y": 100.0
+            }
+          ],
+          "label_font_size": null,
+          "label_font_weight": null,
+          "label_font_style": null,
+          "label_text_decoration": null,
+          "label_h_align": null,
+          "label_v_align": null,
+          "line_color": null,
+          "text_color": null,
+          "subType": null,
+          "source_label_text": null,
+          "source_label_pos_x": null,
+          "source_label_pos_y": null,
+          "target_label_text": null,
+          "target_label_pos_x": null,
+          "target_label_pos_y": null,
+          "z_index": 110,
+          "valid_from": "2024-Q1",
+          "valid_to": null
+        }
+      ],
+      "decorations": [
+        {
+          "id": "dec-1",
+          "type": "BOX",
+          "text": "Order System",
+          "text_font_size": 16.0,
+          "text_font_weight": "bold",
+          "text_font_style": null,
+          "text_color": "#000000",
+          "line_color": "#000000",
+          "line_style": "SOLID",
+          "line_weight": "1",
+          "z_index": -1,
+          "valid_from": null,
+          "valid_to": null,
+          "pos_x": 50.0,
+          "pos_y": 50.0,
+          "width": 300.0,
+          "height": 200.0,
+          "text_h_align": "CENTER",
+          "text_v_align": "TOP",
+          "background_color": "#f0f0f0",
+          "auto_size": false,
+          "line_points": null,
+          "label_pos_x": null,
+          "label_pos_y": null,
+          "arrow_start": null,
+          "arrow_end": null
+        }
+      ],
+      "interaction_edges": [
+        {
+          "id": "ie-1",
+          "interaction_id": "int-1",
+          "relationship_type": "USER_INTERACTION",
+          "source_node_id": "dn-1",
+          "target_node_id": "dn-1",
+          "edge_points": [
+            {
+              "id": "ep-ie1-1",
+              "sequence_order": 0,
+              "pos_x": 100.0,
+              "pos_y": 100.0
+            },
+            {
+              "id": "ep-ie1-2",
+              "sequence_order": 1,
+              "pos_x": 200.0,
+              "pos_y": 100.0
+            }
+          ],
+          "label_text": "Create Order Flow",
+          "label_pos_x": 150.0,
+          "label_pos_y": 80.0,
+          "user_node_id": null,
+          "user_link_edge_points": null,
+          "line_style": "dotted"
+        }
+      ]
+    }
+  ]
+}

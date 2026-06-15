@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: jira-service-test
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+server:
+  port: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    com.example.jiraservice: DEBUG
+
+# Test Jira configuration
+jira:
+  base-url: https://test-jira.atlassian.net
+  auth-mode: BEARER
+  bearer-token: test-token
+  username: test-user
+  api-token: test-api-token
+  connect-timeout-ms: 5000
+  read-timeout-ms: 30000
+  type-mapping:
+    TESTPROJ:
+      Epic: INITIATIVE
+      Story: FEATURE
+      Task: STORY
+      Bug: STORY

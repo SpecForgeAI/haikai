@@ -1,0 +1,7 @@
+{
+  "name": "@example/pkg-a",
+  "version": "1.0.0",
+  "dependencies": {
+    "@example/pkg-b": "workspace:*"
+  }
+}

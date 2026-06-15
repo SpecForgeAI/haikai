@@ -1,0 +1,20 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "UserController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /User",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /User",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

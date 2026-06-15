@@ -1,0 +1,52 @@
+# Tree-sitter language configuration
+# Maps file extensions → grammar packages → extractor classes
+# Adding a new language: add an entry here + create the extractor class
+
+languages:
+  python:
+    extensions: [".py", ".pyi"]
+    package: tree_sitter_python
+    extractor: src.ast.extractors.python.PythonExtractor
+    enabled: true
+
+  typescript:
+    extensions: [".ts", ".tsx", ".js", ".jsx"]
+    package: tree_sitter_typescript
+    extractor: src.ast.extractors.typescript.TypeScriptExtractor
+    enabled: true
+
+  go:
+    extensions: [".go"]
+    package: tree_sitter_go
+    extractor: src.ast.extractors.go.GoExtractor
+    enabled: true
+
+  java:
+    extensions: [".java"]
+    package: tree_sitter_java
+    extractor: src.ast.extractors.java.JavaExtractor
+    enabled: true
+
+  csharp:
+    extensions: [".cs"]
+    package: tree_sitter_c_sharp
+    extractor: src.ast.extractors.csharp.CSharpExtractor
+    enabled: true
+
+  c:
+    extensions: [".c", ".h"]
+    package: tree_sitter_c
+    extractor: src.ast.extractors.c.CExtractor
+    enabled: true
+
+  rust:
+    extensions: [".rs"]
+    package: tree_sitter_rust
+    extractor: src.ast.extractors.rust.RustExtractor
+    enabled: true
+
+  cpp:
+    extensions: [".cpp", ".cc", ".cxx", ".hpp", ".hxx"]
+    package: tree_sitter_cpp
+    extractor: src.ast.extractors.cpp.CppExtractor
+    enabled: true

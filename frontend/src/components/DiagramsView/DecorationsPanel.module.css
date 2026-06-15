@@ -1,0 +1,187 @@
+/**
+ * DecorationsPanel.module.css
+ * Styles for the bottom panel component (cleaned up for future repurposing)
+ * Task Group 4: Bottom Panel Cleanup
+ *
+ * Design principles:
+ * - Matches existing panel styling (PalettePanel, InspectorPanel)
+ * - Bottom-positioned panel with collapse/expand toggle
+ * - Clean, minimal design consistent with the application
+ * - Empty state with placeholder for future use
+ */
+
+/* ============================================
+ * Collapsed State
+ * Small tab at bottom of canvas
+ * ============================================ */
+
+.panelCollapsed {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+}
+
+.toggleButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: #fafafa;
+  border: 1px solid #e0e0e0;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: #666;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.toggleButton:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.toggleIcon {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.toggleLabel {
+  font-weight: 500;
+}
+
+/* ============================================
+ * Expanded State
+ * Full panel at bottom
+ * ============================================ */
+
+.panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 100;
+  max-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.headerTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.closeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #666;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.closeButton:hover {
+  background: #f5f5f5;
+  border-color: #ddd;
+}
+
+.closeIcon {
+  font-size: 10px;
+}
+
+/* Content area - now shows placeholder */
+.content {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  padding: 12px 16px;
+  gap: 24px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================================
+ * Placeholder State (Task Group 4)
+ * Empty panel with placeholder text
+ * ============================================ */
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 16px;
+}
+
+.placeholderText {
+  font-size: 12px;
+  color: #999;
+  font-style: italic;
+  text-align: center;
+}
+
+/* ============================================
+ * Legacy styles - kept for potential future use
+ * These were used for decoration tools before Task Group 4
+ * ============================================ */
+
+/* Section container - may be reused */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionHeader {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Empty state message - may be reused */
+.emptyState {
+  font-size: 12px;
+  color: #999;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 4px;
+  text-align: center;
+  min-width: 200px;
+}
+
+/* ============================================
+ * Responsive adjustments
+ * ============================================ */
+
+@media (max-width: 768px) {
+  .content {
+    flex-direction: column;
+    gap: 16px;
+  }
+}

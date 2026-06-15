@@ -1,0 +1,55 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "PagesController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "GET /",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

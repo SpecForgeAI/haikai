@@ -1,0 +1,36 @@
+{
+  "benchmark": "humaneval",
+  "model": "claude-sonnet-4-5-20250929",
+  "mode": "direct",
+  "timestamp": "20260328-130658",
+  "total": 3,
+  "passed": 0,
+  "failed": 3,
+  "errors": 0,
+  "pass_rate": 0.0,
+  "avg_latency_seconds": 0.231,
+  "total_latency_seconds": 0.694,
+  "problems": [
+    {
+      "problem_id": "HumanEval/0",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.675,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/1",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.011,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/2",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.008,
+      "error": null
+    }
+  ]
+}

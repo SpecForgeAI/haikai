@@ -1,0 +1,42 @@
+/**
+ * Spec 2026-05-24 Target State Sub-tab + Deterministic Suggest -- Task Group 3.1
+ *
+ * Styles for the Architecture & Design page sub-tab strip ("Current State" /
+ * "Target State"). Visual language mirrors the existing MetaModelView domain
+ * row + tab styling so the strip blends with the surrounding chrome.
+ */
+
+.subTabsRow {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.subTab {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  border-radius: 4px 4px 0 0;
+  transition: all 0.15s ease;
+}
+
+.subTab:hover {
+  color: #333;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.activeSubTab {
+  color: #1976D2;
+  border-bottom-color: #1976D2;
+  background: white;
+}

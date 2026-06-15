@@ -1,0 +1,27 @@
+name: drupal
+version: 1
+language: php
+
+detection:
+  files_match:
+    - '**/*.routing.yml'
+    - 'core/lib/Drupal.php'
+  manifest_contains:
+    - {file: 'composer.json', substring: 'drupal/core'}
+
+extract:
+  - id: routing_yml
+    query: configs
+    parser: drupal_routing_yml
+    file_glob: '**/*.routing.yml'
+
+emit:
+  type: REST
+  protocol: HTTP
+  framework: drupal
+
+conflict_rules: []
+
+known_pitfalls:
+  - "Drupal 8+ uses .routing.yml — each top-level key is a route"
+  - "_form/_controller defaults aren't unwrapped here"

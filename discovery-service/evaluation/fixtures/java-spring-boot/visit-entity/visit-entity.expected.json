@@ -1,0 +1,20 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Visit",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "date",
+      "tag": "pack"
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "description",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

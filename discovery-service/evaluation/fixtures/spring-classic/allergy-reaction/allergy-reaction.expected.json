@@ -1,0 +1,35 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "AllergyReaction",
+      "tag": "pack",
+      "description": "@Entity/@Table(\"allergy_reaction\") JPA entity."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "allergyReactionId",
+      "tag": "pack",
+      "description": "@Id primary key."
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AllergyReaction \u2192 Allergy",
+      "tag": "pack",
+      "description": "@ManyToOne allergy association."
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "AllergyReaction \u2192 Concept",
+      "tag": "pack",
+      "description": "@ManyToOne reaction (coded) concept."
+    },
+    {
+      "type": "physical_data_attributes",
+      "name": "reactionNonCoded",
+      "tag": "pack",
+      "description": "@Column free-text reaction description."
+    }
+  ],
+  "shouldNotEmit": []
+}

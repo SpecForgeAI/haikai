@@ -1,0 +1,25 @@
+{
+  "expected": [
+    {
+      "type": "interfaces",
+      "name": "BookmarksController",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "POST /bookmarks",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "DELETE /bookmarks/:id",
+      "tag": "pack"
+    },
+    {
+      "type": "endpoints",
+      "name": "PUT /bookmarks/:id",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

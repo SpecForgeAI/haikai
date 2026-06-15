@@ -1,0 +1,45 @@
+{
+  "expected": [
+    {
+      "type": "physical_data_entities",
+      "name": "Invite",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 Invited_by",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 Invited_user",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 User",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 Invited_group",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 Group",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 Topic_invite",
+      "tag": "pack"
+    },
+    {
+      "type": "logical_data_entity_relationships",
+      "name": "Invite \u2192 Topic",
+      "tag": "pack"
+    }
+  ],
+  "shouldNotEmit": []
+}

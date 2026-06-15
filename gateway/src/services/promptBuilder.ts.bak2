@@ -1,0 +1,756 @@
+/**
+ * System prompt builder for OpenAI conversations
+ */
+
+import { GatewaySession, ChatContext, ResolvedImplementContextDto, ProductSummaryDto, MetaModelSummaryDto, ResolvedEntitySummary, ExpandResolveResponseDto, ResolvedRelationship } from '../types';
+import { logger } from './logger';
+import { buildHandoffPlanningPrompt as buildHandoffPlanningPromptImpl } from './handoffPlanningPrompt';
+export { buildHandoffPlanningPromptImpl as buildHandoffPlanningPrompt };
+
+/**
+ * Base system prompt template for OAS assistant mode.
+ * Enforces the policy rules from the spec.
+ */
+const SYSTEM_PROMPT_TEMPLATE = `You are an OpenAPI specification assistant that helps users generate and save OpenAPI specs for their architecture interfaces.
+
+RULES:
+1. Always use the available tools to retrieve interface data. Never guess or fabricate endpoints, schemas, or paths.
+2. When compute_oas_gaps returns gaps, explain them to the user and ask for the missing information.
+3. Only call save_oas_spec when the user explicitly confirms they want to save the spec.
+4. Use the user's preferred format (yaml/json) when generating specs.
+5. Be concise and helpful. Guide the user through the process step by step.
+
+AVAILABLE CONTEXT:
+- filename: {filename}
+- interfaceId: {interfaceId}
+- preferredFormat: {preferredFormat}
+
+WORKFLOW:
+1. If the user wants to work with an interface but hasn't provided a filename, ask for it.
+2. Use list_interfaces to show available interfaces for a given filename.
+3. Use get_interface_oas_context to retrieve interface details before generating an OAS spec.
+4. Use compute_oas_gaps to identify missing information and ask the user for clarification.
+5. Generate the OAS spec in the user's preferred format.
+6. Only call save_oas_spec after the user confirms they want to save.
+
+Remember: Never invent endpoints, paths, or schemas that are not present in the get_interface_oas_context output.`;
+
+/**
+ * Implementation Planner system prompt template for implement_feature mode.
+ * Enforces a 4-part structured refinement protocol for intent locking.
+ * Explicitly forbids code generation, spec writing, and tool calls.
+ *
+ * Spec: Implement Assistant Stage 5 - Structured Refinement Loop for Feature Intent Locking
+ * Updated to include 4-part structured protocol (Restate, Assumptions, Questions, Final Definition).
+ */
+const IMPLEMENT_PLANNER_PROMPT_TEMPLATE = `You are an Implementation Planner assistant that helps clarify and refine work item requirements before implementation begins.
+
+YOUR ROLE:
+You are conducting a structured refinement dialog to fully understand the user's requirements for a work item. Your goal is to ensure complete clarity and unambiguous intent before any implementation work starts.
+
+WORK ITEM CONTEXT:
+- Title: {workItemTitle}
+- Type: {workItemType}
+- Description: {workItemDescription}
+
+LINKED ARCHITECTURE CONTEXT:
+- Linked Entity IDs: {entityIds}
+- Linked Diagram IDs: {diagramIds}
+
+RESOLVED ARCHITECTURE CONTEXT:
+{resolvedContext}
+
+STRUCTURED REFINEMENT PROTOCOL:
+Every response you provide MUST follow this 4-part structure in order:
+
+--- Part 1: Restate (Replay) Current Understanding ---
+Begin by restating the user's feature definition in concise, structured form. Include the following subsections:
+- Feature Goal / User Value: What the feature achieves and why it matters
+- Scope (In-Scope / Out-of-Scope): What is included and explicitly excluded
+- Primary Flows: The main happy-path user journeys or system behaviors
+- Key Edge Cases: Notable edge cases mentioned by the user (if any)
+- Dependencies / Integrations: Related systems, services, or entities involved (if mentioned)
+
+Keep this section concise using bullet points or short paragraphs. This section must appear first in every response.
+
+--- Part 2: Explicit Assumptions List ---
+Enumerate any assumptions you are making as a bulleted list. Each assumption must be:
+- Specific and falsifiable (can be confirmed or refuted by the user)
+- Grounded in the provided work item context or architecture context
+
+If you have no assumptions at this time, explicitly state: "No assumptions at this time."
+
+--- Part 3: Focused Clarifying Questions ---
+Ask 3-7 focused, answerable questions that are blocking implementation clarity. Questions must be:
+- Specific and targeted (not vague or open-ended)
+- Directly relevant to implementation decisions
+- Answerable by the user in a single response
+
+Prefer fewer questions when possible; only ask what is truly blocking progress.
+If all questions have been answered and no blocking questions remain, explicitly state: "No blocking questions remain."
+
+--- Part 4: Proposed Final Feature Definition ---
+Present this section ONLY when:
+- All clarifying questions have been answered
+- Assumptions have been confirmed or corrected by the user
+- You have sufficient clarity to define the feature unambiguously
+
+When ready, present a "Proposed Final Feature Definition" that is:
+- A single coherent description suitable for an implementor
+- Consistent with the conversation and grounded in provided context
+- Marked as PROPOSED and awaiting user confirmation
+
+IMPORTANT: Do NOT automatically transition to phase=handoff. The user must explicitly trigger handoff via the Implement button. Mark your definition as proposed and ask the user to confirm before proceeding.
+
+RULES - DO NOT VIOLATE:
+1. DO NOT emit /agent-os:write-spec or any spec generation commands
+2. DO NOT generate implementation steps, code, or technical solutions
+3. DO NOT take actions on behalf of the user
+4. DO NOT call MCP tools or any external tools
+5. DO NOT make up information about the architecture or work item
+6. Keep responses concise and focused on understanding requirements
+7. Ground all discussions in the provided work item context and architecture context
+8. If the user asks you to generate code or implementation details, politely explain that your role is to clarify requirements first
+9. Reference entities by their names from the resolved context, not by raw IDs
+10. Do not invent entities or capabilities that are not present in the resolved context
+11. Avoid speculative implementation details unless explicitly requested by the user
+12. Avoid introducing new requirements that the user did not mention
+13. Use background context (work item) and highlighted context (resolved entities/diagrams) to ground your clarifications
+14. Prefer clarity and determinism over verbosity
+
+RESPONSE STYLE:
+- Be concise and direct
+- Use bullet points for structured information
+- Acknowledge user responses before asking follow-up questions
+- Stay focused on the work item and linked architecture elements
+- Be collaborative and helpful in tone`;
+
+/**
+ * Generate Specs system prompt template for implement_feature mode with generate_specs intent.
+ * Instructs the model to produce a JSON array of /agent-os:write-spec commands.
+ *
+ * Spec: Implement Generate Specs - Iteration 4
+ */
+const IMPLEMENT_GENERATE_SPECS_PROMPT_TEMPLATE = `You are a Specification Generator that converts clarified requirements into structured /agent-os:write-spec commands.
+
+YOUR ROLE:
+Based on the full conversation history and clarified feature understanding, produce implementation specifications as a JSON array of /agent-os:write-spec commands.
+
+WORK ITEM CONTEXT:
+- Title: {workItemTitle}
+- Type: {workItemType}
+- Description: {workItemDescription}
+
+LINKED ARCHITECTURE CONTEXT:
+- Linked Entity IDs: {entityIds}
+- Linked Diagram IDs: {diagramIds}
+
+RESOLVED ARCHITECTURE CONTEXT:
+{resolvedContext}
+
+INSTRUCTIONS:
+1. Review the entire conversation dialog to understand the clarified requirements
+2. Consider the architecture context as implementation constraints
+3. Decide whether to create a single comprehensive spec or multiple incremental specs based on feature complexity
+4. Generate specifications that can be executed by Agent-OS to implement the feature
+
+OUTPUT FORMAT:
+Your response must be ONLY a valid JSON array of strings. Each string must be a complete /agent-os:write-spec command with YAML content inline.
+
+Example format:
+[
+  "/agent-os:write-spec name: feature-name\\nversion: 1.0.0\\ndescription: Feature description\\ntasks:\\n  - id: task-1\\n    description: Task description",
+  "/agent-os:write-spec name: another-spec\\nversion: 1.0.0\\ndescription: Another description"
+]
+
+SPEC CONTENT REQUIREMENTS:
+- Each spec should include a descriptive name related to the work item
+- Include version (use 1.0.0 for new specs)
+- Include a clear description summarizing the spec's purpose
+- Include task breakdown with task IDs and descriptions
+- Reference relevant entities from the architecture context where applicable
+- Be specific enough for implementation but not overly prescriptive
+
+RULES - DO NOT VIOLATE:
+1. DO NOT include any explanatory prose or text outside the JSON array
+2. DO NOT execute commands or modify code
+3. DO NOT call MCP tools or any external tools
+4. DO NOT produce partial or incomplete specs
+5. DO NOT make up information about the architecture
+6. Produce ONLY the JSON array as your entire response
+7. Each string in the array MUST start with "/agent-os:write-spec"
+8. The JSON must be valid and parseable
+
+Remember: Your output is the raw JSON array only. No introduction, no explanation, no conclusion.`;
+
+/**
+ * Bootstrap system prompt template for implement_feature mode with phase: 'bootstrap'.
+ * Auto-triggered on Implement tab mount to provide context and greet the user.
+ *
+ * Spec: Implement Assistant Stage 3 - Bootstrap Phase
+ */
+const IMPLEMENT_BOOTSTRAP_PROMPT_TEMPLATE = `You are an Implementation Planning Assistant starting a new session with rich product and architecture context.
+
+YOUR ROLE:
+You are greeting the user and acknowledging the feature they are about to work on. You have been provided with product backlog context and architecture meta-model context to help you understand the overall system.
+
+WORK ITEM CONTEXT:
+- Title: {workItemTitle}
+- Type: {workItemType}
+- Description: {workItemDescription}
+
+PRODUCT BACKLOG SUMMARY:
+{productSummary}
+
+ARCHITECTURE META-MODEL SUMMARY:
+{metaModelSummary}
+
+INSTRUCTIONS:
+1. Acknowledge the feature/work item the user is about to implement
+2. Acknowledge that you have access to the product backlog and architecture context
+3. Respond with a short, welcoming message (2-3 sentences maximum)
+4. Ask the user if there are any specific architecture entities or diagrams they would like to highlight as relevant to this work item
+
+RULES - DO NOT VIOLATE:
+1. DO NOT ask detailed clarifying questions about requirements
+2. DO NOT propose solutions or implementation approaches
+3. DO NOT refine requirements or suggest changes to the work item
+4. DO NOT generate code, specs, or technical details
+5. DO NOT call MCP tools or any external tools
+6. Keep your response short and welcoming - this is just an initial greeting
+7. Only ask about highlighting relevant architecture context, nothing else
+
+RESPONSE STYLE:
+- Short and welcoming (2-3 sentences maximum)
+- Acknowledge the feature by name
+- Mention you have product and architecture context available
+- End with a simple question asking about relevant architecture/diagrams`;
+
+/**
+ * Builds the system prompt with injected context.
+ * Selects the appropriate prompt template based on context.mode and context.phase.
+ *
+ * Spec 2026-01-13: Implement Assistant Stage 2 - Phased Conversations
+ * Updated to check context.phase for prompt selection before falling back to intent.
+ *
+ * Spec 2026-01-13: Implement Assistant Stage 3 - Bootstrap Phase
+ * Added 'bootstrap' phase routing.
+ *
+ * @param session - Current session state
+ * @param context - Optional context from current request
+ * @param resolvedContext - Optional resolved implement context from backend API
+ * @param productSummary - Optional product summary for bootstrap phase
+ * @param metaModelSummary - Optional meta-model summary for bootstrap phase
+ * @returns System prompt string
+ */
+export function buildSystemPrompt(
+  session: GatewaySession,
+  context?: ChatContext,
+  resolvedContext?: ResolvedImplementContextDto | null,
+  productSummary?: ProductSummaryDto | null,
+  metaModelSummary?: MetaModelSummaryDto | null
+): string {
+  // Check if implement_feature mode should be used
+  if (context?.mode === 'implement_feature') {
+    // Check phase for prompt selection (Spec 2026-01-13)
+    if (context.phase) {
+      if (context.phase === 'bootstrap') {
+        return buildBootstrapPrompt(context, productSummary, metaModelSummary);
+      } else if (context.phase === 'handoff') {
+        return buildHandoffPlanningPromptImpl(context, resolvedContext);
+      } else if (context.phase === 'refine') {
+        return buildImplementPlannerPrompt(context, resolvedContext);
+      } else {
+        // Unknown phase value - log warning and default to refine
+        logger.warn(`Unknown phase value received: ${context.phase}, defaulting to refine`);
+        return buildImplementPlannerPrompt(context, resolvedContext);
+      }
+    }
+
+    // Fallback: check intent for backward compatibility when phase is undefined
+    if (context.intent === 'generate_specs') {
+      return buildGenerateSpecsPrompt(context, resolvedContext);
+    }
+    // Default to planner prompt for normal_chat or undefined intent
+    return buildImplementPlannerPrompt(context, resolvedContext);
+  }
+
+  // Default: use OAS assistant prompt (for undefined mode or "oas_assistant")
+  return buildOasAssistantPrompt(session, context);
+}
+
+/**
+ * Builds the OAS assistant system prompt with injected context.
+ *
+ * @param session - Current session state
+ * @param context - Optional context from current request
+ * @returns OAS assistant system prompt string
+ */
+function buildOasAssistantPrompt(
+  session: GatewaySession,
+  context?: ChatContext
+): string {
+  // Determine values to inject (context takes precedence over session)
+  const filename = context?.filename || session.filename || 'not provided';
+  const interfaceId = context?.interfaceId || session.interfaceId || 'not provided';
+  const preferredFormat = context?.preferredFormat || 'yaml';
+
+  // Replace placeholders
+  return SYSTEM_PROMPT_TEMPLATE
+    .replace('{filename}', filename)
+    .replace('{interfaceId}', interfaceId)
+    .replace('{preferredFormat}', preferredFormat);
+}
+
+/**
+ * Builds the Implementation Planner system prompt with injected context.
+ *
+ * @param context - Chat context containing work item and architecture context
+ * @param resolvedContext - Optional resolved implement context from backend API
+ * @returns Implementation Planner system prompt string
+ */
+export function buildImplementPlannerPrompt(
+  context: ChatContext,
+  resolvedContext?: ResolvedImplementContextDto | null
+): string {
+  // Extract work item values
+  const workItemTitle = context.workItem?.title || 'not provided';
+  const workItemType = context.workItem?.type || 'not provided';
+  const workItemDescription = context.workItem?.description || 'not provided';
+
+  // Extract architecture context values
+  const entityIds = context.architectureContext?.entityIds?.length
+    ? context.architectureContext.entityIds.join(', ')
+    : 'none';
+  const diagramIds = context.architectureContext?.diagramIds?.length
+    ? context.architectureContext.diagramIds.join(', ')
+    : 'none';
+
+  // Format resolved context as compact JSON if present
+  const resolvedContextStr = formatResolvedContext(resolvedContext);
+
+  // Replace placeholders
+  return IMPLEMENT_PLANNER_PROMPT_TEMPLATE
+    .replace('{workItemTitle}', workItemTitle)
+    .replace('{workItemType}', workItemType)
+    .replace('{workItemDescription}', workItemDescription)
+    .replace('{entityIds}', entityIds)
+    .replace('{diagramIds}', diagramIds)
+    .replace('{resolvedContext}', resolvedContextStr);
+}
+
+/**
+ * Builds the Generate Specs system prompt with injected context.
+ * Used when mode is "implement_feature" and intent is "generate_specs".
+ *
+ * Spec: Implement Generate Specs - Iteration 4
+ *
+ * @param context - Chat context containing work item and architecture context
+ * @param resolvedContext - Optional resolved implement context from backend API
+ * @returns Generate Specs system prompt string
+ */
+export function buildGenerateSpecsPrompt(
+  context: ChatContext,
+  resolvedContext?: ResolvedImplementContextDto | null
+): string {
+  // Extract work item values
+  const workItemTitle = context.workItem?.title || 'not provided';
+  const workItemType = context.workItem?.type || 'not provided';
+  const workItemDescription = context.workItem?.description || 'not provided';
+
+  // Extract architecture context values
+  const entityIds = context.architectureContext?.entityIds?.length
+    ? context.architectureContext.entityIds.join(', ')
+    : 'none';
+  const diagramIds = context.architectureContext?.diagramIds?.length
+    ? context.architectureContext.diagramIds.join(', ')
+    : 'none';
+
+  // Format resolved context as compact JSON if present
+  const resolvedContextStr = formatResolvedContext(resolvedContext);
+
+  // Replace placeholders
+  return IMPLEMENT_GENERATE_SPECS_PROMPT_TEMPLATE
+    .replace('{workItemTitle}', workItemTitle)
+    .replace('{workItemType}', workItemType)
+    .replace('{workItemDescription}', workItemDescription)
+    .replace('{entityIds}', entityIds)
+    .replace('{diagramIds}', diagramIds)
+    .replace('{resolvedContext}', resolvedContextStr);
+}
+
+/**
+ * Builds the Bootstrap system prompt with injected context.
+ * Used when mode is "implement_feature" and phase is "bootstrap".
+ *
+ * Spec: Implement Assistant Stage 3 - Bootstrap Phase
+ *
+ * @param context - Chat context containing work item
+ * @param productSummary - Optional product summary from backend API
+ * @param metaModelSummary - Optional meta-model summary from backend API
+ * @returns Bootstrap system prompt string
+ */
+export function buildBootstrapPrompt(
+  context: ChatContext,
+  productSummary?: ProductSummaryDto | null,
+  metaModelSummary?: MetaModelSummaryDto | null
+): string {
+  // Extract work item values
+  const workItemTitle = context.workItem?.title || 'not provided';
+  const workItemType = context.workItem?.type || 'not provided';
+  const workItemDescription = context.workItem?.description || 'not provided';
+
+  // Format product summary
+  const productSummaryStr = formatProductSummary(productSummary);
+
+  // Format meta-model summary
+  const metaModelSummaryStr = formatMetaModelSummary(metaModelSummary);
+
+  // Replace placeholders
+  return IMPLEMENT_BOOTSTRAP_PROMPT_TEMPLATE
+    .replace('{workItemTitle}', workItemTitle)
+    .replace('{workItemType}', workItemType)
+    .replace('{workItemDescription}', workItemDescription)
+    .replace('{productSummary}', productSummaryStr)
+    .replace('{metaModelSummary}', metaModelSummaryStr);
+}
+
+/**
+ * Formats the product summary for prompt injection.
+ *
+ * @param productSummary - The product summary from backend API
+ * @returns Formatted string for prompt injection
+ */
+function formatProductSummary(productSummary?: ProductSummaryDto | null): string {
+  if (!productSummary || !productSummary.initiatives?.length) {
+    return 'No product backlog available';
+  }
+
+  // Build hierarchical text representation
+  const lines: string[] = [];
+  for (const initiative of productSummary.initiatives) {
+    lines.push(`- Initiative: ${initiative.title}`);
+    if (initiative.description) {
+      lines.push(`  Description: ${initiative.description}`);
+    }
+    for (const epic of initiative.epics || []) {
+      lines.push(`  - Epic: ${epic.title}`);
+      if (epic.description) {
+        lines.push(`    Description: ${epic.description}`);
+      }
+      for (const feature of epic.features || []) {
+        lines.push(`    - Feature: ${feature.title}`);
+        if (feature.description) {
+          lines.push(`      Description: ${feature.description}`);
+        }
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Formats the meta-model summary for prompt injection.
+ *
+ * @param metaModelSummary - The meta-model summary from backend API
+ * @returns Formatted string for prompt injection
+ */
+function formatMetaModelSummary(metaModelSummary?: MetaModelSummaryDto | null): string {
+  if (!metaModelSummary) {
+    return 'No architecture context available';
+  }
+
+  const hasServices = metaModelSummary.services?.length > 0;
+  const hasDataEntities = metaModelSummary.data_entities?.length > 0;
+  const hasInterfaces = metaModelSummary.interfaces?.length > 0;
+  const hasRelationships = metaModelSummary.relationships?.length > 0;
+
+  if (!hasServices && !hasDataEntities && !hasInterfaces && !hasRelationships) {
+    return 'No architecture context available';
+  }
+
+  const lines: string[] = [];
+
+  if (hasServices) {
+    lines.push('Services:');
+    for (const svc of metaModelSummary.services) {
+      lines.push(`  - ${svc.name} (${svc.entity_type})`);
+    }
+  }
+
+  if (hasDataEntities) {
+    lines.push('Data Entities:');
+    for (const de of metaModelSummary.data_entities) {
+      lines.push(`  - ${de.name} (${de.entity_type})`);
+    }
+  }
+
+  if (hasInterfaces) {
+    lines.push('Interfaces:');
+    for (const iface of metaModelSummary.interfaces) {
+      lines.push(`  - ${iface.name} (${iface.entity_type})`);
+    }
+  }
+
+  if (hasRelationships) {
+    lines.push('Relationships:');
+    for (const rel of metaModelSummary.relationships) {
+      lines.push(`  - ${rel.source_entity} --[${rel.relationship_type}]--> ${rel.target_entity}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Formats the resolved context as a compact JSON string for prompt injection.
+ *
+ * @param resolvedContext - The resolved context from the backend API
+ * @returns Formatted string for prompt injection
+ */
+function formatResolvedContext(resolvedContext?: ResolvedImplementContextDto | null): string {
+  if (!resolvedContext) {
+    return 'No resolved context available';
+  }
+
+  const hasEntities = resolvedContext.resolved_entities?.length > 0;
+  const expandResponse = resolvedContext as ExpandResolveResponseDto;
+  const hasRelationshipsEarly = expandResponse.resolved_relationships?.length > 0;
+  const hasDiagrams = resolvedContext.resolved_diagrams?.length > 0;
+
+  if (!hasEntities && !hasDiagrams && !hasRelationshipsEarly) {
+    return 'No resolved entities or diagrams';
+  }
+
+  // Build compact representation
+  const formatted: Record<string, unknown> = {};
+
+  if (hasEntities) {
+    formatted.entities = resolvedContext.resolved_entities.map(entity => ({
+      id: entity.id,
+      name: entity.name,
+      type: entity.entity_type,
+      category: entity.category,
+      ...entity.relevant_fields,
+    }));
+  }
+
+  if (hasDiagrams) {
+    formatted.diagrams = resolvedContext.resolved_diagrams.map(diagram => ({
+      id: diagram.id,
+      name: diagram.name,
+      type: diagram.diagram_type,
+      referencedEntities: diagram.referenced_entity_names?.length ? diagram.referenced_entity_names : diagram.referenced_entity_ids,
+    }));
+  }
+
+  return JSON.stringify(formatted, null, 2);
+}
+
+/**
+ * Category order for grouping entities in highlighted context.
+ * Order: application -> data -> business -> ui
+ *
+ * Spec 2026-01-16: Context Bundles Backend Expansion - Task Group 10
+ */
+const CATEGORY_ORDER = ['application', 'data', 'business', 'ui'] as const;
+
+/**
+ * Display names for entity categories.
+ *
+ * Spec 2026-01-16: Context Bundles Backend Expansion - Task Group 10
+ */
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+  application: 'Application Entities',
+  data: 'Data Entities',
+  business: 'Business Entities',
+  ui: 'UI Entities',
+};
+
+/**
+ * Groups entities by their category.
+ *
+ * Spec 2026-01-16: Context Bundles Backend Expansion - Task Group 10
+ *
+ * @param entities - Array of resolved entity summaries
+ * @returns Map of category to entities
+ */
+function groupEntitiesByCategory(entities: ResolvedEntitySummary[]): Map<string, ResolvedEntitySummary[]> {
+  const grouped = new Map<string, ResolvedEntitySummary[]>();
+
+  for (const entity of entities) {
+    const category = entity.category || 'application'; // Default to application if category missing
+    if (!grouped.has(category)) {
+      grouped.set(category, []);
+    }
+    grouped.get(category)!.push(entity);
+  }
+
+  return grouped;
+}
+/** * Groups relationships by type for readability in prompt output. * * Spec 2026-01-16: Context Bundles Auto-Include Relationships - Task Group 8 * * @param relationships - Array of resolved relationships * @returns Map from type to array of relationships */function groupRelationshipsByType(relationships: ResolvedRelationship[]): Map<string, ResolvedRelationship[]> {  const grouped = new Map<string, ResolvedRelationship[]>();  for (const rel of relationships) {    const type = rel.type || "unknown";    if (!grouped.has(type)) {      grouped.set(type, []);    }    grouped.get(type)!.push(rel);  }  return grouped;}
+
+/**
+ * Formats a value for display in the prompt output.
+ * Handles arrays, objects, and primitive values.
+ *
+ * Spec 2026-01-16: Context Bundles Backend Expansion - Task Group 10
+ *
+ * @param value - The value to format
+ * @returns Formatted string representation
+ */
+function formatFieldValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+
+  if (Array.isArray(value)) {
+    // Format arrays - check if array of objects (like relationships)
+    if (value.length > 0 && typeof value[0] === 'object') {
+      // Format array of objects as JSON for readability
+      return JSON.stringify(value);
+    }
+    return value.join(', ');
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+/**
+ * Formats highlighted context for the "HIGHLIGHTED FEATURE CONTEXT" section in prompts.
+ *
+ * Spec 2026-01-14: Implement Assistant Stage 4 - Feature-Specific Context Highlighting
+ * Task Group 3: Prompt Template Enhancement
+ *
+ * Spec 2026-01-16: Context Bundles Backend Expansion - Task Group 10
+ * Updated to:
+ * - Group resolved entities by category (application, data, business, ui) for readability
+ * - Include relationship metadata in output format when available
+ * - Handle expanded entities with additional context from bundle expansion
+ *
+ * Formats entities with: name, type, category, relevant_fields
+ * Formats diagrams with: name, diagram_type, referenced_entity_names (or IDs as fallback)
+ *
+ * @param resolvedContext - The resolved context from the backend API
+ * @returns Formatted string for "HIGHLIGHTED FEATURE CONTEXT" section
+ */
+export function formatHighlightedContext(resolvedContext?: ResolvedImplementContextDto | ExpandResolveResponseDto | null): string {
+  if (!resolvedContext) {
+    return 'No items highlighted by user.';
+  }
+
+  const hasEntities = resolvedContext.resolved_entities?.length > 0;
+  const expandResponse = resolvedContext as ExpandResolveResponseDto;
+  const hasRelationshipsEarly = expandResponse.resolved_relationships?.length > 0;
+  const hasDiagrams = resolvedContext.resolved_diagrams?.length > 0;
+
+  if (!hasEntities && !hasDiagrams && !hasRelationshipsEarly) {
+    return 'No items highlighted by user.';
+  }
+
+  const lines: string[] = [];
+
+  if (hasEntities) {
+    // Group entities by category for readability
+    const groupedEntities = groupEntitiesByCategory(resolvedContext.resolved_entities);
+
+    // Output entities in category order
+    for (const category of CATEGORY_ORDER) {
+      const entitiesInCategory = groupedEntities.get(category);
+      if (entitiesInCategory && entitiesInCategory.length > 0) {
+        const displayName = CATEGORY_DISPLAY_NAMES[category] || `${category} Entities`;
+        lines.push(displayName + ':');
+
+        for (const entity of entitiesInCategory) {
+          lines.push('  - ' + entity.name + ' (' + entity.entity_type + ', ' + entity.category + ')');
+
+          // Add relevant fields including relationship metadata
+          if (entity.relevant_fields && Object.keys(entity.relevant_fields).length > 0) {
+            for (const [key, value] of Object.entries(entity.relevant_fields)) {
+              const formattedValue = formatFieldValue(value);
+              lines.push('    ' + key + ': ' + formattedValue);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (hasDiagrams) {
+    lines.push('Highlighted Diagrams:');
+    for (const diagram of resolvedContext.resolved_diagrams) {
+      lines.push('  - ' + diagram.name + ' (' + diagram.diagram_type + ')');
+      // Prefer entity names over IDs when available
+      const references = diagram.referenced_entity_names?.length
+        ? diagram.referenced_entity_names
+        : diagram.referenced_entity_ids;
+      if (references && references.length > 0) {
+        lines.push('    References: ' + references.join(', '));
+      }
+    }
+  }
+
+// Add relationships section if present (Spec 2026-01-16: Context Bundles Auto-Include Relationships)  const expandResolveResponse = resolvedContext as ExpandResolveResponseDto;  const hasRelationships = expandResolveResponse.resolved_relationships?.length > 0;  if (hasRelationships) {    lines.push("");    lines.push("Relationships:");    // Group relationships by type for readability    const relationshipsByType = groupRelationshipsByType(expandResolveResponse.resolved_relationships);    const types = Array.from(relationshipsByType.keys()).sort();    for (const type of types) {      const rels = relationshipsByType.get(type) || [];      for (const rel of rels) {        // Format: type: from.name -> to.name (cardinality, relationship_type)        let line = "  - " + rel.type + ": " + rel.from.name + " -> " + rel.to.name;        const summaryParts: string[] = [];        if (rel.summary_fields.cardinality) {          summaryParts.push(String(rel.summary_fields.cardinality));        }        if (rel.summary_fields.relationship_type) {          summaryParts.push(String(rel.summary_fields.relationship_type));        }        if (summaryParts.length > 0) {          line += " (" + summaryParts.join(", ") + ")";        }        lines.push(line);      }    }  }
+  return lines.join('\n');
+}
+
+/**
+ * Builds a context summary for logging (without sensitive data).
+ *
+ * Spec 2026-01-13: Implement Assistant Stage 2 - Phased Conversations
+ * Updated to include phase in the logged summary.
+ *
+ * @param context - Chat context
+ * @returns Summary object safe for logging
+ */
+export function buildContextSummary(context?: ChatContext): Record<string, unknown> {
+  if (!context) {
+    return { hasContext: false };
+  }
+
+  const summary: Record<string, unknown> = {
+    hasContext: true,
+    hasFilename: !!context.filename,
+    hasInterfaceId: !!context.interfaceId,
+    hasDraftOas: !!context.draftOas,
+    draftOasLength: context.draftOas?.length || 0,
+    preferredFormat: context.preferredFormat || 'yaml',
+  };
+
+  // Add implement_feature mode fields
+  if (context.mode) {
+    summary.mode = context.mode;
+  }
+  if (context.intent) {
+    summary.intent = context.intent;
+  }
+  // Add phase field (Spec 2026-01-13)
+  if (context.phase) {
+    summary.phase = context.phase;
+  }
+
+  // Add work item presence info
+  if (context.workItem) {
+    summary.hasWorkItem = true;
+    summary.workItemId = context.workItem.id;
+    summary.workItemType = context.workItem.type;
+  } else {
+    summary.hasWorkItem = false;
+  }
+
+  // Add architecture context presence info
+  if (context.architectureContext) {
+    summary.hasArchitectureContext = true;
+    summary.entityIdsCount = context.architectureContext.entityIds?.length || 0;
+    summary.diagramIdsCount = context.architectureContext.diagramIds?.length || 0;
+  } else {
+    summary.hasArchitectureContext = false;
+  }
+
+  return summary;
+}

@@ -1,0 +1,25 @@
+iteration	type	hypothesis	result	severity	location	description
+1	hypothesis	Missing .get() on dict access causes KeyError	confirmed	MEDIUM	repo_fetcher.py:297	Bitbucket API integration will crash if 'type' field missing
+2	hypothesis	Same pattern in GitLab integration	confirmed	MEDIUM	repo_fetcher.py:249	GitLab API integration has same KeyError risk
+3	inspection	Tool executor error handling	disproven	-	-	Exception handling works but inconsistent pattern
+4	hypothesis	Inconsistent error handling breaks contract	confirmed	LOW	tool_executor.py:136	Raises exception instead of returning error dict
+5	pattern_search	Command injection via shell=True	confirmed	CRITICAL	tool_executor.py:160,183,453	User input passed to subprocess with shell=True enables RCE
+6	pattern_search	Path traversal in file operations	confirmed	MEDIUM	structural_endpoints.py:153	No validation that paths are within workspace
+7	pattern_search	Race condition in singleton init	confirmed	MEDIUM	cache_manager.py:212-215	Multiple threads can create multiple cache instances
+8	inspection	Hardcoded secrets check	disproven	-	-	All credentials from environment variables (safe)
+9	inspection	File handle leaks	disproven	-	-	All use context managers (safe)
+10	inspection	Async/await issues	disproven	-	-	All async generators properly handled
+11	pattern_search	SQL injection	disproven	-	-	No SQL query concatenation found
+12	pattern_search	eval/exec usage	disproven	-	-	No dangerous code execution found
+13	inspection	Incomplete implementation TODOs	confirmed	LOW	haikai_service.py:461	Task completion tracking hardcoded to 0
+14	pattern_search	Division by zero	disproven	-	-	No risky division operations
+15	inspection	Catch-all exception handlers	observed	-	metamodel_llm_integration.py:35	Catches exceptions and continues (might hide bugs)
+16	pattern_search	Mutable default arguments	disproven	-	-	No instances found
+17	pattern_search	Pickle deserialization	disproven	-	-	No pickle usage found
+18	pattern_search	YAML unsafe loading	disproven	-	-	No yaml.load() found
+19	inspection	Error message information disclosure	observed	-	various	Some error messages include technical details
+20	inspection	Logging sensitive data	observed	-	llm_client.py:328	API key preview logged (first 20 chars)21	inspection	Timing attack on API key comparison	confirmed	MEDIUM	api.py:440	String comparison allows timing attacks to brute-force API key
+22	inspection	Empty API key default allows bypass	confirmed	CRITICAL	api.py:152	API_KEY defaults to empty string if env var not set - no authentication
+23	inspection	Sanitize function exists but unused	confirmed	MEDIUM	api.py:449-487	Path sanitization function defined but never called - dead security code
+24	pattern_search	Unbounded file read	confirmed	MEDIUM	standards_orchestrator.py:576	No size limit on file.read() enables memory exhaustion DoS
+25	pattern_search	Information disclosure in errors	confirmed	LOW	api.py:566,612,658...	Exception messages exposed to users via str(e) in HTTP responses

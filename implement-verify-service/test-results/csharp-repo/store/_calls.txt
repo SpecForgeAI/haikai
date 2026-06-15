@@ -1,0 +1,68 @@
+# caller_file	caller	callee_file	callee	line	confidence
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddDefaultAuthentication	12	0.20
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRedisClient	14	0.20
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.Services.AddSingleton<IBasketRepository, RedisBasketRepository>	16	0.20
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus("eventbus")
+               .AddSubscription<OrderStartedIntegrationEvent, OrderStartedIntegrationEventHandler>().ConfigureJsonOptions	18	0.20
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus("eventbus").AddSubscription<OrderStartedIntegrationEvent, OrderStartedIntegrationEventHandler>	18	0.20
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	builder.AddRabbitMqEventBus	18	0.20
+Extensions/Extensions.cs	Extensions.AddApplicationServices	-	options.TypeInfoResolverChain.Add	20	0.20
+Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	-	context.GetHttpContext().User.FindFirst	7	0.20
+Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	-	context.GetHttpContext	7	0.20
+Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserName	-	context.GetHttpContext().User.FindFirst	8	0.20
+Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserName	-	context.GetHttpContext	8	0.20
+Grpc/BasketService.cs	BasketService.GetBasket	Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	15	0.70
+Grpc/BasketService.cs	BasketService.GetBasket	-	string.IsNullOrEmpty	16	0.20
+Grpc/BasketService.cs	BasketService.GetBasket	-	logger.IsEnabled	21	0.20
+Grpc/BasketService.cs	BasketService.GetBasket	-	logger.LogDebug	23	0.20
+Grpc/BasketService.cs	BasketService.GetBasket	Repositories/IBasketRepository.cs	IBasketRepository.GetBasketAsync	26	0.40
+Grpc/BasketService.cs	BasketService.GetBasket	Grpc/BasketService.cs	MapToCustomerBasketResponse	30	0.70
+Grpc/BasketService.cs	BasketService.UpdateBasket	Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	38	0.70
+Grpc/BasketService.cs	BasketService.UpdateBasket	-	string.IsNullOrEmpty	39	0.20
+Grpc/BasketService.cs	BasketService.UpdateBasket	-	ThrowNotAuthenticated	41	0.20
+Grpc/BasketService.cs	BasketService.UpdateBasket	-	logger.IsEnabled	44	0.20
+Grpc/BasketService.cs	BasketService.UpdateBasket	-	logger.LogDebug	46	0.20
+Grpc/BasketService.cs	BasketService.UpdateBasket	Grpc/BasketService.cs	MapToCustomerBasket	49	0.70
+Grpc/BasketService.cs	BasketService.UpdateBasket	Repositories/IBasketRepository.cs	IBasketRepository.UpdateBasketAsync	50	0.40
+Grpc/BasketService.cs	BasketService.UpdateBasket	-	ThrowBasketDoesNotExist	53	0.20
+Grpc/BasketService.cs	BasketService.UpdateBasket	Grpc/BasketService.cs	MapToCustomerBasketResponse	56	0.70
+Grpc/BasketService.cs	BasketService.DeleteBasket	Extensions/ServerCallContextIdentityExtensions.cs	ServerCallContextIdentityExtensions.GetUserIdentity	61	0.70
+Grpc/BasketService.cs	BasketService.DeleteBasket	-	string.IsNullOrEmpty	62	0.20
+Grpc/BasketService.cs	BasketService.DeleteBasket	-	ThrowNotAuthenticated	64	0.20
+Grpc/BasketService.cs	BasketService.DeleteBasket	Repositories/IBasketRepository.cs	IBasketRepository.DeleteBasketAsync	67	0.40
+Grpc/BasketService.cs	BasketService.ThrowNotAuthenticated	-	new RpcException	72	0.20
+Grpc/BasketService.cs	BasketService.ThrowNotAuthenticated	-	new Status	72	0.20
+Grpc/BasketService.cs	BasketService.ThrowBasketDoesNotExist	-	new RpcException	75	0.20
+Grpc/BasketService.cs	BasketService.ThrowBasketDoesNotExist	-	new Status	75	0.20
+Grpc/BasketService.cs	BasketService.MapToCustomerBasketResponse	-	new CustomerBasketResponse	79	0.20
+Grpc/BasketService.cs	BasketService.MapToCustomerBasketResponse	-	response.Items.Add	83	0.20
+Grpc/BasketService.cs	BasketService.MapToCustomerBasketResponse	-	new BasketItem	83	0.20
+Grpc/BasketService.cs	BasketService.MapToCustomerBasket	-	new CustomerBasket	95	0.20
+Grpc/BasketService.cs	BasketService.MapToCustomerBasket	-	response.Items.Add	102	0.20
+IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	OrderStartedIntegrationEventHandler.Handle	-	logger.LogInformation	12	0.20
+IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs	OrderStartedIntegrationEventHandler.Handle	Repositories/IBasketRepository.cs	IBasketRepository.DeleteBasketAsync	14	0.40
+Model/BasketItem.cs	BasketItem.Validate	-	new List	15	0.20
+Model/BasketItem.cs	BasketItem.Validate	-	results.Add	19	0.20
+Model/BasketItem.cs	BasketItem.Validate	-	new ValidationResult	19	0.20
+Program.cs	<module>	-	WebApplication.CreateBuilder	1	0.20
+Program.cs	<module>	-	builder.AddBasicServiceDefaults	3	0.20
+Program.cs	<module>	Extensions/Extensions.cs	Extensions.AddApplicationServices	4	0.70
+Program.cs	<module>	-	builder.Services.AddGrpc	6	0.20
+Program.cs	<module>	-	builder.Build	8	0.20
+Program.cs	<module>	-	app.MapDefaultEndpoints	10	0.20
+Program.cs	<module>	-	app.MapGrpcService<BasketService>	12	0.20
+Program.cs	<module>	-	app.Run	14	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository	-	redis.GetDatabase	8	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository	-	"/basket/"u8.ToArray	13	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketKey	-	BasketKeyPrefix.Append	16	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.DeleteBasketAsync	-	_database.KeyDeleteAsync	20	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.DeleteBasketAsync	-	GetBasketKey	20	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketAsync	-	_database.StringGetLeaseAsync	25	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketAsync	-	GetBasketKey	25	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.GetBasketAsync	-	JsonSerializer.Deserialize	31	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	JsonSerializer.SerializeToUtf8Bytes	36	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	_database.StringSetAsync	37	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	GetBasketKey	37	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	logger.LogInformation	41	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	-	logger.LogInformation	46	0.20
+Repositories/RedisBasketRepository.cs	RedisBasketRepository.UpdateBasketAsync	Repositories/IBasketRepository.cs	IBasketRepository.GetBasketAsync	47	0.40

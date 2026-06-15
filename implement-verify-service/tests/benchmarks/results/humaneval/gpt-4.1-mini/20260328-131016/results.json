@@ -1,0 +1,1163 @@
+{
+  "benchmark": "humaneval",
+  "model": "gpt-4.1-mini",
+  "mode": "direct",
+  "timestamp": "20260328-131016",
+  "total": 164,
+  "passed": 148,
+  "failed": 16,
+  "errors": 0,
+  "pass_rate": 0.9024390243902439,
+  "avg_latency_seconds": 1.292,
+  "total_latency_seconds": 211.913,
+  "problems": [
+    {
+      "problem_id": "HumanEval/0",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 2.442,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/1",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.496,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/2",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.617,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/3",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.793,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/4",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.823,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/5",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.976,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/6",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.414,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/7",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.586,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/8",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.013,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/9",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.497,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/10",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.07,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/11",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.738,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/12",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.018,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/13",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.866,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/14",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.798,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/15",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.707,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/16",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.499,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/17",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.308,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/18",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.937,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/19",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.096,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/20",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.898,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/21",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.841,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/22",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.607,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/23",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.629,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/24",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.831,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/25",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 2.531,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/26",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.708,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/27",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.72,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/28",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.686,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/29",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.115,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/30",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.465,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/31",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.731,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/32",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 3.757,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/33",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.29,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/34",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.596,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/35",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.955,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/36",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.975,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/37",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.097,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/38",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.389,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/39",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 2.547,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/40",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.449,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/41",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.513,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/42",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.731,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/43",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.907,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/44",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.92,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/45",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.567,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/46",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.821,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/47",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.209,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/48",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.787,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/49",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.827,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/50",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.92,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/51",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.233,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/52",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.69,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/53",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.498,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/54",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.631,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/55",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.17,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/56",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.208,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/57",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.168,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/58",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.966,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/59",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.278,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/60",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.748,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/61",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.176,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/62",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.692,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/63",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.387,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/64",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.971,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/65",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.826,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/66",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.685,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/67",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.682,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/68",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.634,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/69",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.255,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/70",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.441,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/71",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.571,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/72",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.825,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/73",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.911,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/74",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.19,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/75",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.983,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/76",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.231,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/77",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.923,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/78",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.031,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/79",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.033,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/80",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.27,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/81",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 2.906,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/82",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.999,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/83",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.664,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/84",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.693,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/85",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.883,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/86",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 2.178,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/87",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.132,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/88",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.014,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/89",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.409,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/90",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.87,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/91",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.25,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/92",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.07,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/93",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.805,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/94",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.96,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/95",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.265,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/96",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.345,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/97",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.555,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/98",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.044,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/99",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.896,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/100",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.144,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/101",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.65,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/102",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.912,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/103",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.233,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/104",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.528,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/105",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.262,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/106",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.541,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/107",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.445,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/108",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.665,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/109",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.322,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/110",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.318,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/111",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.166,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/112",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.815,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/113",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.136,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/114",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.193,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/115",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.881,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/116",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.745,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/117",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.222,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/118",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.268,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/119",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.872,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/120",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.461,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/121",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.864,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/122",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.811,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/123",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.319,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/124",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 2.83,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/125",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.684,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/126",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.022,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/127",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.848,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/128",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.769,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/129",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 8.136,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/130",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.986,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/131",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.355,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/132",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.657,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/133",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.706,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/134",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.332,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/135",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.387,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/136",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.161,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/137",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 2.643,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/138",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.745,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/139",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.868,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/140",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.668,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/141",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 2.741,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/142",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.164,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/143",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 1.965,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/144",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.391,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/145",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 0.932,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/146",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.597,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/147",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 2.728,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/148",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.813,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/149",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.41,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/150",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.238,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/151",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.268,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/152",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.306,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/153",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.818,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/154",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.299,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/155",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.502,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/156",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.883,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/157",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.289,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/158",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.71,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/159",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.531,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/160",
+      "passed": false,
+      "score": 0.0,
+      "latency_seconds": 2.035,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/161",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.953,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/162",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 0.647,
+      "error": null
+    },
+    {
+      "problem_id": "HumanEval/163",
+      "passed": true,
+      "score": 1.0,
+      "latency_seconds": 1.169,
+      "error": null
+    }
+  ]
+}

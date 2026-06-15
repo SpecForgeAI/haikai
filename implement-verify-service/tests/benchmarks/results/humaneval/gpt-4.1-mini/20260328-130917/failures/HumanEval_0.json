@@ -1,0 +1,16 @@
+{
+  "problem_id": "HumanEval/0",
+  "passed": false,
+  "score": 0.0,
+  "error": null,
+  "generated_output": "numbers.sort()\nfor i in range(len(numbers) - 1):\n    if abs(numbers[i+1] - numbers[i]) < threshold:\n        return True\nreturn False",
+  "expected_output": "    for idx, elem in enumerate(numbers):\n        for idx2, elem2 in enumerate(numbers):\n            if idx != idx2:\n                distance = abs(elem - elem2)\n                if distance < threshold:\n                    return True\n\n    return False\n",
+  "latency_seconds": 2.3329743000213057,
+  "mode": "direct",
+  "model": "gpt-4.1-mini",
+  "metadata": {
+    "input_tokens": 173,
+    "output_tokens": 35,
+    "actual_model": "gpt-4.1-mini-2025-04-14"
+  }
+}

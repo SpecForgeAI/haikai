@@ -1,0 +1,368 @@
+{
+  "metaModel": {
+    "entities": {
+      "business_users": [
+        {
+          "id": "user-mia66sxp-guauq",
+          "name": "Market Risk Manager",
+          "description": "",
+          "tags": ""
+        },
+        {
+          "id": "user-mia6e58n-7u9qq",
+          "name": "Market Data Manager",
+          "description": "",
+          "tags": ""
+        },
+        {
+          "id": "user-mia6efje-hbnh7",
+          "name": "Stress Market Risk Manager",
+          "description": "",
+          "tags": ""
+        }
+      ],
+      "business_processes": [
+        {
+          "id": "process-miabh5o3-yeaze",
+          "name": "VaR Interrogation and Reporting",
+          "description": "",
+          "tags": ""
+        },
+        {
+          "id": "process-miabhknm-gnkr0",
+          "name": "Risk Reporting",
+          "description": "",
+          "tags": ""
+        },
+        {
+          "id": "process-miabhxs0-90kpz",
+          "name": "VaR What-if",
+          "description": "",
+          "tags": ""
+        },
+        {
+          "id": "process-miabi614-ab5vf",
+          "name": "Limits Management",
+          "description": "",
+          "tags": ""
+        }
+      ],
+      "applications": [
+        {
+          "id": "app_oms",
+          "name": "OMS System",
+          "description": "Order Management System",
+          "business_area": "Trading",
+          "lifecycle_stage": "PRODUCTION",
+          "owner_team": "Trading Engineering",
+          "tags": [
+            "core",
+            "oms"
+          ],
+          "app_type": "Web",
+          "status": "Active"
+        },
+        {
+          "id": "app_risk",
+          "name": "Risk System",
+          "description": "Risk analytics and position store",
+          "business_area": "Risk",
+          "lifecycle_stage": "PRODUCTION",
+          "owner_team": "Risk Tech",
+          "tags": [
+            "risk",
+            "analytics"
+          ],
+          "app_type": "Web",
+          "status": "Planned"
+        }
+      ],
+      "app_components": [
+        {
+          "id": "comp-miabj1cm-wl0b7",
+          "name": "Risk UI",
+          "description": "",
+          "tags": "",
+          "application_id": "app_risk"
+        }
+      ],
+      "services": [
+        {
+          "id": "svc-mibczly1-e183m",
+          "name": "SMD-UI-Service",
+          "description": "",
+          "tags": "",
+          "application_id": "app_oms",
+          "service_type": "REST"
+        }
+      ],
+      "application_points": [
+        {
+          "id": "ap_oms",
+          "kind": "APPLICATION",
+          "application_id": "app_oms",
+          "app_component_id": null,
+          "service_id": null,
+          "name": "OMS System",
+          "description": "Application point for OMS System",
+          "tags": []
+        },
+        {
+          "id": "ap_risk",
+          "kind": "APPLICATION",
+          "application_id": "app_risk",
+          "app_component_id": null,
+          "service_id": null,
+          "name": "Risk System",
+          "description": "Application point for Risk System",
+          "tags": []
+        },
+        {
+          "id": "point-miabky5y-36bhn",
+          "kind": "APPLICATION_COMPONENT",
+          "name": "Risk System UI",
+          "app_component_id": "comp-miabj1cm-wl0b7",
+          "description": "",
+          "tags": "",
+          "application_id": "app_oms",
+          "point_type": "UI"
+        }
+      ],
+      "logical_data_entities": [
+        {
+          "id": "lde_trade",
+          "name": "Trade",
+          "description": "Represents a trade",
+          "domain": "Trading",
+          "lifecycle_stage": "ACTIVE",
+          "tags": []
+        },
+        {
+          "id": "lde-miabm4ki-et25i",
+          "name": "Risk Sensitivities",
+          "description": "",
+          "tags": ""
+        }
+      ],
+      "logical_data_attributes": [
+        {
+          "id": "lattr-mibd0qzd-qunxn",
+          "name": "Id",
+          "description": "",
+          "tags": "",
+          "logical_entity_id": "lde_trade",
+          "data_type": "INTEGER",
+          "is_primary_key": true,
+          "is_nullable": true
+        }
+      ],
+      "physical_data_entities": [
+        {
+          "id": "pde-mibd25xh-f44qi",
+          "name": "FO-System-Trade",
+          "description": "",
+          "tags": "",
+          "logical_entity_id": "lde_trade",
+          "physical_type": "Table",
+          "database": ""
+        }
+      ],
+      "physical_data_attributes": [
+        {
+          "id": "pattr-mibd2u97-m41o2",
+          "name": "TradeId",
+          "description": "",
+          "tags": "",
+          "physical_entity_id": "pde-mibd25xh-f44qi",
+          "data_type": "INTEGER",
+          "is_primary_key": true,
+          "is_nullable": true
+        },
+        {
+          "id": "pattr-mibd4kr0-3cfc7",
+          "name": "Counterparty",
+          "description": "",
+          "tags": "",
+          "physical_entity_id": "pde-mibd25xh-f44qi",
+          "data_type": "VARCHAR",
+          "is_primary_key": false,
+          "is_nullable": true
+        }
+      ]
+    },
+    "relationships": {
+      "business_user_processes": [
+        {
+          "id": "bup-mibi1jl0-rojd5",
+          "description": "",
+          "tags": "",
+          "business_user_id": "user-mia66sxp-guauq",
+          "business_process_id": "process-miabh5o3-yeaze"
+        }
+      ],
+      "application_point_business_processes": [
+        {
+          "id": "apbp-mibi1x0j-t2mck",
+          "description": "",
+          "tags": "",
+          "application_point_id": "point-miabky5y-36bhn",
+          "business_process_id": "process-miabh5o3-yeaze"
+        }
+      ],
+      "logical_data_entity_relationships": [
+        {
+          "id": "lder-mibi2j5c-ajgzc",
+          "description": "",
+          "tags": "",
+          "source_entity_id": "lde_trade",
+          "target_entity_id": "lde-miabm4ki-et25i",
+          "relationship_type": "many-to-many"
+        }
+      ],
+      "logical_data_entity_physical_data_entities": [],
+      "logical_data_attribute_physical_data_attributes": [],
+      "data_movements": [
+        {
+          "id": "dm_trade_oms_to_risk",
+          "name": "Trades from OMS to Risk",
+          "description": "Daily batch transfer of trades",
+          "frequency": "BATCH_DAILY",
+          "pattern": "FILE_TRANSFER",
+          "source_application_point_id": "ap_oms",
+          "target_application_point_id": "ap_risk",
+          "logical_data_entity_id": "lde_trade",
+          "notes": "",
+          "source_application_id": "app_oms",
+          "target_application_id": "app_risk",
+          "data_entity_id": "lde-miabm4ki-et25i",
+          "movement_type": "Batch"
+        }
+      ]
+    }
+  },
+  "diagrams": [
+    {
+      "id": "d1",
+      "name": "OMS to Risk Flow",
+      "description": "Simple data flow example",
+      "diagram_type": "DATA_MOVEMENTS",
+      "settings": {},
+      "diagram_nodes": [
+        {
+          "id": "n1",
+          "entity_type": "APPLICATION_POINT",
+          "entity_id": "ap_oms",
+          "pos_x": 95,
+          "pos_y": 248,
+          "width": 180,
+          "height": 100,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_v_align": "TOP",
+          "text_font_size": 13,
+          "text_font_weight": "bold"
+        },
+        {
+          "id": "n2",
+          "entity_type": "APPLICATION_POINT",
+          "entity_id": "ap_risk",
+          "pos_x": 379,
+          "pos_y": 251,
+          "width": 156,
+          "height": 44,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "text_font_size": 13,
+          "text_font_weight": "bold"
+        },
+        {
+          "id": "n3",
+          "entity_type": "BUSINESS_PROCESS",
+          "entity_id": "process-miabh5o3-yeaze",
+          "pos_x": 118,
+          "pos_y": 278,
+          "width": 140,
+          "height": 50,
+          "auto_size": true,
+          "z_index": 1,
+          "parent_node_id": "n1",
+          "style_override": {}
+        },
+        {
+          "id": "n4",
+          "entity_type": "BUSINESS_USER",
+          "entity_id": "user-mia66sxp-guauq",
+          "pos_x": 62,
+          "pos_y": 40,
+          "width": 50,
+          "height": 70,
+          "auto_size": false,
+          "z_index": 1,
+          "parent_node_id": null,
+          "style_override": {},
+          "text_area_width": 100
+        }
+      ],
+      "diagram_edges": [
+        {
+          "id": "e1",
+          "relationship_type": "DATA_MOVEMENT",
+          "relationship_id": "dm_trade_oms_to_risk",
+          "source_node_id": "n1",
+          "target_node_id": "n2",
+          "label_text": "Trades",
+          "label_pos_x": 340,
+          "label_pos_y": 210,
+          "line_weight": "MEDIUM",
+          "line_type": "SOLID",
+          "arrow_start": "NONE",
+          "arrow_end": "ARROW",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "p1",
+              "sequence_order": 0,
+              "pos_x": 275,
+              "pos_y": 273
+            },
+            {
+              "id": "p2",
+              "sequence_order": 1,
+              "pos_x": 379,
+              "pos_y": 276
+            }
+          ]
+        },
+        {
+          "id": "e2",
+          "relationship_type": "BUSINESS_USER_PROCESSES",
+          "relationship_id": "bup-mibi1jl0-rojd5",
+          "source_node_id": "n3",
+          "target_node_id": "n4",
+          "line_weight": "THICK",
+          "line_type": "DASHED",
+          "arrow_start": "NONE",
+          "arrow_end": "NONE",
+          "style_override": {},
+          "edge_points": [
+            {
+              "id": "p4",
+              "sequence_order": 0,
+              "pos_x": 95,
+              "pos_y": 145
+            },
+            {
+              "id": "p5",
+              "sequence_order": 1,
+              "pos_x": 123,
+              "pos_y": 278
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "product-manager--definition-of-done",
+  "personaId": "product-manager",
+  "menuLabel": "Definition of Done",
+  "description": "Helps define and refine the Definition of Done for work items, ensuring acceptance criteria are clear, testable, and comprehensive before implementation begins.",
+  "mode": "advisory",
+  "taskPromptRef": "prompts/product-manager.definition-of-done.task.md",
+  "responseFormat": null,
+  "contextNeeds": ["product-summary", "roadmap-summary"],
+  "persistence": "hub",
+  "artifacts": [],
+  "phases": null,
+  "availableFrom": ["hub", "panel"]
+}
