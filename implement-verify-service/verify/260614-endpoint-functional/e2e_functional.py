@@ -776,27 +776,45 @@ def coverage_check(base):
 # "first call"). Their route hits don't feed the parent coverage check — the in-process
 # units already cover every route deterministically. gate: "oauth" (real Max OAuth) or
 # "proxy" (OpenAI-wire proxy at :3456).
+def _is_rate_limited(status, body):
+    """Detect a 429/rate-limit signature on an agentic probe — the executor now surfaces a
+    {"type":"rate_limited"} SSE event (see fix/llm-rate-limit-backoff), and SDK/HTTP paths
+    surface 429 / rate_limit / overloaded. A throttled Max account is infra, not a bug."""
+    b = (body or "").lower()
+    return (status == 429 or str(status) == "429" or "rate_limited" in b
+            or "rate_limit" in b or "rate-limited" in b or "overloaded" in b)
+
+
+def _agentic_assert(label, ok, status, body, detail=""):
+    """Like chk(), but if the agentic call was rate-limited (429), record an honest
+    SKIP('rate-limited') instead of a misleading empty-stream/connection FAIL."""
+    if _is_rate_limited(status, body):
+        skip(label, "Anthropic 429 rate-limited (backoff exhausted)")
+    else:
+        chk(label, ok, detail)
+
+
 def ag_ws2(base):
     s, t = curl("POST", f"/api/v2/specs/{CO}/{PROJ}/write-spec", base=base, body={"spec_id": FRESH_SPEC}, timeout=600)
     wrote = os.path.exists(f"{WORK}/{CO}/{PROJ}/haikai/specs/{FRESH_SPEC}/spec.md")
-    chk("POST /v2/write-spec real -> 200 + spec.md", s == 200 and wrote, f"got {s}, spec.md={wrote}: {t[:160]}")
+    _agentic_assert("POST /v2/write-spec real -> 200 + spec.md", s == 200 and wrote, s, t, f"got {s}, spec.md={wrote}: {t[:160]}")
 
 
 def ag_ws1(base):
     s, t = curl("POST", f"/api/v1/specs/{CO}/{PROJ}/write-spec", base=base, body={"spec_id": FRESH_SPEC2}, timeout=600)
     wrote = os.path.exists(f"{WORK}/{CO}/{PROJ}/haikai/specs/{FRESH_SPEC2}/spec.md")
-    chk("POST /v1/write-spec real -> 200 + spec.md", s == 200 and wrote, f"got {s}, spec.md={wrote}: {t[:160]}")
+    _agentic_assert("POST /v1/write-spec real -> 200 + spec.md", s == 200 and wrote, s, t, f"got {s}, spec.md={wrote}: {t[:160]}")
 
 
 def ag_tg1(base):
     s, t = curl("POST", f"/api/v1/specs/{CO}/{PROJ}/{TG_SPEC}/tasks/generate", base=base, timeout=600)
     made = os.path.exists(f"{WORK}/{CO}/{PROJ}/haikai/specs/{TG_SPEC}/tasks.md")
-    chk("POST /v1/tasks/generate real -> 200 + tasks.md", s == 200 and made, f"got {s}, tasks.md={made}: {t[:160]}")
+    _agentic_assert("POST /v1/tasks/generate real -> 200 + tasks.md", s == 200 and made, s, t, f"got {s}, tasks.md={made}: {t[:160]}")
 
 
 def ag_impl2(base):
     s, t = curl("POST", f"/api/v2/specs/{CO}/{PROJ}/{IMPL_SPEC}/implement", base=base, body={}, timeout=900)
-    chk("POST /v2/implement real -> 200", s == 200, f"got {s}: {t[:200]}")
+    _agentic_assert("POST /v2/implement real -> 200", s == 200, s, t, f"got {s}: {t[:200]}")
 
 
 def ag_ss(base):
@@ -804,26 +822,26 @@ def ag_ss(base):
                         body={"company": CO, "project": PROJ,
                               "message": "Add a GET /ping that returns pong", "session_mode": "new"})
     got = "data:" in b and ('"type"' in b or "content" in b.lower())
-    chk("POST /v1/shape-spec/stream emits real LLM SSE events", got, f"rc={rc} body[:160]={b[:160]!r}")
+    _agentic_assert("POST /v1/shape-spec/stream emits real LLM SSE events", got, rc, b, f"rc={rc} body[:160]={b[:160]!r}")
 
 
 def ag_pp1(base):
     rc, b = curl_stream("POST", "/api/v1/plan-product/stream", base=base, timeout=150,
                         body={"company": CO, "project": PP1, "message": "Design a tiny ping service", "session_mode": "new"})
-    chk("POST /v1/plan-product/stream emits real SSE events", "data:" in b, f"rc={rc} body[:120]={b[:120]!r}")
+    _agentic_assert("POST /v1/plan-product/stream emits real SSE events", "data:" in b, rc, b, f"rc={rc} body[:120]={b[:120]!r}")
 
 
 def ag_pp2(base):
     rc, b = curl_stream("POST", "/api/v2/plan-product/stream", base=base, timeout=150,
                         body={"company": CO, "project": PP2, "message": "Design a tiny ping service", "session_mode": "new"})
-    chk("POST /v2/plan-product/stream emits real SSE events", "data:" in b, f"rc={rc} body[:120]={b[:120]!r}")
+    _agentic_assert("POST /v2/plan-product/stream emits real SSE events", "data:" in b, rc, b, f"rc={rc} body[:120]={b[:120]!r}")
 
 
 def ag_ar(base):
     rc, b = curl_stream("POST", "/api/v1/analyze-repo/stream", base=base, timeout=240,
                         body={"company": CO, "project": ARP, "repo_path": _code_repo(),
                               "no_llm": False, "session_mode": "new"})
-    chk("POST /v1/analyze-repo/stream emits real SSE events", "data:" in b, f"rc={rc} body[:120]={b[:120]!r}")
+    _agentic_assert("POST /v1/analyze-repo/stream emits real SSE events", "data:" in b, rc, b, f"rc={rc} body[:120]={b[:120]!r}")
 
 
 def ag_sa(base):
@@ -831,25 +849,25 @@ def ag_sa(base):
                         body={"company": CO, "project": SAP,
                               "contract": {"Button": {"props": ["label"], "returns": "ReactElement"}},
                               "session_mode": "new"})
-    chk("POST /v1/story-component-anchor/stream emits real SSE events", "data:" in b, f"rc={rc} body[:120]={b[:120]!r}")
+    _agentic_assert("POST /v1/story-component-anchor/stream emits real SSE events", "data:" in b, rc, b, f"rc={rc} body[:120]={b[:120]!r}")
 
 
 def ag_std_gg(base):
     s, t = curl("POST", "/api/v1/standards/global/generate", base=base,
                 body={"company": CO, "sources": [_code_repo()], "recursive": True}, timeout=300)
-    chk("POST /v1/standards/global/generate real -> 200", s == 200, f"got {s}: {t[:160]}")
+    _agentic_assert("POST /v1/standards/global/generate real -> 200", s == 200, s, t, f"got {s}: {t[:160]}")
 
 
 def ag_std_pg(base):
     s, t = curl("POST", "/api/v1/standards/product/generate", base=base,
                 body={"company": CO, "project": PROJ, "sources": [_code_repo()]}, timeout=300)
-    chk("POST /v1/standards/product/generate real -> 200", s == 200, f"got {s}: {t[:160]}")
+    _agentic_assert("POST /v1/standards/product/generate real -> 200", s == 200, s, t, f"got {s}: {t[:160]}")
 
 
 def ag_std_pg2(base):
     s, t = curl("POST", "/api/v2/standards/product/generate", base=base,
                 body={"company": CO, "project": PROJ, "sources": [_code_repo()]}, timeout=600)
-    chk("POST /v2/standards/product/generate real (local git commit) -> 200", s == 200, f"got {s}: {t[:160]}")
+    _agentic_assert("POST /v2/standards/product/generate real (local git commit) -> 200", s == 200, s, t, f"got {s}: {t[:160]}")
 
 
 def _disc_body():
@@ -861,12 +879,12 @@ def _disc_body():
 
 def ag_disc_ep(base):
     s, t = curl("POST", "/api/discovery/endpoints", base=base, body=_disc_body(), timeout=300)
-    chk("POST /api/discovery/endpoints real -> 200", s == 200, f"got {s}: {t[:160]}")
+    _agentic_assert("POST /api/discovery/endpoints real -> 200", s == 200, s, t, f"got {s}: {t[:160]}")
 
 
 def ag_disc_dg(base):
     s, t = curl("POST", "/api/discovery/diagrams", base=base, body=_disc_body(), timeout=300)
-    chk("POST /api/discovery/diagrams real -> 200", s == 200, f"got {s}: {t[:160]}")
+    _agentic_assert("POST /api/discovery/diagrams real -> 200", s == 200, s, t, f"got {s}: {t[:160]}")
 
 
 def ag_orch(base):
@@ -879,10 +897,10 @@ def ag_orch(base):
     job_id = ""
     with contextlib.suppress(Exception):
         job_id = json.loads(t).get("job_id", "")
-    chk("POST /v1/jobs/orchestrations real -> 202 + job_id", s in (200, 202) and bool(job_id), f"got {s}: {t[:160]}")
+    _agentic_assert("POST /v1/jobs/orchestrations real -> 202 + job_id", s in (200, 202) and bool(job_id), s, t, f"got {s}: {t[:160]}")
     if job_id:
         s2, t2 = curl("GET", f"/api/v1/jobs/{job_id}", base=base)
-        chk("GET /v1/jobs/{id} tracks the async orchestration", s2 == 200 and job_id in t2, f"got {s2}: {t2[:120]}")
+        _agentic_assert("GET /v1/jobs/{id} tracks the async orchestration", s2 == 200 and job_id in t2, s2, t2, f"got {s2}: {t2[:120]}")
         curl("DELETE", f"/api/v1/jobs/{job_id}", base=base)  # stop the bg agentic run
 
 

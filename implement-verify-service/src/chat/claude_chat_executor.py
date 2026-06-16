@@ -41,6 +41,16 @@ _CLI_ERROR_PATTERNS: Tuple[str, ...] = (
 # retry loop skips the nudge logic and goes straight to /explain-failure.
 _FATAL_ERROR_HINTS: Tuple[str, ...] = ("authenticate", "invalid", "authentication_error")
 
+# Deterministic rate-limit (HTTP 429) backoff for the agentic CLI lane. The Claude CLI
+# swallows 429s inside its own internal HTTP retries and emits NOTHING to stdout/stderr —
+# so the executor can't see them; the call just hangs until killed (exit 143). Instead we
+# probe the Anthropic Messages API directly (a 429 returns in <1s) and back off
+# exponentially before spawning. See debug 260615 (a raw probe returned 429 in 0.48s).
+_RATE_LIMIT_MAX_ATTEMPTS = 5
+_RATE_LIMIT_BASE_SECONDS = 2.0
+_RATE_LIMIT_CAP_SECONDS = 60.0
+_RATE_LIMIT_PROBE_MODEL = "claude-sonnet-4-5"
+
 
 @dataclass
 class _StreamLoopState:
@@ -464,6 +474,88 @@ class ClaudeChatExecutor:
             env_vars["HAIKAI_PROFILES_PATH"] = str(self._haikai_profiles_path())
 
         return env_vars
+
+    def _probe_rate_limited(self) -> Tuple[bool, Optional[float]]:
+        """Deterministically check whether the Anthropic account is rate-limited.
+
+        Makes ONE minimal POST to the Messages API with this executor's credentials and
+        returns ``(is_rate_limited, retry_after_seconds)``. A 429 comes back in <1s, so
+        this surfaces a rate limit the Claude CLI would otherwise hide inside its own
+        silent internal retries (the CLI then hangs with no output until killed).
+
+        Auth mirrors `_build_env_vars`: OAuth tokens (``sk-ant-oat``) use Bearer + the
+        oauth beta header; plain keys use ``x-api-key``. Any non-429 response or network
+        error returns ``(False, None)`` — we never false-positive into backoff, and real
+        errors still surface through the CLI run itself.
+        """
+        import os
+        import json as _json
+        import urllib.request
+        import urllib.error
+
+        base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
+        headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
+        if "sk-ant-oat" in self.anthropic_api_key:
+            headers["authorization"] = f"Bearer {self.anthropic_api_key}"
+            headers["anthropic-beta"] = "oauth-2025-04-20"
+        else:
+            headers["x-api-key"] = self.anthropic_api_key
+        payload = _json.dumps({
+            "model": _RATE_LIMIT_PROBE_MODEL,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}],
+        }).encode("utf-8")
+        req = urllib.request.Request(base + "/v1/messages", data=payload, headers=headers, method="POST")
+        try:
+            urllib.request.urlopen(req, timeout=15)
+            return (False, None)
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                retry_after = e.headers.get("retry-after") if getattr(e, "headers", None) else None
+                try:
+                    retry_after = float(retry_after) if retry_after else None
+                except (TypeError, ValueError):
+                    retry_after = None
+                return (True, retry_after)
+            return (False, None)
+        except Exception:
+            return (False, None)
+
+    def _rate_limit_backoff(self) -> Generator[Dict[str, Any], None, bool]:
+        """Preflight gate: if rate-limited, back off exponentially until it clears.
+
+        Probes deterministically (`_probe_rate_limited`); if clear, returns ``True``
+        immediately (no events). If rate-limited, yields ``rate_limited`` progress events
+        and sleeps with exponential backoff (full-ish jitter, honoring ``Retry-After``),
+        re-probing between sleeps. Returns ``True`` once the limit clears (safe to spawn)
+        or ``False`` after `_RATE_LIMIT_MAX_ATTEMPTS` (a terminal ``error`` event with
+        ``message="rate_limited"`` has been yielded). Callers `yield from` this and skip
+        the CLI spawn when it returns ``False``.
+        """
+        import time
+        import random
+
+        limited, retry_after = self._probe_rate_limited()
+        if not limited:
+            return True
+        for attempt in range(1, _RATE_LIMIT_MAX_ATTEMPTS + 1):
+            ceiling = retry_after if retry_after else min(
+                _RATE_LIMIT_CAP_SECONDS, _RATE_LIMIT_BASE_SECONDS * (2 ** (attempt - 1)))
+            wait = ceiling * (0.5 + random.random() * 0.5)  # jitter on the upper half
+            logger.warning(
+                f"Rate limited (429) — backoff {attempt}/{_RATE_LIMIT_MAX_ATTEMPTS}, waiting {wait:.1f}s")
+            yield {"type": "rate_limited", "attempt": attempt,
+                   "max_attempts": _RATE_LIMIT_MAX_ATTEMPTS, "wait": round(wait, 2)}
+            time.sleep(wait)
+            limited, retry_after = self._probe_rate_limited()
+            if not limited:
+                logger.info(f"Rate limit cleared after {attempt} backoff attempt(s)")
+                return True
+        logger.error("Rate limit (429) did not clear after exponential backoff")
+        yield {"type": "error", "message": "rate_limited",
+               "detail": (f"Anthropic rate limit (429) did not clear after "
+                          f"{_RATE_LIMIT_MAX_ATTEMPTS} backoff attempts")}
+        return False
 
     # ─────────────────────────────────────────────────────────────────────
     # Stream-line dispatch helpers (Phase B.3a)
@@ -1173,6 +1265,13 @@ class ClaudeChatExecutor:
         logger.info(f"CLI args: {' '.join(cli_args)}")
 
         try:
+            # Preflight: deterministic 429 check + exponential backoff. The Claude CLI
+            # swallows rate limits in its own internal retries and then hangs with no
+            # output until killed; probing the API directly lets us back off and surface
+            # a clear `rate_limited` signal instead of a silent multi-minute hang.
+            if not (yield from self._rate_limit_backoff()):
+                return
+
             # Execute the command with streaming
             process = self._spawn_subprocess(cli_args)
             
