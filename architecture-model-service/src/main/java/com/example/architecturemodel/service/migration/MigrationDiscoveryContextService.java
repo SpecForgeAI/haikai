@@ -45,6 +45,7 @@ import com.example.architecturemodel.model.dto.targetstate.TargetStateDecisionsS
 import com.example.architecturemodel.model.entity.TargetStateCapturedDecisionEntity;
 import com.example.architecturemodel.service.MetaModelSummaryService;
 import com.example.architecturemodel.service.TargetStateCapturedDecisionService;
+import com.example.architecturemodel.trace.HaikaiTrace;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -126,6 +127,13 @@ public class MigrationDiscoveryContextService {
 
     /** Cap on the number of latest runs returned when the request omits explicit IDs. */
     public static final int DEFAULT_LATEST_RUN_LIMIT = 3;
+
+    /**
+     * Haikai workflow tracer (service name {@code ams}). OFF by default --
+     * every call is a no-op unless {@code HAIKAI_TRACE} is set. See
+     * {@code docs/trace-logging.md}.
+     */
+    private static final HaikaiTrace.Tracer TRACE = HaikaiTrace.forService("ams");
 
     /** Severity values treated as "high priority" for sort + gap detection. */
     public static final Set<String> HIGH_SEVERITY = Set.of("critical", "high");
@@ -394,6 +402,7 @@ public class MigrationDiscoveryContextService {
             targetArchitecture != null,
             coverage);
         ReadinessAssessmentDto readiness = assessReadiness(readinessCtx);
+        traceReadiness(projectId, currentArchitecture, readinessCtx, readiness);
 
         // 6. Compose final DTO.
         List<UUID> baselineIds = baselineSummary.baselines().stream()
@@ -1609,6 +1618,139 @@ public class MigrationDiscoveryContextService {
             overall, apiReadiness, dataReadiness, infrastructureReadiness,
             discoveryReadiness, mappingReadiness, baselineReadiness, decisionReadiness,
             dedupedGaps);
+    }
+
+    // -----------------------------------------------------------------------
+    // Haikai trace -- readiness verdict (SUMMARY) + inputs (detail)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Emit the Haikai trace for a readiness assessment. No-op unless
+     * {@code HAIKAI_TRACE} is set -- the project-name lookup and all string /
+     * JSON building are skipped entirely when tracing is OFF, so production is
+     * unaffected. NEVER throws (any failure is swallowed).
+     *
+     * <p>SUMMARY: one glyph-led line per verdict ({@code fail} = insufficient,
+     * {@code warn} = partial, {@code ok} = sufficient) carrying the total
+     * baseline count and the resolved gap codes. DETAIL ({@code readiness.assessed}):
+     * everything needed to diagnose an INSUFFICIENT verdict from the file alone
+     * -- the per-axis readiness, the inputs that drove them, and the full gap
+     * list with a human reason per code.</p>
+     */
+    private void traceReadiness(
+            UUID projectId,
+            ArchitectureEntity currentArchitecture,
+            ReadinessContext ctx,
+            ReadinessAssessmentDto readiness) {
+        if (!TRACE.isEnabled() || readiness == null) {
+            return;
+        }
+        try {
+            String projectName = resolveProjectName(projectId);
+            String archName = currentArchitecture == null ? null : currentArchitecture.getName();
+            HaikaiTrace.Corr corr = HaikaiTrace.Corr.of()
+                .project(projectName)
+                .arch(archName);
+
+            String verdict = readiness.overallStatus() == null
+                ? "unknown" : readiness.overallStatus();
+            int totalBaselines = ctx.baselineSummary() != null
+                && ctx.baselineSummary().totalBaselines() != null
+                ? ctx.baselineSummary().totalBaselines() : 0;
+            int activeBaselineCount = ctx.baselineSummary() != null
+                && ctx.baselineSummary().activeBaselineCount() != null
+                ? ctx.baselineSummary().activeBaselineCount() : 0;
+            List<String> gaps = readiness.gaps() == null
+                ? List.of() : readiness.gaps();
+            String gapCodesJoined = gaps.isEmpty() ? "(none)" : String.join(", ", gaps);
+
+            String message = "plan readiness " + verdict.toUpperCase()
+                + " — baselines=" + totalBaselines + "; gaps: " + gapCodesJoined;
+            if (MigrationGapCodes.STATUS_INSUFFICIENT.equals(verdict)) {
+                TRACE.fail(message, corr);
+            } else if (MigrationGapCodes.STATUS_PARTIAL.equals(verdict)) {
+                TRACE.warn(message, corr);
+            } else {
+                TRACE.ok(message, corr);
+            }
+
+            // DETAIL: only built when tier == detail (toJson + the map below are
+            // skipped otherwise inside the tracer; this guard avoids the work too).
+            int mappings = ctx.mappingsSummary() != null
+                && ctx.mappingsSummary().totalMappings() != null
+                ? ctx.mappingsSummary().totalMappings() : 0;
+            List<Map<String, Object>> gapDetails = new ArrayList<>();
+            for (String code : gaps) {
+                Map<String, Object> g = new LinkedHashMap<>();
+                g.put("code", code);
+                g.put("reason", gapReason(code));
+                gapDetails.add(g);
+            }
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("verdict", verdict);
+            detail.put("findings", ctx.findings() == null ? 0 : ctx.findings().size());
+            detail.put("totalBaselines", totalBaselines);
+            detail.put("activeBaselineCount", activeBaselineCount);
+            detail.put("mappings", mappings);
+            detail.put("apiReadiness", readiness.apiReadiness());
+            detail.put("dataReadiness", readiness.dataReadiness());
+            detail.put("runtimeReadiness", readiness.infrastructureReadiness());
+            detail.put("discoveryReadiness", readiness.discoveryReadiness());
+            detail.put("baselineReadiness", readiness.baselineReadiness());
+            detail.put("mappingReadiness", readiness.mappingReadiness());
+            detail.put("decisionReadiness", readiness.decisionReadiness());
+            detail.put("gaps", gapDetails);
+            TRACE.detail("readiness.assessed", detail, corr);
+        } catch (RuntimeException ignored) {
+            // tracing must never affect the request
+        }
+    }
+
+    /** Resolve the project's human name for trace correlation (best-effort). */
+    private String resolveProjectName(UUID projectId) {
+        if (projectId == null) {
+            return null;
+        }
+        try {
+            return projectRepository.findById(projectId)
+                .map(p -> p.getName())
+                .orElse(null);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    /** Short human reason per gap code, for the self-diagnosing detail line. */
+    private static String gapReason(String code) {
+        if (code == null) {
+            return "";
+        }
+        switch (code) {
+            case MigrationGapCodes.NO_API_BEHAVIOUR_BASELINE:
+                return "no API behaviour baseline saved for the current architecture";
+            case MigrationGapCodes.MISSING_OAS_FOR_IN_SCOPE_INTERFACE:
+                return "current architecture has no in-scope interfaces / OAS";
+            case MigrationGapCodes.NO_DATABASE_DISCOVERY_FINDINGS:
+                return "no database discovery findings";
+            case MigrationGapCodes.NO_SAMPLE_DATA_HINTS:
+                return "no sample-data hints";
+            case MigrationGapCodes.HIGH_SEVERITY_UNREVIEWED_FINDINGS:
+                return "high-severity findings still unreviewed";
+            case MigrationGapCodes.MISSING_CURRENT_TO_TARGET_MAPPINGS:
+                return "no / too few current-to-target element mappings";
+            case MigrationGapCodes.UNRESOLVED_DISCOVERY_DECISIONS:
+                return "unresolved discovery decision tasks";
+            case MigrationGapCodes.INSUFFICIENT_RUNTIME_EVIDENCE:
+                return "no runtime / log evidence captured";
+            case MigrationGapCodes.INCOMPLETE_CAPTURE_COVERAGE:
+                return "not all included operations were captured";
+            case MigrationGapCodes.UNDER_SPECIFIED_ENDPOINTS:
+                return "one or more endpoints are not fully specified";
+            case MigrationGapCodes.DISCOVERY_HARNESS_INVENTORY_MISMATCH:
+                return "model endpoint inventory and harness operations diverge";
+            default:
+                return code;
+        }
     }
 
     /**

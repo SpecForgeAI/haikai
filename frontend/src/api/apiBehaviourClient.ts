@@ -496,14 +496,39 @@ export interface AccountEndpointsResponse {
   operations: ApiBehaviourOperationDto[];
 }
 
+/**
+ * Response from the session-bound `POST /capture-sessions/:id/test-api-connection`
+ * action. The route returns HTTP 200 even when the *target* responds with an
+ * error status: `success` is `status >= 200 && status < 500`, so a 401/403/404
+ * RESOLVES (does NOT throw) with `success: false`. Callers MUST inspect
+ * `success` to distinguish a reachable-but-rejected probe from a healthy one.
+ *
+ * Shape matches the api-migration-validation-service route
+ * (`captureSessionActions.ts`) verbatim -- the gateway proxies the JSON body
+ * without reshaping.
+ */
 export interface TestApiConnectionResponse {
+  sessionId: string;
+  /** `status >= 200 && status < 500`. `false` = reachable but rejected. */
+  success: boolean;
+  /** HTTP status of the upstream probe (a GET on the base URL). */
   status: number;
+  /** Wall-clock duration of the probe in milliseconds. */
   durationMs: number;
 }
 
+/**
+ * Response from the session-bound `POST /capture-sessions/:id/test-db-connection`
+ * action. Like the API probe, the route returns HTTP 200 with `success: false`
+ * when the DB driver reports a non-infrastructure failure, so callers MUST
+ * inspect `success`. Shape matches the route verbatim.
+ */
 export interface TestDbConnectionResponse {
-  ok: boolean;
-  message?: string;
+  sessionId: string;
+  /** `true` when the DB adapter's `testConnection()` succeeded. */
+  success: boolean;
+  /** Server version string reported by the driver on success, else null. */
+  serverVersion?: string | null;
 }
 
 /**

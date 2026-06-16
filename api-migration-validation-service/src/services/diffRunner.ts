@@ -14,6 +14,13 @@ import {
   type VolatilityEnvelope,
 } from './jsonShapeComparator';
 import { classifyDiffItem as defaultClassifyDiffItem } from './findingEmissionRules';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
+// set). See docs/trace-logging.md. The reconcile/diff flow writes a SUMMARY
+// start + terminal line and a per-break DETAIL line. project + arch group the
+// whole migration; the diffId is the reconcile sub-thread (corr `run`).
+const trace = createTracer('capture-svc');
 
 /**
  * Deterministic diff runner. Walks a paired source / target API behaviour
@@ -239,6 +246,21 @@ function freshCounts(): ClassificationCounts {
 }
 
 /**
+ * Read the DISTINCT `volatility_sources` tags persisted onto a diff_item's
+ * `body_diff_json` (set by the comparator when a tolerated entry was
+ * touched). Returns the first tag for the DETAIL line, or undefined when the
+ * break carries no volatility tolerance.
+ */
+function readVolatilitySource(item: ApiBehaviourDiffItemDto): string | undefined {
+  const blob = item.body_diff_json as { volatility_sources?: unknown } | null | undefined;
+  const sources = blob?.volatility_sources;
+  if (Array.isArray(sources) && typeof sources[0] === 'string') {
+    return sources[0];
+  }
+  return undefined;
+}
+
+/**
  * Drive a single diff run end-to-end. Throws only when `runManager.start`
  * rejects the diffId as already-running (the route handler catches and
  * returns HTTP 409); every other failure path is captured into the diff
@@ -301,6 +323,13 @@ export async function runDiff(
   const persistedDiffItems: ApiBehaviourDiffItemDto[] = [];
   let architectureId: string | undefined;
   let completedSuccessfully = false;
+  // Reconcile trace corr -- project + arch group the migration, the diffId is
+  // the reconcile sub-thread (corr `run`). architectureId fills in once the
+  // diff row loads; the start line below uses what we know at that point.
+  let traceCorr: { run: string; project: string; arch?: string } = {
+    run: diffId,
+    project: projectId,
+  };
 
   try {
     // ------------------------------------------------------------------
@@ -308,6 +337,7 @@ export async function runDiff(
     // ------------------------------------------------------------------
     diff = await archModelClient.getDiff(projectId, diffId);
     architectureId = diff.architecture_id;
+    traceCorr = { run: diffId, project: projectId, arch: architectureId };
     if (diff.status !== 'computing') {
       // Either already completed or failed. Don't double-run; surface a
       // diagnostic and return.
@@ -332,6 +362,7 @@ export async function runDiff(
       console.warn(
         `[diffRunner] op=fail diffId=${diffId.slice(0, 8)} reason=target_baseline_not_finalised`,
       );
+      trace.fail('reconcile FAILED — target_baseline_not_finalised', traceCorr);
       return;
     }
     const sourceBaseline = await archModelClient.getBaseline(
@@ -355,6 +386,13 @@ export async function runDiff(
       `[diffRunner] op=start diffId=${diffId.slice(0, 8)} ` +
         `source=${diff.source_baseline_id.slice(0, 8)}(${sourceItems.length} items) ` +
         `target=${diff.target_baseline_id.slice(0, 8)}(${targetItems.length} items)`,
+    );
+
+    // SUMMARY: reconcile started -- the source/target item counts frame the
+    // run before any classification.
+    trace.step(
+      `reconcile started — ${sourceItems.length} source items vs ${targetItems.length} target items`,
+      traceCorr,
     );
 
     // ------------------------------------------------------------------
@@ -538,11 +576,31 @@ export async function runDiff(
         `body_shape_drift=${counts.body_shape_drift} body_value_drift=${counts.body_value_drift} ` +
         `source_only=${counts.source_only} target_only=${counts.target_only}`,
     );
+
+    // SUMMARY: reconcile terminal -- "breaks" = every non-matched item
+    // (status / shape / value drift + source_only + target_only). A clean
+    // reconcile (0 breaks) is an ok line; any break is still ok (reconcile
+    // RAN successfully -- the breaks themselves are the data), so we use the
+    // ok glyph and let the count carry the signal.
+    const breaks =
+      counts.status_drift +
+      counts.body_shape_drift +
+      counts.body_value_drift +
+      counts.source_only +
+      counts.target_only;
+    trace.ok(
+      `reconcile COMPLETED — ${breaks} breaks ` +
+        `(status_drift=${counts.status_drift} shape=${counts.body_shape_drift} ` +
+        `value=${counts.body_value_drift} source_only=${counts.source_only} ` +
+        `target_only=${counts.target_only}; matched=${counts.matched})`,
+      traceCorr,
+    );
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(
       `[diffRunner] op=fail diffId=${diffId.slice(0, 8)} reason=${errorMessage}`,
     );
+    trace.fail(`reconcile FAILED — ${errorMessage}`, traceCorr);
     try {
       await archModelClient.updateDiff(projectId, diffId, {
         status: 'failed',
@@ -598,6 +656,22 @@ export async function runDiff(
         skippedNoEmit += 1;
         continue;
       }
+      // DETAIL: per-break -- the operation, its classification + severity, and
+      // the volatility-source tag (when a tolerated entry was touched). This
+      // is the row-level breadcrumb behind the SUMMARY break count.
+      trace.detail(
+        'reconcile.break',
+        {
+          op: `${item.method} ${item.path}`,
+          classification:
+            item.body_classification ?? item.status_classification,
+          severity: classification.severity,
+          ...(readVolatilitySource(item)
+            ? { volatilitySource: readVolatilitySource(item) }
+            : {}),
+        },
+        traceCorr,
+      );
       await archModelClient.createDiffFinding(projectId, diffId, {
         finding_type: classification.findingType,
         category: classification.category,

@@ -68,6 +68,8 @@ import {
   ApiBehaviourCaptureSessionDto,
   ApiBehaviourApiError,
   SubmitSecretsRequest,
+  TestApiConnectionResponse,
+  TestDbConnectionResponse,
   cancelCaptureSession,
   cloneCaptureSession,
   getCaptureSession,
@@ -150,6 +152,19 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   const [session, setSession] = useState<ApiBehaviourCaptureSessionDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Bug 2 fix: the Test API / Test DB routes return HTTP 200 even when the
+  // *target* fails (the API route's `success` is `status>=200 && status<500`,
+  // so a 401/500 RESOLVES rather than throwing). The handlers used to discard
+  // the resolved value, so a rejected probe was indistinguishable from no
+  // click at all. We now capture the resolved result into state and render
+  // inline feedback near the Test buttons -- treating `success === false` as a
+  // visible FAILURE. The thrown-error path still flows to `setError` (rendered
+  // as the error banner above the action footer).
+  const [apiTestResult, setApiTestResult] =
+    useState<TestApiConnectionResponse | null>(null);
+  const [dbTestResult, setDbTestResult] =
+    useState<TestDbConnectionResponse | null>(null);
 
   // UI-local "secrets are loaded in this UI session" flag. Reset to false
   // on every mount per the conservative rule above.
@@ -396,8 +411,16 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
 
   const handleTestApi = useCallback(async () => {
     setActionInFlight('test-api');
+    // Clear any stale result/error from a previous attempt so the inline
+    // feedback always reflects THIS click.
+    setApiTestResult(null);
+    setError(null);
     try {
-      await testApiConnection(projectId, architectureId, sessionId);
+      const result = await testApiConnection(projectId, architectureId, sessionId);
+      // Resolves on HTTP 200 even when the target rejected the probe
+      // (`result.success === false`); rendering below treats that as a
+      // visible FAILURE rather than silence.
+      setApiTestResult(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to test API');
     } finally {
@@ -407,8 +430,11 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
 
   const handleTestDb = useCallback(async () => {
     setActionInFlight('test-db');
+    setDbTestResult(null);
+    setError(null);
     try {
-      await testDbConnection(projectId, architectureId, sessionId);
+      const result = await testDbConnection(projectId, architectureId, sessionId);
+      setDbTestResult(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to test DB');
     } finally {
@@ -808,54 +834,147 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
 
       {/* Action footer. Most actions are gated on having in-memory secrets
           loaded for this UI session. Cancel is allowed regardless because
-          it only purges state; it never executes anything. */}
+          it only purges state; it never executes anything.
+
+          Bug 3 fix: when `guardActionsBehindSecrets` is true the Test + Start
+          buttons are disabled, but `.secondaryButton` had no `:disabled` rule
+          so a guarded Test button was visually identical to a live one. We now
+          attach `.secondaryButtonDisabled` (greyed + not-allowed cursor, the
+          same affordance `.primaryButton:disabled` already gives Start) plus a
+          native `title` tooltip explaining WHY, and render an inline hint that
+          points at the always-reachable "Re-enter secrets" prompt above. The
+          underlying guard logic is unchanged. */}
       {!isSecretsLost && (
-        <div className={styles.cta}>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            onClick={handleTestApi}
-            disabled={guardActionsBehindSecrets || actionInFlight !== null}
-            data-testid="capture-session-detail-test-api"
-          >
-            Test API connection
-          </button>
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            onClick={handleTestDb}
-            disabled={guardActionsBehindSecrets || actionInFlight !== null}
-            data-testid="capture-session-detail-test-db"
-          >
-            Test DB connection
-          </button>
-          {session.status !== 'running' && (
+        <>
+          <div className={styles.cta}>
             <button
               type="button"
-              className={styles.primaryButton}
-              onClick={handleStart}
-              disabled={
-                guardActionsBehindSecrets ||
-                actionInFlight !== null ||
-                session.status === 'completed'
+              className={
+                guardActionsBehindSecrets
+                  ? `${styles.secondaryButton} ${styles.secondaryButtonDisabled}`
+                  : styles.secondaryButton
               }
-              data-testid="capture-session-detail-start"
+              onClick={handleTestApi}
+              disabled={guardActionsBehindSecrets || actionInFlight !== null}
+              title={
+                guardActionsBehindSecrets
+                  ? 'Re-enter secrets to enable this action - use the "Re-enter secrets" prompt above.'
+                  : 'Probe the configured API base URL using the in-memory secrets'
+              }
+              data-testid="capture-session-detail-test-api"
             >
-              Start
+              {actionInFlight === 'test-api'
+                ? 'Testing API...'
+                : 'Test API connection'}
             </button>
-          )}
-          {session.status === 'running' && (
             <button
               type="button"
-              className={styles.secondaryButton}
-              onClick={handleCancel}
-              disabled={actionInFlight !== null}
-              data-testid="capture-session-detail-cancel"
+              className={
+                guardActionsBehindSecrets
+                  ? `${styles.secondaryButton} ${styles.secondaryButtonDisabled}`
+                  : styles.secondaryButton
+              }
+              onClick={handleTestDb}
+              disabled={guardActionsBehindSecrets || actionInFlight !== null}
+              title={
+                guardActionsBehindSecrets
+                  ? 'Re-enter secrets to enable this action - use the "Re-enter secrets" prompt above.'
+                  : 'Probe the configured database using the in-memory secrets'
+              }
+              data-testid="capture-session-detail-test-db"
             >
-              Cancel run
+              {actionInFlight === 'test-db'
+                ? 'Testing DB...'
+                : 'Test DB connection'}
             </button>
+            {session.status !== 'running' && (
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={handleStart}
+                disabled={
+                  guardActionsBehindSecrets ||
+                  actionInFlight !== null ||
+                  session.status === 'completed'
+                }
+                title={
+                  guardActionsBehindSecrets
+                    ? 'Re-enter secrets to enable this action - use the "Re-enter secrets" prompt above.'
+                    : session.status === 'completed'
+                      ? 'This session has already completed'
+                      : 'Start the capture run'
+                }
+                data-testid="capture-session-detail-start"
+              >
+                {actionInFlight === 'start' ? 'Starting...' : 'Start'}
+              </button>
+            )}
+            {session.status === 'running' && (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={handleCancel}
+                disabled={actionInFlight !== null}
+                data-testid="capture-session-detail-cancel"
+              >
+                {actionInFlight === 'cancel' ? 'Cancelling...' : 'Cancel run'}
+              </button>
+            )}
+          </div>
+
+          {/* Bug 3: explanatory affordance for the guarded/disabled buttons.
+              Always points at the reachable "Re-enter secrets" prompt above so
+              a disabled state is never a dead end. */}
+          {guardActionsBehindSecrets && (
+            <div
+              className={styles.actionHint}
+              data-testid="capture-session-detail-actions-disabled-hint"
+            >
+              Test and Start are disabled until secrets are loaded for this UI
+              session. Use the &ldquo;Re-enter secrets&rdquo; prompt above to
+              enable them.
+            </div>
           )}
-        </div>
+
+          {/* Bug 2: inline result feedback for the connection probes. A probe
+              that RESOLVES with `success === false` (e.g. a 401 returned as
+              HTTP 200 by the route) is rendered as a visible FAILURE here, not
+              silence. The thrown-error path remains the error banner above. */}
+          {apiTestResult && (
+            <div
+              className={
+                apiTestResult.success
+                  ? `${styles.testResult} ${styles.testResultOk}`
+                  : `${styles.testResult} ${styles.testResultFail}`
+              }
+              role="status"
+              data-testid="capture-session-detail-test-api-result"
+            >
+              {apiTestResult.success
+                ? `API connection OK - ${apiTestResult.status} in ${apiTestResult.durationMs}ms`
+                : `API connection FAILED - ${apiTestResult.status} in ${apiTestResult.durationMs}ms`}
+            </div>
+          )}
+          {dbTestResult && (
+            <div
+              className={
+                dbTestResult.success
+                  ? `${styles.testResult} ${styles.testResultOk}`
+                  : `${styles.testResult} ${styles.testResultFail}`
+              }
+              role="status"
+              data-testid="capture-session-detail-test-db-result"
+            >
+              {dbTestResult.success
+                ? `DB connection OK${
+                    dbTestResult.serverVersion
+                      ? ` - ${dbTestResult.serverVersion}`
+                      : ''
+                  }`
+                : 'DB connection FAILED'}
+            </div>
+          )}
+        </>
       )}
 
       {/* Review panel -- mounts once captures could exist. Read-only while

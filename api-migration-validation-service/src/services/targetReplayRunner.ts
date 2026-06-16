@@ -18,6 +18,13 @@ import {
   TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT as DEFAULT_TRANSPORT_FAILURE_THRESHOLD,
   LLM_TOOL_CALL_TIMEOUT_MS as DEFAULT_PER_ITEM_TIMEOUT_MS,
 } from '../config';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
+// is set). See docs/trace-logging.md. The target replay is the target-side
+// arm of reconcile; project + arch group the migration, the replay session
+// id is the sub-thread.
+const trace = createTracer('capture-svc');
 
 /**
  * Target replay runner. Deterministically replays an existing
@@ -418,6 +425,12 @@ export async function runTargetReplay(
         `items=${items.length} target_url=${session.api_base_url}`,
     );
 
+    // SUMMARY: target replay is the target-side arm of reconcile.
+    trace.step(
+      `reconcile started — replaying ${items.length} source items against ${session.api_base_url}`,
+      { project: projectId, arch: session.architecture_id, session: sessionId },
+    );
+
     // ------------------------------------------------------------------
     // 3) Create the target baseline (draft -- finalised to active on
     //    successful completion)
@@ -737,6 +750,24 @@ export async function runTargetReplay(
         `replayed=${itemsReplayed} skipped=${itemsSkipped} failed=${itemsFailed}`,
     );
 
+    // SUMMARY: target replay completed -- itemsReplayed is the truthful
+    // count of source items re-driven against the target; failed/skipped
+    // carry the rest. The diff (auto-triggered above) emits its own
+    // reconcile COMPLETED line with the break count.
+    if (itemsReplayed > 0) {
+      trace.ok(
+        `reconcile COMPLETED — ${itemsReplayed}/${items.length} replayed, ` +
+          `${itemsFailed} failed, ${itemsSkipped} skipped`,
+        { project: projectId, arch: session.architecture_id, session: sessionId },
+      );
+    } else {
+      trace.fail(
+        `reconcile COMPLETED but 0/${items.length} replayed — ` +
+          `${itemsFailed} failed, ${itemsSkipped} skipped`,
+        { project: projectId, arch: session.architecture_id, session: sessionId },
+      );
+    }
+
     return {
       sessionId,
       targetBaselineId: targetBaseline.id,
@@ -754,6 +785,13 @@ export async function runTargetReplay(
     console.error(
       `[targetReplayRunner] op=fail session=${sessionId.slice(0, 8)} reason=${errorMessage}`,
     );
+    // SUMMARY: replay failed. session may be undefined if the very first
+    // load threw -- fall back to the sessionId-only corr in that case.
+    trace.fail(`reconcile FAILED — ${errorMessage}`, {
+      project: (session as CaptureSessionDto | undefined)?.project_id,
+      arch: (session as CaptureSessionDto | undefined)?.architecture_id,
+      session: sessionId,
+    });
     // Best-effort terminal state -- if AMS is unreachable here the session
     // stays running and startup reconciliation catches it on next boot.
     try {

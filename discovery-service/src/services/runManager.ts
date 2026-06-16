@@ -44,6 +44,11 @@ import { mavenDependencyResolver } from './dependencyResolvers/maven/MavenDepend
 import { parsePomMetadataFromFile } from './dependencyResolvers/maven/mavenPomMetadataParser';
 import { runMavenFindingScanner, type MavenPomScannerInput } from './findings/packFindingScanners';
 import { resolveLibrarySource } from './librarySourceResolver';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace (OFF unless HAIKAI_TRACE set). SUMMARY-only here:
+// run started / scan COMPLETED, keyed on project+arch+run. See docs/trace-logging.md.
+const trace = createTracer('discovery');
 
 /**
  * Reconstructs `TechHints` (the indexed `{ language?, technology?, version? }`
@@ -1469,6 +1474,9 @@ export async function startRun(projectId: string, runId: string, architectureId:
     return startServiceScopedRun(projectId, runId, architectureId, serviceId, options);
   }
 
+  trace.runHeader(runId, projectId, architectureId);
+  trace.step('discovery run started — kind=code', { run: runId, project: projectId, arch: architectureId });
+
   // Initialize steps payload with all steps pending
   const stepsPayload: Record<string, Record<string, unknown>> = {};
   for (const s of VALID_STEPS) {
@@ -1564,6 +1572,14 @@ export async function startRun(projectId: string, runId: string, architectureId:
           degraded_reasons: completedDegradedReasons,
         });
         currentRunStatus = 'COMPLETED';
+
+        const profilingOn = options?.doPerformanceRun ?? DISCOVERY_PERFORMANCE_AUTO_SCORE;
+        const candCount = typeof stepResult.candidateCount === 'number' ? stepResult.candidateCount : 0;
+        const evCount = typeof stepResult.evidenceCount === 'number' ? stepResult.evidenceCount : 0;
+        trace.ok(
+          `code scan COMPLETED — ${candCount} candidates, ${evCount} evidence, profiling ${profilingOn ? 'ON' : 'OFF'}`,
+          { run: runId, project: projectId, arch: architectureId },
+        );
 
         // Emit structured log: run_complete
         const totalDurationMs = Date.now() - runStartTime;
@@ -1928,6 +1944,9 @@ async function startServiceScopedRun(
   };
 
   let currentRunStatus = 'PENDING';
+
+  trace.runHeader(runId, projectId, architectureId);
+  trace.step('discovery run started — kind=code', { run: runId, project: projectId, arch: architectureId });
 
   try {
     // Mark step as running
@@ -2602,6 +2621,12 @@ async function startServiceScopedRun(
     });
     currentRunStatus = 'COMPLETED';
 
+    const profilingOn = options?.doPerformanceRun ?? DISCOVERY_PERFORMANCE_AUTO_SCORE;
+    trace.ok(
+      `code scan COMPLETED — ${allCandidates.length} candidates, ${evidenceCount} evidence, profiling ${profilingOn ? 'ON' : 'OFF'}`,
+      { run: runId, project: projectId, arch: architectureId },
+    );
+
     const totalDurationMs = Date.now() - runStartTime;
     logRunEvent({
       runId,
@@ -2828,6 +2853,9 @@ export async function startDatabaseRun(
   const dbRunStartedAt = Date.now();
   console.log(`[diag-runs] db_run=${(runId || '').slice(0, 8)} start elapsed_ms=0`);
 
+  trace.runHeader(runId, projectId, architectureId);
+  trace.step('discovery run started — kind=database', { run: runId, project: projectId, arch: architectureId });
+
   // Validate state transition before updating.
   try {
     validateStatusTransition('PENDING', 'RUNNING');
@@ -2935,6 +2963,18 @@ export async function startDatabaseRun(
           ? 'Database discovery run did not complete connect/testConnection. See pack warnings on the Findings tab.'
           : null,
     });
+
+    const dbProfilingOn = config.profilingMode !== 'none';
+    const dbCorr = { run: runId, project: projectId, arch: architectureId };
+    const dbScanMsg =
+      `database scan COMPLETED — ${result.introspection.tables.length} tables, ` +
+      `${result.candidates.length} candidates, ${result.emittedFindings.length} findings, ` +
+      `profiling ${dbProfilingOn ? 'ON' : 'OFF'}`;
+    if (status === 'COMPLETED') {
+      trace.ok(dbScanMsg, dbCorr);
+    } else {
+      trace.fail(dbScanMsg, dbCorr);
+    }
 
     console.log(
       `[RunManager:database] Run ${runId} ${status}: tables=${result.introspection.tables.length} candidates=${result.candidates.length} persisted=${candidatesPersisted} findings=${result.emittedFindings.length}`,

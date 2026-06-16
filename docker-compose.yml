@@ -35,10 +35,14 @@ services:
       - ./architecture-model-service/src:/app/src:delegated
       - ./architecture-model-service/pom.xml:/app/pom.xml:delegated
       - ./oas-specs:/app/oas-specs:delegated
+      # Haikai trace logging — shared file across all instrumented services. See docs/trace-logging.md
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/architecture_model
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: p05tgre5
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
     networks:
       - arch-tool-network
     depends_on:
@@ -132,11 +136,14 @@ services:
       - "8091:8091"
     volumes:
       - ./discovery-service/src:/app/src:delegated
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
     environment:
       PORT: 8091
       ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
       GATEWAY_BASE_URL: http://gateway:8081
       SYBASE_SIDECAR_URL: http://sybase-discovery-sidecar:8093
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
     networks:
       - arch-tool-network
     depends_on:
@@ -158,6 +165,7 @@ services:
     volumes:
       - ./api-migration-validation-service/src:/app/src:delegated
       - ./oas-specs:/app/oas-specs:delegated
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
     environment:
       PORT: 8092
       ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
@@ -165,6 +173,8 @@ services:
       DISCOVERY_SERVICE_BASE_URL: http://discovery-service:8091
       SYBASE_SIDECAR_URL: http://sybase-discovery-sidecar:8093
       OAS_SPECS_DIR: /app/oas-specs
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
     networks:
       - arch-tool-network
     depends_on:
@@ -196,6 +206,7 @@ services:
       - "8081:8081"
     volumes:
       - ./gateway/src:/app/src:delegated
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       MCP_BASE_URL: http://mcp-server:8090
@@ -204,6 +215,8 @@ services:
       JIRA_SERVICE_URL: http://jira-service:8078
       API_MIGRATION_VALIDATION_SERVICE_URL: http://api-migration-validation-service:8092
       IMPLEMENTATION_LLM_SERVICE_BASE_URL: http://standards-extractor-api:8000
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
     networks:
       - arch-tool-network
     depends_on:
@@ -255,10 +268,13 @@ services:
       API_WORKSPACE_DIR: /app/workspace
       JOBS_DB_PATH: /app/workspace/jobs.db
       VERIFICATION_DB_PATH: /app/workspace/verify.db
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
     ports:
       - "8000:8000"
     volumes:
       - ~/.haikai:/app/workspace:delegated
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
     networks:
       - arch-tool-network
     healthcheck:
@@ -283,8 +299,11 @@ services:
       JOBS_DB_PATH: /app/workspace/jobs.db
       VERIFICATION_DB_PATH: /app/workspace/verify.db
       WORKER_ID: worker-1
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
     volumes:
       - ~/.haikai:/app/workspace:delegated
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
     networks:
       - arch-tool-network
     depends_on:

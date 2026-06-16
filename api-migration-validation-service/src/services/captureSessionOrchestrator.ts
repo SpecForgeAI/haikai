@@ -18,6 +18,12 @@ import type { DiscoveryServiceClient } from './discoveryServiceClient';
 import type { CaptureSession, ScenarioType } from '../types/captureSession';
 import type { ParsedOasInventory } from '../types/oas';
 import type { ChatMessage } from '../types/llm';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
+// set). See docs/trace-logging.md. The corr bag always carries project + arch
+// (the workflow-spanning grouping key) and session (the capture sub-thread).
+const trace = createTracer('capture-svc');
 
 /**
  * Top-level capture-session driver. Orchestrates the per-session lifecycle:
@@ -48,6 +54,14 @@ import type { ChatMessage } from '../types/llm';
  * re-importing the singleton client. When the capture session has no
  * linked discovery run, both fields are left null/undefined and the tool
  * falls back to WSDL-only output (W-17 graceful fallback).
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * misleading-COMPLETED follow-up: a scenario is only credited to
+ * `scenarios_completed` ("captured") when it BOTH exited the loop
+ * `completed` AND persisted >=1 capture row (`runManager.scenarioCapturesPersisted`).
+ * A scenario that "completes" via the terminal `record_capture_note` note
+ * tool (or after every `execute_http_request` attempt failed) with zero
+ * capture rows is counted as errored, so an all-failed run can never read
+ * "N of N captured".
  *
  * Action-endpoint plumbing (`POST /capture-sessions/:id/start` etc.) lives
  * in Task Group 6; this orchestrator is the call target the action endpoint
@@ -457,6 +471,14 @@ export async function orchestrateCaptureSession(
     deps.discoveryServiceClient ?? defaultDiscoveryServiceClient;
   const discoveryRunId: string | null = deps.discoveryRunId ?? null;
 
+  // Stable corr bag for every trace call on this session. project + arch are
+  // the workflow-spanning grouping key; session is this capture's sub-thread.
+  const corr = {
+    project: session.projectId,
+    arch: session.architectureId,
+    session: session.id,
+  };
+
   let scenariosAttempted = 0;
   let scenariosCompleted = 0;
   let scenariosErrored = 0;
@@ -473,6 +495,7 @@ export async function orchestrateCaptureSession(
       scenarios_completed: 0,
       scenarios_errored: 0,
     });
+    trace.fail('capture COMPLETED but 0/0 captured — secrets_lost_during_run', corr);
     return {
       sessionId: session.id,
       scenariosAttempted: 0,
@@ -552,9 +575,10 @@ export async function orchestrateCaptureSession(
       const seedSet = seedsForOperation(discoveryContext, op.method, op.path);
       for (const scenario of scenarios) {
         scenariosAttempted += 1;
-        // Resets `scenarioHttpAttempts` to 0 alongside the existing
-        // `currentScenarioRounds` reset, so the attempt counter restarts
-        // at 1 for each new scenario.
+        // Resets `scenarioHttpAttempts` AND `scenarioCapturesPersisted` to 0
+        // alongside the existing `currentScenarioRounds` reset, so both the
+        // attempt counter and the persisted-capture counter restart for each
+        // new scenario.
         runManager.beginScenario(session.id);
 
         // Persist a draft scenario row first so the loop has a stable id
@@ -609,11 +633,38 @@ export async function orchestrateCaptureSession(
           abortSignal: runManager.get(session.id)?.abortController.signal,
         });
 
-        if (outcome.reason === 'completed') {
+        // Misleading-COMPLETED fix: the loop returns `reason: 'completed'`
+        // whenever a TERMINAL tool (`record_capture_note`, a diagnostic note)
+        // is called OR the assistant returns no tool calls -- NEITHER of
+        // which persists a capture row. The only thing that writes a capture
+        // is a SUCCESSFUL `execute_http_request`, which bumps
+        // `scenarioCapturesPersisted`. So "completed" alone is NOT proof a
+        // capture exists. Credit a scenario as captured ONLY when it exited
+        // `completed` AND persisted >=1 capture row; otherwise count it as
+        // errored so the session counters stay truthful (header reads
+        // "0 of N captured" for an all-failed run, and the existing
+        // zero-captures banner fires). The status state-machine is untouched.
+        const capturesPersisted =
+          runManager.getScenarioCapturesPersisted(session.id) ?? 0;
+        if (outcome.reason === 'completed' && capturesPersisted > 0) {
           scenariosCompleted += 1;
         } else {
           scenariosErrored += 1;
         }
+
+        // DETAIL: per-scenario terminus -- the terminal tool / loop-exit
+        // reason plus the truthful captures-persisted count, the exact pair
+        // that distinguishes a genuine capture from a "completed" no-capture
+        // scenario (the misleading-COMPLETED path we debugged).
+        trace.detail(
+          'capture.scenario.end',
+          {
+            scenario: scenario.name,
+            terminalTool: outcome.reason,
+            capturesPersisted,
+          },
+          corr,
+        );
       }
     }
   } catch (err) {
@@ -634,8 +685,10 @@ export async function orchestrateCaptureSession(
   const finalStatus: 'completed' | 'failed' = infraError ? 'failed' : 'completed';
   // Persist the per-run scenario tallies alongside the terminal status
   // (misleading-COMPLETED fix): `completed` only means "no INFRASTRUCTURE
-  // error" — every scenario can have errored. The tallies let the dashboard
-  // render "Completed — N of M scenarios captured" so an all-failed run is
+  // error" — every scenario can have errored. `scenarios_completed` now
+  // means "scenarios that persisted >=1 capture row", NOT "scenarios that
+  // reached a terminal tool call", so the dashboard renders an honest
+  // "Completed — N of M scenarios captured" and an all-failed run is
   // impossible to mistake for a successful one.
   await archClient.patchCaptureSession(session.projectId, session.id, {
     status: finalStatus,
@@ -645,6 +698,24 @@ export async function orchestrateCaptureSession(
     scenarios_completed: scenariosCompleted,
     scenarios_errored: scenariosErrored,
   });
+
+  // SUMMARY: capture terminal outcome, using the TRUTHFUL counters above.
+  // `scenariosCompleted` == "scenarios that persisted >=1 capture row"
+  // ("captured"); `scenariosErrored` == everything else. A 0-captured run
+  // is a FAIL line so an all-failed run can never read as success.
+  if (scenariosCompleted > 0) {
+    trace.ok(
+      `capture COMPLETED — ${scenariosCompleted}/${scenariosAttempted} captured, ` +
+        `${scenariosErrored} errored`,
+      corr,
+    );
+  } else {
+    trace.fail(
+      `capture COMPLETED but 0/${scenariosAttempted} captured — ` +
+        `${scenariosErrored} scenarios errored`,
+      corr,
+    );
+  }
 
   return {
     sessionId: session.id,

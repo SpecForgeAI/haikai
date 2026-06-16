@@ -11,11 +11,17 @@
 .PARAMETER Exclude
   Comma-separated list of service folder names to skip.
 
+.PARAMETER Trace
+  off | summary | detail   (default: off)
+    Sets HAIKAI_TRACE for each spawned service tab so the instrumented services
+    write to the shared trace file (~/.haikai/trace.log). See docs/trace-logging.md.
+
 .EXAMPLES
   ./install-run-all.ps1
   ./install-run-all.ps1 -a run
   ./install-run-all.ps1 -a run -e architecture-read-service,jira-service
   ./install-run-all.ps1 -action install -exclude frontend
+  ./install-run-all.ps1 -a run -t detail
 #>
 param(
   [Alias('a')]
@@ -23,7 +29,11 @@ param(
   [string]$Action = 'all',
 
   [Alias('e')]
-  [string[]]$Exclude = @()
+  [string[]]$Exclude = @(),
+
+  [Alias('t')]
+  [ValidateSet('off','summary','detail')]
+  [string]$Trace = 'off'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -73,6 +83,7 @@ Write-Host ""
 Write-Host "Repo root : $repoRoot"
 Write-Host "Action    : $Action"
 Write-Host "Excluded  : $(if ($excludeSet.Count) { $excludeSet -join ', ' } else { '(none)' })"
+Write-Host "Trace     : $Trace"
 Write-Host "Selected  :"
 $selected | ForEach-Object { Write-Host ("  - {0,-40} [{1}]" -f $_.Name, $_.Type) }
 Write-Host ""
@@ -133,6 +144,7 @@ if ($doRun) {
     if (-not (Test-Path $path)) { throw "Service path not found: $path" }
 
     $runCmd = if ($svc.Type -eq 'maven') { 'mvn spring-boot:run' } else { 'npm run dev' }
+    if ($Trace -ne 'off') { $runCmd = "`$env:HAIKAI_TRACE='$Trace'; " + $runCmd }
 
     if (-not $first) { $wtArgs.Add(';') }
     $first = $false

@@ -41,6 +41,12 @@
  */
 
 import { logger } from './logger';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace (OFF unless HAIKAI_TRACE set). SUMMARY across the
+// migrate orchestration: run started / spec dispatched / build-results /
+// run deployed, keyed on project+run(+job). See docs/trace-logging.md.
+const trace = createTracer('gateway');
 import {
   createMigrationExecutionRun,
   getMigrationExecutionRun,
@@ -610,6 +616,13 @@ export async function startMigration(
     pinnedBaselineId: baseline?.id ?? null,
   });
 
+  trace.runHeader(runId, scope.project, architectureId);
+  trace.step(`migrate run started — ${dispatchSet.length} specs`, {
+    run: runId,
+    project: scope.project,
+    arch: architectureId,
+  });
+
   // 6. Dispatch the FIRST spec via the detached background runner, then return
   //    immediately. Progression across specs is event-driven on callbacks.
   const firstItem = (run.items ?? []).find((i) => (i.sequence_position ?? -1) === 0);
@@ -756,6 +769,12 @@ export async function runSpecSegment(
     specName: answer.specName,
     deployOnComplete: item.deploy_on_complete ?? false,
   });
+
+  trace.step(`spec dispatched — ${answer.specName}`, {
+    run: runId,
+    job: submit.jobId,
+    project: scope.project,
+  });
 }
 
 // ============================================================================
@@ -880,6 +899,11 @@ export async function advanceRunOnBuildResult(
   // takes the REJECTED status -- everything else is FAILED. The raw outcome is
   // preserved on the run-item record for traceability.
   if (outcome !== 'implemented' && outcome !== 'deployed') {
+    trace.fail(`build-results: ${outcome}`, {
+      run: runId,
+      job: jobId,
+      project: scope.project,
+    });
     await haltRunForItem(
       deps,
       scope,
@@ -912,6 +936,11 @@ export async function advanceRunOnBuildResult(
       runItemId,
       targetBaseUrl: input.targetBaseUrl ?? null,
     });
+    trace.ok(`run deployed — ${input.targetBaseUrl ?? '(no target_base_url)'}`, {
+      run: runId,
+      job: jobId,
+      project: scope.project,
+    });
     // === Spec 4 reconciliation hand-off (Group 2) ===
     // The run is deployed against the pinned current-state baseline. Hand off
     // to the Reconciler to replay the FULL pinned baseline against
@@ -934,6 +963,11 @@ export async function advanceRunOnBuildResult(
     runId,
     runItemId,
     prUrl: input.prUrl ?? null,
+  });
+  trace.ok('spec implemented', {
+    run: runId,
+    job: jobId,
+    project: scope.project,
   });
 
   // Advance the run position + dispatch the next pending spec. If this was the

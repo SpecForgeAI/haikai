@@ -38,6 +38,12 @@
 
 import { getConfig } from '../config';
 import { logger } from './logger';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace (OFF unless HAIKAI_TRACE set). One SUMMARY line per
+// inbound build-results callback; the per-outcome lines (implemented /
+// deployed / failed) are emitted downstream in the driver. See docs/trace-logging.md.
+const trace = createTracer('gateway');
 import {
   advanceRunOnBuildResult,
   advanceRunOnBugResult,
@@ -162,6 +168,12 @@ export async function processBuildResult(
   if (outcome === 'deployed' && !targetBaseUrl) {
     return { status: 422, body: { error: 'target_base_url is required when outcome = deployed' } };
   }
+
+  trace.step(`build-results received — ${outcome}`, {
+    job: jobId ?? undefined,
+    bug: bugId ?? undefined,
+    project,
+  });
 
   // --- bug_id paths (Spec 4, Group 4): scoped re-reconcile + circuit breaker ---
   if (bugId) {

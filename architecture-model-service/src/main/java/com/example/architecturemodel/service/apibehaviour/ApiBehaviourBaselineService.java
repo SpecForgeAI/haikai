@@ -8,6 +8,7 @@ import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourBa
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourBaselineRequest;
 import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourBaselineEntity;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourBaselineRepository;
+import com.example.architecturemodel.trace.HaikaiTrace;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -62,6 +64,13 @@ import java.util.UUID;
 public class ApiBehaviourBaselineService {
 
     public static final Set<String> ALLOWED_STATUSES = Set.of("draft", "active", "archived");
+
+    /**
+     * Haikai workflow tracer (service name {@code ams}). OFF by default --
+     * every call is a no-op unless {@code HAIKAI_TRACE} is set. See
+     * {@code docs/trace-logging.md}.
+     */
+    private static final HaikaiTrace.Tracer TRACE = HaikaiTrace.forService("ams");
 
     public static final Set<String> ALLOWED_KINDS = Set.of("current", "target");
 
@@ -161,7 +170,9 @@ public class ApiBehaviourBaselineService {
             .pairedWithBaselineId(pairedWithBaselineId)
             .build();
 
-        return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
+        ApiBehaviourBaselineEntity saved = repository.saveAndFlush(entity);
+        traceBaselineSaved(saved);
+        return ApiBehaviourMapper.toDto(saved);
     }
 
     @Transactional
@@ -175,6 +186,7 @@ public class ApiBehaviourBaselineService {
         if (request.name() != null) {
             entity.setName(request.name());
         }
+        String statusBefore = entity.getStatus();
         if (request.status() != null) {
             requireAllowedStatus(request.status());
             requireAllowedTransition(entity.getStatus(), request.status());
@@ -208,7 +220,12 @@ public class ApiBehaviourBaselineService {
             entity.setPairedWithBaselineId(effectivePair);
         }
 
-        return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
+        ApiBehaviourBaselineEntity saved = repository.saveAndFlush(entity);
+        if ("active".equalsIgnoreCase(saved.getStatus())
+                && !"active".equalsIgnoreCase(statusBefore)) {
+            traceBaselineActivated(saved);
+        }
+        return ApiBehaviourMapper.toDto(saved);
     }
 
     @Transactional
@@ -282,6 +299,68 @@ public class ApiBehaviourBaselineService {
                     "kind='current' baselines MUST NOT carry a pairedWithBaselineId");
             }
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Haikai trace -- baseline save (draft) + activate
+    // -----------------------------------------------------------------------
+
+    /**
+     * SUMMARY-trace a baseline save. {@code ok} line + a {@code baseline.saved}
+     * detail. When the row is created directly as {@code active}, also emit the
+     * activation trace. No-op unless {@code HAIKAI_TRACE} is set; NEVER throws.
+     */
+    private static void traceBaselineSaved(ApiBehaviourBaselineEntity b) {
+        if (!TRACE.isEnabled() || b == null) {
+            return;
+        }
+        try {
+            boolean active = "active".equalsIgnoreCase(b.getStatus());
+            String stage = active ? "active" : "draft";
+            HaikaiTrace.Corr corr = corrFor(b);
+            TRACE.ok("baseline saved (" + stage + ") — " + b.getName(), corr);
+            TRACE.detail("baseline.saved", baselineDetail(b), corr);
+            if (active) {
+                traceBaselineActivated(b);
+            }
+        } catch (RuntimeException ignored) {
+            // tracing must never affect the request
+        }
+    }
+
+    /**
+     * SUMMARY-trace a baseline activation (draft -> active PATCH). No-op unless
+     * {@code HAIKAI_TRACE} is set; NEVER throws.
+     */
+    private static void traceBaselineActivated(ApiBehaviourBaselineEntity b) {
+        if (!TRACE.isEnabled() || b == null) {
+            return;
+        }
+        try {
+            HaikaiTrace.Corr corr = corrFor(b);
+            TRACE.ok("baseline activated — " + b.getName(), corr);
+            TRACE.detail("baseline.activated", baselineDetail(b), corr);
+        } catch (RuntimeException ignored) {
+            // tracing must never affect the request
+        }
+    }
+
+    private static HaikaiTrace.Corr corrFor(ApiBehaviourBaselineEntity b) {
+        return HaikaiTrace.Corr.of()
+            .project(b.getProjectId() == null ? null : b.getProjectId().toString())
+            .arch(b.getArchitectureId() == null ? null : b.getArchitectureId().toString());
+    }
+
+    private static Map<String, Object> baselineDetail(ApiBehaviourBaselineEntity b) {
+        Map<String, Object> d = new LinkedHashMap<>();
+        d.put("baselineId", b.getId() == null ? null : b.getId().toString());
+        d.put("name", b.getName());
+        d.put("status", b.getStatus());
+        d.put("kind", b.getKind());
+        d.put("sessionId", b.getSessionId() == null ? null : b.getSessionId().toString());
+        d.put("operationCount", b.getOperationCount());
+        d.put("acceptedCaptureCount", b.getAcceptedCaptureCount());
+        return d;
     }
 
     private static void requireAllowedTransition(String from, String to) {

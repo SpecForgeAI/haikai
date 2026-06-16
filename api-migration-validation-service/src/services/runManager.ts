@@ -9,6 +9,9 @@
  * Spec: 2026-05-16 API Behaviour Capture Fixes -- adds `scenarioHttpAttempts`
  * counter (Decision D4) so `execute_http_request` can drive `attempt_number`
  * from a single source of truth rather than the discarded `ctx.retryCount`.
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * adds `scenarioCapturesPersisted` so the orchestrator can tell whether a
+ * scenario actually persisted any capture rows (misleading-COMPLETED fix).
  *
  * The map is keyed by `sessionId` (NOT `runId` -- this service has no
  * separate run concept). Entries are added when a session transitions to
@@ -37,6 +40,22 @@ export interface RunState {
    */
   scenarioHttpAttempts: number;
   /**
+   * Count of capture rows SUCCESSFULLY persisted for the CURRENT scenario.
+   * Incremented by `execute_http_request` immediately after a `createCapture`
+   * write succeeds; reset at each scenario boundary via `beginScenario`. The
+   * orchestrator reads this after the per-scenario loop exits to decide
+   * whether the scenario actually captured anything: a scenario that exits
+   * `completed` (e.g. via the terminal `record_capture_note` note tool, or
+   * after every `execute_http_request` attempt failed) but persisted ZERO
+   * capture rows is counted as errored, NOT captured, so the session-level
+   * `scenarios_completed` tally stays truthful (the misleading-COMPLETED bug:
+   * "45 of 45 captured" with no capture rows).
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * misleading-COMPLETED follow-up.
+   */
+  scenarioCapturesPersisted: number;
+  /**
    * Wall-clock start of the CURRENT scenario. Reset by the loop runner when
    * a scenario starts; checked against `LLM_SCENARIO_WALL_CLOCK_MS`.
    */
@@ -64,6 +83,7 @@ class RunManager {
       startedAt: now,
       currentScenarioRounds: 0,
       scenarioHttpAttempts: 0,
+      scenarioCapturesPersisted: 0,
       currentScenarioStartedAt: now,
       abortController: new AbortController(),
     };
@@ -85,6 +105,7 @@ class RunManager {
     if (!r) throw new Error(`runManager: no live run for session ${sessionId}`);
     r.currentScenarioRounds = 0;
     r.scenarioHttpAttempts = 0;
+    r.scenarioCapturesPersisted = 0;
     r.currentScenarioStartedAt = Date.now();
   }
 
@@ -117,6 +138,36 @@ class RunManager {
    */
   getScenarioHttpAttempts(sessionId: string): number | undefined {
     return this.runs.get(sessionId)?.scenarioHttpAttempts;
+  }
+
+  /**
+   * Increment the per-scenario persisted-capture counter and return the new
+   * value. Called by `execute_http_request` only AFTER a `createCapture`
+   * write has succeeded. Mirrors `incrementHttpAttempts` -- throws if the
+   * session has no live run state.
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * misleading-COMPLETED follow-up.
+   */
+  incrementCapturesPersisted(sessionId: string): number {
+    const r = this.runs.get(sessionId);
+    if (!r) throw new Error(`runManager: no live run for session ${sessionId}`);
+    r.scenarioCapturesPersisted += 1;
+    return r.scenarioCapturesPersisted;
+  }
+
+  /**
+   * Read the current per-scenario persisted-capture counter without
+   * incrementing. Returns `undefined` when no run is live for this session.
+   * The orchestrator reads this after each per-scenario loop to decide
+   * whether the scenario captured anything (count > 0) or should be counted
+   * as errored (count === 0), regardless of the loop's exit `reason`.
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * misleading-COMPLETED follow-up.
+   */
+  getScenarioCapturesPersisted(sessionId: string): number | undefined {
+    return this.runs.get(sessionId)?.scenarioCapturesPersisted;
   }
 
   /** Trigger the per-session abort signal -- causes in-flight tool calls to reject. */

@@ -78,3 +78,45 @@
     absent from `frontend/node_modules` and there is no network for an offline
     install (matches the Group-5 5.4 residual). The frontend change is a minimal,
     structurally type-safe optional-field add + one carry-through line.
+- [x] FU-3 Misleading "COMPLETED · 45 of 45 captured" with ZERO persisted captures.
+  RESOLVED. The orchestrator credited `scenarios_completed` purely on the loop's exit
+  `reason === 'completed'` (`captureSessionOrchestrator.ts`), but the loop returns
+  `completed` whenever a TERMINAL tool fires -- and the ONLY terminal tool is
+  `record_capture_note`, which writes a DIAGNOSTIC, not a capture. The ONLY writer of
+  a capture row is the non-terminal `execute_http_request` (`createCapture`), which
+  rethrows on failure (fed back to the LLM as a recoverable tool error). So a scenario
+  could close `completed` with ZERO capture rows (straight to the note tool, or after
+  every HTTP attempt failed) and the session was PATCHed `scenarios_completed=N`,
+  rendering "N of N captured" in the header when nothing was captured.
+  - Fix: "captured" now MEANS a capture row was persisted. A new per-scenario counter
+    `runManager.scenarioCapturesPersisted` (mirrors `scenarioHttpAttempts`: init 0 in
+    `start`, reset in `beginScenario`, `incrementCapturesPersisted` + read via
+    `getScenarioCapturesPersisted`) is bumped by `execute_http_request` ONLY after a
+    `createCapture` write SUCCEEDS. The orchestrator credits `scenarios_completed`
+    ONLY when the scenario exited `completed` AND `scenarioCapturesPersisted > 0`;
+    otherwise it increments `scenarios_errored`. The status state-machine /
+    `validateStatusTransition` is UNCHANGED -- `status` stays `completed` on no infra
+    error, but the COUNTS are now truthful, so the header reads "0 of N captured" and
+    the EXISTING zero-captures banner in `CaptureSessionDetailView.tsx:~577-595` fires.
+  - Defense in depth: `execute_http_request` now emits a `failed_request` diagnostic
+    when the HTTP attempt produced NO response (`http_no_response`) or when
+    `createCapture` throws (`create_capture_failed`, emitted before the rethrow), so a
+    no-capture-yet-"completed" scenario is auditable in the Diagnostics list.
+  - Field/counter names CONFIRMED by reading the session DTO + final PATCH:
+    `scenarios_attempted` / `scenarios_completed` / `scenarios_errored`
+    (`PatchCaptureSessionRequest` in `archModelClient.ts`; rendered by
+    `CaptureSessionDetailView.tsx`).
+  - Files changed: `runManager.ts` (new counter), `tools/execute_http_request.ts`
+    (bump on success + `failed_request` diagnostics), `captureSessionOrchestrator.ts`
+    (credit only when captures > 0).
+  - Ran (green): validation-service `tsc --noEmit` clean + the touched/new tests (47):
+    new `runManagerCapturesPersisted.test.ts` (6), new
+    `executeHttpRequestCapturesCounter.test.ts` (3), new
+    `captureSessionOrchestrator.capturedTally.test.ts` (4: note-only=errored,
+    captured=completed, all-zero session=0-of-N + degraded, createCapture-failure=
+    errored+diagnostic), plus the updated `captureSessionOrchestrator.e2e.test.ts`
+    (createCapture mock now returns a real row so the success path stays 1-of-1) and
+    the regression set (rewrite/gapFill/probe/loopRunner/runManagerHttpAttempts/
+    scenarioRequest/dbAdapterGuard/fullFlow e2e). No AMS or frontend change needed --
+    the truthful counters flow through the existing wire fields and the existing
+    frontend header + zero-captures banner already react to them.

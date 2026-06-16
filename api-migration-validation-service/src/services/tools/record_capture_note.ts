@@ -1,6 +1,11 @@
 import { ToolHandler, ToolRegistryEntry, ToolValidationError } from './toolTypes';
 import { redactJson } from '../redactor';
 import type { DiagnosticType } from '../../types/captureSession';
+import { createTracer } from '../../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
+// set). See docs/trace-logging.md.
+const trace = createTracer('capture-svc');
 
 /**
  * Tool: `record_capture_note`
@@ -63,6 +68,18 @@ const handler: ToolHandler = async (args, ctx) => {
     message,
     detail_json: detail,
   });
+
+  // DETAIL: the terminal note the LLM used to close the scenario, tagged with
+  // the diagnostic type so a "completed-but-no-capture" close is auditable.
+  trace.detail(
+    'capture.note',
+    { diagnosticType },
+    {
+      project: ctx.session.projectId,
+      arch: ctx.session.architectureId,
+      session: ctx.session.id,
+    },
+  );
 
   return {
     diagnosticId: created.id,

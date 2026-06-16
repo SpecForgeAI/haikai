@@ -18,8 +18,10 @@ from ..chat.session_store import get_active_session
 from ..chat.claude_chat_executor import ClaudeChatExecutor
 from ..git.config import load_git_config, GitConfigError
 from ..git.git_manager import GitManager, GitManagerError
+from ..trace import tracer
 
 logger = logging.getLogger(__name__)
+_trace = tracer("impl-verify")
 
 
 def _setup_orchestrator_context(
@@ -300,6 +302,14 @@ def run_orchestration(job_id: str, storage: JobStorage):
             _resolve_request_context(job)
         )
 
+        # SUMMARY: orchestration started — N specs. impl-verify knows
+        # company/project + job_id; project is the workflow-spanning grouping key,
+        # job the sub-thread (no arch here — grouping by project still works).
+        _corr = {"project": request.project, "job": job_id}
+        _trace.step(
+            f"orchestration started — {len(request.spec_intents)} specs", _corr
+        )
+
         orchestrator = _setup_orchestrator_context(
             request, workspace_dir, session_id, anthropic_api_key
         )
@@ -343,7 +353,20 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 return False
             before = len(git_results)
             _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name)
-            return any(r.get("error") for r in git_results[before:])
+            new = git_results[before:]
+            # DETAIL: per-spec git result (branch/commit/PR/error) — concentrated
+            # where the multi-spec branch/PR plumbing fails.
+            for r in new:
+                _trace.detail(
+                    "orchestration.git",
+                    {
+                        "spec": r.get("spec"), "repo": r.get("repo"),
+                        "branch": r.get("branch"), "commit_sha": r.get("commit_sha"),
+                        "pr_url": r.get("pr_url"), "error": r.get("error"),
+                    },
+                    _corr,
+                )
+            return any(r.get("error") for r in new)
 
         # R8: the interleaved per-spec git mutates the LIVE working tree
         # (git add -A / commit / checkout-back). Two orchestration jobs for the
@@ -380,6 +403,19 @@ def run_orchestration(job_id: str, storage: JobStorage):
         # W1/W2/W3 (F4 async path): consolidate + deploy the run (only when
         # deploy_on_complete), then build the build-results record.
         deploy = _deploy_completed_run(request, workspace_dir, response)
+        # SUMMARY + DETAIL: deploy outcome (only attempted when deploy_on_complete).
+        if request.deploy_on_complete:
+            if deploy and deploy.get("base_url"):
+                _trace.ok(f"run deployed — {deploy.get('base_url')}", _corr)
+                _trace.detail(
+                    "orchestration.deploy",
+                    {"base_url": deploy.get("base_url"), "box_id": deploy.get("box_id"),
+                     "merged_branches": deploy.get("merged")},
+                    _corr,
+                )
+            else:
+                _trace.fail("run deploy FAILED — no target_base_url", _corr)
+                _trace.detail("orchestration.deploy", {"deployed": False, "errors": list(response.errors or [])}, _corr)
         # C3/C5: ALWAYS compute the build-results record and fold it into
         # job.result, so a poller can ALWAYS read `outcome` (implemented|deployed|
         # error) + target_base_url/box_id — not present-or-absent by config.
@@ -890,6 +926,7 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
         # branch ever existed). `merged` lists the spec branches that went in.
         payload["merged_branches"] = deploy.get("merged")
 
+    _corr = {"project": request.project, "job": job_id}
     delivered = None
     if request.callback_url:
         try:
@@ -898,6 +935,27 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
             logger.warning("orchestration build-results callback failed: %s", exc)
             delivered = False
     payload["callback_delivered"] = delivered
+
+    # DETAIL: the callback payload (what we attempted to deliver to Haikai).
+    _trace.detail(
+        "callback.sent",
+        {
+            "outcome": outcome,
+            "target_base_url": payload.get("target_base_url"),
+            "box_id": payload.get("box_id"),
+            "spec_names": payload.get("spec_names"),
+            "callback_url": request.callback_url,
+            "callback_delivered": delivered,
+            "errors": payload.get("errors"),
+        },
+        _corr,
+    )
+    # SUMMARY: build-results SENT — outcome (ok if delivered/no-callback-needed,
+    # fail if a configured callback was rejected/unreachable).
+    if request.callback_url and delivered is False:
+        _trace.fail(f"build-results send FAILED — {outcome}", _corr)
+    else:
+        _trace.ok(f"build-results sent — {outcome}", _corr)
     return payload
 
 
@@ -937,6 +995,9 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
         job.error = f"bug {bug_id} not found"
         storage.save_job(job)
         return
+
+    # Trace correlation: a bug investigation groups by project (+bug sub-thread).
+    _corr = {"project": bug.get("project"), "bug": bug_id}
 
     # Target codebase — C2: traversal-safe resolution from the (validated at
     # intake) company/project. No silent default dir: a bug with no target fails.
@@ -1001,6 +1062,20 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
         "summary": summary[-600:],
     }
 
+    # DETAIL: bug investigation outcome — the haikai verdict + on-disk
+    # corroboration the outcome routing hinges on.
+    _trace.detail(
+        "bug.investigated",
+        {
+            "bug_type": bug.get("bug_type"),
+            "investigated": session_ok,
+            "haikai_verdict": haikai_verdict,
+            "changed_files": changed_files,
+            "fixed": fixed,
+        },
+        _corr,
+    )
+
     # Shared outcome enum (C3/L4) with D1 fully-automated redeploy. The old
     # `failed` collapsed three states; they're now distinct so Haikai can route:
     #   rejected     = investigated, the target is actually correct (not a real bug)
@@ -1051,6 +1126,27 @@ def _finish_bug(storage, job, vstore, bug_id, bug, outcome, detail, changed_file
         conn.close()
 
     callback_ok = _post_callback(bug.get("callback_url"), result_payload)
+
+    # Trace correlation: project is the grouping key, bug the sub-thread.
+    _corr = {"project": bug.get("project"), "bug": bug_id}
+    # DETAIL: the callback payload sent to Haikai.
+    _trace.detail(
+        "callback.sent",
+        {
+            "outcome": outcome,
+            "target_base_url": detail.get("target_base_url"),
+            "box_id": detail.get("box_id"),
+            "bug_type": bug.get("bug_type"),
+            "callback_url": bug.get("callback_url"),
+            "callback_delivered": callback_ok,
+        },
+        _corr,
+    )
+    # SUMMARY: build-results SENT — bug outcome.
+    if bug.get("callback_url") and not callback_ok:
+        _trace.fail(f"build-results send FAILED — {outcome}", _corr)
+    else:
+        _trace.ok(f"build-results sent — {outcome}", _corr)
 
     # Theme A: a `deployed` redeploy box whose callback wasn't acked would leak
     # (Haikai never reconciles/releases). Reclaim it; flag box_released so a

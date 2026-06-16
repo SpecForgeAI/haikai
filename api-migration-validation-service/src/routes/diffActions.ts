@@ -3,6 +3,13 @@ import { archModelClient as defaultArchModelClient } from '../services/archModel
 import { runManager } from '../services/runManager';
 import { runDiff as defaultRunDiff, type DiffRunnerDeps } from '../services/diffRunner';
 import { resolveNonDeterministicEndpointKeys as defaultResolveNdKeys } from '../services/nonDeterministicEndpointKeys';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
+// is set). See docs/trace-logging.md. The diff routes write the reconcile
+// run header so the summarizer groups its [SUMMARY] lines under the
+// project; diffRunner.ts emits the started/completed lines.
+const trace = createTracer('capture-svc');
 
 /**
  * Diff engine action endpoints. Mounted under the same
@@ -182,6 +189,10 @@ export function buildDiffActionsRouter(
         // in-flight run will complete and the polling endpoint reflects
         // status.
       }
+      // Haikai trace: delimit the reconcile run. The diffId is the run
+      // anchor; project + arch group it under the migration.
+      trace.runHeader(diff.id, projectId, body.architectureId);
+
       // Fire-and-forget the runner. Per-run errors are captured into the
       // diff row by the runner itself. Resolve the `endpoint_signal`
       // volatility keys FIRST (FU-1) so the in-process diff is value-tolerant
@@ -272,6 +283,8 @@ export function buildDiffActionsRouter(
           currentStatus: 'computing',
         });
       }
+      // Haikai trace: delimit the recompute reconcile run.
+      trace.runHeader(diffId, projectId, diff.architecture_id);
       buildNonDeterministicEndpointKeys(
         projectId,
         diff.architecture_id,

@@ -34,6 +34,12 @@
  */
 
 import { logger } from './logger';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace (OFF unless HAIKAI_TRACE set). SUMMARY for the reconcile
+// + bug loop; DETAIL for per-break, auto-disposition and the verdict (bug)
+// round-trip — where reconcile failures hide. See docs/trace-logging.md.
+const trace = createTracer('gateway');
 import {
   MigrationExecutionRun,
   patchMigrationExecutionRun,
@@ -387,6 +393,9 @@ export async function triggerFullBaselineReconcile(
     architectureId,
   });
 
+  const reconcileCorr = { run: runId, project: projectId, arch: architectureId };
+  trace.step('reconcile started — full baseline', reconcileCorr);
+
   const result: ReconciliationResult = await deps.runHeadlessReconcile(
     {
       projectId,
@@ -405,6 +414,7 @@ export async function triggerFullBaselineReconcile(
       runId,
       error: result.error ?? 'unknown',
     });
+    trace.fail(`reconcile FAILED — ${result.error ?? 'unknown'}`, reconcileCorr);
     await safePatchRun(deps, projectId, runId, { status: RECONCILE_RUN_STATUS.RECONCILE_FAILED });
     return { status: 'reconcile_failed', error: result.error ?? 'reconcile failed' };
   }
@@ -418,6 +428,22 @@ export async function triggerFullBaselineReconcile(
   if (breakRows.length > 0) {
     try {
       createdBreaks = await deps.createReconciliationBreaks(projectId, runId, breakRows);
+      for (const b of createdBreaks) {
+        const detail = (b.detail_json ?? {}) as Record<string, unknown>;
+        trace.detail(
+          'reconcile.break',
+          {
+            breakId: b.id ?? null,
+            op: detail.method && detail.path ? `${detail.method} ${detail.path}` : (detail.summary ?? null),
+            kind: detail.kind ?? null,
+            severity: detail.severity ?? null,
+            volatilitySource: detail.volatility_source ?? null,
+            sourceBaselineItemId: b.source_baseline_item_id ?? null,
+            disposition: b.disposition_status ?? null,
+          },
+          reconcileCorr,
+        );
+      }
     } catch (error) {
       logger.error('[diag-gateway] migration_reconciliation persist_breaks_failed', {
         projectId,
@@ -470,6 +496,20 @@ export async function triggerFullBaselineReconcile(
     expectedVolatile: volatileDisposition.expectedVolatileCount,
     volatileDownRankedInfo: volatileDisposition.infoCount,
   });
+
+  trace.detail(
+    'reconcile.autoDisposition',
+    {
+      diffItemCount: result.diffItems.length,
+      breakCount: breakRows.length,
+      expectedNetNew: autoRecognisedCount,
+      expectedVolatile: volatileDisposition.expectedVolatileCount,
+      volatileDownRankedInfo: volatileDisposition.infoCount,
+    },
+    reconcileCorr,
+  );
+  const openBreaks = breakRows.length - autoRecognisedCount - volatileDisposition.expectedVolatileCount;
+  trace.ok(`reconcile COMPLETED — ${breakRows.length} breaks (${openBreaks} open after auto-disposition)`, reconcileCorr);
 
   return {
     status: 'reconciled',
@@ -1065,6 +1105,17 @@ export async function sendBugForBreaks(
     ],
   };
 
+  const verdictCorr = { project: args.project };
+  trace.detail(
+    'reconcile.verdict.request',
+    {
+      endpoint: 'POST /api/v2/bugs',
+      bugType: body.bug_type,
+      breakCount: sendable.length,
+      title: body.title,
+    },
+    verdictCorr,
+  );
   let bugId: string;
   try {
     const response = await deps.implRequest('/api/v2/bugs', {
@@ -1076,11 +1127,17 @@ export async function sendBugForBreaks(
       | { bug_id?: string; bugId?: string }
       | null;
     const resolvedBugId = json?.bug_id ?? json?.bugId ?? null;
+    trace.detail(
+      'reconcile.verdict.response',
+      { status: response.status, ok: response.ok, bugId: resolvedBugId },
+      verdictCorr,
+    );
     if (!response.ok || !resolvedBugId) {
       logger.error('[diag-gateway] migration_reconciliation bug_send_non_ok', {
         projectId: args.projectId,
         status: response.status,
       });
+      trace.fail(`verdict (bug) send failed — status ${response.status}`, verdictCorr);
       return { status: 'send_failed', error: `bug send returned status ${response.status}` };
     }
     bugId = resolvedBugId;
@@ -1114,6 +1171,10 @@ export async function sendBugForBreaks(
     projectId: args.projectId,
     bugId,
     breakCount: sendable.length,
+  });
+  trace.ok(`verdict posted — bug ${bugId} (${sendable.length} breaks)`, {
+    bug: bugId,
+    project: args.project,
   });
   return { status: 'sent', bugId, breakCount: sendable.length };
 }
@@ -1386,6 +1447,10 @@ export async function handleBugCallback(
     if (attemptCount >= deps.circuitBreakerMaxAttempts) {
       // TRIP: escalate to human review (terminal, NO auto-loop).
       anyTripped = true;
+      trace.warn(
+        `circuit breaker tripped after ${attemptCount} attempts (cap ${deps.circuitBreakerMaxAttempts}) — escalated to human review`,
+        { run: args.runId ?? undefined, bug: bugId, project: projectId },
+      );
       await safeTrip(deps, projectId, b.id, {
         circuitBroken: true,
         needsHuman: true,

@@ -21,8 +21,10 @@ from .haikai_models import (
     ImplementationPackageFile,
 )
 from .path_safety import safe_segment
+from .trace import tracer
 
 logger = logging.getLogger(__name__)
+_trace = tracer("impl-verify")
 
 
 def _polyrepo_extra_dirs(
@@ -101,7 +103,7 @@ class HaikaiOrchestrator:
     Spec folders and requirements.md MUST be created by /shape-spec before orchestration.
     The orchestrator never creates folders or stub files — it only processes pre-shaped specs.
     """
-    
+
     # Command definitions
     COMMANDS = [
         {"step": 1, "command": "/write-spec", "description": "Write specification"},
@@ -109,7 +111,7 @@ class HaikaiOrchestrator:
         {"step": 3, "command": "/implement-tasks", "description": "Implement all tasks"},
         {"step": 4, "command": "/git-commit-preparation", "description": "Prepare workspace for git commit", "non_fatal": True},
     ]
-    
+
     def __init__(
         self,
         request: OrchestrationRequest,
@@ -166,9 +168,9 @@ class HaikaiOrchestrator:
         self.orchestration_id = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.orchestration_log_dir = self.logs_dir / self.orchestration_id
         self.orchestration_log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(f"Initialized HaikaiOrchestrator with ID: {self.orchestration_id}")
-    
+
     def run_workflow(
         self,
         start_from_step: int = 1,
@@ -200,7 +202,12 @@ class HaikaiOrchestrator:
         all_results: List[StepResult] = []
         spec_names_generated: List[str] = []
         session_ids: Dict[str, str] = {}
-        
+
+        # Trace correlation: the orchestrator knows the project (the
+        # workflow-spanning grouping key). The job id lives in the job runner
+        # (tasks.py), which owns the started/deploy/callback SUMMARY lines.
+        corr = {"project": self.request.project}
+
         try:
             logger.info(f"Starting orchestration for {len(self.request.spec_intents)} spec(s)")
 
@@ -291,7 +298,7 @@ class HaikaiOrchestrator:
                     if self.request.options.stop_on_error:
                         break
                     continue
-                
+
                 # Execute each command in sequence for this spec
                 commands_to_run = [
                     c for c in self.COMMANDS if c["step"] >= start_from_step
@@ -340,6 +347,11 @@ class HaikaiOrchestrator:
                 # spec) so `git add -A` stages only this spec's files (B2).
                 spec_steps = all_results[spec_start:]
                 spec_ok = all(r.status == "success" or r.step in non_fatal_steps for r in spec_steps)
+                # SUMMARY: each spec implemented (its required steps converged or not).
+                if spec_ok:
+                    _trace.ok(f"spec implemented — {spec_name}", corr)
+                else:
+                    _trace.fail(f"spec failed — {spec_name}", corr)
                 if on_spec_complete and spec_ok:
                     git_failed = on_spec_complete(spec_name, spec_idx)
                     # L4: a per-spec git failure halts further generation under
@@ -356,18 +368,18 @@ class HaikaiOrchestrator:
                 if self.request.options.stop_on_error and has_fatal_failure:
                     logger.error(f"Stopping orchestration due to failure in spec '{spec_name}'")
                     break
-            
+
             # Calculate total execution time
             end_time = datetime.now()
             total_time = (end_time - start_time).total_seconds()
-            
+
             # Determine overall success (non-fatal step failures don't count)
             non_fatal_steps = {c["step"] for c in self.COMMANDS if c.get("non_fatal")}
             success = all(
                 r.status == "success" or r.step in non_fatal_steps
                 for r in all_results
             )
-            
+
             # Create main orchestration log
             orchestration_log = self._create_orchestration_log(
                 spec_names=spec_names_generated,
@@ -375,7 +387,7 @@ class HaikaiOrchestrator:
                 total_time=total_time,
                 success=success
             )
-            
+
             return OrchestrationResponse(
                 success=success,
                 spec_names=spec_names_generated,
@@ -384,16 +396,16 @@ class HaikaiOrchestrator:
                 total_execution_time_seconds=total_time,
                 orchestration_log=orchestration_log
             )
-            
+
         except Exception as e:
             logger.error(f"Orchestration failed with exception: {str(e)}", exc_info=True)
-            
+
             # Create error response
             end_time = datetime.now()
             total_time = (end_time - start_time).total_seconds()
-            
+
             error_log = self._create_error_log(str(e), total_time)
-            
+
             return OrchestrationResponse(
                 success=False,
                 spec_names=spec_names_generated,
@@ -402,7 +414,7 @@ class HaikaiOrchestrator:
                 total_execution_time_seconds=total_time,
                 orchestration_log=error_log
             )
-    
+
     def _execute_step_with_session(
         self,
         chat_executor,  # ClaudeChatExecutor or KiroChatExecutor (CHAT_EXECUTOR-selected)
@@ -480,6 +492,22 @@ class HaikaiOrchestrator:
                 logger.error(msg)
                 errors.append(msg)
 
+        # DETAIL: per-spec workflow step outcome — concentrated where failures
+        # hide. The git/deploy detail lives in the job runner (tasks.py); this is
+        # the LLM command step (write-spec/create-tasks/implement-tasks).
+        _trace.detail(
+            "orchestration.step",
+            {
+                "spec": spec_name,
+                "step": step,
+                "command": command,
+                "success": success,
+                "duration_s": round(execution_time, 3),
+                "errors": errors[:3] if errors else [],
+            },
+            {"project": self.request.project},
+        )
+
         # Create execution result dict for logging
         execution_result = {
             "success": success,
@@ -513,16 +541,16 @@ class HaikaiOrchestrator:
     def _determine_output_paths(self, step: int, spec_name: str) -> List[str]:
         """
         Determine the expected output file paths for a step.
-        
+
         Args:
             step: Step number (1-3)
             spec_name: The spec directory name
-        
+
         Returns:
             List of expected output file paths
         """
         spec_dir = self.project_dir / "haikai" / "specs" / spec_name
-        
+
         if step == 1:
             # write-spec creates spec.md
             return [str(spec_dir / "spec.md").replace("\\", "/")]
@@ -537,36 +565,36 @@ class HaikaiOrchestrator:
             # skill nor Claude actually produces — yielding false-positive
             # "step 3 failed" verdicts.
             return [str(spec_dir / "verification" / "final-verification.md").replace("\\", "/")]
-        
+
         return []
-    
+
     def _create_step_log(self, step: int, command: str, execution_result: Dict[str, Any]) -> str:
         """
         Create a detailed log file for a step.
-        
+
         Args:
             step: Step number
             command: The command that was executed
             execution_result: Result from CLI executor
-        
+
         Returns:
             Path to the created log file
         """
         log_file = self.orchestration_log_dir / f"step-{step}-{command.replace('/', '')}.json"
-        
+
         log_data = {
             "orchestration_id": self.orchestration_id,
             "step": step,
             "command": command,
             **execution_result
         }
-        
+
         with open(log_file, 'w') as f:
             json.dump(log_data, f, indent=2)
-        
+
         logger.info(f"Created step log: {log_file}")
         return str(log_file).replace("\\", "/")
-    
+
     def _create_orchestration_log(
         self,
         spec_names: List[str],
@@ -576,18 +604,18 @@ class HaikaiOrchestrator:
     ) -> str:
         """
         Create the main orchestration log file.
-        
+
         Args:
             spec_names: List of generated spec directory names
             results: List of step results
             total_time: Total execution time
             success: Overall success status
-        
+
         Returns:
             Path to the orchestration log file
         """
         log_file = self.orchestration_log_dir / "orchestration.json"
-        
+
         log_data = {
             "orchestration_id": self.orchestration_id,
             "success": success,
@@ -598,26 +626,26 @@ class HaikaiOrchestrator:
             "timestamp": datetime.now().isoformat(),
             "steps": [r.model_dump() for r in results]
         }
-        
+
         with open(log_file, 'w') as f:
             json.dump(log_data, f, indent=2)
-        
+
         logger.info(f"Created orchestration log: {log_file}")
         return str(log_file).replace("\\", "/")
-    
+
     def _create_error_log(self, error_message: str, total_time: float) -> str:
         """
         Create an error log file.
-        
+
         Args:
             error_message: The error message
             total_time: Total execution time before error
-        
+
         Returns:
             Path to the error log file
         """
         log_file = self.orchestration_log_dir / "error.json"
-        
+
         log_data = {
             "orchestration_id": self.orchestration_id,
             "success": False,
@@ -625,10 +653,10 @@ class HaikaiOrchestrator:
             "total_execution_time_seconds": total_time,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         with open(log_file, 'w') as f:
             json.dump(log_data, f, indent=2)
-        
+
         logger.error(f"Created error log: {log_file}")
         return str(log_file).replace("\\", "/")
 

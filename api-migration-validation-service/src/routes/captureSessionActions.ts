@@ -38,6 +38,12 @@ import {
 } from '../services/tools/propose_endpoints_from_code';
 import { discoveryServiceClient as defaultDiscoveryServiceClient } from '../services/discoveryServiceClient';
 import type { DiscoveryServiceClient } from '../services/discoveryServiceClient';
+import { createTracer } from '../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
+// is set). See docs/trace-logging.md. The /start orchestration writes the
+// run header + the 'API capture started' SUMMARY line.
+const trace = createTracer('capture-svc');
 
 /**
  * Capture-session action endpoints. These are the HTTP entry points the
@@ -1716,6 +1722,25 @@ export function buildCaptureSessionActionsRouter(
       // terminal `failed` here -- otherwise it sits stuck in RUNNING forever
       // (the original zombie bug). The patch is itself wrapped so a patch
       // failure can never crash the process.
+      // Haikai trace: the capture sub-flow begins here. Use the session id
+      // as the run anchor for the header (a capture session has no separate
+      // migration run id in this service); project + arch are the
+      // workflow-spanning grouping key, session is the sub-thread. The auth
+      // type + header name come from the REDACTED session config (names only,
+      // never values).
+      const traceCorr = { project: projectId, arch: session.architecture_id, session: sessionId };
+      const authType = session.auth_type ?? running.auth_type ?? "none";
+      const headerNames = (session.auth_config_redacted_json as { headerNames?: unknown } | null)
+        ?.headerNames;
+      const headerName = Array.isArray(headerNames) && typeof headerNames[0] === "string"
+        ? headerNames[0]
+        : "";
+      trace.runHeader(sessionId, projectId, session.architecture_id);
+      trace.step(
+        `API capture started — ${session.api_base_url ?? ""} auth=${authType}(${headerName})`,
+        traceCorr,
+      );
+
       spawnOrchestrator(toCaptureSession(running), {
         oasInventory: inventory,
         persistedOperations,

@@ -2,6 +2,13 @@
  * End-to-end orchestrator integration test (Task Group 11.3 gap-fill #1).
  *
  * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 11.
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ *       misleading-COMPLETED follow-up: a scenario is only credited to
+ *       `scenarios_completed` when it persisted >=1 capture row, so this
+ *       test's `createCapture` mock now returns a real capture DTO (the old
+ *       `jest.fn()` returning `undefined` would, under the fix, be treated as
+ *       a no-capture / errored scenario -- which is the bug, not the success
+ *       path this test asserts).
  *
  * Why: Groups 5/6/9 cover slices (the per-scenario loop in isolation, action
  * endpoints in isolation, save-as-baseline in isolation), but no existing
@@ -15,11 +22,13 @@
  *   2. For one persisted included operation, a draft scenario row is created
  *      and the per-scenario loop runs.
  *   3. The mocked LLM emits one `execute_http_request` tool call (so the
- *      stubbed HTTP executor is actually invoked), followed by the terminal
- *      `record_capture_note` tool call which writes a diagnostic and exits
- *      the scenario.
+ *      stubbed HTTP executor is actually invoked and a capture row is
+ *      persisted), followed by the terminal `record_capture_note` tool call
+ *      which writes a diagnostic and exits the scenario.
  *   4. On the terminal-status transition the session is PATCHED with
- *      `status='completed'` and `completed_at` set.
+ *      `status='completed'`, `completed_at` set, and the truthful per-run
+ *      tallies (1 attempted / 1 completed / 0 errored -- the scenario DID
+ *      persist a capture).
  *   5. The in-memory secrets bundle is purged.
  *   6. The runManager entry is removed.
  *
@@ -124,7 +133,7 @@ afterEach(() => {
 // Test
 // ---------------------------------------------------------------------------
 
-test('orchestrator end-to-end: secrets staged + inventory present -> scenario completes -> session patched completed + secrets purged + runManager cleared', async () => {
+test('orchestrator end-to-end: secrets staged + inventory present -> scenario captures + completes -> session patched completed (1 of 1 captured) + secrets purged + runManager cleared', async () => {
   // Stage in-memory secrets so the orchestrator doesn't short-circuit on the
   // secrets_lost guard.
   secretsStore.set({
@@ -140,6 +149,7 @@ test('orchestrator end-to-end: secrets staged + inventory present -> scenario co
 
   // Mock AMS client: capture every call so we can assert lifecycle.
   const scenariosCreated: Array<{ projectId: string; body: any }> = [];
+  const capturesCreated: Array<{ projectId: string; body: any }> = [];
   const diagnosticsCreated: Array<{ projectId: string; body: any }> = [];
   const sessionPatches: Array<{ projectId: string; sessionId: string; body: any }> = [];
 
@@ -164,7 +174,13 @@ test('orchestrator end-to-end: secrets staged + inventory present -> scenario co
         updated_at: new Date().toISOString(),
       };
     }),
-    createCapture: jest.fn(),
+    // execute_http_request auto-persists a capture row; return a real id so
+    // the handler bumps runManager.scenarioCapturesPersisted (the orchestrator
+    // credits the scenario as captured only when that counter is > 0).
+    createCapture: jest.fn(async (projectId: string, body: any) => {
+      capturesCreated.push({ projectId, body });
+      return { id: `capture-${capturesCreated.length}` };
+    }),
     // record_capture_note (terminal) writes a diagnostic row -- assert this
     // landed so we know the scenario actually reached its terminal tool call.
     createDiagnostic: jest.fn(async (projectId: string, body: any) => {
@@ -251,6 +267,8 @@ test('orchestrator end-to-end: secrets staged + inventory present -> scenario co
   expect(outcome.finalStatus).toBe('completed');
   expect(outcome.errorMessage).toBeNull();
   expect(outcome.scenariosAttempted).toBe(1);
+  // The scenario persisted a capture row AND exited `completed`, so it is
+  // credited as captured (1 of 1), not errored.
   expect(outcome.scenariosCompleted).toBe(1);
   expect(outcome.scenariosErrored).toBe(0);
 
@@ -259,19 +277,30 @@ test('orchestrator end-to-end: secrets staged + inventory present -> scenario co
   expect(scenariosCreated[0].body.operation_id).toBe('op-row-e2e');
   expect(scenariosCreated[0].body.status).toBe('draft');
 
-  // The HTTP executor was actually called via the execute_http_request tool.
-  expect(httpRequestSpy).toHaveBeenCalledTimes(1);
+  // The HTTP executor was actually called via the execute_http_request tool
+  // (the captured call; a non-mutating GET also drives the volatility probe,
+  // so the executor may be hit more than once -- assert at-least-once here).
+  expect(httpRequestSpy).toHaveBeenCalled();
 
-  // The terminal record_capture_note tool wrote a diagnostic row.
+  // A capture row was persisted for the scenario.
+  expect(capturesCreated).toHaveLength(1);
+  expect(capturesCreated[0].body.session_id).toBe(SESSION_ID);
+
+  // The terminal record_capture_note tool wrote exactly one diagnostic row;
+  // because the capture persisted cleanly there is NO `failed_request`
+  // diagnostic.
   expect(diagnosticsCreated).toHaveLength(1);
   expect(diagnosticsCreated[0].body.session_id).toBe(SESSION_ID);
   expect(diagnosticsCreated[0].body.message).toBe('happy-path captured');
 
-  // Terminal session patch with status='completed' was issued.
+  // Terminal session patch with status='completed' and truthful tallies.
   expect(sessionPatches).toHaveLength(1);
   expect(sessionPatches[0].body.status).toBe('completed');
   expect(sessionPatches[0].body.completed_at).toBeTruthy();
   expect(sessionPatches[0].body.error_message).toBeNull();
+  expect(sessionPatches[0].body.scenarios_attempted).toBe(1);
+  expect(sessionPatches[0].body.scenarios_completed).toBe(1);
+  expect(sessionPatches[0].body.scenarios_errored).toBe(0);
 
   // Secrets purged after terminal.
   expect(secretsStore.has(SESSION_ID)).toBe(false);

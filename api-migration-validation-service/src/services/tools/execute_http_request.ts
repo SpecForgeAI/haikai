@@ -8,6 +8,12 @@ import {
   runVolatilityProbe,
   volatilityEnvelopeToWire,
 } from '../volatilityProbe';
+import { createTracer } from '../../trace';
+
+// Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
+// set). See docs/trace-logging.md. DETAIL events live on the capture
+// internals -- the path we debug when a capture run goes wrong.
+const trace = createTracer('capture-svc');
 
 /**
  * Tool: `execute_http_request`
@@ -50,9 +56,72 @@ import {
  * Spec: 2026-05-16 API Behaviour Capture Fixes -- auto-persist every attempt,
  *       combined mutating-call gate, counter on runManager (Decisions D2-D4,
  *       D7).
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ *       misleading-COMPLETED follow-up: bump `runManager.scenarioCapturesPersisted`
+ *       only when `createCapture` SUCCEEDS, and emit a `failed_request`
+ *       diagnostic when the HTTP attempt produced no response or when
+ *       `createCapture` throws, so a no-capture-yet-"completed" scenario is
+ *       auditable and is counted as errored by the orchestrator, not captured.
  */
 
+/**
+ * Best-effort `failed_request` diagnostic for a no-capture HTTP attempt.
+ * NEVER throws -- a failing diagnostic write must not mask the underlying
+ * HTTP / persistence error that the LLM and orchestrator need to see.
+ */
+async function safeRecordFailedRequest(
+  ctx: Parameters<ToolHandler>[1],
+  detail: {
+    operationRowId: string | null;
+    operationId: string;
+    method: string;
+    path: string;
+    attemptNumber: number;
+    phase: 'http_no_response' | 'create_capture_failed';
+    errorType: string | null;
+    errorMessage: string | null;
+  },
+): Promise<void> {
+  try {
+    await ctx.archModelClient.createDiagnostic(ctx.session.projectId, {
+      session_id: ctx.session.id,
+      scenario_id: ctx.currentScenarioId,
+      operation_id: detail.operationRowId,
+      diagnostic_type: 'failed_request',
+      message:
+        detail.phase === 'create_capture_failed'
+          ? `Capture persistence failed for ${detail.method} ${detail.path} ` +
+            `(attempt ${detail.attemptNumber}): ${detail.errorMessage ?? 'unknown error'}.`
+          : `HTTP request produced no response for ${detail.method} ${detail.path} ` +
+            `(attempt ${detail.attemptNumber}): ${detail.errorType ?? 'transport_failure'}.`,
+      detail_json: {
+        phase: detail.phase,
+        operation_id: detail.operationId,
+        method: detail.method,
+        path: detail.path,
+        attempt_number: detail.attemptNumber,
+        error_type: detail.errorType,
+        error_message: detail.errorMessage,
+      },
+    });
+  } catch (diagErr) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'execute_http_request: failed to write failed_request diagnostic',
+      diagErr instanceof Error ? diagErr.message : String(diagErr),
+    );
+  }
+}
+
 const handler: ToolHandler = async (args, ctx) => {
+  // Stable corr bag for every trace call: project + arch are the
+  // workflow-spanning key, session is this capture's sub-thread.
+  const corr = {
+    project: ctx.session.projectId,
+    arch: ctx.session.architectureId,
+    session: ctx.session.id,
+  };
+
   if (!ctx.httpExecutor) {
     throw new ToolValidationError(
       'execute_http_request',
@@ -102,6 +171,19 @@ const handler: ToolHandler = async (args, ctx) => {
   const safeToExecute = persisted.safe_to_execute === true;
   const mutatingConfirmed = ctx.session.mutatingCallsConfirmed === true;
   if (!safeToExecute && !mutatingConfirmed) {
+    // DETAIL: the mutating-gate decision -- this attempt is NOT executed
+    // because the operation is unsafe and mutating calls were not confirmed.
+    trace.detail(
+      'capture.gate.skip',
+      {
+        reason: 'mutating_not_confirmed',
+        op: `${method.toUpperCase()} ${path}`,
+        operationId,
+        safeToExecute,
+        mutatingConfirmed,
+      },
+      corr,
+    );
     throw new ToolValidationError(
       'execute_http_request',
       'operation_not_executable',
@@ -184,6 +266,39 @@ const handler: ToolHandler = async (args, ctx) => {
     }
   }
   const durationMs = Date.now() - start;
+
+  // DETAIL: every HTTP attempt -- op / method / path / status / durationMs.
+  // This is the per-attempt breadcrumb that reconstructs a capture run.
+  trace.detail(
+    'capture.http',
+    {
+      op: `${method.toUpperCase()} ${path}`,
+      method: method.toUpperCase(),
+      path,
+      status: response ? response.status : null,
+      durationMs,
+      attemptNumber,
+    },
+    corr,
+  );
+
+  // DETAIL: a transport / auth failure produced NO HTTP response -- surface
+  // the error so the 401-×N pattern (the original bug) is self-diagnosing.
+  if (!response && (errorType || errorMessage)) {
+    trace.detail(
+      'capture.http.fail',
+      {
+        op: `${method.toUpperCase()} ${path}`,
+        method: method.toUpperCase(),
+        path,
+        status: null,
+        errorType,
+        errorMessage,
+        attemptNumber,
+      },
+      corr,
+    );
+  }
 
   // ---- Build redacted shapes ONCE (reused for both the LLM-facing return
   // value AND the persisted capture row -- DO NOT redact twice).
@@ -300,14 +415,81 @@ const handler: ToolHandler = async (args, ctx) => {
     );
     captureId = persistedCapture.id;
   } catch (err) {
-    // Rethrow so the loop runner's existing tool-error path surfaces this
-    // to the LLM; do NOT silently swallow.
+    // Capture persistence failed -- this attempt produced NO durable capture
+    // row. Surface a `failed_request` diagnostic so a scenario that later
+    // closes `completed` with zero captures is auditable (defense in depth
+    // against the misleading-COMPLETED bug), then rethrow so the loop
+    // runner's existing tool-error path surfaces this to the LLM. Do NOT
+    // bump `scenarioCapturesPersisted` -- nothing was persisted.
+    const createCaptureMessage = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line no-console
     console.error(
       `execute_http_request: createCapture failed for session=${ctx.session.id} attempt=${attemptNumber}`,
       err,
     );
+    // DETAIL: createCapture failure -- the HTTP attempt had a response (or
+    // not) but the durable capture row was NOT written.
+    trace.detail(
+      'capture.http.fail',
+      {
+        op: `${method.toUpperCase()} ${path}`,
+        method: method.toUpperCase(),
+        path,
+        status: response ? response.status : null,
+        phase: 'create_capture_failed',
+        errorMessage: createCaptureMessage,
+        attemptNumber,
+      },
+      corr,
+    );
+    await safeRecordFailedRequest(ctx, {
+      operationRowId: persisted.id,
+      operationId,
+      method: method.toUpperCase(),
+      path,
+      attemptNumber,
+      phase: 'create_capture_failed',
+      errorType: 'create_capture_failed',
+      errorMessage: createCaptureMessage,
+    });
     throw err;
+  }
+
+  // DETAIL: the capture row was durably persisted to AMS.
+  trace.detail(
+    'capture.persisted',
+    {
+      op: `${method.toUpperCase()} ${path}`,
+      method: method.toUpperCase(),
+      path,
+      status: response ? response.status : null,
+      captureId,
+      attemptNumber,
+    },
+    corr,
+  );
+
+  // A capture row was durably persisted -- credit this scenario with one
+  // captured row. The orchestrator reads `scenarioCapturesPersisted` after
+  // the per-scenario loop exits and only counts the scenario as captured
+  // when this is > 0 (misleading-COMPLETED fix).
+  runManager.incrementCapturesPersisted(ctx.session.id);
+
+  // ---- Defense in depth: even though the capture row WAS persisted, a
+  // transport / auth failure (no HTTP response) means the scenario has no
+  // usable oracle. Emit a `failed_request` diagnostic so the per-scenario
+  // failure reason is visible in the operator-facing Diagnostics list.
+  if (!response && (errorType || errorMessage)) {
+    await safeRecordFailedRequest(ctx, {
+      operationRowId: persisted.id,
+      operationId,
+      method: method.toUpperCase(),
+      path,
+      attemptNumber,
+      phase: 'http_no_response',
+      errorType,
+      errorMessage,
+    });
   }
 
   return {
