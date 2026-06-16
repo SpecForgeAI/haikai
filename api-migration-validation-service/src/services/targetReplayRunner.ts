@@ -11,7 +11,8 @@ import {
   createSessionHttpExecutor,
   type SessionHttpExecutor,
 } from './httpExecutor';
-import { runDiff as defaultRunDiff } from './diffRunner';
+import { runDiff as defaultRunDiff, type DiffRunnerDeps } from './diffRunner';
+import { resolveNonDeterministicEndpointKeys as defaultResolveNdKeys } from './nonDeterministicEndpointKeys';
 import type { ApiAuthSecret } from '../types/secrets';
 import {
   TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT as DEFAULT_TRANSPORT_FAILURE_THRESHOLD,
@@ -153,9 +154,17 @@ export interface TargetReplayDeps {
    * the trigger fires (or throws) without actually executing the runner.
    *
    * Spec: 2026-05-25 Diff Engine -- Task Group 3 (auto-trigger at the
-   * happy-path tail of the replay).
+   * happy-path tail of the replay). The optional second `deps` arg carries
+   * the FU-1 `nonDeterministicEndpointKeys` seam (Spec 2026-06-16).
    */
-  runDiffFn?: (diffId: string) => Promise<void>;
+  runDiffFn?: (diffId: string, deps?: DiffRunnerDeps) => Promise<void>;
+  /**
+   * Override for the `non_deterministic_endpoint` -> `${METHOD}|${path}`
+   * bridge that populates the runner's `nonDeterministicEndpointKeys` seam
+   * (Spec 2026-06-16 FU-1). Tests inject a stub; the default resolves it from
+   * the discovery signal. Fail-soft: a rejection degrades to strict (G1).
+   */
+  resolveNonDeterministicEndpointKeys?: typeof defaultResolveNdKeys;
 }
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -665,6 +674,8 @@ export async function runTargetReplay(
     // calls runManager.end(diffId).
     // ------------------------------------------------------------------
     const runDiffFn = deps.runDiffFn ?? defaultRunDiff;
+    const resolveNonDeterministicEndpointKeys =
+      deps.resolveNonDeterministicEndpointKeys ?? defaultResolveNdKeys;
     try {
       const diff = await archModelClient.createDiff(projectId, {
         project_id: projectId,
@@ -685,9 +696,28 @@ export async function runTargetReplay(
         // Already-running protection -- a concurrent recompute is fine,
         // we simply skip our spawn.
       }
+      // Resolve the FU-1 `endpoint_signal` volatility keys from the discovery
+      // signal so the auto-diff is value-tolerant for
+      // `non_deterministic_endpoint`-flagged operations. `items` IS the source
+      // baseline-item set (loaded at step 3), so the produced keys are the
+      // diff's own concrete operation keys. Fail-soft = strict (G1).
+      let nonDeterministicEndpointKeys = new Set<string>();
+      try {
+        nonDeterministicEndpointKeys = await resolveNonDeterministicEndpointKeys(
+          projectId,
+          session.architecture_id,
+          items,
+        );
+      } catch (err) {
+        console.warn(
+          `[targetReplayRunner] op=nd_keys_resolve_failed diffId=${diff.id} err=${
+            err instanceof Error ? err.message : String(err)
+          } -- diff will run strict`,
+        );
+      }
       // Fire-and-forget: do NOT await. Replay returns immediately
       // regardless of diff outcome.
-      runDiffFn(diff.id).catch((err) => {
+      runDiffFn(diff.id, { nonDeterministicEndpointKeys }).catch((err) => {
         console.error(
           `[targetReplayRunner] op=auto_diff_trigger_failed diffId=${diff.id} err=${
             err instanceof Error ? err.message : String(err)

@@ -245,6 +245,7 @@ class ApiBehaviourControllerTest {
             Map.of("query", Map.of("limit", 10)),
             200,
             Map.of("items", List.of(Map.of("id", "w1"))),
+            null,
             "noted",
             NOW, NOW
         );

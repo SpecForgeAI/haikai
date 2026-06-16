@@ -4094,3 +4094,80 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Reconcile-Time Determinism & Volatile-Value Handling (Spec: 2026-06-16)
+  # -- Task Group 1
+  # Changeset 187 adds the empirically-measured volatility envelope to the
+  # immutable source baseline item so the reconcile diff engine can tell
+  # legitimate non-determinism (server timestamps, generated IDs, unordered
+  # collections) apart from a real behavioural divergence -- without ever
+  # narrowing or mutating the pinned current-state oracle. ONE new nullable
+  # column api_behaviour_baseline_items.volatile_paths_json (JSONB NULL),
+  # shaped { paths, volatility_source, k }: the differing JSON-Pointer path
+  # list, the volatility_source taxonomy tag (probed | probed_partial |
+  # endpoint_signal | heuristic | declared | non_json | not_probed), and the
+  # completed-repeat count k. Written ONCE by the capture-time probe at pin
+  # time and NEVER mutated thereafter (baseline immutability) -- it ANNOTATES
+  # the oracle, it never changes a captured value. NULL = no volatility
+  # recorded -> strict comparison (backward-compatible default; the state of
+  # every already-pinned baseline -- NO backfill -- and distinguishable from a
+  # non_json envelope). Nullable, boxed reference type, no backfill: existing
+  # rows are untouched and read back null. New changeset only (186 is the
+  # highest on disk at build time) -- never edit applied changesets. Column-only
+  # ALTER -> the not-columnExists precondition idiom (mirrors 185 / 186 /
+  # 181-implementation-ready-spec-fields).
+  # ============================================================================
+  - changeSet:
+      id: 187-baseline-item-volatile-paths
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_baseline_items
+              columnName: volatile_paths_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/187-baseline-item-volatile-paths.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 188-capture-volatile-paths
+  # Spec: Reconcile-Time Determinism & Volatile-Value Handling (2026-06-16)
+  #       -- Task Group 2 / FU-2 (probe-at-capture wiring).
+  #
+  # Carrier column on api_behaviour_captures so the volatility envelope MEASURED
+  # at capture time (by the probe inside execute_http_request, the only moment
+  # the current system is authoritative and callable through a live executor)
+  # survives the frontend-driven Save-as-baseline promotion and reaches the
+  # source baseline item's own volatile_paths_json (changeset 187). The current-
+  # state baseline is pinned by a frontend->AMS write, not a server-side route,
+  # so the envelope cannot be measured at pin time -- it is measured at capture
+  # and carried forward. volatile_paths_json JSONB NULL; { paths,
+  # volatility_source, k } (+ optional array_paths). NULL = no volatility
+  # recorded -> strict comparison (backward-compatible default; distinguishable
+  # from a non_json envelope). Nullable, boxed reference type, no backfill:
+  # existing rows are untouched and read back null. New changeset only (187 is
+  # the highest on disk at build time) -- never edit applied changesets.
+  # Column-only ALTER -> the not-columnExists precondition idiom (mirrors 187).
+  # ============================================================================
+  - changeSet:
+      id: 188-capture-volatile-paths
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_captures
+              columnName: volatile_paths_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/188-capture-volatile-paths.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

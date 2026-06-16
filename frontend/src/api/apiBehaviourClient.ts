@@ -276,6 +276,15 @@ export interface ApiBehaviourCaptureDto {
   accepted: boolean | null;
   accepted_at: string | null;
   reviewer_notes: string | null;
+  /**
+   * Capture-time volatility envelope { paths, volatility_source, k } measured
+   * by the probe in the validation-service `execute_http_request`. Carried
+   * forward onto the source baseline item on Save-as-baseline. `null` => no
+   * volatility recorded => strict comparison. snake_case wire (AMS default).
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling -- FU-2.
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
 }
 
 export interface UpdateApiBehaviourCaptureRequest {
@@ -345,6 +354,12 @@ export interface ApiBehaviourBaselineItemDto {
   response_status: number | null;
   response_json: Record<string, unknown> | null;
   business_notes: string | null;
+  /**
+   * Volatility envelope { paths, volatility_source, k } pinned on the source
+   * baseline item (carried forward from the capture row). `null` => strict.
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling.
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -361,6 +376,15 @@ export interface CreateApiBehaviourBaselineItemRequest {
   response_status?: number | null;
   response_json?: Record<string, unknown> | null;
   business_notes?: string | null;
+  /**
+   * OPTIONAL volatility envelope carried forward from the capture row at
+   * Save-as-baseline. Write-once at create time (baseline immutability); there
+   * is deliberately NO update path. `null` / omitted => strict comparison.
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * Task Group 1 (AMS) + FU-2 (frontend carry-through).
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
 }
 
 // ============================================================================

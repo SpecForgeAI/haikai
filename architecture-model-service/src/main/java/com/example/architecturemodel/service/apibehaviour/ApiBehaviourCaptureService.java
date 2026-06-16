@@ -106,6 +106,11 @@ public class ApiBehaviourCaptureService {
             .accepted(request.accepted() == null ? Boolean.FALSE : request.accepted())
             .acceptedAt(request.acceptedAt())
             .reviewerNotes(request.reviewerNotes())
+            // Write-once at capture create time -- the volatility envelope the
+            // probe measured in execute_http_request. There is deliberately NO
+            // PATCH path for it. Spec: Reconcile-Time Determinism &
+            // Volatile-Value Handling (2026-06-16) -- FU-2.
+            .volatilePathsJson(request.volatilePathsJson())
             .build();
 
         return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
@@ -169,6 +174,9 @@ public class ApiBehaviourCaptureService {
         if (request.reviewerNotes() != null) {
             entity.setReviewerNotes(request.reviewerNotes());
         }
+        // NOTE: volatilePathsJson is intentionally NOT PATCH-mutable -- it is
+        // write-once at capture create time (the probe's measured envelope),
+        // mirroring baseline immutability. No update branch here on purpose.
 
         return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
     }

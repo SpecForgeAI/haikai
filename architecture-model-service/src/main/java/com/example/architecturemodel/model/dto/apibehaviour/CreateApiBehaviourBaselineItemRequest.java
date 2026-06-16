@@ -6,7 +6,19 @@ import java.util.UUID;
 /**
  * Request body for creating an {@code api_behaviour_baseline_items} row.
  *
- * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2</p>
+ * <p>{@code volatilePathsJson} is OPTIONAL: the capture-time volatility probe
+ * supplies the measured envelope ({@code { paths, volatility_source, k }}) at
+ * pin time; callers that record no volatility (or pre-probe callers) omit it
+ * and the row is stored with {@code null} (strict-comparison default). It is
+ * written ONCE here at create time and never mutated thereafter (baseline
+ * immutability) — there is no PATCH path for it.</p>
+ *
+ * <p>Wire format is snake_case (the AMS default — NO {@code @CamelCaseWire}):
+ * {@code volatilePathsJson} accepts {@code volatile_paths_json} on the wire.</p>
+ *
+ * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2.
+ * Extended by Reconcile-Time Determinism &amp; Volatile-Value Handling
+ * (2026-06-16) — Task Group 1 ({@code volatilePathsJson}).</p>
  */
 public record CreateApiBehaviourBaselineItemRequest(
     UUID baselineId,
@@ -19,5 +31,6 @@ public record CreateApiBehaviourBaselineItemRequest(
     Map<String, Object> requestJson,
     Integer responseStatus,
     Map<String, Object> responseJson,
+    Map<String, Object> volatilePathsJson,
     String businessNotes
 ) {}

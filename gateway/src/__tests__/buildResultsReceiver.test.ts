@@ -208,6 +208,45 @@ describe('processBuildResult dispatch', () => {
 });
 
 // ===========================================================================
+// Reconciled outcome enum: the external implement-verify-service split the old
+// `failed` into `error` (job path) + `fix_unserved` / `not_fixed` (bug path).
+// The door must ACCEPT these (not 422) and route them to halt / escalate.
+// ===========================================================================
+
+describe('processBuildResult reconciled outcome enum', () => {
+  it('accepts the job-path `error` outcome and halts the run (not a 422)', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    const out = await processBuildResult(
+      { company: 'acme', project: 'p', outcome: 'error', job_id: 'job-1' },
+      deps
+    );
+    expect(out.status).toBe(202);
+    expect(out.decision).toBe('halted');
+  });
+
+  it('accepts the bug-path `fix_unserved` outcome (escalates; not a 422)', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    const out = await processBuildResult(
+      { company: 'acme', project: 'p', outcome: 'fix_unserved', bug_id: 'bug-1' },
+      deps
+    );
+    expect(out.status).toBe(202);
+    expect(out.body).toEqual({ acknowledged: true });
+    // The bug path does NOT use the job_id run-item correlation.
+    expect(deps.findMigrationRunItemByJobId).not.toHaveBeenCalled();
+  });
+
+  it('accepts the bug-path `not_fixed` outcome (not a 422)', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    const out = await processBuildResult(
+      { company: 'acme', project: 'p', outcome: 'not_fixed', bug_id: 'bug-1' },
+      deps
+    );
+    expect(out.status).toBe(202);
+  });
+});
+
+// ===========================================================================
 // Route-level: the inbound token guard rejects before dispatch
 // ===========================================================================
 

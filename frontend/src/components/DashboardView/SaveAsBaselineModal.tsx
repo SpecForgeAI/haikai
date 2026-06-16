@@ -145,6 +145,12 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
           response_status: cap.response_status,
           response_json: cap.response_body_json,
           business_notes: null,
+          // Carry the capture-time volatility envelope forward onto the
+          // immutable source baseline item (write-once at pin time). The probe
+          // measured it during capture; `null`/absent => strict comparison.
+          // Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value
+          // Handling -- FU-2 (frontend carry-through).
+          volatile_paths_json: cap.volatile_paths_json ?? null,
         });
       }
 

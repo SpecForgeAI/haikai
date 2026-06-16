@@ -37,7 +37,7 @@ import {
   type ToolExecutionContext,
 } from '../services/tools';
 import { runManager } from '../services/runManager';
-import { LLM_HTTP_ATTEMPTS_PER_SCENARIO } from '../config';
+import { LLM_HTTP_ATTEMPTS_PER_SCENARIO, VOLATILITY_PROBE_REPEATS } from '../config';
 import type { CaptureSession } from '../types/captureSession';
 import type { CaptureDto, OperationDto } from '../services/archModelClient';
 import type { SessionHttpExecutor } from '../services/httpExecutor';
@@ -180,7 +180,11 @@ describe('execute_http_request -- auto-persist capture rows', () => {
       ctx,
     );
 
-    expect(request).toHaveBeenCalledTimes(1);
+    // FU-2: a non-mutating GET now also drives the capture-time volatility
+    // probe, which replays the same request VOLATILITY_PROBE_REPEATS (k) more
+    // times against the current system. So the executor is hit once for the
+    // captured call plus k probe replays. createCapture is still ONE row.
+    expect(request).toHaveBeenCalledTimes(1 + VOLATILITY_PROBE_REPEATS);
     expect(arch.createCapture).toHaveBeenCalledTimes(1);
 
     const [projectId, body] = arch.createCapture.mock.calls[0];
@@ -398,8 +402,11 @@ describe('execute_http_request -- createCapture failure', () => {
         ctx,
       ),
     ).rejects.toThrow(/AMS write failed/);
-    // The request DID happen -- failure is on the AMS write.
-    expect(request).toHaveBeenCalledTimes(1);
+    // The request DID happen -- failure is on the AMS write. FU-2: the
+    // volatility probe runs BEFORE the createCapture write, so the executor
+    // is hit once for the captured call plus k probe replays; the single
+    // createCapture attempt is what fails.
+    expect(request).toHaveBeenCalledTimes(1 + VOLATILITY_PROBE_REPEATS);
     expect(arch.createCapture).toHaveBeenCalledTimes(1);
   });
 });

@@ -18,6 +18,12 @@
  *            intentional_deviation) to breaks the human will NOT send. The
  *            current-state oracle is NEVER mutated (CD-A) -- this is how
  *            intentional / deferred deviations are recorded;
+ *   - POST   .../reconciliation-breaks/declare-volatile
+ *            the in-UI human-declared volatile-paths action (2026-06-16, Q3).
+ *            A path declared through the existing break-detail surface is applied
+ *            RETROACTIVELY to the current run -- the gateway re-evaluates and
+ *            re-disposes the already-open breaks on that operation (tag
+ *            `declared`, the highest-trust volatile source). No new admin screen;
  *   - POST   .../target-credentials
  *            register the run's target-env credentials (CD-2). Held in-memory
  *            for the run only, NEVER persisted, NEVER logged.
@@ -68,7 +74,33 @@ export const BREAK_DISPOSITION = {
   // functionality), NOT a DEVIATION from existing behaviour -- so it is distinct
   // from intentional_deviation. A human may still re-classify it (D7).
   EXPECTED_NET_NEW: 'expected_net_new',
+  // --- 2026-06-16 (Reconcile-Time Determinism & Volatile-Value Handling):
+  // machine-set terminal for a break whose body diverged ENTIRELY on
+  // legitimately-volatile JSON paths (measured by the capture-time probe,
+  // signalled by `non_deterministic_endpoint`, or operator-declared). The
+  // gateway post-diff `expected_volatile` auto-disposition pass sets this
+  // (needs_human=false). Terminal (never re-run) but human-overridable via the
+  // existing dispose path -- a deliberately-changed NON-volatile value still
+  // breaks (the load-bearing oracle invariant). Mirrors EXPECTED_NET_NEW.
+  EXPECTED_VOLATILE: 'expected_volatile',
+  // --- 2026-06-16: machine-set DOWN-RANK marker for a heuristic-only break.
+  // A break justified ONLY by conservative timestamp/UUID heuristics is NOT
+  // auto-terminated (a guess must never silently absorb a real break). It is
+  // down-ranked to `info` and stays OPEN + visible -- an `info` break is just an
+  // `open` break carrying a visible down-rank marker for the review surface, so
+  // it is deliberately NOT terminal and stays selectable.
+  INFO: 'info',
 } as const;
+
+/** The trust tags the validation-service stamps on a tolerated diff entry. */
+export type VolatilitySource =
+  | 'probed'
+  | 'probed_partial'
+  | 'endpoint_signal'
+  | 'heuristic'
+  | 'declared'
+  | 'non_json'
+  | 'not_probed';
 
 /** The terminal human dispositions accepted by the dispose route (CD-A). */
 export type ReconciliationDisposition =
@@ -80,10 +112,12 @@ export type ReconciliationDisposition =
  * The terminal break states: once a break is in one of these it is never sent
  * and never re-run. Drives the disable-selection logic in the review surface.
  *
- * `expected_net_new` (D6) is terminal in the same gateway/idempotent-callback
- * sense (never re-run), but unlike the human terminals it is MACHINE-set by the
- * auto-disposition pass, so the review surface keeps it overridable (D7) -- the
- * panel selectability rule special-cases it.
+ * `expected_net_new` (D6) and `expected_volatile` (2026-06-16) are terminal in
+ * the same gateway/idempotent-callback sense (never re-run), but unlike the
+ * human terminals they are MACHINE-set by an auto-disposition pass, so the
+ * review surface keeps them overridable -- the panel selectability rule
+ * special-cases them. `info` is deliberately NOT terminal (it stays open +
+ * selectable).
  */
 export const TERMINAL_BREAK_STATES: readonly string[] = [
   BREAK_DISPOSITION.ACCEPTED,
@@ -92,6 +126,7 @@ export const TERMINAL_BREAK_STATES: readonly string[] = [
   BREAK_DISPOSITION.FIXED_CONFIRMED,
   BREAK_DISPOSITION.CIRCUIT_BROKEN_ESCALATED,
   BREAK_DISPOSITION.EXPECTED_NET_NEW,
+  BREAK_DISPOSITION.EXPECTED_VOLATILE,
 ];
 
 // ============================================================================
@@ -139,6 +174,22 @@ export type SendReconciliationBreaksResult =
 export interface DisposeReconciliationBreaksResult {
   status: 'disposed';
   count: number;
+}
+
+/**
+ * The declare-volatile route result (the gateway builds this natively --
+ * camelCase). The gateway re-evaluates the current run's open breaks on the
+ * named operation, re-tags the now-declared paths, and re-disposes them: a
+ * pure-volatile break becomes `expected_volatile`, a heuristic-mixed one becomes
+ * `info`, a still-real one stays open.
+ */
+export interface DeclareVolatilePathsResult {
+  /** Open breaks on the operation that carried a now-declared path. */
+  reEvaluated: number;
+  /** Of those, the count re-dispositioned to the terminal `expected_volatile`. */
+  expectedVolatile: number;
+  /** Of those, the count down-ranked to `info` (stays open). */
+  info: number;
 }
 
 /** The target-credentials registration result. */
@@ -326,6 +377,60 @@ export async function disposeReconciliationBreaks(
   }
   const body = (await res.json()) as Partial<DisposeReconciliationBreaksResult>;
   return { status: 'disposed', count: body.count ?? 0 };
+}
+
+/**
+ * Declare volatile JSON-Pointer path(s) on an operation through the EXISTING
+ * break-detail surface (2026-06-16, Q3). No config file, no new admin screen.
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/reconciliation-breaks/declare-volatile
+ *
+ * The declaration is applied RETROACTIVELY to the CURRENT run: the gateway
+ * re-evaluates the already-open breaks on the named operation, re-tags the
+ * now-declared paths as `declared` (the highest-trust volatile source) and
+ * re-disposes them via the existing PATCH path -- a pure-volatile break becomes
+ * the terminal `expected_volatile`, a heuristic-mixed one becomes `info`, a
+ * still-real (non-volatile) break stays open. The pinned current-state oracle is
+ * NEVER changed -- this only annotates variance. Body is snake_case
+ * (`operation`, `declared_paths`). A non-2xx rejects so the caller can surface
+ * the error. The caller refreshes the list afterwards so the re-disposition shows.
+ */
+export async function declareVolatilePaths(
+  projectId: string,
+  runId: string,
+  args: {
+    /** The operation the path(s) are declared on, as `<METHOD> <path>`. */
+    operation: string;
+    /** The newly-declared JSON-Pointer path(s), e.g. `['/createdAt']`. */
+    declaredPaths: string[];
+  },
+): Promise<DeclareVolatilePathsResult> {
+  const url = runScopedUrl(
+    projectId,
+    runId,
+    '/reconciliation-breaks/declare-volatile',
+  );
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      operation: args.operation,
+      declared_paths: args.declaredPaths,
+    }),
+  });
+  if (!res.ok) {
+    const serverMessage = await readServerMessage(res);
+    throw new Error(
+      serverMessage ||
+        `Failed to declare volatile paths for run ${runId}: ${res.status} ${res.statusText}`,
+    );
+  }
+  const body = (await res.json()) as Partial<DeclareVolatilePathsResult>;
+  return {
+    reEvaluated: body.reEvaluated ?? 0,
+    expectedVolatile: body.expectedVolatile ?? 0,
+    info: body.info ?? 0,
+  };
 }
 
 /**

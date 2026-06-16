@@ -136,11 +136,55 @@ services:
       PORT: 8091
       ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
       GATEWAY_BASE_URL: http://gateway:8081
+      SYBASE_SIDECAR_URL: http://sybase-discovery-sidecar:8093
     networks:
       - arch-tool-network
     depends_on:
       architecture-model-service:
         condition: service_healthy
+
+  # API Migration Validation Service (Node.js)
+  # Captures the current-state API behaviour baseline (the "oracle") and runs the
+  # reconciliation diff engine. Core to the migration flow; the gateway reaches it
+  # via API_MIGRATION_VALIDATION_SERVICE_URL. (No healthcheck: node:20-alpine has
+  # no curl, mirroring discovery-service.)
+  api-migration-validation-service:
+    build:
+      context: ./api-migration-validation-service
+      dockerfile: Dockerfile.dev
+    container_name: arch-api-migration-validation-service
+    ports:
+      - "8092:8092"
+    volumes:
+      - ./api-migration-validation-service/src:/app/src:delegated
+      - ./oas-specs:/app/oas-specs:delegated
+    environment:
+      PORT: 8092
+      ARCHITECTURE_MODEL_SERVICE_BASE_URL: http://architecture-model-service:8080
+      GATEWAY_BASE_URL: http://gateway:8081
+      DISCOVERY_SERVICE_BASE_URL: http://discovery-service:8091
+      SYBASE_SIDECAR_URL: http://sybase-discovery-sidecar:8093
+      OAS_SPECS_DIR: /app/oas-specs
+    networks:
+      - arch-tool-network
+    depends_on:
+      architecture-model-service:
+        condition: service_healthy
+
+  # Sybase Discovery Sidecar (Spring Boot - Java)
+  # JDBC introspection sidecar the discovery-service + validation-service call for
+  # Sybase ASE metadata. Builds a fat JAR from its production Dockerfile.
+  sybase-discovery-sidecar:
+    build:
+      context: ./sybase-discovery-sidecar
+      dockerfile: Dockerfile
+    container_name: arch-sybase-sidecar
+    ports:
+      - "8093:8093"
+    environment:
+      SERVER_PORT: 8093
+    networks:
+      - arch-tool-network
 
   # Gateway Service (Node.js)
   gateway:
@@ -158,6 +202,8 @@ services:
       PORT: 8081
       ALLOWED_ORIGINS: http://localhost:5173
       JIRA_SERVICE_URL: http://jira-service:8078
+      API_MIGRATION_VALIDATION_SERVICE_URL: http://api-migration-validation-service:8092
+      IMPLEMENTATION_LLM_SERVICE_BASE_URL: http://standards-extractor-api:8000
     networks:
       - arch-tool-network
     depends_on:

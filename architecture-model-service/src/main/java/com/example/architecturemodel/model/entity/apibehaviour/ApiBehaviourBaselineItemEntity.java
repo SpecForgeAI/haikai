@@ -38,7 +38,10 @@ import java.util.UUID;
  * preserve {@code null} when omitted (see project memory note
  * {@code project_primitive_double_dto_overwrite.md}).</p>
  *
- * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 1</p>
+ * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 1.
+ * Extended by Reconcile-Time Determinism &amp; Volatile-Value Handling
+ * (2026-06-16) — Task Group 1 (the nullable {@code volatile_paths_json}
+ * volatility envelope; changeset 187).</p>
  */
 @Entity
 @Table(
@@ -101,6 +104,33 @@ public class ApiBehaviourBaselineItemEntity {
     @Type(JsonType.class)
     @Column(name = "response_json", columnDefinition = "jsonb", nullable = false)
     private Map<String, Object> responseJson;
+
+    /**
+     * Empirically-measured volatility envelope for this captured scenario,
+     * shaped {@code { paths, volatility_source, k }} (the differing
+     * JSON-Pointer path list, the {@code volatility_source} taxonomy tag, and
+     * the completed-repeat count). Written ONCE by the capture-time volatility
+     * probe at pin time and never mutated thereafter, consistent with baseline
+     * immutability — it ANNOTATES the pinned oracle, it never changes a
+     * captured value. The reconcile diff engine reads it to tolerate volatile
+     * VALUES + ORDERING per-path (shape diffs on a volatile path STILL break).
+     *
+     * <p><b>{@code null} means no volatility recorded</b> and yields strict
+     * comparison — the backward-compatible default (today's behaviour) and the
+     * state of every already-pinned baseline (NO backfill). It is
+     * distinguishable from a probed-but-non-JSON body, which records a non-null
+     * envelope tagged {@code volatility_source: "non_json"}.</p>
+     *
+     * <p>Nullable, boxed reference type, no backfill: existing baseline-item
+     * rows are untouched and read back with {@code null}. No
+     * {@code @PrePersist} defaulting — {@code null} is the valid empty state.</p>
+     *
+     * <p>Spec: Reconcile-Time Determinism &amp; Volatile-Value Handling
+     * (2026-06-16) — Task Group 1.</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "volatile_paths_json", columnDefinition = "jsonb")
+    private Map<String, Object> volatilePathsJson;
 
     @Column(name = "business_notes")
     private String businessNotes;

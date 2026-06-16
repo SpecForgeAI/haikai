@@ -73,18 +73,50 @@ import java.util.Set;
  *       wrongly-matched break (D7). Membership in
  *       {@link #TERMINAL_HUMAN_DISPOSITIONS} only governs the no-auto-loop
  *       short-circuit; it never blocks a human override.</p></li>
+ *   <li>{@link #EXPECTED_VOLATILE} -- a break whose divergence lands ENTIRELY on
+ *       paths the volatility envelope recorded as legitimately non-deterministic
+ *       (server timestamps, freshly-generated IDs, unordered collections). The
+ *       gateway post-diff auto-disposition pass (sibling to the D6
+ *       {@code expected_net_new} pass) recognises it when the break's value /
+ *       ordering divergence is justified entirely by volatile paths with
+ *       {@code volatility_source} in {@code {probed, probed_partial,
+ *       endpoint_signal, declared}} (the higher-trust sources), then PATCHes the
+ *       (already created, visible + auditable) break into this state with
+ *       {@code needs_human=false} and a {@code detail_json} audit note listing
+ *       the volatile paths + their source. It is NOT silent suppression: the
+ *       break is created first and remains visible; a mixed volatile +
+ *       non-volatile divergence stays {@code open} (the non-volatile part is a
+ *       real break), and a divergence justified only by lower-trust
+ *       {@code heuristic} paths is down-ranked to {@code info} (stays
+ *       {@code open}), never auto-terminated.
+ *       <p><b>Terminal + machine-set + human-overridable</b>, exactly like
+ *       {@link #EXPECTED_NET_NEW}: it is TERMINAL (it lives in
+ *       {@link #TERMINAL_HUMAN_DISPOSITIONS} so the loop does not re-bug / re-run
+ *       it), MACHINE-SET (the gateway auto-disposition writes it), and
+ *       HUMAN-OVERRIDABLE via the unchanged disposition PATCH path (a human can
+ *       move an over-broadly-tolerated break back to {@code open} with one
+ *       action, preserving the "oracle always breaks on a real divergence"
+ *       invariant). Plain TEXT, NO DDL -- only {@link #ALL} (the validation set)
+ *       and {@link #TERMINAL_HUMAN_DISPOSITIONS} (the no-auto-loop terminal set)
+ *       gained the value.</p></li>
  * </ul>
  *
  * <p><b>Oracle invariant (CD-A):</b> the pinned current-state baseline is the
  * oracle ALWAYS; none of these dispositions mutate it. Intentional / deferred
  * deviations are handled here, by disposition, not by narrowing the oracle. The
  * D6 {@code expected_net_new} auto-disposition likewise only RECORDS the
- * additive endpoint -- it never narrows the pinned baseline.</p>
+ * additive endpoint -- it never narrows the pinned baseline. The
+ * {@code expected_volatile} auto-disposition only ANNOTATES measured
+ * non-determinism on the immutable baseline -- it never changes a captured
+ * value, and a deliberately-changed NON-volatile value still breaks.</p>
  *
  * <p>Spec: Migration Reconciliation + Bug Loop (2026-06-14, Spec 4 of 4) --
  * Task Group 1. Extended by Non-Reconciling Work at Reconcile Time
  * (2026-06-14, Spec 6 of 6 / D6) -- Task Group 1 (the {@code expected_net_new}
- * machine-set terminal value; NO new changeset -- the column is plain TEXT).</p>
+ * machine-set terminal value; NO new changeset -- the column is plain TEXT).
+ * Extended by Reconcile-Time Determinism &amp; Volatile-Value Handling
+ * (2026-06-16) -- Task Group 1 (the {@code expected_volatile} machine-set
+ * terminal value; NO new changeset -- the column is plain TEXT).</p>
  */
 public final class MigrationReconciliationBreakStatus {
 
@@ -109,6 +141,25 @@ public final class MigrationReconciliationBreakStatus {
      */
     public static final String EXPECTED_NET_NEW = "expected_net_new";
 
+    // --- Machine-set terminal recognition (volatile-value handling) -------
+    /**
+     * The measured-volatility terminal state: a break whose value / ordering
+     * divergence lands ENTIRELY on paths the volatility envelope recorded as
+     * legitimately non-deterministic (higher-trust {@code volatility_source}:
+     * {@code probed} / {@code probed_partial} / {@code endpoint_signal} /
+     * {@code declared}). The gateway post-diff auto-disposition pass (sibling to
+     * the {@link #EXPECTED_NET_NEW} pass) PATCHes the already-created, visible
+     * break into this state with {@code needs_human=false} and a
+     * {@code detail_json} audit note listing the volatile paths + source.
+     * Terminal (no auto re-loop) + machine-set + human-overridable. It tolerates
+     * VALUES + ORDERING only -- shape diffs on a volatile path STILL break, a
+     * mixed volatile + non-volatile divergence stays {@code open}, and a
+     * {@code heuristic}-only justification is down-ranked to {@code info} rather
+     * than auto-terminated. NEVER silent suppression: the break is created and
+     * visible first.
+     */
+    public static final String EXPECTED_VOLATILE = "expected_volatile";
+
     /** The set of all allowed persisted disposition-status values. */
     public static final Set<String> ALL = Set.of(
         OPEN,
@@ -119,7 +170,8 @@ public final class MigrationReconciliationBreakStatus {
         ACCEPTED,
         WONT_REPORT,
         INTENTIONAL_DEVIATION,
-        EXPECTED_NET_NEW
+        EXPECTED_NET_NEW,
+        EXPECTED_VOLATILE
     );
 
     /**
@@ -127,17 +179,19 @@ public final class MigrationReconciliationBreakStatus {
      * short-circuit treats as a no-op: once set, the break is never sent and
      * never re-run (CD-A).
      *
-     * <p>Holds the three human dispositions PLUS the D6 machine-set
-     * {@link #EXPECTED_NET_NEW}: an additive {@code net_new} endpoint recognised
-     * at reconcile time is terminal exactly like a human "accepted" -- the loop
-     * must not bug it or re-run it. It is machine-set rather than human-chosen,
-     * but it shares the terminal no-auto-loop semantics, which is what this set
-     * gates. It remains human-overridable via the standard disposition PATCH
-     * path (see {@link #EXPECTED_NET_NEW}); membership here never blocks an
-     * override.</p>
+     * <p>Holds the three human dispositions PLUS the machine-set
+     * {@link #EXPECTED_NET_NEW} (an additive {@code net_new} endpoint recognised
+     * at reconcile time) and {@link #EXPECTED_VOLATILE} (a divergence landing
+     * entirely on measured-volatile paths). Both machine-set values are terminal
+     * exactly like a human "accepted" -- the loop must not bug them or re-run
+     * them. They are machine-set rather than human-chosen, but they share the
+     * terminal no-auto-loop semantics, which is what this set gates. Both remain
+     * human-overridable via the standard disposition PATCH path (see
+     * {@link #EXPECTED_NET_NEW} / {@link #EXPECTED_VOLATILE}); membership here
+     * never blocks an override.</p>
      */
     public static final Set<String> TERMINAL_HUMAN_DISPOSITIONS = Set.of(
-        ACCEPTED, WONT_REPORT, INTENTIONAL_DEVIATION, EXPECTED_NET_NEW
+        ACCEPTED, WONT_REPORT, INTENTIONAL_DEVIATION, EXPECTED_NET_NEW, EXPECTED_VOLATILE
     );
 
     private MigrationReconciliationBreakStatus() {

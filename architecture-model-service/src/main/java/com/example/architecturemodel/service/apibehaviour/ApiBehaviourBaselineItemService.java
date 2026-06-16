@@ -94,6 +94,7 @@ public class ApiBehaviourBaselineItemService {
             .requestJson(request.requestJson())
             .responseStatus(request.responseStatus())
             .responseJson(request.responseJson())
+            .volatilePathsJson(request.volatilePathsJson())
             .businessNotes(request.businessNotes())
             .build();
 

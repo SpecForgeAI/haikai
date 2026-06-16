@@ -4,7 +4,11 @@
  * Spec: 2026-06-14 Migration Reconciliation + Bug Loop (Spec 4 of 4) --
  * Task Group 5. Extended 2026-06-14 Non-Reconciling Work at Reconcile Time
  * (D6) -- Task Group 5: the `expected_net_new` recognised badge + matched
- * work-item reference.
+ * work-item reference. Extended 2026-06-16 Reconcile-Time Determinism &
+ * Volatile-Value Handling -- Task Group 5: the volatile JSON-Pointer path list
+ * + `volatility_source` badge on the break detail, the `info` down-rank marker,
+ * the in-UI declare-volatile control, and the `expected_volatile` run-summary
+ * count alongside `expected_net_new`.
  *
  * The run-scoped reconciliation REVIEW surface on the Migration Delivery
  * Dashboard, sitting directly below the Spec-3 Migrate / run-progress panel
@@ -43,6 +47,18 @@
  *      `detail_json.net_new_match`), NOT hidden, while staying overridable so a
  *      human can re-classify a wrongly-matched endpoint via the existing
  *      disposition path (D7).
+ *   6. (2026-06-16) A break carrying volatility metadata -- the validation
+ *      service tagged tolerated value/order diff entries with a `volatilitySource`
+ *      and the gateway auto-dispositioned it to `expected_volatile` (terminal,
+ *      overridable) or down-ranked it to `info` (a heuristic-only guess; stays
+ *      open) -- shows its full normalised JSON-Pointer path list (collapsible if
+ *      large) plus a plain `volatility_source` label/badge in the break detail,
+ *      reusing the existing metadata styling. A reviewer can DECLARE further
+ *      volatile paths on the operation inline (`declareVolatilePaths`); the
+ *      declaration applies retroactively to the run and the list refreshes so the
+ *      re-disposition shows. The reconcile run summary DISPLAYS the
+ *      `expected_volatile` count alongside `expected_net_new` (displayed count
+ *      only -- no threshold / alert).
  *
  * Presentational: every client is a test-seam prop (defaults to the real api
  * client) so the dashboard test renders deterministically + offline. The panel
@@ -54,6 +70,7 @@ import {
   getReconciliationBreaks as defaultGetBreaks,
   sendReconciliationBreaksAsBugs as defaultSendBreaks,
   disposeReconciliationBreaks as defaultDisposeBreaks,
+  declareVolatilePaths as defaultDeclareVolatile,
   registerTargetCredentials as defaultRegisterCreds,
   BREAK_DISPOSITION,
   TERMINAL_BREAK_STATES,
@@ -61,6 +78,9 @@ import {
   type ReconciliationDisposition,
 } from '../../../api/migrationReconciliationApi';
 import styles from './MigrationDeliveryDashboard.module.css';
+
+/** Above this path count the volatile-path list collapses behind a toggle. */
+const VOLATILE_PATHS_COLLAPSE_THRESHOLD = 8;
 
 // ============================================================================
 // Helpers
@@ -71,11 +91,23 @@ function breakDetail(b: MigrationReconciliationBreakDto): {
   method: string;
   path: string;
   summary: string;
+  /** The canonical `<METHOD> <path>` operation key the gateway matches on. */
+  operation: string;
 } {
   const d = (b.detail_json ?? {}) as Record<string, unknown>;
+  const method = typeof d.method === 'string' ? d.method : '';
+  const path = typeof d.path === 'string' ? d.path : '';
+  // Prefer the canonical operation key the gateway wrote (`<METHOD> <path>`);
+  // fall back to a reconstruction from method/path. The gateway matches the
+  // declare operation case-insensitively, so either form is accepted.
+  const operation =
+    typeof d.operation === 'string' && d.operation.trim().length > 0
+      ? d.operation
+      : `${method} ${path}`.trim();
   return {
-    method: typeof d.method === 'string' ? d.method : '',
-    path: typeof d.path === 'string' ? d.path : '',
+    method,
+    path,
+    operation,
     summary:
       typeof d.summary === 'string'
         ? d.summary
@@ -117,6 +149,62 @@ function netNewMatch(b: MigrationReconciliationBreakDto): {
   };
 }
 
+/**
+ * Read the volatility metadata off a break's `detail_json` (2026-06-16). The
+ * gateway copies the validation-service diff_item's
+ * `body_diff_json = { entries, volatility_sources? }` verbatim onto
+ * `detail_json.body_diff_json` at break-creation; the per-entry tag is
+ * `entries[].volatilitySource` (present only on TOLERATED value/order entries)
+ * and the volatile JSON-Pointer paths are those entries' `path` values. The
+ * DISTINCT trust tags are surfaced on `body_diff_json.volatility_sources`.
+ *
+ * Returns the volatile path list (de-duplicated, normalised JSON-Pointers) plus
+ * the distinct `volatility_source` tags. Tolerates both the nested
+ * `body_diff_json` shape and snake/camel field names (belt-and-braces for the
+ * snake_case AMS wire vs the gateway-native camel). Empty arrays mean the break
+ * carries no volatility metadata (strict / `null` envelope) -- nothing renders.
+ */
+function readBreakVolatility(b: MigrationReconciliationBreakDto): {
+  paths: string[];
+  sources: string[];
+} {
+  const d = (b.detail_json ?? {}) as Record<string, unknown>;
+  const bodyDiff = (d.body_diff_json ?? d.bodyDiffJson ?? null) as
+    | Record<string, unknown>
+    | null;
+
+  const rawSources =
+    (bodyDiff?.volatility_sources as unknown) ??
+    (bodyDiff?.volatilitySources as unknown) ??
+    (d.volatility_sources as unknown) ??
+    (d.volatilitySources as unknown) ??
+    null;
+  const sources: string[] = Array.isArray(rawSources)
+    ? (rawSources.filter((s) => typeof s === 'string') as string[])
+    : [];
+
+  // The volatile paths == the `path` of any entry carrying a volatilitySource
+  // tag (the comparator only tags tolerated VALUE/ORDER entries). De-duplicate
+  // while preserving first-seen order.
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  const entries = (bodyDiff?.entries as unknown) ?? null;
+  if (Array.isArray(entries)) {
+    for (const e of entries) {
+      if (!e || typeof e !== 'object') continue;
+      const entry = e as Record<string, unknown>;
+      const tag = entry.volatilitySource ?? entry.volatility_source ?? null;
+      const path = entry.path;
+      if (typeof tag === 'string' && typeof path === 'string' && !seen.has(path)) {
+        seen.add(path);
+        paths.push(path);
+      }
+    }
+  }
+
+  return { paths, sources };
+}
+
 /** Human label for a disposition status. */
 function dispositionLabel(status: string | null | undefined): string {
   switch (status) {
@@ -138,6 +226,10 @@ function dispositionLabel(status: string | null | undefined): string {
       return 'Intentional deviation';
     case BREAK_DISPOSITION.EXPECTED_NET_NEW:
       return 'Expected — net_new endpoint';
+    case BREAK_DISPOSITION.EXPECTED_VOLATILE:
+      return 'Expected — volatile';
+    case BREAK_DISPOSITION.INFO:
+      return 'Info — heuristic (open)';
     default:
       return status ?? 'unknown';
   }
@@ -147,8 +239,10 @@ function dispositionLabel(status: string | null | undefined): string {
  * Map a disposition status to a distinct badge class. The three re-reconcile
  * outcomes get their own purpose-built classes (resolved-green /
  * still-looping-amber / escalated-red); the D6 auto-recognised additive
- * net_new endpoint gets its own recognised-state class; the other states reuse
- * the dashboard's existing chip palette.
+ * net_new endpoint gets its own recognised-state class; the 2026-06-16
+ * `expected_volatile` reuses the same recognised-state palette (machine-set,
+ * overridable) and `info` reuses the neutral chip; the other states reuse the
+ * dashboard's existing chip palette. No NEW colour system is introduced.
  */
 function dispositionBadgeClass(status: string | null | undefined): string {
   switch (status) {
@@ -160,12 +254,15 @@ function dispositionBadgeClass(status: string | null | undefined): string {
       return styles.badgeCircuitBroken ?? styles.badgeSpecFailed ?? styles.badge;
     case BREAK_DISPOSITION.EXPECTED_NET_NEW:
       return styles.badgeExpectedNetNew ?? styles.badgeNetNew ?? styles.badge;
+    case BREAK_DISPOSITION.EXPECTED_VOLATILE:
+      return styles.badgeExpectedNetNew ?? styles.badgeNetNew ?? styles.badge;
     case BREAK_DISPOSITION.SENT_AS_BUG:
       return styles.badgeSpecGenerated ?? styles.badge;
     case BREAK_DISPOSITION.ACCEPTED:
     case BREAK_DISPOSITION.WONT_REPORT:
     case BREAK_DISPOSITION.INTENTIONAL_DEVIATION:
       return styles.badgeNotSaved ?? styles.badge;
+    case BREAK_DISPOSITION.INFO:
     default:
       return styles.badge;
   }
@@ -186,12 +283,27 @@ function isAutoRecognisedNetNew(b: MigrationReconciliationBreakDto): boolean {
 }
 
 /**
- * A break is SELECTABLE for the human gate iff it is not terminal, OR it is an
- * auto-recognised net_new endpoint -- the latter is machine-set, so a human may
- * still re-classify a wrong match via the existing disposition path (D7).
+ * A break is auto-recognised volatile (2026-06-16) iff the gateway set its
+ * disposition to `expected_volatile`. Terminal in the gateway/idempotent sense
+ * but MACHINE-set, so the review surface keeps it overridable -- a human can
+ * re-classify a wrongly-tolerated value back to `open` via the existing
+ * disposition path.
+ */
+function isAutoRecognisedVolatile(b: MigrationReconciliationBreakDto): boolean {
+  return b.disposition_status === BREAK_DISPOSITION.EXPECTED_VOLATILE;
+}
+
+/**
+ * A break is SELECTABLE for the human gate iff it is not terminal, OR it is a
+ * machine-set auto-recognised state (`expected_net_new` / `expected_volatile`)
+ * -- the latter stay selectable so a human may re-classify a wrong recognition
+ * via the existing disposition path. `info` is non-terminal so it is selectable
+ * already.
  */
 function isSelectable(b: MigrationReconciliationBreakDto): boolean {
-  return !isTerminal(b) || isAutoRecognisedNetNew(b);
+  return (
+    !isTerminal(b) || isAutoRecognisedNetNew(b) || isAutoRecognisedVolatile(b)
+  );
 }
 
 /** A break is escalated (needs human) iff circuit-broken or flagged. */
@@ -226,9 +338,166 @@ export interface MigrationDeliveryReconciliationPanelProps {
   sendBreaksFn?: typeof defaultSendBreaks;
   /** Test seam: override the dispose. Defaults to the real client. */
   disposeBreaksFn?: typeof defaultDisposeBreaks;
+  /** Test seam: override the declare-volatile. Defaults to the real client. */
+  declareVolatileFn?: typeof defaultDeclareVolatile;
   /** Test seam: override the target-credentials register. */
   registerCredsFn?: typeof defaultRegisterCreds;
 }
+
+// ============================================================================
+// Volatility detail sub-component (the volatile-path list + source badge)
+// ============================================================================
+
+/**
+ * Render a break's volatile JSON-Pointer path list + plain `volatility_source`
+ * badge(s) plus the inline declare-volatile control, reusing the existing
+ * metadata styling. Collapses the path list behind a toggle above the threshold.
+ *
+ * The path list + source badge render only when the break already carries
+ * volatility metadata (or is the `info` down-rank). The DECLARE control renders
+ * whenever the break is `declarable` (a non-human-terminal break a reviewer can
+ * still act on) -- a reviewer needs to be able to declare a path that is NOT yet
+ * tolerated. When the break has neither volatility metadata nor is declarable,
+ * nothing renders.
+ */
+const BreakVolatilityDetail: React.FC<{
+  breakRow: MigrationReconciliationBreakDto;
+  /** Whether the inline declare-volatile control should be offered. */
+  declarable: boolean;
+  busy: boolean;
+  onDeclare: (operation: string, paths: string[]) => void;
+}> = ({ breakRow, declarable, busy, onDeclare }) => {
+  const id = breakRow.id ?? '';
+  const { paths, sources } = useMemo(
+    () => readBreakVolatility(breakRow),
+    [breakRow],
+  );
+  const { operation } = breakDetail(breakRow);
+  const isInfo = breakRow.disposition_status === BREAK_DISPOSITION.INFO;
+
+  const [expanded, setExpanded] = useState(false);
+  const [declareInput, setDeclareInput] = useState('');
+
+  const collapsible = paths.length > VOLATILE_PATHS_COLLAPSE_THRESHOLD;
+  const visiblePaths =
+    collapsible && !expanded
+      ? paths.slice(0, VOLATILE_PATHS_COLLAPSE_THRESHOLD)
+      : paths;
+
+  // The volatility METADATA block (path list + source badge + the info marker)
+  // shows when the break actually carries volatility info or is down-ranked.
+  const hasVolatility = paths.length > 0 || sources.length > 0 || isInfo;
+  // The DECLARE control shows whenever the reviewer can still act AND there is a
+  // concrete operation to declare against.
+  const showDeclare = declarable && operation.length > 0;
+
+  const handleDeclareSubmit = useCallback(() => {
+    const declared = declareInput
+      .split(/[\n,]/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    if (declared.length === 0 || !operation) return;
+    onDeclare(operation, declared);
+    setDeclareInput('');
+  }, [declareInput, operation, onDeclare]);
+
+  if (!hasVolatility && !showDeclare) return null;
+
+  return (
+    <div
+      className={styles.needsAttentionReason}
+      data-testid={`mdd-recon-break-volatility-${id}`}
+    >
+      {hasVolatility && (
+        <div>
+          {isInfo
+            ? 'Down-ranked to info — justified only by a conservative heuristic (stays open for review).'
+            : 'Tolerated as expected non-determinism on the volatile path(s) below — the oracle is unchanged.'}
+        </div>
+      )}
+
+      {/* The plain volatility_source label/badge(s) -- no new colour system. */}
+      {sources.length > 0 && (
+        <div data-testid={`mdd-recon-break-volatility-sources-${id}`}>
+          {sources.map((src) => (
+            <span
+              key={src}
+              className={styles.badge}
+              data-testid={`mdd-recon-break-volatility-source-${id}-${src}`}
+              data-volatility-source={src}
+            >
+              {src}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* The full normalised JSON-Pointer volatile-path list (collapsible). */}
+      {paths.length > 0 && (
+        <ul
+          className={styles.defineTestsBannerList}
+          data-testid={`mdd-recon-break-volatility-paths-${id}`}
+        >
+          {visiblePaths.map((p) => (
+            <li
+              key={p}
+              data-testid={`mdd-recon-break-volatility-path-${id}-${p}`}
+            >
+              <code>{p}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+      {collapsible && (
+        <button
+          type="button"
+          className={styles.headerNavLink}
+          data-testid={`mdd-recon-break-volatility-toggle-${id}`}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded
+            ? 'Show fewer paths'
+            : `Show all ${paths.length} volatile paths`}
+        </button>
+      )}
+
+      {/* The in-UI declare-volatile control (same surface as the override). */}
+      {showDeclare && (
+        <div
+          className={styles.needsAttentionActions}
+          data-testid={`mdd-recon-break-declare-${id}`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <input
+            type="text"
+            className={styles.testFilterToggle}
+            data-testid={`mdd-recon-break-declare-input-${id}`}
+            placeholder="/path/to/declare, /another"
+            value={declareInput}
+            disabled={busy}
+            onChange={(e) => setDeclareInput(e.target.value)}
+            aria-label={`Declare volatile JSON-Pointer paths on ${operation}`}
+          />
+          <button
+            type="button"
+            className={styles.bulkButton}
+            data-testid={`mdd-recon-break-declare-button-${id}`}
+            disabled={busy || declareInput.trim().length === 0}
+            onClick={handleDeclareSubmit}
+            title="Declare these JSON-Pointer paths volatile on this operation. Applied retroactively to this run; the oracle is unchanged."
+          >
+            Declare volatile
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ============================================================================
 // Component
@@ -245,6 +514,7 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
   fetchBreaksFn = defaultGetBreaks,
   sendBreaksFn = defaultSendBreaks,
   disposeBreaksFn = defaultDisposeBreaks,
+  declareVolatileFn = defaultDeclareVolatile,
   registerCredsFn = defaultRegisterCreds,
 }) => {
   const [breaks, setBreaks] = useState<MigrationReconciliationBreakDto[]>([]);
@@ -277,7 +547,7 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
   }, [loadBreaks]);
 
   // Drop any now-unselectable ids from the selection whenever breaks change
-  // (an auto-recognised net_new break stays selectable for human override).
+  // (an auto-recognised net_new / volatile break stays selectable for override).
   useEffect(() => {
     setSelected((prev) => {
       const stillSelectable = new Set(
@@ -300,6 +570,22 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
 
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
   const hasSelection = selectedIds.length > 0;
+
+  // ----- Run-summary disposition counts (displayed only -- no threshold) ----
+  const expectedNetNewCount = useMemo(
+    () =>
+      breaks.filter(
+        (b) => b.disposition_status === BREAK_DISPOSITION.EXPECTED_NET_NEW,
+      ).length,
+    [breaks],
+  );
+  const expectedVolatileCount = useMemo(
+    () =>
+      breaks.filter(
+        (b) => b.disposition_status === BREAK_DISPOSITION.EXPECTED_VOLATILE,
+      ).length,
+    [breaks],
+  );
 
   // ----- The human gate: Send selected breaks as ONE bug report -----------
   const handleSend = useCallback(async () => {
@@ -375,6 +661,36 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
     loadBreaks,
   ]);
 
+  // ----- Declare volatile paths (in-UI, retroactive -- 2026-06-16, Q3) ------
+  const handleDeclareVolatile = useCallback(
+    async (operation: string, paths: string[]) => {
+      if (busy || !operation || paths.length === 0) return;
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        const result = await declareVolatileFn(projectId, runId, {
+          operation,
+          declaredPaths: paths,
+        });
+        setNotice(
+          `Declared ${paths.length} volatile path${paths.length === 1 ? '' : 's'} on "${operation}". ` +
+            `Re-evaluated ${result.reEvaluated} open break${result.reEvaluated === 1 ? '' : 's'}: ` +
+            `${result.expectedVolatile} now expected (volatile), ${result.info} down-ranked to info. ` +
+            'Applied retroactively to this run; the oracle is unchanged.',
+        );
+        await loadBreaks();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Failed to declare the volatile paths',
+        );
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, declareVolatileFn, projectId, runId, loadBreaks],
+  );
+
   // ----- Register target credentials (CD-2 pause re-entry) ----------------
   const handleRegisterCreds = useCallback(async () => {
     if (busy) return;
@@ -431,9 +747,23 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
         breaks and either send them as a bug for the external service to fix, or
         dispose them as an intentional / accepted deviation (not sent — the oracle
         is never changed). A break recognised as a deliberately-added net_new
-        endpoint is auto-marked "Expected — net_new endpoint"; you can still
-        re-classify it if the match was wrong.
+        endpoint is auto-marked "Expected — net_new endpoint"; a break that
+        diverged only on legitimately-volatile paths is auto-marked "Expected —
+        volatile". You can still re-classify either if the recognition was wrong.
       </p>
+
+      {/* ----- Run summary: displayed disposition counts (no threshold) ----- */}
+      <div
+        className={styles.needsAttentionReason}
+        data-testid="mdd-recon-run-summary"
+      >
+        <span data-testid="mdd-recon-summary-expected-net-new">
+          Expected — net_new: {expectedNetNewCount}
+        </span>{' '}
+        <span data-testid="mdd-recon-summary-expected-volatile">
+          Expected — volatile: {expectedVolatileCount}
+        </span>
+      </div>
 
       {/* ----- needs_target_credentials pause (CD-2) ----- */}
       {needsCredentials && (
@@ -583,6 +913,16 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
                         {match.operation ? ` via ${match.operation}` : ''}.
                       </div>
                     )}
+                    {/* 2026-06-16: the volatile JSON-Pointer path list +
+                        volatility_source badge + the in-UI declare control. */}
+                    <BreakVolatilityDetail
+                      breakRow={b}
+                      declarable={isSelectable(b)}
+                      busy={busy}
+                      onDeclare={(op, paths) =>
+                        void handleDeclareVolatile(op, paths)
+                      }
+                    />
                   </td>
                   <td>
                     <span

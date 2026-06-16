@@ -777,11 +777,35 @@ export type AdvanceDecision =
  * the matched run-item's run -- so the door passes company/project for
  * traceability only and does NOT need the AMS project UUID.
  */
+/**
+ * The shared build-results outcome enum, reconciled with the external
+ * implement-verify-service (`src/verification/outcomes.py`). That service
+ * deliberately split the old `failed` into three materially-different states:
+ *   - `error`        -- nothing built (infra/build error);
+ *   - `fix_unserved` -- a bug fix was kept (tests green) but the redeploy failed
+ *                       -- the fix EXISTS and needs human review (bug path only);
+ *   - `not_fixed`    -- no fix kept -- human review / re-file (bug path only).
+ * `failed` is retained for backward-compatibility. Control flow folds every
+ * non-`implemented`/non-`deployed` value into the existing halt/escalate path,
+ * but the RAW value is preserved on the run-item / break record for traceability.
+ */
+export type BuildResultOutcome =
+  | 'implemented'
+  | 'deployed'
+  | 'failed'
+  | 'error'
+  | 'rejected'
+  | 'fix_unserved'
+  | 'not_fixed';
+
+/** Bug-path subset (a bug callback never reports `implemented`). */
+export type BugResultOutcome = Exclude<BuildResultOutcome, 'implemented'>;
+
 export interface BuildResultAdvanceInput {
   company: string;
   project: string;
   jobId: string;
-  outcome: 'implemented' | 'deployed' | 'failed' | 'rejected';
+  outcome: BuildResultOutcome;
   prUrl?: string | null;
   targetBaseUrl?: string | null;
   summary?: string | null;
@@ -795,8 +819,11 @@ export interface BuildResultAdvanceInput {
  *     NEXT spec (or, if it was the final spec, the run is fully implemented);
  *   - `deployed` (final spec) -> mark the run deployed + record
  *     `target_base_url` (leaving a CLEAN reconciliation hand-off seam for Spec 4);
- *   - `failed` / `rejected` -> halt the run + record the error against the
- *     run-item + work item (per-item failure isolation; surface, don't abort).
+ *   - any other terminal outcome (`failed` / `error` / `rejected` / `fix_unserved`
+ *     / `not_fixed`) -> halt the run + record the error against the run-item + work
+ *     item (per-item failure isolation; surface, don't abort). `rejected` maps to
+ *     the REJECTED run-item status; every other halting outcome maps to FAILED,
+ *     with the raw outcome preserved on the record.
  *
  * IDEMPOTENT (CD-6): a duplicate callback for an already-terminal run-item is a
  * no-op. Returns the decision so the door can log it.
@@ -847,14 +874,19 @@ export async function advanceRunOnBuildResult(
     return 'noop_idempotent';
   }
 
-  if (outcome === 'failed' || outcome === 'rejected') {
+  // Any terminal outcome that is not implemented/deployed halts the run. The
+  // external service reports `error` (build error) on the job path and may report
+  // `fix_unserved` / `not_fixed` on the bug path; all fold here. Only `rejected`
+  // takes the REJECTED status -- everything else is FAILED. The raw outcome is
+  // preserved on the run-item record for traceability.
+  if (outcome !== 'implemented' && outcome !== 'deployed') {
     await haltRunForItem(
       deps,
       scope,
       runId,
       runItemId,
       item,
-      outcome === 'failed' ? RUN_ITEM_STATUS.FAILED : RUN_ITEM_STATUS.REJECTED,
+      outcome === 'rejected' ? RUN_ITEM_STATUS.REJECTED : RUN_ITEM_STATUS.FAILED,
       input.summary ?? `Build-results reported ${outcome}`,
       outcome
     );
@@ -947,7 +979,10 @@ export function kickFullReconcile(
  * (project + pinned baseline + target_base_url), then:
  *   - `deployed` -> SCOPED re-reconcile + circuit breaker (run DETACHED -- the
  *     replay is long; the door 202s immediately);
- *   - `failed`/`rejected` -> terminal escalation (run INLINE -- no replay).
+ *   - any non-`deployed` outcome (`failed`/`rejected`/`error`/`fix_unserved`/
+ *     `not_fixed`) -> terminal escalation to human review (run INLINE -- no
+ *     replay). The raw outcome is preserved so `fix_unserved` (a kept-but-unserved
+ *     fix the human must rescue) stays distinguishable from `not_fixed`.
  *
  * Returns the kind of dispatch so the door can log it. Never throws.
  */
@@ -955,7 +990,7 @@ export interface BugResultAdvanceInput {
   company: string;
   project: string;
   bugId: string;
-  outcome: 'deployed' | 'failed' | 'rejected';
+  outcome: BugResultOutcome;
   targetBaseUrl?: string | null;
   summary?: string | null;
 }
@@ -1024,8 +1059,9 @@ export async function advanceRunOnBugResult(
     summary: input.summary ?? null,
   };
 
-  if (input.outcome === 'failed' || input.outcome === 'rejected') {
-    // No replay -- escalate inline (fast).
+  if (input.outcome !== 'deployed') {
+    // No replay -- escalate inline (fast). Covers failed/rejected plus the
+    // external service's richer terminal outcomes (error/fix_unserved/not_fixed).
     const result: BugCallbackResult = await handler(callArgs, reconciliationDeps);
     logger.info('[diag-gateway] migration_reconciliation bug_callback_inline', {
       projectId,
@@ -1254,7 +1290,9 @@ async function haltRunForItem(
   item: MigrationExecutionRunItem,
   itemStatus: string,
   errorDetail: string,
-  outcome: 'failed' | 'rejected' = 'failed'
+  // The raw terminal outcome (`failed` | `error` | `rejected` | `fix_unserved`
+  // | `not_fixed`); recorded verbatim on the run-item for traceability.
+  outcome: string = 'failed'
 ): Promise<void> {
   logger.warn('[diag-gateway] migration_execution_driver halt_run', {
     projectId: scope.projectId,

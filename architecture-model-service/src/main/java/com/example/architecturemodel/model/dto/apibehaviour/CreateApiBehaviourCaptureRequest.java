@@ -7,6 +7,15 @@ import java.util.UUID;
 /**
  * Request body for creating an {@code api_behaviour_captures} row.
  *
+ * <p>{@code volatilePathsJson} is OPTIONAL: the capture-time volatility probe
+ * (in {@code execute_http_request}) measures the volatility envelope
+ * {@code { paths, volatility_source, k }} and sends it on the CREATE so it can
+ * be carried forward onto the source baseline item on Save-as-baseline.
+ * Write-once at capture time; omitted / {@code null} =&gt; strict comparison.
+ * snake_case wire ({@code volatile_paths_json}, AMS default). Spec:
+ * Reconcile-Time Determinism &amp; Volatile-Value Handling (2026-06-16) —
+ * FU-2.</p>
+ *
  * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2</p>
  */
 public record CreateApiBehaviourCaptureRequest(
@@ -29,5 +38,6 @@ public record CreateApiBehaviourCaptureRequest(
     Instant capturedAt,
     Boolean accepted,
     Instant acceptedAt,
-    String reviewerNotes
+    String reviewerNotes,
+    Map<String, Object> volatilePathsJson
 ) {}

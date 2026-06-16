@@ -174,3 +174,43 @@ export const AMVS_PAYLOAD_CTX_SESSION_TOKEN_CAP: number =
  */
 export const TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT: number =
   parseInt(process.env.TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT || '10', 10);
+
+/**
+ * Number of HTTP replays the capture-time volatility probe performs against
+ * the current system to MEASURE which JSON paths legitimately vary. The
+ * probe replays the just-captured scenario `k` times (HTTP-only, no LLM) and
+ * self-diffs the responses; any path that differs across the repeats is a
+ * measured volatile path. A full `k`-repeat probe is tagged `probed`.
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * Task Group 2 (Q1: `k = 3` default).
+ * Default: 3.
+ */
+export const VOLATILITY_PROBE_REPEATS: number =
+  parseInt(process.env.VOLATILITY_PROBE_REPEATS || '3', 10);
+
+/**
+ * Wall-clock budget (ms) for the WHOLE volatility probe across all `k`
+ * replays. On exceed, the probe aborts and records a PARTIAL result from the
+ * replays that DID complete (tagged `probed_partial`, storing the
+ * completed-repeat count). A `probed_partial` envelope is trusted exactly
+ * like a full probe -- it is NOT down-ranked.
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * Task Group 2 (Q1(a) probe budget, Q2 partial handling).
+ * Default: 10000 (10 seconds across all repeats).
+ */
+export const VOLATILITY_PROBE_BUDGET_MS: number =
+  parseInt(process.env.VOLATILITY_PROBE_BUDGET_MS || '10000', 10);
+
+/**
+ * Inter-replay spacing (ms) applied BETWEEN volatility-probe replays so
+ * per-second clock-bucket fields (e.g. a timestamp truncated to the second)
+ * surface across the repeats rather than collapsing into a single bucket.
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * Task Group 2 (Q1(b) inter-replay spacing).
+ * Default: 250.
+ */
+export const VOLATILITY_PROBE_SPACING_MS: number =
+  parseInt(process.env.VOLATILITY_PROBE_SPACING_MS || '250', 10);

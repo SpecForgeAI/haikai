@@ -87,7 +87,7 @@ function classifyStatusDriftSeverity(
   return 'low';
 }
 
-/** Count shape-diff entries by op for the body_shape_drift summary line. */
+/** Count shape-diff entries by kind for the body_shape_drift summary line. */
 function summariseBodyShapeDiff(bodyDiffJson: Record<string, unknown> | null): {
   added: number;
   removed: number;
@@ -102,10 +102,14 @@ function summariseBodyShapeDiff(bodyDiffJson: Record<string, unknown> | null): {
       : [];
   for (const raw of entries) {
     if (!raw || typeof raw !== 'object') continue;
-    const op = (raw as { op?: unknown }).op;
-    if (op === 'added' || op === 'key_added') added += 1;
-    else if (op === 'removed' || op === 'key_removed') removed += 1;
-    else if (op === 'type_changed' || op === 'type_change') typeChanges += 1;
+    // The producer (jsonShapeComparator.walk) tags every entry with `kind`:
+    // key_added | key_removed | type_changed | value_changed. (value_changed is
+    // a value drift, counted separately by countBodyValueDiffs.) This previously
+    // read a non-existent `op` field, so every shape-drift summary reported 0/0/0.
+    const kind = (raw as { kind?: unknown }).kind;
+    if (kind === 'key_added') added += 1;
+    else if (kind === 'key_removed') removed += 1;
+    else if (kind === 'type_changed') typeChanges += 1;
   }
   return { added, removed, typeChanges };
 }

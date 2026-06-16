@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { archModelClient as defaultArchModelClient } from '../services/archModelClient';
 import { runManager } from '../services/runManager';
 import { runDiff as defaultRunDiff, type DiffRunnerDeps } from '../services/diffRunner';
+import { resolveNonDeterministicEndpointKeys as defaultResolveNdKeys } from '../services/nonDeterministicEndpointKeys';
 
 /**
  * Diff engine action endpoints. Mounted under the same
@@ -41,6 +42,14 @@ export interface DiffActionsDeps {
    * the runner without actually executing it.
    */
   spawnRunner?: (diffId: string, deps?: DiffRunnerDeps) => Promise<void>;
+  /**
+   * Override for the `non_deterministic_endpoint` -> `${METHOD}|${path}`
+   * bridge that populates the runner's `nonDeterministicEndpointKeys` seam
+   * (Spec 2026-06-16 FU-1). Tests inject a stub returning a fixed set; the
+   * default resolves it from the discovery signal. Fail-soft: a rejection is
+   * caught and the diff runs strict (G1).
+   */
+  resolveNonDeterministicEndpointKeys?: typeof defaultResolveNdKeys;
 }
 
 function extractProjectId(req: Request): string | null {
@@ -75,6 +84,40 @@ export function buildDiffActionsRouter(
   const router = Router({ mergeParams: true });
   const archModelClient = deps.archModelClient ?? defaultArchModelClient;
   const spawnRunner = deps.spawnRunner ?? defaultRunDiff;
+  const resolveNonDeterministicEndpointKeys =
+    deps.resolveNonDeterministicEndpointKeys ?? defaultResolveNdKeys;
+
+  /**
+   * Resolve the `nonDeterministicEndpointKeys` seam for a diff (FU-1). Lists
+   * the source baseline items + resolves the discovery signal into concrete
+   * `${METHOD}|${path}` keys. Fail-soft: ANY error yields an empty set so the
+   * diff runs strict (the G1 default) -- a bad / unresolvable signal can never
+   * suppress a real break.
+   */
+  const buildNonDeterministicEndpointKeys = async (
+    projectId: string,
+    architectureId: string,
+    sourceBaselineId: string,
+  ): Promise<Set<string>> => {
+    try {
+      const sourceItems = await archModelClient.listBaselineItems(
+        projectId,
+        sourceBaselineId,
+      );
+      return await resolveNonDeterministicEndpointKeys(
+        projectId,
+        architectureId,
+        sourceItems,
+      );
+    } catch (err) {
+      console.warn(
+        `[diffActions] op=nd_keys_resolve_failed source=${sourceBaselineId} err=${
+          err instanceof Error ? err.message : String(err)
+        } -- diff will run strict`,
+      );
+      return new Set<string>();
+    }
+  };
 
   // ----------------------------------------------------------------------
   // POST /api/diffs
@@ -140,14 +183,24 @@ export function buildDiffActionsRouter(
         // status.
       }
       // Fire-and-forget the runner. Per-run errors are captured into the
-      // diff row by the runner itself.
-      spawnRunner(diff.id).catch((err) => {
-        console.error(
-          `[diffActions] runDiff failed for ${diff.id}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      });
+      // diff row by the runner itself. Resolve the `endpoint_signal`
+      // volatility keys FIRST (FU-1) so the in-process diff is value-tolerant
+      // for `non_deterministic_endpoint`-flagged operations; fail-soft = strict.
+      buildNonDeterministicEndpointKeys(
+        projectId,
+        body.architectureId,
+        body.sourceBaselineId,
+      )
+        .then((nonDeterministicEndpointKeys) =>
+          spawnRunner(diff.id, { nonDeterministicEndpointKeys }),
+        )
+        .catch((err) => {
+          console.error(
+            `[diffActions] runDiff failed for ${diff.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
 
       return res.status(202).json({ diffId: diff.id, status: 'computing' });
     } catch (err) {
@@ -219,13 +272,21 @@ export function buildDiffActionsRouter(
           currentStatus: 'computing',
         });
       }
-      spawnRunner(diffId).catch((err) => {
-        console.error(
-          `[diffActions] runDiff (recompute) failed for ${diffId}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      });
+      buildNonDeterministicEndpointKeys(
+        projectId,
+        diff.architecture_id,
+        diff.source_baseline_id,
+      )
+        .then((nonDeterministicEndpointKeys) =>
+          spawnRunner(diffId, { nonDeterministicEndpointKeys }),
+        )
+        .catch((err) => {
+          console.error(
+            `[diffActions] runDiff (recompute) failed for ${diffId}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
 
       return res.status(202).json({ diffId, status: 'computing' });
     } catch (err) {

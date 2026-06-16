@@ -194,7 +194,15 @@ function buildExecutorAlwaysOk(): NonNullable<TargetReplayDeps['createHttpExecut
 
 function buildDeps(opts: {
   archMock: Record<string, unknown>;
-  runDiffFn?: (diffId: string) => Promise<void>;
+  runDiffFn?: (diffId: string, deps?: unknown) => Promise<void>;
+  // FU-1: stub the non_deterministic_endpoint -> METHOD|path bridge so the
+  // auto-diff does not hit the (intentionally narrow) arch mock. Defaults to
+  // "no signal" = strict.
+  resolveNonDeterministicEndpointKeys?: (
+    projectId: string,
+    architectureId: string,
+    sourceItems: unknown[],
+  ) => Promise<Set<string>>;
 }): TargetReplayDeps {
   const secretsStore = new SecretsStore();
   secretsStore.set({
@@ -215,6 +223,10 @@ function buildDeps(opts: {
     runManager,
     createHttpExecutor: buildExecutorAlwaysOk(),
     runDiffFn: opts.runDiffFn,
+    resolveNonDeterministicEndpointKeys:
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (opts.resolveNonDeterministicEndpointKeys ??
+        (async () => new Set<string>())) as any,
     now: () => 1700000000000,
   };
 }
@@ -244,7 +256,11 @@ test('after replay finalises the target baseline, runDiff is invoked exactly onc
   // replay returned -- give it a tick.
   await new Promise((r) => setTimeout(r, 5));
   expect(runDiffFn).toHaveBeenCalledTimes(1);
-  expect(runDiffFn).toHaveBeenCalledWith('diff-1');
+  // FU-1: the auto-diff now threads the resolved (here empty = strict)
+  // `nonDeterministicEndpointKeys` seam as the second arg.
+  expect(runDiffFn).toHaveBeenCalledWith('diff-1', {
+    nonDeterministicEndpointKeys: new Set<string>(),
+  });
 });
 
 // ---------------------------------------------------------------------------

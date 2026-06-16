@@ -148,7 +148,8 @@ public final class ApiBehaviourMapper {
             entity.getCapturedAt(),
             entity.getAccepted(),
             entity.getAcceptedAt(),
-            entity.getReviewerNotes()
+            entity.getReviewerNotes(),
+            entity.getVolatilePathsJson()
         );
     }
 
@@ -205,6 +206,7 @@ public final class ApiBehaviourMapper {
             entity.getRequestJson(),
             entity.getResponseStatus(),
             entity.getResponseJson(),
+            entity.getVolatilePathsJson(),
             entity.getBusinessNotes(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()

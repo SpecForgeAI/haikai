@@ -8,10 +8,15 @@
  * core (so the door handler stays thin and the validation / token / dispatch
  * rules are asserted directly).
  *
- * Contract (`BuildResultCallback`, from the pinned openapi.yaml):
+ * Contract (`BuildResultCallback`, see
+ * `docs/reconciliation-integration/migration-reconciliation-integration.md`):
  *   - required `{ company, project, outcome }`;
  *   - exactly one of `job_id` / `bug_id`;
- *   - `outcome in { implemented, deployed, failed, rejected }`;
+ *   - `outcome in { implemented, deployed, failed, error, rejected,
+ *     fix_unserved, not_fixed }` -- the reconciled enum shared with the external
+ *     implement-verify-service (`src/verification/outcomes.py`). `failed` is kept
+ *     for back-compat; the service emits `error` on the job path and
+ *     `fix_unserved` / `not_fixed` on the bug path;
  *   - `target_base_url` REQUIRED when `outcome = deployed`;
  *   - optional `pr_url` + `summary`;
  *   - respond `202 { acknowledged: true }`.
@@ -38,6 +43,8 @@ import {
   advanceRunOnBugResult,
   AdvanceDecision,
   BugAdvanceDispatch,
+  BuildResultOutcome,
+  BugResultOutcome,
   MigrationDriverDeps,
 } from './migrationExecutionDriver';
 
@@ -69,7 +76,19 @@ export interface BuildResultProcessOutcome {
   bugDispatch?: BugAdvanceDispatch;
 }
 
-const VALID_OUTCOMES = new Set(['implemented', 'deployed', 'failed', 'rejected']);
+// The reconciled outcome enum, matching the external implement-verify-service
+// (`src/verification/outcomes.py`). `failed` is retained for back-compat; the
+// service splits it into `error` (job path) and `fix_unserved` / `not_fixed`
+// (bug path). All non-implemented/non-deployed values route to halt/escalate.
+const VALID_OUTCOMES = new Set([
+  'implemented',
+  'deployed',
+  'failed',
+  'error',
+  'rejected',
+  'fix_unserved',
+  'not_fixed',
+]);
 
 /** Pick a value tolerating both snake_case and camelCase keys. */
 function pick(
@@ -129,7 +148,10 @@ export async function processBuildResult(
   if (!VALID_OUTCOMES.has(outcome)) {
     return {
       status: 422,
-      body: { error: 'outcome must be one of implemented | deployed | failed | rejected' },
+      body: {
+        error:
+          'outcome must be one of implemented | deployed | failed | error | rejected | fix_unserved | not_fixed',
+      },
     };
   }
   // Exactly one of job_id / bug_id.
@@ -159,7 +181,7 @@ export async function processBuildResult(
         company,
         project,
         bugId,
-        outcome: outcome as 'deployed' | 'failed' | 'rejected',
+        outcome: outcome as BugResultOutcome,
         targetBaseUrl,
         summary,
       },
@@ -184,7 +206,7 @@ export async function processBuildResult(
       company,
       project,
       jobId: jobId as string,
-      outcome: outcome as 'implemented' | 'deployed' | 'failed' | 'rejected',
+      outcome: outcome as BuildResultOutcome,
       prUrl,
       targetBaseUrl,
       summary,

@@ -8,7 +8,11 @@ import type {
   CreateApiBehaviourDiffItemRequest,
 } from './archModelClient';
 import { runManager as defaultRunManager, RunManager } from './runManager';
-import { compareJsonShapes } from './jsonShapeComparator';
+import {
+  compareJsonShapes,
+  type VolatilityContext,
+  type VolatilityEnvelope,
+} from './jsonShapeComparator';
 import { classifyDiffItem as defaultClassifyDiffItem } from './findingEmissionRules';
 
 /**
@@ -77,6 +81,23 @@ export interface DiffRunnerDeps {
   now?: () => number;
   /** Pure classifier; injectable for tests. */
   classifyDiffItem?: typeof defaultClassifyDiffItem;
+  /**
+   * Operation keys (`${METHOD}|${path}`) that carry a
+   * `non_deterministic_endpoint` discovery signal (Spring-only, built by
+   * `2026-05-30-oracle-integrity-determinism`, emitted by the
+   * discovery-service `emissionSources.ts`). When a source item's operation
+   * key is in this set, the WHOLE response is treated as VALUE-tolerant
+   * (presence / shape still compared) even if the volatility probe recorded
+   * nothing -- tagged `endpoint_signal`.
+   *
+   * Optional + defaults to an empty set, so a reconcile with no signal behaves
+   * EXACTLY as the strict path (the backward-compat guard, G1). Tests inject a
+   * populated set; the production wiring (or a future fetch) supplies it.
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * Task Group 3 (sub-tasks 3.2 + 3.4).
+   */
+  nonDeterministicEndpointKeys?: Set<string>;
 }
 
 /**
@@ -91,6 +112,82 @@ function pairKey(item: BaselineItemDto): string {
   const scenario = item.scenario_name ?? '';
   return `${method}|${path}|${scenario}`;
 }
+
+/**
+ * Operation key (`${METHOD}|${path}`) -- the granularity at which the
+ * `non_deterministic_endpoint` discovery signal applies. Distinct from
+ * {@link pairKey} (which also pins the scenario): the endpoint signal is
+ * endpoint-coarse, so it omits the scenario component.
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling.
+ */
+function operationKey(item: BaselineItemDto): string {
+  const method = (item.method ?? 'GET').toUpperCase();
+  const path = item.path ?? '/';
+  return `${method}|${path}`;
+}
+
+/**
+ * Parse the source baseline item's `volatile_paths_json` into a typed
+ * {@link VolatilityEnvelope}, or null when absent / malformed. A `null`
+ * envelope yields EXACTLY today's strict comparison (the backward-compat
+ * guard, G1) -- so anything we cannot confidently parse degrades to strict.
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * Task Group 3 (sub-tasks 3.2 + 3.6).
+ */
+function parseVolatilityEnvelope(raw: unknown): VolatilityEnvelope | null {
+  if (raw === null || raw === undefined || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const obj = raw as Record<string, unknown>;
+  const source = obj.volatility_source;
+  const paths = obj.paths;
+  if (typeof source !== 'string') return null;
+  const env: VolatilityEnvelope = {
+    paths: Array.isArray(paths) ? (paths.filter((p) => typeof p === 'string') as string[]) : [],
+    volatility_source: source as VolatilityEnvelope['volatility_source'],
+    k: typeof obj.k === 'number' ? obj.k : 0,
+  };
+  if (Array.isArray(obj.array_paths)) {
+    env.array_paths = (obj.array_paths as unknown[]).filter(
+      (p) => typeof p === 'string',
+    ) as string[];
+  }
+  return env;
+}
+
+/**
+ * Build the per-operation {@link VolatilityContext} for a source item.
+ * Returns `undefined` when there is no envelope AND no endpoint signal -- in
+ * which case the comparator runs the STRICT v1 path unchanged.
+ *
+ * Heuristics are enabled whenever the path was NOT fully measured by a probe
+ * (no envelope, OR a `non_json` / `not_probed` envelope, OR an endpoint
+ * signal carries the response). A full / partial `probed` envelope already
+ * measured the operation, so the heuristic fallback is suppressed there to
+ * avoid a guess shadowing the measurement.
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * Task Group 3 (sub-tasks 3.2, 3.4, 3.5).
+ */
+function buildVolatilityContext(
+  envelope: VolatilityEnvelope | null,
+  endpointSignal: boolean,
+): VolatilityContext | undefined {
+  if (!envelope && !endpointSignal) return undefined;
+  const probed =
+    !!envelope &&
+    (envelope.volatility_source === 'probed' ||
+      envelope.volatility_source === 'probed_partial');
+  return {
+    envelope,
+    endpointSignal,
+    // Heuristic fallback only on paths a probe did NOT measure.
+    applyHeuristics: !probed,
+  };
+}
+
 
 /**
  * Heuristic for deriving the `notes` reason on a `source_only` diff_item.
@@ -155,6 +252,8 @@ export async function runDiff(
   const runManager = deps.runManager ?? defaultRunManager;
   const now = deps.now ?? (() => Date.now());
   const classifyDiffItem = deps.classifyDiffItem ?? defaultClassifyDiffItem;
+  const nonDeterministicEndpointKeys =
+    deps.nonDeterministicEndpointKeys ?? new Set<string>();
 
   // We need projectId for ALL subsequent AMS calls. The diff row carries
   // it, but we cannot fetch the diff until we have projectId. The AMS
@@ -309,14 +408,37 @@ export async function runDiff(
         // Body classification via the comparator (which performs the Step 1
         // wrapper unwrap to normalise the source-raw vs target-wrapped
         // `response_json` shapes).
+        //
+        // Volatility tolerance (Spec 2026-06-16, Task Group 3): consult the
+        // source item's `volatile_paths_json` envelope + the operation's
+        // `non_deterministic_endpoint` signal. A `null` envelope + no signal
+        // => `ctx` undefined => EXACTLY today's strict comparison (G1). The
+        // tolerated value/order entries are persisted in `body_diff_json` with
+        // their `volatilitySource` tag so the gateway auto-disposition pass
+        // (Group 4) can classify the break; the comparator itself drops
+        // nothing.
+        const envelope = parseVolatilityEnvelope(sourceItem.volatile_paths_json);
+        const endpointSignal = nonDeterministicEndpointKeys.has(
+          operationKey(sourceItem),
+        );
+        const volatilityCtx = buildVolatilityContext(envelope, endpointSignal);
         const cmp = compareJsonShapes(
           sourceItem.response_json,
           targetItem.response_json,
+          volatilityCtx,
         );
         bodyClassification = cmp.bodyClassification;
         bodyDiffJson =
           cmp.bodyDiffJson.length > 0
-            ? { entries: cmp.bodyDiffJson as unknown[] }
+            ? {
+                entries: cmp.bodyDiffJson as unknown[],
+                // Surface the DISTINCT volatility-source tags that touched a
+                // tolerated entry so the gateway post-diff pass can read them
+                // off the persisted diff_item without re-walking the bodies.
+                ...(cmp.volatilitySourcesTouched.length > 0
+                  ? { volatility_sources: cmp.volatilitySourcesTouched as unknown[] }
+                  : {}),
+              }
             : null;
 
         // Aggregate counts. Status drift is counted whenever statuses

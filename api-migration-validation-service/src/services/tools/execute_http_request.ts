@@ -4,6 +4,10 @@ import { redactHeaders, redactJson } from '../redactor';
 import { HttpMethod } from '../../types/oas';
 import { runManager } from '../runManager';
 import { LLM_HTTP_ATTEMPTS_PER_SCENARIO } from '../../config';
+import {
+  runVolatilityProbe,
+  volatilityEnvelopeToWire,
+} from '../volatilityProbe';
 
 /**
  * Tool: `execute_http_request`
@@ -203,6 +207,60 @@ const handler: ToolHandler = async (args, ctx) => {
     );
   }
 
+  // ---- Capture-time volatility probe (FU-2 wiring).
+  //
+  // This is the probe's home: `ctx.httpExecutor` is the live executor against
+  // the CURRENT system and the scenario request (method/path/query/headers/
+  // body) is right here -- the only moment the current system is authoritative
+  // and callable. Run the empirical k-repeat self-diff and carry the envelope
+  // onto the capture row so it survives the frontend-driven Save-as-baseline
+  // promotion onto the source baseline item's volatile_paths_json (AMS
+  // changeset 187/188). Spec: 2026-06-16 Reconcile-Time Determinism &
+  // Volatile-Value Handling -- FU-2.
+  //
+  // Guards:
+  //   - only probe a SUCCESSFUL (2xx) response: a non-2xx / error body is not
+  //     the captured oracle worth measuring, and re-hitting a failing endpoint
+  //     k more times is wasteful + noisy. A non-2xx response leaves the
+  //     envelope null = strict (the backward-compat default, G1);
+  //   - only probe when the request actually produced a response (a transport
+  //     failure has nothing to self-diff);
+  //   - the probe enforces the mutating-scenario guard itself: when
+  //     `mutatingConfirmed` is true OR the method is POST/PUT/PATCH/DELETE it
+  //     makes NO replay calls and returns a `not_probed` envelope;
+  //   - any probe error is non-fatal: a probe failure must never fail the
+  //     capture (the envelope simply stays null = strict, G1).
+  let volatilePathsJson: Record<string, unknown> | null = null;
+  const responseIs2xx =
+    response !== null && response.status >= 200 && response.status < 300;
+  if (response && responseIs2xx) {
+    try {
+      const envelope = await runVolatilityProbe(
+        {
+          method: method.toUpperCase(),
+          path,
+          query: queryParams,
+          headers,
+          body,
+        },
+        {
+          executor: ctx.httpExecutor,
+          mutatingConfirmed: ctx.session.mutatingCallsConfirmed === true,
+        },
+      );
+      volatilePathsJson = volatilityEnvelopeToWire(envelope);
+    } catch (probeErr) {
+      // Non-fatal: leave the envelope null (strict comparison). Log the
+      // category only -- never the response body.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `execute_http_request: volatility probe failed for session=${ctx.session.id} ` +
+          `op=${persisted.id} -- envelope left null (strict)`,
+        probeErr instanceof Error ? probeErr.message : String(probeErr),
+      );
+    }
+  }
+
   // ---- Persist the capture row. One row per attempt regardless of outcome.
   // `accepted` is intentionally omitted so AMS applies its default (null);
   // `false` is reserved for explicit reviewer rejection.
@@ -231,6 +289,7 @@ const handler: ToolHandler = async (args, ctx) => {
     error_type: errorType,
     error_message: errorMessage,
     captured_at: new Date().toISOString(),
+    volatile_paths_json: volatilePathsJson,
   };
 
   let captureId: string;

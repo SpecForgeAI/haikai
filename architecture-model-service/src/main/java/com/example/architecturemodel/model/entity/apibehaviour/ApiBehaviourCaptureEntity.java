@@ -143,6 +143,30 @@ public class ApiBehaviourCaptureEntity {
     @Column(name = "reviewer_notes")
     private String reviewerNotes;
 
+    /**
+     * Empirically-measured volatility envelope {@code { paths, volatility_source,
+     * k }} (and optionally {@code array_paths}) MEASURED at capture time by the
+     * capture-time volatility probe (in {@code execute_http_request}, the only
+     * moment the current system is authoritative and callable through a live
+     * executor). Carried forward verbatim onto the source baseline item's own
+     * {@code volatile_paths_json} on Save-as-baseline, where the reconcile diff
+     * engine consumes it. The current-state baseline is pinned by a
+     * frontend-&gt;AMS write, NOT a server-side route, so the envelope cannot be
+     * measured at pin time -- it is measured at capture and carried forward.
+     *
+     * <p>{@code null} means NO volatility recorded =&gt; strict comparison (the
+     * backward-compatible default; today's behaviour). {@code null} is
+     * distinguishable from a probed-but-non-JSON body (a non-null envelope
+     * tagged {@code volatility_source: "non_json"}). Write-once at capture
+     * create time; there is deliberately NO PATCH path.</p>
+     *
+     * <p>Spec: Reconcile-Time Determinism &amp; Volatile-Value Handling
+     * (2026-06-16) — FU-2 (probe-at-capture wiring).</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "volatile_paths_json", columnDefinition = "jsonb")
+    private Map<String, Object> volatilePathsJson;
+
     @PrePersist
     protected void onCreate() {
         if (capturedAt == null) {

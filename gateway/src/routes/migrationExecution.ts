@@ -50,6 +50,7 @@ import {
   defaultReconciliationDriverDeps,
   sendBugForBreaks,
   disposeBreaks,
+  declareVolatilePaths,
 } from '../services/migrationReconciliationDriver';
 import { migrationTargetCredentialsStore } from '../services/migrationTargetCredentialsStore';
 import {
@@ -314,6 +315,57 @@ migrationExecutionRouter.post(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(500).json({ error: 'Failed to dispose the breaks' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-execution-runs/:runId/reconciliation-breaks/declare-volatile --
+ * the in-UI human-declared volatile path action (2026-06-16, Q3). Body:
+ * { operation: '<METHOD> <path>', declared_paths: ['/createdAt', ...] }. A path
+ * declared through the existing break-detail / disposition UI is applied
+ * RETROACTIVELY to the CURRENT run -- it re-evaluates and re-disposes the
+ * already-open breaks on that operation (tag `declared`, the highest-trust
+ * volatile source) via the existing PATCH path. No new AMS endpoint, no admin
+ * screen. The oracle is NEVER changed -- this only annotates variance.
+ *
+ * Spec: Reconcile-Time Determinism & Volatile-Value Handling (2026-06-16) --
+ * Task Group 4 (sub-task 4.3, the gateway side; the frontend is Group 5).
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/reconciliation-breaks/declare-volatile',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as { operation?: string; declared_paths?: string[] };
+    if (!body.operation || typeof body.operation !== 'string') {
+      return res.status(400).json({ error: 'operation ("<METHOD> <path>") is required' });
+    }
+    if (!Array.isArray(body.declared_paths) || body.declared_paths.length === 0) {
+      return res.status(400).json({ error: 'declared_paths must be a non-empty array' });
+    }
+    try {
+      const deps = defaultReconciliationDriverDeps();
+      // Re-disposition is scoped to the CURRENT run's breaks (retroactive, not
+      // forward-only): read them, then re-tag + re-classify the open breaks on
+      // the named operation.
+      const breaks = await getReconciliationBreaksForRun(projectId, runId);
+      const result = await declareVolatilePaths(
+        {
+          projectId,
+          operation: body.operation,
+          declaredPaths: body.declared_paths,
+          breaks,
+        },
+        deps
+      );
+      return res.status(200).json(result);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_reconciliation declare_volatile_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(500).json({ error: 'Failed to declare the volatile paths' });
     }
   }
 );

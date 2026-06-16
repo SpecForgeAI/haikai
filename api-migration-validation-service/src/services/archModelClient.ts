@@ -339,6 +339,16 @@ export interface CaptureDto {
   accepted: boolean | null;
   accepted_at: string | null;
   reviewer_notes: string | null;
+  /**
+   * Empirically-measured volatility envelope { paths, volatility_source, k }
+   * (and optionally array_paths) MEASURED at capture time by the volatility
+   * probe in `execute_http_request`. Carried forward onto the source baseline
+   * item on Save-as-baseline. snake_case wire (AMS default). `null` => no
+   * volatility recorded => strict comparison.
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling -- FU-2.
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
 }
 
 export interface CreateCaptureRequest {
@@ -358,6 +368,15 @@ export interface CreateCaptureRequest {
   error_type?: string | null;
   error_message?: string | null;
   captured_at?: string | null;
+  /**
+   * OPTIONAL volatility envelope { paths, volatility_source, k } measured by
+   * the capture-time probe (in `execute_http_request`). Write-once at capture
+   * create time; omitted / null => strict comparison. snake_case wire (AMS
+   * default; maps to AMS `volatilePathsJson`).
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling -- FU-2.
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
 }
 
 /**
@@ -463,6 +482,20 @@ export interface BaselineItemDto {
   response_status: number | null;
   response_json: unknown;
   business_notes: string | null;
+  /**
+   * Empirically-measured volatility envelope written ONCE at pin time by the
+   * capture-time volatility probe. An OBJECT `{ paths, volatility_source, k }`
+   * (and optionally `array_paths`) -- see `VolatilityEnvelope` in
+   * `jsonShapeComparator.ts`. `null` / absent => no volatility recorded =>
+   * strict comparison (today's behaviour; the backward-compat default).
+   *
+   * snake_case wire (AMS default, NO `@CamelCaseWire`). Write-once at create
+   * time; there is deliberately NO PATCH path (baseline immutability).
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * Task Group 1 (AMS column) + Task Group 2 (probe write).
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -479,6 +512,19 @@ export interface CreateBaselineItemRequest {
   response_status?: number | null;
   response_json?: unknown;
   business_notes?: string | null;
+  /**
+   * OPTIONAL volatility envelope `{ paths, volatility_source, k }` measured by
+   * the capture-time probe. Sent on the CREATE request ONLY (write-once at pin
+   * time; there is deliberately NO update/PATCH path -- baseline
+   * immutability). Omitted / null => strict comparison.
+   *
+   * snake_case wire (AMS default). Maps to the AMS create-request field
+   * `volatilePathsJson` (which accepts `volatile_paths_json` on the wire).
+   *
+   * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+   * Task Group 2.
+   */
+  volatile_paths_json?: Record<string, unknown> | null;
 }
 // --------------------------------------------------------------------------
 // Diff DTOs -- mirror the AMS Java DTOs from
@@ -642,6 +688,58 @@ export interface DiscoveryFindingDto {
   reviewed_at: string | null;
   reviewer_notes: string | null;
   links: DiscoveryFindingLinkDto[];
+}
+
+/**
+ * Pagination envelope returned by the run-scoped finding-list endpoint
+ * `GET .../discovery/runs/{runId}/findings`. Mirrors the AMS Java record
+ * `DiscoveryFindingSearchResponse` (snake_case wire, AMS default).
+ *
+ * Read-only surface used by the `non_deterministic_endpoint` -> `${METHOD}|
+ * {path}` bridge (Spec 2026-06-16 FU-1). NOT used by the diff runner's
+ * emission step (which is diff-scoped).
+ */
+export interface DiscoveryFindingSearchResponse {
+  items: DiscoveryFindingDto[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/**
+ * Discovery-run summary row returned by
+ * `GET .../architectures/{architectureId}/discovery/runs`. Only the narrow
+ * slice the bridge needs (the run id + status) is typed here; the AMS DTO
+ * carries more (snake_case wire, AMS default).
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * FU-1.
+ */
+export interface DiscoveryRunSummaryDto {
+  id: string;
+  project_id: string;
+  architecture_id: string;
+  status: string;
+  discovery_kind?: string | null;
+}
+
+/**
+ * Discovery-candidate row returned by
+ * `GET .../discovery/runs/{runId}/candidates`. Mirrors the narrow slice of
+ * the AMS Java DTO `DiscoveryCandidateDto` the bridge needs (snake_case
+ * wire, AMS default). `data` is the verbatim JSONB passthrough; for an
+ * `endpoints` candidate it carries the HTTP route slots
+ * (`httpMethod` / `operation_verb` + `fullPath` / `path_or_address`).
+ *
+ * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
+ * FU-1.
+ */
+export interface DiscoveryCandidateDto {
+  id: string;
+  run_id: string;
+  candidate_type: string;
+  name: string;
+  data?: Record<string, unknown> | null;
 }
 
 /**
@@ -1639,6 +1737,106 @@ class ArchModelClient {
       return res.data ?? [];
     } catch (err) {
       throw this.toClientError(err, endpoint, 'list diff-item findings');
+    }
+  }
+
+  // ----------------------------------------------------------------------
+  // Discovery read surface for the non_deterministic_endpoint -> METHOD|path
+  // bridge (Spec 2026-06-16 Reconcile-Time Determinism & Volatile-Value
+  // Handling -- FU-1).
+  //
+  // The `non_deterministic_endpoint` discovery signal (built by spec
+  // 2026-05-30) is emitted as an `evidence_gap` finding with
+  // `detail_json.gapType='non_deterministic_endpoint'` and a `supports` link
+  // to the endpoint's discovery candidate. The candidate carries the HTTP
+  // route. These three read wrappers let the validation-service resolve that
+  // signal into the `${METHOD}|${path}` operation keys the diff runner's
+  // `nonDeterministicEndpointKeys` seam consumes. ALL run-scoped (no
+  // architecture-wide finding search exists in AMS), so the bridge enumerates
+  // runs first.
+  // ----------------------------------------------------------------------
+
+  /**
+   * List discovery runs bound to an architecture. Mirrors the AMS
+   * `GET /api/model/projects/{projectId}/architectures/{architectureId}/discovery/runs`
+   * route. Used by the FU-1 bridge to enumerate the runs whose findings /
+   * candidates must be scanned (there is no architecture-wide finding
+   * search). Returns `[]` on a non-array body so a degenerate response
+   * degrades to "no signal" = strict.
+   */
+  async listDiscoveryRuns(
+    projectId: string,
+    architectureId: string,
+  ): Promise<DiscoveryRunSummaryDto[]> {
+    const endpoint = `/api/model/projects/${projectId}/architectures/${architectureId}/discovery/runs`;
+    try {
+      const res = await this.client.get<DiscoveryRunSummaryDto[]>(endpoint);
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'list discovery runs');
+    }
+  }
+
+  /**
+   * List discovery findings for a run, with the optional AMS query filters
+   * (`findingType` / `linkedTargetType` are the ones the FU-1 bridge uses).
+   * Mirrors the AMS
+   * `GET .../architectures/{architectureId}/discovery/runs/{runId}/findings`
+   * route, which returns a paginated {@link DiscoveryFindingSearchResponse}.
+   * The bridge requests a large page so a single call covers the (typically
+   * small) `evidence_gap` set; if AMS ever paginates beyond `size`, the
+   * bridge simply sees the first page and the unseen findings degrade to
+   * strict (safe).
+   */
+  async listFindingsForRun(
+    projectId: string,
+    architectureId: string,
+    runId: string,
+    filters?: {
+      findingType?: string;
+      linkedTargetType?: string;
+      size?: number;
+    },
+  ): Promise<DiscoveryFindingDto[]> {
+    const params = new URLSearchParams();
+    if (filters?.findingType) params.set('findingType', filters.findingType);
+    if (filters?.linkedTargetType) {
+      params.set('linkedTargetType', filters.linkedTargetType);
+    }
+    params.set('size', String(filters?.size ?? 500));
+    const qs = params.toString();
+    const endpoint =
+      `/api/model/projects/${projectId}/architectures/${architectureId}` +
+      `/discovery/runs/${runId}/findings${qs ? `?${qs}` : ''}`;
+    try {
+      const res = await this.client.get<DiscoveryFindingSearchResponse>(endpoint);
+      return Array.isArray(res.data?.items) ? res.data.items : [];
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'list discovery findings for run');
+    }
+  }
+
+  /**
+   * List discovery candidates for a run, optionally filtered by candidate
+   * `type` (the bridge passes `endpoints`). Mirrors the AMS
+   * `GET .../discovery/runs/{runId}/candidates?type=...` route. Returns `[]`
+   * on a non-array body (degrades to "unresolvable" = strict).
+   */
+  async listCandidatesForRun(
+    projectId: string,
+    architectureId: string,
+    runId: string,
+    type?: string,
+  ): Promise<DiscoveryCandidateDto[]> {
+    const qs = type ? `?type=${encodeURIComponent(type)}` : '';
+    const endpoint =
+      `/api/model/projects/${projectId}/architectures/${architectureId}` +
+      `/discovery/runs/${runId}/candidates${qs}`;
+    try {
+      const res = await this.client.get<DiscoveryCandidateDto[]>(endpoint);
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'list discovery candidates for run');
     }
   }
 

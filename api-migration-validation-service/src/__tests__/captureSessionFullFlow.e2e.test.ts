@@ -314,6 +314,9 @@ function buildFakeAms(sessionDto: CaptureSessionDto): FakeAms {
       accepted: null,
       accepted_at: null,
       reviewer_notes: null,
+      // FU-2: the capture-time probe writes its envelope here; the fake AMS
+      // must carry it so the promotion step can copy it onto the baseline item.
+      volatile_paths_json: body.volatile_paths_json ?? null,
     };
     captures.set(id, row);
     return row;
@@ -376,6 +379,8 @@ function buildFakeAms(sessionDto: CaptureSessionDto): FakeAms {
       response_status: body.response_status ?? null,
       response_json: body.response_json ?? null,
       business_notes: body.business_notes ?? null,
+      // FU-2: the envelope carried forward from the capture row at pin time.
+      volatile_paths_json: body.volatile_paths_json ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -761,6 +766,9 @@ describe('captureSessionFullFlow e2e', () => {
         body: accepted[0].response_body_json,
       },
       business_notes: null,
+      // FU-2: mirror SaveAsBaselineModal -- carry the capture-time volatility
+      // envelope forward onto the immutable source baseline item at pin time.
+      volatile_paths_json: accepted[0].volatile_paths_json ?? null,
     });
 
     // ---- Assertions on the baseline + baseline-item round-trip ----
@@ -778,6 +786,26 @@ describe('captureSessionFullFlow e2e', () => {
       id: 'keep',
       name: 'widget-keep',
     });
+
+    // ---- FU-2 end-to-end: the capture-time probe ran against the CURRENT
+    // system (the real stub, through the real executor) during capture and
+    // recorded a REAL (non-null) envelope on the capture row; the promotion
+    // carried it forward onto the source baseline item's volatile_paths_json.
+    // The stub's /widgets/:id body is deterministic, so the probe measured no
+    // variance -> empty `paths`, but a non-null `probed` envelope (distinct
+    // from the never-probed `null` strict default).
+    const capEnv = accepted[0].volatile_paths_json as {
+      paths: string[];
+      volatility_source: string;
+      k: number;
+    } | null;
+    expect(capEnv).not.toBeNull();
+    expect(capEnv?.volatility_source).toBe('probed');
+    expect(capEnv?.paths).toEqual([]);
+    // The same envelope reached the baseline item (this is the FU-2 payoff:
+    // a production current-state capture now writes a real envelope that
+    // reaches volatile_paths_json).
+    expect(item.volatile_paths_json).toEqual(capEnv);
   });
 
   it('mutating-confirmation flow: POST /widgets is blocked when mutatingCallsConfirmed=false, succeeds when mutatingCallsConfirmed=true', async () => {

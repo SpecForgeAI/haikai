@@ -25,6 +25,12 @@
  *
  * Spec: Migration Reconciliation + Bug Loop (2026-06-14, Spec 4 of 4) --
  * Task Groups 2 + 3 + 4.
+ *
+ * Spec: Reconcile-Time Determinism & Volatile-Value Handling (2026-06-16) --
+ * Task Group 4 adds the post-diff `expected_volatile` auto-disposition pass
+ * ({@link autoDisposeVolatileBreaks}, sibling to {@link autoDisposeNetNewTargetOnly}),
+ * the retroactive human-declared-path re-disposition ({@link declareVolatilePaths}),
+ * and the `expected_volatile` run-summary count.
  */
 
 import { logger } from './logger';
@@ -66,6 +72,10 @@ import {
   buildNetNewOperationLookup,
   matchTargetOnlyOperation,
 } from './migrationReconciliationNetNewMatch';
+import {
+  classifyBreakVolatility,
+  VolatilitySource,
+} from './migrationReconciliationVolatilityDisposition';
 
 // ============================================================================
 // Run-state status (Spec-4 extension of the Spec-3 RUN_STATUS vocabulary)
@@ -227,7 +237,7 @@ export function defaultReconciliationDriverDeps(): ReconciliationDriverDeps {
 
 /** The outcome of the full-baseline reconcile trigger. */
 export type FullReconcileResult =
-  | { status: 'reconciled'; breakCount: number }
+  | { status: 'reconciled'; breakCount: number; expectedNetNewCount: number; expectedVolatileCount: number }
   | { status: 'already_reconciled' }
   | { status: 'needs_target_credentials' }
   | { status: 'no_pinned_baseline' }
@@ -236,6 +246,11 @@ export type FullReconcileResult =
 /**
  * Map a diff_item to the break wire row. Only the SOFT reference + the inline
  * detail are carried (no break-payload duplication beyond the review snapshot).
+ *
+ * The `body_diff_json` snapshot carries the validation-service's `{ entries,
+ * volatility_sources? }` shape VERBATIM -- the volatile-path metadata the
+ * post-diff `expected_volatile` pass ({@link autoDisposeVolatileBreaks}) reads
+ * off the break without re-walking the bodies.
  */
 function diffItemToBreak(
   item: ReconciliationDiffItem,
@@ -429,6 +444,21 @@ export async function triggerFullBaselineReconcile(
     deps
   );
 
+  // --- 2026-06-16: post-diff `expected_volatile` auto-disposition pass.
+  // SIBLING to the net_new pass above -- runs AFTER breaks are created so the
+  // diff engine stays volatility-agnostic. Per break, reads the volatility
+  // metadata the validation-service stamped on `detail_json.body_diff_json`
+  // (`{ entries, volatility_sources }`) and:
+  //   - divergence ENTIRELY on auto-terminal volatile paths -> PATCH
+  //     `expected_volatile`, needs_human=false, audit note (paths + sources);
+  //   - heuristic-only justification -> down-rank to `info`, stays open;
+  //   - mixed (a non-volatile entry survived) -> stays open (real break);
+  //   - no volatility metadata (non_json / not_probed / null) -> no disposition.
+  // Nothing is ever DROPPED -- every outcome is a visible terminal or a visible
+  // open break (the load-bearing invariant). Failure-isolated like the net_new
+  // pass (a single PATCH failure just leaves the affected break open).
+  const volatileDisposition = await autoDisposeVolatileBreaks(run, createdBreaks, deps);
+
   await safePatchRun(deps, projectId, runId, { status: RECONCILE_RUN_STATUS.RECONCILED });
 
   logger.info('[diag-gateway] migration_reconciliation full_reconcile_complete', {
@@ -437,9 +467,16 @@ export async function triggerFullBaselineReconcile(
     diffItemCount: result.diffItems.length,
     breakCount: breakRows.length,
     netNewAutoRecognised: autoRecognisedCount,
+    expectedVolatile: volatileDisposition.expectedVolatileCount,
+    volatileDownRankedInfo: volatileDisposition.infoCount,
   });
 
-  return { status: 'reconciled', breakCount: breakRows.length };
+  return {
+    status: 'reconciled',
+    breakCount: breakRows.length,
+    expectedNetNewCount: autoRecognisedCount,
+    expectedVolatileCount: volatileDisposition.expectedVolatileCount,
+  };
 }
 
 /**
@@ -566,6 +603,368 @@ async function autoDisposeNetNewTargetOnly(
     });
   }
   return autoRecognised;
+}
+
+// ============================================================================
+// 2026-06-16 -- post-diff `expected_volatile` auto-disposition pass
+// ============================================================================
+
+/** A volatility-disposition audit note recorded on a break's detail_json. */
+function buildVolatilityAuditNote(
+  outcome: 'expected_volatile' | 'info',
+  sources: VolatilitySource[],
+  paths: string[]
+): Record<string, unknown> {
+  const sourceList = sources.join(', ');
+  const pathList = paths.length > 0 ? paths.join(', ') : '(whole-response)';
+  const note =
+    outcome === 'expected_volatile'
+      ? `Auto-recognised as expected non-determinism: the body diverged ONLY on ` +
+        `legitimately-volatile path(s) [${pathList}] (source: ${sourceList}). The pinned ` +
+        `current-state oracle is unchanged; a deliberately-changed non-volatile value ` +
+        `would still break. Human-overridable back to open via the disposition path.`
+      : `Down-ranked to info: the divergence is justified ONLY by a conservative ` +
+        `heuristic on path(s) [${pathList}] (source: ${sourceList}). A guess must never ` +
+        `auto-close a break, so this stays OPEN for human review.`;
+  return {
+    outcome,
+    sources,
+    paths,
+    recognised_at: new Date().toISOString(),
+    note,
+  };
+}
+
+/** The tally the `expected_volatile` pass returns for the run summary + log. */
+export interface VolatileDispositionTally {
+  /** Breaks auto-dispositioned to the terminal `expected_volatile`. */
+  expectedVolatileCount: number;
+  /** Breaks down-ranked to `info` (heuristic-only); they stay open. */
+  infoCount: number;
+}
+
+/**
+ * 2026-06-16: the post-diff `expected_volatile` auto-disposition pass (sibling to
+ * {@link autoDisposeNetNewTargetOnly}). For each CREATED break, reads the
+ * volatility metadata the validation-service stamped on
+ * `detail_json.body_diff_json` (`{ entries, volatility_sources }`) and:
+ *
+ *   - ENTIRELY-VOLATILE (every justifying source is `probed` / `probed_partial`
+ *     / `endpoint_signal` / `declared`, no surviving non-volatile drift) -> PATCH
+ *     to the terminal `expected_volatile`, `needs_human=false`, audit note listing
+ *     the tolerated paths + source(s) (reuses the net_new audit-note format);
+ *   - HEURISTIC-ONLY -> down-rank to `info` (PATCH `disposition_status='info'`),
+ *     stays OPEN -- a guess never auto-terminates;
+ *   - MIXED (a non-volatile entry survived -> the comparator left a real
+ *     `body_value_drift` / `body_shape_drift`) -> stays `open`; the volatile
+ *     paths are still recorded on detail_json for the human;
+ *   - NO volatility metadata (`non_json` / `not_probed` / `null`) -> strict, left
+ *     exactly as today (no write).
+ *
+ * The INVARIANT (G2): no break ever DISAPPEARS -- every volatility outcome is
+ * either `expected_volatile` (visible terminal) or stays open (`info` or the
+ * untouched created state). NEVER throws: the whole pass is failure-isolated.
+ */
+export async function autoDisposeVolatileBreaks(
+  run: MigrationExecutionRun,
+  createdBreaks: MigrationReconciliationBreak[],
+  deps: ReconciliationDriverDeps
+): Promise<VolatileDispositionTally> {
+  const projectId = run.project_id ?? '';
+  const runId = run.id ?? '';
+
+  let expectedVolatileCount = 0;
+  let infoCount = 0;
+
+  for (const brk of createdBreaks) {
+    if (!brk.id) continue;
+    // Never re-touch a break already in a terminal disposition (e.g. the net_new
+    // pass above already auto-recognised it). The two passes are disjoint in
+    // practice (net_new acts on target_only breaks which carry no source body
+    // diff), but this guards the invariant explicitly.
+    if ((TERMINAL_DISPOSITIONS as readonly string[]).includes(brk.disposition_status ?? '')) {
+      continue;
+    }
+
+    const detail = (brk.detail_json ?? {}) as Record<string, unknown>;
+    const classification = classifyBreakVolatility(detail);
+
+    if (classification.outcome === 'none') {
+      // No volatility metadata -> strict; leave the break exactly as today.
+      continue;
+    }
+
+    if (classification.outcome === 'expected_volatile') {
+      const auditedDetail: Record<string, unknown> = {
+        ...detail,
+        volatility_match: buildVolatilityAuditNote(
+          'expected_volatile',
+          classification.sources,
+          classification.paths
+        ),
+      };
+      await safePatchBreak(deps, projectId, brk.id, {
+        disposition_status: BREAK_DISPOSITION.EXPECTED_VOLATILE,
+        needs_human: false,
+        detail_json: auditedDetail,
+      });
+      expectedVolatileCount += 1;
+      continue;
+    }
+
+    if (classification.outcome === 'info') {
+      // Heuristic-only -> down-rank to `info` (stays open + visible). A guess
+      // never auto-terminates -- we move it to `info` and record the heuristic
+      // paths so the human sees them in the same drawer.
+      const auditedDetail: Record<string, unknown> = {
+        ...detail,
+        volatility_match: buildVolatilityAuditNote(
+          'info',
+          classification.sources,
+          classification.paths
+        ),
+      };
+      await safePatchBreak(deps, projectId, brk.id, {
+        disposition_status: BREAK_DISPOSITION.INFO,
+        needs_human: false,
+        detail_json: auditedDetail,
+      });
+      infoCount += 1;
+      continue;
+    }
+
+    // MIXED: a non-volatile entry survived -> stays `open` (the no-override
+    // guard G3). Record the partial allowance so the human sees which paths were
+    // tolerated, but DO NOT change the disposition.
+    const mixedDetail: Record<string, unknown> = {
+      ...detail,
+      volatility_match: {
+        outcome: 'mixed',
+        sources: classification.sources,
+        paths: classification.paths,
+        recognised_at: new Date().toISOString(),
+        note:
+          `Some path(s) [${classification.paths.join(', ') || '(none)'}] are volatile ` +
+          `(source: ${classification.sources.join(', ')}), but a NON-volatile value also ` +
+          `diverged -- the non-volatile divergence is a real break. Left open for human review.`,
+      },
+    };
+    await safePatchBreak(deps, projectId, brk.id, {
+      detail_json: mixedDetail,
+    });
+  }
+
+  if (expectedVolatileCount > 0 || infoCount > 0) {
+    logger.info('[diag-gateway] migration_reconciliation volatile_auto_disposed', {
+      projectId,
+      runId,
+      expectedVolatile: expectedVolatileCount,
+      downRankedInfo: infoCount,
+      breakCount: createdBreaks.length,
+    });
+  }
+
+  return { expectedVolatileCount, infoCount };
+}
+
+/**
+ * 2026-06-16: RETROACTIVELY apply a human-declared volatile path to the CURRENT
+ * run (Q3). A path declared through the EXISTING break-detail / disposition UI is
+ * persisted alongside the operation's other tolerated paths (tagged `declared`)
+ * and applied IMMEDIATELY -- not forward-only. This re-evaluates and re-disposes
+ * the ALREADY-OPEN breaks on the named operation:
+ *
+ *   - for each currently-OPEN break on the operation, the newly-declared path(s)
+ *     are merged into the break's `body_diff_json` -- any value/order entry whose
+ *     `path` is now declared is RE-TAGGED `volatilitySource='declared'` (so it no
+ *     longer counts as a real drift), the distinct `volatility_sources` set is
+ *     re-derived, and the body_classification is recomputed (`body_match` when
+ *     the only remaining entries are tolerated). The break is then re-classified
+ *     by {@link classifyBreakVolatility} and re-dispositioned exactly like the
+ *     post-diff pass (terminal `expected_volatile`, `info`, or left open).
+ *
+ * This is the GATEWAY side of the retroactive declare (the frontend that captures
+ * the declaration + persists it on the envelope is Group 5). It re-uses the
+ * existing PATCH path -- no new AMS endpoint, no new mechanism. NEVER throws.
+ *
+ * The set of operations is matched on the SAME normalised `<METHOD> <path>` the
+ * breaks carry on `detail_json.operation`. `breaks` is the current run's break
+ * set (the caller reads it via `getReconciliationBreaksForRun`).
+ */
+export async function declareVolatilePaths(
+  args: {
+    projectId: string;
+    /** The operation the human declared the path(s) on: `<METHOD> <path>`. */
+    operation: string;
+    /** The newly-declared JSON-Pointer path(s) (normalised, e.g. `/createdAt`). */
+    declaredPaths: string[];
+    /** The current run's breaks (the retroactive re-disposition scope). */
+    breaks: MigrationReconciliationBreak[];
+  },
+  deps: ReconciliationDriverDeps
+): Promise<{ reEvaluated: number; expectedVolatile: number; info: number }> {
+  const declared = new Set(args.declaredPaths.filter((p) => typeof p === 'string' && p.length > 0));
+  const operationKey = (args.operation ?? '').trim().toUpperCase();
+
+  let reEvaluated = 0;
+  let expectedVolatile = 0;
+  let info = 0;
+
+  for (const brk of args.breaks) {
+    if (!brk.id) continue;
+    // Only re-dispose breaks that are still OPEN -- a human-disposed / terminal
+    // break is never silently re-touched (the no-silent-override invariant).
+    if ((brk.disposition_status ?? '') !== BREAK_DISPOSITION.OPEN) continue;
+
+    const detail = (brk.detail_json ?? {}) as Record<string, unknown>;
+    const op = String(detail.operation ?? '').trim().toUpperCase();
+    if (op !== operationKey) continue;
+    if (declared.size === 0) continue;
+
+    // Merge the declared path(s) into the break's body_diff_json by re-tagging
+    // matching entries `declared`, then re-derive the volatility metadata.
+    const merged = applyDeclaredPathsToDetail(detail, declared);
+    if (!merged.changed) {
+      // The declared path matched no entry on this break -> nothing to re-dispose.
+      continue;
+    }
+    reEvaluated += 1;
+
+    const classification = classifyBreakVolatility(merged.detail);
+
+    if (classification.outcome === 'expected_volatile') {
+      const auditedDetail: Record<string, unknown> = {
+        ...merged.detail,
+        volatility_match: buildVolatilityAuditNote(
+          'expected_volatile',
+          classification.sources,
+          classification.paths
+        ),
+      };
+      await safePatchBreak(deps, args.projectId, brk.id, {
+        disposition_status: BREAK_DISPOSITION.EXPECTED_VOLATILE,
+        needs_human: false,
+        detail_json: auditedDetail,
+      });
+      expectedVolatile += 1;
+    } else if (classification.outcome === 'info') {
+      const auditedDetail: Record<string, unknown> = {
+        ...merged.detail,
+        volatility_match: buildVolatilityAuditNote(
+          'info',
+          classification.sources,
+          classification.paths
+        ),
+      };
+      await safePatchBreak(deps, args.projectId, brk.id, {
+        disposition_status: BREAK_DISPOSITION.INFO,
+        needs_human: false,
+        detail_json: auditedDetail,
+      });
+      info += 1;
+    } else {
+      // MIXED / none after the merge -> persist the re-tagged detail so the human
+      // sees the declared allowance, but leave the break open (a non-volatile
+      // entry still survives).
+      await safePatchBreak(deps, args.projectId, brk.id, {
+        detail_json: merged.detail,
+      });
+    }
+  }
+
+  logger.info('[diag-gateway] migration_reconciliation volatile_declared_retroactive', {
+    projectId: args.projectId,
+    operation: args.operation,
+    declaredPaths: args.declaredPaths,
+    reEvaluated,
+    expectedVolatile,
+    info,
+  });
+
+  return { reEvaluated, expectedVolatile, info };
+}
+
+/**
+ * Re-tag any `body_diff_json` entry whose `path` is in `declaredPaths` as
+ * `volatilitySource='declared'` (so it is treated as tolerated), then re-derive
+ * `volatility_sources` and `body_classification`. Returns a NEW detail object;
+ * `changed=false` when no entry matched (so the caller can skip the write).
+ *
+ * Mirrors the validation-service comparator's classification semantics: a
+ * tolerated value entry does NOT count toward drift; shape entries (key add /
+ * remove / type change) ALWAYS break (volatility never tolerates shape).
+ */
+function applyDeclaredPathsToDetail(
+  detail: Record<string, unknown>,
+  declaredPaths: Set<string>
+): { detail: Record<string, unknown>; changed: boolean } {
+  const bodyDiff = (detail.body_diff_json ?? null) as Record<string, unknown> | null;
+  const entries = bodyDiff && Array.isArray(bodyDiff.entries) ? (bodyDiff.entries as unknown[]) : null;
+  if (!entries) {
+    return { detail, changed: false };
+  }
+
+  let changed = false;
+  const reTagged = entries.map((e) => {
+    if (!e || typeof e !== 'object') return e;
+    const entry = { ...(e as Record<string, unknown>) };
+    const kind = entry.kind;
+    const path = entry.path;
+    // Only VALUE diffs can be tolerated by a declared path; shape diffs always
+    // break (key add/remove/type change). An already-tagged entry is untouched.
+    if (
+      kind === 'value_changed' &&
+      typeof path === 'string' &&
+      declaredPaths.has(path) &&
+      entry.volatilitySource === undefined
+    ) {
+      entry.volatilitySource = 'declared';
+      changed = true;
+    }
+    return entry;
+  });
+
+  if (!changed) {
+    return { detail, changed: false };
+  }
+
+  // Re-derive the distinct volatility_sources + the body_classification.
+  const sources: string[] = [];
+  let hasShape = false;
+  let hasUntoleratedValue = false;
+  for (const e of reTagged) {
+    if (!e || typeof e !== 'object') continue;
+    const entry = e as Record<string, unknown>;
+    const tag = entry.volatilitySource;
+    if (typeof tag === 'string' && !sources.includes(tag)) sources.push(tag);
+    const kind = entry.kind;
+    if (kind === 'key_added' || kind === 'key_removed' || kind === 'type_changed') {
+      hasShape = true;
+    } else if (kind === 'value_changed' && tag === undefined) {
+      hasUntoleratedValue = true;
+    }
+  }
+
+  const bodyClassification = hasShape
+    ? 'body_shape_drift'
+    : hasUntoleratedValue
+      ? 'body_value_drift'
+      : 'body_match';
+
+  const newBodyDiff: Record<string, unknown> = {
+    ...(bodyDiff as Record<string, unknown>),
+    entries: reTagged,
+    ...(sources.length > 0 ? { volatility_sources: sources } : {}),
+  };
+
+  return {
+    detail: {
+      ...detail,
+      body_diff_json: newBodyDiff,
+      body_classification: bodyClassification,
+    },
+    changed: true,
+  };
 }
 
 // ============================================================================
@@ -727,7 +1126,11 @@ export type NonSentDisposition =
   // D6/D7: a human may also re-classify a break INTO `expected_net_new` (e.g. the
   // auto-match missed) or OUT of it (the auto-match was wrong -> back to a real
   // disposition) via the same path. No new mechanism.
-  | typeof BREAK_DISPOSITION.EXPECTED_NET_NEW;
+  | typeof BREAK_DISPOSITION.EXPECTED_NET_NEW
+  // 2026-06-16: a human may also re-classify INTO / OUT of `expected_volatile`
+  // (override the auto-rule) or back to `open` via the same disposition path.
+  | typeof BREAK_DISPOSITION.EXPECTED_VOLATILE
+  | typeof BREAK_DISPOSITION.OPEN;
 
 const VALID_NON_SENT_DISPOSITIONS = new Set<string>([
   BREAK_DISPOSITION.ACCEPTED,
@@ -735,6 +1138,11 @@ const VALID_NON_SENT_DISPOSITIONS = new Set<string>([
   BREAK_DISPOSITION.INTENTIONAL_DEVIATION,
   // D6/D7: human override moves a break into/out of `expected_net_new`.
   BREAK_DISPOSITION.EXPECTED_NET_NEW,
+  // 2026-06-16: human override into/out of `expected_volatile` and back to `open`
+  // (the human-overridable terminal-state requirement -- a wrong auto-recognition
+  // can be reversed with one action via this same path).
+  BREAK_DISPOSITION.EXPECTED_VOLATILE,
+  BREAK_DISPOSITION.OPEN,
 ]);
 
 /** The outcome of a disposition assignment. */
@@ -823,7 +1231,9 @@ export async function handleBugCallback(
     projectId: string;
     runId: string | null;
     bugId: string;
-    outcome: 'deployed' | 'failed' | 'rejected';
+    // `deployed` triggers the scoped re-reconcile; any other terminal outcome
+    // (failed | error | rejected | fix_unserved | not_fixed) escalates inline.
+    outcome: string;
     targetBaseUrl: string | null;
     pinnedBaselineId: string | null;
     summary?: string | null;
@@ -862,8 +1272,9 @@ export async function handleBugCallback(
     return { status: 'noop_idempotent' };
   }
 
-  // --- failed / rejected: escalate without a re-run. ---
-  if (outcome === 'failed' || outcome === 'rejected') {
+  // --- any non-deployed terminal outcome: escalate without a re-run. ---
+  // (failed | error | rejected | fix_unserved | not_fixed)
+  if (outcome !== 'deployed') {
     for (const b of nonTerminal) {
       if (!b.id) continue;
       await safeTrip(deps, projectId, b.id, {

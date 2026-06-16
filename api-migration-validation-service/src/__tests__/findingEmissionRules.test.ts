@@ -99,12 +99,17 @@ test('body_shape_drift -> emits medium api_behaviour_shape_drift with N/M/K coun
     scenario_name: 'create_order',
     status_classification: 'status_match',
     body_classification: 'body_shape_drift',
+    // Faithful to the producer shape (jsonShapeComparator.walk): each entry is
+    // tagged with `kind` (key_added | key_removed | type_changed | value_changed)
+    // and value fields -- NOT a hand-invented `op` field. A prior fixture used
+    // `op`, which masked a bug where summariseBodyShapeDiff read `.op` and so
+    // always reported 0/0/0 in production.
     body_diff_json: {
       entries: [
-        { op: 'added', path: '/discount_code' },
-        { op: 'added', path: '/loyalty_points' },
-        { op: 'removed', path: '/promo' },
-        { op: 'type_changed', path: '/total', from: 'number', to: 'string' },
+        { path: '/discount_code', kind: 'key_added', targetValue: 'SAVE10' },
+        { path: '/loyalty_points', kind: 'key_added', targetValue: 120 },
+        { path: '/promo', kind: 'key_removed', sourceValue: 'OLD' },
+        { path: '/total', kind: 'type_changed', sourceValue: 42, targetValue: '42' },
       ],
     },
   });

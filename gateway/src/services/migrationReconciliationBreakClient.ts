@@ -62,6 +62,23 @@ export const BREAK_DISPOSITION = {
   // re-run), but stays human-overridable via the existing disposition path. A
   // plain TEXT value -- NO changeset (mirrors AMS `MigrationReconciliationBreakStatus`).
   EXPECTED_NET_NEW: 'expected_net_new',
+  // --- 2026-06-16: machine-set terminal disposition for a volatile-only break ---
+  // A break whose body diverged ENTIRELY on legitimately-volatile JSON paths
+  // (measured by the capture-time probe, signalled by `non_deterministic_endpoint`,
+  // or operator-declared) is auto-recognised as expected non-determinism. Set by the
+  // gateway post-diff `expected_volatile` auto-disposition pass (machine, not human),
+  // is terminal (never re-run), but stays human-overridable via the existing
+  // disposition path. A deliberately-changed NON-volatile value still breaks (the
+  // load-bearing oracle invariant). Plain TEXT -- NO changeset (mirrors AMS
+  // `MigrationReconciliationBreakStatus.EXPECTED_VOLATILE`).
+  EXPECTED_VOLATILE: 'expected_volatile',
+  // --- 2026-06-16: machine-set DOWN-RANK marker for a heuristic-only break ---
+  // A break justified ONLY by conservative timestamp/UUID heuristics is NOT
+  // auto-terminated (a guess must never silently absorb a real break). It is
+  // down-ranked to `info` and stays OPEN + visible (it is NOT terminal). Plain
+  // TEXT -- NO changeset; an `info` break is just an `open` break carrying a
+  // visible down-rank marker for the review surface.
+  INFO: 'info',
 } as const;
 
 /** The terminal human dispositions: once set, never sent, never re-run (CD-A). */
@@ -79,6 +96,9 @@ export const TERMINAL_DISPOSITIONS: readonly string[] = [
   // D6: an auto-recognised net_new endpoint is terminal (never sent, never
   // re-run) -- like a human disposition but machine-set.
   BREAK_DISPOSITION.EXPECTED_NET_NEW,
+  // 2026-06-16: an auto-recognised volatile-only break is terminal (machine-set,
+  // human-overridable). `info` is deliberately NOT terminal -- it stays open.
+  BREAK_DISPOSITION.EXPECTED_VOLATILE,
 ];
 
 // ============================================================================

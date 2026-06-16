@@ -1,0 +1,182 @@
+openapi: 3.0.3
+info:
+  title: Migration Reconciliation Integration
+  version: "1.0.0"
+  description: >
+    Wire contract between the gateway (Migration Execution Driver + Reconciler)
+    and the implement-verify-service. Pinned post-merge (2026-06-15). Human-
+    readable companion: migration-reconciliation-integration.md. The
+    implement-verify-service side is FastAPI; its live /openapi.json is the
+    authoritative generator for that operation.
+
+tags:
+  - name: build-results
+    description: service -> gateway outcome callbacks
+  - name: reconciliation
+    description: gateway -> service verdict round-trip (releases haibox boxes)
+
+paths:
+  /api/implementation/build-results:
+    post:
+      tags: [build-results]
+      summary: Build-results outcome callback (implement-verify-service -> gateway)
+      description: >
+        Called after every unit of work. snake_case on the wire; the receiver is
+        camelCase-tolerant. Exactly one of job_id / bug_id. target_base_url is
+        required when outcome = deployed.
+      security:
+        - inboundServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BuildResultCallback'
+      responses:
+        '202':
+          description: Accepted (incl. idempotent no-op for an already-terminal item)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  acknowledged: { type: boolean, example: true }
+        '401': { description: Bad or missing inbound service token }
+        '404': { description: Unknown job_id for the workspace }
+        '422': { description: Neither/both ids, unknown outcome, or deployed without target_base_url }
+
+  /api/v2/reconciliation:
+    post:
+      tags: [reconciliation]
+      summary: Reconciliation verdict intake (gateway -> implement-verify-service)
+      description: >
+        The final reconciliation verdict for a deployed target. A finding that
+        carries a verdict plus the (orchestrate_id, task_group_id, repo)
+        correlation keys supersedes the cell's haibox `pending` verdict and
+        releases the SERVER-owned serving box (a caller-supplied box_id is
+        ignored). snake_case throughout.
+      security:
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconciliationIntake'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationIntakeResult'
+        '400': { description: source missing, or no findings to record }
+        '401': { description: Bad or missing bearer API key }
+
+components:
+  securitySchemes:
+    inboundServiceToken:
+      type: http
+      scheme: bearer
+      description: >
+        Bearer build-results service token (gateway buildResultsServiceToken).
+        May alternatively be supplied via the X-Service-Token header. Fail-closed.
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      description: implement-verify-service STANDARDS_API_KEY.
+
+  schemas:
+    Outcome:
+      type: string
+      description: >
+        Shared, reconciled outcome enum (src/verification/outcomes.py). Job path
+        emits implemented|deployed|error; bug path emits
+        deployed|fix_unserved|not_fixed|rejected|error. `failed` is retained for
+        backward-compatibility.
+      enum: [implemented, deployed, failed, error, rejected, fix_unserved, not_fixed]
+
+    BuildResultCallback:
+      type: object
+      required: [company, project, outcome]
+      properties:
+        company: { type: string }
+        project: { type: string }
+        outcome: { $ref: '#/components/schemas/Outcome' }
+        job_id:
+          type: string
+          nullable: true
+          description: Spec correlation. Exactly one of job_id / bug_id.
+        bug_id:
+          type: string
+          nullable: true
+          description: Bug-fix correlation. Exactly one of job_id / bug_id.
+        target_base_url:
+          type: string
+          nullable: true
+          description: Required when outcome = deployed.
+        pr_url: { type: string, nullable: true }
+        summary: { type: string, nullable: true }
+      description: >
+        camelCase aliases (jobId, bugId, targetBaseUrl, prUrl) are also accepted.
+
+    ReconciliationIntake:
+      type: object
+      required: [source, findings]
+      properties:
+        source:
+          type: string
+          example: haikai-frontend
+        delivery_id:
+          type: string
+          description: Optional batch-level idempotency key.
+        findings:
+          type: array
+          items: { $ref: '#/components/schemas/ReconciliationFinding' }
+          description: One or many. A bare single finding object is also accepted.
+
+    ReconciliationFinding:
+      type: object
+      description: >
+        A verdict is recorded only when `verdict` AND all three correlation keys
+        (orchestrate_id, task_group_id, repo) are present.
+      properties:
+        verdict:
+          type: string
+          enum: [pass, fail]
+          description: The final reconciliation verdict; supersedes haibox `pending`.
+        orchestrate_id: { type: string }
+        task_group_id: { type: string }
+        repo: { type: string }
+        verifier:
+          type: string
+          default: reconciliation
+        external_id: { type: string, description: Per-item dedup. }
+        kind:
+          type: string
+          enum: [bug, reconciliation_diff, reconciliation_result]
+        title: { type: string }
+        detail:
+          type: object
+          additionalProperties: true
+        diff:
+          type: string
+
+    ReconciliationIntakeResult:
+      type: object
+      properties:
+        status: { type: string, example: accepted }
+        recorded: { type: integer }
+        duplicates: { type: integer }
+        skipped: { type: integer }
+        verdicts: { type: integer }
+        superseded: { type: integer }
+        ids:
+          type: array
+          items: { type: string }
+        released_boxes:
+          type: array
+          items: { type: string }
+        failed_releases:
+          type: array
+          items: { type: string }
