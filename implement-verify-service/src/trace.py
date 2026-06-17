@@ -37,7 +37,7 @@ _RAW_FILE = os.environ.get("HAIKAI_TRACE_FILE")
 if _RAW_FILE and _RAW_FILE.strip():
     _FILE = Path(os.path.expanduser(_RAW_FILE))
 else:
-    _FILE = Path(os.path.expanduser("~")) / ".haikai" / "trace.log"
+    _FILE = Path(r"C:\dev\data\haikai-trace.log")
 
 # Correlation ids, emitted in this EXACT stable order; only set keys appear.
 _CORR_ORDER = ("run", "session", "job", "bug", "project", "arch")

@@ -309,6 +309,31 @@ const handler: ToolHandler = async (args, ctx) => {
     : null;
   const safeResponseBody = response ? redactJson(response.data) : null;
 
+  // DETAIL: the FULL (secret-redacted) request + response for this attempt, so a
+  // failing call can be replayed OUTSIDE the app (curl / Postman). The auth
+  // secret value is masked here -- supply the real ssoToken yourself when
+  // replaying. This is what makes "test GET 200 but all real calls fail"
+  // self-diagnosing (you see the exact URL / body / content-type / fault).
+  trace.detail(
+    'capture.http.full',
+    {
+      op: `${method.toUpperCase()} ${path}`,
+      request: {
+        method: method.toUpperCase(),
+        baseUrl: (ctx.session as { api_base_url?: string | null }).api_base_url ?? null,
+        path,
+        query: queryParams ?? null,
+        headers: safeRequestHeaders,
+        body: safeRequestBody,
+      },
+      response: response
+        ? { status: response.status, headers: safeResponseHeaders, body: safeResponseBody }
+        : { status: null, errorType, errorMessage },
+      attemptNumber,
+    },
+    corr,
+  );
+
   // The capture FK columns require a non-null `scenario_id`. The
   // orchestrator pre-creates one scenario per included operation before
   // entering the loop, so `currentScenarioId` is always set in production.

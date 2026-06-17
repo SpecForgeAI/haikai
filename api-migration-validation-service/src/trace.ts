@@ -39,7 +39,7 @@ const TIER: Tier = (() => {
 const FILE: string =
   process.env.HAIKAI_TRACE_FILE && process.env.HAIKAI_TRACE_FILE.trim() !== ''
     ? process.env.HAIKAI_TRACE_FILE
-    : join(homedir(), '.haikai', 'trace.log');
+    : join('C:\\dev\\data', 'haikai-trace.log');
 
 let dirEnsured = false;
 function ensureDir(): void {
