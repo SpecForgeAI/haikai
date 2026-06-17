@@ -144,7 +144,6 @@ if ($doRun) {
     if (-not (Test-Path $path)) { throw "Service path not found: $path" }
 
     $runCmd = if ($svc.Type -eq 'maven') { 'mvn spring-boot:run' } else { 'npm run dev' }
-    if ($Trace -ne 'off') { $runCmd = "`$env:HAIKAI_TRACE='$Trace'; " + $runCmd }
 
     if (-not $first) { $wtArgs.Add(';') }
     $first = $false
@@ -154,8 +153,20 @@ if ($doRun) {
     $wtArgs.Add('-d');       $wtArgs.Add($path)
     $wtArgs.Add('powershell')
     $wtArgs.Add('-NoExit')
-    $wtArgs.Add('-Command')
-    $wtArgs.Add($runCmd)
+    if ($Trace -ne 'off') {
+      # Set HAIKAI_TRACE inside the tab. We need a "$env:...='x'; <run>" statement
+      # separator (';'), but wt.exe treats a bare ';' as ITS OWN tab delimiter
+      # (see the $wtArgs.Add(';') above) -- passing it via -Command splits the
+      # command and wt tries to launch the run word as an exe (0x80070002). So we
+      # base64-encode the statement (UTF-16LE) and use -EncodedCommand: the b64 has
+      # no ';' for wt to see, and the env is set INSIDE the tab (works even when
+      # -w 0 attaches to an already-open Terminal window).
+      $inner = "`$env:HAIKAI_TRACE='$Trace'; $runCmd"
+      $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
+      $wtArgs.Add('-EncodedCommand'); $wtArgs.Add($enc)
+    } else {
+      $wtArgs.Add('-Command'); $wtArgs.Add($runCmd)
+    }
   }
 
   Write-Host "Launching Windows Terminal with $($selected.Count) tab(s)..." -ForegroundColor Green
