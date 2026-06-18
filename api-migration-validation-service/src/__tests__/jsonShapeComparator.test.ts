@@ -125,18 +125,19 @@ test('shape drift wins over value drift when both present', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 6 (sanity): array comparison is ordered/positional
+// Test 6 (UPDATED -- Spec 2026-06-17): a NON-volatile array reorder is its own
+// `body_ordering_drift` dimension, NOT a positional value_changed cascade.
 // ---------------------------------------------------------------------------
-test('arrays compared positionally; reordering surfaces value_changed', () => {
+test('non-volatile array reorder surfaces body_ordering_drift (single marker, not a value cascade)', () => {
   const source = { items: [1, 2, 3] };
   const target = { items: [3, 2, 1] };
   const result = compareJsonShapes(source, target);
-  // Positional comparison: items[0] and items[2] differ.
-  expect(result.bodyClassification).toBe('body_value_drift');
-  expect(result.bodyDiffJson.map((d) => d.path).sort()).toEqual([
-    '/items/0',
-    '/items/2',
-  ]);
+  // Same multiset, different order, not volatile-flagged -> ordering drift.
+  expect(result.bodyClassification).toBe('body_ordering_drift');
+  // ONE marker on the array path -- not a per-element /items/0 + /items/2 pile.
+  expect(result.bodyDiffJson).toHaveLength(1);
+  expect(result.bodyDiffJson[0].path).toBe('/items');
+  expect(result.bodyDiffJson[0].kind).toBe('ordering');
 });
 
 // ---------------------------------------------------------------------------

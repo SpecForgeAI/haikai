@@ -1,0 +1,61 @@
+-- 192-baseline-item-sequence.sql
+-- Spec: Stateful Sequence Scenarios (2026-06-18) -- Task Group 1 (AMS field).
+--       Spec D of the A->B->C->D oracle-standard series (A = oracle coverage
+--       scoring, changeset 189; B = reconcile full-response fidelity, changeset
+--       190; C = baseline integrity & provenance, changeset 191).
+--
+-- Gives the oracle faithful MUTATING + STATEFUL support: a scenario can be
+-- captured as an ORDERED HTTP chain (setup -> act -> cleanup) pinned atomically
+-- as ONE oracle unit and replayed deterministically at reconcile. The pinned
+-- chain lives as ONE nullable JSONB column on the existing immutable baseline
+-- item (R1: NOT a child entity/table -- steps are read as a UNIT at reconcile,
+-- no independent step queryability needed in v1).
+--
+--   api_behaviour_baseline_items (1 new nullable column):
+--     - sequence_json  JSONB NULL -- the pinned ordered HTTP chain shaped
+--       { steps: [ { index, role: 'setup'|'act'|'cleanup', kind: 'http',
+--                    request: { method, path, query, headers, body },
+--                    expected_status,
+--                    response_refs: [ { ref: '$<stepIndex>.<jsonpath>',
+--                                       from_step, json_path } ] } ],
+--         act_step_index, cleanup_best_effort: true }.
+--       Exactly one step has role 'act' (pointed to by act_step_index); 0..N
+--       'setup' steps precede it and 0..N 'cleanup' steps follow. kind is
+--       present on every step but only 'http' is implemented now ('sql'/'e2e'
+--       are reserved future values -- model headroom only, NOT built). Inter-
+--       step references ($<stepIndex>.<jsonpath>) resolve a value from an
+--       EARLIER step's LIVE response at replay. Map<String,Object> /
+--       @Type(JsonType) on the Java side, mirroring the sibling
+--       volatile_paths_json / request_json / response_json JSONB columns on this
+--       entity. Written ONCE at create time (write-once, no PATCH path),
+--       consistent with baseline immutability -- it ANNOTATES the pinned oracle,
+--       it is never mutated. NULL = today's single-shot item -> the existing
+--       capture/replay/diff path runs BYTE-FOR-BYTE unchanged (zero regression).
+--       Snake_case wire (AMS default -- NO @CamelCaseWire; the TS clients are
+--       snake_case).
+--
+-- INTEGRITY HASH (Spec C coherence -- ADDITIVE, NULL-OMITTED; canonical_version
+-- STAYS 1): sequence_json participates in BaselineContentHashUtil's per-item
+-- canonical content ONLY when non-null (tamper-evidence of the pinned chain).
+-- It is OMITTED ENTIRELY from the canonical form when null, so every existing
+-- baseline + every single-shot item (sequence_json null) hashes BYTE-IDENTICAL
+-- to today's v1 form and verifyIntegrity keeps verifying them. canonical_version
+-- is deliberately NOT bumped: Spec C's verifyIntegrity is NOT version-dispatched,
+-- so a bump to v2 would recompute every existing v1 baseline under v2 and
+-- false-mismatch it. Omit-when-null is the explicit override of any "bump to v2"
+-- suggestion.
+--
+-- New nullable column, reference type, NO backfill: existing baseline-item rows
+-- are untouched and read back with sequence_json null. No @PrePersist defaulting
+-- -- null is the valid empty state.
+--
+-- NEW changeset only -- never edit applied changesets per
+-- feedback_liquibase_immutable_changesets.md. 191
+-- (191-baseline-content-hash-provenance.sql) is the highest on disk at build
+-- time; this registers AFTER it in db.changelog-master.yaml. Column-only ALTER
+-- -> the not-columnExists precondition idiom (mirrors 189 / 190 / 191).
+
+ALTER TABLE api_behaviour_baseline_items ADD COLUMN sequence_json jsonb NULL;
+
+COMMENT ON COLUMN api_behaviour_baseline_items.sequence_json IS
+  'Pinned ordered HTTP chain (setup -> act -> cleanup) for a STATEFUL SEQUENCE scenario: { steps: [ { index, role: setup|act|cleanup, kind: http, request: { method, path, query, headers, body }, expected_status, response_refs: [ { ref: $<stepIndex>.<jsonpath>, from_step, json_path } ] } ], act_step_index, cleanup_best_effort: true }. kind is present on every step but only http is implemented (sql/e2e reserved, not built). Inter-step refs resolve from an earlier step''s live response at replay. Written once at create time, never mutated (write-once, no PATCH) -- it annotates the oracle. NULL = single-shot item -> existing capture/replay/diff path runs byte-for-byte unchanged (zero regression). sequence_json IS folded into the content hash when present (tamper-evidence) but OMITTED entirely when null so existing baselines hash byte-identical (canonical_version stays 1, NOT bumped). Map<String,Object> / @Type(JsonType). Snake_case wire. No backfill. Spec: Stateful Sequence Scenarios (2026-06-18).';

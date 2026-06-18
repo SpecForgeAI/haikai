@@ -1,5 +1,6 @@
 import { AxiosError, AxiosResponse } from 'axios';
 import { ToolHandler, ToolRegistryEntry, ToolValidationError } from './toolTypes';
+import { extractIdentifierFacts } from './_idFacts';
 import { redactHeaders, redactJson } from '../redactor';
 import { HttpMethod } from '../../types/oas';
 import { runManager } from '../runManager';
@@ -8,12 +9,90 @@ import {
   runVolatilityProbe,
   volatilityEnvelopeToWire,
 } from '../volatilityProbe';
+import { coerceAuthMode, resolveAuthOverride } from '../authOverride';
 import { createTracer } from '../../trace';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. DETAIL events live on the capture
 // internals -- the path we debug when a capture run goes wrong.
 const trace = createTracer('capture-svc');
+
+/**
+ * Issue 2: AMS stores `request_body_json` / `response_body_json` as
+ * `Map<String,Object>` (Jackson). A non-object body -- an HTML/text error page
+ * (e.g. a 500 / 415), a plain string, or a top-level JSON array -- cannot
+ * deserialize into a Map, so the `createCapture` POST fails with HTTP 400. Wrap
+ * any non-plain-object value in a `{ _raw, _type }` envelope so the shape is
+ * preserved AND Map-deserializable. `null`/`undefined` pass through as `null`.
+ */
+function normaliseBodyForAms(value: unknown): Record<string, unknown> | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { _raw: value, _type: Array.isArray(value) ? 'array' : typeof value };
+}
+
+/**
+ * Fix 6: distill a SHORT one-line cause from a non-2xx HTML/text error body.
+ *
+ * A Tomcat / Jersey target buries the real fault (e.g. "Invalid format:
+ * 20240131 is malformed at...") inside an HTML 415/500 error page or a long
+ * stack-trace text block. The LLM (and the operator reviewing captures) would
+ * otherwise have to dig through escaped HTML to find it. This collapses the
+ * body to a single readable line so it can be surfaced both on the persisted
+ * capture row's `error_message` AND on the tool's LLM-facing return.
+ *
+ * Defensive contract (mirrors `normaliseBodyForAms`): NEVER throws, returns
+ * `null` when there is nothing useful to surface (2xx, non-string body, empty
+ * body). Only meaningful for a non-2xx string body. Caps at ~300 chars.
+ */
+function extractErrorSummary(body: unknown, status: number): string | null {
+  try {
+    if (status >= 200 && status < 300) return null;
+    if (typeof body !== 'string') return null;
+    const raw = body.trim();
+    if (raw.length === 0) return null;
+
+    const MAX = 300;
+    const cap = (s: string): string =>
+      s.length > MAX ? `${s.slice(0, MAX - 1).trimEnd()}…` : s;
+    const collapse = (s: string): string =>
+      s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+    // 1. Prefer a Tomcat / Jersey HTML error page's <title> -- it carries the
+    //    status line + a short reason ("HTTP Status 415 - Unsupported...").
+    const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleMatch) {
+      const title = collapse(titleMatch[1]);
+      if (title.length > 0) return cap(title);
+    }
+
+    // 2. Tomcat's <p><b>Message</b> ... </p> / <b>Description</b> rows hold
+    //    the buried real fault (e.g. "Invalid format: 20240131 is malformed").
+    //    Capture the run of text AFTER a Message/Description label.
+    const labelMatch = raw.match(
+      /(?:message|description)\b[^>]*>?\s*([\s\S]{1,600})/i,
+    );
+    if (labelMatch) {
+      const labelled = collapse(labelMatch[1]);
+      if (labelled.length > 0) return cap(labelled);
+    }
+
+    // 3. Fall back to the first meaningful (non-empty, post-tag-strip) line.
+    for (const line of raw.split(/\r?\n/)) {
+      const cleaned = collapse(line);
+      if (cleaned.length > 0) return cap(cleaned);
+    }
+
+    // 4. Nothing line-oriented survived -- collapse the whole thing.
+    const whole = collapse(raw);
+    return whole.length > 0 ? cap(whole) : null;
+  } catch {
+    // Defensive: a malformed body must never break capture persistence.
+    return null;
+  }
+}
 
 /**
  * Tool: `execute_http_request`
@@ -62,6 +141,11 @@ const trace = createTracer('capture-svc');
  *       diagnostic when the HTTP attempt produced no response or when
  *       `createCapture` throws, so a no-capture-yet-"completed" scenario is
  *       auditable and is counted as errored by the orchestrator, not captured.
+ * Spec: 2026-06-17 Oracle Coverage Scoring -- optional `authMode` arg
+ *       (`session` | `none` | `bad_token`) routes the SINGLE call through the
+ *       executor's SCOPED auth-override seam so a deliberate no-auth / bad-token
+ *       request lands as a normal (401/403) captured row. When absent the
+ *       normal auth path is byte-for-byte unchanged.
  */
 
 /**
@@ -139,6 +223,15 @@ const handler: ToolHandler = async (args, ctx) => {
       '`operationId`, `method`, and `path` are required.',
     );
   }
+
+  // ---- Optional scoped auth override (`session` | `none` | `bad_token`).
+  // Defaults to `session` (the normal auto-injected auth) when absent so the
+  // common path is byte-for-byte unchanged. The override, when present, is
+  // applied to THIS single call only via the executor's
+  // `requestWithAuthOverride` seam (swap-before / restore-immediately-after),
+  // so a no-auth / bad-token request can never leak onto a later capture.
+  const authMode = coerceAuthMode(args.authMode);
+  const authOverride = resolveAuthOverride(authMode);
 
   // ---- Attempt counter: increment FIRST so every entry (even ones that
   // fail at a gate) consumes a slot. Source of truth is `runManager`; the
@@ -237,18 +330,46 @@ const handler: ToolHandler = async (args, ctx) => {
   const headers = (args.headers && typeof args.headers === 'object') ? args.headers as Record<string, string> : undefined;
   const body = args.body !== undefined ? args.body : undefined;
 
+  // ---- Fix 4: default `Content-Type: application/json` for requests that
+  // carry a body but where the caller did not set one. A Tomcat / Jersey
+  // target rejects a body with no content-type as HTTP 415 (Unsupported
+  // Media Type), so the capture LLM's request fails AVOIDABLY. We default it
+  // HERE (the LLM-driven request path) rather than in the shared
+  // `httpExecutor` -- the bare connection probe + target replay also flow
+  // through that executor and must NOT be force-defaulted.
+  //
+  // The check is case-INSENSITIVE on the caller's header keys (HTTP header
+  // names are case-insensitive; a caller-set `content-type`, `Content-Type`,
+  // or `CONTENT-TYPE` must all be preserved, not overridden).
+  let effectiveHeaders: Record<string, string> | undefined = headers;
+  if (body !== undefined) {
+    const callerHasContentType = headers
+      ? Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')
+      : false;
+    if (!callerHasContentType) {
+      effectiveHeaders = { ...(headers ?? {}), 'Content-Type': 'application/json' };
+    }
+  }
+
   const start = Date.now();
   let response: AxiosResponse<unknown> | null = null;
   let errorType: string | null = null;
   let errorMessage: string | null = null;
   try {
-    response = await ctx.httpExecutor.request({
+    const requestConfig = {
       url: path,
       method: method as HttpMethod,
       params: queryParams,
-      headers,
+      headers: effectiveHeaders,
       data: body,
-    });
+    };
+    // When an auth override is active, route through the SCOPED override seam
+    // (swap session auth for this single call, restore immediately after) so
+    // the no-auth / bad-token state can never leak onto a later normal
+    // capture. The normal (`session`) path is byte-for-byte unchanged.
+    response = authOverride
+      ? await ctx.httpExecutor.requestWithAuthOverride(requestConfig, authOverride)
+      : await ctx.httpExecutor.request(requestConfig);
   } catch (err) {
     const axiosErr = err as AxiosError;
     // If the axios error carries a response (e.g. an HTTP 4xx/5xx
@@ -278,6 +399,7 @@ const handler: ToolHandler = async (args, ctx) => {
       status: response ? response.status : null,
       durationMs,
       attemptNumber,
+      authMode,
     },
     corr,
   );
@@ -302,12 +424,23 @@ const handler: ToolHandler = async (args, ctx) => {
 
   // ---- Build redacted shapes ONCE (reused for both the LLM-facing return
   // value AND the persisted capture row -- DO NOT redact twice).
-  const safeRequestHeaders = redactHeaders(headers ?? {});
+  const safeRequestHeaders = redactHeaders(effectiveHeaders ?? {});
   const safeRequestBody = body !== undefined ? redactJson(body) : null;
   const safeResponseHeaders = response
     ? redactHeaders(response.headers as unknown as Record<string, string | string[] | undefined>)
     : null;
   const safeResponseBody = response ? redactJson(response.data) : null;
+
+  // ---- Fix 6: distill a SHORT one-line cause from a non-2xx HTML/text error
+  // body (e.g. a Tomcat 415/500 page burying the real fault). Computed from
+  // the redacted body so no secret leaks into the summary. Surfaced in TWO
+  // places: (a) the persisted capture row's `error_message` (so it's
+  // available for baseline comparison / operator review) and (b) the tool's
+  // LLM-facing return as `response.errorSummary` (Fix 8). `null` when there's
+  // nothing useful (2xx, non-string body, empty).
+  const errorSummary = response
+    ? extractErrorSummary(safeResponseBody, response.status)
+    : null;
 
   // DETAIL: the FULL (secret-redacted) request + response for this attempt, so a
   // failing call can be replayed OUTSIDE the app (curl / Postman). The auth
@@ -320,14 +453,14 @@ const handler: ToolHandler = async (args, ctx) => {
       op: `${method.toUpperCase()} ${path}`,
       request: {
         method: method.toUpperCase(),
-        baseUrl: (ctx.session as { api_base_url?: string | null }).api_base_url ?? null,
+        baseUrl: ctx.session.apiBaseUrl ?? null,
         path,
         query: queryParams ?? null,
         headers: safeRequestHeaders,
         body: safeRequestBody,
       },
       response: response
-        ? { status: response.status, headers: safeResponseHeaders, body: safeResponseBody }
+        ? { status: response.status, headers: safeResponseHeaders, body: safeResponseBody, errorSummary }
         : { status: null, errorType, errorMessage },
       attemptNumber,
     },
@@ -370,17 +503,20 @@ const handler: ToolHandler = async (args, ctx) => {
   //     makes NO replay calls and returns a `not_probed` envelope;
   //   - any probe error is non-fatal: a probe failure must never fail the
   //     capture (the envelope simply stays null = strict, G1).
+  //   - an auth-override attempt (`none` / `bad_token`) is NEVER probed: it is
+  //     a deliberate negative whose 401/403 is not a 2xx oracle anyway, and we
+  //     must not replay it k more times with the wrong auth.
   let volatilePathsJson: Record<string, unknown> | null = null;
   const responseIs2xx =
     response !== null && response.status >= 200 && response.status < 300;
-  if (response && responseIs2xx) {
+  if (response && responseIs2xx && !authOverride) {
     try {
       const envelope = await runVolatilityProbe(
         {
           method: method.toUpperCase(),
           path,
           query: queryParams,
-          headers,
+          headers: effectiveHeaders,
           body,
         },
         {
@@ -409,6 +545,22 @@ const handler: ToolHandler = async (args, ctx) => {
   // -- `redactHeaders` returns `Record<string, string | string[]>` to
   // preserve multi-valued headers; AMS stores them as a JSON blob anyway,
   // so the runtime shape is preserved through the JSON round-trip.
+  // Issue 1: AMS REQUIRES a non-blank `request_url_redacted` on every
+  // createCapture -- a blank/missing value is rejected HTTP 400, which silently
+  // fails ALL capture persistence (every scenario "errors", 0 captured). Build
+  // it from the session base URL + path; auth secrets live in headers (redacted
+  // separately), not in base+path.
+  const urlBase = (ctx.session.apiBaseUrl ?? '').replace(/\/+$/, '');
+  const requestUrlRedacted =
+    (path.startsWith('/') ? `${urlBase}${path}` : `${urlBase}/${path}`) || path || 'unknown';
+
+  // Fix 6 (persist side): for a non-2xx response, prefer the distilled
+  // `errorSummary` for the capture row's `error_message` so the buried fault
+  // is available for baseline comparison / operator review (it was `null` on
+  // the response/non-2xx path before). A transport failure (no response) keeps
+  // the caught-error `errorMessage`.
+  const persistedErrorMessage = errorMessage ?? errorSummary;
+
   const captureBody = {
     session_id: ctx.session.id,
     scenario_id: ctx.currentScenarioId,
@@ -416,18 +568,20 @@ const handler: ToolHandler = async (args, ctx) => {
     attempt_number: attemptNumber,
     request_method: method.toUpperCase(),
     request_path: path,
+    request_url_redacted: requestUrlRedacted,
     request_query_json: queryParams ?? null,
     request_headers_redacted_json:
       safeRequestHeaders as unknown as Record<string, string> | null,
-    request_body_json: safeRequestBody,
+    // Issue 2: wrap non-object bodies so AMS Map<String,Object> can hold them.
+    request_body_json: normaliseBodyForAms(safeRequestBody),
     response_status: response ? response.status : null,
     response_headers_redacted_json: response
       ? (safeResponseHeaders as unknown as Record<string, string> | null)
       : null,
-    response_body_json: safeResponseBody,
+    response_body_json: normaliseBodyForAms(safeResponseBody),
     duration_ms: durationMs,
     error_type: errorType,
-    error_message: errorMessage,
+    error_message: persistedErrorMessage,
     captured_at: new Date().toISOString(),
     volatile_paths_json: volatilePathsJson,
   };
@@ -500,6 +654,90 @@ const handler: ToolHandler = async (args, ctx) => {
   // when this is > 0 (misleading-COMPLETED fix).
   runManager.incrementCapturesPersisted(ctx.session.id);
 
+  // Record this capture's id + HTTP status (null on a transport failure) in
+  // attempt order so the orchestrator can, after the per-scenario loop exits,
+  // pick the ONE canonical capture matching the scenario's intended outcome
+  // and reject-and-hide the LLM's intermediate fumbles (e.g. a malformed-date
+  // 400 it later corrected to a 200). Intent-driven canonical capture.
+  runManager.recordScenarioCapture(
+    ctx.session.id,
+    captureId,
+    response ? response.status : null,
+    {
+      method: method.toUpperCase(),
+      path,
+      query: queryParams ?? null,
+      headers: safeRequestHeaders as unknown as Record<string, string> | null,
+      body: safeRequestBody,
+      responseStatus: response ? response.status : null,
+      responseHeaders: safeResponseHeaders as unknown as Record<string, string> | null,
+      responseBody: safeResponseBody,
+    },
+  );
+
+  // ---- Cross-scenario learning. Record concise, secret-redacted lines on the
+  // session-level `learnedFacts` so the orchestrator threads them into LATER
+  // scenario prompts and the LLM stops re-guessing what already worked / kept
+  // failing. Every harvest below is best-effort -- a learning write must NEVER
+  // fail a capture. Three flavours, each self-describing via its prefix:
+  //
+  //   - `OK <METHOD path> -> <status> ...` (fix 5): a request that returned 2xx
+  //     is a known-good example -- reuse its value formats / date patterns / ids.
+  //   - `OK id: <key>=<value> (from ...)` (Kiro #2): an identifier surfaced by a
+  //     SUCCESSFUL response is a REAL id to chain into a later detail call --
+  //     prefer it over a fresh DB lookup or a guess that gets "not a valid id".
+  //   - `FAILED: <METHOD path> ... -> <status> <summary>` (Kiro #1): an input the
+  //     API REJECTED -- avoid it on later scenarios (the LLM was correcting a
+  //     date format on one endpoint then re-guessing ISO on the next).
+  //
+  // An auth-override attempt's outcome is NOT harvested as a learned fact: a
+  // deliberate 401/403 from a no-auth/bad-token probe is not a real API
+  // rejection to teach later scenarios to avoid.
+  if (!authOverride && responseIs2xx) {
+    // (1) known-good REQUEST fact (fix 5).
+    try {
+      const factParts = [`OK ${method.toUpperCase()} ${path} -> ${response?.status}`];
+      if (queryParams && Object.keys(queryParams).length > 0) {
+        factParts.push(`query=${JSON.stringify(queryParams)}`);
+      }
+      if (safeRequestBody && typeof safeRequestBody === 'object') {
+        factParts.push(`body=${JSON.stringify(safeRequestBody)}`);
+      }
+      runManager.recordLearnedFact(ctx.session.id, factParts.join(' ').slice(0, 240));
+    } catch {
+      /* best-effort */
+    }
+
+    // (2) up to ~5 candidate identifiers from the SUCCESSFUL response body
+    // (Kiro #2). Defensive: `extractIdentifierFacts` never throws; the harvest
+    // is additionally wrapped so a learning failure can never fail a capture.
+    try {
+      const provenance = `${method.toUpperCase()} ${path}`;
+      for (const idFact of extractIdentifierFacts(safeResponseBody)) {
+        runManager.recordLearnedFact(
+          ctx.session.id,
+          `OK id: ${idFact} (from ${provenance})`.slice(0, 240),
+        );
+      }
+    } catch {
+      /* best-effort */
+    }
+  } else if (!authOverride && response && errorSummary) {
+    // (3) known-bad fact for a non-2xx response with a distilled cause (Kiro
+    // #1). Teaches LATER scenarios which input/format the API rejected so the
+    // LLM does not re-guess the same malformed value.
+    try {
+      const failParts = [`FAILED: ${method.toUpperCase()} ${path}`];
+      if (queryParams && Object.keys(queryParams).length > 0) {
+        failParts.push(`query=${JSON.stringify(queryParams)}`);
+      }
+      failParts.push(`-> ${response.status} ${errorSummary}`);
+      runManager.recordLearnedFact(ctx.session.id, failParts.join(' ').slice(0, 240));
+    } catch {
+      /* best-effort */
+    }
+  }
+
   // ---- Defense in depth: even though the capture row WAS persisted, a
   // transport / auth failure (no HTTP response) means the scenario has no
   // usable oracle. Emit a `failed_request` diagnostic so the per-scenario
@@ -532,6 +770,10 @@ const handler: ToolHandler = async (args, ctx) => {
           status: response.status,
           headers: safeResponseHeaders ?? {},
           body: safeResponseBody,
+          // Fix 8: surface the distilled one-line cause so the LLM reads a
+          // legible error instead of digging through escaped HTML. `null`
+          // for a 2xx / non-distillable body.
+          errorSummary,
         }
       : null,
     error: errorType
@@ -555,6 +797,12 @@ export const executeHttpRequestTool: ToolRegistryEntry = {
       query: { type: 'object', description: 'Optional query parameters.' },
       headers: { type: 'object', description: 'Optional ad-hoc headers (do NOT include auth headers).' },
       body: { description: 'Optional JSON body.' },
+      authMode: {
+        type: 'string',
+        enum: ['session', 'none', 'bad_token'],
+        description:
+          "Optional, SCOPED to this single call. 'session' (default) uses the session's auto-injected auth. 'none' sends with NO auth and 'bad_token' sends a garbage bearer token -- both for deliberate auth-negative coverage (expect a 401/403). The override never leaks onto a later call.",
+      },
     },
     required: ['operationId', 'method', 'path'],
     additionalProperties: false,

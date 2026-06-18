@@ -185,6 +185,7 @@ function buildExecutorAlwaysOk(): NonNullable<TargetReplayDeps['createHttpExecut
         headers: { 'content-type': 'application/json' },
         config: {} as never,
       } as never)),
+      requestWithAuthOverride: jest.fn(),
       setAuth: jest.fn(),
       dispose: jest.fn(),
     };

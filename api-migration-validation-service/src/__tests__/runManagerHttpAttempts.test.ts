@@ -79,3 +79,35 @@ describe('runManager -- scenarioHttpAttempts', () => {
     );
   });
 });
+
+describe('runManager -- recordLearnedFact (cross-scenario learning, both directions)', () => {
+  it('dedupes identical facts and is a no-op for an unknown session', () => {
+    const rm = new RunManager();
+    rm.start({ sessionId: SESSION_ID, projectId: PROJECT_ID, architectureId: ARCH_ID });
+    rm.recordLearnedFact(SESSION_ID, 'OK GET /things -> 200');
+    rm.recordLearnedFact(SESSION_ID, 'OK GET /things -> 200');
+    rm.recordLearnedFact(SESSION_ID, 'FAILED: GET /things -> 400 bad date');
+    expect(rm.getLearnedFacts(SESSION_ID)).toEqual([
+      'OK GET /things -> 200',
+      'FAILED: GET /things -> 400 bad date',
+    ]);
+    // No-op for an unknown session: never throws, returns empty list.
+    rm.recordLearnedFact('does-not-exist', 'OK whatever');
+    expect(rm.getLearnedFacts('does-not-exist')).toEqual([]);
+    rm.end(SESSION_ID);
+  });
+
+  it('caps retained facts at the most recent 40 (bumped from 25 to hold good + bad + id facts)', () => {
+    const rm = new RunManager();
+    rm.start({ sessionId: SESSION_ID, projectId: PROJECT_ID, architectureId: ARCH_ID });
+    for (let i = 0; i < 45; i += 1) {
+      rm.recordLearnedFact(SESSION_ID, `OK fact ${i}`);
+    }
+    const facts = rm.getLearnedFacts(SESSION_ID);
+    expect(facts).toHaveLength(40);
+    // The oldest five were shifted out; the most recent 40 are retained.
+    expect(facts[0]).toBe('OK fact 5');
+    expect(facts[facts.length - 1]).toBe('OK fact 44');
+    rm.end(SESSION_ID);
+  });
+});

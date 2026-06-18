@@ -27,6 +27,20 @@ const MAX_BODY_DIFF_BYTES = 8 * 1024;
 /** Sentinel category for all findings emitted by this rules file. */
 export const API_BEHAVIOUR_DRIFT_CATEGORY = 'api_behaviour_drift' as const;
 
+/**
+ * The five per-dimension break TYPES (Spec 2026-06-17, R1 + R2 + R6). A single
+ * diff_item still produces exactly ONE break (no cardinality change), but that
+ * break carries the SET of dimensions that drifted so triage / the frontend
+ * can render per-dimension badges. Status-CLASS (2xx vs 4xx vs 5xx) is a
+ * SEVERITY sub-label of the single `status` type -- NOT a sixth type (R6).
+ */
+export type BreakType =
+  | 'status'
+  | 'headers'
+  | 'body-shape'
+  | 'body-value'
+  | 'ordering';
+
 export interface EmissionDetailJson {
   method: string;
   path: string;
@@ -35,8 +49,22 @@ export interface EmissionDetailJson {
   targetStatus: number | null;
   statusClassification: string;
   bodyClassification: string | null;
+  /**
+   * Per-dimension header classification (`header_match` /
+   * `header_value_drift` / `header_presence_drift`), or null when the header
+   * dimension was skipped. Spec 2026-06-17.
+   */
+  headerClassification: string | null;
   notes: string | null;
   bodyDiffJson: Record<string, unknown> | null;
+  /**
+   * The SET of dimensions that drifted on this diff_item, derived by
+   * {@link deriveBreakTypes}. The gateway copies this onto the break
+   * `detail_json` so the frontend can render per-dimension badges. Empty for
+   * a clean match and for source_only / target_only (which carry their own
+   * finding type, not a dimension set). Spec 2026-06-17, R1 + R2.
+   */
+  breakTypes: BreakType[];
   /** Set when `bodyDiffJson` was truncated above {@link MAX_BODY_DIFF_BYTES}. */
   bodyDiffTruncated?: boolean;
 }
@@ -53,6 +81,11 @@ export interface EmissionInstruction {
   summary: string;
   /** Populated even when `shouldEmit=false` -- diagnostic-only in that case. */
   detailJson: EmissionDetailJson;
+  /**
+   * The derived break_type SET (mirror of {@link EmissionDetailJson.breakTypes}
+   * for callers reading the instruction directly). Spec 2026-06-17.
+   */
+  breakTypes: BreakType[];
   category: typeof API_BEHAVIOUR_DRIFT_CATEGORY;
 }
 
@@ -149,9 +182,70 @@ function maybeTruncateBodyDiff(
   };
 }
 
+/**
+ * Count + summarise the header divergences on a diff_item's `header_entries`
+ * blob (written by diffRunner). Returns the affected header names (incl.
+ * tolerated allowlisted ones) and whether any presence drift is present, for
+ * the header finding summary line.
+ */
+function summariseHeaderDiff(bodyDiffJson: Record<string, unknown> | null): {
+  names: string[];
+  presenceDrift: boolean;
+} {
+  const names: string[] = [];
+  let presenceDrift = false;
+  const entries =
+    bodyDiffJson && Array.isArray(bodyDiffJson.header_entries)
+      ? (bodyDiffJson.header_entries as unknown[])
+      : [];
+  for (const raw of entries) {
+    if (!raw || typeof raw !== 'object') continue;
+    const e = raw as { headerName?: unknown; kind?: unknown };
+    if (typeof e.headerName === 'string') names.push(e.headerName);
+    if (e.kind === 'presence') presenceDrift = true;
+  }
+  return { names, presenceDrift };
+}
+
+/**
+ * Derive the SET of per-dimension break TYPES that drifted on a diff_item
+ * (Spec 2026-06-17, R1 + R2 + R6). A single diff_item still yields ONE break;
+ * this set tags WHICH dimensions diverged for per-dimension badges.
+ *
+ * Precedence is NOT encoded here -- this is the unordered SET. Status-CLASS is
+ * NOT a separate type: a status drift contributes the single `status` type
+ * regardless of 2xx/4xx/5xx (the severity captures the class, R6).
+ *
+ * source_only / target_only carry their own finding type and are NOT dimension
+ * drifts in the five-type taxonomy, so they yield an EMPTY set.
+ */
+function deriveBreakTypes(item: ApiBehaviourDiffItemDto): BreakType[] {
+  const types: BreakType[] = [];
+  if (item.status_classification === 'status_drift') types.push('status');
+  const header = item.header_classification ?? null;
+  if (header === 'header_value_drift' || header === 'header_presence_drift') {
+    types.push('headers');
+  }
+  switch (item.body_classification) {
+    case 'body_shape_drift':
+      types.push('body-shape');
+      break;
+    case 'body_value_drift':
+      types.push('body-value');
+      break;
+    case 'body_ordering_drift':
+      types.push('ordering');
+      break;
+    default:
+      break;
+  }
+  return types;
+}
+
 function buildDetailJson(
   item: ApiBehaviourDiffItemDto,
   truncatedBodyDiff: { value: Record<string, unknown> | null; truncated: boolean },
+  breakTypes: BreakType[],
 ): EmissionDetailJson {
   return {
     method: item.method,
@@ -161,6 +255,8 @@ function buildDetailJson(
     targetStatus: item.target_response_status ?? null,
     statusClassification: item.status_classification,
     bodyClassification: item.body_classification ?? null,
+    headerClassification: item.header_classification ?? null,
+    breakTypes,
     notes: item.notes ?? null,
     bodyDiffJson: truncatedBodyDiff.value,
     ...(truncatedBodyDiff.truncated ? { bodyDiffTruncated: true } : {}),
@@ -171,6 +267,7 @@ function buildDetailJson(
 function noEmit(
   item: ApiBehaviourDiffItemDto,
   truncatedBodyDiff: { value: Record<string, unknown> | null; truncated: boolean },
+  breakTypes: BreakType[],
 ): EmissionInstruction {
   return {
     shouldEmit: false,
@@ -178,7 +275,8 @@ function noEmit(
     severity: '',
     title: '',
     summary: '',
-    detailJson: buildDetailJson(item, truncatedBodyDiff),
+    detailJson: buildDetailJson(item, truncatedBodyDiff, breakTypes),
+    breakTypes,
     category: API_BEHAVIOUR_DRIFT_CATEGORY,
   };
 }
@@ -216,7 +314,12 @@ export function classifyDiffItem(
   const sourceStatus = item.source_response_status ?? null;
   const targetStatus = item.target_response_status ?? null;
   const truncated = maybeTruncateBodyDiff(item.body_diff_json ?? null);
-  const detailJson = buildDetailJson(item, truncated);
+  // The derived per-dimension break_type SET (Spec 2026-06-17, R1 + R2). One
+  // break per diff_item; this set tags WHICH dimensions drifted so the gateway
+  // can copy it onto detail_json and the frontend can render per-dimension
+  // badges. Threaded onto EVERY returned instruction + its detail_json.
+  const breakTypes = deriveBreakTypes(item);
+  const detailJson = buildDetailJson(item, truncated, breakTypes);
 
   // ---- target_only ----------------------------------------------------
   if (item.status_classification === 'target_only') {
@@ -227,6 +330,7 @@ export function classifyDiffItem(
       title: `Target-only: ${method} ${path}`,
       summary: `Target baseline contains scenario "${scenarioName}" but no source captured this scenario for comparison.`,
       detailJson,
+      breakTypes,
       category: API_BEHAVIOUR_DRIFT_CATEGORY,
     };
   }
@@ -242,6 +346,7 @@ export function classifyDiffItem(
         title: `Source-only: ${method} ${path} (mutating call skipped on replay)`,
         summary: `Mutating source scenario "${scenarioName}" was skipped during target replay because mutating_calls_confirmed was false.`,
         detailJson,
+        breakTypes,
         category: API_BEHAVIOUR_DRIFT_CATEGORY,
       };
     }
@@ -253,6 +358,7 @@ export function classifyDiffItem(
         title: `Source-only: ${method} ${path} (target replay transport failure)`,
         summary: `Target replay for scenario "${scenarioName}" hit a transport-level failure; no target response captured.`,
         detailJson,
+        breakTypes,
         category: API_BEHAVIOUR_DRIFT_CATEGORY,
       };
     }
@@ -266,11 +372,15 @@ export function classifyDiffItem(
       title: `Source-only: ${method} ${path} (no paired target capture)`,
       summary: `Source baseline contains scenario "${scenarioName}" but no matching target capture was produced.`,
       detailJson,
+      breakTypes,
       category: API_BEHAVIOUR_DRIFT_CATEGORY,
     };
   }
 
-  // ---- status_drift ---------------------------------------------------
+  // ---- status_drift (dominant; status-CLASS is its severity, R6) -------
+  // A status drift takes the primary finding type even when it co-occurs with
+  // a header / body / ordering drift; `breakTypes` still carries the full set
+  // so the gateway / frontend surface every drifted dimension.
   if (item.status_classification === 'status_drift') {
     const severity = classifyStatusDriftSeverity(sourceStatus, targetStatus);
     return {
@@ -280,12 +390,14 @@ export function classifyDiffItem(
       title: `Status drift: ${method} ${path} responded ${sourceStatus} -> ${targetStatus}`,
       summary: `Source baseline captured a ${sourceStatus} response; target baseline captured ${targetStatus} for scenario "${scenarioName}".`,
       detailJson,
+      breakTypes,
       category: API_BEHAVIOUR_DRIFT_CATEGORY,
     };
   }
 
-  // ---- status_match: branch on body classification --------------------
+  // ---- status_match: branch on body / header / ordering classification -
   if (item.status_classification === 'status_match') {
+    // Body SHAPE wins the primary finding type (strongest body signal).
     if (item.body_classification === 'body_shape_drift') {
       const counts = summariseBodyShapeDiff(item.body_diff_json ?? null);
       return {
@@ -295,6 +407,34 @@ export function classifyDiffItem(
         title: `Body shape drift: ${method} ${path}`,
         summary: `Response body shape changed for scenario "${scenarioName}": ${counts.added} keys added, ${counts.removed} keys removed, ${counts.typeChanges} type changes.`,
         detailJson,
+        breakTypes,
+        category: API_BEHAVIOUR_DRIFT_CATEGORY,
+      };
+    }
+    // Header drift (presence/value). A header divergence is a real
+    // behavioural break -- emit a dedicated header finding. presence drift
+    // (a header appeared/disappeared) is the more serious signal -> medium;
+    // a value change -> info (allowlisted-value tolerance is handled by the
+    // gateway auto-dispose pass, not suppressed here). Ranked AFTER body
+    // shape so a shape+header diff reads primarily as the shape break, with
+    // `headers` still in breakTypes.
+    const header = item.header_classification ?? null;
+    if (header === 'header_presence_drift' || header === 'header_value_drift') {
+      const summary = summariseHeaderDiff(item.body_diff_json ?? null);
+      const names = summary.names.length > 0 ? summary.names.join(', ') : '(none)';
+      const severity = header === 'header_presence_drift' ? 'medium' : 'info';
+      const kindLabel =
+        header === 'header_presence_drift'
+          ? 'a response header appeared or disappeared'
+          : 'a response header value changed';
+      return {
+        shouldEmit: true,
+        findingType: 'api_behaviour_header_drift',
+        severity,
+        title: `Header drift: ${method} ${path}`,
+        summary: `Response headers changed for scenario "${scenarioName}": ${kindLabel} (${names}).`,
+        detailJson,
+        breakTypes,
         category: API_BEHAVIOUR_DRIFT_CATEGORY,
       };
     }
@@ -307,14 +447,29 @@ export function classifyDiffItem(
         title: `Body value drift: ${method} ${path}`,
         summary: `Response body shape unchanged but ${valueDiffCount} value(s) differ for scenario "${scenarioName}".`,
         detailJson,
+        breakTypes,
         category: API_BEHAVIOUR_DRIFT_CATEGORY,
       };
     }
-    // status_match + body_match (or null body classification) -- no emit.
-    return noEmit(item, truncated);
+    // Array ORDERING drift (Spec 2026-06-17): a NON-volatile reorder, surfaced
+    // as its own dimension rather than a value cascade. Weakest body signal.
+    if (item.body_classification === 'body_ordering_drift') {
+      return {
+        shouldEmit: true,
+        findingType: 'api_behaviour_ordering_drift',
+        severity: 'info',
+        title: `Array ordering drift: ${method} ${path}`,
+        summary: `Response body has the same elements in a different order for scenario "${scenarioName}".`,
+        detailJson,
+        breakTypes,
+        category: API_BEHAVIOUR_DRIFT_CATEGORY,
+      };
+    }
+    // status_match + body_match + header_match/skipped -- no emit.
+    return noEmit(item, truncated, breakTypes);
   }
 
   // Fall-through -- unknown status_classification value. Don't emit;
   // returning shouldEmit=false keeps the runner's fail-soft loop quiet.
-  return noEmit(item, truncated);
+  return noEmit(item, truncated, breakTypes);
 }

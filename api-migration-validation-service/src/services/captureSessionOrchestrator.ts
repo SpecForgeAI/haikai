@@ -9,6 +9,8 @@ import { gatewayClient as defaultGatewayClient } from './gatewayClient';
 import { runManager } from './runManager';
 import { secretsStore } from './secretsStore';
 import { createSessionHttpExecutor } from './httpExecutor';
+import type { SessionHttpExecutor } from './httpExecutor';
+import { BAD_TOKEN_VALUE } from './authOverride';
 import { createDbAdapter } from './db/dbAdapterFactory';
 import { runScenarioLoop } from './captureLoopRunner';
 import { ALL_TOOLS } from './tools';
@@ -17,7 +19,13 @@ import { discoveryServiceClient as defaultDiscoveryServiceClient } from './disco
 import type { DiscoveryServiceClient } from './discoveryServiceClient';
 import type { CaptureSession, ScenarioType } from '../types/captureSession';
 import type { ParsedOasInventory } from '../types/oas';
+import type { ApiAuthSecret } from '../types/secrets';
 import type { ChatMessage } from '../types/llm';
+import {
+  assembleSequenceJson,
+  deriveSequenceVolatilePaths,
+  type SequenceJson,
+} from './sequenceAssembly';
 import { createTracer } from '../trace';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
@@ -56,12 +64,21 @@ const trace = createTracer('capture-svc');
  * falls back to WSDL-only output (W-17 graceful fallback).
  * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling --
  * misleading-COMPLETED follow-up: a scenario is only credited to
- * `scenarios_completed` ("captured") when it BOTH exited the loop
- * `completed` AND persisted >=1 capture row (`runManager.scenarioCapturesPersisted`).
- * A scenario that "completes" via the terminal `record_capture_note` note
- * tool (or after every `execute_http_request` attempt failed) with zero
- * capture rows is counted as errored, so an all-failed run can never read
- * "N of N captured".
+ * `scenarios_completed` ("captured") when it produced a usable oracle.
+ * Spec: 2026-06-17 Intent-Driven Canonical Capture -- the captured/errored
+ * decision is now intent-driven: AFTER the per-scenario loop exits, the
+ * orchestrator selects the ONE canonical capture matching the scenario's
+ * intended outcome (`scenario.expectedStatus`) from the ordered
+ * `runManager.getScenarioCaptures(session.id)` list, leaves it pending human
+ * accept, and reject-and-hides every OTHER capture (the LLM's intermediate
+ * fumbles -- e.g. a malformed-date 400 it later corrected to a 200) with
+ * `accepted:false` + a system reason marker on `reviewer_notes`. A scenario
+ * counts as CAPTURED iff a canonical was found; otherwise it errored (only
+ * fumbles / a 500 came back) and ALL its captures are rejected as
+ * non-canonical. INTENTIONAL negatives (404 / 4xx) survive because they are
+ * their OWN scenarios carrying that `expectedStatus`. Reject-and-hide (NOT
+ * hard delete): there is no AMS capture-delete endpoint and deleting oracle
+ * data is unsafe. So an all-fumbled run can never read "N of N captured".
  *
  * Action-endpoint plumbing (`POST /capture-sessions/:id/start` etc.) lives
  * in Task Group 6; this orchestrator is the call target the action endpoint
@@ -303,6 +320,8 @@ export function buildScenarioPrompt(
   path?: string,
   discoveryContext?: MigrationDiscoveryContextDto,
   scenarioSeed?: ScenarioSeedDto,
+  knownGoodFacts?: string[],
+  scenarioDirective?: string,
 ): ChatMessage[] {
   const userPayload: Record<string, unknown> = {
     sessionId: session.id,
@@ -311,9 +330,21 @@ export function buildScenarioPrompt(
     operationId: operationOasId,
     scenarioName,
     instructions:
-      'Plan and execute this scenario. Use list_oas_operations / get_oas_operation_detail for shape; ' +
-      'sample_db_values / list_db_metadata if helpful for realistic inputs; ' +
-      'execute_http_request to capture; record_capture_note to finish.',
+      'Follow this MANDATORY order for the scenario: ' +
+      '(1) call get_oas_operation_detail for THIS operation FIRST and read its parameter ' +
+      'types/formats/patterns/enums and request schema BEFORE building any request (do not guess shapes); ' +
+      '(2) for every id, code, foreign-key or reference value a parameter needs, get a REAL value from the ' +
+      'database first (list_db_metadata to find the table, then sample_db_values / run_readonly_sql) -- ' +
+      'do NOT invent ids (no 1/0/100) when a database is configured; ' +
+      '(3) build the request using the contract formats (e.g. the exact date pattern) and the real values; ' +
+      'the path template may have MULTIPLE segments (e.g. /x/{a}/{b}) -- read EVERY path parameter from ' +
+      'get_oas_operation_detail and fill EACH segment with a correctly-typed value (from the contract format / ' +
+      'database); never collapse a multi-segment path into a single id; ' +
+      '(4) call execute_http_request to capture; ' +
+      '(5) if the response is non-2xx or an error, READ response.errorSummary / response.body, identify the ' +
+      'rejected field, and issue ONE corrected request (limited attempts -- never repeat an identical request); ' +
+      '(6) call record_capture_note to finish. ' +
+      'Only guess a value when no database is configured AND the contract gives no example or pattern.',
   };
 
   // Seeded scenario inputs computed from the discovery model. Attached
@@ -341,10 +372,12 @@ export function buildScenarioPrompt(
     );
     userPayload.discoveryContext = {
       guidance:
-        'Discovery findings are supporting evidence. Do not invent behaviour beyond OAS/API ' +
-        'response evidence. Use DB sample hints (sample_db_values) where available. If discovery ' +
-        'indicates uncertainty (e.g. missing contract detail, unresolved decision tasks), record ' +
-        'a note/warning via record_capture_note rather than guessing.',
+        'Discovery findings and DB sample hints are AUTHORITATIVE signals for input formats and ' +
+        'conventions (date formats, id shapes, enum values, required headers) -- use them to construct ' +
+        'realistic requests, and prefer a discovered concrete value/format over a guess. Verify against the ' +
+        'live OAS/response evidence. Only when discovery genuinely CONTRADICTS the contract should you record ' +
+        'a note via record_capture_note instead of proceeding -- do not default to guessing when a discovered ' +
+        'value is available.',
       perOperationMatched: block.hadPerOperationMatches,
       highPriorityFindings: block.highPriorityFindings,
       evidenceHighlights: block.evidenceHighlights,
@@ -370,12 +403,36 @@ export function buildScenarioPrompt(
     );
   }
 
+  if (scenarioDirective) {
+    // The specific variation THIS scenario must exercise (enum value, negative
+    // case, filter combo, ...) -- see defaultScenarioSet. The intent class is
+    // enforced post-loop by Phase-2 canonical capture.
+    userPayload.scenarioDirective = scenarioDirective;
+  }
+
+  if (knownGoodFacts && knownGoodFacts.length > 0) {
+    // Cross-scenario learning, BOTH directions. Each fact is self-describing
+    // via its prefix (`OK` / `OK id:` / `FAILED:`), so the guidance only has
+    // to teach the LLM how to read them. (Payload key kept as `knownGood` for
+    // wire/test stability even though it now carries known-bad facts too.)
+    userPayload.knownGood = {
+      guidance:
+        'Facts learned earlier in THIS capture session. REUSE the values and formats from `OK` lines ' +
+        '(date patterns, id conventions, working query/body shapes), and PREFER an id surfaced by a prior ' +
+        'response -- an `OK id:` line -- over a fresh DB lookup or a guess when a later call needs that id. ' +
+        'AVOID the inputs on `FAILED` lines: those were rejected by the API and must not be re-tried as-is.',
+      examples: knownGoodFacts,
+    };
+  }
+
   return [
     {
       role: 'system',
       content:
         'You are an API behaviour capture planner. You will draft scenarios, execute them via the registered tools, and record results. ' +
         'You must use `execute_http_request` for any HTTP call (never describe one in prose) and `run_readonly_sql` for any DB read. ' +
+        'Do NOT call `execute_http_request` until you have (a) fetched `get_oas_operation_detail` for the operation and (b) resolved real input values from the database where one is configured. ' +
+        'After any non-2xx or error response, READ the error before retrying and change the specific value/field the API rejected -- never repeat an identical request. ' +
         'When you are satisfied that the scenario is captured (or determine it cannot be), call `record_capture_note` to end the loop.',
     },
     {
@@ -417,15 +474,567 @@ export function seedsForOperation(
  *
  * Exported for unit testing.
  */
+/**
+ * The intended outcome class for a generated scenario. Phase-2 canonical-capture
+ * keeps the capture matching this and drops the LLM's intermediate fumbles, so a
+ * NEGATIVE scenario (its goal IS an error) survives while a corrected mistake on
+ * a POSITIVE scenario does not.
+ */
+export type ScenarioExpectedStatus = 'success' | 'not_found' | 'client_error';
+
+export interface GeneratedScenario {
+  name: string;
+  type: string;
+  expectedStatus: ScenarioExpectedStatus;
+  /** Plain-language variation the LLM must exercise (rendered into the prompt). */
+  directive?: string;
+}
+
+/**
+ * System marker written to a non-canonical capture's `reviewer_notes` when the
+ * orchestrator reject-and-hides it (Phase-2 intent-driven canonical capture).
+ * It is a BARE string (not the structured `{ text, masks }` reviewer-notes
+ * JSON the review UI writes), so the frontend can distinguish a system fumble
+ * from a human reject: a human reject either carries no marker or carries the
+ * structured payload, while a system fumble's `reviewer_notes` equals this
+ * exact literal. `accepted:false` alone is NOT sufficient -- a human can also
+ * reject a capture -- so the marker is what the frontend filters on.
+ *
+ * Reason field chosen: AMS `PatchCaptureRequest` exposes only
+ * `accepted` / `accepted_at` / `reviewer_notes` (NO `accepted_reason` /
+ * `business_notes` on the capture PATCH surface), so the EXISTING
+ * `reviewer_notes` field carries the marker -- no new AMS field invented.
+ *
+ * Spec: 2026-06-17 Intent-Driven Canonical Capture.
+ */
+export const NON_CANONICAL_REVIEWER_NOTE = 'superseded_non_canonical';
+
+/**
+ * Select the canonical capture for a scenario from the ordered per-scenario
+ * capture list, by the scenario's intended `expectedStatus`:
+ *
+ *   - `success`      -> the LAST capture with a 2xx status;
+ *   - `not_found`    -> the LAST capture with status 404, else the LAST 4xx;
+ *   - `client_error` -> the LAST capture with a 4xx status.
+ *
+ * "Last" because the LLM's CORRECTED attempt comes after its fumble(s): a
+ * positive scenario that first sent a malformed-date 400 then a fixed 200
+ * keeps the 200; a negative `not_found` scenario whose first attempt was a
+ * malformed-input 400 (a fumble building the request) then a clean 404 keeps
+ * the 404. Returns `null` when no capture matches the intended class -- the
+ * scenario then has no usable oracle (e.g. only a 500 came back) and the
+ * orchestrator counts it errored and rejects every capture.
+ *
+ * Exported for unit testing.
+ *
+ * Spec: 2026-06-17 Intent-Driven Canonical Capture.
+ */
+export function selectCanonicalCapture(
+  captures: ReadonlyArray<{ captureId: string; status: number | null }>,
+  expectedStatus: ScenarioExpectedStatus,
+): { captureId: string; status: number | null } | null {
+  const is2xx = (s: number | null): boolean => s !== null && s >= 200 && s < 300;
+  const is4xx = (s: number | null): boolean => s !== null && s >= 400 && s < 500;
+  const is404 = (s: number | null): boolean => s === 404;
+
+  // Walk from the end so the FIRST match is the LAST (most-recent / corrected)
+  // capture, without mutating the caller's array.
+  const lastMatching = (
+    pred: (s: number | null) => boolean,
+  ): { captureId: string; status: number | null } | null => {
+    for (let i = captures.length - 1; i >= 0; i -= 1) {
+      if (pred(captures[i].status)) return captures[i];
+    }
+    return null;
+  };
+
+  switch (expectedStatus) {
+    case 'success':
+      return lastMatching(is2xx);
+    case 'not_found':
+      return lastMatching(is404) ?? lastMatching(is4xx);
+    case 'client_error':
+      return lastMatching(is4xx);
+    default:
+      return null;
+  }
+}
+
+// ===========================================================================
+// Oracle Coverage Scoring (Spec: 2026-06-17 Oracle Coverage Scoring)
+//
+// SINGLE-SOURCE RUBRIC: the scorer consumes the EXACT `GeneratedScenario[]`
+// that `defaultScenarioSet` emits (one dimension == one generated scenario) and
+// reuses `selectCanonicalCapture` VERBATIM to decide "achieved", so generation
+// and scoring can never drift. The scorer is PURE (inputs in, summary out --
+// no I/O, no mutation of inputs); the orchestrator owns the accumulation across
+// the per-scenario loop and the final assembly + persistence.
+// ===========================================================================
+
+/** One scored coverage dimension == one generated scenario. snake_case wire. */
+export interface CoverageDimensionResult {
+  name: string;
+  type: string;
+  expected_status: ScenarioExpectedStatus;
+  achieved: boolean;
+  /** The canonical capture id when achieved; null on a MISS. */
+  canonical_capture_id: string | null;
+  /** Honest human-readable reason on a MISS; null when achieved. */
+  reason: string | null;
+}
+
+/** Per-endpoint coverage: the rubric dimensions + the achieved/total fraction. */
+export interface EndpointCoverageResult {
+  operation_id: string;
+  method: string;
+  path: string;
+  /** achieved dimensions / total rubric dimensions for this operation. */
+  score: number;
+  dimensions: CoverageDimensionResult[];
+}
+
+/** One session-level auth-negative probe sub-result. */
+export interface AuthProbeResult {
+  /** `no_token` | `bad_token`. */
+  name: string;
+  /** Human-readable expectation (e.g. `401`, `401/403`). */
+  expected: string;
+  achieved: boolean;
+  /** Observed HTTP status (null when no response / not run). */
+  observed_status: number | null;
+  /** Honest reason on a MISS / not-run; null when achieved. */
+  reason: string | null;
+}
+
+/** The single project-level auth-coverage dimension (rolls up both probes). */
+export interface AuthCoverageResult {
+  /** Achieved only when BOTH probes returned their expected rejection. */
+  achieved: boolean;
+  /** The included endpoint the probes ran against; null when none qualified. */
+  representative_operation_id: string | null;
+  probes: AuthProbeResult[];
+}
+
+/** The whole persisted coverage summary (one AMS JSONB field, snake_case). */
+export interface CoverageSummary {
+  overall_score: number;
+  dimensions_total: number;
+  dimensions_achieved: number;
+  per_endpoint: EndpointCoverageResult[];
+  auth_coverage: AuthCoverageResult;
+}
+
+/**
+ * The per-scenario outcome the scorer reads: the ordered capture list the loop
+ * recorded for that scenario (a snapshot of `runManager.getScenarioCaptures`
+ * taken BEFORE the next `beginScenario` reset). Keyed by scenario name so the
+ * scorer can line each generated dimension up with its outcome.
+ */
+export type ScenarioOutcomesByName = ReadonlyMap<
+  string,
+  ReadonlyArray<{ captureId: string; status: number | null }>
+>;
+
+/**
+ * Derive an honest, human-readable MISS reason for a dimension from its
+ * per-scenario captures. Pure. Cases, in order:
+ *   - no captures at all                  -> nothing was captured
+ *   - only 5xx / no-response came back    -> system returned 5xx on all attempts
+ *   - enum dimension, value unreachable   -> value not reachable
+ *   - otherwise                           -> no capture matched the intended class
+ */
+function coverageMissReason(
+  scenario: GeneratedScenario,
+  captures: ReadonlyArray<{ captureId: string; status: number | null }>,
+): string {
+  if (captures.length === 0) {
+    return `${scenario.name}: no capture was recorded (no HTTP attempt persisted a usable response)`;
+  }
+  const statuses = captures.map((c) => c.status);
+  const allNullOrServerError = statuses.every(
+    (st) => st === null || (st >= 500 && st < 600),
+  );
+  if (allNullOrServerError) {
+    const seen = statuses.map((st) => (st === null ? 'transport_failure' : String(st)));
+    return `${scenario.name}: system returned 5xx / no response on all attempts (saw ${seen.join(', ')})`;
+  }
+  // Enum dimensions name the exact unreachable value in their name/directive.
+  if (scenario.type === 'enum') {
+    return `${scenario.name}: no canonical capture — value not reachable`;
+  }
+  const seen = statuses.map((st) => (st === null ? 'transport_failure' : String(st)));
+  return (
+    `${scenario.name}: no capture matched the intended ${scenario.expectedStatus} class ` +
+    `(saw ${seen.join(', ')})`
+  );
+}
+
+/**
+ * PURE coverage scorer (sibling to `selectCanonicalCapture`). Scores one
+ * operation's rubric: every `GeneratedScenario` becomes exactly one dimension,
+ * "achieved" iff `selectCanonicalCapture(captures, scenario.expectedStatus)`
+ * returns a non-null capture for that scenario's recorded captures. Because the
+ * dimension set IS the generated `scenarios` array, a dimension can never be
+ * scored that was not generated, and every generated dimension is scored
+ * (no drift). Inputs are not mutated; no I/O.
+ *
+ * `scenarios` MUST be the same array `defaultScenarioSet(op, ...)` produced for
+ * this operation (the rubric). `outcomesByName` maps each scenario name to the
+ * ordered captures the loop recorded for it.
+ *
+ * Exported for unit testing.
+ */
+export function scoreEndpointCoverage(
+  op: Pick<OperationDto, 'operation_id' | 'method' | 'path'>,
+  scenarios: ReadonlyArray<GeneratedScenario>,
+  outcomesByName: ScenarioOutcomesByName,
+): EndpointCoverageResult {
+  const dimensions: CoverageDimensionResult[] = scenarios.map((scenario) => {
+    const captures = outcomesByName.get(scenario.name) ?? [];
+    const canonical = selectCanonicalCapture(captures, scenario.expectedStatus);
+    if (canonical) {
+      return {
+        name: scenario.name,
+        type: scenario.type,
+        expected_status: scenario.expectedStatus,
+        achieved: true,
+        canonical_capture_id: canonical.captureId,
+        reason: null,
+      };
+    }
+    return {
+      name: scenario.name,
+      type: scenario.type,
+      expected_status: scenario.expectedStatus,
+      achieved: false,
+      canonical_capture_id: null,
+      reason: coverageMissReason(scenario, captures),
+    };
+  });
+
+  const total = dimensions.length;
+  const achieved = dimensions.filter((d) => d.achieved).length;
+  return {
+    operation_id: op.operation_id,
+    method: op.method,
+    path: op.path,
+    // Score is display-only this iteration. An endpoint with no generated
+    // dimensions (should not happen -- happy_path is always added) scores 0.
+    score: total > 0 ? achieved / total : 0,
+    dimensions,
+  };
+}
+
+/**
+ * Assemble the whole session coverage summary from the per-endpoint results and
+ * the single project-level auth dimension. PURE. Overall score folds the auth
+ * dimension into the denominator as +1:
+ *
+ *   overall = (sum of achieved per-endpoint dimensions + auth_achieved?1:0)
+ *           / (sum of all per-endpoint dimensions + 1)
+ *
+ * `dimensions_total` / `dimensions_achieved` are persisted alongside the
+ * fraction so a later reader (Spec C) does not recompute.
+ *
+ * Exported for unit testing.
+ */
+export function assembleCoverageSummary(
+  perEndpoint: ReadonlyArray<EndpointCoverageResult>,
+  authCoverage: AuthCoverageResult,
+): CoverageSummary {
+  const endpointTotal = perEndpoint.reduce((acc, e) => acc + e.dimensions.length, 0);
+  const endpointAchieved = perEndpoint.reduce(
+    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
+    0,
+  );
+  // The auth dimension always contributes exactly 1 to the denominator.
+  const dimensionsTotal = endpointTotal + 1;
+  const dimensionsAchieved = endpointAchieved + (authCoverage.achieved ? 1 : 0);
+  return {
+    overall_score: dimensionsTotal > 0 ? dimensionsAchieved / dimensionsTotal : 0,
+    dimensions_total: dimensionsTotal,
+    dimensions_achieved: dimensionsAchieved,
+    per_endpoint: [...perEndpoint],
+    auth_coverage: authCoverage,
+  };
+}
+
+/**
+ * A candidate representative endpoint for the session-level auth-negative
+ * probes: it is included, `safe_to_execute` (non-mutating under default
+ * policy), achieved its happy_path (so the request shape is known-good), and
+ * has NO templated path segments (so the probe can replay it WITHOUT inventing
+ * a real id -- staying safe). The orchestrator builds this from the loop
+ * accumulation; the probe runner picks the FIRST qualifying candidate.
+ */
+export interface AuthProbeCandidate {
+  operationId: string;
+  method: string;
+  path: string;
+}
+
+/** A path with no `{...}` template segment is safe to replay with no auth. */
+function pathHasNoTemplateSegments(path: string): boolean {
+  return !/\{[^}]+\}/.test(path);
+}
+
+/**
+ * Pick the representative endpoint for the auth probes from the qualifying
+ * candidates. Pure -- returns the first candidate (deterministic, the loop
+ * adds them in operation order) or null when none qualifies.
+ *
+ * Exported for unit testing.
+ */
+export function selectAuthProbeEndpoint(
+  candidates: ReadonlyArray<AuthProbeCandidate>,
+): AuthProbeCandidate | null {
+  for (const c of candidates) {
+    if (pathHasNoTemplateSegments(c.path)) return c;
+  }
+  return null;
+}
+
+/**
+ * Run the SESSION-level auth-negative probes ONCE against the chosen
+ * representative endpoint and roll them into the single project-level auth
+ * dimension. Two probes:
+ *   - no_token  -> send WITH NO auth (`{ type: 'none' }`), expect 401;
+ *   - bad_token -> send a garbage bearer token, expect 401 or 403.
+ *
+ * Both use the executor's SCOPED `requestWithAuthOverride` seam, so neither can
+ * leak the override onto a later call. The auth dimension is "achieved" only
+ * when BOTH probes returned their expected rejection; otherwise MISSED with a
+ * reason naming the failing probe and the observed status. When no safe
+ * representative endpoint qualifies, the dimension is MISSED with an honest
+ * reason and NO call is fired (respecting safe_to_execute / mutating gates).
+ *
+ * Defensive: a transport failure or unexpected throw on a probe is recorded as
+ * that probe MISSING with an honest reason rather than aborting the run.
+ */
+async function runAuthNegativeProbes(
+  executor: SessionHttpExecutor,
+  candidates: ReadonlyArray<AuthProbeCandidate>,
+): Promise<AuthCoverageResult> {
+  const chosen = selectAuthProbeEndpoint(candidates);
+  if (!chosen) {
+    const reason =
+      'no safe representative endpoint available for auth probes ' +
+      '(need an included, safe_to_execute, happy-path-captured endpoint with no path parameters)';
+    return {
+      achieved: false,
+      representative_operation_id: null,
+      probes: [
+        { name: 'no_token', expected: '401', achieved: false, observed_status: null, reason },
+        { name: 'bad_token', expected: '401/403', achieved: false, observed_status: null, reason },
+      ],
+    };
+  }
+
+  const runProbe = async (
+    name: 'no_token' | 'bad_token',
+    expectedLabel: string,
+    override: ApiAuthSecret,
+    isExpectedRejection: (status: number) => boolean,
+  ): Promise<AuthProbeResult> => {
+    try {
+      const resp = await executor.requestWithAuthOverride(
+        { url: chosen.path, method: chosen.method.toLowerCase() },
+        override,
+      );
+      const status = resp.status;
+      if (isExpectedRejection(status)) {
+        return { name, expected: expectedLabel, achieved: true, observed_status: status, reason: null };
+      }
+      return {
+        name,
+        expected: expectedLabel,
+        achieved: false,
+        observed_status: status,
+        reason:
+          `${name} probe expected ${expectedLabel} but the endpoint returned ${status} ` +
+          `(auth was NOT enforced as expected)`,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        name,
+        expected: expectedLabel,
+        achieved: false,
+        observed_status: null,
+        reason: `${name} probe produced no response (transport failure: ${message})`,
+      };
+    }
+  };
+
+  const noToken = await runProbe(
+    'no_token',
+    '401',
+    { type: 'none' },
+    (status) => status === 401,
+  );
+  const badToken = await runProbe(
+    'bad_token',
+    '401/403',
+    { type: 'bearer', bearerToken: BAD_TOKEN_VALUE },
+    (status) => status === 401 || status === 403,
+  );
+
+  const probes = [noToken, badToken];
+  const achieved = probes.every((p) => p.achieved);
+  return {
+    achieved,
+    representative_operation_id: chosen.operationId,
+    probes,
+  };
+}
+
+/** Coverage caps so a param-rich endpoint gets thorough -- but bounded -- coverage. */
+const MAX_SCENARIOS_PER_OP = 10;
+const MAX_ENUM_VALUES_PER_PARAM = 4;
+
+/** Classify a discovery-seed scenario name into an expected-outcome class. */
+function classifyExpectedFromName(name: string): ScenarioExpectedStatus {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('404') || n.includes('not_found') || n.includes('notfound')) return 'not_found';
+  if (
+    n.includes('400') || n.includes('bad') || n.includes('invalid') ||
+    n.includes('auth') || n.includes('validation') || n.includes('error')
+  ) {
+    return 'client_error';
+  }
+  return 'success';
+}
+
+/** Defensively read an OAS operation's parameters (skips $ref params/schemas). */
+function extractOasParams(
+  oasOperation: unknown,
+): Array<{ name: string; location: string; required: boolean; enumValues?: unknown[] }> {
+  const raw = (oasOperation as { parameters?: unknown })?.parameters;
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ name: string; location: string; required: boolean; enumValues?: unknown[] }> = [];
+  for (const p of raw) {
+    if (!p || typeof p !== 'object' || '$ref' in (p as object)) continue;
+    const param = p as { name?: unknown; in?: unknown; required?: boolean; schema?: unknown };
+    if (typeof param.name !== 'string' || typeof param.in !== 'string') continue;
+    const schema =
+      param.schema && typeof param.schema === 'object' && !('$ref' in (param.schema as object))
+        ? (param.schema as { enum?: unknown[] })
+        : undefined;
+    out.push({
+      name: param.name,
+      location: param.in,
+      required: param.required ?? param.in === 'path',
+      enumValues: Array.isArray(schema?.enum) && schema!.enum!.length > 0 ? schema!.enum : undefined,
+    });
+  }
+  return out;
+}
+
+/**
+ * Build the scenario set for one operation. Scales coverage to the operation's
+ * parameter space (your-ask #2 / thoroughness): a bare `GET /x/{id}` yields a
+ * few scenarios (happy / not-found / bad-request), while a parameter-rich
+ * endpoint yields up to `MAX_SCENARIOS_PER_OP` -- one per enum value (each
+ * likely exercises a distinct code path we want to replicate), a filter
+ * combination, and negatives -- all derived from the now fix-1-enriched param
+ * schemas (`oasOperation.parameters` carry `enum`/`format`). Each scenario
+ * carries an `expectedStatus` intent (for Phase-2 canonical capture) and a
+ * `directive` telling the LLM exactly which variation to exercise. Discovery
+ * seeds (when present) are folded in first as authoritative starting points.
+ *
+ * Exported for unit testing.
+ */
 export function defaultScenarioSet(
   op: OperationDto,
   discoveryContext?: MigrationDiscoveryContextDto,
-): Array<{ name: string; type: string }> {
+  oasOperation?: unknown,
+): GeneratedScenario[] {
+  const out: GeneratedScenario[] = [];
+  const seen = new Set<string>();
+  const add = (s: GeneratedScenario): void => {
+    if (seen.has(s.name) || out.length >= MAX_SCENARIOS_PER_OP) return;
+    seen.add(s.name);
+    out.push(s);
+  };
+
+  // 1. Discovery seeds first (authoritative, discovery-derived).
   const seedSet = seedsForOperation(discoveryContext, op.method, op.path);
-  if (seedSet?.seeds && seedSet.seeds.length > 0) {
-    return seedSet.seeds.map((s) => ({ name: s.scenarioName, type: s.scenarioType }));
+  if (seedSet?.seeds) {
+    for (const s of seedSet.seeds) {
+      add({ name: s.scenarioName, type: s.scenarioType, expectedStatus: classifyExpectedFromName(s.scenarioName) });
+    }
   }
-  return [{ name: 'happy_path', type: 'happy_path' }];
+
+  // 2. Always exercise the happy path.
+  add({
+    name: 'happy_path',
+    type: 'happy_path',
+    expectedStatus: 'success',
+    directive:
+      'Send a fully valid request using REAL values (DB-sourced ids, the contract date/enum ' +
+      'formats); expect a 2xx success.',
+  });
+
+  // 3. Parameter-derived coverage (uses the fix-1-enriched param schemas).
+  const params = extractOasParams(oasOperation);
+  const pathParams = params.filter((p) => p.location === 'path');
+  const enumParams = params.filter((p) => p.enumValues && p.enumValues.length > 0);
+  const queryParams = params.filter((p) => p.location === 'query');
+
+  // 3a. Non-existent path id -> 404 (its own negative scenario, kept as intended).
+  if (pathParams.length > 0) {
+    const p = pathParams[0];
+    add({
+      name: `not_found_${p.name}`,
+      type: 'not_found',
+      expectedStatus: 'not_found',
+      directive:
+        `Send a well-formed but NON-EXISTENT ${p.name} (matches the format, absent from the data); ` +
+        'expect a 404/not-found. This is an INTENDED negative case to capture, not a mistake.',
+    });
+  }
+
+  // 3b. One scenario per enum value -- each likely exercises a distinct code path.
+  for (const p of enumParams) {
+    for (const value of (p.enumValues as unknown[]).slice(0, MAX_ENUM_VALUES_PER_PARAM)) {
+      add({
+        name: `enum_${p.name}_${String(value)}`,
+        type: 'enum',
+        expectedStatus: 'success',
+        directive:
+          `Set ${p.name}=${String(value)} (a valid enum value) with all other inputs valid; expect a ` +
+          '2xx. Each enum value likely drives a different code path, which we want to capture.',
+      });
+    }
+  }
+
+  // 3c. Filter combination when there are >=2 query params.
+  if (queryParams.length >= 2) {
+    const names = queryParams.slice(0, 3).map((p) => p.name);
+    add({
+      name: `filter_combo_${names.join('_')}`,
+      type: 'filter_combo',
+      expectedStatus: 'success',
+      directive:
+        `Combine the filters ${names.join(', ')} with valid values in a single request; expect a 2xx. ` +
+        'Captures the filtered behaviour.',
+    });
+  }
+
+  // 3d. Malformed required param -> 4xx validation (its own negative scenario).
+  const malformTarget = params.find((p) => p.required && p.location !== 'path') ?? params.find((p) => p.required);
+  if (malformTarget) {
+    add({
+      name: `bad_request_${malformTarget.name}`,
+      type: 'bad_request',
+      expectedStatus: 'client_error',
+      directive:
+        `Send a MALFORMED ${malformTarget.name} that violates its declared format/pattern (e.g. wrong ` +
+        'date format, out-of-enum value); expect a 4xx validation error. INTENDED negative case to capture.',
+    });
+  }
+
+  return out;
 }
 
 /**
@@ -450,9 +1059,45 @@ function seedTypeToScenarioType(seedType: string): ScenarioType {
     case 'error':
     case 'edge':
     case 'business_edge_case':
+    case 'enum':
+    case 'filter_combo':
       return 'business_edge_case';
+    case 'not_found':
+      return 'not_found';
+    case 'bad_request':
+      return 'validation_error';
     default:
       return 'generated_candidate';
+  }
+}
+
+/**
+ * Reject-and-hide ONE non-canonical capture: PATCH `accepted:false` with the
+ * system reason marker on `reviewer_notes`. Defensive -- NEVER throws: a
+ * reject-write failure (AMS hiccup, or a test mock with no `patchCapture`)
+ * must not abort the run. The canonical capture is durably persisted and the
+ * scenario counting already happened by the time we get here; a missed reject
+ * just leaves a fumble visible (degrades to the pre-canonical behaviour),
+ * which is strictly safer than tearing down the whole capture session.
+ *
+ * Spec: 2026-06-17 Intent-Driven Canonical Capture.
+ */
+async function safeRejectNonCanonicalCapture(
+  archClient: typeof defaultArchModelClient,
+  projectId: string,
+  captureId: string,
+): Promise<void> {
+  try {
+    await archClient.patchCapture(projectId, captureId, {
+      accepted: false,
+      reviewer_notes: NON_CANONICAL_REVIEWER_NOTE,
+    });
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `captureSessionOrchestrator: failed to reject non-canonical capture ${captureId}`,
+      err instanceof Error ? err.message : String(err),
+    );
   }
 }
 
@@ -483,6 +1128,18 @@ export async function orchestrateCaptureSession(
   let scenariosCompleted = 0;
   let scenariosErrored = 0;
   let infraError: string | null = null;
+
+  // ---- Oracle Coverage Scoring (Spec: 2026-06-17). Accumulated INSIDE the
+  // per-scenario loop because `runManager.getScenarioCaptures` is RESET every
+  // `beginScenario`; we cannot read it once at the end. The scorer stays pure;
+  // the orchestrator owns this accumulation + the final assembly. `null` means
+  // the summary could not be assembled (defensive -- never blocks completion).
+  const perEndpointCoverage: EndpointCoverageResult[] = [];
+  // Candidate representative endpoints for the SESSION-level auth probes:
+  // included + safe_to_execute + happy_path achieved (built in operation order;
+  // `selectAuthProbeEndpoint` filters out templated paths).
+  const authProbeCandidates: AuthProbeCandidate[] = [];
+  let coverageSummary: CoverageSummary | null = null;
 
   // ---- Pre-flight: secrets must exist (purged on terminal => fail fast)
   const secrets = secretsStore.get(session.id);
@@ -571,8 +1228,16 @@ export async function orchestrateCaptureSession(
 
     for (const op of deps.persistedOperations) {
       if (op.included !== true) continue;
-      const scenarios = defaultScenarioSet(op, discoveryContext);
+      const oasOperation = deps.oasInventory.operations.find(
+        (o) => o.operationId === op.operation_id,
+      )?.oasOperation;
+      const scenarios = defaultScenarioSet(op, discoveryContext, oasOperation);
       const seedSet = seedsForOperation(discoveryContext, op.method, op.path);
+      // Snapshot each scenario's recorded captures HERE (the loop below resets
+      // `runManager.scenarioCaptures` on the next `beginScenario`), keyed by
+      // scenario name, so the pure scorer can line each generated dimension up
+      // with its outcome after this operation's scenarios finish.
+      const outcomesByName = new Map<string, Array<{ captureId: string; status: number | null }>>();
       for (const scenario of scenarios) {
         scenariosAttempted += 1;
         // Resets `scenarioHttpAttempts` AND `scenarioCapturesPersisted` to 0
@@ -626,6 +1291,8 @@ export async function orchestrateCaptureSession(
             op.path,
             discoveryContext,
             seedSet?.seeds?.find((s) => s.scenarioName === scenario.name),
+            runManager.getLearnedFacts(session.id),
+            scenario.directive,
           ),
           tools: ALL_TOOLS,
           gatewayClient: gateway,
@@ -633,40 +1300,180 @@ export async function orchestrateCaptureSession(
           abortSignal: runManager.get(session.id)?.abortController.signal,
         });
 
-        // Misleading-COMPLETED fix: the loop returns `reason: 'completed'`
-        // whenever a TERMINAL tool (`record_capture_note`, a diagnostic note)
-        // is called OR the assistant returns no tool calls -- NEITHER of
-        // which persists a capture row. The only thing that writes a capture
-        // is a SUCCESSFUL `execute_http_request`, which bumps
-        // `scenarioCapturesPersisted`. So "completed" alone is NOT proof a
-        // capture exists. Credit a scenario as captured ONLY when it exited
-        // `completed` AND persisted >=1 capture row; otherwise count it as
-        // errored so the session counters stay truthful (header reads
-        // "0 of N captured" for an all-failed run, and the existing
-        // zero-captures banner fires). The status state-machine is untouched.
-        const capturesPersisted =
-          runManager.getScenarioCapturesPersisted(session.id) ?? 0;
-        if (outcome.reason === 'completed' && capturesPersisted > 0) {
+        // Intent-driven canonical capture (replaces the misleading-COMPLETED
+        // captured/errored decision): the loop typically produces MULTIPLE
+        // capture rows for one scenario -- the LLM's intermediate fumbles plus
+        // the corrected attempt (e.g. a malformed-date 400 then a fixed 200).
+        // Only the ONE capture matching the scenario's intended outcome is the
+        // oracle worth keeping; the rest are noise that would pollute the
+        // baseline and the human review. We select the canonical capture by
+        // `scenario.expectedStatus`, leave it UNTOUCHED (still pending human
+        // accept), and reject-and-hide every OTHER capture (`accepted:false`
+        // + a system reason marker on `reviewer_notes`). A scenario counts as
+        // CAPTURED iff a canonical was found; otherwise it errored (only
+        // fumbles / a 500 came back -- no usable oracle) and ALL its captures
+        // are rejected as non-canonical. There is no AMS delete endpoint and
+        // deleting oracle data is unsafe, so this is reject-and-hide, never a
+        // hard delete. The status state-machine is untouched.
+        const scenarioCaptures = runManager.getScenarioCaptures(session.id);
+        const capturesPersisted = scenarioCaptures.length;
+
+        // ---- Stateful sequence assembly (Spec D, 2026-06-18). When the LLM
+        // pinned a sequence for this scenario (via the terminal `pin_sequence`
+        // tool), assemble the R1 `sequence_json` from the pin declaration +
+        // the ordered captures and derive the ref-derived volatile paths. A
+        // sequence stays ONE GeneratedScenario -> ONE CoverageDimensionResult:
+        // we DELIBERATELY reuse the existing selectCanonicalCapture /
+        // scoreEndpointCoverage path (the ACT step's capture is the canonical
+        // one for scoring), so the per-endpoint rubric is NEVER inflated to N
+        // dimensions. A NON-sequence scenario takes the existing single-shot
+        // path byte-for-byte unchanged (pinnedSequence is null).
+        const pinnedSequence = runManager.getPinnedSequence(session.id);
+        let assembledSequence: SequenceJson | null = null;
+        let sequenceVolatilePaths: Record<string, unknown> | null = null;
+        let actStepCapture: { captureId: string; status: number | null } | null = null;
+        if (pinnedSequence) {
+          assembledSequence = assembleSequenceJson(pinnedSequence, scenarioCaptures);
+          if (assembledSequence) {
+            // The ACT step's capture is the canonical oracle for scoring + the
+            // baseline-item carrier of `sequence_json`.
+            const actDecl = pinnedSequence.steps[pinnedSequence.actStepIndex];
+            const actCap = scenarioCaptures[actDecl.captureIndex];
+            if (actCap) {
+              actStepCapture = { captureId: actCap.captureId, status: actCap.status };
+            }
+            // Ref-derived volatility (R3): record the referenced + generated-id
+            // paths into the SAME volatile_paths_json envelope so the diff side
+            // tolerates them with NO diff-side change.
+            sequenceVolatilePaths = deriveSequenceVolatilePaths(pinnedSequence, scenarioCaptures);
+          }
+        }
+
+        // For a well-formed sequence, the canonical capture is the ACT step's
+        // capture (the behaviour under test). Otherwise the existing
+        // intent-driven canonical selection by `expectedStatus` applies,
+        // unchanged.
+        const canonical = actStepCapture
+          ? actStepCapture
+          : selectCanonicalCapture(scenarioCaptures, scenario.expectedStatus);
+
+        // Coverage accumulation: snapshot this scenario's ordered captures by
+        // name (copy -- the array is reset on the next `beginScenario`). The
+        // pure scorer re-runs `selectCanonicalCapture` on this snapshot, so the
+        // achieved/missed decision uses the EXACT same function as the canonical
+        // selection above (no second definition of coverage).
+        outcomesByName.set(
+          scenario.name,
+          scenarioCaptures.map((c) => ({ captureId: c.captureId, status: c.status })),
+        );
+
+        let droppedCount = 0;
+        if (canonical) {
           scenariosCompleted += 1;
+          // Reject every NON-canonical capture (the fumbles). The canonical
+          // capture is deliberately left as-is (pending human accept).
+          for (const cap of scenarioCaptures) {
+            if (cap.captureId === canonical.captureId) continue;
+            droppedCount += 1;
+            await safeRejectNonCanonicalCapture(archClient, session.projectId, cap.captureId);
+          }
         } else {
+          // No capture matched the intended outcome -- the scenario errored.
+          // Reject ALL of its captures as non-canonical so none reach the
+          // baseline or the human review's default view.
           scenariosErrored += 1;
+          for (const cap of scenarioCaptures) {
+            droppedCount += 1;
+            await safeRejectNonCanonicalCapture(archClient, session.projectId, cap.captureId);
+          }
         }
 
         // DETAIL: per-scenario terminus -- the terminal tool / loop-exit
-        // reason plus the truthful captures-persisted count, the exact pair
-        // that distinguishes a genuine capture from a "completed" no-capture
-        // scenario (the misleading-COMPLETED path we debugged).
+        // reason, the truthful captures-persisted count, PLUS the canonical
+        // captureId kept and the count of fumbles dropped (intent-driven
+        // canonical capture). `canonicalCaptureId` is null when the scenario
+        // errored (no capture matched its intended outcome).
+        // Persist the assembled `sequence_json` (+ ref-derived volatile paths)
+        // as a structured diagnostic keyed to the canonical (act-step) capture,
+        // so the Save-as-baseline flow can carry it onto the act step's
+        // baseline item via the `createBaselineItem` path (write-once,
+        // snake_case `sequence_json` + `volatile_paths_json`). Best-effort -- a
+        // failed write must not fail the run.
+        if (assembledSequence && canonical) {
+          try {
+            await archClient.createDiagnostic(session.projectId, {
+              session_id: session.id,
+              operation_id: op.id,
+              scenario_id: scenarioRow.id,
+              // Reuse the existing `endpoint_skipped` diagnostic type as the
+              // carrier (AMS DiagnosticType is a constrained union); the
+              // structured `detail_json` carries the sequence + the
+              // `sequence_pinned` marker the Save / review surfaces read.
+              diagnostic_type: 'endpoint_skipped',
+              message:
+                `sequence_pinned: stateful sequence for '${scenario.name}' -- ` +
+                `${assembledSequence.steps.length} steps, act at index ${assembledSequence.act_step_index}.`,
+              detail_json: {
+                marker: 'sequence_pinned',
+                canonical_capture_id: canonical.captureId,
+                sequence_json: assembledSequence as unknown as Record<string, unknown>,
+                volatile_paths_json: sequenceVolatilePaths,
+              },
+            });
+          } catch (seqErr) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              `captureSessionOrchestrator: failed to persist sequence_pinned diagnostic for ` +
+                `session=${session.id} scenario='${scenario.name}'`,
+              seqErr instanceof Error ? seqErr.message : String(seqErr),
+            );
+          }
+        }
+
         trace.detail(
           'capture.scenario.end',
           {
             scenario: scenario.name,
             terminalTool: outcome.reason,
             capturesPersisted,
+            expectedStatus: scenario.expectedStatus,
+            canonicalCaptureId: canonical ? canonical.captureId : null,
+            dropped: droppedCount,
+            sequencePinned: assembledSequence !== null,
+            sequenceStepCount: assembledSequence ? assembledSequence.steps.length : 0,
           },
           corr,
         );
       }
+
+      // Operation finished: score its rubric from the accumulated per-scenario
+      // outcomes (PURE scorer reads the SAME `scenarios` array generation used).
+      const endpointCoverage = scoreEndpointCoverage(op, scenarios, outcomesByName);
+      perEndpointCoverage.push(endpointCoverage);
+
+      // Register this endpoint as an auth-probe candidate when it is safe to
+      // replay (non-mutating / safe_to_execute) AND it achieved its happy_path
+      // (a known-good request shape). `selectAuthProbeEndpoint` additionally
+      // rejects templated paths so the probe never has to invent a real id.
+      const happyAchieved = endpointCoverage.dimensions.some(
+        (d) => d.name === 'happy_path' && d.achieved,
+      );
+      if (op.safe_to_execute === true && happyAchieved) {
+        authProbeCandidates.push({
+          operationId: op.operation_id,
+          method: op.method,
+          path: op.path,
+        });
+      }
     }
+
+    // ---- Session-level auth-negative coverage (ONE project dimension). Run
+    // ONCE, BEFORE the executor is disposed in the `finally`. The probes use
+    // the scoped auth-override seam so they can never leak onto a later call;
+    // when no safe representative endpoint qualifies the dimension is recorded
+    // MISSED with an honest reason rather than firing an unsafe call.
+    const authCoverage = await runAuthNegativeProbes(httpExecutor, authProbeCandidates);
+    coverageSummary = assembleCoverageSummary(perEndpointCoverage, authCoverage);
   } catch (err) {
     infraError = err instanceof Error ? err.message : String(err);
   } finally {
@@ -697,6 +1504,15 @@ export async function orchestrateCaptureSession(
     scenarios_attempted: scenariosAttempted,
     scenarios_completed: scenariosCompleted,
     scenarios_errored: scenariosErrored,
+    // Oracle Coverage Scoring (2026-06-17): the whole coverage summary rides
+    // along on the SAME completion PATCH beside the scenario tallies (AMS
+    // changeset 189, snake_case wire). Display-only -- no gate. Null when the
+    // run aborted before assembly (infra error); a null/absent summary renders
+    // as "coverage not recorded", never an error. Cast to the AMS field's
+    // Record shape (the summary is a plain JSON object).
+    coverage_summary_json: coverageSummary
+      ? (coverageSummary as unknown as Record<string, unknown>)
+      : null,
   });
 
   // SUMMARY: capture terminal outcome, using the TRUTHFUL counters above.

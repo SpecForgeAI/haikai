@@ -1,0 +1,15 @@
+Topic: Stateful Sequence Scenarios — mutating + stateful behaviour support for the oracle (api-migration-validation-service capture + reconcile; AMS; frontend). Item 3 of the Oracle-standard roadmap; "Spec D" after the A/B/C series.
+
+Problem: The oracle cannot faithfully capture/reconcile MUTATING endpoints or STATEFUL flows. (1) reconcile re-issues captured requests against the target as black-box HTTP with NO rollback/transaction/reset and NO target-DB access (targetReplayRunner fires mutating requests when mutating_calls_confirmed=true, else skips them); (2) the scenario `preconditions` field is text-only, never executed; no scenario chaining exists (only opportunistic id-harvesting); (3) the volatility probe SKIPS mutating endpoints, so a generated id in a 201 response is compared strictly and throws a false break on replay. Known failing case: POST /filters/submitForReview needs a private, un-promoted filter to exist first.
+
+Decisions ALREADY made (fixed constraints):
+1. CORE ABSTRACTION = "stateful sequence scenarios": a scenario becomes an ORDERED HTTP chain — setup/create → the ACT (behaviour under test) → optional CLEANUP — captured atomically as ONE oracle unit. Covers mutating safety, stateful preconditions, and idempotency.
+2. AUTHORING = HYBRID: the LLM DISCOVERS the chain + real ids during CAPTURE; PIN it as an explicit ordered DECLARATIVE step list with inter-step references (e.g. `$1.id`). RECONCILE replays pinned steps DETERMINISTICALLY, NO LLM. (Not LLM-dynamic-replay; not human-declared-only.)
+3. ISOLATION = self-clean-via-HTTP: sequences DELETE what they create; where no cleanup endpoint exists, accept BOUNDED, FLAGGED residual pollution (never pretend clean). Isolation PLUGGABLE for a future DB-reset/seed or fresh-target strategy.
+4. TRANSPORT extensible but HTTP-ONLY today: each step has a `kind` — `http` is the only implemented kind now; reserve room for future `sql` (DB reconciliation) and `e2e` (Playwright) kinds WITHOUT building them now.
+5. MUTATING-ID VOLATILITY: extend volatility handling (today skips mutating) so generated ids in mutating responses are tolerated at reconcile AND threaded forward via inter-step references. Generated id change != false break; a genuinely-changed NON-volatile field still breaks (oracle invariant).
+6. SCOPE = ONE coherent spec, built as ordered task groups (AMS sequence model → capture-side sequence builder/pin → deterministic replay engine → reconcile incl. id-volatility → frontend), each independently verifiable — NOT split.
+
+Reconcile semantics: replay the pinned sequence against target; ASSERT setup steps reach expected status; FULLY DIFF the ACT step's response (reuse Spec B full-response fidelity + volatile tolerance); CLEANUP best-effort + flagged on failure.
+
+Series context: A (changeset 189), B (190), C (191) all BUILT. Highest changeset on disk = 191; this expects ~192 (verify next-free at build). AMS wire snake_case. Reference idioms: agent-os/specs/2026-06-16-reconcile-determinism-volatile-values and the 2026-06-17-* specs.

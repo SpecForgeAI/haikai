@@ -501,10 +501,11 @@ test('buildScenarioPrompt: filters findings to those matching the current operat
 });
 
 // ---------------------------------------------------------------------------
-// Test 9: buildScenarioPrompt includes the explicit "do not invent" prompt
-// guard.
+// Test 9: buildScenarioPrompt frames discovery context as AUTHORITATIVE for
+// input formats/conventions (reframed guidance: prefer a discovered value over
+// a guess), NOT passive "do not invent" supporting evidence.
 // ---------------------------------------------------------------------------
-test('buildScenarioPrompt: includes the explicit "do not invent behaviour" prompt guard', () => {
+test('buildScenarioPrompt: frames discovery context as authoritative for input formats', () => {
   const session = buildSessionDomain();
   const ctxDto = buildDiscoveryContextDto({
     highPriorityFindings: [
@@ -525,8 +526,44 @@ test('buildScenarioPrompt: includes the explicit "do not invent behaviour" promp
   const messages = buildScenarioPrompt(session, 'getPetById', 'happy_path', 'GET', '/pets/{id}', ctxDto);
   const parsed = JSON.parse(messages[1].content as string);
   const guard: string = parsed.discoveryContext.guidance;
-  expect(guard).toContain('Discovery findings are supporting evidence');
-  expect(guard.toLowerCase()).toContain('do not invent');
+  expect(guard).toContain('AUTHORITATIVE');
+  expect(guard.toLowerCase()).toContain('prefer a discovered concrete value');
+});
+
+// ---------------------------------------------------------------------------
+// Test 11 (fix 5 + Kiro #1/#2): buildScenarioPrompt threads cross-scenario
+// learned facts -- now BOTH directions. The guidance must teach the LLM to
+// REUSE `OK`/`OK id:` lines AND to AVOID the inputs on `FAILED` lines.
+// ---------------------------------------------------------------------------
+test('buildScenarioPrompt: threads cross-scenario learned facts (reuse OK, avoid FAILED) into the prompt', () => {
+  const session = buildSessionDomain();
+  const facts = [
+    'OK GET /pets/{id} -> 200 query={"date":"01-JAN-2024"}',
+    'OK id: hierarchyNodeId=90000 (from GET /search)',
+    'FAILED: GET /pets query={"date":"2026-06-17"} -> 400 Invalid format: 2026-06-17 is malformed',
+  ];
+  const messages = buildScenarioPrompt(
+    session,
+    'getPetById',
+    'happy_path',
+    'GET',
+    '/pets/{id}',
+    undefined,
+    undefined,
+    facts,
+  );
+  const parsed = JSON.parse(messages[1].content as string);
+  expect(parsed.knownGood).toBeDefined();
+  expect(parsed.knownGood.examples).toEqual(facts);
+  const guidance = String(parsed.knownGood.guidance);
+  // Reuse direction: working OK values/formats + prefer a surfaced id.
+  expect(guidance).toContain('REUSE');
+  expect(guidance).toContain('OK');
+  // Avoid direction (Kiro #1): the prompt now teaches the LLM to skip the
+  // inputs the API already rejected, instead of re-guessing them.
+  expect(guidance).toContain('AVOID');
+  expect(guidance).toContain('FAILED');
+  expect(guidance.toLowerCase()).toContain('rejected by the api');
 });
 
 // ---------------------------------------------------------------------------

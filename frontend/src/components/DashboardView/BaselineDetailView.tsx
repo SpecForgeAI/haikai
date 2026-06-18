@@ -43,10 +43,14 @@ import {
   ApiBehaviourBaselineDto,
   ApiBehaviourBaselineItemDto,
   getBaseline,
+  getBaselineIntegrity,
   listBaselineItems,
+  parseBaselineProvenance,
 } from '../../api/apiBehaviourClient';
 import styles from './ApiBaselinesListPage.module.css';
 import { DriftReportTab } from './DriftReportTab';
+import { formatScorePct } from './CoverageSummaryPanel';
+import { BaselineSequenceView } from './BaselineSequenceView';
 
 export interface BaselineDetailViewProps {
   projectId: string;
@@ -93,6 +97,36 @@ function formatJson(value: Record<string, unknown> | null): string {
   }
 }
 
+/**
+ * Truncate a long lowercase-hex content hash for at-a-glance display while
+ * keeping enough entropy to recognise it. The full hash is rendered in a
+ * monospace block and surfaced verbatim via a `title` attribute / data attr
+ * for copy. Spec 2026-06-17 Baseline Integrity & Provenance -- Task Group 3.
+ */
+function truncateHash(hash: string): string {
+  if (hash.length <= 20) return hash;
+  return `${hash.slice(0, 12)}…${hash.slice(-8)}`;
+}
+
+/**
+ * Live integrity verdict resolution state. Spec 2026-06-17 (R4).
+ *
+ *   - 'loading'   : the AMS verify call is in flight; we keep showing the
+ *                   at-rest "Hash recorded" badge until the verdict arrives
+ *                   (no flash, no premature mismatch).
+ *   - 'verified'  : `integrity_verified === true` -- recorded hash matches
+ *                   the server-side recompute over the CURRENT stored items.
+ *   - 'mismatch'  : `integrity_verified === false` with a non-null
+ *                   `content_hash` -- tamper-evident warning.
+ *   - 'unverified': the verify call FAILED (network/5xx). Fail-soft: we fall
+ *                   back to the at-rest "Hash recorded" badge -- we never
+ *                   render a false mismatch on a transient error.
+ *
+ * Only meaningful for current-state baselines that HAVE a content_hash; a
+ * null-hash baseline never triggers the call and stays neutral.
+ */
+type IntegrityVerdict = 'loading' | 'verified' | 'mismatch' | 'unverified';
+
 /** Tab identifier for the target-side tabs nav. */
 type TargetTabId = 'detail' | 'drift';
 
@@ -110,6 +144,12 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TargetTabId>('detail');
+
+  // ---- Spec 2026-06-17 Baseline Integrity & Provenance -- R4 (live badge) ---
+  // Server-side verify verdict for current-state baselines that carry a
+  // content_hash. Resolved via the AMS verify endpoint in the effect below.
+  const [integrityVerdict, setIntegrityVerdict] =
+    useState<IntegrityVerdict>('loading');
 
   // ---- Spec 2026-05-25 Task Group 5: paired-source-name resolution ---
   // When the loaded baseline is `kind='target'` we fetch the source
@@ -156,6 +196,58 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
       cancelled = true;
     };
   }, [projectId, architectureId, baselineId]);
+
+  // ---- Spec 2026-06-17 R4: live integrity verification -----------------
+  // For a current-state baseline that HAS a content_hash, call the AMS
+  // verify endpoint (recomputes the hash over the CURRENT stored items) and
+  // map the verdict onto the live badge. Mirrors the view's existing
+  // useEffect + cancelled-flag data-loading pattern.
+  //
+  // Fail-soft contract:
+  //   - null/absent content_hash  -> never call; verdict stays irrelevant
+  //     (the render falls through to the neutral at-rest "no hash" badge).
+  //   - call errors               -> 'unverified' -> render falls back to the
+  //     at-rest "Hash recorded" badge (NO false mismatch, NO crash).
+  useEffect(() => {
+    if (!baseline) return;
+    const kindLocal = (baseline.kind ?? 'current') as 'current' | 'target';
+    const hash = baseline.content_hash ?? null;
+    // Target baselines are out of scope; null-hash baselines stay neutral and
+    // must NOT hit the endpoint.
+    if (kindLocal !== 'current' || !(typeof hash === 'string' && hash.length > 0)) {
+      setIntegrityVerdict('loading');
+      return;
+    }
+    let cancelled = false;
+    setIntegrityVerdict('loading');
+    void (async () => {
+      try {
+        const verdict = await getBaselineIntegrity(
+          projectId,
+          architectureId,
+          baseline.id,
+        );
+        if (cancelled) return;
+        if (verdict.integrity_verified === true) {
+          setIntegrityVerdict('verified');
+        } else if (verdict.content_hash !== null) {
+          // integrity_verified === false with a recorded hash -> tamper-evident
+          // mismatch. (A null content_hash from AMS would be the neutral case,
+          // but we only reach here for a baseline whose hash is already set.)
+          setIntegrityVerdict('mismatch');
+        } else {
+          setIntegrityVerdict('unverified');
+        }
+      } catch {
+        // Fail-soft: keep the at-rest "Hash recorded" view; never a false
+        // mismatch on a transient/verify failure.
+        if (!cancelled) setIntegrityVerdict('unverified');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseline, projectId, architectureId]);
 
   // Resolve the source baseline name when the loaded baseline is kind='target'.
   // Soft-fails: any error leaves the banner showing the UUID rather than
@@ -259,6 +351,23 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
   const kind = (baseline.kind ?? 'current') as 'current' | 'target';
   const pairedWithId = baseline.paired_with_baseline_id ?? null;
 
+  // ---- Spec 2026-06-17 Baseline Integrity & Provenance -- Task Group 3 ----
+  // Surface the recorded content hash + provenance + coverage score, plus an
+  // integrity badge, on current-state (oracle) baselines only. `content_hash`
+  // is stamped SERVER-SIDE at the draft -> active transition; `null` =
+  // pre-existing / never-activated = "no integrity hash recorded" (NEUTRAL,
+  // never an error). The at-rest view shows the recorded hash + provenance.
+  //
+  // R4 (live badge): for a hash-bearing current baseline we additionally
+  // consume the AMS verify endpoint and render a LIVE verdict --
+  // "Integrity verified" (green) on a match, "Integrity MISMATCH" (red,
+  // tamper-evident) on a mismatch. While the verify call is in flight, or if
+  // it fails, we fall back to the at-rest "Hash recorded" badge (fail-soft).
+  // Target baselines are out of scope (no integrity/provenance).
+  const contentHash = baseline.content_hash ?? null;
+  const provenance = parseBaselineProvenance(baseline.provenance_json ?? null);
+  const hasIntegrityHash = typeof contentHash === 'string' && contentHash.length > 0;
+
   // Build the paired-source display fragment. Three branches:
   //   - resolved baseline -> show the name (or "(unnamed)") as a link
   //   - loading           -> show "loading…"
@@ -293,6 +402,46 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
     }
   }
 
+  // -- Live integrity badge for a hash-bearing current baseline (R4). -------
+  // Verified -> green; Mismatch -> red (tamper-evident). 'loading' and
+  // 'unverified' (verify call failed) BOTH fall back to the at-rest
+  // "Hash recorded" badge so a transient failure never shows a false alarm
+  // and the hash-recorded fact is always communicated.
+  const renderIntegrityBadge = (): React.ReactNode => {
+    if (integrityVerdict === 'verified') {
+      return (
+        <span
+          className={`${styles.statusBadge} ${styles.integrityVerified}`}
+          data-testid="baseline-detail-integrity-badge"
+          data-integrity-state="verified"
+        >
+          Integrity verified
+        </span>
+      );
+    }
+    if (integrityVerdict === 'mismatch') {
+      return (
+        <span
+          className={`${styles.statusBadge} ${styles.integrityMismatch}`}
+          data-testid="baseline-detail-integrity-badge"
+          data-integrity-state="mismatch"
+        >
+          Integrity MISMATCH
+        </span>
+      );
+    }
+    // 'loading' or 'unverified' -> at-rest hash-recorded fallback.
+    return (
+      <span
+        className={`${styles.statusBadge} ${styles.integrityVerified}`}
+        data-testid="baseline-detail-integrity-badge"
+        data-integrity-state="hash-recorded"
+      >
+        Hash recorded
+      </span>
+    );
+  };
+
   // -- Reusable "flat" detail content. Used directly when `kind='current'`
   // (no tab container) and wrapped under the "Baseline detail" tab when
   // `kind='target'` so the existing structure is preserved verbatim. -----
@@ -316,6 +465,70 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
           <div className={styles.detailRow}>
             <span className={styles.detailKey}>Notes:</span>
             {baseline.notes}
+          </div>
+        )}
+
+        {/*
+          Spec 2026-06-17 Baseline Integrity & Provenance -- Task Group 3 + R4.
+          Current-state oracle baselines only; target baselines are out of
+          scope. Renders the integrity badge + recorded content hash (or the
+          neutral "no integrity hash recorded" state), provenance rows, and
+          the coverage score (from provenance_json.coverage_score = Spec A's
+          overall_score, formatted as a percent).
+
+          When a content_hash is present, the badge is the LIVE verify verdict
+          (verified / mismatch), falling back to the at-rest "Hash recorded"
+          badge while loading or on a verify failure (fail-soft).
+        */}
+        {kind === 'current' && (
+          <div
+            className={styles.detailRow}
+            data-testid="baseline-detail-integrity"
+          >
+            <span className={styles.detailKey}>Integrity:</span>
+            {hasIntegrityHash ? (
+              <>
+                {renderIntegrityBadge()}
+                <pre
+                  className={styles.contentHash}
+                  style={{ margin: '4px 0 0 0', whiteSpace: 'pre-wrap' }}
+                  title={contentHash ?? undefined}
+                  data-testid="baseline-detail-content-hash"
+                  data-content-hash={contentHash ?? undefined}
+                >
+                  {truncateHash(contentHash as string)}
+                </pre>
+              </>
+            ) : (
+              <span
+                className={`${styles.statusBadge} ${styles.integrityNeutral}`}
+                data-testid="baseline-detail-integrity-badge"
+                data-integrity-state="no-hash"
+              >
+                No integrity hash recorded
+              </span>
+            )}
+          </div>
+        )}
+
+        {kind === 'current' && provenance && (
+          <div data-testid="baseline-detail-provenance">
+            <div className={styles.detailRow}>
+              <span className={styles.detailKey}>Environment:</span>
+              {provenance.environment_name ?? '—'}
+            </div>
+            <div className={styles.detailRow}>
+              <span className={styles.detailKey}>Activated at:</span>
+              {provenance.activated_at ?? '—'}
+            </div>
+            <div className={styles.detailRow}>
+              <span className={styles.detailKey}>Coverage score:</span>
+              <span data-testid="baseline-detail-coverage-score">
+                {provenance.coverage_score === null
+                  ? '—'
+                  : formatScorePct(provenance.coverage_score)}
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -362,6 +575,14 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
                     {formatJson(item.response_json)}
                   </pre>
                 </div>
+                {/*
+                  Spec 2026-06-18 Stateful Sequence Scenarios (Spec D) -- TG4.
+                  When this baseline item carries a pinned sequence chain,
+                  render its ordered steps + role badges + inter-step refs.
+                  Null sequence_json => nothing renders (single-shot item,
+                  unchanged).
+                */}
+                <BaselineSequenceView sequenceJson={item.sequence_json} />
                 {item.business_notes && (
                   <div className={styles.detailRow}>
                     <span className={styles.detailKey}>Notes:</span>
@@ -486,5 +707,6 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
     </div>
   );
 };
+
 
 export default BaselineDetailView;

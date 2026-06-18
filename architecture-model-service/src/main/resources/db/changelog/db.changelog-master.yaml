@@ -4171,3 +4171,203 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 189-capture-coverage-summary
+  # Spec: Oracle Coverage Scoring (2026-06-17) -- Task Group 1 (AMS field).
+  #
+  # ONE new nullable JSONB column on api_behaviour_capture_sessions holding the
+  # whole coverage summary as plain JSON, written ONCE on the existing completion
+  # PATCH (patchCaptureSession at the end of orchestrateCaptureSession, beside
+  # scenarios_attempted/completed/errored). The single-source coverage scorer (in
+  # api-migration-validation-service captureSessionOrchestrator.ts) consumes the
+  # EXACT GeneratedScenario[] from defaultScenarioSet (the rubric) and the EXACT
+  # selectCanonicalCapture decision, so generation and scoring cannot drift.
+  # coverage_summary_json JSONB NULL; { overall_score, dimensions_total,
+  # dimensions_achieved, per_endpoint:[{ operation_id, method, path, score,
+  # dimensions:[{ name, type, expected_status, achieved, canonical_capture_id|null,
+  # reason|null }] }], auth_coverage:{ achieved, representative_operation_id|null,
+  # probes:[...] } }. Snake_case wire (AMS default -- NO @CamelCaseWire). NULL =
+  # coverage not recorded (legacy / pre-fix sessions; rendered gracefully as
+  # "coverage not recorded"). Designed so a later spec (baseline integrity &
+  # provenance, Spec C) can read overall_score + per-endpoint dimensions/reasons
+  # off the session and stamp it onto the immutable baseline. Nullable, reference
+  # type, no backfill: existing rows are untouched and read back null. New
+  # changeset only (188 is the highest on disk at build time) -- never edit
+  # applied changesets. Column-only ALTER -> the not-columnExists precondition
+  # idiom (mirrors 188).
+  # ============================================================================
+  - changeSet:
+      id: 189-capture-coverage-summary
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_capture_sessions
+              columnName: coverage_summary_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/189-capture-coverage-summary.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 190-diff-item-header-classification
+  # Spec: Reconcile Full-Response Fidelity & Distinct Break Types (2026-06-17)
+  #       -- Task Group 1 (AMS field).
+  #
+  # ONE new nullable TEXT column on api_behaviour_diff_items carrying the
+  # per-dimension HEADER classification so the oracle reconciliation diff
+  # surfaces response-header divergences (a Content-Type flip, a dropped/added
+  # header, a non-allowlisted header value change) as their own typed break
+  # instead of silently discarding the captured-but-never-compared headers.
+  # header_classification TEXT NULL; valid values header_match |
+  # header_value_drift | header_presence_drift, validated at the service layer
+  # (NO DB enum, mirrors status_classification / body_classification).
+  # NULL when source_only / target_only (no pair) OR when either side lacks a
+  # { headers, body } response wrapper so the header dimension is skipped
+  # (graceful degrade -- no false header break, R5). Snake_case wire (AMS
+  # default -- NO @CamelCaseWire). The new accepted body_classification value
+  # body_ordering_drift (a non-volatile array reorder) needs NO DDL -- it is an
+  # additional accepted value of the EXISTING body_classification column,
+  # validated at the service layer only. Nullable, reference type, no backfill:
+  # existing rows are untouched and read back null. New changeset only (189 is
+  # the highest on disk at build time) -- never edit applied changesets.
+  # Column-only ALTER -> the not-columnExists precondition idiom (mirrors 189).
+  # ============================================================================
+  - changeSet:
+      id: 190-diff-item-header-classification
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_diff_items
+              columnName: header_classification
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/190-diff-item-header-classification.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 191-baseline-content-hash-provenance
+  # Spec: Baseline Integrity & Provenance (2026-06-17) -- Task Group 1 (AMS
+  #       field). Spec C of the A->B->C series (A = changeset 189, B = 190).
+  #
+  # TWO new nullable columns on the api_behaviour_baselines HEADER making the
+  # pinned current-state oracle tamper-EVIDENT + auditable:
+  #   content_hash    TEXT  NULL -- deterministic SHA-256 (lowercase hex) over the
+  #     CANONICAL form of the baseline's item set, computed server-side (AMS/Java)
+  #     at the draft->active ACTIVATE transition over the items AS PERSISTED.
+  #     Canonical form: items sorted by (method, path, scenario_name); per item
+  #     method/path/scenario_name/request_json/response_status/response_json/
+  #     volatile_paths_json; JSON object keys sorted recursively; UTF-8;
+  #     canonical_version 1. NULL = pre-existing / never-activated (draft)
+  #     baseline (NO backfill) = "no integrity hash recorded" (NEUTRAL, NOT a
+  #     mismatch).
+  #   provenance_json JSONB NULL -- audit record stamped at activate
+  #     { session_id, environment_name, activated_at, coverage_score,
+  #       coverage_summary, accepted_capture_count, operation_count,
+  #       hash_algo: "sha256", canonical_version: 1 }. coverage_score is Spec A's
+  #     overall_score from the linked session's coverage_summary_json (changeset
+  #     189); NULL when absent (never fabricated). Map<String,Object> /
+  #     @Type(JsonType). Snake_case wire (AMS default -- NO @CamelCaseWire).
+  #
+  # volatile_paths_json (changeset 187) IS part of the hash (pinned content ->
+  # tamper-evidence) but this is SEPARATE from reconcile-time volatile TOLERANCE:
+  # the hash records the declared paths; it does NOT change expected_volatile /
+  # diff behaviour. Stamped only on transition INTO active, only for
+  # kind='current'; drafts and kind='target' carry neither.
+  #
+  # New nullable columns, reference types, NO backfill: existing baseline rows are
+  # untouched and read back null. New changeset only (190 is the highest on disk
+  # at build time) -- never edit applied changesets. Column-only ALTERs -> the
+  # not-columnExists precondition idiom (mirrors 189 / 190), ONE precondition per
+  # column.
+  # ============================================================================
+  - changeSet:
+      id: 191-baseline-content-hash-provenance
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_baselines
+              columnName: content_hash
+        - not:
+            columnExists:
+              tableName: api_behaviour_baselines
+              columnName: provenance_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/191-baseline-content-hash-provenance.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 192-baseline-item-sequence
+  # Spec: Stateful Sequence Scenarios (2026-06-18) -- Task Group 1 (AMS field).
+  #       Spec D of the A->B->C->D oracle-standard series (A = changeset 189,
+  #       B = 190, C = 191).
+  #
+  # ONE new nullable JSONB column on api_behaviour_baseline_items carrying the
+  # pinned ordered HTTP chain (setup -> act -> cleanup) for a STATEFUL SEQUENCE
+  # scenario, captured atomically as ONE oracle unit and replayed
+  # deterministically at reconcile. R1: a single column (NOT a child
+  # entity/table) -- steps are read as a UNIT at reconcile, no independent step
+  # queryability in v1.
+  #   sequence_json JSONB NULL -- { steps: [ { index, role: setup|act|cleanup,
+  #     kind: http, request: { method, path, query, headers, body },
+  #     expected_status, response_refs: [ { ref: $<stepIndex>.<jsonpath>,
+  #     from_step, json_path } ] } ], act_step_index, cleanup_best_effort: true }.
+  #     Exactly one step has role act (pointed to by act_step_index); 0..N setup
+  #     steps precede it; 0..N cleanup steps follow. kind is on every step but
+  #     only http is implemented (sql/e2e reserved -- model headroom only, NOT
+  #     built). Inter-step refs resolve from an earlier step's live response at
+  #     replay. Map<String,Object> / @Type(JsonType), mirroring the sibling
+  #     volatile_paths_json / request_json / response_json JSONB columns.
+  #     Written ONCE at create (write-once, no PATCH path) -- it annotates the
+  #     pinned oracle, never mutated (baseline immutability). NULL = today's
+  #     single-shot item -> the existing capture/replay/diff path runs
+  #     BYTE-FOR-BYTE unchanged (zero regression). Snake_case wire (AMS default
+  #     -- NO @CamelCaseWire; TS clients are snake_case).
+  #
+  # INTEGRITY HASH (Spec C coherence -- ADDITIVE, NULL-OMITTED; canonical_version
+  # STAYS 1): sequence_json is folded into BaselineContentHashUtil's per-item
+  # canonical content ONLY when non-null (tamper-evidence of the pinned chain),
+  # and OMITTED ENTIRELY when null so every existing baseline + single-shot item
+  # hashes BYTE-IDENTICAL to today's v1 form. canonical_version is deliberately
+  # NOT bumped: Spec C's verifyIntegrity is NOT version-dispatched, so a bump
+  # would recompute existing v1 baselines under v2 and false-mismatch them.
+  # Omit-when-null is the explicit override of any "bump to v2" suggestion.
+  #
+  # New nullable column, reference type, NO backfill: existing rows are untouched
+  # and read back null. No @PrePersist defaulting -- null is the valid empty
+  # state. New changeset only (191 is the highest on disk at build time) -- never
+  # edit applied changesets. Column-only ALTER -> the not-columnExists
+  # precondition idiom (mirrors 189 / 190 / 191).
+  # ============================================================================
+  - changeSet:
+      id: 192-baseline-item-sequence
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_baseline_items
+              columnName: sequence_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/192-baseline-item-sequence.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

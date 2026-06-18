@@ -102,6 +102,44 @@ export type VolatilitySource =
   | 'non_json'
   | 'not_probed';
 
+/**
+ * The derived per-dimension break TYPE set the gateway writes onto a break's
+ * `detail_json.break_types` (Spec 2026-06-17 Reconcile Full-Response Fidelity --
+ * R1 + R2). A single diff_item still yields exactly ONE break; this set tags
+ * WHICH response dimensions diverged so the review surface can render distinct
+ * per-dimension badges. Status-class (2xx/4xx/5xx) is a SEVERITY sub-label
+ * within the single `status` type, NOT a sixth type (R6). source_only /
+ * target_only diffs carry no dimension classifications -> the set is absent /
+ * empty and the panel falls back to the existing drift-summary rendering.
+ */
+export type BreakType =
+  | 'status'
+  | 'headers'
+  | 'body-shape'
+  | 'body-value'
+  | 'ordering';
+
+/** The ordered canonical break-type set (for stable badge ordering). */
+export const BREAK_TYPE_ORDER: readonly BreakType[] = [
+  'status',
+  'headers',
+  'body-shape',
+  'body-value',
+  'ordering',
+];
+
+/**
+ * The per-dimension header classification the validation-service derives and
+ * AMS persists on the diff_item, copied onto the break `detail_json` by the
+ * gateway (Spec 2026-06-17). `null` when there is no header pair to compare
+ * (source_only / target_only, or a pre-existing source baseline that lacks the
+ * `{ headers, body }` wrapper -- graceful degrade).
+ */
+export type HeaderClassification =
+  | 'header_match'
+  | 'header_value_drift'
+  | 'header_presence_drift';
+
 /** The terminal human dispositions accepted by the dispose route (CD-A). */
 export type ReconciliationDisposition =
   | 'accepted'
@@ -151,7 +189,20 @@ export interface MigrationReconciliationBreakDto {
   source_baseline_item_id?: string | null;
   /** The referenced api_behaviour_diff_item (soft ref; no payload duplication). */
   diff_item_id?: string | null;
-  /** Inline break detail (method/path/summary/diff) for the review surface. */
+  /**
+   * Inline break detail (method/path/summary/diff) for the review surface.
+   *
+   * Spec 2026-06-17 (Reconcile Full-Response Fidelity, R1 + R2): the gateway
+   * additionally writes the per-dimension `header_classification`
+   * ({@link HeaderClassification}) and the derived `break_types`
+   * ({@link BreakType}[]) set onto this object so the panel can render distinct
+   * per-dimension badges. The `expected_volatile` auto-disposition pass records
+   * any tolerated allowlisted header names under
+   * `detail_json.volatility_match.tolerated_header_names`. All three are OPTIONAL
+   * -- a legacy break (or a source_only / target_only diff) omits them and the
+   * panel degrades to the existing drift-summary rendering. Kept loosely typed
+   * (`Record<string, unknown>`) for forward/backward compatibility.
+   */
   detail_json?: Record<string, unknown> | null;
   disposition_status?: string | null;
   bug_id?: string | null;

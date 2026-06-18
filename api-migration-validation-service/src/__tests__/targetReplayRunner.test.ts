@@ -297,6 +297,7 @@ function buildExecutorFromScript(
           config: {} as never,
         } as never;
       }),
+      requestWithAuthOverride: jest.fn(),
       setAuth: jest.fn(),
       dispose: jest.fn(),
     };
@@ -648,6 +649,7 @@ test('runManager.cancel() mid-run terminates cleanly with status=cancelled', asy
         config: {} as never,
       } as never;
     }),
+    requestWithAuthOverride: jest.fn(),
     setAuth: jest.fn(),
     dispose: jest.fn(),
   });

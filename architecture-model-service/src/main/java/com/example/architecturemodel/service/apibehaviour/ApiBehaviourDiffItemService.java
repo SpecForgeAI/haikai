@@ -27,15 +27,26 @@ import java.util.UUID;
  *   <li>{@code statusClassification} MUST be one of {@code status_match} |
  *       {@code status_drift} | {@code source_only} | {@code target_only}.</li>
  *   <li>{@code bodyClassification} (when present) MUST be one of
- *       {@code body_match} | {@code body_shape_drift} | {@code body_value_drift}.
- *       NULL is allowed (and required) when classification is
- *       {@code source_only} / {@code target_only}.</li>
+ *       {@code body_match} | {@code body_shape_drift} | {@code body_value_drift}
+ *       | {@code body_ordering_drift}. NULL is allowed (and required) when
+ *       classification is {@code source_only} / {@code target_only}. The
+ *       {@code body_ordering_drift} value (Reconcile Full-Response Fidelity,
+ *       2026-06-17) tags a non-volatile array reorder -- existing column,
+ *       service-layer validation only, NO schema change.</li>
+ *   <li>{@code headerClassification} (when present) MUST be one of
+ *       {@code header_match} | {@code header_value_drift} |
+ *       {@code header_presence_drift}. NULL is allowed when the header
+ *       dimension is skipped (no pair, or a side lacks the {@code {headers,
+ *       body}} wrapper). Mirrors the {@code bodyClassification} validator.</li>
  * </ul>
  *
  * <p>Throws {@link IllegalArgumentException} on validation breach -- the
  * existing {@code GlobalExceptionHandler} surfaces this as HTTP 400.</p>
  *
  * <p>Spec: API Test Harness — Diff Engine (2026-05-25) — Task Group 2</p>
+ * <p>Extended: Reconcile Full-Response Fidelity (2026-06-17) — Task Group 1
+ * ({@code headerClassification} validator + {@code body_ordering_drift}
+ * body value).</p>
  */
 @Service
 @ConditionalOnProperty(
@@ -51,7 +62,11 @@ public class ApiBehaviourDiffItemService {
         Set.of("status_match", "status_drift", "source_only", "target_only");
 
     public static final Set<String> ALLOWED_BODY_CLASSIFICATIONS =
-        Set.of("body_match", "body_shape_drift", "body_value_drift");
+        Set.of("body_match", "body_shape_drift", "body_value_drift",
+            "body_ordering_drift");
+
+    public static final Set<String> ALLOWED_HEADER_CLASSIFICATIONS =
+        Set.of("header_match", "header_value_drift", "header_presence_drift");
 
     private final ApiBehaviourDiffItemRepository diffItemRepository;
     private final ApiBehaviourDiffRepository diffRepository;
@@ -80,6 +95,9 @@ public class ApiBehaviourDiffItemService {
         if (request.bodyClassification() != null) {
             requireAllowedBodyClassification(request.bodyClassification());
         }
+        if (request.headerClassification() != null) {
+            requireAllowedHeaderClassification(request.headerClassification());
+        }
 
         // Resolve parent diff via the URL-path diffId AND verify it exists
         // under the given project. The request body's diffId (if present) is
@@ -102,6 +120,7 @@ public class ApiBehaviourDiffItemService {
             .targetBaselineItemId(request.targetBaselineItemId())
             .statusClassification(request.statusClassification())
             .bodyClassification(request.bodyClassification())
+            .headerClassification(request.headerClassification())
             .sourceResponseStatus(request.sourceResponseStatus())
             .targetResponseStatus(request.targetResponseStatus())
             .bodyDiffJson(request.bodyDiffJson())
@@ -164,6 +183,14 @@ public class ApiBehaviourDiffItemService {
             throw new IllegalArgumentException(
                 "bodyClassification '" + value
                     + "' is not in the allowed set " + ALLOWED_BODY_CLASSIFICATIONS);
+        }
+    }
+
+    private static void requireAllowedHeaderClassification(String value) {
+        if (!ALLOWED_HEADER_CLASSIFICATIONS.contains(value)) {
+            throw new IllegalArgumentException(
+                "headerClassification '" + value
+                    + "' is not in the allowed set " + ALLOWED_HEADER_CLASSIFICATIONS);
         }
     }
 }

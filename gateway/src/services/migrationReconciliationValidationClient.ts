@@ -48,6 +48,16 @@ export interface ReconciliationDiffItem {
   target_baseline_item_id?: string | null;
   status_classification?: string | null;
   body_classification?: string | null;
+  /**
+   * Per-dimension header classification (Spec 2026-06-17). One of
+   * `header_match` / `header_value_drift` / `header_presence_drift`, or null when
+   * the header dimension was SKIPPED (a side lacked the `{ headers, body }`
+   * wrapper -- graceful degrade, no false break). A presence drift always breaks;
+   * a value drift breaks unless every changed header name is allowlisted-volatile
+   * (the comparator tags those `declared` on `body_diff_json.header_entries`,
+   * which the gateway volatility pass reads).
+   */
+  header_classification?: string | null;
   source_response_status?: number | null;
   target_response_status?: number | null;
   body_diff_json?: Record<string, unknown> | null;
@@ -480,15 +490,40 @@ function pickFreshestForSession(
 }
 
 /**
- * Classify a diff_item as a BREAK. A break is any diff_item that is NOT a clean
- * match -- i.e. anything other than (status_match AND body_match). `source_only`
- * (the operation absent in the target) and `target_only` both count as breaks.
- * This is the truthful signal: a deferred / un-migrated story whose behaviour is
- * absent or divergent surfaces here exactly like any other deviation (CD-B).
+ * Classify a diff_item as a BREAK. A break is any diff_item where ANY response
+ * dimension drifted -- it is NOT a clean match. `source_only` (the operation
+ * absent in the target) and `target_only` both count as breaks. This is the
+ * truthful signal: a deferred / un-migrated story whose behaviour is absent or
+ * divergent surfaces here exactly like any other deviation (CD-B).
+ *
+ * Spec 2026-06-17 (Reconcile Full-Response Fidelity): registers the NEW
+ * dimensions as breaks too --
+ *   - the body dimension now breaks on `body_ordering_drift` (a non-volatile
+ *     array reorder), in addition to the existing `body_value_drift` /
+ *     `body_shape_drift`;
+ *   - the header dimension (`header_value_drift` / `header_presence_drift`)
+ *     registers as a break. `header_classification` is null when the dimension
+ *     was SKIPPED (a side lacked the `{ headers, body }` wrapper -- graceful
+ *     degrade, no false break) or `header_match` when headers matched.
+ *
+ * A `header_value_drift` break is CREATED even when the changed header name is
+ * allowlisted-volatile; the volatile DOWN-RANK to `expected_volatile` happens
+ * AFTER creation in the gateway auto-disposition pass
+ * (create-then-auto-dispose, never silently suppressed).
  */
 export function isDiffItemABreak(item: ReconciliationDiffItem): boolean {
   const status = item.status_classification ?? '';
   const body = item.body_classification ?? null;
+  const header = item.header_classification ?? null;
+
+  // The header dimension is a NEW also-breaks dimension (Spec 2026-06-17): any
+  // classification other than `header_match` / null (skipped -- graceful
+  // degrade) registers as a break.
+  if (header !== null && header !== 'header_match') return true;
+
+  // Status + body preserve EXACTLY the original predicate: a clean status/body
+  // match is `status_match && body_match`; anything else (incl. the new
+  // `body_ordering_drift`, which is not `body_match`) is a break.
   if (status === 'status_match' && body === 'body_match') return false;
   return true;
 }

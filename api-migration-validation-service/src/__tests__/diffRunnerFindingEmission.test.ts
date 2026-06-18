@@ -167,6 +167,7 @@ function buildArchMock(opts: {
           target_baseline_item_id: (body.target_baseline_item_id as string | null) ?? null,
           status_classification: body.status_classification as ApiBehaviourDiffItemDto['status_classification'],
           body_classification: (body.body_classification as ApiBehaviourDiffItemDto['body_classification']) ?? null,
+          header_classification: (body.header_classification as ApiBehaviourDiffItemDto['header_classification']) ?? null,
           source_response_status: (body.source_response_status as number | null) ?? null,
           target_response_status: (body.target_response_status as number | null) ?? null,
           body_diff_json: (body.body_diff_json as Record<string, unknown> | null) ?? null,

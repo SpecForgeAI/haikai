@@ -250,6 +250,34 @@ public class ApiBehaviourCaptureSessionEntity {
     @Column(name = "coverage_override_at")
     private Instant coverageOverrideAt;
 
+    /**
+     * Whole coverage summary (Oracle Coverage Scoring, 2026-06-17, changeset
+     * 189): how thoroughly this session's baseline pins the behaviour it set
+     * out to capture. Shaped {@code { overall_score, dimensions_total,
+     * dimensions_achieved, per_endpoint: [{ operation_id, method, path, score,
+     * dimensions: [{ name, type, expected_status, achieved,
+     * canonical_capture_id|null, reason|null }] }], auth_coverage: { achieved,
+     * representative_operation_id|null, probes: [...] } }}. Written ONCE on the
+     * completion PATCH by the single-source coverage scorer (which reads the
+     * same {@code GeneratedScenario[]} as generation so the rubric cannot
+     * drift). Snake_case wire (AMS default).
+     *
+     * <p>{@code null} = coverage NOT recorded (legacy / pre-fix sessions). No
+     * backfill — null is the valid empty state; the frontend renders a
+     * null/absent summary gracefully as "coverage not recorded". JSONB column
+     * via {@code @Type(JsonType.class)}, mirroring the sibling
+     * {@code oasSpecRefsJson} / {@code authConfigRedactedJson} columns;
+     * reference type, no primitive-wipe risk per
+     * {@code project_primitive_double_dto_overwrite.md}.</p>
+     *
+     * <p>Designed so a later spec (baseline integrity &amp; provenance,
+     * Spec C) can read {@code overall_score} + per-endpoint dimensions/reasons
+     * off the session and stamp it onto the immutable baseline.</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "coverage_summary_json", columnDefinition = "jsonb")
+    private Map<String, Object> coverageSummaryJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

@@ -4,17 +4,24 @@ import com.example.architecturemodel.exception.ConflictException;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.mapper.apibehaviour.ApiBehaviourMapper;
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourBaselineDto;
+import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourBaselineIntegrityDto;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourBaselineRequest;
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourBaselineRequest;
 import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourBaselineEntity;
+import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourBaselineItemEntity;
+import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourCaptureSessionEntity;
+import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourBaselineItemRepository;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourBaselineRepository;
+import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourCaptureSessionRepository;
 import com.example.architecturemodel.trace.HaikaiTrace;
+import com.example.architecturemodel.util.BaselineContentHashUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -50,8 +57,21 @@ import java.util.UUID;
  *       (kind, pairedWithBaselineId) pair.</li>
  * </ul>
  *
+ * <h2>Integrity + provenance stamping (Spec: 2026-06-17 Baseline Integrity &amp; Provenance)</h2>
+ * <p>At the draft→active ACTIVATE transition, and ONLY for {@code kind='current'}
+ * baselines, the service reads the baseline's OWN persisted items, computes the
+ * deterministic canonical content hash (see {@link BaselineContentHashUtil}),
+ * and stamps {@code content_hash} + {@code provenance_json} onto the header in
+ * the SAME transaction as the activation. This makes the pinned oracle
+ * tamper-EVIDENT and auditable. Drafts and {@code kind='target'} baselines are
+ * never stamped (stamping happens only on transition INTO active). The
+ * {@link #verifyIntegrity} operation recomputes the same hash over the current
+ * stored items and reports verified / mismatch / no-hash-recorded.</p>
+ *
  * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2</p>
  * <p>Extended: API Test Harness — Target-Side Capture (2026-05-25) — Task Group 2</p>
+ * <p>Extended: Baseline Integrity &amp; Provenance (2026-06-17) — Task Group 1
+ * (stamp-at-activate + verify).</p>
  */
 @Service
 @ConditionalOnProperty(
@@ -81,6 +101,8 @@ public class ApiBehaviourBaselineService {
     );
 
     private final ApiBehaviourBaselineRepository repository;
+    private final ApiBehaviourBaselineItemRepository itemRepository;
+    private final ApiBehaviourCaptureSessionRepository sessionRepository;
 
     @Transactional(readOnly = true)
     public List<ApiBehaviourBaselineDto> listByProjectAndArchitecture(
@@ -132,6 +154,33 @@ public class ApiBehaviourBaselineService {
         return ApiBehaviourMapper.toDto(findOrThrow(projectId, id));
     }
 
+    /**
+     * Server-side integrity verify: recompute the canonical content hash over
+     * the baseline's CURRENT stored items (identical canonical form to the
+     * stamp-at-activate path) and compare it to the stamped
+     * {@code content_hash}.
+     *
+     * <p>{@code integrity_verified} = {@code content_hash != null && content_hash
+     * == recomputed_hash}. A baseline with a null {@code content_hash}
+     * (pre-existing / never-activated / draft) yields the NEUTRAL result
+     * ({@code content_hash: null}, {@code integrity_verified: false}) — the
+     * consumer treats null-hash as "no hash recorded", NOT a mismatch.
+     * Verification is only meaningful for {@code kind='current'} baselines;
+     * other kinds are never stamped so they surface as null-hash neutral.</p>
+     */
+    @Transactional(readOnly = true)
+    public ApiBehaviourBaselineIntegrityDto verifyIntegrity(UUID projectId, UUID id) {
+        ApiBehaviourBaselineEntity entity = findOrThrow(projectId, id);
+        String stored = entity.getContentHash();
+        // Recompute over the CURRENT stored items using the identical canonical
+        // form (BaselineContentHashUtil) used at stamp time.
+        List<ApiBehaviourBaselineItemEntity> items =
+            itemRepository.findByBaselineIdOrderByCreatedAtAsc(id);
+        String recomputed = BaselineContentHashUtil.computeContentHash(items);
+        boolean verified = stored != null && stored.equals(recomputed);
+        return new ApiBehaviourBaselineIntegrityDto(stored, recomputed, verified);
+    }
+
     @Transactional
     public ApiBehaviourBaselineDto create(
             UUID projectId, CreateApiBehaviourBaselineRequest request) {
@@ -171,6 +220,11 @@ public class ApiBehaviourBaselineService {
             .build();
 
         ApiBehaviourBaselineEntity saved = repository.saveAndFlush(entity);
+        // A baseline created directly as active (e.g. target replay writer) is an
+        // activation INTO active too: stamp integrity + provenance for current.
+        if ("active".equalsIgnoreCase(saved.getStatus())) {
+            saved = stampIntegrityIfCurrent(saved);
+        }
         traceBaselineSaved(saved);
         return ApiBehaviourMapper.toDto(saved);
     }
@@ -223,6 +277,13 @@ public class ApiBehaviourBaselineService {
         ApiBehaviourBaselineEntity saved = repository.saveAndFlush(entity);
         if ("active".equalsIgnoreCase(saved.getStatus())
                 && !"active".equalsIgnoreCase(statusBefore)) {
+            // Draft→active ACTIVATE transition. Stamp the integrity hash +
+            // provenance onto the header in the SAME transaction, BEFORE
+            // returning the DTO, but ONLY for kind='current' (the pinned
+            // oracle). The items are already persisted by the frontend draft
+            // flow. This is layered on top of immutability-by-no-mutation-path;
+            // it never mutates the pinned item content.
+            saved = stampIntegrityIfCurrent(saved);
             traceBaselineActivated(saved);
         }
         return ApiBehaviourMapper.toDto(saved);
@@ -231,6 +292,96 @@ public class ApiBehaviourBaselineService {
     @Transactional
     public void delete(UUID projectId, UUID id) {
         repository.delete(findOrThrow(projectId, id));
+    }
+
+    // -----------------------------------------------------------------------
+    // Integrity + provenance stamping at draft->active (Spec: 2026-06-17)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Stamp {@code content_hash} + {@code provenance_json} onto the baseline
+     * header at the moment immutability takes effect (the activate transition),
+     * over the items AS PERSISTED. ONLY for {@code kind='current'} baselines —
+     * target baselines are transient / regenerated, not the pinned trust anchor
+     * (R8), so they are left unstamped and returned unchanged.
+     *
+     * <p>Returns the (possibly re-saved) entity so the caller maps the stamped
+     * DTO.</p>
+     */
+    private ApiBehaviourBaselineEntity stampIntegrityIfCurrent(
+            ApiBehaviourBaselineEntity baseline) {
+        if (!"current".equalsIgnoreCase(baseline.getKind())) {
+            // R8: out of scope for target baselines.
+            return baseline;
+        }
+
+        // Read the baseline's OWN items (already persisted by the draft flow)
+        // and compute the deterministic canonical content hash. Same canonical
+        // form as verifyIntegrity, so a later verify recomputes byte-identical.
+        List<ApiBehaviourBaselineItemEntity> items =
+            itemRepository.findByBaselineIdOrderByCreatedAtAsc(baseline.getId());
+        String contentHash = BaselineContentHashUtil.computeContentHash(items);
+
+        Instant activatedAt = Instant.now();
+        Map<String, Object> provenance =
+            buildProvenance(baseline, contentHash, activatedAt);
+
+        baseline.setContentHash(contentHash);
+        baseline.setProvenanceJson(provenance);
+        return repository.saveAndFlush(baseline);
+    }
+
+    /**
+     * Assemble the provenance record stamped at activate:
+     * {@code { session_id, environment_name, activated_at, coverage_score,
+     * coverage_summary, accepted_capture_count, operation_count,
+     * hash_algo, canonical_version }}.
+     *
+     * <p>{@code session_id}, {@code accepted_capture_count},
+     * {@code operation_count} come from the baseline header.
+     * {@code environment_name}, {@code coverage_score}, {@code coverage_summary}
+     * are read from the linked capture session via the baseline's
+     * {@code session_id}. {@code coverage_score} is Spec A's
+     * {@code overall_score} from the session's {@code coverage_summary_json}
+     * (changeset 189) — NOT {@code in_scope_coverage_pct}. If the session has no
+     * coverage summary (legacy / not recorded), {@code coverage_score} is null
+     * and {@code coverage_summary} is null — never fabricated.</p>
+     */
+    private Map<String, Object> buildProvenance(
+            ApiBehaviourBaselineEntity baseline,
+            String contentHash,
+            Instant activatedAt) {
+        Map<String, Object> provenance = new LinkedHashMap<>();
+        provenance.put("session_id",
+            baseline.getSessionId() == null ? null : baseline.getSessionId().toString());
+
+        // Resolve the originating capture session for environment_name + coverage.
+        String environmentName = null;
+        Object coverageScore = null;
+        Map<String, Object> coverageSummary = null;
+        if (baseline.getSessionId() != null) {
+            ApiBehaviourCaptureSessionEntity session =
+                sessionRepository.findById(baseline.getSessionId()).orElse(null);
+            if (session != null) {
+                environmentName = session.getEnvironmentName();
+                Map<String, Object> summary = session.getCoverageSummaryJson();
+                if (summary != null) {
+                    coverageSummary = summary;
+                    // Spec A's overall coverage score — null-safe if absent.
+                    coverageScore = summary.get("overall_score");
+                }
+            }
+        }
+
+        provenance.put("environment_name", environmentName);
+        provenance.put("activated_at", activatedAt.toString());
+        provenance.put("coverage_score", coverageScore);
+        provenance.put("coverage_summary", coverageSummary);
+        provenance.put("accepted_capture_count", baseline.getAcceptedCaptureCount());
+        provenance.put("operation_count", baseline.getOperationCount());
+        provenance.put("hash_algo", BaselineContentHashUtil.HASH_ALGO);
+        provenance.put("canonical_version", BaselineContentHashUtil.CANONICAL_VERSION);
+        return provenance;
     }
 
     private ApiBehaviourBaselineEntity findOrThrow(UUID projectId, UUID id) {

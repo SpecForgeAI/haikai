@@ -1,5 +1,6 @@
 package com.example.architecturemodel.model.entity.apibehaviour;
 
+import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -12,8 +13,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Type;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -49,9 +52,21 @@ import java.util.UUID;
  * MUST have it null. ON DELETE SET NULL keeps the target alive as an
  * unmoored row if the source is deleted.</p>
  *
+ * <h2>Integrity + provenance (Spec: 2026-06-17 Baseline Integrity &amp; Provenance)</h2>
+ * <p>{@code contentHash} + {@code provenanceJson} make the pinned current-state
+ * oracle tamper-EVIDENT + auditable. Both are stamped server-side at the
+ * draft→active ACTIVATE transition (see
+ * {@link com.example.architecturemodel.service.apibehaviour.ApiBehaviourBaselineService})
+ * over the items AS PERSISTED, in the same transaction as the activation, and
+ * ONLY for {@code kind='current'} baselines. Drafts and {@code kind='target'}
+ * baselines carry neither. Both are nullable reference types (no primitive-wipe
+ * risk) with NO backfill — a null hash is "no integrity hash recorded"
+ * (neutral, NOT a mismatch).</p>
+ *
  * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 1
  * (initial fields). API Test Harness — Target-Side Capture (2026-05-25) —
- * Task Group 1 (kind + pairedWithBaselineId).</p>
+ * Task Group 1 (kind + pairedWithBaselineId). Baseline Integrity &amp;
+ * Provenance (2026-06-17) — Task Group 1 (contentHash + provenanceJson).</p>
  */
 @Entity
 @Table(
@@ -123,6 +138,51 @@ public class ApiBehaviourBaselineEntity {
      */
     @Column(name = "paired_with_baseline_id")
     private UUID pairedWithBaselineId;
+
+    /**
+     * Deterministic SHA-256 (lowercase hex) over the CANONICAL form of this
+     * baseline's item set, stamped server-side at the draft→active ACTIVATE
+     * transition over the items AS PERSISTED. Makes the pinned oracle
+     * tamper-EVIDENT: the verify operation recomputes the same canonical hash
+     * over the current stored items and compares.
+     *
+     * <p><b>{@code null} = pre-existing / never-activated (draft) baseline</b>
+     * (NO backfill) — treated as "no integrity hash recorded" (neutral, NOT a
+     * mismatch). Stamped only on transition INTO active and only for
+     * {@code kind='current'} baselines; drafts and {@code kind='target'}
+     * baselines stay null. Reference type ({@link String}) — no primitive-wipe
+     * risk per {@code project_primitive_double_dto_overwrite.md}.</p>
+     *
+     * <p>The canonical form (and the volatile-pinning-vs-tolerance distinction)
+     * is documented on the hashing util in
+     * {@link com.example.architecturemodel.service.apibehaviour.ApiBehaviourBaselineService}.</p>
+     *
+     * <p>Spec: Baseline Integrity &amp; Provenance (2026-06-17) — Task Group 1
+     * (changeset 191).</p>
+     */
+    @Column(name = "content_hash")
+    private String contentHash;
+
+    /**
+     * Audit record stamped at the draft→active ACTIVATE transition, shaped
+     * {@code { session_id, environment_name, activated_at, coverage_score,
+     * coverage_summary, accepted_capture_count, operation_count,
+     * hash_algo: "sha256", canonical_version: 1 }}. {@code coverage_score} is
+     * Spec A's {@code overall_score} read from the linked capture session's
+     * {@code coverage_summary_json} (changeset 189) via {@code session_id};
+     * {@code null} when the session has no summary (legacy) — never fabricated.
+     *
+     * <p><b>{@code null} = pre-existing / never-activated baseline</b> (NO
+     * backfill). JSONB column via {@code @Type(JsonType.class)}, mirroring the
+     * sibling JSONB columns on the capture-session entity; reference type, no
+     * primitive-wipe risk per {@code project_primitive_double_dto_overwrite.md}.</p>
+     *
+     * <p>Spec: Baseline Integrity &amp; Provenance (2026-06-17) — Task Group 1
+     * (changeset 191).</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "provenance_json", columnDefinition = "jsonb")
+    private Map<String, Object> provenanceJson;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

@@ -35,7 +35,20 @@ import java.util.UUID;
  *
  * <p>{@code bodyClassification} (NULL when source_only / target_only -- no
  * pair to body-compare): {@code body_match} | {@code body_shape_drift} |
- * {@code body_value_drift}.</p>
+ * {@code body_value_drift} | {@code body_ordering_drift}. The
+ * {@code body_ordering_drift} value (added by Reconcile Full-Response
+ * Fidelity, 2026-06-17) tags a non-volatile array reorder as its own
+ * dimension instead of a {@code body_value_drift} cascade -- no schema
+ * change, service-layer validation only.</p>
+ *
+ * <p>{@code headerClassification} (NULL when source_only / target_only, or
+ * when EITHER side lacks a {@code {headers, body\}} response wrapper so the
+ * header dimension is skipped -- no header pair to compare):
+ * {@code header_match} | {@code header_value_drift} |
+ * {@code header_presence_drift}. Mirrors {@code bodyClassification}; added by
+ * Reconcile Full-Response Fidelity (2026-06-17) so a Content-Type flip, a
+ * dropped/added header, or a non-allowlisted header value change surfaces as
+ * its own typed dimension instead of being silently discarded.</p>
  *
  * <p>Validated at the service layer (no DB enum, matches existing AMS
  * convention for status discriminators).</p>
@@ -66,6 +79,9 @@ import java.util.UUID;
  * diff_items.</p>
  *
  * <p>Spec: API Test Harness — Diff Engine (2026-05-25) — Task Group 1</p>
+ * <p>Extended: Reconcile Full-Response Fidelity &amp; Distinct Break Types
+ * (2026-06-17) — Task Group 1 ({@code headerClassification} column +
+ * {@code body_ordering_drift} body sub-classification value).</p>
  */
 @Entity
 @Table(
@@ -128,12 +144,28 @@ public class ApiBehaviourDiffItemEntity {
 
     /**
      * Discrete bucket. Valid values: {@code body_match} |
-     * {@code body_shape_drift} | {@code body_value_drift}. NULL when
-     * {@link #statusClassification} is {@code source_only} /
-     * {@code target_only}. Validated at the service layer.
+     * {@code body_shape_drift} | {@code body_value_drift} |
+     * {@code body_ordering_drift}. NULL when {@link #statusClassification} is
+     * {@code source_only} / {@code target_only}. Validated at the service
+     * layer.
      */
     @Column(name = "body_classification")
     private String bodyClassification;
+
+    /**
+     * Discrete bucket for the response-HEADER dimension. Valid values:
+     * {@code header_match} | {@code header_value_drift} |
+     * {@code header_presence_drift}. NULL when {@link #statusClassification}
+     * is {@code source_only} / {@code target_only} (no pair), OR when either
+     * side lacks a {@code {headers, body\}} response wrapper so the header
+     * dimension is skipped (graceful degrade -- no false header break).
+     * Validated at the service layer (no DB enum, mirrors
+     * {@link #bodyClassification}).
+     *
+     * <p>Spec: Reconcile Full-Response Fidelity (2026-06-17) — Task Group 1.</p>
+     */
+    @Column(name = "header_classification")
+    private String headerClassification;
 
     /**
      * HTTP response status from the source baseline item.

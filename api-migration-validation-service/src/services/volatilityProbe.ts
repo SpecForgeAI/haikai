@@ -234,6 +234,16 @@ export async function runVolatilityProbe(
   for (let i = 1; i < bodies.length; i += 1) {
     const cmp = compareJsonShapes(bodies[0], bodies[i]);
     for (const entry of cmp.bodyDiffJson) {
+      // A NON-volatile pure reorder now surfaces (Spec 2026-06-17) as a SINGLE
+      // `ordering` marker on the ARRAY path itself, instead of the per-element
+      // `value_changed` cascade the probe historically promoted via
+      // nearestArrayAncestor. Flag that array path directly as
+      // order-insensitive so the persisted envelope's `array_paths` carries it
+      // exactly as before the comparator change.
+      if (entry.kind === 'ordering') {
+        volatileArrays.add(entry.path);
+        continue;
+      }
       if (entry.kind === 'value_changed') {
         volatileLeaves.add(entry.path);
         // If the differing leaf sits under an array, flag the nearest array

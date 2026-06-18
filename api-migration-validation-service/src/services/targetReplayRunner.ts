@@ -13,6 +13,10 @@ import {
 } from './httpExecutor';
 import { runDiff as defaultRunDiff, type DiffRunnerDeps } from './diffRunner';
 import { resolveNonDeterministicEndpointKeys as defaultResolveNdKeys } from './nonDeterministicEndpointKeys';
+import {
+  replaySequenceItem,
+  type SequenceReplayDeps,
+} from './sequenceReplayRunner';
 import type { ApiAuthSecret } from '../types/secrets';
 import {
   TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT as DEFAULT_TRANSPORT_FAILURE_THRESHOLD,
@@ -101,7 +105,13 @@ export type TargetReplayDiagnosticType =
   | 'mutating_skipped'
   | 'replay_non_2xx'
   | 'replay_transport_failure'
-  | 'replay_cancelled';
+  | 'replay_cancelled'
+  // Stateful-sequence diagnostics (Spec D, Task Group 3). A sequence is
+  // inherently mutating: it requires mutating_calls_confirmed to replay.
+  | 'sequence_skipped'
+  | 'sequence_setup_failed'
+  | 'sequence_cleanup_failed'
+  | 'sequence_residual_pollution';
 
 export interface TargetReplayDiagnostic {
   diagnosticType: TargetReplayDiagnosticType;
@@ -316,7 +326,8 @@ export async function runTargetReplay(
       await archModelClient.createDiagnostic(sessionRow.project_id, {
         session_id: sessionRow.id,
         diagnostic_type:
-          diag.diagnosticType === 'mutating_skipped'
+          diag.diagnosticType === 'mutating_skipped' ||
+          diag.diagnosticType === 'sequence_skipped'
             ? 'endpoint_skipped'
             : 'failed_request',
         message: diag.message,
@@ -502,6 +513,45 @@ export async function runTargetReplay(
       }
 
       const req = extractItemRequest(item);
+
+      // ----------------------------------------------------------------
+      // SEQUENCE DISPATCH (Spec D, Task Group 3). A baseline item whose
+      // sequence_json is non-null is an ordered setup -> act -> cleanup
+      // HTTP chain captured atomically as ONE oracle unit. Hand it to the
+      // deterministic ordered-step sub-runner, which runs the steps in
+      // order, resolves $<step>.<jsonpath> refs from earlier LIVE responses,
+      // asserts setup statuses, promotes the ACT response to a target
+      // baseline-item (so the existing auto-diff fully diffs it), and runs
+      // cleanup best-effort. NON-sequence items fall through to the existing
+      // single-shot path BYTE-FOR-BYTE unchanged.
+      if (item.sequence_json != null) {
+        const seqDeps: SequenceReplayDeps = { archModelClient, now };
+        const seqResult = await replaySequenceItem(
+          item,
+          session,
+          targetBaseline,
+          executor,
+          seqDeps,
+        );
+        // Fold the sub-runner diagnostics into the run + persist each one.
+        for (const d of seqResult.diagnostics) {
+          await emitDiagnostic(d, session);
+        }
+        // Counter accounting mirrors the single-shot path: a skipped
+        // sequence counts as skipped; a setup failure as failed; an act that
+        // replayed (and was diffed) as replayed. Cleanup failure / residual
+        // pollution are FLAGGED (diagnostics above) but never change the
+        // replayed/failed verdict (best-effort isolation, R5/R6).
+        if (seqResult.skipped) {
+          itemsSkipped += 1;
+        } else if (seqResult.setupFailed) {
+          itemsFailed += 1;
+        } else if (seqResult.actReplayed) {
+          itemsReplayed += 1;
+        }
+        continue;
+      }
+
       const isMutating = MUTATING_METHODS.has(req.method);
       const mutatingConfirmed = session.mutating_calls_confirmed === true;
 
@@ -545,6 +595,11 @@ export async function runTargetReplay(
           attempt_number: 1,
           request_method: req.method,
           request_path: req.path,
+          // Issue 1: AMS REQUIRES a non-blank request_url_redacted (else 400).
+          request_url_redacted:
+            ((session.api_base_url ?? '').replace(/\/+$/, '') +
+              (req.path.startsWith('/') ? req.path : `/${req.path}`)) ||
+            req.path,
           request_query_json: req.query ?? null,
           request_headers_redacted_json: req.headers ?? null,
           request_body_json: req.body ?? null,

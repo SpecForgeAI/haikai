@@ -276,6 +276,14 @@ public class ApiBehaviourCaptureSessionService {
         if (request.coverageOverrideAt() != null) {
             entity.setCoverageOverrideAt(request.coverageOverrideAt());
         }
+        // Coverage summary (Spec: Oracle Coverage Scoring, 2026-06-17;
+        // changeset 189) -- written on the completion PATCH by the single-source
+        // scorer. Null-guarded reference field per the PATCH rule: an absent key
+        // (Jackson-bound to null) preserves any existing summary; it never
+        // clobbers a previously-recorded summary back to null.
+        if (request.coverageSummaryJson() != null) {
+            entity.setCoverageSummaryJson(request.coverageSummaryJson());
+        }
 
         // Kind + pairing invariant — null-guarded per PATCH semantics. If
         // either field appears in the body, re-check the invariant against

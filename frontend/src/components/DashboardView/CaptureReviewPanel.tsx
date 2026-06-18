@@ -34,11 +34,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ApiBehaviourCaptureDto,
+  ApiBehaviourDiagnosticDto,
   ApiBehaviourOperationDto,
   ApiBehaviourScenarioDto,
   FieldMask,
   ReviewerNotesPayload,
   listCaptures,
+  listDiagnostics,
   listOperations,
   listScenarios,
   parseReviewerNotes,
@@ -68,6 +70,14 @@ export interface CaptureReviewPanelProps {
    * without acting on rows that may yet be retried by the loop.
    */
   readOnly?: boolean;
+  /**
+   * Raw `coverage_summary_json` off the capture session (snake_case JSONB
+   * wire), threaded down from `CaptureSessionDetailView` so the
+   * Save-as-Baseline modal can surface oracle coverage (display-only).
+   * Null / absent renders as 'coverage not recorded'. Spec: 2026-06-17
+   * Oracle Coverage Scoring -- Task 3.4.
+   */
+  coverageSummaryJson?: Record<string, unknown> | null;
 }
 
 // ============================================================================
@@ -233,6 +243,34 @@ function describeError(err: unknown): string {
   return 'Unexpected error';
 }
 
+/**
+ * System reason marker the capture-session orchestrator writes to a
+ * non-canonical capture's `reviewer_notes` when it reject-and-hides the LLM's
+ * intermediate fumbles (intent-driven canonical capture, validation-service
+ * `captureSessionOrchestrator.ts` -> `NON_CANONICAL_REVIEWER_NOTE`). It is a
+ * BARE string, distinct from the structured `{ text, masks }` reviewer-notes
+ * JSON a human reject writes via this panel.
+ *
+ * Spec: 2026-06-17 Intent-Driven Canonical Capture.
+ */
+const NON_CANONICAL_REVIEWER_NOTE = 'superseded_non_canonical';
+
+/**
+ * True when a capture is an auto-rejected non-canonical fumble: `accepted` is
+ * explicitly `false` AND `reviewer_notes` is exactly the system marker. A
+ * human reject (which carries free-text / structured `{ text, masks }` notes,
+ * or none) is NOT a fumble and stays visible. `accepted === false` alone is
+ * deliberately NOT sufficient -- that is also a human reject.
+ *
+ * Spec: 2026-06-17 Intent-Driven Canonical Capture.
+ */
+function isAutoRejectedFumble(cap: ApiBehaviourCaptureDto): boolean {
+  return (
+    cap.accepted === false &&
+    (cap.reviewer_notes ?? '').trim() === NON_CANONICAL_REVIEWER_NOTE
+  );
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -242,10 +280,16 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   architectureId,
   sessionId,
   readOnly = false,
+  coverageSummaryJson,
 }) => {
   const [operations, setOperations] = useState<ApiBehaviourOperationDto[]>([]);
   const [scenarios, setScenarios] = useState<ApiBehaviourScenarioDto[]>([]);
   const [captures, setCaptures] = useState<ApiBehaviourCaptureDto[]>([]);
+  // Session diagnostics. Carries the `sequence_pinned` marker rows the
+  // capture orchestrator writes for stateful sequence scenarios; passed to
+  // the Save-as-baseline modal so the assembled `sequence_json` is carried
+  // onto the canonical ACT-step baseline item (Spec D, Task Group 4).
+  const [diagnostics, setDiagnostics] = useState<ApiBehaviourDiagnosticDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -325,10 +369,14 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [ops, scens, caps] = await Promise.all([
+      const [ops, scens, caps, diags] = await Promise.all([
         listOperations(projectId, architectureId, sessionId),
         listScenarios(projectId, architectureId, sessionId),
         listCaptures(projectId, architectureId, sessionId),
+        // Best-effort: diagnostics carry the sequence_pinned markers. A
+        // failure here must NOT fail the whole review load, so swallow it
+        // to an empty list (the single-shot path renders unchanged).
+        listDiagnostics(projectId, architectureId, sessionId).catch(() => []),
       ]);
       // Coerce defensively: the list endpoints are typed `[]` but a 204 /
       // empty / non-array body resolves to undefined; never put a non-array
@@ -336,6 +384,7 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
       setOperations(Array.isArray(ops) ? ops : []);
       setScenarios(Array.isArray(scens) ? scens : []);
       setCaptures(Array.isArray(caps) ? caps : []);
+      setDiagnostics(Array.isArray(diags) ? diags : []);
       setError(null);
     } catch (err) {
       setError(describeError(err));
@@ -349,22 +398,34 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   }, [refresh]);
 
   // ---- Derived state ---------------------------------------------------
+  // Intent-driven canonical capture: the orchestrator persists EVERY HTTP
+  // attempt (the canonical capture PLUS the LLM's intermediate fumbles) but
+  // reject-and-hides the fumbles with a system reason marker. Filter those out
+  // here so the review surface shows only the canonical + genuinely-reviewable
+  // captures; human-rejected captures (no system marker) stay visible. The
+  // grouping, the tally, the save-modal, and the panel header count all read
+  // off `visibleCaptures`, never the raw `captures` array.
+  const visibleCaptures = useMemo(
+    () => captures.filter((c) => !isAutoRejectedFumble(c)),
+    [captures],
+  );
+
   const grouped = useMemo(
-    () => group(operations, scenarios, captures),
-    [operations, scenarios, captures],
+    () => group(operations, scenarios, visibleCaptures),
+    [operations, scenarios, visibleCaptures],
   );
 
   const acceptedCount = useMemo(
-    () => captures.filter((c) => c.accepted === true).length,
-    [captures],
+    () => visibleCaptures.filter((c) => c.accepted === true).length,
+    [visibleCaptures],
   );
 
   const operationsWithoutAccepted = useMemo(() => {
     const accepted = new Set(
-      captures.filter((c) => c.accepted === true).map((c) => c.operation_id),
+      visibleCaptures.filter((c) => c.accepted === true).map((c) => c.operation_id),
     );
     return operations.filter((o) => !accepted.has(o.id));
-  }, [operations, captures]);
+  }, [operations, visibleCaptures]);
 
   // ---- Mutators --------------------------------------------------------
 
@@ -533,7 +594,7 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   return (
     <div className={styles.panel} data-testid="capture-review-panel">
       <div className={styles.panelHeader}>
-        <h3>Captured behaviour ({captures.length})</h3>
+        <h3>Captured behaviour ({visibleCaptures.length})</h3>
         <div className={styles.headerActions}>
           <span
             className={styles.acceptedTally}
@@ -957,10 +1018,12 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
           projectId={projectId}
           architectureId={architectureId}
           sessionId={sessionId}
-          captures={captures}
+          captures={visibleCaptures}
           operations={operations}
           scenarios={scenarios}
           operationsWithoutAccepted={operationsWithoutAccepted}
+          coverageSummaryJson={coverageSummaryJson}
+          diagnostics={diagnostics}
           onClose={() => setSaveModalOpen(false)}
         />
       )}

@@ -87,17 +87,25 @@ describe('seedsForOperation', () => {
 });
 
 describe('defaultScenarioSet', () => {
-  it('falls back to a single happy_path when no context', () => {
-    expect(defaultScenarioSet(makeOp('GET', '/owners'))).toEqual([
-      { name: 'happy_path', type: 'happy_path' },
-    ]);
+  it('falls back to a single happy_path when no context (no params)', () => {
+    const result = defaultScenarioSet(makeOp('GET', '/owners'));
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      name: 'happy_path',
+      type: 'happy_path',
+      expectedStatus: 'success',
+    });
   });
 
-  it('falls back to a single happy_path when no seed set matches', () => {
+  it('falls back to a single happy_path when no seed set matches (no params)', () => {
     const ctx = makeContext({ scenarioSeeds: [] });
-    expect(defaultScenarioSet(makeOp('GET', '/owners'), ctx)).toEqual([
-      { name: 'happy_path', type: 'happy_path' },
-    ]);
+    const result = defaultScenarioSet(makeOp('GET', '/owners'), ctx);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      name: 'happy_path',
+      type: 'happy_path',
+      expectedStatus: 'success',
+    });
   });
 
   it('expands to one scenario per seed when a seed set matches', () => {
@@ -117,10 +125,34 @@ describe('defaultScenarioSet', () => {
       ],
     });
     expect(defaultScenarioSet(makeOp('POST', '/owners'), ctx)).toEqual([
-      { name: 'happy_path', type: 'happy_path' },
-      { name: 'error_404', type: 'error' },
-      { name: 'auth_missing_token', type: 'auth_variant' },
+      { name: 'happy_path', type: 'happy_path', expectedStatus: 'success' },
+      { name: 'error_404', type: 'error', expectedStatus: 'not_found' },
+      { name: 'auth_missing_token', type: 'auth_variant', expectedStatus: 'client_error' },
     ]);
+  });
+
+  it('scales coverage to the parameter space (path id, enum values, negatives)', () => {
+    const oasOp = {
+      parameters: [
+        { name: 'id', in: 'path', required: true },
+        { name: 'status', in: 'query', schema: { enum: ['ACTIVE', 'CLOSED'] } },
+      ],
+    };
+    const result = defaultScenarioSet(makeOp('GET', '/things/{id}'), undefined, oasOp);
+    const names = result.map((s) => s.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'happy_path',
+        'not_found_id',
+        'enum_status_ACTIVE',
+        'enum_status_CLOSED',
+        'bad_request_id',
+      ]),
+    );
+    // Expected-outcome intents drive Phase-2 canonical capture.
+    expect(result.find((s) => s.name === 'not_found_id')?.expectedStatus).toBe('not_found');
+    expect(result.find((s) => s.name === 'enum_status_ACTIVE')?.expectedStatus).toBe('success');
+    expect(result.find((s) => s.name === 'bad_request_id')?.expectedStatus).toBe('client_error');
   });
 });
 
@@ -158,6 +190,24 @@ describe('buildScenarioPrompt with scenarioSeed', () => {
     const userMsg = messages.find((m) => m.role === 'user');
     const payload = JSON.parse(userMsg!.content as string) as Record<string, unknown>;
     expect(payload.scenarioSeed).toBeUndefined();
+  });
+
+  // Kiro #3: the MANDATORY instructions must tell the LLM that a path template
+  // can have MULTIPLE segments and that EACH must be filled -- guarding against
+  // collapsing e.g. /hierarchynodes/{cobDate}/{orgId} into a single /{id}.
+  it('instructions warn about multi-segment path templates and filling each segment', () => {
+    const messages = buildScenarioPrompt(makeSession(), 'GET /owners', 'happy_path', 'GET', '/owners');
+    const userMsg = messages.find((m) => m.role === 'user');
+    const payload = JSON.parse(userMsg!.content as string) as Record<string, unknown>;
+    const instructions = payload.instructions as string;
+    expect(typeof instructions).toBe('string');
+    // Mentions multi-segment path templates explicitly.
+    expect(instructions).toMatch(/MULTIPLE segments/);
+    expect(instructions).toMatch(/path template/i);
+    // Tells the LLM to fill EACH segment and never collapse to one id.
+    expect(instructions).toMatch(/EACH segment/);
+    expect(instructions).toMatch(/never collapse/i);
+    expect(instructions).toMatch(/single id/i);
   });
 });
 

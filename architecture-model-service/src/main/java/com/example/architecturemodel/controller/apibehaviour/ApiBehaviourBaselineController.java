@@ -1,6 +1,7 @@
 package com.example.architecturemodel.controller.apibehaviour;
 
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourBaselineDto;
+import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourBaselineIntegrityDto;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourBaselineRequest;
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourBaselineRequest;
 import com.example.architecturemodel.service.apibehaviour.ApiBehaviourBaselineService;
@@ -31,6 +32,8 @@ import java.util.UUID;
  * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2</p>
  * <p>Extended: API Test Harness — Target-Side Capture (2026-05-25) — Task Group 2
  * ({@link #listTargetBaselines} endpoint for Spec #5's diff UI consumption).</p>
+ * <p>Extended: Baseline Integrity &amp; Provenance (2026-06-17) — Task Group 1
+ * ({@link #integrity} verify endpoint).</p>
  */
 @RestController
 @RequestMapping("/api/projects/{projectId}/api-behaviour/baselines")
@@ -75,6 +78,26 @@ public class ApiBehaviourBaselineController {
             @PathVariable UUID projectId,
             @PathVariable UUID baselineId) {
         return ResponseEntity.ok(service.get(projectId, baselineId));
+    }
+
+    /**
+     * Server-side integrity verify for a single baseline. Recomputes the
+     * canonical content hash over the CURRENT stored items and compares it to
+     * the {@code content_hash} stamped at activation, returning
+     * {@code { content_hash, recomputed_hash, integrity_verified }} (snake_case
+     * wire). A baseline with a null {@code content_hash} (pre-existing /
+     * never-activated) yields the neutral null-hash result — the consumer treats
+     * it as "no hash recorded", NOT a mismatch.
+     *
+     * <p>Preferred over an {@code integrity} block on {@code getBaseline} so the
+     * hash recompute does not run on every list read; the reconcile path calls
+     * this explicitly. Spec: Baseline Integrity &amp; Provenance (2026-06-17).</p>
+     */
+    @GetMapping("/{baselineId}/integrity")
+    public ResponseEntity<ApiBehaviourBaselineIntegrityDto> integrity(
+            @PathVariable UUID projectId,
+            @PathVariable UUID baselineId) {
+        return ResponseEntity.ok(service.verifyIntegrity(projectId, baselineId));
     }
 
     /**

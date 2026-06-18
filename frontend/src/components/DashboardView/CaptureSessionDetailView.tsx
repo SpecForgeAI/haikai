@@ -79,6 +79,7 @@ import {
   testDbConnection,
 } from '../../api/apiBehaviourClient';
 import { CaptureReviewPanel } from './CaptureReviewPanel';
+import { CoverageSummaryPanel } from './CoverageSummaryPanel';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
@@ -623,6 +624,25 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           </div>
         )}
 
+      {/* Oracle coverage summary (Spec 2026-06-17 Oracle Coverage Scoring).
+          Display-only readiness surfacing: overall + per-endpoint coverage
+          with honest missed-dimension reasons, thin-coverage flags, and the
+          project-level auth dimension. Rendered for COMPLETED runs beside the
+          scenario tally. A null / absent / pre-fix summary renders gracefully
+          as "coverage not recorded" -- never an error. Reuses the existing
+          banner/badge styling (secretsPrompt + statusBadge) -- no charting
+          widget. */}
+      {session.status === 'completed' && (
+        <CoverageSummaryPanel
+          raw={session.coverage_summary_json}
+          testId="capture-session-coverage-summary"
+          classes={{
+            banner: styles.secretsPrompt,
+            badge: styles.statusBadge,
+          }}
+        />
+      )}
+
       {/* Coverage-override banner (Model-Seeded Capture Inventory spec,
           2026-06-11). Rendered ONLY when the session's /start was overridden
           past the inventory-coverage gate -- legacy rows (all-null trio)
@@ -985,6 +1005,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           architectureId={architectureId}
           sessionId={sessionId}
           readOnly={reviewPanelReadOnly}
+          coverageSummaryJson={session.coverage_summary_json}
         />
       )}
     </div>

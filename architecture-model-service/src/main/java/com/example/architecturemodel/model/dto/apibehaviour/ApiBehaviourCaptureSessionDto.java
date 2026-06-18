@@ -31,14 +31,25 @@ import java.util.UUID;
  * current-state baseline it is replaying. Service-layer invariant: target
  * sessions MUST have a non-null source; current sessions MUST have it null.</p>
  *
+ * <h2>Coverage summary (Spec: 2026-06-17 Oracle Coverage Scoring)</h2>
+ * <p>{@code coverageSummaryJson} carries the whole coverage summary (overall +
+ * per-endpoint dimensions, achieved/missed, honest reasons, and the single
+ * project-level auth dimension), written on the completion PATCH by the
+ * single-source coverage scorer. Snake_case wire (AMS default — NO
+ * {@code @CamelCaseWire}). {@code null} = coverage not recorded (legacy /
+ * pre-fix sessions). Designed so a later spec (baseline integrity &amp;
+ * provenance, Spec C) can read it off the session.</p>
+ *
  * <p>A backward-compatible 18-arg constructor delegates to the canonical
- * 20-arg constructor with {@code kind="current"} and
- * {@code sourceBaselineId=null}, so existing call sites compile unchanged
- * (same pattern as {@link com.example.architecturemodel.model.dto.ArchitectureDto}).</p>
+ * constructor with {@code kind="current"} and {@code sourceBaselineId=null},
+ * so existing call sites compile unchanged (same pattern as
+ * {@link com.example.architecturemodel.model.dto.ArchitectureDto}).</p>
  *
  * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2</p>
  * <p>Extended: API Test Harness — Target-Side Capture (2026-05-25) — Task Group 2
  * ({@code kind} + {@code sourceBaselineId}).</p>
+ * <p>Extended: Oracle Coverage Scoring (2026-06-17) — Task Group 1
+ * ({@code coverageSummaryJson}).</p>
  */
 public record ApiBehaviourCaptureSessionDto(
     UUID id,
@@ -81,14 +92,67 @@ public record ApiBehaviourCaptureSessionDto(
     String coverageOverrideJustification,
     Integer coverageOverrideUnaccountedCount,
     Instant coverageOverrideAt,
+    /**
+     * Whole coverage summary (Oracle Coverage Scoring, 2026-06-17, changeset
+     * 189). {@code null} = coverage not recorded. JSONB; snake_case wire (AMS
+     * default — NO {@code @CamelCaseWire}). Designed for Spec C to read.
+     */
+    Map<String, Object> coverageSummaryJson,
     Instant createdAt,
     Instant updatedAt
 ) {
 
     /**
+     * Backward-compatible constructor preserving the pre-Oracle-Coverage-Scoring
+     * canonical signature (no {@code coverageSummaryJson}). Delegates with a
+     * null coverage summary.
+     */
+    public ApiBehaviourCaptureSessionDto(
+            UUID id,
+            UUID projectId,
+            UUID architectureId,
+            String name,
+            String status,
+            String environmentName,
+            String apiBaseUrl,
+            String authType,
+            Map<String, Object> authConfigRedactedJson,
+            Map<String, Object> defaultHeadersRedactedJson,
+            Map<String, Object> oasSpecRefsJson,
+            Map<String, Object> dbConfigRedactedJson,
+            Boolean mutatingCallsConfirmed,
+            Instant startedAt,
+            Instant completedAt,
+            String errorMessage,
+            String kind,
+            UUID sourceBaselineId,
+            Integer scenariosAttempted,
+            Integer scenariosCompleted,
+            Integer scenariosErrored,
+            List<String> scopeInterfaceIdsJson,
+            String coverageOverrideJustification,
+            Integer coverageOverrideUnaccountedCount,
+            Instant coverageOverrideAt,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, projectId, architectureId, name, status,
+            environmentName, apiBaseUrl, authType,
+            authConfigRedactedJson, defaultHeadersRedactedJson,
+            oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
+            startedAt, completedAt, errorMessage,
+            kind, sourceBaselineId,
+            scenariosAttempted, scenariosCompleted, scenariosErrored,
+            scopeInterfaceIdsJson,
+            coverageOverrideJustification, coverageOverrideUnaccountedCount,
+            coverageOverrideAt,
+            null,
+            createdAt, updatedAt);
+    }
+
+    /**
      * Backward-compatible 23-arg constructor preserving the
      * pre-Model-Seeded-Capture-Inventory canonical signature. Delegates to
-     * the canonical constructor with null scope + override fields.
+     * the canonical constructor with null scope + override + coverage fields.
      */
     public ApiBehaviourCaptureSessionDto(
             UUID id,
@@ -122,6 +186,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             scenariosAttempted, scenariosCompleted, scenariosErrored,
             null, null, null, null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -161,6 +226,8 @@ public record ApiBehaviourCaptureSessionDto(
             startedAt, completedAt, errorMessage,
             "current", null,
             null, null, null,
+            null, null, null, null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -197,6 +264,8 @@ public record ApiBehaviourCaptureSessionDto(
             startedAt, completedAt, errorMessage,
             kind, sourceBaselineId,
             null, null, null,
+            null, null, null, null,
+            null,
             createdAt, updatedAt);
     }
 }

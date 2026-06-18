@@ -6,21 +6,30 @@
  *   Task Group 3 layers OPTIONAL per-path volatility tolerance on top of the
  *   strict comparison. See the "Volatility tolerance" section below. When NO
  *   volatility context is passed (the default), the comparator behaves
- *   EXACTLY as the original strict v1 -- the backward-compat guard (G1).
+ *   EXACTLY as the original strict v1 for the BODY/VALUE dimensions -- the
+ *   backward-compat guard (G1).
+ * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types --
+ *   Task Group 2 stops DISCARDING the `{ headers, body }` wrapper's `headers`
+ *   key and instead DIFFS response headers (presence + value, with a narrow
+ *   volatile-header allowlist), and promotes a NON-volatile array reorder to
+ *   its own `body_ordering_drift` dimension. See the "Header comparison" and
+ *   "Ordering drift" sections below.
  *
  * Compares two JSON trees (a source response body and a target response body)
- * and classifies the result into one of three top-level buckets:
+ * and classifies the result into one of these top-level buckets:
  *
- *   - `body_match`        -- deep equality after the symmetric wrapper unwrap
- *   - `body_shape_drift`  -- one or more keys added / removed OR a leaf type
- *                            change at one or more JSON-pointer paths
- *   - `body_value_drift`  -- same shape (key sets + types) but at least one
- *                            leaf value differs
+ *   - `body_match`          -- deep equality after the symmetric wrapper unwrap
+ *   - `body_shape_drift`    -- one or more keys added / removed OR a leaf type
+ *                              change at one or more JSON-pointer paths
+ *   - `body_value_drift`    -- same shape (key sets + types) but at least one
+ *                              leaf value differs
+ *   - `body_ordering_drift` -- the ONLY drift is a NON-volatile array reorder
+ *                              (same elements, different order). Spec 2026-06-17.
  *
- * Shape wins over value: if any key/type drift exists, the top-level
- * classification is `body_shape_drift` even when there are also value
- * differences elsewhere. `body_value_drift` is reserved for the
- * exact-shape-with-different-leaves case.
+ * Shape wins over value wins over ordering: if any key/type drift exists, the
+ * top-level classification is `body_shape_drift`; `body_value_drift` is
+ * reserved for the exact-shape-with-different-leaves case; `body_ordering_drift`
+ * is the weakest -- reported ONLY when nothing stronger drifted.
  *
  * ---------------------------------------------------------------------------
  * CRITICAL -- Step 1 wrapper-unwrap normalisation
@@ -46,6 +55,40 @@
  * `jsonShapeComparator.wrapperUnwrap.test.ts`.
  *
  * ---------------------------------------------------------------------------
+ * Header comparison (Spec 2026-06-17, Task Group 2) -- the headers key is now
+ *   CAPTURED, not discarded
+ * ---------------------------------------------------------------------------
+ *
+ * Before any body walk, the comparator reads the PRE-unwrap `headers` key from
+ * BOTH sides (the `{ headers, body }` wrapper written by
+ * `targetReplayRunner.ts` on the target side, and -- once the frontend's
+ * SaveAsBaselineModal change lands -- the source side). It compares them:
+ *
+ *   - a header that appears / disappears -> `header_presence_drift` (ALWAYS
+ *     breaks; presence is NEVER tolerated, even for an allowlisted name);
+ *   - a header VALUE change -> `header_value_drift`. Allowlisted header names
+ *     ({@link VOLATILE_HEADER_NAMES}) are tolerated (tagged `declared`); every
+ *     other name (incl. `Content-Type`) breaks.
+ *
+ * GRACEFUL DEGRADE: when EITHER side lacks the `{ headers, body }` wrapper
+ * (pre-existing source baselines store the raw body, no headers), the header
+ * dimension is SKIPPED ENTIRELY -- `headerClassification` stays `null` and NO
+ * header entry is emitted (no false break, no backfill). Spec R5.
+ *
+ * ---------------------------------------------------------------------------
+ * Ordering drift (Spec 2026-06-17, Task Group 2)
+ * ---------------------------------------------------------------------------
+ *
+ * A NON-volatile array whose elements are a reordered multiset of the same
+ * values (i.e. `multisetEqual` but not `arraysStrictlyEqual`) is recorded as a
+ * single `ordering` marker on the array path INSTEAD of the per-element
+ * `value_changed` cascade the strict positional walk would otherwise produce.
+ * A volatile-flagged array stays order-INsensitive as today (a pure reorder is
+ * fully tolerated). Ordering is the weakest classification: a reorder that
+ * co-occurs with a real shape / value drift classifies as that stronger
+ * dimension; ordering only "wins" when it is the sole drift.
+ *
+ * ---------------------------------------------------------------------------
  * Volatility tolerance (Spec 2026-06-16, Task Group 3) -- OPTIONAL
  * ---------------------------------------------------------------------------
  *
@@ -67,30 +110,57 @@
  * entry's `volatilitySource` so the downstream gateway auto-disposition pass
  * (Group 4) can decide whether the whole break is `expected_volatile`,
  * down-ranked-to-`info`, or stays `open`. The comparator itself NEVER drops a
- * break -- it only annotates value/order entries it has reclassified.
+ * break -- it only annotates value/order/header entries it has reclassified.
  *
  * ---------------------------------------------------------------------------
  * Out of scope (deferred to v2 per accepted Q11 of the original Diff Engine
- * spec; partially RESOLVED by the 2026-06-16 spec)
+ * spec; RESOLVED by the 2026-06-16 + 2026-06-17 specs)
  * ---------------------------------------------------------------------------
  *
- *   - Header drift detection. Response headers legitimately vary across
- *     servers (server identifier, timestamp, request-id echo).
+ *   - Response timing / latency diff (`duration_ms` stays captured but is not
+ *     diffed -- inherently noisy, not a behavioural contract). Spec R7.
  *
- * Compares RESPONSE bodies only. Request bodies are identical-by-construction
- * (Spec #4 replay carries them verbatim).
+ * Compares RESPONSE bodies + RESPONSE headers only. Request bodies are
+ * identical-by-construction (Spec #4 replay carries them verbatim).
  */
 
 export type BodyClassification =
   | 'body_match'
   | 'body_shape_drift'
-  | 'body_value_drift';
+  | 'body_value_drift'
+  // The ONLY drift is a NON-volatile array reorder (same elements, different
+  // order). Its own dimension -- not a `value_changed` cascade. Spec 2026-06-17.
+  | 'body_ordering_drift';
+
+/**
+ * Per-dimension RESPONSE-HEADER classification, mirroring the body / status
+ * classifications. `null` (absent) when the header dimension is SKIPPED
+ * because a side lacked the `{ headers, body }` response wrapper (graceful
+ * degrade -- old source baselines store the raw body, so there is no header
+ * pair to compare). See {@link compareJsonShapes}.
+ *
+ *   - `header_match`          -- header sets + values equal (after allowlist)
+ *   - `header_value_drift`    -- a header's VALUE changed (allowlisted names
+ *                                are tolerated; everything else breaks)
+ *   - `header_presence_drift` -- a header appeared / disappeared (ALWAYS
+ *                                breaks, even for an allowlisted name)
+ *
+ * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types.
+ */
+export type HeaderClassification =
+  | 'header_match'
+  | 'header_value_drift'
+  | 'header_presence_drift';
 
 export type LeafDiffKind =
   | 'key_added'
   | 'key_removed'
   | 'type_changed'
-  | 'value_changed';
+  | 'value_changed'
+  // A NON-volatile array reorder, recorded as a SINGLE marker on the array
+  // path (not a per-element value cascade). Classifies as `body_ordering_drift`
+  // when it is the sole drift. Spec 2026-06-17, Task Group 2.
+  | 'ordering';
 
 /**
  * The taxonomy of WHY a path is treated as volatile. Mirrors the AMS
@@ -143,6 +213,39 @@ export interface BodyDiffEntry {
 }
 
 /**
+ * A single response-header divergence. Mirrors {@link BodyDiffEntry} but for
+ * the header dimension. Emitted ONLY when both sides carried a `{ headers,
+ * body }` wrapper (see the graceful-degrade rule). Reuses {@link buildPointer}
+ * (a `/<header-name>` pointer) so the audit path set is normalised the same
+ * way the body diff paths are.
+ *
+ * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types.
+ */
+export interface HeaderDiffEntry {
+  /** RFC-6901 pointer for the header name, e.g. `/content-type`. */
+  path: string;
+  /**
+   * `presence` -- the header appeared / disappeared (ALWAYS breaks).
+   * `value`    -- the header VALUE changed (tolerated only when the name is
+   *               allowlisted, in which case `volatilitySource` is set).
+   */
+  kind: 'presence' | 'value';
+  /** The original (un-normalised) header name as seen on one of the sides. */
+  headerName: string;
+  /** Source value at the path. `undefined` when the source lacked the header. */
+  sourceValue?: unknown;
+  /** Target value at the path. `undefined` when the target lacked the header. */
+  targetValue?: unknown;
+  /**
+   * Set ONLY when a header VALUE change was TOLERATED because the header name
+   * is on the volatile allowlist ({@link VOLATILE_HEADER_NAMES}). Always
+   * `declared` for the allowlist. Absent on presence drift (never tolerated)
+   * and on a non-allowlisted value change (strict).
+   */
+  volatilitySource?: VolatilitySource;
+}
+
+/**
  * The volatility envelope persisted on the source baseline item's
  * `volatile_paths_json` column. An OBJECT (despite the `_paths_` name).
  *
@@ -171,12 +274,29 @@ export interface CompareJsonShapesResult {
   bodyClassification: BodyClassification;
   bodyDiffJson: BodyDiffEntry[];
   /**
-   * The DISTINCT set of `volatility_source` tags that touched a tolerated
-   * value/order entry in this comparison, in first-seen order. Empty when
-   * nothing was tolerated. The gateway auto-disposition pass reads this (off
-   * the persisted `body_diff_json` entries) to classify the break.
+   * Response-header classification, or `null` when the header dimension was
+   * SKIPPED (either side lacked the `{ headers, body }` wrapper). When set,
+   * one of {@link HeaderClassification}. The diff runner threads this into
+   * the AMS diff_item's `header_classification` column.
    *
-   * Spec: 2026-06-16 -- Task Group 3 (metadata the gateway pass acts on).
+   * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types.
+   */
+  headerClassification: HeaderClassification | null;
+  /**
+   * The per-header divergences underpinning {@link headerClassification}.
+   * Empty when the headers matched OR when the dimension was skipped. Carried
+   * for audit + so the gateway / frontend can list the affected header names
+   * (incl. which were tolerated as volatile).
+   */
+  headerDiffJson: HeaderDiffEntry[];
+  /**
+   * The DISTINCT set of `volatility_source` tags that touched a tolerated
+   * value/order/header entry in this comparison, in first-seen order. Empty
+   * when nothing was tolerated. The gateway auto-disposition pass reads this
+   * (off the persisted diff json entries) to classify the break.
+   *
+   * Spec: 2026-06-16 -- Task Group 3 (metadata the gateway pass acts on);
+   *   extended 2026-06-17 to include allowlisted header-value tolerance.
    */
   volatilitySourcesTouched: VolatilitySource[];
 }
@@ -217,8 +337,80 @@ export interface VolatilityContext {
 }
 
 // ---------------------------------------------------------------------------
+// Volatile-header allowlist (Spec 2026-06-17, Task Group 2 / R4)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE central, narrow, case-INSENSITIVE allowlist of response-header NAMES
+ * whose VALUE changes are TOLERATED (tagged `declared`). It is the single
+ * source of truth -- every consumer (the comparator here, the gateway
+ * auto-disposition pass) keys off this exact set. Stored lower-cased; lookups
+ * lower-case the candidate name.
+ *
+ * Tolerance applies to allowlisted header VALUE changes ONLY -- a header
+ * appearing / disappearing (`presence`) ALWAYS breaks, even for an allowlisted
+ * name. `Content-Type` is deliberately NOT here (a media-type flip is a real
+ * behavioural divergence and must break); likewise `Cache-Control`,
+ * `Location`, `Vary`, `Content-Encoding`, `Content-Disposition`,
+ * `WWW-Authenticate`, `Allow` break on value change.
+ *
+ * Narrow + extensible: in-UI declaration of additional volatile header names
+ * (mirroring the body-path `declareVolatilePaths` idiom) is an explicit FUTURE
+ * follow-on, deliberately NOT built this iteration. Spec R3 / R4.
+ *
+ * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types.
+ */
+export const VOLATILE_HEADER_NAMES: ReadonlySet<string> = new Set(
+  [
+    'Date',
+    'Age',
+    'Expires',
+    'Last-Modified',
+    'ETag',
+    'Set-Cookie',
+    'X-Request-Id',
+    'X-Correlation-Id',
+    'X-Trace-Id',
+    'Request-Id',
+    'Trace-Id',
+    'X-Runtime',
+    'X-Response-Time',
+    'Server-Timing',
+    'Keep-Alive',
+    // `Content-Length` is body-derived; tolerating its value avoids
+    // double-counting volatile-body noise as a separate header break.
+    'Content-Length',
+  ].map((h) => h.toLowerCase()),
+);
+
+/** Whether a header NAME is on the volatile allowlist (case-insensitive). */
+export function isVolatileHeaderName(name: string): boolean {
+  return VOLATILE_HEADER_NAMES.has(name.toLowerCase());
+}
+
+// ---------------------------------------------------------------------------
 // Step 1 -- symmetric wrapper unwrap
 // ---------------------------------------------------------------------------
+
+/**
+ * If `json` is an object whose keys are EXACTLY `headers` and `body` (and
+ * nothing else), this is the `{ headers, body }` response wrapper. Otherwise
+ * it is a raw body (no header pair available).
+ */
+function isResponseEnvelope(
+  json: unknown,
+): json is { headers: unknown; body: unknown } {
+  if (json === null || typeof json !== 'object' || Array.isArray(json)) {
+    return false;
+  }
+  const obj = json as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  return (
+    keys.length === 2 &&
+    Object.prototype.hasOwnProperty.call(obj, 'headers') &&
+    Object.prototype.hasOwnProperty.call(obj, 'body')
+  );
+}
 
 /**
  * If `json` is an object whose keys are EXACTLY `headers` and `body` (and
@@ -227,21 +419,35 @@ export interface VolatilityContext {
  * Applied symmetrically to both inputs before any walking. See the file
  * header for why this matters -- without it, every paired item would be
  * flagged `body_shape_drift`.
+ *
+ * NOTE: the comparator now also reads the `headers` key (see
+ * {@link extractHeaders}); the body unwrap stays symmetric so body comparison
+ * is unchanged once both sides wrap.
  */
 export function unwrapBodyEnvelope(json: unknown): unknown {
-  if (json === null || typeof json !== 'object' || Array.isArray(json)) {
-    return json;
-  }
-  const obj = json as Record<string, unknown>;
-  const keys = Object.keys(obj);
-  if (
-    keys.length === 2 &&
-    Object.prototype.hasOwnProperty.call(obj, 'headers') &&
-    Object.prototype.hasOwnProperty.call(obj, 'body')
-  ) {
-    return obj.body;
+  if (isResponseEnvelope(json)) {
+    return json.body;
   }
   return json;
+}
+
+/**
+ * Extract the response-header map from a `{ headers, body }` wrapper, or
+ * `undefined` when `json` is NOT a wrapper (a raw body has no header pair).
+ * `undefined` is the graceful-degrade signal -- the header dimension is
+ * skipped entirely when EITHER side returns `undefined` here. A wrapper with
+ * `headers: null` returns `{}` (an empty header map: the wrapper IS present,
+ * it just carried no headers) so two present-but-empty header maps still
+ * compare as `header_match` rather than skipping.
+ *
+ * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types.
+ */
+function extractHeaders(json: unknown): Record<string, unknown> | undefined {
+  if (!isResponseEnvelope(json)) return undefined;
+  const headers = json.headers;
+  if (headers === null || headers === undefined) return {};
+  if (typeof headers !== 'object' || Array.isArray(headers)) return {};
+  return headers as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +483,9 @@ function escapePointerToken(key: string): string {
  * Build an RFC-6901 JSON pointer child token under `parent`. THE path
  * normalisation primitive -- reused by the capture-time volatility probe
  * (`volatilityProbe.ts`) so the envelope path set and the diff-time path set
- * are byte-identical. Do NOT re-author path normalisation; reuse this.
+ * are byte-identical, and by the header walk (Spec 2026-06-17) so header
+ * pointer keys are normalised the same way. Do NOT re-author path
+ * normalisation; reuse this.
  *
  * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling.
  */
@@ -443,7 +651,8 @@ function canonicalKey(v: unknown): string {
 /**
  * Multiset (order-insensitive) equality for two arrays. Returns true when the
  * two arrays contain the same elements with the same multiplicities,
- * regardless of order. Used for volatile-flagged arrays.
+ * regardless of order. Used for volatile-flagged arrays AND for detecting a
+ * NON-volatile pure reorder (the `body_ordering_drift` dimension).
  */
 function multisetEqual(a: unknown[], b: unknown[]): boolean {
   if (a.length !== b.length) return false;
@@ -475,8 +684,10 @@ function multisetEqual(a: unknown[], b: unknown[]): boolean {
  *   - Both objects     -> walk key union; classify per-key as
  *                         key_added / key_removed / recurse
  *   - Both arrays      -> volatile-flagged: multiset compare (order tolerated);
- *                         otherwise walk by position; missing positions are
- *                         key_added / key_removed
+ *                         NON-volatile reorder (same multiset, different order):
+ *                         a single `ordering` marker instead of a per-element
+ *                         value cascade; otherwise walk by position; missing
+ *                         positions are key_added / key_removed
  *   - Same primitive   -> equality check -> match / value_changed / tolerated
  *   - Differing types  -> type_changed (ALWAYS reported -- shape)
  *   - One null/other   -> type_changed (ALWAYS reported -- shape)
@@ -570,6 +781,24 @@ function walk(
       // Not multiset-equal -> a real difference. Fall through to positional
       // walk WITHOUT array tolerance for the element diffs (the per-element
       // value tolerance still applies via leaf-level checks below).
+    } else if (
+      // NON-volatile array reorder (Spec 2026-06-17, Task Group 2): the two
+      // arrays are the same multiset but in a different order. Record a SINGLE
+      // `ordering` marker on the array path INSTEAD of the per-element
+      // `value_changed` cascade the positional walk would otherwise produce.
+      // A volatile-flagged array took the order-insensitive branch above; a
+      // genuine content/length change falls through to the positional walk.
+      sArr.length > 0 &&
+      multisetEqual(sArr, tArr) &&
+      !arraysStrictlyEqual(sArr, tArr)
+    ) {
+      diffs.push({
+        path: pointer,
+        kind: 'ordering',
+        sourceValue: source,
+        targetValue: target,
+      });
+      return;
     }
 
     const maxLen = Math.max(sArr.length, tArr.length);
@@ -621,6 +850,120 @@ function arraysStrictlyEqual(a: unknown[], b: unknown[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Header walk (Spec 2026-06-17, Task Group 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compare two response-header maps, both already KNOWN to be present (the
+ * graceful-degrade skip is decided by the caller before this runs).
+ *
+ * Header names are matched CASE-INSENSITIVELY (HTTP header names are
+ * case-insensitive); the first-seen original casing is preserved on the entry
+ * for display. Outcomes:
+ *
+ *   - a name present on exactly one side -> `presence` entry (ALWAYS breaks);
+ *   - a name on both sides with a differing value -> `value` entry. When the
+ *     name is on {@link VOLATILE_HEADER_NAMES} the entry is tagged `declared`
+ *     (tolerated); otherwise it is a strict break.
+ *
+ * Values are compared by canonical-key equality so structurally-equal values
+ * (e.g. arrays of cookies) don't false-positive on declaration order.
+ */
+function walkHeaders(
+  sourceHeaders: Record<string, unknown>,
+  targetHeaders: Record<string, unknown>,
+): HeaderDiffEntry[] {
+  const entries: HeaderDiffEntry[] = [];
+
+  // Build lower-cased lookup maps preserving the original key + value.
+  const sLower = new Map<string, { name: string; value: unknown }>();
+  for (const k of Object.keys(sourceHeaders)) {
+    sLower.set(k.toLowerCase(), { name: k, value: sourceHeaders[k] });
+  }
+  const tLower = new Map<string, { name: string; value: unknown }>();
+  for (const k of Object.keys(targetHeaders)) {
+    tLower.set(k.toLowerCase(), { name: k, value: targetHeaders[k] });
+  }
+
+  // Union of header names (lower-cased), source-first for stable ordering.
+  const seen = new Set<string>();
+  const order: string[] = [];
+  for (const k of sLower.keys()) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      order.push(k);
+    }
+  }
+  for (const k of tLower.keys()) {
+    if (!seen.has(k)) {
+      seen.add(k);
+      order.push(k);
+    }
+  }
+
+  for (const lower of order) {
+    const s = sLower.get(lower);
+    const t = tLower.get(lower);
+    const name = (s ?? t)!.name;
+    const headerPointer = buildPointer('', name);
+
+    if (s && !t) {
+      // Present on source, absent on target -- presence drift, ALWAYS breaks.
+      entries.push({
+        path: headerPointer,
+        kind: 'presence',
+        headerName: name,
+        sourceValue: s.value,
+      });
+      continue;
+    }
+    if (!s && t) {
+      // Absent on source, present on target -- presence drift, ALWAYS breaks.
+      entries.push({
+        path: headerPointer,
+        kind: 'presence',
+        headerName: name,
+        targetValue: t.value,
+      });
+      continue;
+    }
+    // Present on both -- compare values.
+    if (canonicalKey(s!.value) !== canonicalKey(t!.value)) {
+      const tolerated = isVolatileHeaderName(name);
+      entries.push({
+        path: headerPointer,
+        kind: 'value',
+        headerName: name,
+        sourceValue: s!.value,
+        targetValue: t!.value,
+        // Allowlisted header VALUE change -> tolerated, tagged `declared`.
+        ...(tolerated ? { volatilitySource: 'declared' as VolatilitySource } : {}),
+      });
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Classify a set of header diff entries. Mirrors {@link classify} for the
+ * body dimension:
+ *   - any `presence` entry -> `header_presence_drift` (presence wins; ALWAYS
+ *     a break, never tolerated);
+ *   - else any `value` entry (tolerated OR not) -> `header_value_drift`. The
+ *     dimension stays VISIBLE even for allowlisted-only value changes
+ *     (create-then-auto-dispose): the gateway pass reads the `declared`
+ *     volatility tag off the entries and disposes the break to
+ *     `expected_volatile`. The comparator NEVER silently drops it.
+ *   - else `header_match` (no entries).
+ */
+function classifyHeaders(entries: HeaderDiffEntry[]): HeaderClassification {
+  if (entries.some((e) => e.kind === 'presence')) return 'header_presence_drift';
+  if (entries.some((e) => e.kind === 'value')) return 'header_value_drift';
+  return 'header_match';
+}
+
+// ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
 
@@ -637,7 +980,7 @@ function classify(diffs: BodyDiffEntry[]): BodyClassification {
   // classification entirely. They remain in `bodyDiffJson` for audit.
   const effective = diffs.filter((d) => !isToleratedValue(d));
   if (effective.length === 0) return 'body_match';
-  // Shape wins over value: any add / remove / type change -> shape drift.
+  // Shape wins over value wins over ordering.
   const hasShape = effective.some(
     (d) =>
       d.kind === 'key_added' ||
@@ -645,14 +988,27 @@ function classify(diffs: BodyDiffEntry[]): BodyClassification {
       d.kind === 'type_changed',
   );
   if (hasShape) return 'body_shape_drift';
-  return 'body_value_drift';
+  const hasValue = effective.some((d) => d.kind === 'value_changed');
+  if (hasValue) return 'body_value_drift';
+  // Only ordering markers remain -> ordering drift (Spec 2026-06-17).
+  const hasOrdering = effective.some((d) => d.kind === 'ordering');
+  if (hasOrdering) return 'body_ordering_drift';
+  return 'body_match';
 }
 
-function distinctSourcesTouched(diffs: BodyDiffEntry[]): VolatilitySource[] {
+function distinctSourcesTouched(
+  diffs: BodyDiffEntry[],
+  headerDiffs: HeaderDiffEntry[],
+): VolatilitySource[] {
   const seen: VolatilitySource[] = [];
   for (const d of diffs) {
     if (d.volatilitySource && !seen.includes(d.volatilitySource)) {
       seen.push(d.volatilitySource);
+    }
+  }
+  for (const h of headerDiffs) {
+    if (h.volatilitySource && !seen.includes(h.volatilitySource)) {
+      seen.push(h.volatilitySource);
     }
   }
   return seen;
@@ -668,14 +1024,32 @@ function distinctSourcesTouched(diffs: BodyDiffEntry[]): VolatilitySource[] {
  *
  * @param ctx OPTIONAL per-path volatility context (Spec 2026-06-16, Task
  *   Group 3). When omitted / undefined the comparison is EXACTLY the strict
- *   v1 -- the backward-compat guard (G1). A `null` envelope inside the ctx is
- *   also strict.
+ *   v1 for the BODY/VALUE dimensions -- the backward-compat guard (G1). A
+ *   `null` envelope inside the ctx is also strict. NOTE: the HEADER + ORDERING
+ *   dimensions (Spec 2026-06-17) are always computed regardless of `ctx`;
+ *   they are pure functions of the wrapper shape, and they degrade gracefully
+ *   (header dimension skipped when a side lacks the wrapper) so inputs that
+ *   exercised only body/status are unaffected.
  */
 export function compareJsonShapes(
   source: unknown,
   target: unknown,
   ctx?: VolatilityContext,
 ): CompareJsonShapesResult {
+  // Header dimension (Spec 2026-06-17). Read the PRE-unwrap `headers` key from
+  // BOTH sides. GRACEFUL DEGRADE: when EITHER side lacks the `{ headers, body }`
+  // wrapper (old source baselines store the raw body), the header dimension is
+  // SKIPPED entirely -- `headerClassification` stays null, NO header entry is
+  // emitted (no false break, no backfill). Spec R5.
+  const sHeaders = extractHeaders(source);
+  const tHeaders = extractHeaders(target);
+  let headerClassification: HeaderClassification | null = null;
+  let headerDiffJson: HeaderDiffEntry[] = [];
+  if (sHeaders !== undefined && tHeaders !== undefined) {
+    headerDiffJson = walkHeaders(sHeaders, tHeaders);
+    headerClassification = classifyHeaders(headerDiffJson);
+  }
+
   // Step 1 -- symmetric wrapper unwrap. THE critical normalisation; see
   // the file header for the reasoning.
   const sUnwrapped = unwrapBodyEnvelope(source);
@@ -689,6 +1063,8 @@ export function compareJsonShapes(
   return {
     bodyClassification: classify(diffs),
     bodyDiffJson: diffs,
-    volatilitySourcesTouched: distinctSourcesTouched(diffs),
+    headerClassification,
+    headerDiffJson,
+    volatilitySourcesTouched: distinctSourcesTouched(diffs, headerDiffJson),
   };
 }

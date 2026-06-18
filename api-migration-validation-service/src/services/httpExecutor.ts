@@ -136,6 +136,23 @@ function maybeTruncateResponse(
 
 export interface SessionHttpExecutor {
   request<T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<T>>;
+  /**
+   * Issue ONE request with a SCOPED auth override. The session auth is swapped
+   * for `authOverride` for the duration of this single call and restored
+   * immediately afterwards (in a `finally`, so even a thrown request restores
+   * it) -- the override can NEVER leak onto a subsequent normal capture. This
+   * is the seam the session-level auth-negative probes use to deliberately send
+   * with no auth (`{ type: 'none' }`) or a bad/garbage bearer token despite the
+   * session auto-injecting the valid ssoToken. The executor's
+   * `validateStatus: () => true` already lets the resulting 401/403 land as a
+   * normal resolved response (a captured row, not a throw).
+   *
+   * Spec: 2026-06-17 Oracle Coverage Scoring -- scoped auth-override seam.
+   */
+  requestWithAuthOverride<T = unknown>(
+    config: AxiosRequestConfig,
+    authOverride: ApiAuthSecret,
+  ): Promise<AxiosResponse<T>>;
   /** Replace the auth bundle in-place (re-entry path). */
   setAuth(auth: ApiAuthSecret): void;
   dispose(): void;
@@ -208,9 +225,27 @@ export function createSessionHttpExecutor(
     (err: AxiosError) => Promise.reject(err),
   );
 
+  const doRequest = <T>(config: AxiosRequestConfig): Promise<AxiosResponse<T>> =>
+    client.request<T>(config) as Promise<AxiosResponse<T>>;
+
   return {
-    request: <T>(config: AxiosRequestConfig) =>
-      client.request<T>(config) as Promise<AxiosResponse<T>>,
+    request: doRequest,
+    requestWithAuthOverride: async <T>(
+      config: AxiosRequestConfig,
+      authOverride: ApiAuthSecret,
+    ): Promise<AxiosResponse<T>> => {
+      // Scope the override to this single call: capture the session auth,
+      // swap in the override, ALWAYS restore in `finally` so neither a normal
+      // 401/403 response nor a transport throw can leak the override onto a
+      // later normal capture.
+      const sessionAuth = currentAuth;
+      currentAuth = authOverride;
+      try {
+        return await doRequest<T>(config);
+      } finally {
+        currentAuth = sessionAuth;
+      }
+    },
     setAuth: (auth: ApiAuthSecret) => {
       currentAuth = auth;
     },

@@ -32,6 +32,7 @@ function buildItem(overrides: Partial<ApiBehaviourDiffItemDto> = {}): ApiBehavio
     target_baseline_item_id: 'tgt-1',
     status_classification: 'status_match',
     body_classification: 'body_match',
+    header_classification: null,
     source_response_status: 200,
     target_response_status: 200,
     body_diff_json: null,

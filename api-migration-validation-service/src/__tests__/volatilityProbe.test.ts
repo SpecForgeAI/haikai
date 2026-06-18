@@ -47,6 +47,7 @@ function stubExecutor(bodies: unknown[]): {
       i += 1;
       return { status: 200, data: body, headers: {} } as never;
     }) as never,
+    requestWithAuthOverride: (async () => ({ status: 200, data: {}, headers: {} })) as never,
     setAuth: () => undefined,
     dispose: () => undefined,
   };

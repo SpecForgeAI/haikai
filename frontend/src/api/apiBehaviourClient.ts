@@ -159,6 +159,17 @@ export interface ApiBehaviourCaptureSessionDto {
   coverage_override_justification?: string | null;
   coverage_override_unaccounted_count?: number | null;
   coverage_override_at?: string | null;
+  /**
+   * Whole oracle-coverage summary for the session (Spec 2026-06-17 Oracle
+   * Coverage Scoring; AMS changeset 189). Plain JSON blob, snake_case wire
+   * (AMS default). Null / absent = legacy or pre-fix session = "coverage not
+   * recorded" (NEVER an error). Display-only this iteration -- no hard gate.
+   * Typed loosely here (Record) as the JSONB wire shape; parse it into the
+   * structured {@link CoverageSummary} via `parseCoverageSummary` before
+   * rendering. A later spec (baseline integrity & provenance, Spec C) reads
+   * `overall_score` + per-endpoint dimensions/reasons off this field.
+   */
+  coverage_summary_json?: Record<string, unknown> | null;
 }
 
 export interface CreateApiBehaviourCaptureSessionRequest {
@@ -331,6 +342,97 @@ export interface ApiBehaviourBaselineDto {
    * baseline this target was replayed from.
    */
   paired_with_baseline_id?: string | null;
+  /**
+   * Tamper-evidence content hash (Spec 2026-06-17 Baseline Integrity &
+   * Provenance; AMS changeset 191). A lowercase-hex SHA-256 stamped
+   * SERVER-SIDE at the draft -> active transition over the canonically
+   * serialized baseline item set. snake_case wire (AMS default; no
+   * `@CamelCaseWire`).
+   *
+   * `null` / absent = pre-existing or never-activated baseline = "no
+   * integrity hash recorded" (NEVER an error; NO backfill). The integrity
+   * badge in `BaselineDetailView` reads this null-vs-present distinction;
+   * the at-rest baseline view surfaces the recorded hash + provenance, while
+   * the live verified/mismatch verdict is the reconcile-side concern (the
+   * AMS `GET .../baselines/{id}/integrity` operation consumed by the
+   * validation service `diffRunner`).
+   */
+  content_hash?: string | null;
+  /**
+   * Provenance record stamped alongside `content_hash` at activate (Spec
+   * 2026-06-17). Plain JSONB blob, snake_case wire. Shape:
+   * `{ session_id, environment_name, activated_at, coverage_score,
+   * coverage_summary, accepted_capture_count, operation_count,
+   * hash_algo: "sha256", canonical_version: 1 }`. `coverage_score` is Spec
+   * A's `overall_score` (0..1 fraction; null when the session summary was
+   * not recorded). Typed loosely as a JSONB blob and read DEFENSIVELY via
+   * {@link parseBaselineProvenance}; `null` / absent on pre-existing or
+   * never-activated baselines.
+   */
+  provenance_json?: Record<string, unknown> | null;
+}
+
+/**
+ * Structured view of `ApiBehaviourBaselineDto.provenance_json` (Spec
+ * 2026-06-17 Baseline Integrity & Provenance). Every field is nullable
+ * because the blob is read defensively -- a legacy / partial / malformed
+ * record never throws, it just yields nulls that the view renders as an
+ * em-dash. `coverage_score` is Spec A's `overall_score`, a 0..1 fraction.
+ */
+export interface BaselineProvenance {
+  session_id: string | null;
+  environment_name: string | null;
+  activated_at: string | null;
+  coverage_score: number | null;
+  accepted_capture_count: number | null;
+  operation_count: number | null;
+  hash_algo: string | null;
+  canonical_version: number | null;
+}
+
+/**
+ * Defensively parse the raw `provenance_json` JSONB blob into the typed
+ * {@link BaselineProvenance}. Returns `null` for null / absent / non-object
+ * values so the caller can render "no provenance recorded" rather than an
+ * error. Never throws; unknown / mistyped fields coerce to null.
+ */
+export function parseBaselineProvenance(
+  raw: Record<string, unknown> | null | undefined,
+): BaselineProvenance | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  const num = (v: unknown): number | null =>
+    typeof v === "number" && Number.isFinite(v) ? v : null;
+  return {
+    session_id: str(o.session_id),
+    environment_name: str(o.environment_name),
+    activated_at: str(o.activated_at),
+    coverage_score: num(o.coverage_score),
+    accepted_capture_count: num(o.accepted_capture_count),
+    operation_count: num(o.operation_count),
+    hash_algo: str(o.hash_algo),
+    canonical_version: num(o.canonical_version),
+  };
+}
+
+/**
+ * Server-side integrity verdict from the AMS
+ * `GET /api/v1/projects/{projectId}/architectures/{architectureId}/
+ * api-behaviour/baselines/{baselineId}/integrity` operation (Spec
+ * 2026-06-17). AMS recomputes the hash over the CURRENT stored items and
+ * compares it to the recorded `content_hash`. snake_case wire.
+ *
+ * `integrity_verified === true`  -> recorded hash matches the recompute.
+ * `integrity_verified === false` with non-null `content_hash` -> MISMATCH.
+ * `content_hash === null` -> neutral "no hash recorded" (NOT a mismatch);
+ * AMS returns `integrity_verified: false` in this case and the consumer
+ * treats null-hash as neutral.
+ */
+export interface ApiBehaviourBaselineIntegrityDto {
+  content_hash: string | null;
+  recomputed_hash: string | null;
+  integrity_verified: boolean;
 }
 
 export interface CreateApiBehaviourBaselineRequest {
@@ -360,6 +462,19 @@ export interface ApiBehaviourBaselineItemDto {
    * Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value Handling.
    */
   volatile_paths_json?: Record<string, unknown> | null;
+  /**
+   * Pinned ordered HTTP chain (setup -> act -> cleanup) for a stateful
+   * sequence scenario. `null` / absent => today's single-shot item (zero
+   * regression). Non-null carries the assembled steps:
+   *   { steps: [ { index, role: 'setup'|'act'|'cleanup', kind: 'http',
+   *       request: { method, path, query, headers, body }, expected_status,
+   *       response_refs: [ { ref: '$<step>.<jsonpath>', from_step, json_path } ] } ],
+   *     act_step_index, cleanup_best_effort }.
+   * Read DEFENSIVELY (loose Record) -- the renderer narrows each field. The
+   * column itself is AMS changeset 192 (nullable jsonb, snake_case wire).
+   * Spec: 2026-06-18 Stateful Sequence Scenarios (Spec D).
+   */
+  sequence_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -385,6 +500,15 @@ export interface CreateApiBehaviourBaselineItemRequest {
    * Task Group 1 (AMS) + FU-2 (frontend carry-through).
    */
   volatile_paths_json?: Record<string, unknown> | null;
+  /**
+   * OPTIONAL pinned ordered HTTP chain for a stateful sequence scenario,
+   * carried onto the ACT-step baseline item at Save-as-baseline (write-once at
+   * create; NO update path -- mirrors `volatile_paths_json`). `null` / omitted
+   * => single-shot item. Assembled capture-side and surfaced via the
+   * `sequence_pinned` diagnostic marker on the canonical act-step capture.
+   * Spec: 2026-06-18 Stateful Sequence Scenarios (Spec D) -- Task Group 4.
+   */
+  sequence_json?: Record<string, unknown> | null;
 }
 
 // ============================================================================
@@ -1020,6 +1144,28 @@ export async function updateBaseline(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     },
+  );
+}
+
+/**
+ * Fetch the server-side integrity verdict for a baseline (Spec 2026-06-17
+ * Baseline Integrity & Provenance). Calls the AMS
+ * `GET .../baselines/{id}/integrity` operation, which recomputes the hash
+ * over the CURRENT stored items and returns
+ * `{ content_hash, recomputed_hash, integrity_verified }` (snake_case).
+ *
+ * Mirrors the `getBaseline` endpoint shape; the path is the baseline route
+ * with a trailing `/integrity` segment. Verification is ENTIRELY server-side
+ * -- this client only carries the verdict, it never recomputes the hash.
+ */
+export async function getBaselineIntegrity(
+  projectId: string,
+  architectureId: string,
+  baselineId: string,
+): Promise<ApiBehaviourBaselineIntegrityDto> {
+  return jsonRequest<ApiBehaviourBaselineIntegrityDto>(
+    `${gatewayUrl(projectId, architectureId, "baselines", baselineId)}/integrity`,
+    { method: "GET" },
   );
 }
 

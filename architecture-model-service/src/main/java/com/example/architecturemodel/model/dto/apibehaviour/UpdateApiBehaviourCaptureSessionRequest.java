@@ -25,12 +25,18 @@ import java.util.UUID;
  * (target → non-null source; current → null source) whenever either field is
  * present in the body.</p>
  *
+ * <p>{@code coverageSummaryJson} (Oracle Coverage Scoring, 2026-06-17) is the
+ * coverage summary written on the completion PATCH; null-guarded like every
+ * other field so an absent key never nulls an existing summary.</p>
+ *
  * <p>A backward-compatible 13-arg constructor delegates to the canonical
- * 15-arg constructor with {@code kind=null} and {@code sourceBaselineId=null}.</p>
+ * constructor with {@code kind=null} and {@code sourceBaselineId=null}.</p>
  *
  * <p>Spec: API Behaviour Baseline Capture Service (2026-05-15) — Task Group 2</p>
  * <p>Extended: API Test Harness — Target-Side Capture (2026-05-25) — Task Group 2
  * ({@code kind} + {@code sourceBaselineId}).</p>
+ * <p>Extended: Oracle Coverage Scoring (2026-06-17) — Task Group 1
+ * ({@code coverageSummaryJson}).</p>
  */
 public record UpdateApiBehaviourCaptureSessionRequest(
     String name,
@@ -70,13 +76,60 @@ public record UpdateApiBehaviourCaptureSessionRequest(
      */
     String coverageOverrideJustification,
     Integer coverageOverrideUnaccountedCount,
-    Instant coverageOverrideAt
+    Instant coverageOverrideAt,
+    /**
+     * Whole coverage summary (Oracle Coverage Scoring, 2026-06-17, changeset
+     * 189) -- sent by the capture orchestrator on the completion PATCH.
+     * {@code null} means "field omitted" (PATCH-no-op), never "clear the
+     * summary"; null-guarded in the service update per the PATCH rule above.
+     */
+    Map<String, Object> coverageSummaryJson
 ) {
+
+    /**
+     * Backward-compatible constructor preserving the pre-Oracle-Coverage-Scoring
+     * canonical signature (no {@code coverageSummaryJson}). Delegates with a
+     * null coverage summary (PATCH-no-op).
+     */
+    public UpdateApiBehaviourCaptureSessionRequest(
+            String name,
+            String status,
+            String environmentName,
+            String apiBaseUrl,
+            String authType,
+            Map<String, Object> authConfigRedactedJson,
+            Map<String, Object> defaultHeadersRedactedJson,
+            Map<String, Object> oasSpecRefsJson,
+            Map<String, Object> dbConfigRedactedJson,
+            Boolean mutatingCallsConfirmed,
+            Instant startedAt,
+            Instant completedAt,
+            String errorMessage,
+            String kind,
+            UUID sourceBaselineId,
+            Integer scenariosAttempted,
+            Integer scenariosCompleted,
+            Integer scenariosErrored,
+            List<String> scopeInterfaceIdsJson,
+            String coverageOverrideJustification,
+            Integer coverageOverrideUnaccountedCount,
+            Instant coverageOverrideAt) {
+        this(name, status, environmentName, apiBaseUrl, authType,
+            authConfigRedactedJson, defaultHeadersRedactedJson,
+            oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
+            startedAt, completedAt, errorMessage,
+            kind, sourceBaselineId,
+            scenariosAttempted, scenariosCompleted, scenariosErrored,
+            scopeInterfaceIdsJson,
+            coverageOverrideJustification, coverageOverrideUnaccountedCount,
+            coverageOverrideAt,
+            null);
+    }
 
     /**
      * Backward-compatible 18-arg constructor preserving the
      * pre-Model-Seeded-Capture-Inventory canonical signature. Delegates with
-     * null scope + override fields (PATCH-no-op).
+     * null scope + override + coverage fields (PATCH-no-op).
      */
     public UpdateApiBehaviourCaptureSessionRequest(
             String name,
@@ -103,7 +156,8 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             startedAt, completedAt, errorMessage,
             kind, sourceBaselineId,
             scenariosAttempted, scenariosCompleted, scenariosErrored,
-            null, null, null, null);
+            null, null, null, null,
+            null);
     }
 
     /**

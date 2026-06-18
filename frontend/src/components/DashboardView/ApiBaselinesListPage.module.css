@@ -547,3 +547,23 @@
   color: #cbd5e1;
   font-size: 12px;
 }
+
+/* ----------------------------------------------------------------------------
+ * Integrity & provenance surface (Spec 2026-06-17 Baseline Integrity &
+ * Provenance -- Task Group 3). Surfaced on current-state baselines in the
+ * Summary section: a content-hash + provenance + coverage block plus an
+ * integrity badge. The badge reuses the .statusBadge pill shape; the three
+ * states mirror the verified (green) / failed (red) / neutral palettes
+ * already defined above.
+ * ------------------------------------------------------------------------- */
+
+.integrityVerified { background: #E8F5E9; color: #2E7D32; }
+.integrityMismatch { background: #FFEBEE; color: #C62828; }
+.integrityNeutral  { background: #ECEFF1; color: #455A64; }
+
+/* Monospace, truncating display for the (long) lowercase-hex content hash. */
+.contentHash {
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-all;
+}

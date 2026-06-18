@@ -375,6 +375,7 @@ describe('execute_http_request -- mutating verb gating', () => {
       ]),
       httpExecutor: {
         request: jest.fn(),
+        requestWithAuthOverride: jest.fn(),
         setAuth: jest.fn(),
         dispose: jest.fn(),
       },

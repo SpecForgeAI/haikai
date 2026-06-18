@@ -24,6 +24,15 @@
  *   7. If `createCapture` itself throws, the handler rethrows (not silently
  *      swallowed).
  *
+ * Also covers the 2026-06-17 capture-LLM request fixes (this file's later
+ * describe blocks):
+ *   - Fix 4: default `Content-Type: application/json` for a request that
+ *     carries a body but whose caller did not set a content-type; a
+ *     caller-set content-type is preserved; no body => no content-type added.
+ *   - Fix 6 / Fix 8: a non-2xx HTML/text error body is distilled to a SHORT
+ *     one-line `errorSummary`, surfaced both on the persisted capture row's
+ *     `error_message` AND on the tool's LLM-facing `response.errorSummary`.
+ *
  * The runManager counter is exercised end-to-end here (not stubbed) so that
  * the integration between the handler and `runManager.incrementHttpAttempts`
  * is proven directly.
@@ -207,6 +216,10 @@ describe('execute_http_request -- auto-persist capture rows', () => {
     // Result shape carries the persisted captureId.
     expect((result as { captureId: string }).captureId).toMatch(/^capture-/);
     expect((result as { attemptNumber: number }).attemptNumber).toBe(1);
+    // Fix 8: a 2xx response carries a null errorSummary on the return.
+    expect(
+      (result as { response: { errorSummary: string | null } }).response.errorSummary,
+    ).toBeNull();
   });
 
   it('persists a capture row for a non-2xx (500) response with response_status=500 and populated redacted response slots', async () => {
@@ -235,6 +248,8 @@ describe('execute_http_request -- auto-persist capture rows', () => {
     expect(body.response_body_json).toEqual({ error: 'oops' });
     expect(body.response_headers_redacted_json).not.toBeNull();
     expect(body.error_type).toBeNull();
+    // A non-2xx JSON (object) body is not a distillable string error page, so
+    // `extractErrorSummary` returns null and `error_message` stays null.
     expect(body.error_message).toBeNull();
   });
 
@@ -408,6 +423,304 @@ describe('execute_http_request -- createCapture failure', () => {
     // createCapture attempt is what fails.
     expect(request).toHaveBeenCalledTimes(1 + VOLATILITY_PROBE_REPEATS);
     expect(arch.createCapture).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('execute_http_request -- Fix 4: default Content-Type for bodied requests', () => {
+  it('adds Content-Type: application/json when a body is present and the caller set no content-type', async () => {
+    startRun();
+    const response: AxiosResponse<unknown> = {
+      status: 201,
+      statusText: 'Created',
+      headers: {},
+      config: {} as never,
+      data: { id: 7 },
+    };
+    const request = jest.fn(async () => response);
+    const op = buildOperation({
+      operation_id: 'createThing',
+      method: 'POST',
+      path: '/things',
+      included: true,
+      safe_to_execute: false,
+    });
+    const ctx = buildContext({
+      session: buildSession({ mutatingCallsConfirmed: true }),
+      operationsByOasId: new Map([[op.operation_id, op]]),
+      httpExecutor: buildHttpExecutor(request),
+    });
+
+    await executeHttpRequestTool.handler(
+      { operationId: 'createThing', method: 'post', path: '/things', body: { name: 'x' } },
+      ctx,
+    );
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const sentConfig = (request.mock.calls[0] as unknown[])[0] as {
+      headers?: Record<string, string>;
+      data?: unknown;
+    };
+    expect(sentConfig.headers).toBeDefined();
+    expect(sentConfig.headers?.['Content-Type']).toBe('application/json');
+    expect(sentConfig.data).toEqual({ name: 'x' });
+  });
+
+  it('preserves a caller-set content-type and does NOT override it (case-insensitive match)', async () => {
+    startRun();
+    const response: AxiosResponse<unknown> = {
+      status: 201,
+      statusText: 'Created',
+      headers: {},
+      config: {} as never,
+      data: { id: 7 },
+    };
+    const request = jest.fn(async () => response);
+    const op = buildOperation({
+      operation_id: 'createThing',
+      method: 'POST',
+      path: '/things',
+      included: true,
+      safe_to_execute: false,
+    });
+    const ctx = buildContext({
+      session: buildSession({ mutatingCallsConfirmed: true }),
+      operationsByOasId: new Map([[op.operation_id, op]]),
+      httpExecutor: buildHttpExecutor(request),
+    });
+
+    await executeHttpRequestTool.handler(
+      {
+        operationId: 'createThing',
+        method: 'post',
+        path: '/things',
+        // Lower-cased key with a non-JSON media type -- must be preserved.
+        headers: { 'content-type': 'application/xml' },
+        body: '<thing/>',
+      },
+      ctx,
+    );
+
+    expect(request).toHaveBeenCalledTimes(1);
+    const sentConfig = (request.mock.calls[0] as unknown[])[0] as {
+      headers?: Record<string, string>;
+    };
+    // The caller's content-type survives verbatim; we did NOT add a second
+    // `Content-Type` key.
+    expect(sentConfig.headers?.['content-type']).toBe('application/xml');
+    expect(
+      Object.prototype.hasOwnProperty.call(sentConfig.headers ?? {}, 'Content-Type'),
+    ).toBe(false);
+  });
+
+  it('does NOT add a content-type when there is no body', async () => {
+    startRun();
+    const response: AxiosResponse<unknown> = {
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config: {} as never,
+      data: { id: 1 },
+    };
+    const request = jest.fn(async () => response);
+    const ctx = buildContext({
+      httpExecutor: buildHttpExecutor(request),
+    });
+
+    await executeHttpRequestTool.handler(
+      { operationId: 'getThings', method: 'get', path: '/things' },
+      ctx,
+    );
+
+    expect(request).toHaveBeenCalled();
+    const sentConfig = (request.mock.calls[0] as unknown[])[0] as {
+      headers?: Record<string, string>;
+    };
+    // No caller headers and no body -> headers stays undefined and no
+    // Content-Type is forced.
+    const hasContentType =
+      !!sentConfig.headers &&
+      Object.keys(sentConfig.headers).some((k) => k.toLowerCase() === 'content-type');
+    expect(hasContentType).toBe(false);
+  });
+});
+
+describe('execute_http_request -- Fix 6/8: distilled error summary from HTML/text error bodies', () => {
+  it('populates capture error_message and returns response.errorSummary for a non-2xx HTML error page', async () => {
+    startRun();
+    // A Tomcat-style 500 page burying the real fault inside the message row.
+    const htmlBody = [
+      '<!doctype html><html lang="en"><head>',
+      '<title>HTTP Status 500 – Internal Server Error</title>',
+      '</head><body><h1>HTTP Status 500</h1>',
+      '<p><b>Message</b> Invalid format: 20240131 is malformed at "0131"</p>',
+      '<p><b>Description</b> The server encountered an unexpected condition.</p>',
+      '</body></html>',
+    ].join('');
+    const response: AxiosResponse<unknown> = {
+      status: 500,
+      statusText: 'Internal Server Error',
+      headers: { 'content-type': 'text/html' },
+      config: {} as never,
+      data: htmlBody,
+    };
+    const request = jest.fn(async () => response);
+    const ctx = buildContext({
+      httpExecutor: buildHttpExecutor(request),
+    });
+    const arch = ctx.archModelClient as MockArchClient;
+
+    const result = await executeHttpRequestTool.handler(
+      { operationId: 'getThings', method: 'get', path: '/things' },
+      ctx,
+    );
+
+    expect(arch.createCapture).toHaveBeenCalledTimes(1);
+    const body = arch.createCapture.mock.calls[0][1];
+    // (a) persisted capture row carries the distilled summary in error_message.
+    expect(typeof body.error_message).toBe('string');
+    expect(body.error_message.length).toBeGreaterThan(0);
+    expect(body.error_message.length).toBeLessThanOrEqual(300);
+    // The <title> is preferred and is a clean, tag-free one-liner.
+    expect(body.error_message).toContain('HTTP Status 500');
+    expect(body.error_message).not.toContain('<');
+    // error_type stays null -- this is a real HTTP response, not a transport
+    // failure.
+    expect(body.error_type).toBeNull();
+
+    // (b) the LLM-facing return surfaces the same summary on response.errorSummary.
+    const ret = result as {
+      response: { status: number; errorSummary: string | null };
+    };
+    expect(ret.response.status).toBe(500);
+    expect(ret.response.errorSummary).toBe(body.error_message);
+  });
+
+  it('distills the buried Message line when there is no <title>, capping length', async () => {
+    startRun();
+    const longTail = 'x'.repeat(500);
+    const textBody =
+      'org.glassfish.jersey.message.internal.MessageBodyProviderNotFoundException\n' +
+      `message Invalid format: 20240131 is malformed at "0131" ${longTail}`;
+    const response: AxiosResponse<unknown> = {
+      status: 415,
+      statusText: 'Unsupported Media Type',
+      headers: { 'content-type': 'text/plain' },
+      config: {} as never,
+      data: textBody,
+    };
+    const request = jest.fn(async () => response);
+    const ctx = buildContext({
+      httpExecutor: buildHttpExecutor(request),
+    });
+    const arch = ctx.archModelClient as MockArchClient;
+
+    const result = await executeHttpRequestTool.handler(
+      { operationId: 'getThings', method: 'get', path: '/things' },
+      ctx,
+    );
+
+    const body = arch.createCapture.mock.calls[0][1];
+    expect(typeof body.error_message).toBe('string');
+    // First meaningful line is the exception class line, which is a useful
+    // one-line cause; capped to <= 300 chars.
+    expect(body.error_message.length).toBeLessThanOrEqual(300);
+    expect(body.error_message.length).toBeGreaterThan(0);
+    const ret = result as { response: { errorSummary: string | null } };
+    expect(ret.response.errorSummary).toBe(body.error_message);
+  });
+});
+
+describe('execute_http_request -- cross-scenario learned-fact harvest (Kiro #1/#2)', () => {
+  it('Kiro #1: a non-2xx response with an error summary records a FAILED: learned fact', async () => {
+    startRun();
+    // A Tomcat-style 400 page burying the rejected-input fault. extractErrorSummary
+    // distills it; the handler must then record it as a known-bad fact so LATER
+    // scenarios avoid re-guessing the same malformed date.
+    const htmlBody = [
+      '<!doctype html><html lang="en"><head>',
+      '<title>HTTP Status 400 – Bad Request</title>',
+      '</head><body><p><b>Message</b> Invalid format: 2026-06-17 is malformed at "-06-17"</p>',
+      '</body></html>',
+    ].join('');
+    const response: AxiosResponse<unknown> = {
+      status: 400,
+      statusText: 'Bad Request',
+      headers: { 'content-type': 'text/html' },
+      config: {} as never,
+      data: htmlBody,
+    };
+    const request = jest.fn(async () => response);
+    const ctx = buildContext({ httpExecutor: buildHttpExecutor(request) });
+
+    await executeHttpRequestTool.handler(
+      { operationId: 'getThings', method: 'get', path: '/things', query: { date: '2026-06-17' } },
+      ctx,
+    );
+
+    const facts = runManager.getLearnedFacts(SESSION_ID);
+    const failed = facts.find((f) => f.startsWith('FAILED:'));
+    expect(failed).toBeDefined();
+    // Carries the verb/path, the rejected query input, the status, and the
+    // distilled cause so a later scenario can avoid the malformed value.
+    expect(failed).toContain('GET /things');
+    expect(failed).toContain('2026-06-17');
+    expect(failed).toContain('400');
+    // No OK fact is recorded for a non-2xx response.
+    expect(facts.some((f) => f.startsWith('OK '))).toBe(false);
+    // Capped well under the 240-char limit guard.
+    expect((failed as string).length).toBeLessThanOrEqual(240);
+  });
+
+  it('Kiro #2: a 2xx whose body has an id / hierarchyNodeId records OK id: facts with provenance', async () => {
+    startRun();
+    const response: AxiosResponse<unknown> = {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      config: {} as never,
+      // A search-style result: an id-ish key at top level and a nested
+      // hierarchyNodeId the LLM should chain into a later detail call.
+      data: { results: [{ id: 42, hierarchyNodeId: 90000, name: 'node' }] },
+    };
+    const request = jest.fn(async () => response);
+    const ctx = buildContext({ httpExecutor: buildHttpExecutor(request) });
+
+    await executeHttpRequestTool.handler(
+      { operationId: 'getThings', method: 'get', path: '/things' },
+      ctx,
+    );
+
+    const facts = runManager.getLearnedFacts(SESSION_ID);
+    const idFacts = facts.filter((f) => f.startsWith('OK id:'));
+    // Both id-ish keys were harvested from the SUCCESSFUL response body.
+    expect(idFacts.some((f) => f.includes('hierarchyNodeId=90000'))).toBe(true);
+    expect(idFacts.some((f) => f.includes('id=42'))).toBe(true);
+    // Provenance points back at the call that surfaced the id.
+    expect(idFacts.every((f) => f.includes('(from GET /things)'))).toBe(true);
+    // The known-good REQUEST fact (fix 5) is still recorded alongside.
+    expect(facts.some((f) => f.startsWith('OK GET /things -> 200'))).toBe(true);
+  });
+
+  it('a 2xx body with no id-ish keys records the request fact but no OK id: facts (defensive)', async () => {
+    startRun();
+    const response: AxiosResponse<unknown> = {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      config: {} as never,
+      data: { name: 'no-ids-here', count: 3 },
+    };
+    const request = jest.fn(async () => response);
+    const ctx = buildContext({ httpExecutor: buildHttpExecutor(request) });
+
+    await executeHttpRequestTool.handler(
+      { operationId: 'getThings', method: 'get', path: '/things' },
+      ctx,
+    );
+
+    const facts = runManager.getLearnedFacts(SESSION_ID);
+    expect(facts.some((f) => f.startsWith('OK id:'))).toBe(false);
+    expect(facts.some((f) => f.startsWith('OK GET /things -> 200'))).toBe(true);
   });
 });
 

@@ -250,13 +250,62 @@ export type FullReconcileResult =
   | { status: 'reconcile_failed'; error: string };
 
 /**
+ * The five per-dimension break TYPES (Spec 2026-06-17, R1 + R2 + R6). Status-class
+ * (2xx / 4xx / 5xx) is a SEVERITY within the single `status` type, NOT a 6th type.
+ */
+export type BreakType = 'status' | 'headers' | 'body-shape' | 'body-value' | 'ordering';
+
+/**
+ * Derive the SET of per-dimension break TYPES that drifted on a diff_item
+ * (Spec 2026-06-17, R1 + R2). MIRRORS the validation-service `deriveBreakTypes`
+ * ({@link findingEmissionRules}) -- the gateway reads the AMS diff_items (which
+ * carry the per-dimension classifications), not the finding rows (which carry the
+ * derived set), so the set is re-derived here from the same classifications.
+ *
+ * A single diff_item still yields ONE break; this set tags WHICH dimensions
+ * diverged so the frontend can render per-dimension badges. source_only /
+ * target_only carry no dimension classifications -> EMPTY set.
+ */
+export function deriveBreakTypes(item: {
+  status_classification?: string | null;
+  body_classification?: string | null;
+  header_classification?: string | null;
+}): BreakType[] {
+  const types: BreakType[] = [];
+  if (item.status_classification === 'status_drift') types.push('status');
+  const header = item.header_classification ?? null;
+  if (header === 'header_value_drift' || header === 'header_presence_drift') {
+    types.push('headers');
+  }
+  switch (item.body_classification) {
+    case 'body_shape_drift':
+      types.push('body-shape');
+      break;
+    case 'body_value_drift':
+      types.push('body-value');
+      break;
+    case 'body_ordering_drift':
+      types.push('ordering');
+      break;
+    default:
+      break;
+  }
+  return types;
+}
+
+/**
  * Map a diff_item to the break wire row. Only the SOFT reference + the inline
  * detail are carried (no break-payload duplication beyond the review snapshot).
  *
  * The `body_diff_json` snapshot carries the validation-service's `{ entries,
- * volatility_sources? }` shape VERBATIM -- the volatile-path metadata the
- * post-diff `expected_volatile` pass ({@link autoDisposeVolatileBreaks}) reads
- * off the break without re-walking the bodies.
+ * header_entries?, volatility_sources? }` shape VERBATIM -- the volatile-path /
+ * tolerated-header metadata the post-diff `expected_volatile` pass
+ * ({@link autoDisposeVolatileBreaks}) reads off the break without re-walking the
+ * responses.
+ *
+ * Spec 2026-06-17 (R1 + R2): also carries the per-dimension `header_classification`
+ * and the derived `break_types` SET onto `detail_json` so the frontend can render
+ * per-dimension badges (status / headers / body-shape / body-value / ordering).
  */
 function diffItemToBreak(
   item: ReconciliationDiffItem,
@@ -279,6 +328,8 @@ function diffItemToBreak(
       scenario_name: item.scenario_name ?? null,
       status_classification: item.status_classification ?? null,
       body_classification: item.body_classification ?? null,
+      header_classification: item.header_classification ?? null,
+      break_types: deriveBreakTypes(item),
       source_response_status: item.source_response_status ?? null,
       target_response_status: item.target_response_status ?? null,
       body_diff_json: item.body_diff_json ?? null,
@@ -649,7 +700,14 @@ async function autoDisposeNetNewTargetOnly(
 // 2026-06-16 -- post-diff `expected_volatile` auto-disposition pass
 // ============================================================================
 
-/** A volatility-disposition audit note recorded on a break's detail_json. */
+/**
+ * A volatility-disposition audit note recorded on a break's detail_json.
+ *
+ * Spec 2026-06-17: the tolerated `paths` may include `header:<name>` entries for
+ * allowlisted header VALUE changes (see {@link readBreakVolatility}); those are
+ * surfaced as `tolerated_header_names` and named in the note so the human sees
+ * exactly which header values were tolerated.
+ */
 function buildVolatilityAuditNote(
   outcome: 'expected_volatile' | 'info',
   sources: VolatilitySource[],
@@ -657,19 +715,31 @@ function buildVolatilityAuditNote(
 ): Record<string, unknown> {
   const sourceList = sources.join(', ');
   const pathList = paths.length > 0 ? paths.join(', ') : '(whole-response)';
+  // Split out the tolerated HEADER names (recorded as `header:<name>` paths by
+  // the volatility reader) so the audit trail names which header values were
+  // tolerated as volatile (R-volatile audit requirement).
+  const toleratedHeaderNames = paths
+    .filter((p) => p.startsWith('header:'))
+    .map((p) => p.slice('header:'.length));
+  const headerClause =
+    toleratedHeaderNames.length > 0
+      ? ` Allowlisted volatile header value(s) tolerated: [${toleratedHeaderNames.join(', ')}].`
+      : '';
   const note =
     outcome === 'expected_volatile'
-      ? `Auto-recognised as expected non-determinism: the body diverged ONLY on ` +
-        `legitimately-volatile path(s) [${pathList}] (source: ${sourceList}). The pinned ` +
-        `current-state oracle is unchanged; a deliberately-changed non-volatile value ` +
-        `would still break. Human-overridable back to open via the disposition path.`
+      ? `Auto-recognised as expected non-determinism: the response diverged ONLY on ` +
+        `legitimately-volatile path(s) [${pathList}] (source: ${sourceList}).${headerClause} The pinned ` +
+        `current-state oracle is unchanged; a deliberately-changed non-volatile value, a ` +
+        `header appearing/disappearing, or a non-allowlisted header change would still break. ` +
+        `Human-overridable back to open via the disposition path.`
       : `Down-ranked to info: the divergence is justified ONLY by a conservative ` +
-        `heuristic on path(s) [${pathList}] (source: ${sourceList}). A guess must never ` +
+        `heuristic on path(s) [${pathList}] (source: ${sourceList}).${headerClause} A guess must never ` +
         `auto-close a break, so this stays OPEN for human review.`;
   return {
     outcome,
     sources,
     paths,
+    ...(toleratedHeaderNames.length > 0 ? { tolerated_header_names: toleratedHeaderNames } : {}),
     recognised_at: new Date().toISOString(),
     note,
   };
@@ -774,8 +844,11 @@ export async function autoDisposeVolatileBreaks(
     }
 
     // MIXED: a non-volatile entry survived -> stays `open` (the no-override
-    // guard G3). Record the partial allowance so the human sees which paths were
-    // tolerated, but DO NOT change the disposition.
+    // guard G3, extended to headers per R-volatile). The surviving drift may be
+    // a real body value/shape/ordering change, a header appearing/disappearing,
+    // or a non-allowlisted header value change. Record the partial allowance so
+    // the human sees which paths/headers were tolerated, but DO NOT change the
+    // disposition -- MIXED-stays-open (load-bearing, never silently suppressed).
     const mixedDetail: Record<string, unknown> = {
       ...detail,
       volatility_match: {
@@ -784,9 +857,10 @@ export async function autoDisposeVolatileBreaks(
         paths: classification.paths,
         recognised_at: new Date().toISOString(),
         note:
-          `Some path(s) [${classification.paths.join(', ') || '(none)'}] are volatile ` +
-          `(source: ${classification.sources.join(', ')}), but a NON-volatile value also ` +
-          `diverged -- the non-volatile divergence is a real break. Left open for human review.`,
+          `Some path(s)/header(s) [${classification.paths.join(', ') || '(none)'}] are volatile ` +
+          `(source: ${classification.sources.join(', ')}), but a NON-volatile divergence also ` +
+          `survived (a real body change, a header appearing/disappearing, or a non-allowlisted ` +
+          `header value change) -- that divergence is a real break. Left open for human review.`,
       },
     };
     await safePatchBreak(deps, projectId, brk.id, {

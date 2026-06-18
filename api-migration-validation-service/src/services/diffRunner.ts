@@ -4,6 +4,8 @@ import type {
   ApiBehaviourDiffItemDto,
   ApiBehaviourDiffStatusClassification,
   ApiBehaviourDiffBodyClassification,
+  ApiBehaviourDiffHeaderClassification,
+  BaselineIntegrityDto,
   BaselineItemDto,
   CreateApiBehaviourDiffItemRequest,
 } from './archModelClient';
@@ -13,7 +15,10 @@ import {
   type VolatilityContext,
   type VolatilityEnvelope,
 } from './jsonShapeComparator';
-import { classifyDiffItem as defaultClassifyDiffItem } from './findingEmissionRules';
+import {
+  classifyDiffItem as defaultClassifyDiffItem,
+  API_BEHAVIOUR_DRIFT_CATEGORY,
+} from './findingEmissionRules';
 import { createTracer } from '../trace';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
@@ -230,6 +235,14 @@ interface ClassificationCounts {
   status_drift: number;
   body_shape_drift: number;
   body_value_drift: number;
+  // NON-volatile array reorder dimension (Spec 2026-06-17). AMS has NO
+  // dedicated ordering count column, so this stays a LOCAL tally only -- it
+  // feeds the reconcile trace's "breaks" sum so an ordering-only divergence is
+  // counted as a break, without changing the persisted AMS count summary.
+  body_ordering_drift: number;
+  // Header dimension (Spec 2026-06-17). Same local-only treatment -- counts a
+  // diff_item whose header_classification is a real (untolerated) break.
+  header_drift: number;
   source_only: number;
   target_only: number;
 }
@@ -240,6 +253,8 @@ function freshCounts(): ClassificationCounts {
     status_drift: 0,
     body_shape_drift: 0,
     body_value_drift: 0,
+    body_ordering_drift: 0,
+    header_drift: 0,
     source_only: 0,
     target_only: 0,
   };
@@ -323,6 +338,15 @@ export async function runDiff(
   const persistedDiffItems: ApiBehaviourDiffItemDto[] = [];
   let architectureId: string | undefined;
   let completedSuccessfully = false;
+  // SOURCE/oracle integrity verdict captured at the source baseline load
+  // (consumed in the finding-emission tail block, AFTER the mandatory
+  // delete-findings cleanup so a recompute does not accumulate the advisory
+  // integrity finding). `undefined` => verification was not run / failed soft.
+  // `sourceBaselineIdForIntegrity` is captured alongside so the tail block can
+  // reference it without re-narrowing the possibly-undefined `diff`.
+  // Spec: 2026-06-17 Baseline Integrity & Provenance -- Task Group 2.
+  let sourceIntegrity: BaselineIntegrityDto | undefined;
+  let sourceBaselineIdForIntegrity: string | undefined;
   // Reconcile trace corr -- project + arch group the migration, the diffId is
   // the reconcile sub-thread (corr `run`). architectureId fills in once the
   // diff row loads; the start line below uses what we know at that point.
@@ -371,6 +395,41 @@ export async function runDiff(
     );
 
     // ------------------------------------------------------------------
+    // 2b) Verify the SOURCE / oracle baseline integrity (advisory, R4 + R7)
+    // ------------------------------------------------------------------
+    // Ask AMS to recompute the canonical content hash over the oracle's
+    // CURRENT stored items and compare it to the hash stamped at activation.
+    // The TS path CONSUMES the verdict -- it never recomputes the hash itself
+    // (one Java hashing implementation eliminates cross-language drift). This
+    // is ALWAYS fail-soft and ALWAYS advisory: a verify-call error must never
+    // break an otherwise-working reconcile, and a real mismatch surfaces a
+    // VISIBLE warning finding (emitted in the tail block) without blocking.
+    // Scoped to the SOURCE/oracle baseline only -- target baselines are out of
+    // scope (R8). The finding emission is deferred to the tail block so it runs
+    // AFTER deleteFindingsByApiBehaviourDiffId (recompute-safe, no duplication).
+    sourceBaselineIdForIntegrity = diff.source_baseline_id;
+    try {
+      sourceIntegrity = await archModelClient.getBaselineIntegrity(
+        projectId,
+        diff.source_baseline_id,
+      );
+    } catch (err) {
+      // Fail-soft: verification unavailable (AMS error / endpoint missing).
+      // Proceed with the reconcile; do NOT crash and do NOT emit a mismatch.
+      sourceIntegrity = undefined;
+      console.warn(
+        `[diffRunner] op=integrity_verify_unavailable diffId=${diffId.slice(0, 8)} ` +
+          `source=${diff.source_baseline_id.slice(0, 8)} ` +
+          `err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      trace.detail(
+        'reconcile.integrity',
+        { source: diff.source_baseline_id, verdict: 'verify_unavailable' },
+        traceCorr,
+      );
+    }
+
+    // ------------------------------------------------------------------
     // 3) Load both sides' baseline items
     // ------------------------------------------------------------------
     const sourceItems = await archModelClient.listBaselineItems(
@@ -415,7 +474,11 @@ export async function runDiff(
       // which are filled in per-branch below before persistence.
       const baseRequest: Omit<
         CreateApiBehaviourDiffItemRequest,
-        'status_classification' | 'body_classification' | 'body_diff_json' | 'notes'
+        | 'status_classification'
+        | 'body_classification'
+        | 'header_classification'
+        | 'body_diff_json'
+        | 'notes'
       > = {
         diff_id: diffId,
         method: (sourceItem.method ?? 'GET').toUpperCase(),
@@ -429,6 +492,11 @@ export async function runDiff(
 
       let statusClassification: ApiBehaviourDiffStatusClassification;
       let bodyClassification: ApiBehaviourDiffBodyClassification | null = null;
+      // Header dimension (Spec 2026-06-17). NULL when there is no header pair
+      // to compare -- either no target match (source_only) or a side lacked the
+      // { headers, body } wrapper (the comparator returns null then; graceful
+      // degrade, no false break).
+      let headerClassification: ApiBehaviourDiffHeaderClassification | null = null;
       let bodyDiffJson: Record<string, unknown> | null = null;
       let notes: string | null = null;
 
@@ -466,18 +534,32 @@ export async function runDiff(
           volatilityCtx,
         );
         bodyClassification = cmp.bodyClassification;
-        bodyDiffJson =
-          cmp.bodyDiffJson.length > 0
-            ? {
-                entries: cmp.bodyDiffJson as unknown[],
-                // Surface the DISTINCT volatility-source tags that touched a
-                // tolerated entry so the gateway post-diff pass can read them
-                // off the persisted diff_item without re-walking the bodies.
-                ...(cmp.volatilitySourcesTouched.length > 0
-                  ? { volatility_sources: cmp.volatilitySourcesTouched as unknown[] }
-                  : {}),
-              }
-            : null;
+        // Header classification (null = dimension skipped: a side lacked the
+        // { headers, body } wrapper). The comparator returns one of
+        // header_match / header_value_drift / header_presence_drift, which the
+        // AMS column accepts verbatim (snake_case).
+        headerClassification =
+          (cmp.headerClassification as ApiBehaviourDiffHeaderClassification | null) ??
+          null;
+        // Persist the body + header diff entries (and the distinct volatility
+        // sources that touched a tolerated entry -- now including allowlisted
+        // header values tagged `declared`) so the gateway post-diff pass can
+        // read them off the persisted diff_item without re-walking the
+        // responses. header_entries lets the gateway / frontend list the
+        // affected (incl. tolerated) header names.
+        {
+          const blob: Record<string, unknown> = {};
+          if (cmp.bodyDiffJson.length > 0) {
+            blob.entries = cmp.bodyDiffJson as unknown[];
+          }
+          if (cmp.headerDiffJson.length > 0) {
+            blob.header_entries = cmp.headerDiffJson as unknown[];
+          }
+          if (cmp.volatilitySourcesTouched.length > 0) {
+            blob.volatility_sources = cmp.volatilitySourcesTouched as unknown[];
+          }
+          bodyDiffJson = Object.keys(blob).length > 0 ? blob : null;
+        }
 
         // Aggregate counts. Status drift is counted whenever statuses
         // differ, regardless of body classification. Body shape/value drift
@@ -489,12 +571,31 @@ export async function runDiff(
           counts.body_shape_drift += 1;
         } else if (bodyClassification === 'body_value_drift') {
           counts.body_value_drift += 1;
+        } else if (bodyClassification === 'body_ordering_drift') {
+          // Local-only ordering tally (no AMS count column); feeds the breaks
+          // sum so an ordering-only divergence is counted as a break.
+          counts.body_ordering_drift += 1;
         }
-        // Matched-bucket only when both status and body match (and no shape
-        // drift). The header strip / UI will show non-overlapping buckets.
+        // Header break (local-only tally): a real, untolerated header
+        // divergence. header_match (incl. allowlisted-value-only, which the
+        // comparator still surfaces as header_value_drift but tags `declared`)
+        // is NOT counted here as a hard break -- the gateway auto-dispose pass
+        // decides volatility. A header_presence_drift or a non-allowlisted
+        // header_value_drift is the hard-break signal; the gateway's
+        // isDiffItemABreak (Task Group 3) registers it. We count any non-match
+        // header classification so the breaks sum reflects the dimension.
+        if (
+          headerClassification === 'header_presence_drift' ||
+          headerClassification === 'header_value_drift'
+        ) {
+          counts.header_drift += 1;
+        }
+        // Matched-bucket only when status + body + header all match (or header
+        // skipped). Header drift keeps the item out of the matched bucket.
         if (
           statusClassification === 'status_match' &&
-          bodyClassification === 'body_match'
+          bodyClassification === 'body_match' &&
+          (headerClassification === null || headerClassification === 'header_match')
         ) {
           counts.matched += 1;
         }
@@ -505,6 +606,7 @@ export async function runDiff(
           ...baseRequest,
           status_classification: statusClassification,
           body_classification: bodyClassification,
+          header_classification: headerClassification,
           body_diff_json: bodyDiffJson,
           notes,
         });
@@ -538,6 +640,7 @@ export async function runDiff(
           target_baseline_item_id: targetItem.id,
           status_classification: 'target_only',
           body_classification: null,
+          header_classification: null,
           source_response_status: null,
           target_response_status: targetItem.response_status ?? null,
           body_diff_json: null,
@@ -586,6 +689,8 @@ export async function runDiff(
       counts.status_drift +
       counts.body_shape_drift +
       counts.body_value_drift +
+      counts.body_ordering_drift +
+      counts.header_drift +
       counts.source_only +
       counts.target_only;
     trace.ok(
@@ -644,6 +749,91 @@ export async function runDiff(
     );
     // Continue to emission -- better to risk a small duplication than skip
     // the spec entirely. The reviewer can always re-recompute.
+  }
+
+  // STEP 1b: SOURCE/oracle integrity advisory finding (Spec 2026-06-17,
+  // R4 + R7). Emitted AFTER the mandatory delete-findings cleanup so a
+  // recompute replaces (not accumulates) this finding -- same recompute-safe
+  // ordering as the per-item findings below.
+  //
+  // Decision logic on the verdict captured at the source baseline load:
+  //   - integrity_verified === false AND content_hash != null => REAL mismatch
+  //     (the stored hash exists but no longer matches the recompute): emit a
+  //     VISIBLE advisory WARNING finding and PROCEED. Never blocks; never
+  //     silent.
+  //   - content_hash === null => "no integrity hash recorded" (pre-existing /
+  //     never-activated baseline): NEUTRAL -- SKIP verification, do NOT emit a
+  //     mismatch warning (an info-level trace breadcrumb only).
+  //   - integrity_verified === true => trusted oracle: no finding.
+  //   - sourceIntegrity undefined (verify call failed soft at load): no finding.
+  // Fail-soft: any emission error here is logged + skipped; the diff stays
+  // completed (mirrors the per-item emission tail).
+  if (sourceIntegrity) {
+    const hasRecordedHash = sourceIntegrity.content_hash != null;
+    if (!hasRecordedHash) {
+      // NEUTRAL null-hash case -- NOT a mismatch. No finding; breadcrumb only.
+      trace.detail(
+        'reconcile.integrity',
+        { source: sourceBaselineIdForIntegrity, verdict: 'no_hash_recorded' },
+        traceCorr,
+      );
+    } else if (sourceIntegrity.integrity_verified === false) {
+      // REAL mismatch: stored hash exists but does not match the recompute.
+      // Visible advisory warning; reconcile already completed (advisory only).
+      trace.detail(
+        'reconcile.integrity',
+        {
+          source: sourceBaselineIdForIntegrity,
+          verdict: 'mismatch',
+          contentHash: sourceIntegrity.content_hash,
+          recomputedHash: sourceIntegrity.recomputed_hash,
+        },
+        traceCorr,
+      );
+      try {
+        await archModelClient.createDiffFinding(projectId, diffId, {
+          finding_type: 'api_behaviour_oracle_integrity_mismatch',
+          category: API_BEHAVIOUR_DRIFT_CATEGORY,
+          severity: 'medium',
+          status: 'new',
+          title: 'Oracle baseline integrity mismatch',
+          summary:
+            'The source (current-state oracle) baseline failed server-side ' +
+            'integrity verification: its stored content hash no longer matches ' +
+            'a recompute over the current stored items. The pinned oracle may ' +
+            'have been tampered with or drifted. This reconcile result was ' +
+            'computed against a possibly-compromised oracle (advisory only -- ' +
+            'the reconcile still completed).',
+          detail_json: {
+            source_baseline_id: sourceBaselineIdForIntegrity,
+            content_hash: sourceIntegrity.content_hash,
+            recomputed_hash: sourceIntegrity.recomputed_hash,
+            integrity_verified: sourceIntegrity.integrity_verified,
+          },
+          source: 'api_behaviour_diff',
+          created_by_stage: 'diffRunner.integrityVerify',
+        });
+        console.warn(
+          `[diffRunner] op=integrity_mismatch diffId=${diffId.slice(0, 8)} ` +
+            `source=${(sourceBaselineIdForIntegrity ?? '').slice(0, 8)} ` +
+            `(advisory warning emitted; reconcile proceeded)`,
+        );
+      } catch (err) {
+        // Fail-soft: emission failure must not fail the (already-completed)
+        // reconcile. Log + skip, mirroring the per-item emission tail.
+        console.error(
+          `[diffRunner] op=integrity_finding_emission_failed diffId=${diffId.slice(0, 8)} ` +
+            `err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      // integrity_verified === true -- trusted oracle. No finding.
+      trace.detail(
+        'reconcile.integrity',
+        { source: sourceBaselineIdForIntegrity, verdict: 'verified' },
+        traceCorr,
+      );
+    }
   }
 
   // STEP 2 + 3 + 4: classify, create, link per item. Fail-soft per item.

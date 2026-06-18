@@ -35,6 +35,12 @@ import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourScena
  * {@code kind} + {@code pairedWithBaselineId}).</p>
  * <p>Extended: API Test Harness — Diff Engine (2026-05-25) — Task Group 2
  * (diff + diff_item entity/DTO converters).</p>
+ * <p>Extended: Reconcile Full-Response Fidelity (2026-06-17) — Task Group 1
+ * (diff_item {@code headerClassification}).</p>
+ * <p>Extended: Baseline Integrity &amp; Provenance (2026-06-17) — Task Group 1
+ * (baseline {@code contentHash} + {@code provenanceJson}).</p>
+ * <p>Extended: Stateful Sequence Scenarios (2026-06-18) — Task Group 1
+ * (baseline item {@code sequenceJson}).</p>
  */
 public final class ApiBehaviourMapper {
 
@@ -72,6 +78,7 @@ public final class ApiBehaviourMapper {
             entity.getCoverageOverrideJustification(),
             entity.getCoverageOverrideUnaccountedCount(),
             entity.getCoverageOverrideAt(),
+            entity.getCoverageSummaryJson(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
         );
@@ -185,6 +192,8 @@ public final class ApiBehaviourMapper {
             entity.getNotes(),
             entity.getKind(),
             entity.getPairedWithBaselineId(),
+            entity.getContentHash(),
+            entity.getProvenanceJson(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
         );
@@ -207,6 +216,7 @@ public final class ApiBehaviourMapper {
             entity.getResponseStatus(),
             entity.getResponseJson(),
             entity.getVolatilePathsJson(),
+            entity.getSequenceJson(),
             entity.getBusinessNotes(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
@@ -248,6 +258,8 @@ public final class ApiBehaviourMapper {
      * Entity → DTO conversion for {@link ApiBehaviourDiffItemEntity}.
      *
      * <p>Spec: API Test Harness — Diff Engine (2026-05-25) — Task Group 2</p>
+     * <p>Extended: Reconcile Full-Response Fidelity (2026-06-17) — Task Group 1
+     * ({@code headerClassification}).</p>
      */
     public static ApiBehaviourDiffItemDto toDto(ApiBehaviourDiffItemEntity entity) {
         if (entity == null) {
@@ -263,6 +275,7 @@ public final class ApiBehaviourMapper {
             entity.getTargetBaselineItemId(),
             entity.getStatusClassification(),
             entity.getBodyClassification(),
+            entity.getHeaderClassification(),
             entity.getSourceResponseStatus(),
             entity.getTargetResponseStatus(),
             entity.getBodyDiffJson(),

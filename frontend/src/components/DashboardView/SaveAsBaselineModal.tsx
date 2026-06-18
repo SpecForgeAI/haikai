@@ -46,6 +46,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ApiBehaviourCaptureDto,
+  ApiBehaviourDiagnosticDto,
   ApiBehaviourOperationDto,
   ApiBehaviourScenarioDto,
   createBaseline,
@@ -55,6 +56,7 @@ import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
 import styles from './CaptureReviewPanel.module.css';
+import { CoverageSummaryPanel } from './CoverageSummaryPanel';
 
 export interface SaveAsBaselineModalProps {
   projectId: string;
@@ -69,6 +71,27 @@ export interface SaveAsBaselineModalProps {
    * with gaps. Empty array -> full coverage, no warning.
    */
   operationsWithoutAccepted: ApiBehaviourOperationDto[];
+  /**
+   * Session diagnostics. Carries the `sequence_pinned` marker rows written
+   * by the capture orchestrator for stateful sequence scenarios:
+   * `detail_json = { marker: 'sequence_pinned', canonical_capture_id,
+   * sequence_json, volatile_paths_json }`. When a marker's
+   * `canonical_capture_id` matches the ACT-step capture being pinned, the
+   * assembled `sequence_json` (+ the ref-derived `volatile_paths_json`) is
+   * carried onto that capture's baseline item -- mirroring exactly how
+   * `volatile_paths_json` is carried today. OPTIONAL / defaults to `[]` so
+   * non-sequence callers (and existing tests) are unaffected.
+   * Spec: 2026-06-18 Stateful Sequence Scenarios (Spec D) -- Task Group 4.
+   */
+  diagnostics?: ApiBehaviourDiagnosticDto[];
+  /**
+   * Raw `coverage_summary_json` off the capture session (snake_case JSONB
+   * wire). Display-only: surfaced beside the coverage warning so the reviewer
+   * sees overall + per-endpoint oracle coverage (with missed reasons + thin
+   * flags) before locking the baseline. Null / absent renders as 'coverage
+   * not recorded'. Spec: 2026-06-17 Oracle Coverage Scoring -- Task 3.4.
+   */
+  coverageSummaryJson?: Record<string, unknown> | null;
   onClose: () => void;
 }
 
@@ -91,6 +114,8 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
   operations,
   scenarios,
   operationsWithoutAccepted,
+  coverageSummaryJson,
+  diagnostics = [],
   onClose,
 }) => {
   const navigate = useNavigate();
@@ -115,6 +140,46 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
     () => new Map(scenarios.map((s) => [s.id, s])),
     [scenarios],
   );
+
+  // Stateful-sequence carry (Spec D, Task Group 4). The capture orchestrator
+  // persists the assembled `sequence_json` (+ the ref-derived
+  // `volatile_paths_json`) as a `sequence_pinned`-marked diagnostic keyed to
+  // the canonical ACT-step capture. Index those markers by
+  // `canonical_capture_id` so the per-capture pin loop can carry them onto
+  // the matching ACT-step baseline item -- exactly mirroring the existing
+  // `volatile_paths_json` carry. Read DEFENSIVELY: a malformed / absent
+  // marker simply yields no carry (the single-shot path, unchanged).
+  const sequenceCarryByCaptureId = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        sequence_json: Record<string, unknown> | null;
+        volatile_paths_json: Record<string, unknown> | null;
+      }
+    >();
+    for (const diag of diagnostics) {
+      const detail = diag.detail_json;
+      if (!detail || typeof detail !== 'object') continue;
+      if (detail.marker !== 'sequence_pinned') continue;
+      const captureId = detail.canonical_capture_id;
+      if (typeof captureId !== 'string' || captureId.length === 0) continue;
+      const seq =
+        detail.sequence_json &&
+        typeof detail.sequence_json === 'object' &&
+        !Array.isArray(detail.sequence_json)
+          ? (detail.sequence_json as Record<string, unknown>)
+          : null;
+      if (!seq) continue;
+      const vol =
+        detail.volatile_paths_json &&
+        typeof detail.volatile_paths_json === 'object' &&
+        !Array.isArray(detail.volatile_paths_json)
+          ? (detail.volatile_paths_json as Record<string, unknown>)
+          : null;
+      map.set(captureId, { sequence_json: seq, volatile_paths_json: vol });
+    }
+    return map;
+  }, [diagnostics]);
 
   const handleSubmit = useCallback(async () => {
     if (!name.trim() || acceptedCaptures.length === 0) return;
@@ -143,14 +208,42 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
           scenario_name: scenario?.scenario_name ?? null,
           request_json: cap.request_body_json,
           response_status: cap.response_status,
-          response_json: cap.response_body_json,
+          // Pin the source baseline item's response as a { headers, body }
+          // envelope SYMMETRIC with the target side (targetReplayRunner stores
+          // `{ headers: capture.response_headers_redacted_json, body:
+          // response_body_json }`). The reconcile comparator unwraps both sides
+          // the same way and now diffs the response HEADERS too -- without the
+          // wrapper here the comparator would have no source headers to diff
+          // against and would skip the header dimension. Headers are ALREADY
+          // captured + redacted on the capture row (response_headers_redacted_json);
+          // this is NOT a new capture. Pre-existing baselines that lack the
+          // wrapper degrade gracefully comparator-side (the header dimension is
+          // skipped -- no false break). Spec: 2026-06-17 Reconcile Full-Response
+          // Fidelity & Distinct Break Types -- R5.
+          response_json: {
+            headers: cap.response_headers_redacted_json ?? null,
+            body: cap.response_body_json,
+          },
           business_notes: null,
           // Carry the capture-time volatility envelope forward onto the
           // immutable source baseline item (write-once at pin time). The probe
           // measured it during capture; `null`/absent => strict comparison.
           // Spec: 2026-06-16 Reconcile-Time Determinism & Volatile-Value
           // Handling -- FU-2 (frontend carry-through).
-          volatile_paths_json: cap.volatile_paths_json ?? null,
+          //
+          // Stateful-sequence carry (Spec D, Task Group 4): when this capture
+          // is the canonical ACT step of a pinned sequence, carry the
+          // assembled `sequence_json` AND prefer the ref-derived
+          // `volatile_paths_json` from the `sequence_pinned` marker (the
+          // generated ids referenced as `$N.<path>` are expected-volatile by
+          // construction). Non-sequence captures keep `sequence_json: null`
+          // and the capture-row volatile envelope -- pinned exactly as today.
+          volatile_paths_json:
+            sequenceCarryByCaptureId.get(cap.id)?.volatile_paths_json ??
+            cap.volatile_paths_json ??
+            null,
+          sequence_json:
+            sequenceCarryByCaptureId.get(cap.id)?.sequence_json ?? null,
         });
       }
 
@@ -196,6 +289,7 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
     acceptedCaptures,
     operationById,
     scenarioById,
+    sequenceCarryByCaptureId,
     navigate,
     dispatch,
     activeProject?.name,
@@ -218,6 +312,22 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
           {acceptedCaptures.length} accepted capture
           {acceptedCaptures.length === 1 ? '' : 's'} will be promoted.
         </div>
+
+        {/* Oracle coverage summary (Spec 2026-06-17). Display-only: overall
+            + per-endpoint coverage with honest missed-dimension reasons and
+            thin-coverage flags, beside the existing coverage warning. Null /
+            absent renders as 'coverage not recorded' -- never an error. No
+            hard gate; the reviewer can still save. Reuses the modal's
+            warningBanner + discoveryBadge styling -- no charting widget. */}
+        <CoverageSummaryPanel
+          raw={coverageSummaryJson}
+          testId="save-as-baseline-coverage-summary"
+          classes={{
+            banner: styles.warningBanner,
+            badge: styles.discoveryBadge,
+            badgeWarning: styles.discoveryBadgeWarning,
+          }}
+        />
 
         {operationsWithoutAccepted.length > 0 && (
           <div

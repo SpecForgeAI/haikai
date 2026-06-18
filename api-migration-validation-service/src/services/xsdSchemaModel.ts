@@ -716,6 +716,60 @@ export function messageTypeToJsonSchema(
 }
 
 // ----------------------------------------------------------------------------
+// Public API: scalar param type -> JSON Schema
+// ----------------------------------------------------------------------------
+
+/**
+ * Project a single XSD scalar `type=` qname (as carried by a WADL `<param>`)
+ * into an `OpenAPIV3.SchemaObject`, so path/query/header parameters surface the
+ * real XSD `type`/`format`/`pattern`/`enum`/length/bounds to the capture LLM
+ * instead of a bare `{ type: 'string' }`.
+ *
+ * Resolution order (mirrors the simple-typed branches of `elementToJsonSchema`,
+ * reusing the same private facet helpers -- no duplicated facet logic):
+ *  - null / empty / the WADL sentinel `'unknown'` -> `{ type: 'string' }`;
+ *  - a BUILTIN xsd type (`xsd:date`, `xs:int`, ...) -> `xsdBuiltinToJson`
+ *    (`xsd:date -> { type:'string', format:'date' }`, numerics, etc.);
+ *  - a NAMED simpleType present in the registry that carries a `<restriction>`
+ *    -> the restriction's BASE builtin drives `type`/`format` (via
+ *    `xsdBuiltinToJson`) and its facets (`pattern`/`enum`/min-max/length) are
+ *    folded on via `extractRestrictionFacets` + `applyRestrictions`;
+ *  - anything else (a named type with no resolvable restriction, an unknown
+ *    qname) -> `{ type: 'string' }`.
+ */
+export function paramSchemaFromXsdType(
+  typeQName: string | null,
+  registry: XsdTypeRegistry,
+): OpenAPIV3.SchemaObject {
+  if (!typeQName) return { type: 'string' };
+  const trimmed = typeQName.trim();
+  if (trimmed.length === 0 || trimmed === 'unknown') return { type: 'string' };
+
+  // Built-in xsd:* / xs:* scalar -> JSON primitive type/format.
+  if (isXsdBuiltin(trimmed)) {
+    return xsdBuiltinToJson(trimmed) as OpenAPIV3.SchemaObject;
+  }
+
+  // Named simpleType ref carrying a <restriction>: base builtin drives the
+  // JSON primitive, facets fold on. Reuses the named-simple lookup +
+  // facet-extraction helpers (same path elementToJsonSchema takes).
+  const local = stripPrefix(trimmed) as string;
+  const named = registry.simpleTypes.get(local);
+  if (named) {
+    const restriction = firstChildByLocal(named.node, 'restriction');
+    if (restriction) {
+      const baseQName = getAttr(restriction, 'base');
+      const node = xsdBuiltinToJson(baseQName) as OpenAPIV3.SchemaObject;
+      applyRestrictions(node, extractRestrictionFacets(restriction));
+      return node;
+    }
+  }
+
+  // Named non-simple / unresolved type: safest free-text default.
+  return { type: 'string' };
+}
+
+// ----------------------------------------------------------------------------
 // Public API: element -> JSON Schema
 // ----------------------------------------------------------------------------
 

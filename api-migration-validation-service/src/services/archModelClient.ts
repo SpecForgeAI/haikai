@@ -112,6 +112,23 @@ export interface CaptureSessionDto {
   coverage_override_justification?: string | null;
   coverage_override_unaccounted_count?: number | null;
   coverage_override_at?: string | null;
+  /**
+   * Whole oracle-coverage summary for the session (Oracle Coverage Scoring,
+   * 2026-06-17; AMS changeset 189). Plain JSON blob, snake_case wire (AMS
+   * default -- NO @CamelCaseWire on the AMS side). Null on legacy / pre-fix
+   * sessions = "coverage not recorded". Written on the completion PATCH beside
+   * the scenario tallies. Shape:
+   *   { overall_score, dimensions_total, dimensions_achieved,
+   *     per_endpoint: [{ operation_id, method, path, score,
+   *       dimensions: [{ name, type, expected_status, achieved,
+   *         canonical_capture_id|null, reason|null }] }],
+   *     auth_coverage: { achieved, representative_operation_id|null,
+   *       probes: [{ name, expected, achieved, observed_status|null,
+   *         reason|null }] } }
+   * A later spec (baseline integrity & provenance, Spec C) reads
+   * `overall_score` + per-endpoint dimensions/reasons off the session.
+   */
+  coverage_summary_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -167,6 +184,13 @@ export interface PatchCaptureSessionRequest {
   coverage_override_justification?: string | null;
   coverage_override_unaccounted_count?: number | null;
   coverage_override_at?: string | null;
+  /**
+   * Oracle-coverage summary written on the completion PATCH (Oracle Coverage
+   * Scoring, 2026-06-17). Optional/nullable -- omitting the key is a PATCH
+   * no-op on the AMS side (null-guarded, never clobbers an existing summary).
+   * snake_case wire (AMS default). See {@link CaptureSessionDto.coverage_summary_json}.
+   */
+  coverage_summary_json?: Record<string, unknown> | null;
 }
 
 export interface OperationDto {
@@ -358,6 +382,11 @@ export interface CreateCaptureRequest {
   attempt_number?: number | null;
   request_method?: string | null;
   request_path?: string | null;
+  /**
+   * Non-blank full request URL (base + path), redacted. AMS REQUIRES this on
+   * every createCapture -- a blank/missing value is rejected HTTP 400.
+   */
+  request_url_redacted: string;
   request_query_json?: unknown;
   request_headers_redacted_json?: Record<string, string> | null;
   request_body_json?: unknown;
@@ -435,8 +464,57 @@ export interface BaselineDto {
    * baselines.
    */
   paired_with_baseline_id?: string | null;
+  /**
+   * Deterministic SHA-256 (lowercase hex) content hash stamped SERVER-SIDE in
+   * AMS at the draft->active transition (Baseline Integrity & Provenance spec,
+   * 2026-06-17; AMS changeset 191). `null` => pre-existing / never-activated
+   * baseline = "no integrity hash recorded" (NEUTRAL, NOT a mismatch -- there
+   * is NO backfill). Only `kind='current'` (oracle) baselines are stamped;
+   * `kind='target'` baselines are out of scope and carry null.
+   *
+   * snake_case wire (AMS default, NO `@CamelCaseWire`). The TS path NEVER
+   * recomputes this; verification is server-side via {@link getBaselineIntegrity}.
+   */
+  content_hash?: string | null;
+  /**
+   * Audit/provenance record stamped at activation alongside `content_hash`.
+   * Shape:
+   *   { session_id, environment_name, activated_at, coverage_score,
+   *     coverage_summary, accepted_capture_count, operation_count,
+   *     hash_algo: "sha256", canonical_version: 1 }
+   * `null` => pre-existing / never-activated baseline. snake_case wire.
+   *
+   * Spec: 2026-06-17 Baseline Integrity & Provenance.
+   */
+  provenance_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Result of the AMS server-side baseline integrity verify operation
+ * (`GET .../baselines/{baselineId}/integrity`). Mirrors the AMS Java record
+ * `ApiBehaviourBaselineIntegrityDto` VERBATIM (snake_case wire, AMS default --
+ * NO `@CamelCaseWire`).
+ *
+ * AMS recomputes the canonical content hash over the CURRENT stored items and
+ * compares it to the hash stamped at activation. The TS reconcile path CONSUMES
+ * this verdict; it does NOT recompute the hash (one hashing implementation in
+ * Java eliminates cross-language canonical-serialization drift).
+ *
+ * Interpretation:
+ *   - `integrity_verified === true`  => hash matches => trusted oracle.
+ *   - `integrity_verified === false` AND `content_hash != null` => REAL mismatch
+ *     (tamper / drift): surface a VISIBLE advisory warning, but PROCEED.
+ *   - `content_hash === null` => "no integrity hash recorded" (pre-existing /
+ *     never-activated baseline) => NEUTRAL: skip, NOT a mismatch.
+ *
+ * Spec: 2026-06-17 Baseline Integrity & Provenance -- Task Group 2.
+ */
+export interface BaselineIntegrityDto {
+  content_hash: string | null;
+  recomputed_hash: string | null;
+  integrity_verified: boolean;
 }
 
 export interface CreateBaselineRequest {
@@ -496,6 +574,23 @@ export interface BaselineItemDto {
    * Task Group 1 (AMS column) + Task Group 2 (probe write).
    */
   volatile_paths_json?: Record<string, unknown> | null;
+  /**
+   * OPTIONAL pinned stateful-sequence envelope. `null` / absent => today's
+   * single-shot baseline item (zero regression); non-null => an ordered
+   * setup -> act -> cleanup HTTP chain captured atomically as ONE oracle unit.
+   * The shape is the R1 `sequence_json`:
+   *   { steps: [ { index, role, kind: 'http', request: { method, path, query,
+   *     headers, body }, expected_status, response_refs: [ { ref, from_step,
+   *     json_path } ] } ], act_step_index, cleanup_best_effort }.
+   *
+   * snake_case wire (AMS default, NO `@CamelCaseWire`). Write-once at create
+   * time; there is deliberately NO PATCH path (baseline immutability), mirroring
+   * `volatile_paths_json`.
+   *
+   * Spec: 2026-06-18 Stateful Sequence Scenarios (Spec D) -- AMS changeset 192
+   * (column) + Task Group 2 (capture-side assembly + carry-through).
+   */
+  sequence_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -525,6 +620,19 @@ export interface CreateBaselineItemRequest {
    * Task Group 2.
    */
   volatile_paths_json?: Record<string, unknown> | null;
+  /**
+   * OPTIONAL pinned stateful-sequence envelope (R1 `sequence_json`). Sent on the
+   * CREATE request ONLY (write-once at pin time; NO PATCH path -- baseline
+   * immutability), mirroring `volatile_paths_json`. Omitted / null => today's
+   * single-shot item. Maps to the AMS create-request field `sequenceJson`
+   * (which accepts `sequence_json` on the wire). For a sequence the act step's
+   * baseline item carries this envelope AND the ref-derived
+   * `volatile_paths_json` so the diff/reconcile side tolerates generated ids
+   * with no diff-side change.
+   *
+   * Spec: 2026-06-18 Stateful Sequence Scenarios (Spec D) -- Task Group 2.
+   */
+  sequence_json?: Record<string, unknown> | null;
 }
 // --------------------------------------------------------------------------
 // Diff DTOs -- mirror the AMS Java DTOs from
@@ -552,7 +660,27 @@ export type ApiBehaviourDiffStatusClassification =
 export type ApiBehaviourDiffBodyClassification =
   | 'body_match'
   | 'body_shape_drift'
-  | 'body_value_drift';
+  | 'body_value_drift'
+  // A NON-volatile array reorder. New accepted value of the EXISTING
+  // body_classification field (service-layer validated in AMS; NO new column).
+  // Spec: 2026-06-17 Reconcile Full-Response Fidelity -- Task Group 1/2.
+  | 'body_ordering_drift';
+
+/**
+ * Per-dimension RESPONSE-HEADER classification, mirroring the body / status
+ * classifications. `null` on the wire when the header dimension is SKIPPED
+ * (a side lacked the `{ headers, body }` response wrapper -- old source
+ * baselines store the raw body) or on source_only / target_only rows.
+ *
+ * snake_case wire (AMS default -- NO @CamelCaseWire). Maps to the AMS
+ * `header_classification` column (Task Group 1).
+ *
+ * Spec: 2026-06-17 Reconcile Full-Response Fidelity & Distinct Break Types.
+ */
+export type ApiBehaviourDiffHeaderClassification =
+  | 'header_match'
+  | 'header_value_drift'
+  | 'header_presence_drift';
 
 export interface ApiBehaviourDiffDto {
   id: string;
@@ -586,6 +714,13 @@ export interface ApiBehaviourDiffItemDto {
   target_baseline_item_id: string | null;
   status_classification: ApiBehaviourDiffStatusClassification;
   body_classification: ApiBehaviourDiffBodyClassification | null;
+  /**
+   * Per-dimension response-header classification. `null` when the header pair
+   * was unavailable (a side lacked the `{ headers, body }` wrapper) or on
+   * source_only / target_only rows. snake_case wire.
+   * Spec: 2026-06-17 Reconcile Full-Response Fidelity -- Task Group 1/2.
+   */
+  header_classification: ApiBehaviourDiffHeaderClassification | null;
   /** Boxed Integer in AMS -- nullable on the wire. */
   source_response_status: number | null;
   target_response_status: number | null;
@@ -626,6 +761,12 @@ export interface CreateApiBehaviourDiffItemRequest {
   target_baseline_item_id?: string | null;
   status_classification: ApiBehaviourDiffStatusClassification;
   body_classification?: ApiBehaviourDiffBodyClassification | null;
+  /**
+   * Per-dimension response-header classification (optional; omit / null when
+   * the header dimension was skipped). snake_case wire.
+   * Spec: 2026-06-17 Reconcile Full-Response Fidelity -- Task Group 1/2.
+   */
+  header_classification?: ApiBehaviourDiffHeaderClassification | null;
   source_response_status?: number | null;
   target_response_status?: number | null;
   body_diff_json?: Record<string, unknown> | null;
@@ -1209,6 +1350,33 @@ class ArchModelClient {
       return res.data;
     } catch (err) {
       throw this.toClientError(err, endpoint, 'get baseline');
+    }
+  }
+
+  /**
+   * Verify a baseline's integrity SERVER-SIDE. AMS recomputes the canonical
+   * content hash over the CURRENT stored items and compares it to the hash
+   * stamped at the draft->active transition, returning
+   * `{ content_hash, recomputed_hash, integrity_verified }` (snake_case wire).
+   *
+   * The reconcile path (`diffRunner`) calls this for the SOURCE / oracle
+   * baseline only and CONSUMES the verdict -- it never recomputes the hash in
+   * TS (one Java hashing implementation eliminates cross-language drift). A
+   * null `content_hash` is the NEUTRAL "no integrity hash recorded" case
+   * (pre-existing / never-activated), NOT a mismatch.
+   *
+   * Spec: 2026-06-17 Baseline Integrity & Provenance -- Task Group 2.
+   */
+  async getBaselineIntegrity(
+    projectId: string,
+    baselineId: string,
+  ): Promise<BaselineIntegrityDto> {
+    const endpoint = `/api/projects/${projectId}/api-behaviour/baselines/${baselineId}/integrity`;
+    try {
+      const res = await this.client.get<BaselineIntegrityDto>(endpoint);
+      return res.data;
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'get baseline integrity');
     }
   }
 

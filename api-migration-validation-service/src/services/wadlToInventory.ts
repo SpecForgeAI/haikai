@@ -32,6 +32,22 @@
  * the JSON-Schema shape the LLM + DB sampler already understand, so a WADL+XSD
  * operation gets realistic Sybase-sourced inputs with no sampler change.
  *
+ * Path/query/header params are likewise typed from their XSD `type=` qname via
+ * `paramSchemaFromXsdType` (xsd built-ins -> primitive type/format; named
+ * restricted simpleTypes -> base type + facets), so the LLM sees the real
+ * `type`/`format`/`pattern`/`enum`/bounds rather than a bare `{type:'string'}`.
+ *
+ * MULTI-SEGMENT path templates: a WADL resource tree flattens to a path that
+ * may carry SEVERAL `{...}` template segments (e.g. nested `<resource>` nodes
+ * yield `hierarchynodes/{cobDate}/{orgId}`). EVERY such segment must surface as
+ * its own `path` parameter -- otherwise the capture LLM, reading only the
+ * declared `<param>` set, treats a multi-segment template like a single
+ * `/{id}` and the request 500s. WADLs frequently declare a `<param
+ * style="template">` for only SOME (or none) of the segments, so we
+ * additionally synthesise a `path` parameter for any `{segment}` in the
+ * flattened path template that has no declared template param, defaulting its
+ * schema to `{ type: 'string' }`. Path params are always `required:true`.
+ *
  * Pure: no I/O. Callers resolve the XSD source files (upload parts or
  * spec-link siblings) and hand them in already loaded.
  */
@@ -46,6 +62,7 @@ import type {
 import {
   buildXsdRegistry,
   elementToJsonSchema,
+  paramSchemaFromXsdType,
   type XsdTypeRegistry,
 } from './xsdSchemaModel';
 
@@ -59,6 +76,24 @@ const VALID_HTTP_METHODS = new Set<HttpMethod>([
   'patch',
   'trace',
 ]);
+
+/**
+ * Extract the ordered list of `{segment}` template-variable names from a
+ * flattened resource path. `hierarchynodes/{cobDate}/{orgId}` ->
+ * `['cobDate', 'orgId']`. Returns an empty array for a path with no template
+ * segments. Duplicate names (an unusual but legal authoring quirk) are kept in
+ * order; the caller dedups against the declared/synthesised param set.
+ */
+function pathTemplateSegments(path: string): string[] {
+  const out: string[] = [];
+  const re = /\{([^}]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(path)) !== null) {
+    const name = m[1].trim();
+    if (name.length > 0) out.push(name);
+  }
+  return out;
+}
 
 /**
  * Synthesise an operationId from a WADL `compositeId` (`POST /a/{b}` ->
@@ -111,11 +146,24 @@ function schemaForRepresentation(
  * `get_oas_operation_detail` tool surface a coherent operation object. Marked
  * with `x-amvs-source: 'wadl'` so downstream diagnostics can spot
  * WADL-derived rows.
+ *
+ * Param schemas are derived from each `WadlParam.type` XSD qname via
+ * `paramSchemaFromXsdType` against the shared `registry`, so they carry the
+ * real XSD type/format/facets (with `{ type: 'string' }` the fallback for
+ * `'unknown'` / missing / unresolved types).
+ *
+ * EVERY `{segment}` in the flattened path template is guaranteed a `path`
+ * parameter: declared `<param style="template">` nodes carry their XSD type,
+ * and any template segment WITHOUT a matching declared param is back-filled
+ * with a `{ type: 'string' }` `path` param so a multi-segment template never
+ * collapses to a single `/{id}` for the capture LLM. All path params are
+ * `required:true`.
  */
 function synthOperationObject(
   op: WadlOperation,
   requestSchema: OpenAPIV3.SchemaObject | null,
   responseSchema: OpenAPIV3.SchemaObject | null,
+  registry: XsdTypeRegistry,
 ): OpenAPIV3.OperationObject {
   const operationObject: OpenAPIV3.OperationObject = {
     responses: {},
@@ -128,6 +176,9 @@ function synthOperationObject(
 
   // Path / query / header params -> OAS ParameterObjects so the LLM sees them.
   const parameters: OpenAPIV3.ParameterObject[] = [];
+  // Track which path-param NAMES we have already emitted so the
+  // template-segment back-fill below never duplicates a declared one.
+  const emittedPathParamNames = new Set<string>();
   for (const p of op.params) {
     const location =
       p.style === 'template'
@@ -137,13 +188,34 @@ function synthOperationObject(
           : p.style === 'matrix'
             ? 'path'
             : 'query';
+    if (location === 'path') emittedPathParamNames.add(p.name);
     parameters.push({
       name: p.name,
       in: location as OpenAPIV3.ParameterObject['in'],
       required: location === 'path' ? true : p.required,
+      schema: paramSchemaFromXsdType(p.type, registry),
+    });
+  }
+
+  // Back-fill a `path` parameter for EVERY `{segment}` in the flattened path
+  // template that has no declared template param. A multi-segment template
+  // (e.g. `/hierarchynodes/{cobDate}/{orgId}`) often declares params for only
+  // some -- or none -- of its segments; without this the LLM would never see
+  // (and so never fill) the missing segments and the request 500s. The XSD
+  // type is unknown for a back-filled segment, so it gets the `{ type:
+  // 'string' }` fallback; segments WITH a declared param keep their typed
+  // schema above. Always `required:true` (a path segment is never optional).
+  for (const segName of pathTemplateSegments(op.path)) {
+    if (emittedPathParamNames.has(segName)) continue;
+    emittedPathParamNames.add(segName);
+    parameters.push({
+      name: segName,
+      in: 'path',
+      required: true,
       schema: { type: 'string' },
     });
   }
+
   if (parameters.length > 0) operationObject.parameters = parameters;
 
   if (requestSchema) {
@@ -193,7 +265,12 @@ export function wadlToInventory(
     const operationId =
       op.methodId && op.methodId.length > 0 ? op.methodId : synthOperationId(op);
 
-    const oasOperation = synthOperationObject(op, requestSchema, responseSchema);
+    const oasOperation = synthOperationObject(
+      op,
+      requestSchema,
+      responseSchema,
+      registry,
+    );
 
     operations.push({
       operationId,

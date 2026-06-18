@@ -74,6 +74,8 @@ import {
   registerTargetCredentials as defaultRegisterCreds,
   BREAK_DISPOSITION,
   TERMINAL_BREAK_STATES,
+  BREAK_TYPE_ORDER,
+  type BreakType,
   type MigrationReconciliationBreakDto,
   type ReconciliationDisposition,
 } from '../../../api/migrationReconciliationApi';
@@ -203,6 +205,168 @@ function readBreakVolatility(b: MigrationReconciliationBreakDto): {
   }
 
   return { paths, sources };
+}
+
+/** The valid per-dimension break types (in canonical display order). */
+const VALID_BREAK_TYPES = new Set<BreakType>(BREAK_TYPE_ORDER);
+
+/**
+ * Read the derived per-dimension break_type SET off a break's `detail_json`
+ * (Spec 2026-06-17 Reconcile Full-Response Fidelity -- R1 + R2). The gateway
+ * writes `detail_json.break_types` (a list of `status` / `headers` /
+ * `body-shape` / `body-value` / `ordering`) plus the per-dimension
+ * `header_classification`. A single diff_item still yields ONE break; this set
+ * just tags WHICH dimensions diverged so we can render distinct badges.
+ *
+ * GRACEFUL DEGRADE: a legacy break (pre-2026-06-17), or a source_only /
+ * target_only diff, carries no `break_types`. We return an EMPTY array and the
+ * caller falls back to the existing drift-summary rendering -- never a crash.
+ * Unknown / malformed entries are filtered out; the order follows
+ * `BREAK_TYPE_ORDER` so the badges render deterministically regardless of the
+ * wire order.
+ */
+function readBreakTypes(b: MigrationReconciliationBreakDto): BreakType[] {
+  const d = (b.detail_json ?? {}) as Record<string, unknown>;
+  const raw = (d.break_types ?? d.breakTypes ?? null) as unknown;
+  if (!Array.isArray(raw)) return [];
+  const present = new Set<BreakType>();
+  for (const t of raw) {
+    if (typeof t === 'string' && VALID_BREAK_TYPES.has(t as BreakType)) {
+      present.add(t as BreakType);
+    }
+  }
+  return BREAK_TYPE_ORDER.filter((t) => present.has(t));
+}
+
+/** Short human label for a per-dimension break type. */
+function breakTypeLabel(t: BreakType): string {
+  switch (t) {
+    case 'status':
+      return 'Status';
+    case 'headers':
+      return 'Headers';
+    case 'body-shape':
+      return 'Body shape';
+    case 'body-value':
+      return 'Body value';
+    case 'ordering':
+      return 'Ordering';
+    default:
+      return t;
+  }
+}
+
+/**
+ * Read the tolerated allowlisted header NAMES the gateway's `expected_volatile`
+ * auto-disposition pass recorded on `detail_json.volatility_match`
+ * (`tolerated_header_names`). Surfaced in the volatility detail the same way the
+ * volatile body paths are -- so the reviewer sees exactly which header VALUES
+ * were tolerated as volatile. Empty array when the break carries none. Tolerates
+ * both snake_case (AMS wire) and camelCase (gateway-native) field names.
+ */
+function readToleratedHeaderNames(b: MigrationReconciliationBreakDto): string[] {
+  const d = (b.detail_json ?? {}) as Record<string, unknown>;
+  const vm = (d.volatility_match ?? d.volatilityMatch ?? null) as
+    | Record<string, unknown>
+    | null;
+  const raw =
+    (vm?.tolerated_header_names as unknown) ??
+    (vm?.toleratedHeaderNames as unknown) ??
+    null;
+  return Array.isArray(raw)
+    ? (raw.filter((n) => typeof n === 'string') as string[])
+    : [];
+}
+
+/**
+ * The stateful-sequence diagnostic types the reconcile sub-runner emits
+ * (Spec 2026-06-18 Stateful Sequence Scenarios -- Spec D, Task Group 3).
+ */
+const SEQUENCE_DIAGNOSTIC_TYPES = new Set<string>([
+  'sequence_skipped',
+  'sequence_setup_failed',
+  'sequence_cleanup_failed',
+  'sequence_residual_pollution',
+]);
+
+/** Short human label for a sequence diagnostic type. */
+function sequenceDiagnosticLabel(type: string): string {
+  switch (type) {
+    case 'sequence_skipped':
+      return 'Sequence skipped (no mutating confirmation)';
+    case 'sequence_setup_failed':
+      return 'Sequence setup failed';
+    case 'sequence_cleanup_failed':
+      return 'Sequence cleanup failed';
+    case 'sequence_residual_pollution':
+      return 'Residual pollution';
+    default:
+      return type;
+  }
+}
+
+/**
+ * Read the stateful-sequence signals off a break's `detail_json` (Spec D,
+ * Task Group 4). A sequence break is the sequence's ACT step fully diffed, so
+ * it pairs + classifies exactly like a single-shot break; this reader surfaces
+ * (a) WHETHER the break came from a sequence act step and (b) the sequence
+ * diagnostics (skipped / setup-failed / cleanup-failed / residual-pollution)
+ * plus the cleanup / residual-pollution flags so the panel can render them
+ * distinctly. Read DEFENSIVELY, tolerating snake/camel field names and both
+ * a `{ diagnostic_type, message }` list and a bare string list. A break with
+ * NO sequence fields (every single-shot break + legacy break) returns the
+ * empty/false shape and nothing extra renders -- graceful degrade, no crash.
+ */
+function readSequenceDetail(b: MigrationReconciliationBreakDto): {
+  fromSequence: boolean;
+  cleanupFailed: boolean;
+  residualPollution: boolean;
+  diagnostics: { type: string; message: string }[];
+} {
+  const d = (b.detail_json ?? {}) as Record<string, unknown>;
+  const fromSequence =
+    d.from_sequence === true ||
+    d.fromSequence === true ||
+    d.is_sequence === true ||
+    d.isSequence === true ||
+    d.sequence_act === true ||
+    d.sequenceAct === true;
+  const cleanupFailed =
+    d.sequence_cleanup_failed === true || d.sequenceCleanupFailed === true;
+  const residualPollution =
+    d.sequence_residual_pollution === true ||
+    d.sequenceResidualPollution === true;
+
+  const rawDiags =
+    (d.sequence_diagnostics as unknown) ??
+    (d.sequenceDiagnostics as unknown) ??
+    null;
+  const diagnostics: { type: string; message: string }[] = [];
+  if (Array.isArray(rawDiags)) {
+    for (const entry of rawDiags) {
+      if (typeof entry === 'string') {
+        if (SEQUENCE_DIAGNOSTIC_TYPES.has(entry)) {
+          diagnostics.push({ type: entry, message: '' });
+        }
+        continue;
+      }
+      if (!entry || typeof entry !== 'object') continue;
+      const obj = entry as Record<string, unknown>;
+      const type =
+        typeof obj.diagnostic_type === 'string'
+          ? obj.diagnostic_type
+          : typeof obj.diagnosticType === 'string'
+            ? obj.diagnosticType
+            : typeof obj.type === 'string'
+              ? obj.type
+              : '';
+      if (!type) continue;
+      const message =
+        typeof obj.message === 'string' ? obj.message : '';
+      diagnostics.push({ type, message });
+    }
+  }
+  return { fromSequence, cleanupFailed, residualPollution, diagnostics };
 }
 
 /** Human label for a disposition status. */
@@ -372,6 +536,13 @@ const BreakVolatilityDetail: React.FC<{
     () => readBreakVolatility(breakRow),
     [breakRow],
   );
+  // Spec 2026-06-17 (R-volatile audit): the allowlisted header NAMES whose VALUE
+  // changes the gateway tolerated as volatile, recorded on
+  // detail_json.volatility_match. Surfaced alongside the volatile body paths.
+  const toleratedHeaderNames = useMemo(
+    () => readToleratedHeaderNames(breakRow),
+    [breakRow],
+  );
   const { operation } = breakDetail(breakRow);
   const isInfo = breakRow.disposition_status === BREAK_DISPOSITION.INFO;
 
@@ -386,7 +557,11 @@ const BreakVolatilityDetail: React.FC<{
 
   // The volatility METADATA block (path list + source badge + the info marker)
   // shows when the break actually carries volatility info or is down-ranked.
-  const hasVolatility = paths.length > 0 || sources.length > 0 || isInfo;
+  const hasVolatility =
+    paths.length > 0 ||
+    sources.length > 0 ||
+    toleratedHeaderNames.length > 0 ||
+    isInfo;
   // The DECLARE control shows whenever the reviewer can still act AND there is a
   // concrete operation to declare against.
   const showDeclare = declarable && operation.length > 0;
@@ -448,6 +623,26 @@ const BreakVolatilityDetail: React.FC<{
           ))}
         </ul>
       )}
+      {/* Spec 2026-06-17 (R-volatile): the tolerated allowlisted header NAMES
+          whose VALUE changes were auto-tolerated as volatile -- shown the same
+          way as the volatile body paths so the reviewer sees exactly which
+          header values were tolerated (header presence/absence is NEVER
+          tolerated and would have kept the break open). */}
+      {toleratedHeaderNames.length > 0 && (
+        <div data-testid={`mdd-recon-break-tolerated-headers-${id}`}>
+          <div>Tolerated volatile header value(s):</div>
+          <ul className={styles.defineTestsBannerList}>
+            {toleratedHeaderNames.map((h) => (
+              <li
+                key={h}
+                data-testid={`mdd-recon-break-tolerated-header-${id}-${h}`}
+              >
+                <code>{h}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {collapsible && (
         <button
           type="button"
@@ -494,6 +689,106 @@ const BreakVolatilityDetail: React.FC<{
             Declare volatile
           </button>
         </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// Sequence detail sub-component (Spec D, Task Group 4)
+// ============================================================================
+
+/**
+ * Render a sequence break's distinct signals, reusing the existing metadata
+ * styling: a "from sequence act step" badge, a residual-pollution / cleanup
+ * warning, and the list of sequence diagnostics (skipped / setup-failed /
+ * cleanup-failed / residual-pollution) read off the break detail. Renders
+ * nothing when the break carries no sequence signals (every single-shot
+ * break) -- graceful degrade, NO new colour system, NO charting widget.
+ */
+const BreakSequenceDetail: React.FC<{
+  breakRow: MigrationReconciliationBreakDto;
+}> = ({ breakRow }) => {
+  const id = breakRow.id ?? '';
+  const { fromSequence, cleanupFailed, residualPollution, diagnostics } =
+    useMemo(() => readSequenceDetail(breakRow), [breakRow]);
+
+  // Nothing sequence-related on this break -> render exactly as a single-shot
+  // break (no extra rows).
+  if (
+    !fromSequence &&
+    !cleanupFailed &&
+    !residualPollution &&
+    diagnostics.length === 0
+  ) {
+    return null;
+  }
+
+  const hasPollution = residualPollution || cleanupFailed;
+
+  return (
+    <div
+      className={styles.needsAttentionReason}
+      data-testid={`mdd-recon-break-sequence-${id}`}
+      data-from-sequence={fromSequence ? 'true' : 'false'}
+    >
+      {fromSequence && (
+        <div>
+          <span
+            className={styles.badge}
+            data-testid={`mdd-recon-break-sequence-badge-${id}`}
+          >
+            From sequence act step
+          </span>{' '}
+          This break is the ACT step of a pinned stateful sequence (setup -&gt;
+          act -&gt; cleanup); the setup steps were asserted and the act response
+          fully diffed.
+        </div>
+      )}
+
+      {hasPollution && (
+        <div
+          className={styles.badgeRow}
+          data-testid={`mdd-recon-break-sequence-pollution-${id}`}
+          style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 4 }}
+        >
+          {cleanupFailed && (
+            <span
+              className={`${styles.badge} ${styles.badgeSpecWarning ?? styles.badge}`}
+              data-testid={`mdd-recon-break-sequence-cleanup-failed-${id}`}
+              title="A cleanup step failed (best-effort); the created resource may be left in place."
+            >
+              Cleanup failed
+            </span>
+          )}
+          {residualPollution && (
+            <span
+              className={`${styles.badge} ${styles.badgeSpecWarning ?? styles.badge}`}
+              data-testid={`mdd-recon-break-sequence-residual-pollution-${id}`}
+              title="A created resource was left on the target (bounded, flagged residual pollution -- never pretended clean)."
+            >
+              Residual pollution
+            </span>
+          )}
+        </div>
+      )}
+
+      {diagnostics.length > 0 && (
+        <ul
+          className={styles.defineTestsBannerList}
+          data-testid={`mdd-recon-break-sequence-diagnostics-${id}`}
+        >
+          {diagnostics.map((diag, di) => (
+            <li
+              key={`${diag.type}-${di}`}
+              data-testid={`mdd-recon-break-sequence-diagnostic-${id}-${diag.type}`}
+              data-diagnostic-type={diag.type}
+            >
+              <strong>{sequenceDiagnosticLabel(diag.type)}</strong>
+              {diag.message ? `: ${diag.message}` : ''}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -883,6 +1178,11 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
               const terminal = isTerminal(b);
               const escalated = isEscalated(b);
               const match = netNewMatch(b);
+              // Spec 2026-06-17 (R1 + R2): the derived per-dimension break_type
+              // set off detail_json. Empty for a legacy break / source_only /
+              // target_only diff -> the badges row is omitted and only the
+              // existing drift summary renders (graceful degrade, no crash).
+              const breakTypes = readBreakTypes(b);
               return (
                 <tr key={id} data-testid={`mdd-recon-break-row-${id}`}>
                   <td>
@@ -899,6 +1199,39 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
                     <strong>{method}</strong> {path}
                   </td>
                   <td>
+                    {/* Spec 2026-06-17 (R1 + R2): one small badge per drifted
+                        response dimension (status / headers / body-shape /
+                        body-value / ordering) read off detail_json.break_types,
+                        reusing the existing chip palette -- NO new colour system,
+                        NO charting widget. Omitted entirely when the set is empty
+                        (legacy break / source_only / target_only) so the existing
+                        drift summary stands alone. */}
+                    {breakTypes.length > 0 && (
+                      <div
+                        className={styles.badgeRow}
+                        data-testid={`mdd-recon-break-types-${id}`}
+                        style={{
+                          display: 'flex',
+                          gap: 4,
+                          flexWrap: 'wrap',
+                          marginBottom: 4,
+                        }}
+                      >
+                        {breakTypes.map((t) => (
+                          <span
+                            key={t}
+                            className={styles.badge}
+                            data-testid={`mdd-recon-break-type-${id}-${t}`}
+                            data-break-type={t}
+                            title={`This break diverged on the ${breakTypeLabel(
+                              t,
+                            )} dimension.`}
+                          >
+                            {breakTypeLabel(t)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {summary || '—'}
                     {/* D6: the matched work-item reference for an auto-recognised
                         additive net_new endpoint -- surfaced inline, NOT hidden. */}
@@ -923,6 +1256,12 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
                         void handleDeclareVolatile(op, paths)
                       }
                     />
+                    {/* Spec D (2026-06-18): a sequence break is the act step
+                        fully diffed -- surface that it came from a sequence,
+                        plus the cleanup / residual-pollution flags + the
+                        sequence diagnostics read off the break detail. Renders
+                        nothing for a single-shot break (graceful degrade). */}
+                    <BreakSequenceDetail breakRow={b} />
                   </td>
                   <td>
                     <span
