@@ -353,12 +353,14 @@ describe('orchestrator -- intent-driven canonical capture', () => {
   it('not_found scenario with captures [400 fumble, 404] keeps the 404 and rejects the 400', async () => {
     // The orchestrator's intent comes from scenario.expectedStatus. A required
     // path-param op makes defaultScenarioSet emit, IN ORDER:
-    //   1. happy_path     (success)      -> [200]
-    //   2. not_found_id   (not_found)    -> [400 fumble, 404]
-    //   3. bad_request_id (client_error) -> [400]
-    // so we script all three deterministically. The ONLY non-canonical capture
-    // is the not_found scenario's 400 fumble; happy keeps its 200, not_found
-    // keeps its 404, bad_request keeps its single 400 (its intended outcome).
+    //   1. happy_path          (success)      -> [200]
+    //   2. not_found_id        (not_found)    -> [400 fumble, 404]
+    //   3. bad_request_id      (client_error) -> [400]
+    //   4. bad_request_id_type (client_error) -> [400]
+    //   5. edge_id             (not_found)    -> [404]
+    // so we script all five deterministically. The ONLY non-canonical capture
+    // is the not_found scenario's 400 fumble; every other scenario keeps the
+    // single capture matching its intended outcome.
     const op = buildOperationRow({
       method: 'GET',
       path: '/things/{id}',
@@ -389,8 +391,9 @@ describe('orchestrator -- intent-driven canonical capture', () => {
 
     // Creation order -> capture ids:
     //   capture-1 = happy 200; capture-2 = not_found 400 fumble;
-    //   capture-3 = not_found 404; capture-4 = bad_request 400.
-    stubHttpExecutorSequence([200, 400, 404, 400]);
+    //   capture-3 = not_found 404; capture-4 = bad_request 400;
+    //   capture-5 = bad_request_type 400; capture-6 = edge 404.
+    stubHttpExecutorSequence([200, 400, 404, 400, 400, 404]);
     const ams = buildMockAms();
     const gateway = buildGateway([
       // happy_path: one 200 attempt + terminal note
@@ -403,6 +406,12 @@ describe('orchestrator -- intent-driven canonical capture', () => {
       // bad_request: one 400 attempt (its intended outcome) + terminal note
       execMessage('tc-b1'),
       noteMessage(),
+      // bad_request_type: one 400 attempt (intended) + terminal note
+      execMessage('tc-t1'),
+      noteMessage(),
+      // edge (boundary id -> 404): one attempt + terminal note
+      execMessage('tc-e1'),
+      noteMessage(),
     ]);
 
     const outcome = await orchestrateCaptureSession(toCaptureSession(buildSessionDto()), {
@@ -412,15 +421,15 @@ describe('orchestrator -- intent-driven canonical capture', () => {
       persistedOperations: [op],
     });
 
-    // Three scenarios, all captured (each kept the capture matching its intent).
-    expect(outcome.scenariosAttempted).toBe(3);
-    expect(outcome.scenariosCompleted).toBe(3);
+    // Five scenarios, all captured (each kept the capture matching its intent).
+    expect(outcome.scenariosAttempted).toBe(5);
+    expect(outcome.scenariosCompleted).toBe(5);
     expect(outcome.scenariosErrored).toBe(0);
 
-    // Four captures persisted (200, 400, 404, 400). Exactly ONE reject: the
-    // not_found scenario's 400 fumble (capture-2). The 404 canonical and the
-    // bad_request 400 canonical are both untouched.
-    expect(ams.capturesCreated.map((c) => c.status)).toEqual([200, 400, 404, 400]);
+    // Six captures persisted (200, 400, 404, 400, 400, 404). Exactly ONE reject:
+    // the not_found scenario's 400 fumble (capture-2). Every canonical capture
+    // (incl. the two new id negatives + the boundary 404) is left untouched.
+    expect(ams.capturesCreated.map((c) => c.status)).toEqual([200, 400, 404, 400, 400, 404]);
     const notFoundFumble = ams.capturesCreated[1]; // capture-2, status 400
     const notFoundCanonical = ams.capturesCreated[2]; // capture-3, status 404
     const badRequestCanonical = ams.capturesCreated[3]; // capture-4, status 400

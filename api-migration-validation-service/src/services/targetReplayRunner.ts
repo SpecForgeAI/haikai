@@ -1,4 +1,6 @@
 import { archModelClient as defaultArchModelClient } from './archModelClient';
+import { redactUrl } from './redactor';
+import { normaliseBodyForAms } from './amsBodyEnvelope';
 import type {
   BaselineDto,
   BaselineItemDto,
@@ -596,13 +598,13 @@ export async function runTargetReplay(
           request_method: req.method,
           request_path: req.path,
           // Issue 1: AMS REQUIRES a non-blank request_url_redacted (else 400).
-          request_url_redacted:
+          request_url_redacted: redactUrl(
             ((session.api_base_url ?? '').replace(/\/+$/, '') +
               (req.path.startsWith('/') ? req.path : `/${req.path}`)) ||
-            req.path,
+            req.path),
           request_query_json: req.query ?? null,
           request_headers_redacted_json: req.headers ?? null,
-          request_body_json: req.body ?? null,
+          request_body_json: normaliseBodyForAms(req.body),
           response_status: response.status,
           response_headers_redacted_json:
             response.headers && typeof response.headers === 'object'
@@ -613,7 +615,7 @@ export async function runTargetReplay(
                   ]),
                 ) as Record<string, string>)
               : null,
-          response_body_json: response.data ?? null,
+          response_body_json: normaliseBodyForAms(response.data),
           duration_ms: now() - requestStartedAt,
           error_type: null,
           error_message: null,

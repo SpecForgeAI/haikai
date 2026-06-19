@@ -12,6 +12,10 @@
  *   + JAXB DTO source for envelope construction). The propose-endpoints
  *   tool (Group 5) is intentionally NOT registered here -- its invocation
  *   point is the Step 4 wizard button, not a per-scenario LLM round-trip.
+ * Spec: 2026-06-18 Stateful Sequence Scenarios (Spec D) -- Task Group 2 adds
+ *   the terminal `pin_sequence` tool beside `record_capture_note` /
+ *   `record_scenario_candidate`; the LLM calls it to declare an ordered
+ *   setup -> act -> cleanup chain it has just exercised as ONE oracle unit.
  */
 
 import type { ToolDefinition } from '../../types/llm';
@@ -25,6 +29,7 @@ import { runReadonlySqlTool } from './run_readonly_sql';
 import { executeHttpRequestTool } from './execute_http_request';
 import { recordScenarioCandidateTool } from './record_scenario_candidate';
 import { recordCaptureNoteTool } from './record_capture_note';
+import { pinSequenceTool } from './pin_sequence';
 
 export const ALL_TOOLS: ReadonlyArray<ToolRegistryEntry> = [
   listOasOperationsTool,
@@ -36,6 +41,7 @@ export const ALL_TOOLS: ReadonlyArray<ToolRegistryEntry> = [
   executeHttpRequestTool,
   recordScenarioCandidateTool,
   recordCaptureNoteTool,
+  pinSequenceTool,
 ];
 
 export function buildToolRegistry(

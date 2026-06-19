@@ -1,7 +1,7 @@
 import { AxiosError, AxiosResponse } from 'axios';
 import { ToolHandler, ToolRegistryEntry, ToolValidationError } from './toolTypes';
 import { extractIdentifierFacts } from './_idFacts';
-import { redactHeaders, redactJson } from '../redactor';
+import { redactHeaders, redactJson, redactUrl } from '../redactor';
 import { HttpMethod } from '../../types/oas';
 import { runManager } from '../runManager';
 import { LLM_HTTP_ATTEMPTS_PER_SCENARIO } from '../../config';
@@ -11,27 +11,12 @@ import {
 } from '../volatilityProbe';
 import { coerceAuthMode, resolveAuthOverride } from '../authOverride';
 import { createTracer } from '../../trace';
+import { normaliseBodyForAms } from '../amsBodyEnvelope';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. DETAIL events live on the capture
 // internals -- the path we debug when a capture run goes wrong.
 const trace = createTracer('capture-svc');
-
-/**
- * Issue 2: AMS stores `request_body_json` / `response_body_json` as
- * `Map<String,Object>` (Jackson). A non-object body -- an HTML/text error page
- * (e.g. a 500 / 415), a plain string, or a top-level JSON array -- cannot
- * deserialize into a Map, so the `createCapture` POST fails with HTTP 400. Wrap
- * any non-plain-object value in a `{ _raw, _type }` envelope so the shape is
- * preserved AND Map-deserializable. `null`/`undefined` pass through as `null`.
- */
-function normaliseBodyForAms(value: unknown): Record<string, unknown> | null {
-  if (value === undefined || value === null) return null;
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return { _raw: value, _type: Array.isArray(value) ? 'array' : typeof value };
-}
 
 /**
  * Fix 6: distill a SHORT one-line cause from a non-2xx HTML/text error body.
@@ -551,8 +536,9 @@ const handler: ToolHandler = async (args, ctx) => {
   // it from the session base URL + path; auth secrets live in headers (redacted
   // separately), not in base+path.
   const urlBase = (ctx.session.apiBaseUrl ?? '').replace(/\/+$/, '');
-  const requestUrlRedacted =
-    (path.startsWith('/') ? `${urlBase}${path}` : `${urlBase}/${path}`) || path || 'unknown';
+  const requestUrlRedacted = redactUrl(
+    (path.startsWith('/') ? `${urlBase}${path}` : `${urlBase}/${path}`) || path || 'unknown',
+  );
 
   // Fix 6 (persist side): for a non-2xx response, prefer the distilled
   // `errorSummary` for the capture row's `error_message` so the buried fault

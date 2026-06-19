@@ -87,7 +87,7 @@ describe('seedsForOperation', () => {
 });
 
 describe('defaultScenarioSet', () => {
-  it('falls back to a single happy_path when no context (no params)', () => {
+  it('param-less endpoint (no params/body) yields a single happy_path', () => {
     const result = defaultScenarioSet(makeOp('GET', '/owners'));
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -97,15 +97,43 @@ describe('defaultScenarioSet', () => {
     });
   });
 
-  it('falls back to a single happy_path when no seed set matches (no params)', () => {
+  it('param-less endpoint with an empty seed set still yields a single happy_path', () => {
     const ctx = makeContext({ scenarioSeeds: [] });
     const result = defaultScenarioSet(makeOp('GET', '/owners'), ctx);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
-      name: 'happy_path',
-      type: 'happy_path',
-      expectedStatus: 'success',
-    });
+    expect(result.map((s) => s.name)).toEqual(['happy_path']);
+  });
+
+  it('simple GET /{id} reaches a floor of 5 (happy + 404 + two 400s + boundary)', () => {
+    const oasOp = {
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    };
+    const result = defaultScenarioSet(makeOp('GET', '/things/{id}'), undefined, oasOp);
+    const names = result.map((s) => s.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'happy_path',
+        'not_found_id',
+        'bad_request_id',
+        'bad_request_id_type',
+        'edge_id',
+      ]),
+    );
+    expect(result.length).toBeGreaterThanOrEqual(5);
+    // Two distinct intended 400s (format + wrong-type) on the id param.
+    const clientErrors = result.filter((s) => s.expectedStatus === 'client_error').map((s) => s.name);
+    expect(clientErrors).toEqual(expect.arrayContaining(['bad_request_id', 'bad_request_id_type']));
+  });
+
+  it('body-bearing endpoint with no params gets a malformed-body 400 (floor of 2)', () => {
+    const oasOp = {
+      requestBody: { content: { 'application/json': { schema: { type: 'object' } } } },
+    };
+    const result = defaultScenarioSet(makeOp('POST', '/things'), undefined, oasOp);
+    const names = result.map((s) => s.name);
+    expect(names).toContain('happy_path');
+    expect(names).toContain('bad_request_body');
+    expect(result.find((s) => s.name === 'bad_request_body')?.expectedStatus).toBe('client_error');
+    expect(result.length).toBeGreaterThanOrEqual(2);
   });
 
   it('expands to one scenario per seed when a seed set matches', () => {

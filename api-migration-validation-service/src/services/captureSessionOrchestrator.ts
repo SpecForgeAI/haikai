@@ -889,7 +889,7 @@ async function runAuthNegativeProbes(
 }
 
 /** Coverage caps so a param-rich endpoint gets thorough -- but bounded -- coverage. */
-const MAX_SCENARIOS_PER_OP = 10;
+const MAX_SCENARIOS_PER_OP = 12;
 const MAX_ENUM_VALUES_PER_PARAM = 4;
 
 /** Classify a discovery-seed scenario name into an expected-outcome class. */
@@ -932,9 +932,11 @@ function extractOasParams(
 
 /**
  * Build the scenario set for one operation. Scales coverage to the operation's
- * parameter space (your-ask #2 / thoroughness): a bare `GET /x/{id}` yields a
- * few scenarios (happy / not-found / bad-request), while a parameter-rich
- * endpoint yields up to `MAX_SCENARIOS_PER_OP` -- one per enum value (each
+ * parameter space (your-ask #2 / thoroughness): a bare `GET /{id}` yields 5
+ * (happy / not-found / 2x bad-request / boundary id), a body-bearing endpoint
+ * at least 2 (happy + malformed-body), a param-less body-less endpoint just the
+ * happy path, while a parameter-rich endpoint yields up to `MAX_SCENARIOS_PER_OP`
+ * -- one per enum value (each
  * likely exercises a distinct code path we want to replicate), a filter
  * combination, and negatives -- all derived from the now fix-1-enriched param
  * schemas (`oasOperation.parameters` carry `enum`/`format`). Each scenario
@@ -1031,6 +1033,47 @@ export function defaultScenarioSet(
       directive:
         `Send a MALFORMED ${malformTarget.name} that violates its declared format/pattern (e.g. wrong ` +
         'date format, out-of-enum value); expect a 4xx validation error. INTENDED negative case to capture.',
+    });
+  }
+
+  // 3e. Malformed request BODY -> 4xx. Covers body-bearing endpoints that have
+  // no malformable path/query param (e.g. POST /things), raising their floor
+  // from 1 (happy only) to >=2.
+  const hasRequestBody =
+    !!oasOperation &&
+    typeof oasOperation === 'object' &&
+    !!(oasOperation as Record<string, unknown>).requestBody;
+  if (hasRequestBody) {
+    add({
+      name: 'bad_request_body',
+      type: 'bad_request',
+      expectedStatus: 'client_error',
+      directive:
+        'Send a MALFORMED request body that violates the schema (wrong field types, a missing ' +
+        'required field, or an invalid enum/format value); expect a 4xx validation error. INTENDED negative case.',
+    });
+  }
+
+  // 3f. Extra path-id negatives so a simple GET /{id} reaches >=5: a wrong-TYPE
+  // malformation (distinct from the format violation in 3d) plus a boundary id.
+  if (pathParams.length > 0) {
+    const idp = pathParams[0];
+    add({
+      name: `bad_request_${idp.name}_type`,
+      type: 'bad_request',
+      expectedStatus: 'client_error',
+      directive:
+        `Send ${idp.name} with the WRONG DATA TYPE (e.g. a non-numeric string where a numeric id is ` +
+        'expected, or free text where a date/uuid is expected); expect a 4xx. Distinct from the ' +
+        'malformed-format case. INTENDED negative.',
+    });
+    add({
+      name: `edge_${idp.name}`,
+      type: 'not_found',
+      expectedStatus: 'not_found',
+      directive:
+        `Send a well-formed but BOUNDARY/extreme ${idp.name} (e.g. a very large value) that is absent ` +
+        'from the data; expect a 404. Captures boundary-id handling distinct from a random not-found.',
     });
   }
 
