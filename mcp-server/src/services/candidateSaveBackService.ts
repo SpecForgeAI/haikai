@@ -1122,6 +1122,78 @@ export function convertCandidateToEntity(
           entity.response_contract = responseContract;
         }
       }
+      // Per-endpoint REQUEST-contract capture (Spec 2026-06-19, Task Group 2):
+      // sibling to the response-contract pass-through above. The discovery
+      // scanner / adapter already writes the request-construction facts onto
+      // the candidate's `data` -- a pre-assembled structured `request_contract`
+      // block (Phase 2: param_formats / request_validation / provenance /
+      // confidence + embedded `schema_version`) AND/OR the loose Phase-1
+      // discriminator facts (`consumes` -> request media type, required
+      // `headers`/`requestHeaders`, `requestParams`). Map them onto the AMS
+      // `endpoints.request_contract` JSONB column (added in Task Group 1).
+      // Snake/camel-tolerant (accept `requestContract` too) and additive +
+      // nullable: ABSENT when no request facts are present -- leave the column
+      // UNSET (undefined -> ABSENT key) rather than overwriting an existing
+      // value with null, mirroring the response_contract / protocol-metadata
+      // idioms above. Today these facts (consumes/headers/requestParams/
+      // requestHeaders) reach `discovery_candidates.data` but die here -- this
+      // pass-through is the Phase-1 unblock.
+      {
+        // (1) A pre-assembled structured block rides through verbatim.
+        const requestContract = data.request_contract ?? data.requestContract;
+        if (requestContract !== undefined && requestContract !== null) {
+          entity.request_contract = requestContract;
+        } else {
+          // (2) Otherwise assemble from the loose adapter facts the scanner
+          // already produces. Each piece is additive + absent-key safe: a
+          // fact that is missing contributes NOTHING to the blob, and when
+          // no request facts are present at all the column is left UNSET.
+          const assembled: Record<string, unknown> = {};
+          // content_type: request media type(s) from the `consumes`
+          // discriminator (snake/camel-tolerant; array of media types).
+          const consumes = data.consumes ?? data.consumes_media_types;
+          if (Array.isArray(consumes) && consumes.length > 0) {
+            assembled.consumes = consumes;
+            assembled.content_type = consumes[0];
+          }
+          // required_headers: the mapping `headers` discriminators (always
+          // required to match the route) plus any required `@RequestHeader`
+          // params. Each entry is `{ name, source }`.
+          const requiredHeaders: Array<Record<string, unknown>> = [];
+          const headerDiscriminators = data.headers ?? data.header_discriminators;
+          if (Array.isArray(headerDiscriminators)) {
+            for (const h of headerDiscriminators) {
+              if (typeof h === 'string' && h.length > 0) {
+                requiredHeaders.push({ name: h, source: 'mapping-header' });
+              }
+            }
+          }
+          const requestHeaders = data.requestHeaders ?? data.request_headers;
+          if (Array.isArray(requestHeaders)) {
+            for (const rh of requestHeaders) {
+              if (rh && typeof rh === 'object' && (rh as any).required === true) {
+                requiredHeaders.push({
+                  name: (rh as any).name,
+                  source: '@RequestHeader',
+                });
+              }
+            }
+          }
+          if (requiredHeaders.length > 0) {
+            assembled.required_headers = requiredHeaders;
+          }
+          // params: `@RequestParam` request inputs the scanner captured.
+          const requestParams = data.requestParams ?? data.request_params;
+          if (Array.isArray(requestParams) && requestParams.length > 0) {
+            assembled.params = requestParams;
+          }
+          // Only attach the assembled blob when at least one request fact was
+          // present -- otherwise leave the column UNSET (absent key, not null).
+          if (Object.keys(assembled).length > 0) {
+            entity.request_contract = assembled;
+          }
+        }
+      }
       break;
 
     case 'physical_data_attributes':

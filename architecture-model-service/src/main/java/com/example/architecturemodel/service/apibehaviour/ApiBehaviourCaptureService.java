@@ -103,7 +103,10 @@ public class ApiBehaviourCaptureService {
             .errorType(request.errorType())
             .errorMessage(request.errorMessage())
             .capturedAt(request.capturedAt() == null ? Instant.now() : request.capturedAt())
-            .accepted(request.accepted() == null ? Boolean.FALSE : request.accepted())
+            // Pass null through = un-reviewed (blank in UI). Previously coerced to
+            // FALSE, which mis-rendered fresh captures as "rejected" pre-review.
+            // The canonical-capture pass or a human reviewer sets TRUE/FALSE later.
+            .accepted(request.accepted())
             .acceptedAt(request.acceptedAt())
             .reviewerNotes(request.reviewerNotes())
             // Write-once at capture create time -- the volatility envelope the

@@ -39,6 +39,7 @@ import {
 import { discoveryServiceClient as defaultDiscoveryServiceClient } from '../services/discoveryServiceClient';
 import type { DiscoveryServiceClient } from '../services/discoveryServiceClient';
 import { createTracer } from '../trace';
+import { enrichInventoryWithRequestContracts } from '../services/requestContractEnrichment';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
 // is set). See docs/trace-logging.md. The /start orchestration writes the
@@ -1704,6 +1705,38 @@ export function buildCaptureSessionActionsRouter(
           warnings.push('context_unavailable');
           discoveryContext = undefined;
         }
+      }
+
+      // ----------------------------------------------------------------
+      // Capture-time OAS enrichment from AMS request_contract code evidence
+      // (2026-06-19 Request Contract from Code Evidence, Task Group 3; R1 =
+      // iii). After the inventory + discovery context are in scope, fetch the
+      // AMS endpoint rows (each carrying a non-reviewed request_contract JSONB
+      // mined from the code scan) and MERGE their Phase-1 facts -- request
+      // content-type + required headers -- into the matching in-memory OAS
+      // operation by method+path. This is an OVERRIDE where code-evidence and
+      // the contract disagree (provenance-tagged x-amvs-source: code-scan, R3);
+      // where the code is silent the contract value stands. The SAME inventory
+      // object reference is passed to spawnOrchestrator below, so all three
+      // consumers (get_oas_operation_detail, defaultScenarioSet.extractOasParams,
+      // and the executor Content-Type default) see the enriched values.
+      //
+      // FAIL-SOFT (mirrors the discovery-context fetch above): any AMS error or
+      // unmatched endpoint leaves the contract-derived OAS unchanged and never
+      // blocks /start. The enrichment helper is itself total, but the AMS fetch
+      // is wrapped so a transport / 4xx / 5xx failure is downgraded to a no-op.
+      // ----------------------------------------------------------------
+      try {
+        const endpointsForArch = await archModelClient.listEndpointsForArchitecture(
+          projectId,
+          session.architecture_id,
+        );
+        enrichInventoryWithRequestContracts(inventory, endpointsForArch);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[captureSessionActions] request_contract enrichment skipped for session ${sessionId}: ${msg} -- continuing with the contract-derived OAS`,
+        );
       }
 
       // Transition to `running` BEFORE spawning the orchestrator so any

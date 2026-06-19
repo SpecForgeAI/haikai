@@ -4371,3 +4371,69 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 193-capture-accepted-nullable
+  # Spec: Capture-Review Reviewer Column Bug Fix (2026-06-19).
+  #
+  # BUG: a freshly-captured api_behaviour_captures row defaulted to
+  # accepted = FALSE, so the capture-review "Reviewer" column showed "rejected"
+  # before any human/auto review. Pre-review state should be UN-REVIEWED
+  # (NULL -> blank), distinct from an explicit reviewer rejection (FALSE).
+  #
+  # Makes accepted nullable defaulting NULL: DROP DEFAULT (no auto-FALSE on
+  # insert) + DROP NOT NULL (NULL is a valid persisted state). NO backfill --
+  # existing FALSE rows stay as-is. Save-as-baseline eligibility
+  # (findBySessionIdAndAcceptedTrueOrderByCapturedAtAsc) still matches
+  # accepted = TRUE only, so NULL is treated as NOT-accepted (NULL <> TRUE).
+  #
+  # New changeset only (192 is the highest on disk at build time) -- never edit
+  # applied changesets. Column-only ALTER -> columnExists precondition on the
+  # accepted column (mirrors the sibling sqlFile entry idiom; onError: HALT).
+  # ============================================================================
+  - changeSet:
+      id: 193-capture-accepted-nullable
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - columnExists:
+            tableName: api_behaviour_captures
+            columnName: accepted
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/193-capture-accepted-nullable.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Per-endpoint request-contract capture for Discovery (Spec: 2026-06-19)
+  # -- Task Group 1. Adds:
+  #   endpoints.request_contract (JSONB) -- the per-endpoint REQUEST CONTRACT
+  #     (how a correctly-formatted request is constructed): content_type/
+  #     consumes[], required_headers[], param_formats[], request_validation[],
+  #     provenance, a boxed-Double confidence, and an internal schema_version --
+  #     all INSIDE the one JSONB blob (no separate columns). Code-scan
+  #     provenance, NON-REVIEWED. Metadata ON the endpoint entity, NOT a new
+  #     entity/relationship type.
+  # Mirrors the 168-endpoint-response-contract additive-JSONB-on-entity
+  # precedent exactly; snake_case wire, no @CamelCaseWire. NEW changeset only
+  # -- never edit an applied changeset. One columnExists guard.
+  # ============================================================================
+  - changeSet:
+      id: 194-endpoint-request-contract
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: endpoints
+              columnName: request_contract
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/194-endpoint-request-contract.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

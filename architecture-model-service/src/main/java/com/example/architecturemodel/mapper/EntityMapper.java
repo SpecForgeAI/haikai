@@ -399,7 +399,8 @@ public class EntityMapper {
             entity.getRequestDataEntityPointId(),
             entity.getResponseDataEntityPointId(),
             entity.getProtocolMetadataJson(),
-            entity.getResponseContract()
+            entity.getResponseContract(),
+            entity.getRequestContract()
         );
     }
 
@@ -428,6 +429,7 @@ public class EntityMapper {
             .responseDataEntityPointId(dto.responseDataEntityPointId())
             .protocolMetadataJson(dto.protocolMetadataJson())
             .responseContract(dto.responseContract())
+            .requestContract(dto.requestContract())
             .build();
     }
 

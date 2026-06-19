@@ -206,7 +206,17 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
           method: op?.method ?? cap.request_method ?? null,
           path: op?.path ?? cap.request_path ?? null,
           scenario_name: scenario?.scenario_name ?? null,
-          request_json: cap.request_body_json,
+          // AMS requires request_json to be a NON-NULL object (jsonb NOT NULL,
+          // validated "requestJson is required"). A body-less GET has
+          // request_body_json=null, which 400'd EVERY save once an accepted GET
+          // capture was included. Pin a { query, headers, body } envelope --
+          // never null, and symmetric with the target side (targetReplayRunner)
+          // and the response_json envelope below.
+          request_json: {
+            query: cap.request_query_json ?? null,
+            headers: cap.request_headers_redacted_json ?? null,
+            body: cap.request_body_json ?? null,
+          },
           response_status: cap.response_status,
           // Pin the source baseline item's response as a { headers, body }
           // envelope SYMMETRIC with the target side (targetReplayRunner stores

@@ -105,10 +105,13 @@ export const LLM_SCENARIO_WALL_CLOCK_MS: number =
  * boundary via `runManager.beginScenario`.
  *
  * Spec: 2026-05-16 API Behaviour Capture Fixes -- Decision D7.
- * Default: 3.
+ * Raised 3 -> 5 (2026-06-19) to give the LLM more room to self-correct a
+ * request within a scenario (e.g. a per-API date format / content-type) before
+ * `retry_exhausted` fires.
+ * Default: 5.
  */
 export const LLM_HTTP_ATTEMPTS_PER_SCENARIO: number =
-  parseInt(process.env.LLM_HTTP_ATTEMPTS_PER_SCENARIO || '3', 10);
+  parseInt(process.env.LLM_HTTP_ATTEMPTS_PER_SCENARIO || '5', 10);
 
 /**
  * Per-call token cap for the Workstream A `propose_endpoints_from_code`

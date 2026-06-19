@@ -130,12 +130,14 @@ public class ApiBehaviourCaptureEntity {
 
     /**
      * Reviewer flag. Boxed {@link Boolean} so PATCH preserves {@code null}.
-     * Only accepted captures are eligible to land in {@code baseline_items}
-     * on save-as-baseline.
+     * {@code null} = un-reviewed (the default for a freshly-captured row until
+     * the canonical-capture pass or a human reviewer sets it); {@code TRUE} =
+     * accepted, {@code FALSE} = explicitly rejected. Only {@code TRUE} captures
+     * are eligible to land in {@code baseline_items} on save-as-baseline
+     * ({@code null} is treated as NOT-accepted).
      */
-    @Column(name = "accepted", nullable = false)
-    @Builder.Default
-    private Boolean accepted = Boolean.FALSE;
+    @Column(name = "accepted", nullable = true)
+    private Boolean accepted;
 
     @Column(name = "accepted_at")
     private Instant acceptedAt;

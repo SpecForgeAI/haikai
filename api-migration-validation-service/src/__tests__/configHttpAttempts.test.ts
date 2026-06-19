@@ -28,11 +28,11 @@ describe('LLM_HTTP_ATTEMPTS_PER_SCENARIO config', () => {
     }
   });
 
-  it('defaults to 3 when the env var is unset', () => {
+  it('defaults to 5 when the env var is unset', () => {
     jest.isolateModules(() => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
       const config = require('../config');
-      expect(config.LLM_HTTP_ATTEMPTS_PER_SCENARIO).toBe(3);
+      expect(config.LLM_HTTP_ATTEMPTS_PER_SCENARIO).toBe(5);
     });
   });
 

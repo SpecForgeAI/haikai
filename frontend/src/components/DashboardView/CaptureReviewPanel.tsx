@@ -482,6 +482,73 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
     [projectId, architectureId, rejectNotesDraft],
   );
 
+  // ---- Bulk mutators ---------------------------------------------------
+  // Bulk accept/reject iterate the *visible* captures sequentially (mirroring
+  // the per-row handlers + the existing bulk-create pattern), PATCHing each
+  // with the SAME body the per-row accept/reject use. Each PATCH is
+  // best-effort: a single failure is surfaced via setError but does NOT abort
+  // the loop. Accepted/returned DTOs are merged back into local state the same
+  // way handleAccept does (optimistic merge of the returned row), so the table
+  // + accepted tally update without a full reload.
+
+  const handleAcceptAll = useCallback(async () => {
+    if (visibleCaptures.length === 0) return;
+    setActionInFlight("bulk");
+    let lastError: unknown = null;
+    try {
+      for (const capture of visibleCaptures) {
+        try {
+          const updated = await updateCapture(projectId, architectureId, capture.id, {
+            accepted: true,
+            accepted_at: new Date().toISOString(),
+          });
+          setCaptures((prev) =>
+            prev.map((c) => (c.id === capture.id ? updated : c)),
+          );
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if (lastError) setError(describeError(lastError));
+    } finally {
+      setActionInFlight(null);
+    }
+  }, [projectId, architectureId, visibleCaptures]);
+
+  const handleRejectAll = useCallback(async () => {
+    if (visibleCaptures.length === 0) return;
+    const confirmed = window.confirm(
+      `Reject all ${visibleCaptures.length} captures? This clears any acceptance and cannot be undone in bulk.`,
+    );
+    if (!confirmed) return;
+    setActionInFlight("bulk");
+    let lastError: unknown = null;
+    try {
+      for (const capture of visibleCaptures) {
+        try {
+          const existing = parseReviewerNotes(capture.reviewer_notes);
+          const payload: ReviewerNotesPayload = {
+            text: "",
+            masks: existing.masks,
+          };
+          const updated = await updateCapture(projectId, architectureId, capture.id, {
+            accepted: false,
+            accepted_at: null,
+            reviewer_notes: serialiseReviewerNotes(payload),
+          });
+          setCaptures((prev) =>
+            prev.map((c) => (c.id === capture.id ? updated : c)),
+          );
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if (lastError) setError(describeError(lastError));
+    } finally {
+      setActionInFlight(null);
+    }
+  }, [projectId, architectureId, visibleCaptures]);
+
   const handleMaskSubmit = useCallback(
     async (capture: ApiBehaviourCaptureDto) => {
       const path = (maskPathDraft[capture.id] ?? '').trim();
@@ -602,6 +669,28 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
           >
             {acceptedCount} accepted
           </span>
+          {!readOnly && visibleCaptures.length > 0 && (
+            <>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void handleAcceptAll()}
+                disabled={actionInFlight !== null}
+                data-testid="capture-review-accept-all"
+              >
+                Accept all
+              </button>
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => void handleRejectAll()}
+                disabled={actionInFlight !== null}
+                data-testid="capture-review-reject-all"
+              >
+                Reject all
+              </button>
+            </>
+          )}
           {!readOnly && acceptedCount > 0 && (
             <button
               type="button"

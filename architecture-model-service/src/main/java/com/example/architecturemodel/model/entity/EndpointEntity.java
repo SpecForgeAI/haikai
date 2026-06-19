@@ -113,4 +113,33 @@ public class EndpointEntity {
     @Type(JsonType.class)
     @Column(name = "response_contract", columnDefinition = "jsonb")
     private Map<String, Object> responseContract;
+
+    /**
+     * Per-endpoint REQUEST CONTRACT block captured by the discovery
+     * request-contract scanner: how a correctly-formatted request to this
+     * endpoint is constructed -- request content-type, required headers, request
+     * param/field date-formats, and request-field validation -- mined from code
+     * evidence. Top-level keys: {@code content_type}, {@code consumes[]},
+     * {@code required_headers[]}, {@code param_formats[]},
+     * {@code request_validation[]}, {@code provenance}, {@code confidence}.
+     * JSONB blob; boxed reference type ({@link Map}) so a PATCH carrying no value
+     * preserves the existing column content.
+     *
+     * <p>The block embeds its OWN internal {@code schema_version} -- it is NOT a
+     * separate column, so the block shape evolves without a schema migration
+     * (mirroring {@code responseContract}). The embedded {@code confidence} is a
+     * {@link Double} inside this map shape -- never a top-level primitive column
+     * (a PATCH with no value preserves null rather than wiping to 0.0; see
+     * {@code project_primitive_double_dto_overwrite.md}).</p>
+     *
+     * <p>Stored via the Hypersistence {@link JsonType}, the identical
+     * JSONB-via-Hibernate idiom used by {@code responseContract} /
+     * {@code protocolMetadataJson}. A null/absent block round-trips cleanly
+     * (existing rows carry none -- additive + nullable).</p>
+     *
+     * <p>Spec: Request Contract from Code Evidence (2026-06-19) -- Task Group 1.</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "request_contract", columnDefinition = "jsonb")
+    private Map<String, Object> requestContract;
 }

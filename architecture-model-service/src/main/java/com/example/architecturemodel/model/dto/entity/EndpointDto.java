@@ -80,5 +80,60 @@ public record EndpointDto(
      * (2026-05-30) -- Task Group 1.</p>
      */
     @JsonProperty("response_contract")
-    Map<String, Object> responseContract
-) {}
+    Map<String, Object> responseContract,
+
+    /**
+     * Per-endpoint REQUEST CONTRACT blob (JSONB column on the {@code endpoints}
+     * table): how a correctly-formatted request is constructed -- request
+     * content-type, required headers, request param/field date-formats, and
+     * request-field validation -- mined from code evidence. Top-level keys
+     * {@code content_type}, {@code consumes[]}, {@code required_headers[]},
+     * {@code param_formats[]}, {@code request_validation[]}, {@code provenance},
+     * and a boxed {@link Double} {@code confidence}; the block embeds its own
+     * internal {@code schema_version} so its shape can evolve with no further
+     * migration.
+     *
+     * <p>Passthrough {@link Map} (reference type) so an omitted field on PATCH
+     * does NOT overwrite the existing column to {@code null}, and so the embedded
+     * {@code confidence} stays a boxed {@link Double} rather than wiping to 0.0
+     * (per {@code project_primitive_double_dto_overwrite.md}). snake_case wire key
+     * {@code "request_contract"}; consistent with this DTO's snake_case
+     * convention -- there is intentionally NO {@code @CamelCaseWire}.</p>
+     *
+     * <p>Spec: Request Contract from Code Evidence (2026-06-19) -- Task Group 1.</p>
+     */
+    @JsonProperty("request_contract")
+    Map<String, Object> requestContract
+) {
+
+    /**
+     * Backward-compatible 15-arg constructor (without {@code requestContract})
+     * so existing call sites that predate the {@code request_contract} field
+     * continue to compile. Delegates to the canonical 16-arg constructor with a
+     * {@code null} {@code requestContract} (additive + nullable; an absent block
+     * round-trips as {@code null}).
+     */
+    public EndpointDto(
+        String id,
+        String name,
+        String description,
+        String interfaceId,
+        String endpointType,
+        String pathOrAddress,
+        String protocol,
+        String operationVerb,
+        String direction,
+        String validFrom,
+        String validTo,
+        String requestDataEntityPointId,
+        String responseDataEntityPointId,
+        Map<String, Object> protocolMetadataJson,
+        Map<String, Object> responseContract
+    ) {
+        this(
+            id, name, description, interfaceId, endpointType, pathOrAddress,
+            protocol, operationVerb, direction, validFrom, validTo,
+            requestDataEntityPointId, responseDataEntityPointId,
+            protocolMetadataJson, responseContract, null);
+    }
+}

@@ -80,6 +80,55 @@ function extractErrorSummary(body: unknown, status: number): string | null {
 }
 
 /**
+ * Verbs for which the executor defaults a Content-Type even when the request
+ * carries NO body. A Tomcat / Jersey target rejects a body-less PUT / POST /
+ * PATCH with no Content-Type as HTTP 415 (the #3 failure: setFavourite /
+ * unsetFavourite / revertFilterPromotionRequest), so we default it for every
+ * mutating verb -- not only when a body is present.
+ *
+ * Spec: 2026-06-19 Request Contract from Code Evidence -- Task Group 4 (R4).
+ */
+const CONTENT_TYPE_DEFAULTING_VERBS: ReadonlySet<string> = new Set([
+  'put',
+  'post',
+  'patch',
+]);
+
+/**
+ * Resolve the request media type the executor should default for one
+ * operation, reading the (capture-time-enriched) OAS operation off the
+ * in-memory inventory by operationId. The enriched `request_contract`
+ * content-type lands on `oasOperation.requestBody.content` (see
+ * `requestContractEnrichment.ts`), so the first content media-type key IS
+ * the code-evidence-or-contract request media type. Returns null when the
+ * operation is absent or carries no request media type -- the caller then
+ * falls back to `application/json` (R4).
+ *
+ * Pure + total: never throws; a malformed inventory shape yields null.
+ */
+function resolveOperationContentType(
+  ctx: Parameters<ToolHandler>[1],
+  operationId: string,
+): string | null {
+  try {
+    const ops = ctx.oasInventory?.operations;
+    if (!Array.isArray(ops)) return null;
+    const op = ops.find((o) => o.operationId === operationId);
+    const reqBody = (op?.oasOperation as { requestBody?: unknown } | undefined)?.requestBody;
+    if (!reqBody || typeof reqBody !== "object") return null;
+    const content = (reqBody as { content?: unknown }).content;
+    if (!content || typeof content !== "object") return null;
+    const keys = Object.keys(content as Record<string, unknown>);
+    for (const k of keys) {
+      if (typeof k === "string" && k.trim().length > 0) return k;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Tool: `execute_http_request`
  *
  * The only path the LLM has into a real HTTP call. Hard gates:
@@ -315,24 +364,37 @@ const handler: ToolHandler = async (args, ctx) => {
   const headers = (args.headers && typeof args.headers === 'object') ? args.headers as Record<string, string> : undefined;
   const body = args.body !== undefined ? args.body : undefined;
 
-  // ---- Fix 4: default `Content-Type: application/json` for requests that
-  // carry a body but where the caller did not set one. A Tomcat / Jersey
-  // target rejects a body with no content-type as HTTP 415 (Unsupported
-  // Media Type), so the capture LLM's request fails AVOIDABLY. We default it
-  // HERE (the LLM-driven request path) rather than in the shared
+  // ---- Fix 4 (2026-05-16) + Task Group 4 (2026-06-19): default a Content-Type
+  // for the LLM-driven request path where the caller did not set one. A Tomcat
+  // / Jersey target rejects a request with no Content-Type as HTTP 415
+  // (Unsupported Media Type), so the capture LLM's request fails AVOIDABLY. We
+  // default it HERE (the LLM-driven request path) rather than in the shared
   // `httpExecutor` -- the bare connection probe + target replay also flow
   // through that executor and must NOT be force-defaulted.
+  //
+  // The default now fires when EITHER the request carries a body OR the verb is
+  // mutating (PUT / POST / PATCH) regardless of body. The body-less branch is
+  // the #3 fix: a body-less PUT (setFavourite / unsetFavourite /
+  // revertFilterPromotionRequest) otherwise reaches the target with no
+  // Content-Type and is rejected 415. The media type is sourced from the
+  // (capture-time `request_contract`-enriched) operation contract
+  // (`oasOperation.requestBody.content`), falling back to `application/json`
+  // (R4).
   //
   // The check is case-INSENSITIVE on the caller's header keys (HTTP header
   // names are case-insensitive; a caller-set `content-type`, `Content-Type`,
   // or `CONTENT-TYPE` must all be preserved, not overridden).
   let effectiveHeaders: Record<string, string> | undefined = headers;
-  if (body !== undefined) {
+  const shouldDefaultContentType =
+    body !== undefined || CONTENT_TYPE_DEFAULTING_VERBS.has(method);
+  if (shouldDefaultContentType) {
     const callerHasContentType = headers
       ? Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')
       : false;
     if (!callerHasContentType) {
-      effectiveHeaders = { ...(headers ?? {}), 'Content-Type': 'application/json' };
+      const mediaType =
+        resolveOperationContentType(ctx, operationId) ?? 'application/json';
+      effectiveHeaders = { ...(headers ?? {}), 'Content-Type': mediaType };
     }
   }
 

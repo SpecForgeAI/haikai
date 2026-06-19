@@ -1,0 +1,36 @@
+# Docker Compose for Standards Extractor API - Development
+# Usage: docker-compose -f docker-compose.dev.yml up --build
+# Features: Hot reload via source code volume mounts
+
+services:
+  standards-extractor-api-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: standards-extractor-api-dev
+    env_file:
+      - .env.docker.gary
+    ports:
+      - "8000:8000"
+    volumes:
+      # Source code mounts for hot reload
+      - ./src:/app/src:delegated
+      - ./templates:/app/templates:delegated
+      - ./config:/app/config:delegated
+      - ./run_api.py:/app/run_api.py:delegated
+      - ./main.py:/app/main.py:delegated
+      # Workspace directories
+      - ./workspace:/app/workspace:delegated
+      - ./api_workspace:/app/api_workspace:delegated
+    networks:
+      - standards-extractor-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+networks:
+  standards-extractor-network:
+    driver: bridge

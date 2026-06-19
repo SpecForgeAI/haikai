@@ -55,6 +55,16 @@ import {
   scanResponseContracts,
   attachResponseContractsToCandidates,
 } from './responseContractScanner';
+// Per-endpoint REQUEST-contract capture (Spec 2026-06-19, Task Group 5): the
+// request-side sibling of the response-contract scanner. Builds the COMPLETE
+// `request_contract` blob (content_type/consumes + required_headers + params +
+// the NEW request date-formats `param_formats[]` + request_validation[]) and
+// rides it on `candidate.data.request_contract`, MIRRORING the response-contract
+// attach. ADDITIVE -- does not disturb `response_contract` emission.
+import {
+  scanRequestContracts,
+  attachRequestContractsToCandidates,
+} from './requestContractScanner';
 // Spec #4 (Inbound Surface Completeness), Task Groups 2/3/4: JAX-RS, raw
 // servlet / web.xml / @WebServlet, and WebFlux RouterFunction detectors. These
 // emit the SAME canonical interfaces/endpoints candidate shape this adapter's
@@ -2512,6 +2522,37 @@ export function runSpringClassicAdapter(files: SourceFileIR[], runId: string): D
   } catch (err) {
     console.warn(
       `[spring-classic] response-contract scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // Per-endpoint REQUEST-CONTRACT capture (2026-06-19, Task Group 5): the
+  // request-side sibling, run right after the response-contract scan. It
+  // statically reads the request-shaping layers the data-effect + behaviour
+  // passes do not see -- request media type (`consumes`), required headers,
+  // `@RequestParam` inputs, the NEW request date-FORMAT reader (`@JsonFormat`/
+  // `@DateTimeFormat` on request-body DTO fields AND path/query params), and
+  // request VALIDATION -- and attaches ONE COMPLETE `request_contract` blob
+  // onto each matching `endpoints` candidate's `data` (keyed by endpoint name,
+  // reusing the SAME controller->method path composition). The blob
+  // auto-persists on `discovery_candidates.data` and maps to AMS
+  // `endpoints.request_contract` at save-back. ADDITIVE -- leaves the existing
+  // `response_contract`/`consumes`/`headers`/`params` emission untouched. Soft-
+  // fails as a whole so a malformed IR cannot poison the run.
+  try {
+    const requestContractScan = scanRequestContracts(files);
+    const requestAttached = attachRequestContractsToCandidates(
+      out.candidates,
+      requestContractScan,
+    );
+    if (requestAttached > 0) {
+      console.log(
+        `[spring-classic] request_contract: attached ${requestAttached} endpoint contract(s).`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] request-contract scan failed; continuing:`,
       err instanceof Error ? err.message : String(err),
     );
   }
