@@ -50,6 +50,7 @@ import {
 } from '../../api/apiBehaviourClient';
 import styles from './CaptureReviewPanel.module.css';
 import { SaveAsBaselineModal } from './SaveAsBaselineModal';
+import { AddNewBehaviourModal } from './AddNewBehaviourModal';
 import {
   MigrationDiscoveryContext,
   fetchMigrationDiscoveryContext,
@@ -78,6 +79,29 @@ export interface CaptureReviewPanelProps {
    * Oracle Coverage Scoring -- Task 3.4.
    */
   coverageSummaryJson?: Record<string, unknown> | null;
+  /**
+   * Session `mutating_calls_confirmed` posture, threaded from
+   * `CaptureSessionDetailView`. Passed into the Add-New-Behaviour modal so a
+   * mutating manual send shows a STRONGER warning when the session never
+   * confirmed mutating calls (the send is still permitted on explicit intent).
+   * Spec: 2026-06-20 Add New Behaviour -- Manual Capture (Task Group 6).
+   */
+  mutatingCallsConfirmed?: boolean | null;
+  /**
+   * Whether the session's in-memory secret is loaded (parent-owned
+   * `secretsLoadedLocal`). The Add-New-Behaviour modal needs it because a
+   * manual send reuses that secret; when false the panel routes the reviewer
+   * to the parent re-enter prompt via {@link onRequestReenterSecrets}.
+   * Spec: 2026-06-20 Add New Behaviour -- Manual Capture (Task Group 6).
+   */
+  secretsLoaded?: boolean;
+  /**
+   * Ask the parent (`CaptureSessionDetailView`) to surface its EXISTING
+   * re-enter-secrets prompt (testid `capture-session-detail-reenter-secrets-prompt`).
+   * Invoked when the modal needs a secret that is not loaded -- the panel
+   * never rebuilds secret entry.
+   */
+  onRequestReenterSecrets?: () => void;
 }
 
 // ============================================================================
@@ -281,6 +305,9 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   sessionId,
   readOnly = false,
   coverageSummaryJson,
+  mutatingCallsConfirmed = null,
+  secretsLoaded = false,
+  onRequestReenterSecrets,
 }) => {
   const [operations, setOperations] = useState<ApiBehaviourOperationDto[]>([]);
   const [scenarios, setScenarios] = useState<ApiBehaviourScenarioDto[]>([]);
@@ -316,6 +343,9 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
 
   // Save-as-baseline modal visibility.
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  // Add-New-Behaviour (manual capture) modal visibility. Spec 2026-06-20.
+  const [addBehaviourModalOpen, setAddBehaviourModalOpen] = useState(false);
 
   // ---- Discovery context (Spec 2026-05-16 Task Group 4) ---------------
   // The capture review panel fetches the migration discovery context once on
@@ -426,6 +456,24 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
     );
     return operations.filter((o) => !accepted.has(o.id));
   }, [operations, visibleCaptures]);
+  // Union of redacted request-header KEYS across ALL the session's 2xx captures
+  // (regardless of accept/reject), used to prefill the Add-New-Behaviour modal's
+  // header editor. Reads the RAW `captures` array (not `visibleCaptures`) so
+  // auto-rejected intermediate fumbles still contribute their header keys. Auth
+  // headers are already redacted out upstream so they never appear here.
+  // Spec: 2026-06-20 Add New Behaviour -- Manual Capture (Task Group 6).
+  const manualHeaderKeyUnion = useMemo(() => {
+    const keys = new Set<string>();
+    for (const cap of captures) {
+      const status = cap.response_status ?? 0;
+      if (status < 200 || status >= 300) continue;
+      const hdrs = cap.request_headers_redacted_json;
+      if (hdrs && typeof hdrs === 'object') {
+        for (const k of Object.keys(hdrs)) keys.add(k);
+      }
+    }
+    return Array.from(keys).sort();
+  }, [captures]);
 
   // ---- Mutators --------------------------------------------------------
 
@@ -654,6 +702,38 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
         <div className={styles.emptyMessage}>
           No captured rows yet for this session.
         </div>
+        {/* Allow adding an ad-hoc behaviour even on an empty session so a
+            reviewer can fill a coverage gap. Review time only (readOnly false). */}
+        {!readOnly && (
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => setAddBehaviourModalOpen(true)}
+              disabled={actionInFlight !== null}
+              data-testid="capture-review-add-behaviour"
+            >
+              Add New Behaviour
+            </button>
+          </div>
+        )}
+        {addBehaviourModalOpen && (
+          <AddNewBehaviourModal
+            projectId={projectId}
+            architectureId={architectureId}
+            sessionId={sessionId}
+            operations={operations}
+            headerKeyUnion={manualHeaderKeyUnion}
+            mutatingCallsConfirmed={mutatingCallsConfirmed}
+            secretsLoaded={secretsLoaded}
+            onRequestReenterSecrets={() => onRequestReenterSecrets?.()}
+            onClose={() => setAddBehaviourModalOpen(false)}
+            onSaved={() => {
+              setAddBehaviourModalOpen(false);
+              void refresh();
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -699,6 +779,19 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
               data-testid="capture-review-open-save-baseline"
             >
               Save as Baseline
+            </button>
+          )}
+          {/* Add New Behaviour (manual capture). Review time only (readOnly
+              false). Spec: 2026-06-20 Add New Behaviour -- Manual Capture. */}
+          {!readOnly && (
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => setAddBehaviourModalOpen(true)}
+              disabled={actionInFlight !== null}
+              data-testid="capture-review-add-behaviour"
+            >
+              Add New Behaviour
             </button>
           )}
         </div>
@@ -859,6 +952,19 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
                                 title="Scenario generated using DB sample hint"
                               >
                                 DB sample hint
+                              </span>
+                            )}
+                            {/* Manual capture badge (Spec 2026-06-20 Add New
+                                Behaviour). Mirrors the db_sample badge block;
+                                keyed off `scenario.generation_source ===
+                                'manual'`, set by the amvs manual-capture route. */}
+                            {scenario.generation_source === 'manual' && (
+                              <span
+                                className={`${styles.discoveryBadge} ${styles.discoveryBadgeInfo}`}
+                                data-testid="capture-review-scenario-manual-badge"
+                                title="Scenario added manually during review"
+                              >
+                                Manual
                               </span>
                             )}
                             {sessionHasNoDiscoveryEvidence && (
@@ -1114,6 +1220,23 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
           coverageSummaryJson={coverageSummaryJson}
           diagnostics={diagnostics}
           onClose={() => setSaveModalOpen(false)}
+        />
+      )}
+      {addBehaviourModalOpen && (
+        <AddNewBehaviourModal
+          projectId={projectId}
+          architectureId={architectureId}
+          sessionId={sessionId}
+          operations={operations}
+          headerKeyUnion={manualHeaderKeyUnion}
+          mutatingCallsConfirmed={mutatingCallsConfirmed}
+          secretsLoaded={secretsLoaded}
+          onRequestReenterSecrets={() => onRequestReenterSecrets?.()}
+          onClose={() => setAddBehaviourModalOpen(false)}
+          onSaved={() => {
+            setAddBehaviourModalOpen(false);
+            void refresh();
+          }}
         />
       )}
     </div>

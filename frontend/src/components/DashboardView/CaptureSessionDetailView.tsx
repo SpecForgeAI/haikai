@@ -1006,6 +1006,15 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           sessionId={sessionId}
           readOnly={reviewPanelReadOnly}
           coverageSummaryJson={session.coverage_summary_json}
+          mutatingCallsConfirmed={session.mutating_calls_confirmed}
+          secretsLoaded={secretsLoadedLocal}
+          onRequestReenterSecrets={() => {
+            // Reuse the EXISTING parent-owned re-enter-secrets prompt rather
+            // than rebuilding secret entry. The prompt itself is already shown
+            // whenever secrets are not loaded (showReenterSecretsPrompt); open
+            // its form so the reviewer can submit immediately.
+            setSecretsPromptOpen(true);
+          }}
         />
       )}
     </div>

@@ -22,6 +22,10 @@ import {
   createCaptureSession,
   testApiConnectionStateless,
   type ApiBehaviourCaptureSessionDto,
+  manualCapture,
+  isSecretsNotLoadedError,
+  SECRETS_NOT_LOADED_CODE,
+  ApiBehaviourApiError,
 } from '../apiBehaviourClient';
 
 const PROJECT_ID = 'proj-uuid-aaa';
@@ -234,5 +238,114 @@ describe('apiBehaviourClient -- testApiConnectionStateless (Fix C 2026-06-02)', 
     expect(body.baseUrl).toBe('https://api.nonprod.example.com');
     expect(body.auth).toEqual({ type: 'header', headerName: 'ssoToken', headerValue: 'sec' });
     expect(body.defaultHeaders).toEqual([{ name: 'X-Tenant', value: 'acme' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Manual capture ("Add New Behaviour", spec 2026-06-20, Task 4.1).
+// Mirrors the createCaptureSession/testApiConnectionStateless fetch-shim style.
+// ---------------------------------------------------------------------------
+describe('apiBehaviourClient -- manualCapture (Task 4.1)', () => {
+  const originalFetch = globalThis.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs to the manual-capture action URL with the camelCase body shape', async () => {
+    const capture = { id: 'cap-1', session_id: 'session-uuid-1', scenario_id: 'scn-1' };
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => ({ sessionId: 'session-uuid-1', scenarioId: 'scn-1', capture }),
+    });
+
+    const result = await manualCapture(PROJECT_ID, ARCH_ID, 'session-uuid-1', {
+      operationId: 'op-1',
+      method: 'POST',
+      path: '/pets/42',
+      query: { q: '1' },
+      headers: { 'X-Tenant': 'acme' },
+      body: { name: 'Rex' },
+      mutatingCallsConfirmed: true,
+    });
+
+    expect(result.scenarioId).toBe('scn-1');
+    expect(result.capture).toEqual(capture);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `/api/v1/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour/capture-sessions/session-uuid-1/manual-capture`,
+    );
+    expect(options.method).toBe('POST');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+
+    const body = JSON.parse(options.body);
+    expect(body.operationId).toBe('op-1');
+    expect(body.method).toBe('POST');
+    expect(body.path).toBe('/pets/42');
+    expect(body.query).toEqual({ q: '1' });
+    expect(body.headers).toEqual({ 'X-Tenant': 'acme' });
+    expect(body.body).toEqual({ name: 'Rex' });
+    expect(body.mutatingCallsConfirmed).toBe(true);
+  });
+
+  it('surfaces a 409 SECRETS_NOT_LOADED as a detectable typed error', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      statusText: 'Conflict',
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => ({ error: { code: SECRETS_NOT_LOADED_CODE, message: 'Secrets not loaded' } }),
+    });
+
+    let caught: unknown;
+    try {
+      await manualCapture(PROJECT_ID, ARCH_ID, 'session-uuid-1', {
+        operationId: 'op-1',
+        method: 'GET',
+        path: '/pets',
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiBehaviourApiError);
+    expect((caught as ApiBehaviourApiError).status).toBe(409);
+    expect((caught as ApiBehaviourApiError).body.code).toBe(SECRETS_NOT_LOADED_CODE);
+    expect(isSecretsNotLoadedError(caught)).toBe(true);
+  });
+
+  it('does not flag a non-secrets error as SECRETS_NOT_LOADED', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => ({ error: { code: 'OPERATION_NOT_INCLUDED', message: 'nope' } }),
+    });
+
+    let caught: unknown;
+    try {
+      await manualCapture(PROJECT_ID, ARCH_ID, 'session-uuid-1', {
+        operationId: 'op-1',
+        method: 'GET',
+        path: '/pets',
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ApiBehaviourApiError);
+    expect(isSecretsNotLoadedError(caught)).toBe(false);
   });
 });

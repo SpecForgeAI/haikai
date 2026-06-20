@@ -7,7 +7,7 @@
 
 import express from 'express';
 import { getConfig } from './config';
-import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, migrationExecutionRouter } from './routes';
+import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, migrationExecutionRouter } from './routes';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -76,6 +76,9 @@ app.use('/api/v1/discovery', discoveryDecisionTasksRouter);
 // Discovery V3 Gap-Fill relay route (Spec 2026-04-19: V3 Layered Prompt System)
 // Mounted alongside existing discovery routers; handles /v3/gap-fill
 app.use('/api/v1/discovery', discoveryGapFillRouter);
+// Discovery V3 Log-Recipe relay route (Spec 2026-06-20: Runtime Log Evidence -- Format-Agnostic Extraction, Task Group 4)
+// Mounted alongside existing discovery routers; handles POST /v3/log-recipe
+app.use('/api/v1/discovery', discoveryLogRecipeRouter);
 // Discovery Behaviour-Capture relay route (Spec 2026-05-29: Business-logic behaviour capture, Gap C)
 // Mounted alongside existing discovery routers; handles /v3/behaviour-capture
 app.use('/api/v1/discovery', discoveryBehaviourCaptureRouter);
@@ -286,6 +289,7 @@ if (require.main === module) {
     console.log(`[Gateway] Discovery endpoint: http://localhost:${config.port}/api/v1/discovery`);
     console.log(`[Gateway] Discovery DecisionTask Resolution endpoint: http://localhost:${config.port}/api/v1/discovery/resolve-decision-tasks`);
     console.log(`[Gateway] Discovery V3 Gap-Fill endpoint: http://localhost:${config.port}/api/v1/discovery/v3/gap-fill`);
+    console.log(`[Gateway] Discovery V3 Log-Recipe endpoint: http://localhost:${config.port}/api/v1/discovery/v3/log-recipe`);
     console.log(`[Gateway] Discovery Tech Hints Resolve endpoint: http://localhost:${config.port}/api/v1/discovery/tech-hints/resolve`);
     console.log(`[Gateway] API Migration Validation LLM relay: http://localhost:${config.port}/api/v1/api-migration-validation/llm-tool-loop`);
     console.log(`[Gateway] API Behaviour CRUD proxies: http://localhost:${config.port}/api/v1/projects/:projectId/architectures/:architectureId/api-behaviour/...`);
@@ -311,6 +315,7 @@ if (require.main === module) {
     const discoveryRoutes = [
       ...listMountedRoutes('/api/v1/discovery', discoveryDecisionTasksRouter),
       ...listMountedRoutes('/api/v1/discovery', discoveryGapFillRouter),
+      ...listMountedRoutes('/api/v1/discovery', discoveryLogRecipeRouter),
       ...listMountedRoutes('/api/v1/discovery', discoveryOperationalArtifactRouter),
       ...listMountedRoutes('/api/v1/discovery', techHintsResolveRouter),
       ...listMountedRoutes('/api/v1/discovery', discoveryPerformanceScoreRouter),

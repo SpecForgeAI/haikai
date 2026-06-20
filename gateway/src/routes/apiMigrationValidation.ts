@@ -460,6 +460,7 @@ apiMigrationValidationRouter.post('/api-migration-validation/llm-tool-loop', asy
 // where <action> is one of:
 //   parse-oas | test-api-connection | test-db-connection | start | cancel
 //   | secrets | extract-endpoints | reconcile-inventory | account-endpoints
+//   | manual-capture
 //
 // Spec: 2026-06-11 Model-Seeded Capture Inventory -- Task Group 3 adds the
 // `reconcile-inventory` (configure-time + display reconciliation read) and
@@ -482,7 +483,7 @@ apiMigrationValidationRouter.post('/api-migration-validation/llm-tool-loop', asy
 // architecture-scoped logic.
 // ============================================================================
 
-const API_BEHAVIOUR_ACTION_PATHS = [
+export const API_BEHAVIOUR_ACTION_PATHS = [
   'parse-oas',
   'test-api-connection',
   'test-db-connection',
@@ -492,6 +493,7 @@ const API_BEHAVIOUR_ACTION_PATHS = [
   'extract-endpoints',
   'reconcile-inventory',
   'account-endpoints',
+  'manual-capture',
 ] as const;
 
 type ApiBehaviourAction = (typeof API_BEHAVIOUR_ACTION_PATHS)[number];
@@ -633,12 +635,12 @@ async function proxyActionToService(
 }
 
 /**
- * Register all nine action proxies under the gateway URL shape:
+ * Register all ten action proxies under the gateway URL shape:
  *   POST /projects/:projectId/architectures/:architectureId/
  *        api-behaviour/capture-sessions/:sessionId/<action>
  *
  * `parse-oas` accepts an optional multipart upload via `multer().array('file')`
- * The other eight accept only JSON; multer is not on their pipeline.
+ * The other nine accept only JSON; multer is not on their pipeline.
  */
 for (const action of API_BEHAVIOUR_ACTION_PATHS) {
   const path =

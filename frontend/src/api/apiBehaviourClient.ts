@@ -304,6 +304,69 @@ export interface UpdateApiBehaviourCaptureRequest {
   reviewer_notes?: string | null;
 }
 
+// ============================================================================
+// Manual capture ("Add New Behaviour") -- spec 2026-06-20
+// ============================================================================
+
+/**
+ * Request body for the amvs `POST /capture-sessions/:id/manual-capture`
+ * action ("Add New Behaviour" manual capture, spec 2026-06-20). camelCase to
+ * match the amvs route ManualCaptureBody reader (the route maps onto the
+ * snake_case AMS scenario/capture create shapes server-side).
+ *
+ *   - `operationId` is the AMS operation ROW id (`ApiBehaviourOperationDto.id`),
+ *     used to attach the manual scenario + capture and enforce the
+ *     included-operation guard.
+ *   - `path` arrives ALREADY substituted -- the frontend resolves `{param}`
+ *     tokens client-side so the server persists the concrete `request_path`.
+ *   - `mutatingCallsConfirmed` carries the modals explicit-intent confirm
+ *     flag (informational server-side; the send is permitted on either posture).
+ */
+export interface ManualCaptureRequest {
+  operationId: string;
+  method: string;
+  path: string;
+  query?: Record<string, unknown> | null;
+  headers?: Record<string, string> | null;
+  body?: unknown;
+  mutatingCallsConfirmed?: boolean;
+}
+
+/**
+ * Response from a successful manual capture (HTTP 201). Returns the created
+ * `manual` scenario id alongside the persisted capture row (`accepted=null`,
+ * `volatile_paths_json=null`) so the host panel can refresh the review table.
+ */
+export interface ManualCaptureResponse {
+  sessionId: string;
+  scenarioId: string;
+  capture: ApiBehaviourCaptureDto;
+}
+
+/**
+ * Machine-readable code on the manual-capture (and test-api-connection) 409
+ * when the sessions in-memory secret is not loaded. The amvs route returns
+ * `{ error: { code: SECRETS_NOT_LOADED, message } }` and `parseErrorBody`
+ * unwraps the `error` envelope, so callers detect it via
+ * `(err as ApiBehaviourApiError).body.code === SECRETS_NOT_LOADED_CODE` --
+ * NEVER by message-string matching.
+ */
+export const SECRETS_NOT_LOADED_CODE = 'SECRETS_NOT_LOADED';
+
+/**
+ * Detect the 409 `SECRETS_NOT_LOADED` failure on a manual-capture (or any
+ * secrets-gated action) error so the caller can route the user to the existing
+ * parent-owned re-enter-secrets prompt instead of a generic error toast.
+ */
+export function isSecretsNotLoadedError(err: unknown): boolean {
+  return (
+    err instanceof ApiBehaviourApiError &&
+    err.status === 409 &&
+    err.body?.code === SECRETS_NOT_LOADED_CODE
+  );
+}
+
+
 export interface ApiBehaviourDiagnosticDto {
   id: string;
   session_id: string;
@@ -1499,6 +1562,38 @@ export async function accountEndpoints(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
+    },
+  );
+}
+
+// ============================================================================
+// Manual capture action ("Add New Behaviour", spec 2026-06-20)
+// ============================================================================
+
+/**
+ * Send ONE ad-hoc request for an EXISTING included operation during capture
+ * review and persist it as a `manual` scenario + `accepted=null` capture.
+ * Proxied by the gateway to the validation services `manual-capture` action,
+ * which physically sends the request through the per-session executor so
+ * redaction is applied IDENTICALLY to LLM captures. Mirrors `reconcileInventory`
+ * / `accountEndpoints`: `actionUrl(..., 'manual-capture')` + a JSON POST.
+ *
+ * A 409 `SECRETS_NOT_LOADED` surfaces as an `ApiBehaviourApiError` whose
+ * `body.code === SECRETS_NOT_LOADED_CODE` (use `isSecretsNotLoadedError`) so
+ * the caller can route the user to the existing re-enter-secrets prompt.
+ */
+export async function manualCapture(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  body: ManualCaptureRequest,
+): Promise<ManualCaptureResponse> {
+  return jsonRequest<ManualCaptureResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'manual-capture'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     },
   );
 }

@@ -75,7 +75,8 @@ export type ScenarioType =
   | 'boundary_value'
   | 'auth_error'
   | 'business_edge_case'
-  | 'generated_candidate';
+  | 'generated_candidate'
+  | 'manual';
 
 export type ScenarioStatus =
   | 'draft'
@@ -90,7 +91,8 @@ export type GenerationSource =
   | 'db_sample'
   | 'llm_generated'
   | 'llm_refined'
-  | 'user_edited';
+  | 'user_edited'
+  | 'manual';
 
 export type DiagnosticType =
   | 'failed_request'

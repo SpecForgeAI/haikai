@@ -1,0 +1,7 @@
+2026-06-20T11:00:00Z [main] [startup] service warming up
+2026-06-20T11:00:01Z [main] [startup] routes registered /api/users /api/orders /api/health
+2026-06-20T11:00:05Z [req] handling GET /api/users for tenant acme (no status logged here)
+2026-06-20T11:00:06Z [req] handling POST /api/orders for tenant acme (no status logged here)
+2026-06-20T11:00:07Z [req] handling GET /api/users/profile for tenant beta (no status logged here)
+2026-06-20T11:00:08Z [req] dispatching to /api/orders/submit handler (no status logged here)
+2026-06-20T11:00:09Z [pool] [worker] reconcile pass complete

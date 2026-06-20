@@ -51,6 +51,7 @@ import {
 } from './httpRuntimeObservation';
 import { archModelClient as defaultArchModelClient } from '../archModelClient';
 import { DiscoveryCandidate } from '../../types/candidate';
+import type { RecipeStore } from './logRecipeInduction';
 
 /**
  * Loose type for the existing per-candidate `logEnrichment` blob plus the
@@ -85,6 +86,19 @@ interface PersistRuntimeEvidenceArgs {
    * `archModelClient` exported from `archModelClient.ts`.
    */
   archModelClient?: RuntimeEvidenceClient;
+  /**
+   * Inferred + reused log recipes (Task Group 7) keyed by format-fingerprint
+   * (and per-source-file fallback). Merged into
+   * `steps_payload.v3.runtimeEvidence.recipe` for auditable, free reuse on
+   * same-format re-runs. Omitted when no recipe was induced/reused.
+   */
+  recipe?: RecipeStore;
+  /**
+   * Structured ~0-despite-hits diagnostic (Task Group 8). Stored at
+   * `steps_payload.v3.runtimeEvidence.extractionOutcome`. Omitted when the
+   * extraction was not anomalous.
+   */
+  extractionOutcome?: Record<string, unknown>;
 }
 
 /**
@@ -148,15 +162,40 @@ async function persistRunSummary(
   projectId: string,
   runId: string,
   runSummary: RuntimeEvidenceRunSummary,
+  recipe?: RecipeStore,
+  extractionOutcome?: Record<string, unknown>,
 ): Promise<void> {
   const run = await client.getDiscoveryRun(projectId, runId);
   const stepsPayload =
     (run?.steps_payload as Record<string, unknown> | undefined) ?? {};
   const v3 = (stepsPayload.v3 as Record<string, unknown> | undefined) ?? {};
+  const priorRuntimeEvidence =
+    (v3.runtimeEvidence as Record<string, unknown> | undefined) ?? {};
+
+  // The run summary fields ARE the top-level keys of `runtimeEvidence`; the
+  // recipe + extractionOutcome are PRESERVED/EXTENDED sub-keys (Task Group 7
+  // recipe; Task Group 8 diagnostic). Start from the new summary, then merge
+  // each sub-key only when it has content -- so a summary-only write never
+  // clobbers a recipe persisted by an earlier file/run, and vice versa.
+  const mergedRuntimeEvidence: Record<string, unknown> = { ...runSummary };
+  const mergedRecipe = {
+    ...((priorRuntimeEvidence.recipe as Record<string, unknown> | undefined) ?? {}),
+    ...(recipe ?? {}),
+  };
+  if (Object.keys(mergedRecipe).length > 0) {
+    mergedRuntimeEvidence.recipe = mergedRecipe;
+  } else if (priorRuntimeEvidence.recipe !== undefined) {
+    mergedRuntimeEvidence.recipe = priorRuntimeEvidence.recipe;
+  }
+  if (extractionOutcome !== undefined) {
+    mergedRuntimeEvidence.extractionOutcome = extractionOutcome;
+  } else if (priorRuntimeEvidence.extractionOutcome !== undefined) {
+    mergedRuntimeEvidence.extractionOutcome = priorRuntimeEvidence.extractionOutcome;
+  }
 
   const mergedV3 = {
     ...v3,
-    runtimeEvidence: runSummary,
+    runtimeEvidence: mergedRuntimeEvidence,
   };
   const mergedStepsPayload = {
     ...stepsPayload,
@@ -190,12 +229,21 @@ export async function persistRuntimeEvidence(
     projectId,
     runId,
     runSummary,
+    recipe,
+    extractionOutcome,
     archModelClient = defaultArchModelClient,
   } = args;
 
   // Run-level summary write — single read-modify-write to preserve siblings.
   try {
-    await persistRunSummary(archModelClient, projectId, runId, runSummary);
+    await persistRunSummary(
+      archModelClient,
+      projectId,
+      runId,
+      runSummary,
+      recipe,
+      extractionOutcome,
+    );
   } catch (err) {
     console.warn(
       `[runtimeEvidencePersistence] Failed to persist run-level runtime evidence summary for run ${runId}: ${(err as Error).message}`,

@@ -286,11 +286,11 @@ class MigrationDiscoveryContextServiceTest {
     }
 
     // -----------------------------------------------------------------------
-    // Test 7: db-* source findings surfaced via databaseDiscoverySummary
+    // Test 7: db_discovery_pack source findings surfaced via databaseDiscoverySummary
     // -----------------------------------------------------------------------
 
     @Test
-    @DisplayName("Test 7: counts db-* findings into databaseDiscoverySummary")
+    @DisplayName("Test 7: counts db_discovery_pack findings into databaseDiscoverySummary")
     void countsDatabaseDiscoveryFindings() {
         stubProjectAndArchs(true, false);
         UUID runId = UUID.randomUUID();
@@ -298,9 +298,14 @@ class MigrationDiscoveryContextServiceTest {
         stubBaselines(Collections.emptyList());
 
         DiscoveryFindingEntity dbPg = finding("medium", "pending_review", "data_quality", Instant.now());
-        dbPg.setSource("db-postgres-pack");
-        DiscoveryFindingEntity dbSybase = finding("low", "pending_review", "sample_data", Instant.now());
-        dbSybase.setSource("db-sybase-pack");
+        dbPg.setSource("db_discovery_pack");
+        // Real DB profiler sample-data hint shape: findingType='sample_data_hint',
+        // category='data_quality', source='db_discovery_pack' (discovery-service
+        // postgres/sybase *Findings.ts). It is the findingType -- NOT a
+        // 'sample_data' category -- that the summary counts.
+        DiscoveryFindingEntity dbSybase = finding("low", "pending_review", "data_quality", Instant.now());
+        dbSybase.setSource("db_discovery_pack");
+        dbSybase.setFindingType("sample_data_hint");
         DiscoveryFindingEntity codePack = finding("low", "pending_review", "business_logic", Instant.now());
         codePack.setSource("java-spring-pack");
 
@@ -314,6 +319,40 @@ class MigrationDiscoveryContextServiceTest {
         assertThat(result.databaseDiscoverySummary().databaseFindingCount()).isEqualTo(2);
         assertThat(result.databaseDiscoverySummary().sampleDataHintCount()).isEqualTo(1);
         assertThat(result.databaseDiscoverySummary().hasDatabaseDiscovery()).isTrue();
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 7b: a real sample_data_hint finding clears the no_sample_data_hints gap
+    // Regression guard: the counter must key off findingType, NOT a phantom
+    // 'sample_data' category. The DB discovery profiler emits
+    // findingType='sample_data_hint', category='data_quality',
+    // source='db_discovery_pack' -- so this is the exact shape that was
+    // previously uncounted, leaving the migration plan stuck on "No sample data
+    // hints" even after a deep DB scan.
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Test 7b: a sample_data_hint finding counts and clears the NO_SAMPLE_DATA_HINTS gap")
+    void sampleDataHintFindingClearsGap() {
+        stubProjectAndArchs(true, false);
+        UUID runId = UUID.randomUUID();
+        stubLatestRuns(List.of(buildRun(runId, CURRENT_ARCH_ID, "COMPLETED")));
+        stubBaselines(Collections.emptyList());
+
+        DiscoveryFindingEntity sampleHint =
+            finding("info", "pending_review", "data_quality", Instant.now());
+        sampleHint.setFindingType("sample_data_hint");
+        sampleHint.setSource("db_discovery_pack");
+
+        when(discoveryFindingRepository
+            .findByRunIdAndProjectIdAndArchitectureIdAndReviewStatusNot(runId, PROJECT_ID, CURRENT_ARCH_ID, "rejected"))
+            .thenReturn(List.of(sampleHint));
+
+        MigrationDiscoveryContextDto result = service.build(PROJECT_ID, newRequest(CURRENT_ARCH_ID, null));
+
+        assertThat(result.databaseDiscoverySummary().sampleDataHintCount()).isEqualTo(1);
+        assertThat(result.readinessAssessment().gaps())
+            .doesNotContain(MigrationGapCodes.NO_SAMPLE_DATA_HINTS);
     }
 
     // -----------------------------------------------------------------------

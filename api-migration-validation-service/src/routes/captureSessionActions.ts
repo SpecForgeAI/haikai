@@ -40,6 +40,11 @@ import { discoveryServiceClient as defaultDiscoveryServiceClient } from '../serv
 import type { DiscoveryServiceClient } from '../services/discoveryServiceClient';
 import { createTracer } from '../trace';
 import { enrichInventoryWithRequestContracts } from '../services/requestContractEnrichment';
+import type { AxiosError, AxiosResponse } from 'axios';
+import type { HttpMethod } from '../types/oas';
+import { redactHeaders, redactJson, redactUrl } from '../services/redactor';
+import { normaliseBodyForAms } from '../services/amsBodyEnvelope';
+import { LLM_TOOL_CALL_TIMEOUT_MS } from '../config';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
 // is set). See docs/trace-logging.md. The /start orchestration writes the
@@ -573,6 +578,28 @@ interface StartCaptureBody {
    * existing `includeDiscoveryContext` / `discoveryRunIds` body fields.
    */
   coverageOverrideJustification?: string;
+}
+
+/**
+ * Body shape for `POST /api/capture-sessions/:id/manual-capture`
+ * ("Add New Behaviour" manual capture, spec 2026-06-20).
+ *
+ * The frontend resolves path-param tokens client-side, so `path` arrives
+ * already substituted (the concrete `request_path`). `operationId` is the
+ * AMS operation ROW id (matches `OperationDto.id`), used to attach the
+ * scenario + capture and to enforce the included-operation guard.
+ * `mutatingCallsConfirmed` carries the modal's explicit-intent confirm flag
+ * (informational on the server; the send is permitted on either posture).
+ */
+interface ManualCaptureBody {
+  projectId?: string;
+  operationId?: string;
+  method?: string;
+  path?: string;
+  query?: Record<string, unknown> | null;
+  headers?: Record<string, string> | null;
+  body?: unknown;
+  mutatingCallsConfirmed?: boolean;
 }
 
 /**
@@ -1378,6 +1405,193 @@ export function buildCaptureSessionActionsRouter(
       }
     },
   );
+
+  // ----------------------------------------------------------------------
+  // POST /api/capture-sessions/:id/manual-capture
+  // ----------------------------------------------------------------------
+  // "Add New Behaviour" manual capture (spec 2026-06-20). A reviewer adds ONE
+  // ad-hoc request for an EXISTING, included operation during capture review;
+  // it is physically sent to the current-state service through this endpoint so
+  // redaction is applied IDENTICALLY to LLM-driven captures, then persisted as a
+  // `manual` scenario + an `accepted=null` capture that flows through the
+  // existing review / accept-reject / Save-as-Baseline path unchanged.
+  //
+  // It mirrors `test-api-connection` for scaffolding (extractProjectId,
+  // getCaptureSession, secretsStore 409 SECRETS_NOT_LOADED) and the
+  // send->redact->persist sequence of `execute_http_request.ts` -- but binds
+  // the primitives DIRECTLY (no ToolExecutionContext). It works on
+  // completed/failed sessions and is NOT gated on status==='running'.
+  //
+  //   - volatile_paths_json is ALWAYS null (v1: no k=3 probe -> strict).
+  //   - `accepted` is OMITTED on createCapture (AMS default null = un-reviewed);
+  //     never accepted=false.
+  router.post('/api/capture-sessions/:id/manual-capture', async (req: Request, res: Response) => {
+    const sessionId = req.params.id;
+    const projectId = extractProjectId(req);
+    if (!projectId) return fail(res, 400, 'projectId is required (query param or body field)');
+
+    const body = (req.body || {}) as ManualCaptureBody;
+    const operationId =
+      typeof body.operationId === 'string' && body.operationId.length > 0
+        ? body.operationId
+        : null;
+    const method =
+      typeof body.method === 'string' && body.method.trim().length > 0
+        ? body.method.trim().toUpperCase()
+        : null;
+    const path =
+      typeof body.path === 'string' && body.path.trim().length > 0
+        ? body.path.trim()
+        : null;
+    if (!operationId) return fail(res, 400, 'operationId is required');
+    if (!method) return fail(res, 400, 'method is required');
+    if (!path) return fail(res, 400, 'path is required');
+
+    const queryParams =
+      body.query && typeof body.query === 'object' && !Array.isArray(body.query)
+        ? (body.query as Record<string, unknown>)
+        : undefined;
+    const requestHeaders =
+      body.headers && typeof body.headers === 'object' && !Array.isArray(body.headers)
+        ? (body.headers as Record<string, string>)
+        : undefined;
+    const requestBody = body.body !== undefined ? body.body : undefined;
+
+    try {
+      // ---- Load the session. NOT gated on status -- works on completed/failed
+      // sessions (the manual send is independent of the LLM scenario loop).
+      const session = await archModelClient.getCaptureSession(projectId, sessionId);
+
+      // ---- Secrets gate: the in-memory secret must be live. Mirrors
+      // test-api-connection's 409 SECRETS_NOT_LOADED so the frontend routes the
+      // user to the existing parent-owned re-enter-secrets prompt.
+      const secrets = secretsStore.get(sessionId);
+      if (!secrets) {
+        return fail(res, 409, 'Secrets not loaded for this session. Submit /secrets before sending.', {
+          code: 'SECRETS_NOT_LOADED',
+        });
+      }
+      if (!session.api_base_url) {
+        return fail(res, 400, 'Session has no api_base_url configured.');
+      }
+
+      // ---- Validate the target operation: it must exist for this session AND
+      // be included. Never mutates current-state architecture -- read-only.
+      const operations = await archModelClient.listOperationsBySession(projectId, sessionId);
+      const operation = operations.find((op) => op.id === operationId);
+      if (!operation) {
+        return fail(res, 404, `Operation '${operationId}' was not found for this session.`, {
+          code: 'OPERATION_NOT_FOUND',
+        });
+      }
+      if (operation.included !== true) {
+        return fail(res, 400, `Operation '${operationId}' is not included for this session.`, {
+          code: 'OPERATION_NOT_INCLUDED',
+        });
+      }
+
+      // ---- Build + send ONE request via the per-session executor. Auth is
+      // re-injected by the executor's request interceptor (applyAuthToConfig)
+      // from the in-memory secret -- redacted-out auth headers never need
+      // re-entry. validateStatus: () => true means non-2xx resolves; only a
+      // transport failure throws. dispose() in a finally.
+      const exec = createSessionHttpExecutor({
+        auth: secrets.api,
+        baseURL: session.api_base_url,
+        defaultHeaders: session.default_headers_redacted_json ?? {},
+        timeoutMs: LLM_TOOL_CALL_TIMEOUT_MS,
+      });
+
+      const start = Date.now();
+      let response: AxiosResponse<unknown> | null = null;
+      let errorType: string | null = null;
+      let errorMessage: string | null = null;
+      try {
+        response = await exec.request({
+          url: path,
+          method: method.toLowerCase() as HttpMethod,
+          params: queryParams,
+          headers: requestHeaders,
+          data: requestBody,
+        });
+      } catch (err) {
+        const axiosErr = err as AxiosError;
+        // An axios error that still carries a response is a meaningful non-2xx
+        // outcome, not a transport failure -- preserve the response payload.
+        if (axiosErr && axiosErr.response) {
+          response = axiosErr.response as AxiosResponse<unknown>;
+        } else {
+          errorType = axiosErr?.code ?? axiosErr?.name ?? 'UnknownError';
+          errorMessage = axiosErr?.message ?? String(err);
+        }
+      } finally {
+        exec.dispose();
+      }
+      const durationMs = Date.now() - start;
+
+      // ---- Redact ONCE (reused for the persisted capture) -- mirrors
+      // execute_http_request.ts. Do NOT redact twice.
+      const safeRequestHeaders = redactHeaders(requestHeaders ?? {});
+      const safeRequestBody = requestBody !== undefined ? redactJson(requestBody) : null;
+      const safeResponseHeaders = response
+        ? redactHeaders(response.headers as unknown as Record<string, string | string[] | undefined>)
+        : null;
+      const safeResponseBody = response ? redactJson(response.data) : null;
+
+      // ---- Non-blank request_url_redacted (base+path, trailing-slash-trimmed).
+      const urlBase = (session.api_base_url ?? '').replace(/\/+$/, '');
+      const requestUrlRedacted = redactUrl(
+        (path.startsWith('/') ? `${urlBase}${path}` : `${urlBase}/${path}`) || path || 'unknown',
+      );
+
+      // ---- Create the manual scenario under the EXISTING operation, then the
+      // capture. scenario_name auto-generated; non-blank method + path required.
+      const timestamp = new Date().toISOString();
+      const scenario = await archModelClient.createScenario(projectId, {
+        session_id: sessionId,
+        operation_id: operationId,
+        scenario_name: `Manual: ${method} ${path} ${timestamp}`,
+        scenario_type: 'manual',
+        generation_source: 'manual',
+        request_method: method,
+        request_path: path,
+        request_query_json: queryParams ?? null,
+        request_headers_redacted_json:
+          safeRequestHeaders as unknown as Record<string, string> | null,
+        request_body_json: normaliseBodyForAms(safeRequestBody),
+      });
+
+      const capture = await archModelClient.createCapture(projectId, {
+        session_id: sessionId,
+        scenario_id: scenario.id,
+        operation_id: operationId,
+        request_method: method,
+        request_path: path,
+        request_url_redacted: requestUrlRedacted,
+        request_query_json: queryParams ?? null,
+        request_headers_redacted_json:
+          safeRequestHeaders as unknown as Record<string, string> | null,
+        request_body_json: normaliseBodyForAms(safeRequestBody),
+        response_status: response ? response.status : null,
+        response_headers_redacted_json: response
+          ? (safeResponseHeaders as unknown as Record<string, string> | null)
+          : null,
+        response_body_json: normaliseBodyForAms(safeResponseBody),
+        duration_ms: durationMs,
+        error_type: errorType,
+        error_message: errorMessage,
+        captured_at: timestamp,
+        // v1: no k=3 volatility probe -> strict comparison.
+        volatile_paths_json: null,
+        // `accepted` intentionally OMITTED -> AMS default null (un-reviewed).
+      });
+
+      return res.status(201).json({ sessionId, scenarioId: scenario.id, capture });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'manual-capture failed';
+      return fail(res, 500, message);
+    }
+  });
 
   // ----------------------------------------------------------------------
   // POST /api/capture-sessions/:id/test-api-connection

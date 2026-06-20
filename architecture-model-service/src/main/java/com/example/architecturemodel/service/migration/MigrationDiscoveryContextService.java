@@ -153,7 +153,11 @@ public class MigrationDiscoveryContextService {
     );
 
     /** Source prefix used to identify a database-pack-emitted finding. */
-    public static final String DB_SOURCE_PREFIX = "db-";
+    // DB discovery-pack findings are emitted with source='db_discovery_pack'
+    // (discovery-service databasePacks/*Findings.ts + databasePackFindingBuilders.ts).
+    // The old "db-" value matched NO real producer, so databaseFindingCount was
+    // permanently 0.
+    public static final String DB_SOURCE_PREFIX = "db_discovery_pack";
 
     /**
      * The bright-line {@code review_status} disposition suppressed from this
@@ -891,7 +895,13 @@ public class MigrationDiscoveryContextService {
             if (isHighSeverity(f) && isUnreviewed(f)) {
                 highSeverityUnreviewed++;
             }
-            if ("sample_data".equalsIgnoreCase(f.getCategory())) {
+            // Sample-data hints are emitted by the DB discovery profiler as
+            // findingType='sample_data_hint' (category='data_quality') -- see
+            // discovery-service postgres/sybase *Findings.ts. Count the
+            // findingType; the old 'sample_data' CATEGORY is a string no
+            // producer ever emits, so this counter was permanently 0 and the
+            // migration plan always showed "No sample data hints".
+            if ("sample_data_hint".equalsIgnoreCase(f.getFindingType())) {
                 sampleDataHints++;
             }
         }
@@ -973,8 +983,14 @@ public class MigrationDiscoveryContextService {
             .filter(r -> "database".equalsIgnoreCase(r.getDiscoveryKind())
                 || "combined".equalsIgnoreCase(r.getDiscoveryKind()))
             .count();
+        // Sample-data hints are emitted by the DB discovery profiler as
+        // findingType='sample_data_hint' (category='data_quality') -- see
+        // discovery-service postgres/sybase *Findings.ts. Count the findingType;
+        // the old 'sample_data' CATEGORY is a string no producer ever emits, so
+        // this counter was permanently 0 and the `no_sample_data_hints` gap
+        // always fired.
         int sampleHints = (int) findings.stream()
-            .filter(f -> "sample_data".equalsIgnoreCase(f.getCategory()))
+            .filter(f -> "sample_data_hint".equalsIgnoreCase(f.getFindingType()))
             .count();
         return new MigrationDiscoveryContextDto.DatabaseDiscoverySummary(
             dbFindings, dbRuns, sampleHints,

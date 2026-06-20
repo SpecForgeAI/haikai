@@ -301,6 +301,61 @@ export function buildRuntimeUsageObservationFinding(args: {
 }
 
 /**
+ * Source E (runtime-log extraction-diagnostic variant): a LOW-severity,
+ * `runtime_log`-category finding emitted by the runtime-evidence sub-stage when
+ * the streaming pre-scan found candidate request lines but the extraction
+ * pipeline recovered ~no observations from them (Spec
+ * 2026-06-20-runtime-log-evidence-format-agnostic-extraction, Task Group 8).
+ *
+ * Why it exists -- visibility without failure:
+ *   The runtime stage NEVER fails the discovery run (its top-level safety net
+ *   guarantees that). But "pre-scan saw request-like lines, yet extraction
+ *   yielded nothing" is a quietly-degraded outcome a reviewer should see. This
+ *   finding surfaces it. It introduces NO new gap type (the structured
+ *   `extractionOutcome` diagnostic is also recorded in
+ *   `steps_payload.v3.runtimeEvidence`); it is purely an advisory marker.
+ *
+ * Shape (mirrors `buildRuntimeUsageObservationFinding`):
+ *   - `findingType: 'runtime_log_extraction_incomplete'`, `category: 'runtime_log'`
+ *     (the AMS consumer counts categories in {runtime_usage, runtime_log, log}).
+ *   - severity `'low'` (advisory -- something was likely there but unread).
+ *   - `detail_json` carries the pre-scan hit count, the recovered observation
+ *     count, the sampled-block count, and a short reason string.
+ *   - NO candidate link -- this is a run-level signal about a log file, not a
+ *     statement about any one endpoint candidate.
+ */
+export function buildRuntimeLogExtractionDiagnosticFinding(args: {
+  /** Number of request-like lines the pre-scan detected across the file(s). */
+  preScanHits: number;
+  /** Number of observations the extraction pipeline actually recovered (~0). */
+  observations: number;
+  /** Number of sample blocks assembled by the pre-scan sampler. */
+  sampledBlocks: number;
+  /** Short machine-ish reason string (per-file extraction reasons, joined). */
+  reason: string;
+}): FindingEmitInput {
+  return {
+    findingType: 'runtime_log_extraction_incomplete',
+    category: 'runtime_log',
+    severity: 'low',
+    title: `Runtime log extraction incomplete: ${args.preScanHits} candidate line(s), ${args.observations} extracted`,
+    summary:
+      `The pre-scan detected ${args.preScanHits} request-like line(s) but extraction ` +
+      `recovered ${args.observations} observation(s). The run completed; review whether the ` +
+      `log format needs a recipe or is unsupported.`,
+    detailJson: {
+      preScanHits: args.preScanHits,
+      observations: args.observations,
+      sampledBlocks: args.sampledBlocks,
+      reason: args.reason,
+    },
+    source: 'runtime_log_enrichment',
+    createdByStage: 'runtimeEvidence.runDiscoveryRuntimeEvidence',
+    links: [],
+  };
+}
+
+/**
  * Source F: ambiguous relationship inference.
  *
  * Triggered by the competing-relationships path in triage. Severity laddered

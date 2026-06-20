@@ -48,7 +48,7 @@ describe('Config', () => {
       expect(config.maxToolCallsPerTurn).toBe(8);
       expect(config.maxOasBytes).toBe(2097152);
       expect(config.maxMessageBytes).toBe(32768);
-      expect(config.rateLimitRpm).toBe(60);
+      expect(config.rateLimitRpm).toBe(300);
       expect(config.sessionTtlHours).toBe(24);
       expect(config.logLevel).toBe('info');
       expect(config.enableToolTrace).toBe(false);

@@ -62,6 +62,13 @@ export { discoveryDecisionTasksRouter } from './discoveryDecisionTasks';
 // Discovery V3 Gap-Fill relay route (Spec 2026-04-19: V3 Layered Prompt System)
 export { discoveryGapFillRouter } from './discoveryGapFill';
 
+// Discovery V3 Log-Recipe relay route (Spec 2026-06-20: Runtime Log Evidence --
+// Format-Agnostic Extraction, Task Group 4). Sibling of the gap-fill relay --
+// stateless recipe-induction relay (temperature 0, no tools) that forwards a
+// discovery-composed prompt carrying REDACTED runtime-log sample blocks to the
+// LLM and returns the structured recipe (or "no pattern") unmodified.
+export { discoveryLogRecipeRouter } from './discoveryLogRecipe';
+
 // Discovery Behaviour-Capture relay route (Spec 2026-05-29: Business-logic
 // behaviour capture for discovery, Gap C). Sibling of the gap-fill relay.
 export { discoveryBehaviourCaptureRouter } from './discoveryBehaviourCapture';

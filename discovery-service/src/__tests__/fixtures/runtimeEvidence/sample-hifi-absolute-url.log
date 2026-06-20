@@ -1,0 +1,8 @@
+2026-06-20T10:00:00Z [main] [bootstrap] application starting up version=1.2.3
+2026-06-20T10:00:01Z [main] [bootstrap] listening on port 8080
+2026-06-20T10:00:05Z reqId=1 > POST http://svc-host:8080/api/orders statusCode=201 responseBytes=256
+2026-06-20T10:00:06Z reqId=2 > GET http://svc-host:8080/api/users/123 statusCode=200 responseBytes=512
+2026-06-20T10:00:07Z reqId=3 > GET http://svc-host:8080/api/users/456 statusCode=200 responseBytes=512
+2026-06-20T10:00:08Z reqId=4 > GET http://svc-host:8080/api/users/789 statusCode=200 responseBytes=512
+2026-06-20T10:00:09Z reqId=5 > DELETE http://svc-host:8080/api/orders/55 statusCode=204 responseBytes=0
+2026-06-20T10:00:10Z [pool-2] [worker] background reconciliation tick completed items=42

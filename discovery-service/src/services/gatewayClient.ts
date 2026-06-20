@@ -106,6 +106,42 @@ export class BehaviourCaptureGatewayError extends Error {
 }
 
 // ============================================================================
+// Log-Recipe Induction Types
+// Spec 2026-06-20: Runtime Log Evidence -- Format-Agnostic Extraction (Task Group 5).
+// ============================================================================
+
+/**
+ * Response shape returned by the log-recipe induction relay. Identical to
+ * {@link GapFillResponse}; aliased for call-site readability -- `content` is the
+ * raw LLM text output (a STRUCTURED RECIPE JSON object or the literal
+ * "no pattern"). Parsing + held-out validation happen in the caller
+ * (`logRecipeInduction.induceAndValidateRecipe`).
+ */
+export type LogRecipeResponse = GapFillResponse;
+
+/**
+ * Typed error class for log-recipe induction relay failures.
+ *
+ * `induceAndValidateRecipe` catches these per-file and treats the attempt as a
+ * consumed (bounded) call that falls through to retry / deterministic fallback,
+ * without halting the run (mirrors {@link BehaviourCaptureGatewayError}).
+ * Carries the stable source `filePath` for correlation.
+ */
+export class LogRecipeGatewayError extends Error {
+  public readonly filePath: string;
+  public readonly status: number | null;
+  public readonly cause?: unknown;
+
+  constructor(message: string, filePath: string, status: number | null, cause?: unknown) {
+    super(message);
+    this.name = 'LogRecipeGatewayError';
+    this.filePath = filePath;
+    this.status = status;
+    this.cause = cause;
+  }
+}
+
+// ============================================================================
 // Operational-Artifact Summariser Types
 // Spec 2026-06-14: Generic Operational-Artifact Discovery (D1), Task Group 3.
 // ============================================================================
@@ -539,6 +575,106 @@ class GatewayClient {
       `[GatewayClient] captureBehaviour ${methodId} FAILED after ${durationMs}ms: ${message}`,
     );
     throw new BehaviourCaptureGatewayError(message, methodId, status, lastError);
+  }
+
+  /**
+   * POSTs a log-recipe induction prompt to the gateway relay.
+   *
+   * Sibling of {@link captureBehaviour}: per-FILE, single-prompt per-call shape
+   * -- the caller (`logRecipeInduction.induceAndValidateRecipe`) controls the
+   * bounded retry budget (max 3 calls/file). Reuses the gap-fill retry / backoff
+   * transport pattern verbatim (429 + 5xx retried with `Retry-After`-aware
+   * backoff). The gateway relays at `temperature: 0` (deterministic induction).
+   *
+   * The recipe-induction stage MUST NOT call the LLM directly; all LLM access
+   * flows through this relay, exactly like gap-fill. The `prompt` already embeds
+   * the REDACTED sample blocks (redaction happens upstream in the sampler); this
+   * method embeds nothing else.
+   *
+   * The returned `content` is raw LLM output (a STRUCTURED RECIPE JSON object or
+   * the literal "no pattern"). Parsing + held-out validation happen in the
+   * caller; this method only handles transport + typed-error surfacing.
+   *
+   * Spec 2026-06-20: Runtime Log Evidence -- Format-Agnostic Extraction (Task Group 5).
+   *
+   * @param payload - { prompt, filePath? } -- prompt carries redacted sample blocks
+   * @param runId - Discovery run ID (logging / correlation)
+   * @returns Promise resolving to the LLM response ready for recipe parsing
+   * @throws LogRecipeGatewayError on network failure or non-2xx HTTP response
+   */
+  async induceLogRecipe(
+    payload: { prompt: string; filePath?: string },
+    runId: string,
+  ): Promise<LogRecipeResponse> {
+    const filePath = payload.filePath ?? '';
+    const MAX_RETRIES = 4;
+    const start = Date.now();
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      try {
+        const response = await this.client.post<LogRecipeResponse>(
+          '/api/v1/discovery/v3/log-recipe',
+          { prompt: payload.prompt, filePath, runId },
+        );
+        const durationMs = Date.now() - start;
+        if (attempt > 0) {
+          console.log(
+            `[GatewayClient] induceLogRecipe ${filePath} recovered after ${attempt} retry(ies) in ${durationMs}ms`,
+          );
+        } else {
+          console.log(
+            `[GatewayClient] induceLogRecipe ${filePath} complete in ${durationMs}ms, contentLen=${response.data?.content?.length ?? 0}`,
+          );
+        }
+        return {
+          content: response.data?.content ?? '',
+          usage: response.data?.usage,
+        };
+      } catch (error) {
+        lastError = error;
+        const axiosError = error as AxiosError;
+        const status = axiosError.response?.status ?? null;
+        const isRetryable =
+          status === 429 || (status !== null && status >= 500 && status < 600);
+        if (!isRetryable || attempt === MAX_RETRIES) {
+          break;
+        }
+        let waitMs: number;
+        const retryAfter = axiosError.response?.headers?.['retry-after'];
+        if (typeof retryAfter === 'string' && retryAfter.length > 0) {
+          const asSeconds = Number(retryAfter);
+          if (Number.isFinite(asSeconds) && asSeconds > 0) {
+            waitMs = Math.min(asSeconds * 1000, 30_000);
+          } else {
+            const asDate = new Date(retryAfter).getTime();
+            waitMs = Number.isFinite(asDate)
+              ? Math.max(0, Math.min(asDate - Date.now(), 30_000))
+              : 1000 * Math.pow(2, attempt);
+          }
+        } else {
+          const base = 500 * Math.pow(2, attempt);
+          const jitter = Math.floor(Math.random() * (base * 0.5));
+          waitMs = base + jitter;
+        }
+        console.warn(
+          `[GatewayClient] induceLogRecipe ${filePath} got HTTP ${status}, retry ${attempt + 1}/${MAX_RETRIES} after ${waitMs}ms`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+    }
+    const durationMs = Date.now() - start;
+    const axiosError = lastError as AxiosError;
+    const status = axiosError?.response?.status ?? null;
+    const baseMessage =
+      lastError instanceof Error ? lastError.message : 'Unknown log-recipe induction error';
+    const message =
+      status !== null
+        ? `Log-recipe induction failed for ${filePath} (HTTP ${status}): ${baseMessage}`
+        : `Log-recipe induction failed for ${filePath}: ${baseMessage}`;
+    console.error(
+      `[GatewayClient] induceLogRecipe ${filePath} FAILED after ${durationMs}ms: ${message}`,
+    );
+    throw new LogRecipeGatewayError(message, filePath, status, lastError);
   }
 
   /**

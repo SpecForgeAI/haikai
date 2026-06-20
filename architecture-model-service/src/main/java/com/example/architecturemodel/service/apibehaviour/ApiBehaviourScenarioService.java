@@ -41,14 +41,16 @@ public class ApiBehaviourScenarioService {
 
     public static final Set<String> ALLOWED_SCENARIO_TYPES = Set.of(
         "happy_path", "not_found", "validation_error", "empty_result",
-        "boundary_value", "auth_error", "business_edge_case", "generated_candidate"
+        "boundary_value", "auth_error", "business_edge_case", "generated_candidate",
+        "manual"
     );
     public static final Set<String> ALLOWED_STATUSES = Set.of(
         "draft", "executed_success", "executed_error",
         "accepted", "rejected", "needs_review"
     );
     public static final Set<String> ALLOWED_GENERATION_SOURCES = Set.of(
-        "oas_example", "db_sample", "llm_generated", "llm_refined", "user_edited"
+        "oas_example", "db_sample", "llm_generated", "llm_refined", "user_edited",
+        "manual"
     );
 
     private final ApiBehaviourScenarioRepository repository;

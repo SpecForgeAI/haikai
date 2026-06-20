@@ -1,0 +1,36 @@
+2026-06-20T12:00:00Z [main] [bootstrap] application starting up version=2.0.0
+2026-06-20T12:00:01Z [main] [bootstrap] listening on port 8080
+1 > POST http://svc-host:8080/api/orders
+1 > content-type: application/json
+1 > accept: application/json
+1 >
+1 > {"item":"widget","qty":2}
+1 < HTTP/1.1 201 Created
+1 < {"id":"ord-1","ok":true}
+2026-06-20T12:00:02Z [pool-1] [worker] async reconcile tick items=3
+2 > GET http://svc-host:8080/api/users/123
+2 > accept: application/json
+2 >
+2 > {}
+2 < HTTP/1.1 200 OK
+2 < {"id":"123","name":"Ada"}
+2026-06-20T12:00:03Z [pool-1] [worker] async reconcile tick items=7
+3 > GET http://svc-host:8080/api/users/456
+3 > accept: application/json
+3 >
+3 > {}
+3 < HTTP/1.1 200 OK
+3 < {"id":"456","name":"Grace"}
+4 > DELETE http://svc-host:8080/api/orders/55
+4 > authorization: Bearer redact-me-token-zzz
+4 >
+4 > {}
+4 < HTTP/1.1 204 No Content
+4 <
+5 > PUT http://svc-host:8080/api/users/789
+5 > content-type: application/json
+5 >
+5 > {"name":"Linus"}
+5 < HTTP/1.1 200 OK
+5 < {"id":"789","name":"Linus"}
+2026-06-20T12:00:10Z [pool-2] [worker] background reconciliation tick completed items=42

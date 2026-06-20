@@ -63,7 +63,24 @@ import {
   buildUnmatchedRuntimeEndpointFinding,
   buildRuntimeUsageObservationFinding,
   buildUnusedCodeEndpointFinding,
+  buildRuntimeLogExtractionDiagnosticFinding,
 } from '../findings/emissionSources';
+import { gatewayClient as defaultGatewayClient } from '../gatewayClient';
+import { tryKnownFormatFastPathContent, type RichObservation } from './knownFormatFastPath';
+import { preScanAndSampleContent } from './logPreScanSampler';
+import {
+  induceAndValidateRecipe,
+  fingerprintFromBlocks,
+  lookupReusableRecipe,
+  upsertRecipeIntoStore,
+  type LogRecipe,
+  type LogRecipeRelay,
+  type RecipeStore,
+} from './logRecipeInduction';
+import { extractWithRecipeFromContent } from './recipeAwareExtractor';
+import { buildLogEvidenceAtoms } from './runtimeEvidenceAtomBuilder';
+import type { EvidenceAtom } from '../../types/evidenceAtom';
+
 
 /**
  * Per-file size cap. Default 100MB matches the upload cap from Spec 4
@@ -85,13 +102,70 @@ const LOG_PARSE_MAX_TOTAL_BYTES: number = Number(
 );
 
 /**
+ * Max evidence atoms POSTed per bulkSaveEvidence call. Mirrors the manual
+ * log-enrichment route batching so a very busy log does not exceed the AMS
+ * request-body cap in a single call.
+ */
+const LOG_EVIDENCE_BATCH_SIZE = 500;
+
+/**
  * HTTP-method + path regex used against the `message` field of non-CLF
  * log entries (JSONL/syslog/framework-pattern/plaintext). Mirrors the
  * pattern used by `endpointUsageExtractor` so the orchestrator picks up
  * the same observations the manual reprocess route would.
  */
 const HTTP_METHOD_PATH_REGEX =
-  /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\/[^\s"'>,;)\]}]+)(?:[^0-9]*?(\d{3}))?/i;
+  /\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+((?:https?:\/\/[^\s"'>,;)\]}]+)|(?:\/[^\s"'>,;)\]}]+))(?:[^0-9]*?(\d{3}))?/i;
+
+/**
+ * Strip the scheme/host/port off an absolute URL, returning the
+ * `/path[?query]` portion. A value that is already a bare `/path` (or
+ * any non-absolute-URL string) is returned unchanged. Used so the
+ * broadened {@link HTTP_METHOD_PATH_REGEX} -- which now also matches
+ * `METHOD <absolute-URL>` (the bespoke HiFi `POST http://host:port/path`
+ * shape) -- yields a PATH for `normalizePath`, never a full URL.
+ *
+ * Examples:
+ *   `http://host:8080/api/orders`         -> `/api/orders`
+ *   `https://h:443/api/users?active=true`  -> `/api/users?active=true`
+ *   `/api/users`                           -> `/api/users` (unchanged)
+ */
+export function extractPathFromTarget(target: string): string {
+  if (!target) return target;
+  const m = /^https?:\/\/[^\/]+(\/[^\s]*)?$/i.exec(target);
+  if (!m) return target;
+  // Absolute URL with no path (`http://host:8080`) -> root path.
+  return m[1] && m[1].length > 0 ? m[1] : '/';
+}
+
+/**
+ * Shared request-like-line detector primitive (Task Group 1 -> reused by
+ * Task Group 2 pre-scan). Returns `{ method, path }` when a line carries
+ * an HTTP method followed by either a `/path` or an absolute URL
+ * (`METHOD http(s)://host[:port]/path`); the path is the stripped
+ * `/path[?query]` portion. Returns `null` for non-request lines.
+ *
+ * This is the SINGLE source of truth for the verb/URL signal: the
+ * deterministic fallback matcher ({@link tryExtractFromMessage}) and the
+ * pre-scan sampler both go through this same regex, so a line the
+ * fallback can extract is exactly a line the pre-scan treats as a hit.
+ *
+ * Pure function -- no I/O, no state. Status detection is NOT performed
+ * here (the pre-scan only needs the verb/path signal); status capture
+ * stays in {@link tryExtractFromMessage}.
+ */
+export function detectRequestLikeLine(
+  line: string,
+): { method: string; path: string } | null {
+  if (!line) return null;
+  HTTP_METHOD_PATH_REGEX.lastIndex = 0;
+  const m = HTTP_METHOD_PATH_REGEX.exec(line);
+  if (!m) return null;
+  const method = m[1].toUpperCase();
+  const path = extractPathFromTarget(m[2]);
+  if (!path || path[0] !== '/') return null;
+  return { method, path };
+}
 
 /**
  * KV-style status fallback. The user's actual access-log lines tail the
@@ -156,7 +230,7 @@ export interface LogFileArtifactEntry {
  */
 type RuntimeEvidenceArchClient = Pick<
   typeof defaultArchModelClient,
-  'updateDiscoveryRun' | 'getDiscoveryRun'
+  'updateDiscoveryRun' | 'getDiscoveryRun' | 'bulkSaveEvidence'
 >;
 
 export interface RunDiscoveryRuntimeEvidenceArgs {
@@ -184,6 +258,13 @@ export interface RunDiscoveryRuntimeEvidenceArgs {
   configSnapshot: Record<string, unknown> | null | undefined;
   /** Optional client override for tests. Defaults to the singleton. */
   archModelClient?: RuntimeEvidenceArchClient;
+  /**
+   * Optional LLM recipe-induction relay (Task Group 5). Defaults to the
+   * `gatewayClient.induceLogRecipe` singleton; tests pass a mock. Only used
+   * when the known-format fast path comes back THIN and no reusable recipe
+   * is already persisted.
+   */
+  logRecipeRelay?: LogRecipeRelay;
 }
 
 /**
@@ -323,7 +404,7 @@ export function tryExtractFromMessage(
   const m = HTTP_METHOD_PATH_REGEX.exec(message);
   if (!m) return null;
   const method = m[1].toUpperCase();
-  const rawPath = m[2];
+  const rawPath = extractPathFromTarget(m[2]);
   let statusStr: string | undefined = m[3];
   if (!statusStr) {
     const kvMatch = KV_STATUS_REGEX.exec(message);
@@ -443,6 +524,140 @@ async function persistSkipped(
 }
 
 /**
+ * Convert a rich observation that carries a logged status into the legacy
+ * {@link HttpRuntimeObservation} the aggregator/matcher trio consumes. Returns
+ * null when the observation has no usable status (the trio requires a numeric
+ * status); such observations still become `source='log'` evidence atoms, they
+ * just do not contribute a best-effort `runtime_usage` finding.
+ */
+function richToHttpObservation(
+  obs: RichObservation,
+  artifact: LogFileArtifactEntry,
+): HttpRuntimeObservation | null {
+  if (typeof obs.status !== 'number' || !Number.isFinite(obs.status)) return null;
+  return {
+    method: obs.method,
+    rawPath: obs.rawPath,
+    normalizedPath: obs.normalizedPath,
+    status: obs.status,
+    timestampIso: obs.timestampIso,
+    sourceArtifactId: obs.sourceArtifactId ?? artifact.artifactId,
+    sourceFileName: obs.sourceFileName ?? artifact.originalFileName,
+    lineNumber: obs.lineNumber ?? 0,
+    snippet: undefined,
+  };
+}
+
+/**
+ * Convert a legacy {@link HttpRuntimeObservation} (from the CLF parser or the
+ * broadened deterministic fallback matcher) into the rich shape the evidence-
+ * atom builder consumes. These paths are inherently thin (method+path+status,
+ * no bodies); the conversion invents nothing.
+ */
+function httpObservationToRich(obs: HttpRuntimeObservation): RichObservation {
+  return {
+    method: obs.method,
+    rawPath: obs.rawPath,
+    normalizedPath: obs.normalizedPath,
+    status: obs.status,
+    timestampIso: obs.timestampIso,
+    sourceArtifactId: obs.sourceArtifactId,
+    sourceFileName: obs.sourceFileName,
+    lineNumber: obs.lineNumber,
+  };
+}
+
+/**
+ * The per-file extraction SELECTION (Spec Task Group 7, step 7.2). Quality-
+ * first ordering applied to ALREADY-LOADED file content:
+ *   (a) richness-gated known-format fast path (Task Group 3) -- if rich, use it;
+ *   (b) else pre-scan + sample (Task Group 2), reuse a persisted recipe by
+ *       fingerprint if one exists (NO LLM call), otherwise induce + held-out-
+ *       validate one (Task Group 5) and, when accepted, apply it across the file
+ *       deterministically (Task Group 6);
+ *   (c) else return an EMPTY rich set + a fallback signal so the caller drops to
+ *       the existing broadened `tryExtractFromMessage` matcher (Task Group 1).
+ *
+ * NEVER throws: every smart-path failure degrades to the fallback signal so the
+ * orchestrator's NEVER-throws contract is preserved.
+ */
+async function selectAndExtractRichObservations(sel: {
+  fileContent: string;
+  artifact: LogFileArtifactEntry;
+  sourceFilePath: string;
+  runId: string;
+  relay: LogRecipeRelay;
+  existingRecipes: RecipeStore;
+}): Promise<{
+  richObservations: RichObservation[];
+  preScanHits: number;
+  sampledBlocks: number;
+  acceptedRecipe?: LogRecipe;
+  reason: string;
+}> {
+  const meta = {
+    sourceArtifactId: sel.artifact.artifactId,
+    sourceFileName: sel.artifact.originalFileName,
+  };
+  try {
+    // (a) Known-format fast path -- deterministic, no LLM.
+    const fast = tryKnownFormatFastPathContent(sel.fileContent);
+    if (fast.usedFastPath) {
+      const rich = fast.extracted.map((o) => ({ ...o, ...meta }));
+      return { richObservations: rich, preScanHits: rich.length, sampledBlocks: 0, reason: `fast_path:${fast.format}` };
+    }
+
+    // (b) Pre-scan + sample. Reuse a persisted recipe by fingerprint first.
+    const sample = preScanAndSampleContent(sel.fileContent);
+    const fingerprint = fingerprintFromBlocks(sample.blocks);
+    const sourceFileKey = `file:${sel.sourceFilePath}`;
+    const reusable = lookupReusableRecipe(sel.existingRecipes, fingerprint, sourceFileKey);
+    if (reusable) {
+      const rich = extractWithRecipeFromContent(reusable, sel.fileContent, meta);
+      return {
+        richObservations: rich,
+        preScanHits: sample.hitCount,
+        sampledBlocks: sample.blocks.length,
+        acceptedRecipe: reusable,
+        reason: `recipe_reused:${rich.length}`,
+      };
+    }
+
+    const induction = await induceAndValidateRecipe({
+      blocks: sample.blocks,
+      relay: sel.relay,
+      runId: sel.runId,
+      sourceFilePath: sel.sourceFilePath,
+    });
+    if (induction.status === 'accepted') {
+      const rich = extractWithRecipeFromContent(induction.recipe, sel.fileContent, meta);
+      return {
+        richObservations: rich,
+        preScanHits: sample.hitCount,
+        sampledBlocks: sample.blocks.length,
+        acceptedRecipe: induction.recipe,
+        reason: `recipe_induced:${rich.length}`,
+      };
+    }
+
+    // (c) No usable recipe -> caller uses the deterministic fallback matcher.
+    return {
+      richObservations: [],
+      preScanHits: sample.hitCount,
+      sampledBlocks: sample.blocks.length,
+      reason: `fallback:${induction.reason}`,
+    };
+  } catch (err) {
+    // Smart-path failure must never fail the run; drop to the fallback matcher.
+    console.warn(
+      `[runtimeEvidence] rich extraction selection failed for ${sel.artifact.originalFileName}; ` +
+        `using deterministic fallback: ${(err as Error).message}`,
+    );
+    return { richObservations: [], preScanHits: 0, sampledBlocks: 0, reason: 'fallback:selection_error' };
+  }
+}
+
+/**
  * Run the runtime-evidence sub-stage.
  *
  * See module-level comment for the failure-mode contract; in short, this
@@ -482,6 +697,24 @@ export async function runDiscoveryRuntimeEvidence(
   try {
     const warnings: string[] = [];
     const observations: HttpRuntimeObservation[] = [];
+    // Rich observations (method/path + any logged headers/body/response) drive
+    // the `source='log'` evidence write (Task Group 7). EVERY extraction path
+    // contributes here -- fast path, recipe, CLF, and the broadened fallback --
+    // so evidence is written even when zero candidates match (that alone clears
+    // the `insufficient_runtime_evidence` gap).
+    const richObservations: RichObservation[] = [];
+    // Recipes accepted/reused this run, persisted into
+    // `steps_payload.v3.runtimeEvidence.recipe` for free reuse on re-runs.
+    let recipeStore: RecipeStore = {};
+    // Pre-scan accounting for the Task Group 8 ~0-despite-hits diagnostic.
+    let preScanHitsTotal = 0;
+    let sampledBlocksTotal = 0;
+    const perFileReasons: string[] = [];
+    const logRecipeRelay: LogRecipeRelay = args.logRecipeRelay ?? defaultGatewayClient;
+    const repoUrl =
+      (configSnapshot && typeof configSnapshot === 'object'
+        ? ((configSnapshot as Record<string, unknown>).repoUrl as string | undefined)
+        : undefined) ?? '';
     let totalBytesProcessed = 0;
     let logFilesProcessed = 0;
     let attemptedFiles = 0;
@@ -550,20 +783,48 @@ export async function runDiscoveryRuntimeEvidence(
             artifact.originalFileName,
           )) {
             observations.push(obs);
+            richObservations.push(httpObservationToRich(obs));
             perFileObservations += 1;
           }
+          perFileReasons.push(`${artifact.originalFileName}:clf`);
         } else {
-          // Non-CLF format -> reuse the existing whole-file parser.
+          // Non-CLF format -> quality-first selection (Task Group 7, step 7.2).
           // Per Spec 4 the per-file cap (100MB default) keeps memory bounded.
           const fileContent = await fsp.readFile(absolutePath, 'utf8');
-          const parsed = parseLogContent(fileContent);
-          for (const entry of parsed.entries) {
-            const obs = tryExtractFromMessage(entry, artifact);
-            if (obs) {
-              observations.push(obs);
+          const selection = await selectAndExtractRichObservations({
+            fileContent,
+            artifact,
+            sourceFilePath: absolutePath,
+            runId,
+            relay: logRecipeRelay,
+            existingRecipes: recipeStore,
+          });
+          preScanHitsTotal += selection.preScanHits;
+          sampledBlocksTotal += selection.sampledBlocks;
+          perFileReasons.push(`${artifact.originalFileName}:${selection.reason}`);
+          if (selection.acceptedRecipe) {
+            recipeStore = upsertRecipeIntoStore(recipeStore, selection.acceptedRecipe);
+          }
+          if (selection.richObservations.length > 0) {
+            // Smart path (fast path / recipe) won -> use its rich observations.
+            for (const ro of selection.richObservations) {
+              richObservations.push(ro);
+              const httpObs = richToHttpObservation(ro, artifact);
+              if (httpObs) observations.push(httpObs);
               perFileObservations += 1;
-            } else if (perFileNullSamples.length < 3) {
-              perFileNullSamples.push((entry.message ?? '').slice(0, 110));
+            }
+          } else {
+            // (c) Fallback: the broadened deterministic matcher (Task Group 1).
+            const parsed = parseLogContent(fileContent);
+            for (const entry of parsed.entries) {
+              const obs = tryExtractFromMessage(entry, artifact);
+              if (obs) {
+                observations.push(obs);
+                richObservations.push(httpObservationToRich(obs));
+                perFileObservations += 1;
+              } else if (perFileNullSamples.length < 3) {
+                perFileNullSamples.push((entry.message ?? '').slice(0, 110));
+              }
             }
           }
         }
@@ -642,6 +903,82 @@ export async function runDiscoveryRuntimeEvidence(
       logFilesProcessed,
     );
 
+    // Step 7.5: write `source='log'` discovery_evidence rows. THIS IS THE
+    // dead-branch fix and the gap-clearing write: AMS buildRuntimeUsageSummary
+    // counts discovery_evidence rows with source=='log', and
+    // hasRuntimeEvidence = (that count > 0) || (runtime finding count > 0). So
+    // this MUST run even when zero candidates matched -- evidence alone clears
+    // `insufficient_runtime_evidence`. Best-effort: a failure here is warned and
+    // swallowed so the runtime stage never fails the discovery run.
+    try {
+      const logEvidenceAtoms: EvidenceAtom[] = [];
+      for (const artifact of logFiles) {
+        const forFile = richObservations.filter(
+          (o) => (o.sourceArtifactId ?? artifact.artifactId) === artifact.artifactId,
+        );
+        if (forFile.length === 0) continue;
+        const atoms = buildLogEvidenceAtoms(forFile, {
+          runId,
+          repoUrl,
+          logFilePath: artifact.originalFileName,
+        });
+        for (const atom of atoms) logEvidenceAtoms.push(atom);
+      }
+      if (logEvidenceAtoms.length > 0) {
+        for (let i = 0; i < logEvidenceAtoms.length; i += LOG_EVIDENCE_BATCH_SIZE) {
+          await archModelClient.bulkSaveEvidence(
+            projectId,
+            runId,
+            logEvidenceAtoms.slice(i, i + LOG_EVIDENCE_BATCH_SIZE),
+          );
+        }
+      }
+      // eslint-disable-next-line no-console
+      console.log(
+        `[runtimeEvidence] wrote ${logEvidenceAtoms.length} source='log' evidence ` +
+          `atom(s) from ${richObservations.length} rich observation(s) for run ${runId}.`,
+      );
+    } catch (err) {
+      console.warn(
+        `[runtimeEvidence] Failed to write source='log' evidence for run ${runId}: ` +
+          `${(err as Error).message}`,
+      );
+    }
+
+    // Step 7.6 (Task Group 8): ~0-extraction-despite-pre-scan-hits diagnostic.
+    // When the pre-scan saw request-like lines but the pipeline recovered ~no
+    // rich observations, record a STRUCTURED `extractionOutcome` (persisted into
+    // `steps_payload.v3.runtimeEvidence` below) AND emit a LOW-severity
+    // `runtime_log` finding for visibility. This NEVER fails the run and
+    // introduces NO new gap type -- it is purely an advisory marker.
+    let extractionOutcome: Record<string, unknown> | undefined;
+    if (preScanHitsTotal > 0 && richObservations.length === 0) {
+      extractionOutcome = {
+        preScanHits: preScanHitsTotal,
+        observations: richObservations.length,
+        sampledBlocks: sampledBlocksTotal,
+        reason: perFileReasons.join('; ') || 'pre_scan_hits_but_no_observations',
+      };
+      try {
+        await findingEmitter.emitFindings(
+          { runId, projectId, architectureId: args.architectureId ?? '' },
+          [
+            buildRuntimeLogExtractionDiagnosticFinding({
+              preScanHits: preScanHitsTotal,
+              observations: richObservations.length,
+              sampledBlocks: sampledBlocksTotal,
+              reason: perFileReasons.join('; ') || 'pre_scan_hits_but_no_observations',
+            }),
+          ],
+        );
+      } catch (err) {
+        console.warn(
+          `[runtimeEvidence] runtime_log diagnostic finding emit failed (non-fatal) ` +
+            `for run ${runId}: ${(err as Error).message}`,
+        );
+      }
+    }
+
     // Step 8a: HOTFIX 2026-05-12-A. The V3 pipeline runs this stage
     // BEFORE Stage 2's deterministic candidates have been persisted to
     // AMS (RunManager.bulkSaveCandidates runs AFTER the pipeline
@@ -666,6 +1003,8 @@ export async function runDiscoveryRuntimeEvidence(
       runId,
       runSummary,
       archModelClient,
+      recipe: Object.keys(recipeStore).length > 0 ? recipeStore : undefined,
+      extractionOutcome,
     });
 
     // =====================================================================

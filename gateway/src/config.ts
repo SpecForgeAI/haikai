@@ -276,7 +276,7 @@ export function loadConfig(): Config {
     maxMessageBytes: parseIntEnv(process.env.MAX_MESSAGE_BYTES, 32768), // 32KB
 
     // Rate Limiting
-    rateLimitRpm: parseIntEnv(process.env.RATE_LIMIT_RPM, 60),
+    rateLimitRpm: parseIntEnv(process.env.RATE_LIMIT_RPM, 300),
     rateLimitBurst: parseIntEnv(process.env.RATE_LIMIT_BURST, 20),
 
     // Session Management
