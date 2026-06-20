@@ -3,6 +3,8 @@ package com.example.architecturemodel.service.apibehaviour;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.mapper.apibehaviour.ApiBehaviourMapper;
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourCaptureDto;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchUpdateApiBehaviourCapturesRequest;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchUpdateApiBehaviourCapturesResponse;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourCaptureRequest;
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourCaptureRequest;
 import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourCaptureEntity;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -38,6 +41,13 @@ import java.util.UUID;
 public class ApiBehaviourCaptureService {
 
     private final ApiBehaviourCaptureRepository repository;
+
+    /**
+     * Max captures accepted on a single best-effort batch-PATCH call.
+     * Mirrors {@code DiscoveryFindingService.MAX_BULK_FINDINGS}; requests over
+     * the cap are rejected with 400 rather than truncated.
+     */
+    public static final int MAX_BATCH_ITEMS = 500;
 
     @Transactional(readOnly = true)
     public List<ApiBehaviourCaptureDto> listBySession(UUID sessionId) {
@@ -182,6 +192,51 @@ public class ApiBehaviourCaptureService {
         // mirroring baseline immutability. No update branch here on purpose.
 
         return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
+    }
+
+    /**
+     * Best-effort, NON-atomic batch PATCH.
+     *
+     * <p>Each {@code {id, patch}} item is applied via the existing per-row
+     * {@link #update} field-merge independently: a failing item (e.g. a
+     * missing capture, or a validation error) is recorded in {@code failed[]}
+     * (id + reason) and the loop continues -- it does NOT abort the rest. The
+     * {@code {id, patch}} shape lets Reject-All preserve each capture's own
+     * {@code reviewer_notes} masks; Accept-All sends the same patch per id.</p>
+     *
+     * <p>{@code projectId} is accepted for controller-surface symmetry; a
+     * capture row is addressed by its own id, so it is not used to scope the
+     * merge (mirrors {@link #update}).</p>
+     *
+     * <p>Spec: Baseline Save &amp; Review -- Batch + Activate + Table Detail +
+     * Postman Export (2026-06-20) -- Task Group 1 (R1).</p>
+     */
+    @Transactional
+    public BatchUpdateApiBehaviourCapturesResponse updateBatch(
+            UUID projectId, List<BatchUpdateApiBehaviourCapturesRequest.ItemPatch> items) {
+        if (items == null) {
+            throw new IllegalArgumentException("Batch captures request body is required");
+        }
+        if (items.size() > MAX_BATCH_ITEMS) {
+            throw new IllegalArgumentException(
+                "Batch captures request exceeds the per-call cap of "
+                    + MAX_BATCH_ITEMS + " (received " + items.size() + ")");
+        }
+        List<ApiBehaviourCaptureDto> updated = new ArrayList<>(items.size());
+        List<BatchUpdateApiBehaviourCapturesResponse.FailedItem> failed = new ArrayList<>();
+        for (BatchUpdateApiBehaviourCapturesRequest.ItemPatch item : items) {
+            UUID id = item == null ? null : item.id();
+            try {
+                if (item == null || item.id() == null) {
+                    throw new IllegalArgumentException("id is required for each batch item");
+                }
+                updated.add(update(item.id(), item.patch()));
+            } catch (RuntimeException ex) {
+                failed.add(new BatchUpdateApiBehaviourCapturesResponse.FailedItem(
+                    id, ex.getMessage()));
+            }
+        }
+        return new BatchUpdateApiBehaviourCapturesResponse(updated, failed);
     }
 
     @Transactional

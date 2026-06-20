@@ -36,10 +36,11 @@
  *   - Baselines start in `draft` status. Promotion to `active` happens via
  *     a separate flow out of scope for v1.
  *
- * The bulk-create is sequential rather than `Promise.all` so that a
- * partial-failure leaves an obvious "N items written, item N+1 failed"
- * trail rather than racing through and aborting halfway with confusing
- * partial state.
+ * The baseline items are persisted in ONE best-effort batch request
+ * (`createBaselineItemsBatch`) rather than N sequential POSTs -- this avoids
+ * the gateway rate-limit storm and returns a per-item `failed[]`, so a
+ * partial save surfaces an explicit warning naming the items that failed
+ * while the successfully-created items are still saved.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -50,7 +51,8 @@ import {
   ApiBehaviourOperationDto,
   ApiBehaviourScenarioDto,
   createBaseline,
-  createBaselineItem,
+  createBaselineItemsBatch,
+  type BatchCreateBaselineItemFailure,
 } from '../../api/apiBehaviourClient';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
@@ -100,6 +102,25 @@ function describeError(err: unknown): string {
   return 'Unexpected error';
 }
 
+/**
+ * Render the best-effort batch `failed[]` as a single human-readable warning
+ * line naming the captures that did not persist (by `capture_id`, falling
+ * back to the 0-based submitted index when the item carried none). The save
+ * still succeeded for the created rows -- this is informational, not an error.
+ */
+function describeBatchFailures(
+  failed: BatchCreateBaselineItemFailure[],
+): string {
+  const labels = failed.map(
+    (f) => f.capture_id ?? `item #${f.index}`,
+  );
+  const noun = failed.length === 1 ? 'item' : 'items';
+  return (
+    `${failed.length} ${noun} could not be saved and were skipped ` +
+    `(the rest were saved): ${labels.join(', ')}.`
+  );
+}
+
 function operationLabel(op: ApiBehaviourOperationDto): string {
   const method = (op.method ?? '').toUpperCase();
   const path = op.path ?? '(no path)';
@@ -125,6 +146,13 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Best-effort batch save (Spec 2026-06-20, R1/R4): the save POSTs every
+  // accepted capture in ONE `createBaselineItemsBatch` call rather than looping
+  // one gateway request per capture (which tripped the rate limiter). The call
+  // is NON-atomic: a bad item is reported in `failed[]` WITHOUT aborting the
+  // rest, so the save still succeeds for the `created` rows. Surface `failed[]`
+  // here as a non-fatal warning naming the captures that did not persist.
+  const [warning, setWarning] = useState<string | null>(null);
 
   const acceptedCaptures = useMemo(
     () => captures.filter((c) => c.accepted === true),
@@ -185,6 +213,7 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
     if (!name.trim() || acceptedCaptures.length === 0) return;
     setSubmitting(true);
     setError(null);
+    setWarning(null);
     try {
       const baseline = await createBaseline(projectId, architectureId, {
         project_id: projectId,
@@ -194,11 +223,18 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
         notes: notes.trim() || null,
       });
 
-      // Sequential bulk create -- see file comment for rationale.
-      for (const cap of acceptedCaptures) {
+      // Best-effort batch create (Spec 2026-06-20, R1/R4). Build the item
+      // array EXACTLY as the former per-capture loop did (the
+      // `{ query, headers, body }` request_json envelope, the
+      // `{ headers, body }` response_json envelope, and the volatile /
+      // sequence carry per item), then POST them all in ONE
+      // `createBaselineItemsBatch` call instead of N sequential POSTs. The
+      // call is non-atomic: `created` rows commit even when `failed[]` is
+      // non-empty, so we treat the save as succeeded for the created items.
+      const items = acceptedCaptures.map((cap) => {
         const op = operationById.get(cap.operation_id);
         const scenario = scenarioById.get(cap.scenario_id);
-        await createBaselineItem(projectId, architectureId, {
+        return {
           baseline_id: baseline.id,
           capture_id: cap.id,
           operation_id: cap.operation_id,
@@ -254,7 +290,22 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
             null,
           sequence_json:
             sequenceCarryByCaptureId.get(cap.id)?.sequence_json ?? null,
-        });
+        };
+      });
+
+      const { failed } = await createBaselineItemsBatch(
+        projectId,
+        architectureId,
+        items,
+      );
+
+      // Best-effort: the save SUCCEEDS for the created rows even when some
+      // items failed. Surface the failures as a non-fatal warning naming the
+      // exact captures (by `capture_id`, falling back to the submitted index)
+      // so the reviewer knows the baseline is partial -- we still proceed to
+      // refresh the model and navigate to the list.
+      if (failed.length > 0) {
+        setWarning(describeBatchFailures(failed));
       }
 
       // Spec Group 10: AppShell model cache invalidation.
@@ -263,11 +314,11 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
       // model cache is unaware of. The save flow is always scoped to the
       // currently-active architecture (same-arch flow), so we use
       // LOAD_MODEL rather than invalidateArchitectureModelCache so the
-      // user lands on the baseline detail view with a fresh model already
+      // user lands on the baselines list with a fresh model already
       // in hand.
       //
       // Cache-refresh failures are NON-FATAL for the success path: we log
-      // a warning and proceed to the baseline detail navigation. The user
+      // a warning and proceed to the baselines-list navigation. The user
       // can manually refresh if they need to see the new rows in their
       // current architecture view.
       try {
@@ -281,9 +332,14 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
         );
       }
 
+      // Post-save navigation (Spec 2026-06-20, R4): land back on the
+      // baselines LIST -- NOT the per-item detail dump. The new baseline
+      // shows there as `draft`; activation is a deliberate, separate Make
+      // Active action (no auto-activate, because a best-effort save can
+      // leave gaps).
       navigate(
         `/projects/${projectId}/architectures/${architectureId}` +
-          `/api-behaviour/baselines/${baseline.id}`,
+          `/api-behaviour`,
       );
     } catch (err) {
       setError(describeError(err));
@@ -382,6 +438,15 @@ export const SaveAsBaselineModal: React.FC<SaveAsBaselineModalProps> = ({
         </label>
 
         {error && <div className={styles.errorBanner}>{error}</div>}
+
+        {warning && (
+          <div
+            className={styles.warningBanner}
+            data-testid="save-as-baseline-batch-warning"
+          >
+            {warning}
+          </div>
+        )}
 
         <div className={styles.cta}>
           <button

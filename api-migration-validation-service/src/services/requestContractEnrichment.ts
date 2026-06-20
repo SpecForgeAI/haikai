@@ -48,7 +48,7 @@ export const CODE_SCAN_SOURCE = 'code-scan';
  * AMS speaks snake_case at the wire (CLAUDE.md), so `content_type` /
  * `required_headers` are the primary keys.
  */
-interface RequestContractFacts {
+export interface RequestContractFacts {
   /** Request media type, e.g. `application/json` / `application/xml`. */
   contentType: string | null;
   /** Required request headers ({ name } shape on `oasOperation.parameters`). */
@@ -72,7 +72,7 @@ interface RequestContractFacts {
  * to the OAS param `in` for path/query/header, and to a `requestBody` schema
  * PROPERTY for 'body'.
  */
-interface ParamFormat {
+export interface ParamFormat {
   name: string;
   /** 'body' | 'query' | 'path' | 'header' (matches discovery `locationForParam`). */
   location: string | null;
@@ -101,7 +101,7 @@ function readString(obj: Record<string, unknown>, ...keys: string[]): string | n
  *   content_type  : string (preferred) | first entry of consumes[]
  *   required_headers[] : { name, source } -- we project the `name`s
  */
-function readRequestContractFacts(
+export function readRequestContractFacts(
   endpoint: Record<string, unknown>,
 ): RequestContractFacts | null {
   const blobRaw = endpoint.request_contract ?? endpoint.requestContract;

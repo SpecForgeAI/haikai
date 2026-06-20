@@ -44,6 +44,10 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     listOperations: vi.fn().mockResolvedValue([]),
     reconcileInventory: vi.fn(),
     accountEndpoints: vi.fn(),
+    // Renumber (Spec 2026-06-20): the Step 4 -> 5 advance now fetches the
+    // data-type-format preview. An EMPTY result auto-skips the new step so
+    // these flows still land on Start (step 6) after one Next from Step 4.
+    dataTypeDefaultsPreview: vi.fn(),
   };
 });
 
@@ -66,6 +70,7 @@ import {
   startCaptureSession,
   submitSecrets,
   updateCaptureSession,
+  dataTypeDefaultsPreview,
   type ApiBehaviourCaptureSessionDto,
   type ApiBehaviourOperationDto,
   type InventoryReconciliationResponse,
@@ -255,6 +260,11 @@ beforeEach(() => {
   vi.mocked(reconcileInventory).mockResolvedValue(buildReconciliation());
   vi.mocked(updateCaptureSession).mockResolvedValue(buildSession({ status: 'configured' }));
   vi.mocked(startCaptureSession).mockResolvedValue(buildSession({ status: 'running' }));
+  // Empty preview -> the new Data-type step auto-skips to Start (step 6).
+  vi.mocked(dataTypeDefaultsPreview).mockResolvedValue({
+    sessionId: SESSION_ID,
+    rows: [],
+  });
 });
 
 afterEach(() => {

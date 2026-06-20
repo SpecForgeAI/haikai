@@ -1,16 +1,28 @@
 /**
- * CaptureReviewPanel -- bulk "Accept all" / "Reject all" tests
+ * CaptureReviewPanel -- bulk "Accept all" / "Reject all" / "Accept and Save All"
  *
- * Covers the header-toolbar bulk actions added to the capture-review table:
- *   1. "Accept all" PATCHes every *visible* capture with accepted=true (+ iso
- *      accepted_at), one PATCH per visible row.
- *   2. "Reject all" (window.confirm -> true) PATCHes every visible capture
- *      with accepted=false / accepted_at=null.
+ * Spec: 2026-06-20 Baseline Save & Review -- Batch + Activate -- Task Group 4.
+ *
+ * These tests pin the rate-limit-fix headline: the header-toolbar bulk actions
+ * now collapse to a SINGLE best-effort `updateCapturesBatch` call instead of one
+ * gateway PATCH per visible row.
+ *   1. "Accept all" calls `updateCapturesBatch` ONCE (not N times) with one
+ *      `{ id, patch:{ accepted:true, accepted_at } }` per visible capture, merges
+ *      the returned `updated[]` into state, and warns on `failed[]`.
+ *   2. "Reject all" (window.confirm -> true) calls `updateCapturesBatch` ONCE
+ *      with a PER-ROW notes-preserving patch (`{ accepted:false,
+ *      accepted_at:null, reviewer_notes:<that row's masks> }`).
  *   3. "Reject all" is a no-op when window.confirm returns false.
- *   4. Both bulk buttons are hidden when the panel is read-only.
+ *   4. "Accept and Save All" runs the accept batch then OPENS the save flow; on
+ *      a PARTIAL accept failure it STILL proceeds to the save flow and surfaces
+ *      the accept failures as a combined warning.
+ *   5. The bulk buttons are hidden when the panel is read-only.
  *
  * Mocks the apiBehaviourClient (spread-actual + override) so the real
- * parse/serialise helpers stay in use; asserts updateCapture call count/args.
+ * parse/serialise helpers stay in use; asserts updateCapturesBatch call
+ * count/args. The combined action mounts SaveAsBaselineModal, so its context /
+ * model-cache deps are stubbed (the save batch itself is covered by
+ * SaveAsBaselineModal's own tests -- here we only assert the flow OPENS).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -39,12 +51,31 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     listCaptures: vi.fn(),
     listDiagnostics: vi.fn(),
     updateCapture: vi.fn(),
+    updateCapturesBatch: vi.fn(),
     updateScenario: vi.fn(),
+    createBaseline: vi.fn(),
+    createBaselineItemsBatch: vi.fn(),
   };
 });
 
 vi.mock('../../api/migrationDiscoveryContextApi', () => ({
   fetchMigrationDiscoveryContext: vi.fn(),
+}));
+
+// SaveAsBaselineModal (mounted by the combined "Accept and Save All" flow)
+// consumes useArchitectureDispatch / useProject and refreshes the AppShell
+// model cache on a successful save. Stub them so the combined-flow test does
+// not need a full provider tree.
+vi.mock('../../contexts/ArchitectureContext', () => ({
+  useArchitectureDispatch: vi.fn(() => vi.fn()),
+}));
+
+vi.mock('../../contexts/ProjectContext', () => ({
+  useProject: vi.fn(() => null),
+}));
+
+vi.mock('../../api/modelApi', () => ({
+  loadModelByProjectId: vi.fn().mockResolvedValue({}),
 }));
 
 import {
@@ -53,6 +84,8 @@ import {
   listCaptures,
   listDiagnostics,
   updateCapture,
+  updateCapturesBatch,
+  parseReviewerNotes,
   type ApiBehaviourCaptureDto,
   type ApiBehaviourOperationDto,
   type ApiBehaviourScenarioDto,
@@ -164,8 +197,9 @@ async function flushPromises() {
 }
 
 /**
- * Three captures across two scenarios under one operation. updateCapture is
- * stubbed to echo its requested mutation onto the row.
+ * Three captures across two scenarios under one operation. The default
+ * `updateCapturesBatch` stub echoes each requested patch onto the matching row
+ * and reports no failures.
  */
 function seedThreeCaptures(): ApiBehaviourCaptureDto[] {
   const op = buildOperation({ id: 'op-A' });
@@ -179,12 +213,13 @@ function seedThreeCaptures(): ApiBehaviourCaptureDto[] {
   vi.mocked(listOperations).mockResolvedValueOnce([op]);
   vi.mocked(listScenarios).mockResolvedValueOnce([sc1, sc2]);
   vi.mocked(listCaptures).mockResolvedValueOnce(caps);
-  vi.mocked(updateCapture).mockImplementation(
-    async (_p, _a, captureId, payload) => {
-      const base = caps.find((c) => c.id === captureId) ?? buildCapture({ id: captureId });
-      return { ...base, ...payload } as ApiBehaviourCaptureDto;
-    },
-  );
+  vi.mocked(updateCapturesBatch).mockImplementation(async (_p, _a, items) => ({
+    updated: items.map((it) => {
+      const base = caps.find((c) => c.id === it.id) ?? buildCapture({ id: it.id });
+      return { ...base, ...it.patch } as ApiBehaviourCaptureDto;
+    }),
+    failed: [],
+  }));
   return caps;
 }
 
@@ -204,11 +239,11 @@ afterEach(() => {
 });
 
 // ===========================================================================
-// Accept all
+// Accept all -- single batch call (rate-limit fix headline)
 // ===========================================================================
 
 describe('CaptureReviewPanel -- Accept all', () => {
-  it('PATCHes every visible capture with accepted=true', async () => {
+  it('calls updateCapturesBatch ONCE (not a per-row loop) with accept patches', async () => {
     const caps = seedThreeCaptures();
 
     renderPanel();
@@ -222,27 +257,108 @@ describe('CaptureReviewPanel -- Accept all', () => {
       await Promise.resolve();
     });
 
-    expect(updateCapture).toHaveBeenCalledTimes(caps.length);
-    const patchedIds = vi.mocked(updateCapture).mock.calls.map((c) => c[2]).sort();
-    expect(patchedIds).toEqual(['c1', 'c2', 'c3']);
-    for (const call of vi.mocked(updateCapture).mock.calls) {
-      const [proj, arch, , payload] = call;
-      expect(proj).toBe(PROJECT_ID);
-      expect(arch).toBe(ARCH_ID);
-      expect(payload.accepted).toBe(true);
-      expect(typeof payload.accepted_at).toBe('string');
-      expect(payload.accepted_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+    // ONE batch call total -- crucially NOT caps.length, and no per-row PATCH.
+    expect(updateCapturesBatch).toHaveBeenCalledTimes(1);
+    expect(updateCapture).not.toHaveBeenCalled();
+
+    const [proj, arch, items] = vi.mocked(updateCapturesBatch).mock.calls[0];
+    expect(proj).toBe(PROJECT_ID);
+    expect(arch).toBe(ARCH_ID);
+    expect(items.map((i) => i.id).sort()).toEqual(['c1', 'c2', 'c3']);
+    expect(items).toHaveLength(caps.length);
+    for (const item of items) {
+      expect(item.patch.accepted).toBe(true);
+      expect(typeof item.patch.accepted_at).toBe('string');
+      expect(item.patch.accepted_at).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+      );
     }
+  });
+
+  it('merges the returned updated[] into the table (accepted tally reflects it)', async () => {
+    seedThreeCaptures();
+
+    renderPanel();
+    await flushPromises();
+
+    expect(
+      screen.getByTestId('capture-review-accepted-count').textContent,
+    ).toContain('0 accepted');
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('capture-review-accept-all'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The stub echoed accepted=true onto each row; the merged state should now
+    // show all three as accepted.
+    expect(
+      screen.getByTestId('capture-review-accepted-count').textContent,
+    ).toContain('3 accepted');
+  });
+
+  it('surfaces failed[] as a warning naming the failed captures', async () => {
+    seedThreeCaptures();
+    // Override: c2 fails to patch; c1 + c3 succeed.
+    vi.mocked(updateCapturesBatch).mockResolvedValueOnce({
+      updated: [
+        { ...buildCapture({ id: 'c1' }), accepted: true } as ApiBehaviourCaptureDto,
+        { ...buildCapture({ id: 'c3' }), accepted: true } as ApiBehaviourCaptureDto,
+      ],
+      failed: [{ id: 'c2', reason: 'row not found' }],
+    });
+
+    renderPanel();
+    await flushPromises();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('capture-review-accept-all'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const warning = await screen.findByTestId('capture-review-batch-warning');
+    expect(warning.textContent).toContain('c2');
+    // The succeeded ids are NOT named as failures.
+    expect(warning.textContent).not.toContain('c1');
+    expect(warning.textContent).not.toContain('c3');
   });
 });
 
 // ===========================================================================
-// Reject all
+// Reject all -- single batch with per-row notes-preserving patches
 // ===========================================================================
 
 describe('CaptureReviewPanel -- Reject all', () => {
-  it('PATCHes every visible capture with accepted=false when confirmed', async () => {
-    const caps = seedThreeCaptures();
+  it('calls updateCapturesBatch ONCE with per-row notes-preserving patches', async () => {
+    // c2 carries an existing mask in its reviewer_notes -- the reject patch for
+    // that row MUST preserve the mask, while c1 / c3 carry none.
+    const op = buildOperation({ id: 'op-A' });
+    const sc1 = buildScenario({ id: 'sc-A1', operation_id: 'op-A' });
+    const caps = [
+      buildCapture({ id: 'c1', operation_id: 'op-A', scenario_id: 'sc-A1', attempt_number: 1 }),
+      buildCapture({
+        id: 'c2',
+        operation_id: 'op-A',
+        scenario_id: 'sc-A1',
+        attempt_number: 2,
+        reviewer_notes: JSON.stringify({
+          text: 'prior note',
+          masks: [{ path: 'response.body.token', label: 'secret' }],
+        }),
+      }),
+      buildCapture({ id: 'c3', operation_id: 'op-A', scenario_id: 'sc-A1', attempt_number: 3 }),
+    ];
+    vi.mocked(listOperations).mockResolvedValueOnce([op]);
+    vi.mocked(listScenarios).mockResolvedValueOnce([sc1]);
+    vi.mocked(listCaptures).mockResolvedValueOnce(caps);
+    vi.mocked(updateCapturesBatch).mockResolvedValueOnce({ updated: [], failed: [] });
+
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     renderPanel();
@@ -257,14 +373,27 @@ describe('CaptureReviewPanel -- Reject all', () => {
     });
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
-    expect(updateCapture).toHaveBeenCalledTimes(caps.length);
-    const patchedIds = vi.mocked(updateCapture).mock.calls.map((c) => c[2]).sort();
-    expect(patchedIds).toEqual(['c1', 'c2', 'c3']);
-    for (const call of vi.mocked(updateCapture).mock.calls) {
-      const [, , , payload] = call;
-      expect(payload.accepted).toBe(false);
-      expect(payload.accepted_at).toBeNull();
+    expect(updateCapturesBatch).toHaveBeenCalledTimes(1);
+    expect(updateCapture).not.toHaveBeenCalled();
+
+    const [, , items] = vi.mocked(updateCapturesBatch).mock.calls[0];
+    expect(items.map((i) => i.id).sort()).toEqual(['c1', 'c2', 'c3']);
+    for (const item of items) {
+      expect(item.patch.accepted).toBe(false);
+      expect(item.patch.accepted_at).toBeNull();
     }
+
+    // c2's reject patch preserves its existing mask; c1's carries an empty mask
+    // list. Decode via the REAL parseReviewerNotes (spread-actual mock).
+    const c2 = items.find((i) => i.id === 'c2')!;
+    const decodedC2 = parseReviewerNotes(c2.patch.reviewer_notes ?? null);
+    expect(decodedC2.masks).toEqual([
+      { path: 'response.body.token', label: 'secret' },
+    ]);
+
+    const c1 = items.find((i) => i.id === 'c1')!;
+    const decodedC1 = parseReviewerNotes(c1.patch.reviewer_notes ?? null);
+    expect(decodedC1.masks).toEqual([]);
   });
 
   it('does nothing when the confirm dialog is dismissed', async () => {
@@ -279,7 +408,70 @@ describe('CaptureReviewPanel -- Reject all', () => {
       await Promise.resolve();
     });
 
-    expect(updateCapture).not.toHaveBeenCalled();
+    expect(updateCapturesBatch).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// Accept and Save All -- combined flow (proceed-on-partial)
+// ===========================================================================
+
+describe('CaptureReviewPanel -- Accept and Save All', () => {
+  it('runs the accept batch then OPENS the save flow', async () => {
+    seedThreeCaptures();
+
+    renderPanel();
+    await flushPromises();
+
+    // Modal not open yet.
+    expect(screen.queryByTestId('save-as-baseline-modal')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('capture-review-accept-and-save-all'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Accept ran as ONE batch...
+    expect(updateCapturesBatch).toHaveBeenCalledTimes(1);
+    const [, , items] = vi.mocked(updateCapturesBatch).mock.calls[0];
+    for (const item of items) {
+      expect(item.patch.accepted).toBe(true);
+    }
+    // ...then the save flow opened.
+    expect(await screen.findByTestId('save-as-baseline-modal')).toBeTruthy();
+  });
+
+  it('on a PARTIAL accept failure STILL opens the save flow with a combined warning', async () => {
+    seedThreeCaptures();
+    // c2 fails to accept; c1 + c3 succeed.
+    vi.mocked(updateCapturesBatch).mockResolvedValueOnce({
+      updated: [
+        { ...buildCapture({ id: 'c1' }), accepted: true } as ApiBehaviourCaptureDto,
+        { ...buildCapture({ id: 'c3' }), accepted: true } as ApiBehaviourCaptureDto,
+      ],
+      failed: [{ id: 'c2', reason: 'row locked' }],
+    });
+
+    renderPanel();
+    await flushPromises();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('capture-review-accept-and-save-all'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Proceed-on-partial: the save flow STILL opens for the accepted captures...
+    expect(await screen.findByTestId('save-as-baseline-modal')).toBeTruthy();
+    // ...and the combined warning names the accept failure (c2) and survives
+    // while the modal is open.
+    const warning = await screen.findByTestId('capture-review-batch-warning');
+    expect(warning.textContent).toContain('c2');
   });
 });
 
@@ -288,7 +480,7 @@ describe('CaptureReviewPanel -- Reject all', () => {
 // ===========================================================================
 
 describe('CaptureReviewPanel -- bulk buttons hidden when read-only', () => {
-  it('renders neither bulk button in read-only mode', async () => {
+  it('renders none of the bulk buttons in read-only mode', async () => {
     seedThreeCaptures();
 
     renderPanel(true);
@@ -296,5 +488,6 @@ describe('CaptureReviewPanel -- bulk buttons hidden when read-only', () => {
 
     expect(screen.queryByTestId('capture-review-accept-all')).toBeNull();
     expect(screen.queryByTestId('capture-review-reject-all')).toBeNull();
+    expect(screen.queryByTestId('capture-review-accept-and-save-all')).toBeNull();
   });
 });

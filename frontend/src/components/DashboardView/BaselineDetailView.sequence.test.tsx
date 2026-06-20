@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const mockGetBaseline = vi.fn();
@@ -134,6 +134,10 @@ describe('BaselineDetailView -- stateful-sequence rendering (Spec D)', () => {
     mockListBaselineItems.mockResolvedValue([item(SEQUENCE_JSON)]);
     renderView();
 
+    // R5: the view defaults to the compact table; switch to Full detail so the
+    // per-item JSON dump + BaselineSequenceView render.
+    fireEvent.click(await screen.findByTestId('baseline-detail-view-mode-full'));
+
     await waitFor(() =>
       expect(screen.getByTestId('baseline-detail-sequence')).toBeInTheDocument(),
     );
@@ -167,6 +171,9 @@ describe('BaselineDetailView -- stateful-sequence rendering (Spec D)', () => {
   it('renders single-shot (no sequence block) when sequence_json is null', async () => {
     mockListBaselineItems.mockResolvedValue([item(null)]);
     renderView();
+
+    // R5: switch to Full detail so the per-item dump renders.
+    fireEvent.click(await screen.findByTestId('baseline-detail-view-mode-full'));
 
     await waitFor(() =>
       expect(screen.getByTestId('baseline-detail-item')).toBeInTheDocument(),

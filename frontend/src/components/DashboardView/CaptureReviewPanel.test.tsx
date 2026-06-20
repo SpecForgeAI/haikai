@@ -54,6 +54,7 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     updateScenario: vi.fn(),
     createBaseline: vi.fn(),
     createBaselineItem: vi.fn(),
+    createBaselineItemsBatch: vi.fn(),
   };
 });
 
@@ -83,6 +84,7 @@ import {
   updateScenario,
   createBaseline,
   createBaselineItem,
+  createBaselineItemsBatch,
   parseReviewerNotes,
   type ApiBehaviourCaptureDto,
   type ApiBehaviourOperationDto,
@@ -452,7 +454,7 @@ describe('CaptureReviewPanel -- rename scenario + mask field (Task 9.1 #4)', () 
 // ===========================================================================
 
 describe('SaveAsBaselineModal -- writes baseline + items for accepted captures only (Task 9.1 #5)', () => {
-  it('POSTs createBaseline once and createBaselineItem only for accepted captures', async () => {
+  it('POSTs createBaseline once and createBaselineItemsBatch with accepted captures only', async () => {
     const op = buildOperation();
     const sc = buildScenario();
     const acceptedCap = buildCapture({ id: 'cap-yes', accepted: true });
@@ -498,7 +500,10 @@ describe('SaveAsBaselineModal -- writes baseline + items for accepted captures o
       created_at: '2026-05-15T00:00:00Z',
       updated_at: '2026-05-15T00:00:00Z',
     };
-    vi.mocked(createBaselineItem).mockResolvedValueOnce(itemRow);
+    vi.mocked(createBaselineItemsBatch).mockResolvedValueOnce({
+      created: [itemRow],
+      failed: [],
+    });
 
     renderPanel();
     await flushPromises();
@@ -515,7 +520,8 @@ describe('SaveAsBaselineModal -- writes baseline + items for accepted captures o
 
     await act(async () => {
       fireEvent.click(within(modal).getByTestId('save-as-baseline-submit'));
-      // Two awaits: one for createBaseline, one for createBaselineItem (1 item).
+      // Awaits: createBaseline, then the single createBaselineItemsBatch call.
+      await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
@@ -527,16 +533,20 @@ describe('SaveAsBaselineModal -- writes baseline + items for accepted captures o
     expect(baselinePayload.name).toBe('My baseline');
     expect(baselinePayload.session_id).toBe(SESSION_ID);
 
-    // ONLY the accepted capture got an item -- not the rejected or undecided ones.
-    expect(createBaselineItem).toHaveBeenCalledTimes(1);
-    const itemPayload = vi.mocked(createBaselineItem).mock.calls[0][2];
-    expect(itemPayload.baseline_id).toBe('baseline-new');
-    expect(itemPayload.capture_id).toBe('cap-yes');
+    // ONE best-effort batch call carries items for ONLY the accepted capture
+    // -- not the rejected or undecided ones (Spec 2026-06-20 R1/R4; TG5).
+    expect(createBaselineItem).not.toHaveBeenCalled();
+    expect(createBaselineItemsBatch).toHaveBeenCalledTimes(1);
+    const batchItems = vi.mocked(createBaselineItemsBatch).mock.calls[0][2];
+    expect(batchItems).toHaveLength(1);
+    expect(batchItems[0].baseline_id).toBe('baseline-new');
+    expect(batchItems[0].capture_id).toBe('cap-yes');
 
-    // And the page navigates to the new baseline's detail URL.
+    // And the page navigates to the baselines LIST route (NOT the detail dump)
+    // -- the new row shows there as draft until a deliberate Make Active.
     expect(mockNavigate).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith(
-      `/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour/baselines/baseline-new`,
+      `/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour`,
     );
   });
 });

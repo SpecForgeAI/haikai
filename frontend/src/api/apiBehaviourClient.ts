@@ -170,6 +170,20 @@ export interface ApiBehaviourCaptureSessionDto {
    * `overall_score` + per-endpoint dimensions/reasons off this field.
    */
   coverage_summary_json?: Record<string, unknown> | null;
+  /**
+   * Per-data-type operator-confirmed format defaults (Spec 2026-06-20 Capture
+   * data-type format defaults; AMS changeset 195). A plain map
+   * `category -> format string` where a non-null string is the operator
+   * default, an explicit `null` records "no default" (the run gets no nudge
+   * for that type), and an ABSENT key is untouched/never-decided. The map
+   * itself may be `null` / absent (legacy or never-configured session = the
+   * valid empty state -- NO backfill). snake_case wire (AMS default; no
+   * `@CamelCaseWire`). The wizard's Step 5 PATCHes this via
+   * {@link updateCaptureSession}; the preview rows that seed it come from
+   * {@link dataTypeDefaultsPreview}. The `null` values inside the map MUST
+   * survive the round-trip (not be dropped or coerced to a string).
+   */
+  data_type_defaults_json?: Record<string, string | null> | null;
 }
 
 export interface CreateApiBehaviourCaptureSessionRequest {
@@ -184,6 +198,12 @@ export interface CreateApiBehaviourCaptureSessionRequest {
   oas_spec_refs_json?: Record<string, unknown> | null;
   db_config_redacted_json?: Record<string, unknown> | null;
   mutating_calls_confirmed?: boolean | null;
+  /**
+   * Per-data-type operator-confirmed format defaults (Spec 2026-06-20). A map
+   * `category -> format string`; a `null` VALUE means explicit "no default".
+   * The map may be null/absent. snake_case wire (AMS default).
+   */
+  data_type_defaults_json?: Record<string, string | null> | null;
 }
 
 /** PATCH body — every field optional; null preserves the column. */
@@ -201,6 +221,14 @@ export interface UpdateApiBehaviourCaptureSessionRequest {
   started_at?: string | null;
   completed_at?: string | null;
   error_message?: string | null;
+  /**
+   * Per-data-type operator-confirmed format defaults (Spec 2026-06-20). The
+   * wizard's Step 5 PATCHes this map (`category -> format string`); a `null`
+   * VALUE is an explicit "no default" decision and MUST round-trip intact.
+   * Omitting the field entirely leaves the persisted column unchanged
+   * (AMS null-guarded write path). snake_case wire (AMS default).
+   */
+  data_type_defaults_json?: Record<string, string | null> | null;
 }
 
 export interface ApiBehaviourOperationDto {
@@ -681,6 +709,56 @@ export interface AccountEndpointsRequestItem {
 export interface AccountEndpointsResponse {
   sessionId: string;
   operations: ApiBehaviourOperationDto[];
+}
+
+// ----------------------------------------------------------------------------
+// Data-type format-defaults preview wire shapes (Spec 2026-06-20 Capture
+// data-type format defaults, Task Group 5). These mirror the amvs route
+// `POST /api/capture-sessions/:id/data-type-defaults-preview` response
+// VERBATIM (snake_case, AMS-style wire). The classification + Col-4 seeding
+// live ONLY amvs-side (the code-format inputs come from
+// `request_contract.param_formats`, which the frontend cannot reach); this
+// client only carries the rows, it never recomputes them.
+// ----------------------------------------------------------------------------
+
+/**
+ * One contributing field listed under a preview row for the per-row
+ * transparency UI (Q9): the field name, its location (`body`/`query`/`path`/
+ * `header`, or null), and the raw code/contract format that fed the row. A
+ * field contributes via exactly one side, so the other format is `null`.
+ */
+export interface DataTypeDefaultsContributingField {
+  name: string;
+  location: string | null;
+  code_format: string | null;
+  contract_format: string | null;
+}
+
+/**
+ * One classified taxonomy row in the preview -- ONE per DISCOVERED category
+ * (never an empty category, F3). `category` is the data-type bucket (`date`,
+ * `datetime`, `decimal`, ...). `code_formats` / `contract_formats` are the
+ * DISTINCT Col-2 / Col-3 format variations discovered. `default_format` is the
+ * seeded Col-4 value (chain (a): code > contract > standard guess; `null` when
+ * the category has no sensible standard, e.g. enum/boolean). `contributing_fields`
+ * feeds the per-row transparency list.
+ */
+export interface DataTypeDefaultsPreviewRow {
+  category: string;
+  code_formats: string[];
+  contract_formats: string[];
+  default_format: string | null;
+  contributing_fields: DataTypeDefaultsContributingField[];
+}
+
+/**
+ * Response from the `data-type-defaults-preview` action. `rows` is empty when
+ * no classifiable data types were discovered -- the wizard reads that empty
+ * result as the auto-skip-the-step signal (Q8).
+ */
+export interface DataTypeDefaultsPreviewResponse {
+  sessionId: string;
+  rows: DataTypeDefaultsPreviewRow[];
 }
 
 /**
@@ -1261,6 +1339,119 @@ export async function createBaselineItem(
   );
 }
 
+// ----------------------------------------------------------------------------
+// Batch baseline-items + captures (Spec 2026-06-20 Baseline Save & Review --
+// Batch + Activate + Export, R1). The save / accept-all / reject-all tails
+// previously looped one gateway request PER capture (~263 sequential calls),
+// tripping the gateway rate limiter. These two helpers collapse each loop into
+// a SINGLE best-effort, NON-atomic batch call: every item is persisted /
+// patched independently and a bad item is reported in `failed[]` WITHOUT
+// aborting the rest. The gateway registers `/baseline-items/batch` (POST) and
+// `/captures/batch` (PATCH) explicitly BEFORE the generic `/:id` routes, so the
+// literal `batch` segment is never captured as an id. Per-call cap is 500
+// (a clear 400 above that). Snake_case wire (AMS default).
+// ----------------------------------------------------------------------------
+
+/**
+ * Per-item failure record for a baseline-items batch create. `index` is the
+ * 0-based position of the offending item in the submitted `items[]`; `capture_id`
+ * echoes that item's `capture_id` (null when the item carried none) so the UI
+ * can name the exact capture that failed without re-deriving it.
+ */
+export interface BatchCreateBaselineItemFailure {
+  index: number;
+  capture_id: string | null;
+  reason: string;
+}
+
+/** Request body for `POST .../baseline-items/batch`. */
+export interface BatchCreateBaselineItemsRequest {
+  items: CreateApiBehaviourBaselineItemRequest[];
+}
+
+/**
+ * Response from `POST .../baseline-items/batch`. `created` holds the persisted
+ * rows (in submission order, minus the failures); `failed` holds one record
+ * per item that did not persist. Best-effort: a non-empty `failed[]` does NOT
+ * mean the whole call failed -- the `created` rows are committed regardless.
+ */
+export interface BatchCreateBaselineItemsResponse {
+  created: ApiBehaviourBaselineItemDto[];
+  failed: BatchCreateBaselineItemFailure[];
+}
+
+/** One `{ id, patch }` entry for a captures batch update. */
+export interface BatchUpdateCaptureItem {
+  id: string;
+  patch: UpdateApiBehaviourCaptureRequest;
+}
+
+/** Request body for `PATCH .../captures/batch`. */
+export interface BatchUpdateCapturesRequest {
+  items: BatchUpdateCaptureItem[];
+}
+
+/** Per-item failure record for a captures batch update (keyed by capture id). */
+export interface BatchUpdateCaptureFailure {
+  id: string;
+  reason: string;
+}
+
+/**
+ * Response from `PATCH .../captures/batch`. `updated` holds the patched rows;
+ * `failed` holds one record per id that did not patch. Best-effort / non-atomic
+ * (see the section note above).
+ */
+export interface BatchUpdateCapturesResponse {
+  updated: ApiBehaviourCaptureDto[];
+  failed: BatchUpdateCaptureFailure[];
+}
+
+/**
+ * Persist many baseline items in ONE best-effort batch (replaces the per-item
+ * `createBaselineItem` save loop). POSTs `{ items }` to
+ * `.../baseline-items/batch` and returns `{ created, failed }`. Callers render
+ * `failed[]` as a warning naming the captures that did not persist; the
+ * `created` rows are committed even when `failed[]` is non-empty.
+ */
+export async function createBaselineItemsBatch(
+  projectId: string,
+  architectureId: string,
+  items: CreateApiBehaviourBaselineItemRequest[],
+): Promise<BatchCreateBaselineItemsResponse> {
+  return jsonRequest<BatchCreateBaselineItemsResponse>(
+    `${gatewayUrl(projectId, architectureId, 'baseline-items')}/batch`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    },
+  );
+}
+
+/**
+ * Patch many captures in ONE best-effort batch (replaces the per-item
+ * `updateCapture` accept-all / reject-all loops). Each entry carries its OWN
+ * `{ id, patch }` so reject-all can preserve every row's reviewer-notes masks
+ * while accept-all sends the same patch per id. PATCHes `{ items }` to
+ * `.../captures/batch` and returns `{ updated, failed }`; callers merge
+ * `updated[]` into state and surface `failed[]` as a warning.
+ */
+export async function updateCapturesBatch(
+  projectId: string,
+  architectureId: string,
+  items: BatchUpdateCaptureItem[],
+): Promise<BatchUpdateCapturesResponse> {
+  return jsonRequest<BatchUpdateCapturesResponse>(
+    `${gatewayUrl(projectId, architectureId, 'captures')}/batch`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    },
+  );
+}
+
 // ============================================================================
 // Action endpoints (proxied to api-migration-validation-service)
 // ============================================================================
@@ -1538,6 +1729,35 @@ export async function reconcileInventory(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Compute the wizard Step 5 "Data-type formats" preview (Spec 2026-06-20
+ * Capture data-type format defaults). Proxied by the gateway to the amvs
+ * `data-type-defaults-preview` action, which loads the architecture endpoints
+ * (code evidence via `request_contract.param_formats`) + the session's
+ * contract-derived operations, runs the colocated data-type classifier, and
+ * returns ONE row per DISCOVERED category with the distinct code/contract
+ * format variations, the seeded Col-4 default, and the contributing-fields
+ * transparency list. An empty `rows` array means no classifiable data types
+ * were found -- the wizard auto-skips the step in that case.
+ *
+ * Mirrors `reconcileInventory` / `accountEndpoints`: `actionUrl(...,
+ * 'data-type-defaults-preview')` + a JSON POST.
+ */
+export async function dataTypeDefaultsPreview(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<DataTypeDefaultsPreviewResponse> {
+  return jsonRequest<DataTypeDefaultsPreviewResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'data-type-defaults-preview'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
     },
   );
 }

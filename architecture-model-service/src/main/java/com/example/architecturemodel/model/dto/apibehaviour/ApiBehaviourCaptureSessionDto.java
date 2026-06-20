@@ -98,9 +98,69 @@ public record ApiBehaviourCaptureSessionDto(
      * default — NO {@code @CamelCaseWire}). Designed for Spec C to read.
      */
     Map<String, Object> coverageSummaryJson,
+    /**
+     * Per-session operator-confirmed data-type format defaults (Capture
+     * data-type format defaults, 2026-06-20, changeset 195): a plain map
+     * {@code category -> format string} where a non-null string = operator
+     * default, {@code null} = explicit "no default", absent key = untouched.
+     * Example {@code { "date": "dd-MMM-yyyy", "enum": null }}. The map
+     * VALUES are deliberately nullable and MUST survive the round-trip. JSONB;
+     * snake_case wire (AMS default -- NO {@code @CamelCaseWire}).
+     */
+    Map<String, String> dataTypeDefaultsJson,
     Instant createdAt,
     Instant updatedAt
 ) {
+
+    /**
+     * Backward-compatible constructor preserving the pre-data-type-defaults
+     * canonical signature (no {@code dataTypeDefaultsJson}). Delegates with a
+     * null data-type-defaults map. Spec: Capture data-type format defaults
+     * (2026-06-20) -- Task Group 1.
+     */
+    public ApiBehaviourCaptureSessionDto(
+            UUID id,
+            UUID projectId,
+            UUID architectureId,
+            String name,
+            String status,
+            String environmentName,
+            String apiBaseUrl,
+            String authType,
+            Map<String, Object> authConfigRedactedJson,
+            Map<String, Object> defaultHeadersRedactedJson,
+            Map<String, Object> oasSpecRefsJson,
+            Map<String, Object> dbConfigRedactedJson,
+            Boolean mutatingCallsConfirmed,
+            Instant startedAt,
+            Instant completedAt,
+            String errorMessage,
+            String kind,
+            UUID sourceBaselineId,
+            Integer scenariosAttempted,
+            Integer scenariosCompleted,
+            Integer scenariosErrored,
+            List<String> scopeInterfaceIdsJson,
+            String coverageOverrideJustification,
+            Integer coverageOverrideUnaccountedCount,
+            Instant coverageOverrideAt,
+            Map<String, Object> coverageSummaryJson,
+            Instant createdAt,
+            Instant updatedAt) {
+        this(id, projectId, architectureId, name, status,
+            environmentName, apiBaseUrl, authType,
+            authConfigRedactedJson, defaultHeadersRedactedJson,
+            oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
+            startedAt, completedAt, errorMessage,
+            kind, sourceBaselineId,
+            scenariosAttempted, scenariosCompleted, scenariosErrored,
+            scopeInterfaceIdsJson,
+            coverageOverrideJustification, coverageOverrideUnaccountedCount,
+            coverageOverrideAt,
+            coverageSummaryJson,
+            null,
+            createdAt, updatedAt);
+    }
 
     /**
      * Backward-compatible constructor preserving the pre-Oracle-Coverage-Scoring
@@ -146,6 +206,7 @@ public record ApiBehaviourCaptureSessionDto(
             coverageOverrideJustification, coverageOverrideUnaccountedCount,
             coverageOverrideAt,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -186,6 +247,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             scenariosAttempted, scenariosCompleted, scenariosErrored,
             null, null, null, null,
+            null,
             null,
             createdAt, updatedAt);
     }
@@ -228,6 +290,7 @@ public record ApiBehaviourCaptureSessionDto(
             null, null, null,
             null, null, null, null,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -265,6 +328,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             null, null, null,
             null, null, null, null,
+            null,
             null,
             createdAt, updatedAt);
     }

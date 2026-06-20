@@ -284,6 +284,16 @@ public class ApiBehaviourCaptureSessionService {
         if (request.coverageSummaryJson() != null) {
             entity.setCoverageSummaryJson(request.coverageSummaryJson());
         }
+        // Data-type format defaults (Spec: Capture data-type format defaults,
+        // 2026-06-20; changeset 195) -- persisted by the capture wizard step.
+        // Null-guarded reference field per the PATCH rule: an absent key
+        // (Jackson-bound to null) preserves any existing map; it never wipes
+        // a previously-recorded set of defaults. A null VALUE *inside* the map
+        // (an explicit "no default" for a category) is meaningful and is
+        // persisted verbatim -- only an omitted whole field is a no-op.
+        if (request.dataTypeDefaultsJson() != null) {
+            entity.setDataTypeDefaultsJson(request.dataTypeDefaultsJson());
+        }
 
         // Kind + pairing invariant — null-guarded per PATCH semantics. If
         // either field appears in the body, re-check the invariant against

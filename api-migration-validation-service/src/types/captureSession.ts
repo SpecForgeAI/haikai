@@ -65,6 +65,16 @@ export interface CaptureSession {
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Per-data-type operator-confirmed default formats (Capture data-type
+   * format defaults, 2026-06-20; AMS changeset 195). Plain map
+   * `category -> format`: a non-null string is the operator default, `null`
+   * is an explicit "no default" (no operator nudge for that type), an absent
+   * key is untouched/never-decided. Hydrated from the AMS DTO
+   * `data_type_defaults_json` and fed to the capture LLM as a separate
+   * `dataTypeDefaults` prompt block. Null/absent on legacy sessions.
+   */
+  dataTypeDefaultsJson?: Record<string, string | null> | null;
 }
 
 export type ScenarioType =

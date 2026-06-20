@@ -322,6 +322,11 @@ export function buildScenarioPrompt(
   scenarioSeed?: ScenarioSeedDto,
   knownGoodFacts?: string[],
   scenarioDirective?: string,
+  // Capture data-type format defaults (2026-06-20): operator-confirmed
+  // per-data-type default formats, threaded from session.dataTypeDefaultsJson.
+  // null/undefined whole-map and null per-category values are tolerated here;
+  // the block below omits null categories and skips entirely when empty.
+  dataTypeDefaults?: Record<string, string | null> | null,
 ): ChatMessage[] {
   const userPayload: Record<string, unknown> = {
     sessionId: session.id,
@@ -423,6 +428,35 @@ export function buildScenarioPrompt(
         'AVOID the inputs on `FAILED` lines: those were rejected by the API and must not be re-tried as-is.',
       examples: knownGoodFacts,
     };
+  }
+
+  // Operator-confirmed per-data-type default formats (Capture data-type format
+  // defaults, 2026-06-20). A SEPARATE prompt block -- NOT an OAS override (the
+  // enrichInventoryWithRequestContracts code>contract>runtime chain is
+  // untouched). Categories whose value is null are an explicit "no default"
+  // and are OMITTED so the LLM gets no nudge for that type; the block is
+  // skipped entirely when no non-null defaults remain. The guidance REFINES
+  // (does not contradict) the contract-first instruction above, expressing the
+  // scan-time precedence code-evidence(field) > operator-default(type) >
+  // contract(field) > LLM.
+  if (dataTypeDefaults) {
+    const formats: Record<string, string> = {};
+    for (const [category, format] of Object.entries(dataTypeDefaults)) {
+      // OMIT null (explicit "no default") and any non-string slot.
+      if (typeof format === "string") {
+        formats[category] = format;
+      }
+    }
+    if (Object.keys(formats).length > 0) {
+      userPayload.dataTypeDefaults = {
+        guidance:
+          "Per-data-type default formats confirmed by the operator. When a field has NO " +
+          "code-evidence format, use the default for its data type and PREFER it over the " +
+          "contract's declared format. A field's own code-evidence still wins; you may still " +
+          "adapt from live response evidence; never retry a rejected format.",
+        formats,
+      };
+    }
   }
 
   return [
@@ -1336,6 +1370,7 @@ export async function orchestrateCaptureSession(
             seedSet?.seeds?.find((s) => s.scenarioName === scenario.name),
             runManager.getLearnedFacts(session.id),
             scenario.directive,
+            session.dataTypeDefaultsJson,
           ),
           tools: ALL_TOOLS,
           gatewayClient: gateway,

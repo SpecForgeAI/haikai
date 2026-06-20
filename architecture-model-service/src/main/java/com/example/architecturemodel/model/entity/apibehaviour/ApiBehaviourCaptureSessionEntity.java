@@ -278,6 +278,28 @@ public class ApiBehaviourCaptureSessionEntity {
     @Column(name = "coverage_summary_json", columnDefinition = "jsonb")
     private Map<String, Object> coverageSummaryJson;
 
+    /**
+     * Per-session operator-confirmed data-type format defaults (Capture
+     * data-type format defaults, 2026-06-20, changeset 195): a plain map
+     * {@code category -> format string} steering the capture LLM toward the
+     * format a given data type really uses (e.g. {@code { "date":
+     * "dd-MMM-yyyy", "enum": null }}). Semantics: a non-null string is the
+     * operator default; a {@code null} value is an explicit "no default"
+     * (the LLM gets NO nudge for that data type); an ABSENT key is
+     * untouched/never-decided. Written through the capture wizard via the
+     * existing PATCH path. Snake_case wire (AMS default).
+     *
+     * <p>{@code null} (whole column) = no defaults recorded -- the valid empty
+     * state; NO backfill. JSONB via {@code @Type(JsonType.class)}, mirroring
+     * the sibling {@code coverageSummaryJson} column; reference type, no
+     * primitive-wipe risk per {@code project_primitive_double_dto_overwrite.md}.
+     * The map VALUES are deliberately nullable -- a {@code null} value carries
+     * meaning and MUST survive the JSONB round-trip (it is NOT dropped).
+     */
+    @Type(JsonType.class)
+    @Column(name = "data_type_defaults_json", columnDefinition = "jsonb")
+    private Map<String, String> dataTypeDefaultsJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

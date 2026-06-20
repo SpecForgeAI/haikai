@@ -79,6 +79,7 @@ public final class ApiBehaviourMapper {
             entity.getCoverageOverrideUnaccountedCount(),
             entity.getCoverageOverrideAt(),
             entity.getCoverageSummaryJson(),
+            entity.getDataTypeDefaultsJson(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
         );

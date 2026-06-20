@@ -1,6 +1,8 @@
 package com.example.architecturemodel.controller.apibehaviour;
 
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourBaselineItemDto;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchCreateApiBehaviourBaselineItemsRequest;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchCreateApiBehaviourBaselineItemsResponse;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourBaselineItemRequest;
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourBaselineItemRequest;
 import com.example.architecturemodel.service.apibehaviour.ApiBehaviourBaselineItemService;
@@ -64,6 +66,24 @@ public class ApiBehaviourBaselineItemController {
             @PathVariable UUID projectId,
             @RequestBody CreateApiBehaviourBaselineItemRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
+    }
+
+    /**
+     * Best-effort, NON-atomic batch create. Persists every valid item and
+     * returns the survivors in {@code created} + one {@code failed[]} entry
+     * per rejected item (index + capture_id + reason). Per-call cap is
+     * {@code ApiBehaviourBaselineItemService.MAX_BATCH_ITEMS} (400 if exceeded).
+     * The integrity hash is NOT touched here (stamped at activate). Returns 200
+     * (a best-effort batch is not a pure 201-create -- it can partially fail).
+     *
+     * <p>Spec: Baseline Save &amp; Review (2026-06-20) -- Task Group 1 (R1).</p>
+     */
+    @PostMapping("/batch")
+    public ResponseEntity<BatchCreateApiBehaviourBaselineItemsResponse> createBatch(
+            @PathVariable UUID projectId,
+            @RequestBody BatchCreateApiBehaviourBaselineItemsRequest request) {
+        return ResponseEntity.ok(service.createBatch(
+            projectId, request == null ? null : request.items()));
     }
 
     @PatchMapping("/{id}")

@@ -26,6 +26,17 @@ import {
   isSecretsNotLoadedError,
   SECRETS_NOT_LOADED_CODE,
   ApiBehaviourApiError,
+  dataTypeDefaultsPreview,
+  type DataTypeDefaultsPreviewResponse,
+  createBaselineItemsBatch,
+  updateCapturesBatch,
+  type BatchCreateBaselineItemsResponse,
+  type BatchUpdateCapturesResponse,
+  type CreateApiBehaviourBaselineItemRequest,
+  type ApiBehaviourBaselineItemDto,
+  type ApiBehaviourCaptureDto,
+  type CreateApiBehaviourCaptureSessionRequest,
+  type UpdateApiBehaviourCaptureSessionRequest,
 } from '../apiBehaviourClient';
 
 const PROJECT_ID = 'proj-uuid-aaa';
@@ -347,5 +358,260 @@ describe('apiBehaviourClient -- manualCapture (Task 4.1)', () => {
 
     expect(caught).toBeInstanceOf(ApiBehaviourApiError);
     expect(isSecretsNotLoadedError(caught)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Data-type format defaults (Spec 2026-06-20, Task 5.1).
+//   #1 dataTypeDefaultsPreview POSTs to the right action URL and returns the
+//      typed rows verbatim (category, code/contract formats, seeded Col-4,
+//      contributing fields).
+//   #2 the session DTO + Create/Update request types round-trip
+//      data_type_defaults_json INCLUDING a null map value.
+// Mirrors the createCaptureSession / manualCapture fetch-shim style above.
+// ---------------------------------------------------------------------------
+describe('apiBehaviourClient -- dataTypeDefaultsPreview (Task 5.1 #1)', () => {
+  const originalFetch = globalThis.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs to the data-type-defaults-preview action URL and returns the typed rows', async () => {
+    const preview: DataTypeDefaultsPreviewResponse = {
+      sessionId: 'session-uuid-1',
+      rows: [
+        {
+          category: 'date',
+          code_formats: ['dd-MMM-yyyy'],
+          contract_formats: ['date'],
+          default_format: 'dd-MMM-yyyy',
+          contributing_fields: [
+            {
+              name: 'startDate',
+              location: 'query',
+              code_format: 'dd-MMM-yyyy',
+              contract_format: null,
+            },
+          ],
+        },
+        {
+          category: 'enum',
+          code_formats: [],
+          contract_formats: [],
+          default_format: null,
+          contributing_fields: [
+            { name: 'status', location: 'body', code_format: null, contract_format: null },
+          ],
+        },
+      ],
+    };
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => preview,
+    });
+
+    const result = await dataTypeDefaultsPreview(PROJECT_ID, ARCH_ID, 'session-uuid-1');
+
+    // The typed rows come back verbatim, including a null default_format and
+    // a null contract_format inside a contributing field.
+    expect(result).toEqual(preview);
+    expect(result.rows[0].category).toBe('date');
+    expect(result.rows[0].default_format).toBe('dd-MMM-yyyy');
+    expect(result.rows[1].default_format).toBeNull();
+    expect(result.rows[0].contributing_fields[0].contract_format).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `/api/v1/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour/capture-sessions/session-uuid-1/data-type-defaults-preview`,
+    );
+    expect(options.method).toBe('POST');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+    // No body fields required -- the action reads everything server-side.
+    expect(JSON.parse(options.body)).toEqual({});
+  });
+});
+
+describe('apiBehaviourClient -- data_type_defaults_json round-trip (Task 5.1 #2)', () => {
+  it('carries data_type_defaults_json (with a null map value) on the session DTO', () => {
+    // A map that mixes a chosen default AND an explicit null (no-default).
+    // The null value must survive as a typed property of the DTO -- it is
+    // distinct from an absent key.
+    const session = buildSessionFixture({
+      data_type_defaults_json: { date: 'dd-MMM-yyyy', enum: null },
+    });
+    expect(session.data_type_defaults_json).toEqual({ date: 'dd-MMM-yyyy', enum: null });
+    expect(session.data_type_defaults_json).toHaveProperty('enum', null);
+    // JSON.stringify keeps the null value (not dropped like undefined).
+    const wire = JSON.parse(JSON.stringify(session)) as typeof session;
+    expect(wire.data_type_defaults_json).toEqual({ date: 'dd-MMM-yyyy', enum: null });
+    expect('enum' in (wire.data_type_defaults_json ?? {})).toBe(true);
+  });
+
+  it('accepts data_type_defaults_json (incl. a null value) on Create + Update request types', () => {
+    const createReq: CreateApiBehaviourCaptureSessionRequest = {
+      project_id: PROJECT_ID,
+      architecture_id: ARCH_ID,
+      data_type_defaults_json: { date: 'dd-MMM-yyyy', enum: null },
+    };
+    const updateReq: UpdateApiBehaviourCaptureSessionRequest = {
+      data_type_defaults_json: { datetime: "yyyy-MM-dd'T'HH:mm:ss", enum: null },
+    };
+    // The null map value round-trips through JSON on both request shapes.
+    expect(JSON.parse(JSON.stringify(createReq)).data_type_defaults_json).toEqual({
+      date: 'dd-MMM-yyyy',
+      enum: null,
+    });
+    expect(JSON.parse(JSON.stringify(updateReq)).data_type_defaults_json.enum).toBeNull();
+    // The whole map itself may also be null (explicit empty state).
+    const cleared: UpdateApiBehaviourCaptureSessionRequest = { data_type_defaults_json: null };
+    expect(cleared.data_type_defaults_json).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Batch baseline-items + captures (Spec 2026-06-20 Baseline Save & Review --
+// Batch + Activate + Export, Task 3.1). These two helpers collapse the per-item
+// save / accept-all / reject-all loops into a single best-effort batch call.
+//   #1 createBaselineItemsBatch POSTs `{ items }` to .../baseline-items/batch
+//      and returns the typed `{ created, failed }` (failed carries index +
+//      capture_id + reason).
+//   #2 updateCapturesBatch PATCHes `{ items: [{ id, patch }] }` to
+//      .../captures/batch and returns the typed `{ updated, failed }`.
+// Mirrors the createCaptureSession / manualCapture fetch-shim style above.
+// ---------------------------------------------------------------------------
+describe('apiBehaviourClient -- createBaselineItemsBatch (Task 3.1 #1)', () => {
+  const originalFetch = globalThis.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs { items } to the .../baseline-items/batch URL and returns { created, failed }', async () => {
+    const createdItem: Partial<ApiBehaviourBaselineItemDto> = {
+      id: 'item-1',
+      baseline_id: 'bl-1',
+      capture_id: 'cap-ok',
+    };
+    const response: BatchCreateBaselineItemsResponse = {
+      created: [createdItem as ApiBehaviourBaselineItemDto],
+      failed: [{ index: 1, capture_id: 'cap-bad', reason: 'capture_id not found' }],
+    };
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => response,
+    });
+
+    const items: CreateApiBehaviourBaselineItemRequest[] = [
+      { baseline_id: 'bl-1', capture_id: 'cap-ok', operation_id: 'op-1', scenario_id: 'scn-1' },
+      { baseline_id: 'bl-1', capture_id: 'cap-bad', operation_id: 'op-2', scenario_id: 'scn-2' },
+    ];
+    const result = await createBaselineItemsBatch(PROJECT_ID, ARCH_ID, items);
+
+    // The typed { created, failed } shape comes back verbatim.
+    expect(result).toEqual(response);
+    expect(result.created).toHaveLength(1);
+    expect(result.failed[0]).toEqual({
+      index: 1,
+      capture_id: 'cap-bad',
+      reason: 'capture_id not found',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    // Literal `batch` sub-path on the baseline-items collection.
+    expect(url).toBe(
+      `/api/v1/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour/baseline-items/batch`,
+    );
+    expect(options.method).toBe('POST');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+
+    // The whole array is sent in ONE request under the `items` envelope.
+    const body = JSON.parse(options.body);
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0].capture_id).toBe('cap-ok');
+    expect(body.items[1].capture_id).toBe('cap-bad');
+  });
+});
+
+describe('apiBehaviourClient -- updateCapturesBatch (Task 3.1 #2)', () => {
+  const originalFetch = globalThis.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('PATCHes { items: [{ id, patch }] } to the .../captures/batch URL and returns { updated, failed }', async () => {
+    const updatedCapture: Partial<ApiBehaviourCaptureDto> = {
+      id: 'cap-ok',
+      session_id: 'session-uuid-1',
+      accepted: true,
+    };
+    const response: BatchUpdateCapturesResponse = {
+      updated: [updatedCapture as ApiBehaviourCaptureDto],
+      failed: [{ id: 'cap-bad', reason: 'capture not found' }],
+    };
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => response,
+    });
+
+    // reject-all-style: each entry carries its OWN id + patch (notes preserved).
+    const result = await updateCapturesBatch(PROJECT_ID, ARCH_ID, [
+      { id: 'cap-ok', patch: { accepted: true, accepted_at: '2026-06-20T00:00:00Z' } },
+      { id: 'cap-bad', patch: { accepted: false, accepted_at: null, reviewer_notes: 'n' } },
+    ]);
+
+    // The typed { updated, failed } shape comes back verbatim.
+    expect(result).toEqual(response);
+    expect(result.updated).toHaveLength(1);
+    expect(result.failed[0]).toEqual({ id: 'cap-bad', reason: 'capture not found' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    // Literal `batch` sub-path on the captures collection; PATCH verb.
+    expect(url).toBe(
+      `/api/v1/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour/captures/batch`,
+    );
+    expect(options.method).toBe('PATCH');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+
+    // One request carries every { id, patch } entry under `items`.
+    const body = JSON.parse(options.body);
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]).toEqual({
+      id: 'cap-ok',
+      patch: { accepted: true, accepted_at: '2026-06-20T00:00:00Z' },
+    });
+    expect(body.items[1].id).toBe('cap-bad');
+    expect(body.items[1].patch.reviewer_notes).toBe('n');
   });
 });

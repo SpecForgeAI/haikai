@@ -263,6 +263,44 @@ function registerCrudProxy(resource: ApiBehaviourResource): void {
   );
 }
 
+// ============================================================================
+// Best-effort batch proxies -- Spec: 2026-06-20 Baseline Save & Review --
+// Batch + Activate + Export -- Task Group 2.
+//
+// Two AMS-direct batch routes for the save -> review -> activate tail. They
+// collapse the per-item accept/reject/save loops (~263 captures => ~263
+// sequential gateway hits, which trip the rate limiter) into ONE request each:
+//
+//   POST  .../api-behaviour/baseline-items/batch   { items: [...] }
+//   PATCH .../api-behaviour/captures/batch         { items: [{ id, patch }] }
+//
+// They MUST be registered BEFORE the generic registerCrudProxy loop below:
+// otherwise the id-scoped PATCH .../captures/:id would capture the literal
+// "batch" segment as the ":id" placeholder (and baseline-items/batch would
+// 404 against the bare collection POST). Same first-match ordering discipline the
+// diffs/by-target route uses against diffs/:diffId.
+//
+// Both reuse the shared proxyToAms / buildAmsUrl path with the literal
+// "batch" segment passed as the resourceId, so the forward URL becomes
+// /api/projects/{projectId}/api-behaviour/<resource>/batch (AMS publishes
+// the batch endpoints at exactly that shape; architectureId rides on the
+// query string harmlessly, as it does for every other CRUD proxy here).
+//
+// No body-limit change: the 32KB chat maxMessageBytes is NOT on these routes;
+// they are bounded by the global express.json({ limit: '30mb' }) in server.ts.
+// The per-call cap 500 enforced by AMS is the guardrail.
+// ============================================================================
+
+apiMigrationValidationRouter.post(
+  '/projects/:projectId/architectures/:architectureId/api-behaviour/baseline-items/batch',
+  (req, res) => proxyToAms(req, res, 'baseline-items', 'batch'),
+);
+
+apiMigrationValidationRouter.patch(
+  '/projects/:projectId/architectures/:architectureId/api-behaviour/captures/batch',
+  (req, res) => proxyToAms(req, res, 'captures', 'batch'),
+);
+
 for (const resource of API_BEHAVIOUR_RESOURCES) {
   registerCrudProxy(resource);
 }
@@ -460,7 +498,7 @@ apiMigrationValidationRouter.post('/api-migration-validation/llm-tool-loop', asy
 // where <action> is one of:
 //   parse-oas | test-api-connection | test-db-connection | start | cancel
 //   | secrets | extract-endpoints | reconcile-inventory | account-endpoints
-//   | manual-capture
+//   | manual-capture | data-type-defaults-preview
 //
 // Spec: 2026-06-11 Model-Seeded Capture Inventory -- Task Group 3 adds the
 // `reconcile-inventory` (configure-time + display reconciliation read) and
@@ -494,6 +532,7 @@ export const API_BEHAVIOUR_ACTION_PATHS = [
   'reconcile-inventory',
   'account-endpoints',
   'manual-capture',
+  'data-type-defaults-preview',
 ] as const;
 
 type ApiBehaviourAction = (typeof API_BEHAVIOUR_ACTION_PATHS)[number];
@@ -635,12 +674,12 @@ async function proxyActionToService(
 }
 
 /**
- * Register all ten action proxies under the gateway URL shape:
+ * Register all eleven action proxies under the gateway URL shape:
  *   POST /projects/:projectId/architectures/:architectureId/
  *        api-behaviour/capture-sessions/:sessionId/<action>
  *
  * `parse-oas` accepts an optional multipart upload via `multer().array('file')`
- * The other nine accept only JSON; multer is not on their pipeline.
+ * The other ten accept only JSON; multer is not on their pipeline.
  */
 for (const action of API_BEHAVIOUR_ACTION_PATHS) {
   const path =

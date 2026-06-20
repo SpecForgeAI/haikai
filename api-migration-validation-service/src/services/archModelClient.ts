@@ -129,6 +129,17 @@ export interface CaptureSessionDto {
    * `overall_score` + per-endpoint dimensions/reasons off the session.
    */
   coverage_summary_json?: Record<string, unknown> | null;
+  /**
+   * Per-data-type operator-confirmed default formats (Capture data-type
+   * format defaults, 2026-06-20; AMS changeset 195). Plain map
+   * `category -> format` on the wire as `data_type_defaults_json`: a non-null
+   * string is the operator default, `null` is an explicit "no default", an
+   * absent key is untouched. snake_case wire (AMS default -- NO @CamelCaseWire
+   * on the AMS side). Null/absent on legacy sessions. Hydrated onto
+   * `CaptureSession.dataTypeDefaultsJson` and consumed by the orchestrators
+   * `dataTypeDefaults` prompt block.
+   */
+  data_type_defaults_json?: Record<string, string | null> | null;
   created_at: string;
   updated_at: string;
 }
@@ -2055,5 +2066,11 @@ export function toCaptureSession(dto: CaptureSessionDto): CaptureSession {
     errorMessage: dto.error_message,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
+    // Capture data-type format defaults (2026-06-20): hydrate the operator
+    // per-data-type default map so the orchestrators dataTypeDefaults prompt
+    // block can read it off the session. Preserves null map values (explicit
+    // "no default") and the null/absent whole-field empty state.
+    dataTypeDefaultsJson:
+      (dto.data_type_defaults_json as CaptureSession["dataTypeDefaultsJson"]) ?? null,
   };
 }

@@ -40,6 +40,7 @@ import { discoveryServiceClient as defaultDiscoveryServiceClient } from '../serv
 import type { DiscoveryServiceClient } from '../services/discoveryServiceClient';
 import { createTracer } from '../trace';
 import { enrichInventoryWithRequestContracts } from '../services/requestContractEnrichment';
+import { classifyDataTypes } from '../services/dataTypeClassifier';
 import type { AxiosError, AxiosResponse } from 'axios';
 import type { HttpMethod } from '../types/oas';
 import { redactHeaders, redactJson, redactUrl } from '../services/redactor';
@@ -1193,6 +1194,102 @@ export function buildCaptureSessionActionsRouter(
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'parse-oas failed';
+        return fail(res, 500, message);
+      }
+    },
+  );
+
+  // ----------------------------------------------------------------------
+  // POST /api/capture-sessions/:id/data-type-defaults-preview
+  // ----------------------------------------------------------------------
+  // Data-type format-defaults preview (spec 2026-06-20 Capture data-type
+  // format defaults, Task Group 2 / Q1). Computes the wizard Step 5 table
+  // SERVER-SIDE because the code-format inputs live in
+  // `request_contract.param_formats`, reachable only amvs-side via
+  // `listEndpointsForArchitecture` -- the frontend has NO request_contract
+  // access (C1). Loads the architecture endpoints (code evidence) + the
+  // session's persisted operations (contract evidence via
+  // `oas_operation_json`), runs the colocated data-type classifier, and
+  // returns ONE row per DISCOVERED category (never an empty category, F3).
+  //
+  // Each row carries: the category, the distinct Col-2 (code) format
+  // variations, the distinct Col-3 (contract) format variations, the seeded
+  // Col-4 default (chain (a): code > contract > standard guess), and the
+  // contributing-fields list (name + location + raw code/contract format) for
+  // the per-row transparency UI (Q9).
+  //
+  // FAIL-SOFT on the evidence fetches (mirrors /start): an AMS error on either
+  // the endpoints or operations load is downgraded to an empty source for that
+  // side, so the preview still returns whatever the other side classified
+  // rather than 500-ing the wizard. An empty result is the valid
+  // auto-skip-the-step signal.
+  router.post(
+    '/api/capture-sessions/:id/data-type-defaults-preview',
+    async (req: Request, res: Response) => {
+      const sessionId = req.params.id;
+      const projectId = extractProjectId(req);
+      if (!projectId) {
+        return fail(res, 400, 'projectId is required (query param or body field)');
+      }
+
+      try {
+        // Load the session first so a bad id surfaces as a clear AMS client
+        // error rather than an opaque classification failure.
+        const session = await archModelClient.getCaptureSession(projectId, sessionId);
+
+        // Code evidence: the architecture endpoint rows (each carrying a
+        // `request_contract` blob). Fail-soft to an empty list.
+        let endpoints: Array<Record<string, unknown>> = [];
+        try {
+          endpoints = await archModelClient.listEndpointsForArchitecture(
+            projectId,
+            session.architecture_id,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[captureSessionActions] data-type-defaults-preview endpoints load failed for session ${sessionId}: ${msg} -- continuing with contract evidence only`,
+          );
+        }
+
+        // Contract evidence: the session's persisted operation rows carry the
+        // contract-derived `oas_operation_json`. Fail-soft to an empty list.
+        let oasOperations: unknown[] = [];
+        try {
+          const operations = await archModelClient.listOperationsBySession(
+            projectId,
+            sessionId,
+          );
+          oasOperations = operations.map((op) => op.oas_operation_json);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[captureSessionActions] data-type-defaults-preview operations load failed for session ${sessionId}: ${msg} -- continuing with code evidence only`,
+          );
+        }
+
+        const rows = classifyDataTypes({ endpoints, oasOperations });
+
+        // Snake_case wire shape (AMS convention; the gateway proxy + frontend
+        // client expect snake_case). Rows are ONLY the discovered categories.
+        return res.status(200).json({
+          sessionId,
+          rows: rows.map((r) => ({
+            category: r.category,
+            code_formats: r.codeFormats,
+            contract_formats: r.contractFormats,
+            default_format: r.defaultFormat,
+            contributing_fields: r.contributingFields.map((f) => ({
+              name: f.name,
+              location: f.location,
+              code_format: f.codeFormat,
+              contract_format: f.contractFormat,
+            })),
+          })),
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'data-type-defaults-preview failed';
         return fail(res, 500, message);
       }
     },

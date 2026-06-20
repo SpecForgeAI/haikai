@@ -2,6 +2,8 @@ package com.example.architecturemodel.controller.apibehaviour;
 
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourCaptureDto;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourCaptureRequest;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchUpdateApiBehaviourCapturesRequest;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchUpdateApiBehaviourCapturesResponse;
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourCaptureRequest;
 import com.example.architecturemodel.service.apibehaviour.ApiBehaviourCaptureService;
 import lombok.RequiredArgsConstructor;
@@ -74,6 +76,25 @@ public class ApiBehaviourCaptureController {
             @PathVariable UUID projectId,
             @RequestBody CreateApiBehaviourCaptureRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.create(request));
+    }
+
+    /**
+     * Best-effort, NON-atomic batch PATCH. Applies each {@code {id, patch}}
+     * via the existing per-row field-merge and returns the survivors in
+     * {@code updated} + one {@code failed[]} entry per failing item
+     * (id + reason). Per-call cap is
+     * {@code ApiBehaviourCaptureService.MAX_BATCH_ITEMS} (400 if exceeded).
+     * Registered BEFORE {@code /{id}} so the literal {@code batch} segment is
+     * not captured as a capture id.
+     *
+     * <p>Spec: Baseline Save &amp; Review (2026-06-20) -- Task Group 1 (R1).</p>
+     */
+    @PatchMapping("/batch")
+    public ResponseEntity<BatchUpdateApiBehaviourCapturesResponse> updateBatch(
+            @PathVariable UUID projectId,
+            @RequestBody BatchUpdateApiBehaviourCapturesRequest request) {
+        return ResponseEntity.ok(service.updateBatch(
+            projectId, request == null ? null : request.items()));
     }
 
     @PatchMapping("/{id}")

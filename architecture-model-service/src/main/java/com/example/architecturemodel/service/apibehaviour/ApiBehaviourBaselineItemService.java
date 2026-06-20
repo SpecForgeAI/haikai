@@ -3,6 +3,7 @@ package com.example.architecturemodel.service.apibehaviour;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.mapper.apibehaviour.ApiBehaviourMapper;
 import com.example.architecturemodel.model.dto.apibehaviour.ApiBehaviourBaselineItemDto;
+import com.example.architecturemodel.model.dto.apibehaviour.BatchCreateApiBehaviourBaselineItemsResponse;
 import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourBaselineItemRequest;
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourBaselineItemRequest;
 import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourBaselineItemEntity;
@@ -13,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +35,13 @@ public class ApiBehaviourBaselineItemService {
 
     private final ApiBehaviourBaselineItemRepository repository;
 
+    /**
+     * Max baseline items accepted on a single best-effort batch-create call.
+     * Mirrors {@code DiscoveryFindingService.MAX_BULK_FINDINGS}; requests over
+     * the cap are rejected with 400 rather than truncated.
+     */
+    public static final int MAX_BATCH_ITEMS = 500;
+
     @Transactional(readOnly = true)
     public List<ApiBehaviourBaselineItemDto> listByBaseline(UUID baselineId) {
         return repository.findByBaselineIdOrderByCreatedAtAsc(baselineId)
@@ -48,6 +57,70 @@ public class ApiBehaviourBaselineItemService {
 
     @Transactional
     public ApiBehaviourBaselineItemDto create(CreateApiBehaviourBaselineItemRequest request) {
+        // Validation lives in buildEntity (shared with createBatch); behaviour
+        // is identical to the pre-extraction inline-validate-then-build path.
+        ApiBehaviourBaselineItemEntity entity = buildEntity(request);
+        return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
+    }
+
+    /**
+     * Best-effort, NON-atomic batch create.
+     *
+     * <p>Each item is validated + persisted independently via {@link
+     * #buildEntity}: a bad item is recorded in {@code failed[]} (index +
+     * capture_id + reason) and the loop continues -- it does NOT abort the
+     * rest or roll back the successes. The integrity hash is NOT touched here
+     * (it is stamped at activate time); this only persists rows, and item
+     * order is irrelevant to the hash (it canonical-sorts).</p>
+     *
+     * <p>{@code projectId} is accepted for controller-surface symmetry with the
+     * other endpoints; the baseline_items row is scoped by {@code baselineId},
+     * so it is not used in the entity build (mirrors {@link #create}, which the
+     * controller likewise calls without threading projectId into the row).</p>
+     *
+     * <p>Spec: Baseline Save &amp; Review -- Batch + Activate + Table Detail +
+     * Postman Export (2026-06-20) -- Task Group 1 (R1).</p>
+     */
+    @Transactional
+    public BatchCreateApiBehaviourBaselineItemsResponse createBatch(
+            UUID projectId, List<CreateApiBehaviourBaselineItemRequest> items) {
+        if (items == null) {
+            throw new IllegalArgumentException("Batch baseline items request body is required");
+        }
+        if (items.size() > MAX_BATCH_ITEMS) {
+            throw new IllegalArgumentException(
+                "Batch baseline items request exceeds the per-call cap of "
+                    + MAX_BATCH_ITEMS + " (received " + items.size() + ")");
+        }
+        List<ApiBehaviourBaselineItemDto> created = new ArrayList<>(items.size());
+        List<BatchCreateApiBehaviourBaselineItemsResponse.FailedItem> failed = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            CreateApiBehaviourBaselineItemRequest request = items.get(i);
+            try {
+                ApiBehaviourBaselineItemEntity entity = buildEntity(request);
+                created.add(ApiBehaviourMapper.toDto(repository.saveAndFlush(entity)));
+            } catch (RuntimeException ex) {
+                failed.add(new BatchCreateApiBehaviourBaselineItemsResponse.FailedItem(
+                    i,
+                    request == null ? null : request.captureId(),
+                    ex.getMessage()));
+            }
+        }
+        return new BatchCreateApiBehaviourBaselineItemsResponse(created, failed);
+    }
+
+    /**
+     * Validate {@code request} and build the {@code api_behaviour_baseline_items}
+     * entity (un-persisted). Extracted from {@link #create} so {@link #createBatch}
+     * reuses the exact same validation + builder; {@code create} now calls this
+     * and persists, behaving identically to before the extraction.
+     *
+     * <p>{@code projectId} is unused in the build (the row is scoped by
+     * {@code baselineId}); it is on the signature for documented symmetry with
+     * the other batch surfaces.</p>
+     */
+    private ApiBehaviourBaselineItemEntity buildEntity(
+            CreateApiBehaviourBaselineItemRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Baseline item request body is required");
         }
@@ -82,7 +155,7 @@ public class ApiBehaviourBaselineItemService {
             throw new IllegalArgumentException("responseJson is required");
         }
 
-        ApiBehaviourBaselineItemEntity entity = ApiBehaviourBaselineItemEntity.builder()
+        return ApiBehaviourBaselineItemEntity.builder()
             .id(UUID.randomUUID())
             .baselineId(request.baselineId())
             .captureId(request.captureId())
@@ -98,8 +171,6 @@ public class ApiBehaviourBaselineItemService {
             .sequenceJson(request.sequenceJson())
             .businessNotes(request.businessNotes())
             .build();
-
-        return ApiBehaviourMapper.toDto(repository.saveAndFlush(entity));
     }
 
     @Transactional

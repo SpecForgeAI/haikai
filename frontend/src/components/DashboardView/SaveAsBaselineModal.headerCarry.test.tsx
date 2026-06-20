@@ -9,7 +9,7 @@
  * source headers to diff against and skips the header dimension entirely.
  *
  * Covered here:
- *   1. The createBaselineItem payload's `response_json` is the
+ *   1. The batched baseline item payload's `response_json` is the
  *      `{ headers, body }` envelope -- headers from response_headers_redacted_json,
  *      body from response_body_json.
  *   2. When the capture row has NO redacted response headers, the envelope still
@@ -35,7 +35,7 @@ vi.mock('../../api/apiBehaviourClient', async () => {
   const actual = await vi.importActual<
     typeof import('../../api/apiBehaviourClient')
   >('../../api/apiBehaviourClient');
-  return { ...actual, createBaseline: vi.fn(), createBaselineItem: vi.fn() };
+  return { ...actual, createBaseline: vi.fn(), createBaselineItemsBatch: vi.fn() };
 });
 
 vi.mock('../../contexts/ArchitectureContext', () => ({
@@ -46,7 +46,7 @@ vi.mock('../../api/modelApi', () => ({ loadModelByProjectId: vi.fn() }));
 
 import {
   createBaseline,
-  createBaselineItem,
+  createBaselineItemsBatch,
   type ApiBehaviourBaselineDto,
   type ApiBehaviourBaselineItemDto,
   type ApiBehaviourCaptureDto,
@@ -177,9 +177,10 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useProject>);
   vi.mocked(loadModelByProjectId).mockResolvedValue({} as never);
   vi.mocked(createBaseline).mockResolvedValue(buildBaselineResponse());
-  vi.mocked(createBaselineItem).mockResolvedValue({
-    id: 'item-1',
-  } as unknown as ApiBehaviourBaselineItemDto);
+  vi.mocked(createBaselineItemsBatch).mockResolvedValue({
+    created: [{ id: 'item-1' } as unknown as ApiBehaviourBaselineItemDto],
+    failed: [],
+  });
 });
 
 afterEach(() => {
@@ -197,9 +198,11 @@ describe('SaveAsBaselineModal -- source header carry (R5)', () => {
       fireEvent.click(screen.getByTestId('save-as-baseline-submit'));
     });
 
-    await waitFor(() => expect(createBaselineItem).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createBaselineItemsBatch).toHaveBeenCalledTimes(1),
+    );
 
-    const payload = vi.mocked(createBaselineItem).mock.calls[0][2];
+    const payload = vi.mocked(createBaselineItemsBatch).mock.calls[0][2][0];
     expect(payload.response_json).toEqual({
       headers: RESPONSE_HEADERS,
       body: RESPONSE_BODY,
@@ -220,9 +223,11 @@ describe('SaveAsBaselineModal -- source header carry (R5)', () => {
       fireEvent.click(screen.getByTestId('save-as-baseline-submit'));
     });
 
-    await waitFor(() => expect(createBaselineItem).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(createBaselineItemsBatch).toHaveBeenCalledTimes(1),
+    );
 
-    const payload = vi.mocked(createBaselineItem).mock.calls[0][2];
+    const payload = vi.mocked(createBaselineItemsBatch).mock.calls[0][2][0];
     expect(payload.response_json).toEqual({
       headers: null,
       body: RESPONSE_BODY,

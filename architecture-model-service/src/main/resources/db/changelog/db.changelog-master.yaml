@@ -4437,3 +4437,49 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 195-capture-data-type-defaults
+  # Spec: Capture data-type format defaults (2026-06-20) -- Task Group 1 (AMS
+  #       field).
+  #
+  # ONE new nullable JSONB column on api_behaviour_capture_sessions holding the
+  # operator-confirmed per-data-type format defaults as a plain JSON map:
+  #   data_type_defaults_json JSONB NULL -- map category -> format string, e.g.
+  #   { "date": "dd-MMM-yyyy", "datetime": "...", "enum": null }. A non-null
+  #   string value = the operator default for that data type; a NULL value = an
+  #   explicit "no default" (the capture LLM gets NO nudge for that type ->
+  #   falls back to contract / its own judgment); an ABSENT key = untouched. The
+  #   map VALUES are deliberately nullable and a null value is MEANINGFUL -- it
+  #   MUST survive the JSONB round-trip (NOT dropped). Confirmed in the capture
+  #   wizard "Data-type formats" step and fed to the capture LLM (in
+  #   api-migration-validation-service captureSessionOrchestrator.ts) as a
+  #   SEPARATE prompt block, NOT an OAS override. Per-session, per-data-type
+  #   only -- no per-endpoint/per-field override in v1. Map<String,String> /
+  #   @Type(JsonType), mirroring the sibling coverage_summary_json /
+  #   oas_spec_refs_json JSONB columns. Snake_case wire (AMS default -- NO
+  #   @CamelCaseWire; TS clients are snake_case). NULL = no defaults recorded
+  #   (valid empty state; e.g. the step auto-skipped with no discovered types).
+  #
+  # New nullable column, reference type, NO backfill: existing rows are untouched
+  # and read back null. No @PrePersist defaulting -- null is the valid empty
+  # state. New changeset only (194 is the highest on disk at build time) -- never
+  # edit applied changesets. Column-only ALTER -> the not-columnExists
+  # precondition idiom (mirrors 189 / 194).
+  # ============================================================================
+  - changeSet:
+      id: 195-capture-data-type-defaults
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_capture_sessions
+              columnName: data_type_defaults_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/195-capture-data-type-defaults.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

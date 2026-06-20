@@ -11,7 +11,7 @@
  * Covered here:
  *   1. A capture matched by a `sequence_pinned` marker's `canonical_capture_id`
  *      carries `sequence_json` (+ the marker's ref-derived volatile envelope)
- *      onto its `createBaselineItem` payload.
+ *      onto its batched baseline item payload.
  *   2. A non-sequence capture (no matching marker) carries `sequence_json: null`
  *      and keeps the capture-row volatile envelope -- pinned exactly as today.
  *
@@ -34,7 +34,7 @@ vi.mock('../../api/apiBehaviourClient', async () => {
   const actual = await vi.importActual<
     typeof import('../../api/apiBehaviourClient')
   >('../../api/apiBehaviourClient');
-  return { ...actual, createBaseline: vi.fn(), createBaselineItem: vi.fn() };
+  return { ...actual, createBaseline: vi.fn(), createBaselineItemsBatch: vi.fn() };
 });
 
 vi.mock('../../contexts/ArchitectureContext', () => ({
@@ -45,7 +45,7 @@ vi.mock('../../api/modelApi', () => ({ loadModelByProjectId: vi.fn() }));
 
 import {
   createBaseline,
-  createBaselineItem,
+  createBaselineItemsBatch,
   type ApiBehaviourBaselineDto,
   type ApiBehaviourBaselineItemDto,
   type ApiBehaviourCaptureDto,
@@ -221,7 +221,9 @@ async function submit() {
   await act(async () => {
     fireEvent.click(screen.getByTestId('save-as-baseline-submit'));
   });
-  await waitFor(() => expect(createBaselineItem).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(createBaselineItemsBatch).toHaveBeenCalledTimes(1),
+  );
 }
 
 beforeEach(() => {
@@ -235,9 +237,10 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useProject>);
   vi.mocked(loadModelByProjectId).mockResolvedValue({} as never);
   vi.mocked(createBaseline).mockResolvedValue(buildBaselineResponse());
-  vi.mocked(createBaselineItem).mockResolvedValue({
-    id: 'item-1',
-  } as unknown as ApiBehaviourBaselineItemDto);
+  vi.mocked(createBaselineItemsBatch).mockResolvedValue({
+    created: [{ id: 'item-1' } as unknown as ApiBehaviourBaselineItemDto],
+    failed: [],
+  });
 });
 
 afterEach(() => {
@@ -249,7 +252,7 @@ describe('SaveAsBaselineModal -- stateful-sequence carry (Spec D)', () => {
     renderModal([buildAcceptedCapture()], [buildSequenceMarker()]);
     await submit();
 
-    const payload = vi.mocked(createBaselineItem).mock.calls[0][2];
+    const payload = vi.mocked(createBaselineItemsBatch).mock.calls[0][2][0];
     // The assembled sequence chain is carried verbatim onto the act-step item.
     expect(payload.sequence_json).toEqual(SEQUENCE_JSON);
     // The marker's ref-derived volatile envelope is PREFERRED over the
@@ -263,7 +266,7 @@ describe('SaveAsBaselineModal -- stateful-sequence carry (Spec D)', () => {
     renderModal([buildAcceptedCapture()], []);
     await submit();
 
-    const payload = vi.mocked(createBaselineItem).mock.calls[0][2];
+    const payload = vi.mocked(createBaselineItemsBatch).mock.calls[0][2][0];
     expect(payload.sequence_json ?? null).toBeNull();
     // Falls back to the capture-row volatile envelope exactly as today.
     expect(payload.volatile_paths_json).toEqual(CAPTURE_VOLATILE);
@@ -276,7 +279,7 @@ describe('SaveAsBaselineModal -- stateful-sequence carry (Spec D)', () => {
     renderModal([buildAcceptedCapture()], [marker]);
     await submit();
 
-    const payload = vi.mocked(createBaselineItem).mock.calls[0][2];
+    const payload = vi.mocked(createBaselineItemsBatch).mock.calls[0][2][0];
     expect(payload.sequence_json ?? null).toBeNull();
     expect(payload.volatile_paths_json).toEqual(CAPTURE_VOLATILE);
   });

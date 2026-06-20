@@ -46,7 +46,10 @@ import {
   parseReviewerNotes,
   serialiseReviewerNotes,
   updateCapture,
+  updateCapturesBatch,
   updateScenario,
+  type BatchUpdateCaptureItem,
+  type BatchUpdateCaptureFailure,
 } from '../../api/apiBehaviourClient';
 import styles from './CaptureReviewPanel.module.css';
 import { SaveAsBaselineModal } from './SaveAsBaselineModal';
@@ -268,6 +271,27 @@ function describeError(err: unknown): string {
 }
 
 /**
+ * Render a best-effort captures-batch `failed[]` as a single human-readable
+ * warning line naming the captures that did NOT patch (by capture `id`). The
+ * accepted/rejected rows still committed -- this is informational, not an
+ * error. `verb` is the action that partially failed ("accept"/"reject").
+ * Spec: 2026-06-20 R2 (do not silently drop `failed[]`).
+ */
+function describeCaptureBatchFailures(
+  failed: BatchUpdateCaptureFailure[],
+  verb: string,
+): string {
+  const labels = failed.map((f) => f.id);
+  const noun = failed.length === 1 ? 'capture' : 'captures';
+  return (
+    `${failed.length} ${noun} could not be ${verb}ed and ${
+      failed.length === 1 ? 'was' : 'were'
+    } skipped ` +
+    `(the rest were ${verb}ed): ${labels.join(', ')}.`
+  );
+}
+
+/**
  * System reason marker the capture-session orchestrator writes to a
  * non-canonical capture's `reviewer_notes` when it reject-and-hides the LLM's
  * intermediate fumbles (intent-driven canonical capture, validation-service
@@ -343,6 +367,15 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
 
   // Save-as-baseline modal visibility.
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  // Best-effort batch warning (Spec 2026-06-20 R2/R4). Accept All / Reject All
+  // now collapse to a SINGLE `updateCapturesBatch` call; a non-atomic batch can
+  // return `failed[]` (rows that did not patch) while the rest committed. Surface
+  // that here as a non-fatal warning naming the failed captures rather than
+  // silently dropping them. "Accept and Save All" also parks its accept-step
+  // `failed[]` here so the warning persists while the save modal completes --
+  // the combined (accept + save) failure view R4 requires.
+  const [warning, setWarning] = useState<string | null>(null);
 
   // Add-New-Behaviour (manual capture) modal visibility. Spec 2026-06-20.
   const [addBehaviourModalOpen, setAddBehaviourModalOpen] = useState(false);
@@ -531,37 +564,65 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   );
 
   // ---- Bulk mutators ---------------------------------------------------
-  // Bulk accept/reject iterate the *visible* captures sequentially (mirroring
-  // the per-row handlers + the existing bulk-create pattern), PATCHing each
-  // with the SAME body the per-row accept/reject use. Each PATCH is
-  // best-effort: a single failure is surfaced via setError but does NOT abort
-  // the loop. Accepted/returned DTOs are merged back into local state the same
-  // way handleAccept does (optimistic merge of the returned row), so the table
-  // + accepted tally update without a full reload.
+  // Bulk accept/reject now collapse to a SINGLE best-effort `updateCapturesBatch`
+  // call over the *visible* captures (Spec 2026-06-20 R2) -- replacing the former
+  // per-row PATCH loop that fired one gateway request per capture (~263 PATCHes
+  // for a large session) and tripped the rate limiter. The batch is NON-atomic:
+  // a bad item lands in `failed[]` while the rest commit. The returned
+  // `updated[]` DTOs are merged back into local state the same way `handleAccept`
+  // merges a single returned row (so the table + accepted tally update without a
+  // full reload); `failed[]` is surfaced as a non-fatal warning naming the
+  // captures that did not patch -- never silently dropped.
+
+  // Merge a batch's returned `updated[]` rows back into local capture state by
+  // id (rows not in the batch are left untouched). One setState for the whole
+  // batch rather than one per row.
+  const mergeUpdatedCaptures = useCallback(
+    (updated: ApiBehaviourCaptureDto[]) => {
+      if (updated.length === 0) return;
+      const byId = new Map(updated.map((u) => [u.id, u]));
+      setCaptures((prev) => prev.map((c) => byId.get(c.id) ?? c));
+    },
+    [],
+  );
+
+  // The accept-batch payload: every visible capture -> the SAME accept patch
+  // (`accepted=true` + a single shared iso `accepted_at`). Shared by Accept All
+  // and the combined Accept-and-Save-All action.
+  const buildAcceptItems = useCallback((): BatchUpdateCaptureItem[] => {
+    const acceptedAt = new Date().toISOString();
+    return visibleCaptures.map((capture) => ({
+      id: capture.id,
+      patch: { accepted: true, accepted_at: acceptedAt },
+    }));
+  }, [visibleCaptures]);
 
   const handleAcceptAll = useCallback(async () => {
     if (visibleCaptures.length === 0) return;
-    setActionInFlight("bulk");
-    let lastError: unknown = null;
+    setActionInFlight('bulk');
+    setWarning(null);
     try {
-      for (const capture of visibleCaptures) {
-        try {
-          const updated = await updateCapture(projectId, architectureId, capture.id, {
-            accepted: true,
-            accepted_at: new Date().toISOString(),
-          });
-          setCaptures((prev) =>
-            prev.map((c) => (c.id === capture.id ? updated : c)),
-          );
-        } catch (err) {
-          lastError = err;
-        }
+      const { updated, failed } = await updateCapturesBatch(
+        projectId,
+        architectureId,
+        buildAcceptItems(),
+      );
+      mergeUpdatedCaptures(updated);
+      if (failed.length > 0) {
+        setWarning(describeCaptureBatchFailures(failed, 'accept'));
       }
-      if (lastError) setError(describeError(lastError));
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setActionInFlight(null);
     }
-  }, [projectId, architectureId, visibleCaptures]);
+  }, [
+    projectId,
+    architectureId,
+    visibleCaptures,
+    buildAcceptItems,
+    mergeUpdatedCaptures,
+  ]);
 
   const handleRejectAll = useCallback(async () => {
     if (visibleCaptures.length === 0) return;
@@ -569,33 +630,88 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
       `Reject all ${visibleCaptures.length} captures? This clears any acceptance and cannot be undone in bulk.`,
     );
     if (!confirmed) return;
-    setActionInFlight("bulk");
-    let lastError: unknown = null;
+    setActionInFlight('bulk');
+    setWarning(null);
     try {
-      for (const capture of visibleCaptures) {
-        try {
-          const existing = parseReviewerNotes(capture.reviewer_notes);
-          const payload: ReviewerNotesPayload = {
-            text: "",
-            masks: existing.masks,
-          };
-          const updated = await updateCapture(projectId, architectureId, capture.id, {
+      // Each visible capture carries its OWN notes-preserving patch so the
+      // reject preserves that row's existing reviewer-notes masks exactly as
+      // the former per-row loop did (`{ accepted:false, accepted_at:null,
+      // reviewer_notes:<masks-preserving payload> }`). Built into one batch.
+      const items: BatchUpdateCaptureItem[] = visibleCaptures.map((capture) => {
+        const existing = parseReviewerNotes(capture.reviewer_notes);
+        const payload: ReviewerNotesPayload = {
+          text: '',
+          masks: existing.masks,
+        };
+        return {
+          id: capture.id,
+          patch: {
             accepted: false,
             accepted_at: null,
             reviewer_notes: serialiseReviewerNotes(payload),
-          });
-          setCaptures((prev) =>
-            prev.map((c) => (c.id === capture.id ? updated : c)),
-          );
-        } catch (err) {
-          lastError = err;
-        }
+          },
+        };
+      });
+      const { updated, failed } = await updateCapturesBatch(
+        projectId,
+        architectureId,
+        items,
+      );
+      mergeUpdatedCaptures(updated);
+      if (failed.length > 0) {
+        setWarning(describeCaptureBatchFailures(failed, 'reject'));
       }
-      if (lastError) setError(describeError(lastError));
+    } catch (err) {
+      setError(describeError(err));
     } finally {
       setActionInFlight(null);
     }
-  }, [projectId, architectureId, visibleCaptures]);
+  }, [
+    projectId,
+    architectureId,
+    visibleCaptures,
+    mergeUpdatedCaptures,
+  ]);
+
+  // "Accept and Save All" (Spec 2026-06-20 R2/R4): run the accept batch, then
+  // trigger the existing Save flow (open `SaveAsBaselineModal`, which owns the
+  // best-effort save batch + post-save navigation to the list). On a PARTIAL
+  // accept failure we PROCEED to the save step for the captures that DID accept
+  // and PARK the accept `failed[]` in the panel-level warning so it stays
+  // visible while the modal completes -- the modal independently surfaces its
+  // own save `failed[]`, giving the reviewer the combined (accept + save)
+  // failure view R4 requires. Only a hard accept-batch throw (network-level)
+  // aborts before the save step.
+  const handleAcceptAndSaveAll = useCallback(async () => {
+    if (visibleCaptures.length === 0) return;
+    setActionInFlight('bulk');
+    setWarning(null);
+    try {
+      const { updated, failed } = await updateCapturesBatch(
+        projectId,
+        architectureId,
+        buildAcceptItems(),
+      );
+      mergeUpdatedCaptures(updated);
+      if (failed.length > 0) {
+        // Proceed-on-partial: keep the accept failures visible (the modal adds
+        // its own save failures) and still open the save flow for the accepted.
+        setWarning(describeCaptureBatchFailures(failed, 'accept'));
+      }
+      setSaveModalOpen(true);
+    } catch (err) {
+      // A hard accept-batch failure (nothing accepted) aborts before save.
+      setError(describeError(err));
+    } finally {
+      setActionInFlight(null);
+    }
+  }, [
+    projectId,
+    architectureId,
+    visibleCaptures,
+    buildAcceptItems,
+    mergeUpdatedCaptures,
+  ]);
 
   const handleMaskSubmit = useCallback(
     async (capture: ApiBehaviourCaptureDto) => {
@@ -769,6 +885,18 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
               >
                 Reject all
               </button>
+              {/* Combined Accept-and-Save-All (Spec 2026-06-20 R2/R4): accept
+                  every visible capture in one batch, then open the Save flow.
+                  Proceeds to save on a partial accept failure. */}
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={() => void handleAcceptAndSaveAll()}
+                disabled={actionInFlight !== null}
+                data-testid="capture-review-accept-and-save-all"
+              >
+                Accept and Save All
+              </button>
             </>
           )}
           {!readOnly && acceptedCount > 0 && (
@@ -796,6 +924,15 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
           )}
         </div>
       </div>
+
+      {warning && (
+        <div
+          className={styles.warningBanner}
+          data-testid="capture-review-batch-warning"
+        >
+          {warning}
+        </div>
+      )}
 
       {discoveryCtx && (
         <div

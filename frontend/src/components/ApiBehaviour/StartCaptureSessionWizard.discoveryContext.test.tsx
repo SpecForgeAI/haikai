@@ -41,6 +41,10 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     updateCaptureSession: vi.fn(),
     updateOperation: vi.fn(),
     listOperations: vi.fn().mockResolvedValue([]),
+    // Renumber (Spec 2026-06-20): the Step 4 -> 5 advance now fetches the
+    // data-type-format preview. An EMPTY result auto-skips the new step so
+    // these flows still land on Start (step 6) after one Next from Step 4.
+    dataTypeDefaultsPreview: vi.fn().mockResolvedValue({ sessionId: 'session-discovery-1', rows: [] }),
   };
 });
 

@@ -58,8 +58,11 @@ import {
   testApiConnectionStateless,
   updateCaptureSession,
   updateOperation,
+  dataTypeDefaultsPreview,
+  DataTypeDefaultsPreviewRow,
   ApiBehaviourApiError,
 } from '../../api/apiBehaviourClient';
+import { DataTypeFormatsStep } from './DataTypeFormatsStep';
 import {
   MigrationDiscoveryContext,
   fetchMigrationDiscoveryContext,
@@ -89,7 +92,7 @@ export interface StartCaptureSessionWizardProps {
 // Internal types
 // ============================================================================
 
-type WizardStep = 1 | 2 | 3 | 4 | 5;
+type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 type AuthType = 'none' | 'bearer' | 'basic' | 'header';
 type DbType = 'none' | 'postgres' | 'sybase';
@@ -305,6 +308,21 @@ export function StartCaptureSessionWizard({
   // a session row to exist before it can write operations).
   const draftSessionRef = useRef<ApiBehaviourCaptureSessionDto | null>(null);
 
+  // ---- Step 5: Data-type formats (Spec 2026-06-20) --------------------
+  // Classified preview rows (one per DISCOVERED category) fetched on the
+  // Step 4 -> 5 advance from the amvs `data-type-defaults-preview` endpoint;
+  // the code-format inputs live in `request_contract.param_formats`, reachable
+  // only amvs-side. An EMPTY rows result is the auto-skip signal (Q8) -- the
+  // wizard jumps straight from Endpoints (4) to Start (6) and never shows the
+  // step. `dataTypeDefaults` is the operator's editable Col-4 value map
+  // (category -> string | null): a non-null string = the default, `null` =
+  // an explicit "no default" (no nudge), seeded from each row's `default_format`.
+  const [dataTypeRows, setDataTypeRows] = useState<DataTypeDefaultsPreviewRow[]>([]);
+  const [dataTypeDefaults, setDataTypeDefaults] = useState<
+    Record<string, string | null>
+  >({});
+  const [dataTypePreviewLoading, setDataTypePreviewLoading] = useState(false);
+
   // ---- Discovery Context (Step 1 collapsed section, Task Group 4) ------
   // The wizard fires a single read-only POST to the gateway proxy on open
   // to fetch the latest-relevant discovery context for the active
@@ -348,6 +366,9 @@ export function StartCaptureSessionWizard({
     setSubmitting(false);
     setError(null);
     draftSessionRef.current = null;
+    setDataTypeRows([]);
+    setDataTypeDefaults({});
+    setDataTypePreviewLoading(false);
     // Reset discovery section state too -- a fresh open recomputes from
     // the latest AMS aggregation.
     setDiscoveryCtx(null);
@@ -728,6 +749,45 @@ export function StartCaptureSessionWizard({
         }
       }
       await Promise.all(writes);
+      // Fetch the data-type-format preview. The draft session exists by now, so
+      // the endpoint can read its OAS operations + the architecture's
+      // request-contract code evidence. An EMPTY rows result means no
+      // classifiable data types were discovered -> AUTO-SKIP step 5 (Q8) and
+      // advance straight to Start (step 6) with no "nothing to configure" screen.
+      setDataTypePreviewLoading(true);
+      let previewRows: DataTypeDefaultsPreviewRow[] = [];
+      try {
+        const preview = await dataTypeDefaultsPreview(
+          projectId,
+          architectureId,
+          session.id,
+        );
+        previewRows = Array.isArray(preview?.rows) ? preview.rows : [];
+      } catch {
+        // Fail-soft: a preview failure must not strand the wizard. Treat it as
+        // "no data types discovered" and skip the step rather than block Start.
+        previewRows = [];
+      } finally {
+        setDataTypePreviewLoading(false);
+      }
+      if (previewRows.length === 0) {
+        setDataTypeRows([]);
+        setDataTypeDefaults({});
+        setStep(6);
+        return;
+      }
+      // Seed Col-4 from each row's `default_format` (chain (a):
+      // code > contract > standard guess, computed amvs-side). A `null` seed
+      // (no sensible standard, e.g. enum) starts as an empty editable string --
+      // NOT the explicit "(no default)" choice, which the operator records by
+      // ticking the per-row no-default box.
+      const seeded: Record<string, string | null> = {};
+      for (const row of previewRows) {
+        seeded[row.category] =
+          typeof row.default_format === 'string' ? row.default_format : '';
+      }
+      setDataTypeRows(previewRows);
+      setDataTypeDefaults(seeded);
       setStep(5);
     } catch (err) {
       setError(describeError(err));
@@ -740,6 +800,44 @@ export function StartCaptureSessionWizard({
     submitting,
     parsedOperations,
     operationIncluded,
+  ]);
+
+  /**
+   * Step 5 -> 6 advance. Persists the operator's confirmed Col-4 defaults onto
+   * the draft session as `data_type_defaults_json` via the existing
+   * `updateCaptureSession` PATCH path, then shows the Start step. The map is
+   * `category -> string | null`: a non-null string is the default, `null` is
+   * the explicit "no default" decision (the run gets no nudge for that type and
+   * the AMS round-trip preserves the `null` value). Empty-string entries are an
+   * untouched seed-with-no-standard -- persisted as-is; the prompt block
+   * treats a non-null value as a default.
+   */
+  const handleAdvanceToStep6 = useCallback(async () => {
+    const session = draftSessionRef.current;
+    if (!session || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      const map: Record<string, string | null> = {};
+      for (const row of dataTypeRows) {
+        const v = dataTypeDefaults[row.category];
+        map[row.category] = v === null ? null : (v ?? '');
+      }
+      await updateCaptureSession(projectId, architectureId, session.id, {
+        data_type_defaults_json: map,
+      });
+      setStep(6);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    projectId,
+    architectureId,
+    submitting,
+    dataTypeRows,
+    dataTypeDefaults,
   ]);
 
   /**
@@ -1004,7 +1102,7 @@ export function StartCaptureSessionWizard({
 
         {/* Stepper */}
         <div className={styles.stepper} data-testid="start-capture-session-wizard-stepper">
-          {([1, 2, 3, 4, 5] as WizardStep[]).map((n, idx) => (
+          {([1, 2, 3, 4, 5, 6] as WizardStep[]).map((n, idx) => (
             <React.Fragment key={n}>
               {idx > 0 && (
                 <span className={styles.stepSeparator} aria-hidden="true">
@@ -1026,6 +1124,8 @@ export function StartCaptureSessionWizard({
                   ? 'DB sampling'
                   : n === 4
                   ? 'Endpoints'
+                  : n === 5
+                  ? 'Data-type formats'
                   : 'Start'}
               </span>
             </React.Fragment>
@@ -1945,6 +2045,18 @@ export function StartCaptureSessionWizard({
           )}
 
           {step === 5 && (
+            <DataTypeFormatsStep
+              rows={dataTypeRows}
+              values={dataTypeDefaults}
+              loading={dataTypePreviewLoading}
+              styles={styles}
+              onChange={(category, value) =>
+                setDataTypeDefaults((prev) => ({ ...prev, [category]: value }))
+              }
+            />
+          )}
+
+          {step === 6 && (
             <>
               <p className={styles.helperText}>
                 Review the redacted configuration below, then start the
@@ -2168,6 +2280,17 @@ export function StartCaptureSessionWizard({
             </button>
           )}
           {step === 5 && (
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={handleAdvanceToStep6}
+              disabled={submitting}
+              data-testid="start-capture-session-wizard-next"
+            >
+              {submitting ? 'Saving…' : 'Next'}
+            </button>
+          )}
+          {step === 6 && (
             <button
               type="button"
               className={styles.primaryButton}

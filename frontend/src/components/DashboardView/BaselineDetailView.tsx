@@ -44,13 +44,17 @@ import {
   ApiBehaviourBaselineItemDto,
   getBaseline,
   getBaselineIntegrity,
+  getCaptureSession,
   listBaselineItems,
   parseBaselineProvenance,
+  updateBaseline,
 } from '../../api/apiBehaviourClient';
 import styles from './ApiBaselinesListPage.module.css';
 import { DriftReportTab } from './DriftReportTab';
 import { formatScorePct } from './CoverageSummaryPanel';
 import { BaselineSequenceView } from './BaselineSequenceView';
+import { baselineToPostmanCollection } from '../../utils/postmanExport';
+import { triggerDownload, sanitizeFilename } from '../../utils/fileOperations';
 
 export interface BaselineDetailViewProps {
   projectId: string;
@@ -144,6 +148,22 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TargetTabId>('detail');
+
+  // ---- Spec 2026-06-20 Baseline Save & Review (R5) ----------------------
+  // Detail-view density toggle. Defaults to a compact TABLE (Method / Path /
+  // Scenario / Status); 'full' reveals today's per-item request/response JSON
+  // dump (including the BaselineSequenceView for sequence items). Reuses the
+  // existing tabsNav toggle pattern.
+  const [viewMode, setViewMode] = useState<'table' | 'full'>('table');
+
+  // ---- Spec 2026-06-20 Baseline Save & Review (R3 + R6) -----------------
+  // Toolbar action state for Make Active (draft -> active) + Export Postman
+  // Collection. `actionError` / `actionNotice` surface inline feedback;
+  // `activating` / `exporting` guard against double-submits.
+  const [activating, setActivating] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // ---- Spec 2026-06-17 Baseline Integrity & Provenance -- R4 (live badge) ---
   // Server-side verify verdict for current-state baselines that carry a
@@ -324,6 +344,75 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
 
   const sortedItems = useMemo(() => [...items].sort(compareItems), [items]);
 
+  // ---- Spec 2026-06-20 (R3): manual Make Active ------------------------
+  // Deliberate draft -> active promotion via the EXISTING updateBaseline
+  // status path (which stamps the integrity hash + provenance server-side
+  // at the transition -- unchanged here). On success we replace the local
+  // baseline with the returned DTO so the status badge flips to active.
+  const handleMakeActive = async (): Promise<void> => {
+    if (!baseline || baseline.status !== 'draft' || activating) return;
+    setActivating(true);
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      const updated = await updateBaseline(projectId, architectureId, baseline.id, {
+        status: 'active',
+      });
+      setBaseline(updated);
+      setActionNotice('Baseline activated.');
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : 'Failed to activate baseline',
+      );
+    } finally {
+      setActivating(false);
+    }
+  };
+
+  // ---- Spec 2026-06-20 (R6): export Postman Collection -----------------
+  // Pure-frontend export available on ANY saved baseline (draft or active).
+  // The {{baseUrl}} variable is fail-soft prefilled from the capture
+  // session's api_base_url when the baseline carries a session_id; any
+  // fetch error (or absent session) leaves it blank. The collection is
+  // built by the TG7 util and downloaded via the shared file helpers.
+  const handleExportPostman = async (): Promise<void> => {
+    if (!baseline || exporting) return;
+    setExporting(true);
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      let baseUrl = '';
+      if (baseline.session_id) {
+        try {
+          const session = await getCaptureSession(
+            projectId,
+            architectureId,
+            baseline.session_id,
+          );
+          baseUrl = session.api_base_url ?? '';
+        } catch {
+          // Fail-soft: a missing/forbidden session leaves baseUrl blank.
+          baseUrl = '';
+        }
+      }
+      const collection = baselineToPostmanCollection(
+        baseline.name ?? '',
+        items,
+        baseUrl,
+      );
+      const filename = `${sanitizeFilename(
+        baseline.name && baseline.name.trim() ? baseline.name : 'baseline',
+      )}.postman_collection.json`;
+      triggerDownload(JSON.stringify(collection, null, 2), filename);
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : 'Failed to export Postman collection',
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className={styles.detailContainer} data-testid="baseline-detail-view">
@@ -447,6 +536,45 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
   // `kind='target'` so the existing structure is preserved verbatim. -----
   const flatDetailContent = (
     <>
+      {/*
+        Spec 2026-06-20 Baseline Save & Review (R2 + R3 + R6) -- NET-NEW
+        toolbar for a saved baseline. Make Active is gated to draft (it uses
+        the existing updateBaseline status path which stamps the hash); Export
+        Postman Collection is available on ANY saved baseline (draft OR
+        active). Inline notice/error feedback sits beneath the buttons.
+      */}
+      <div className={styles.headerActions} data-testid="baseline-detail-toolbar">
+        {baseline.status === 'draft' && (
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={() => void handleMakeActive()}
+            disabled={activating}
+            data-testid="baseline-detail-make-active"
+          >
+            {activating ? 'Activating…' : 'Make Active'}
+          </button>
+        )}
+        <button
+          type="button"
+          className={styles.secondaryButton}
+          onClick={() => void handleExportPostman()}
+          disabled={exporting}
+          data-testid="baseline-detail-export-postman"
+        >
+          {exporting ? 'Exporting…' : 'Export Postman Collection'}
+        </button>
+      </div>
+      {actionNotice && (
+        <div className={styles.testResultOk} data-testid="baseline-detail-action-notice">
+          {actionNotice}
+        </div>
+      )}
+      {actionError && (
+        <div className={styles.errorBanner} data-testid="baseline-detail-action-error">
+          {actionError}
+        </div>
+      )}
       <div className={styles.detailSection}>
         <h3>Summary</h3>
         <div className={styles.detailRow}>
@@ -534,13 +662,90 @@ export const BaselineDetailView: React.FC<BaselineDetailViewProps> = ({
       </div>
 
       <div className={styles.detailSection}>
-        <h3>Baseline items ({sortedItems.length})</h3>
+        <div className={styles.detailHeader}>
+          <h3 style={{ margin: 0 }}>Baseline items ({sortedItems.length})</h3>
+          {/*
+            Spec 2026-06-20 (R5): density toggle. Defaults to the compact
+            table; 'Full detail' reveals the per-item request/response JSON
+            dump (incl. BaselineSequenceView). Reuses the tabsNav styling.
+          */}
+          <div
+            className={styles.tabsNav}
+            data-testid="baseline-detail-view-mode-toggle"
+            role="tablist"
+            style={{ borderBottom: 'none' }}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'table'}
+              className={
+                viewMode === 'table'
+                  ? `${styles.tabButton} ${styles.tabButtonActive}`
+                  : styles.tabButton
+              }
+              onClick={() => setViewMode('table')}
+              data-testid="baseline-detail-view-mode-table"
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'full'}
+              className={
+                viewMode === 'full'
+                  ? `${styles.tabButton} ${styles.tabButtonActive}`
+                  : styles.tabButton
+              }
+              onClick={() => setViewMode('full')}
+              data-testid="baseline-detail-view-mode-full"
+            >
+              Full detail
+            </button>
+          </div>
+        </div>
         {sortedItems.length === 0 && (
           <div className={styles.emptyMessage} data-testid="baseline-detail-items-empty">
             This baseline has no accepted items yet.
           </div>
         )}
-        {sortedItems.length > 0 && (
+        {/*
+          Spec 2026-06-20 (R5): compact default table -- Method / Path /
+          Scenario / Status. Reuses the review-style `driftItemsTable` look.
+        */}
+        {sortedItems.length > 0 && viewMode === 'table' && (
+          <table
+            className={styles.driftItemsTable}
+            data-testid="baseline-detail-items-table"
+          >
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Path</th>
+                <th>Scenario</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedItems.map((item) => (
+                <tr
+                  key={item.id}
+                  data-testid="baseline-detail-item-row"
+                  data-baseline-item-id={item.id}
+                >
+                  <td>
+                    <strong>{item.method ?? '?'}</strong>
+                  </td>
+                  <td>{item.path ?? '(no path)'}</td>
+                  <td>{item.scenario_name ?? '—'}</td>
+                  <td>{item.response_status ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {sortedItems.length > 0 && viewMode === 'full' && (
           <ul className={styles.list} data-testid="baseline-detail-items-list">
             {sortedItems.map((item) => (
               <li
