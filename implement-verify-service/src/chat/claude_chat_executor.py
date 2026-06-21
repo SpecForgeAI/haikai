@@ -41,6 +41,29 @@ _CLI_ERROR_PATTERNS: Tuple[str, ...] = (
 # retry loop skips the nudge logic and goes straight to /explain-failure.
 _FATAL_ERROR_HINTS: Tuple[str, ...] = ("authenticate", "invalid", "authentication_error")
 
+# Commands the orchestrator runs non-interactively: they never invoke the
+# /ask-questions skill, so they must skip the shape-spec question/folder recovery
+# retries in stream_message(). Without this, /git-commit-preparation -- which
+# produces neither questions nor a spec folder -- burns `max_retries` CLI spawns
+# and logs a misleading "failed to produce questions or folder" error (the other
+# three only avoid it incidentally by writing a spec folder). Mirrors the command
+# names in HaikaiOrchestrator.COMMANDS; a guard test keeps the two in sync.
+_NON_INTERACTIVE_COMMANDS = frozenset({
+    "write-spec",
+    "create-tasks",
+    "implement-tasks",
+    "git-commit-preparation",
+})
+
+
+def _uses_question_flow(command_name: str) -> bool:
+    """True when a command may use the /ask-questions question/folder flow.
+
+    False for the non-interactive orchestration commands, which never ask
+    questions and so must not trigger the question/folder recovery retries.
+    """
+    return command_name not in _NON_INTERACTIVE_COMMANDS
+
 # Deterministic rate-limit (HTTP 429) backoff for the agentic CLI lane. The Claude CLI
 # swallows 429s inside its own internal HTTP retries and emits NOTHING to stdout/stderr —
 # so the executor can't see them; the call just hangs until killed (exit 143). Instead we
@@ -1292,16 +1315,19 @@ class ClaudeChatExecutor:
 
             # New-session recovery: retry up to 3 times, then emit
             # questions_failed if /ask-questions never landed.
-            if is_new_session and not state.is_collecting_questions:
+            if (is_new_session and not state.is_collecting_questions
+                    and _uses_question_flow(command_name)):
                 yield from self._run_question_retry_loop(state, cli_prompt, command_name)
-            if is_new_session and not state.is_collecting_questions:
+            if (is_new_session and not state.is_collecting_questions
+                    and _uses_question_flow(command_name)):
                 yield from self._emit_questions_failed(state, command_name)
 
             # Resume-session recovery: if the LLM dumped questions as plain
             # text instead of /ask-questions, nudge it. Skipped on fatal
             # errors (LLM is unreachable).
             if (not is_new_session and not state.is_collecting_questions
-                    and not state.folder_buffer and not state.is_fatal_error):
+                    and not state.folder_buffer and not state.is_fatal_error
+                    and _uses_question_flow(command_name)):
                 yield from self._run_resume_retry_loop(state, command_name)
 
             # Parse questions from buffered content if /ask-questions was invoked
