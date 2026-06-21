@@ -108,6 +108,17 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // Implementation-Service project init + repo CRUD + build-results
+        // routes are gateway-owned (proxied to the implement-verify-service via
+        // the gateway, with AMS persistence). AMS has no controller for them,
+        // so they must reach the gateway, not the model service -- otherwise
+        // Spring answers "No static resource api/implementation/...". MUST come
+        // before `/api`.
+        '/api/implementation': {
+          target: chatApiTarget,
+          changeOrigin: true,
+          secure: false,
+        },
         // All other /api routes
         '/api': {
           target: modelApiTarget,

@@ -367,7 +367,20 @@ export function useShapeSpecStream(): UseShapeSpecStreamReturn {
       console.log('[useShapeSpecStream] RESPONSE headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
-        throw new Error(`HTTP error: ${response.status}`);
+        // Surface the upstream detail alongside the status. A bare
+        // "HTTP error: 502" masked a real 503 "CHAT_EXECUTOR is required"
+        // config error; the gateway now forwards {error, detail}.
+        let detailSuffix = '';
+        try {
+          const errBody = await response.json();
+          const detail = errBody?.detail ?? errBody?.error;
+          if (detail) {
+            detailSuffix = ` — ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`;
+          }
+        } catch {
+          /* non-JSON or empty body — status alone is the message */
+        }
+        throw new Error(`HTTP error: ${response.status}${detailSuffix}`);
       }
 
       if (!response.body) {

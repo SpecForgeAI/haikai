@@ -137,13 +137,35 @@ shapeSpecRouter.post(
         return res.status(502).json({ error: 'Upstream authentication failed' });
       }
 
-      // Handle other non-success responses
+      // Handle other non-success responses. Forward the REAL upstream status
+      // and detail -- do NOT mislabel as auth. Mislabeling every non-2xx as
+      // "Upstream authentication failed" masked a 503 "CHAT_EXECUTOR is
+      // required" config error from the implement-verify-service. The error
+      // body is JSON (FastAPI {detail}) or text; tolerate both.
       if (!upstreamResponse.ok) {
+        let detailBody: unknown;
+        try {
+          detailBody = await upstreamResponse.json();
+        } catch {
+          try {
+            detailBody = await upstreamResponse.text();
+          } catch {
+            detailBody = undefined;
+          }
+        }
         logger.error('Upstream returned error status', {
           requestId,
           status: upstreamResponse.status,
+          detail: detailBody,
         });
-        return res.status(502).json({ error: 'Upstream authentication failed' });
+        const detail =
+          detailBody && typeof detailBody === 'object' && 'detail' in detailBody
+            ? (detailBody as { detail: unknown }).detail
+            : detailBody;
+        return res.status(upstreamResponse.status).json({
+          error: 'Shape-Spec service error',
+          detail,
+        });
       }
 
       // Set SSE headers for successful streaming response
