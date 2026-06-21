@@ -51,7 +51,7 @@ saveApprovedCandidatesRouter.post(
   '/',
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { sessionId, projectId, architectureId, runId } = req.body;
+      const { sessionId, projectId, architectureId, runId, commit } = req.body;
 
       // ====================================================================
       // Request Validation
@@ -90,7 +90,12 @@ saveApprovedCandidatesRouter.post(
       // Delegate to Service with manual mode
       // ====================================================================
 
-      const response = await saveDiscoveryCandidatesToModel(projectId, architectureId, runId, 'manual');
+      // `commit === false` (forwarded from the gateway dry-run flag) runs the
+      // resolution as a PROJECTION ONLY -- no model PUT, no candidate transition,
+      // no findings write -- so the C1 remediation panel can PREVIEW what would
+      // commit (Spec 2026-06-20 skipped-candidate-visibility-bulk-fill). Defaults
+      // to a real commit when the flag is absent.
+      const response = await saveDiscoveryCandidatesToModel(projectId, architectureId, runId, 'manual', commit !== false);
 
       // ====================================================================
       // Success Response

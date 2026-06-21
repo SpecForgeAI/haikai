@@ -3,6 +3,8 @@ package com.example.architecturemodel.controller;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.model.dto.DiscoveryCandidateDto;
 import com.example.architecturemodel.model.dto.discovery.BulkReviewCascadeRequest;
+import com.example.architecturemodel.model.dto.discovery.BulkCandidateEditRequest;
+import com.example.architecturemodel.model.dto.discovery.BulkCandidateEditResponse;
 import com.example.architecturemodel.model.dto.discovery.BulkReviewCascadeResponse;
 import com.example.architecturemodel.model.dto.discovery.ResolveDiscoveryConflictRequest;
 import com.example.architecturemodel.service.DiscoveryCandidateService;
@@ -178,6 +180,64 @@ public class DiscoveryCandidateController {
         } catch (IllegalArgumentException e) {
             log.warn("Bad request on cascade bulk review for run {}: {}", runId, e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * ATOMIC bulk-candidate-EDIT across a curated id set with PER-CANDIDATE field
+     * patches (Skipped-candidate visibility + grouped bulk-fill (C1) for discovery
+     * save-back, 2026-06-20 -- Task Group 3). Mirrors {@link #bulkReviewCascade}
+     * (atomic, curated-id-set bulk write) but PATCHES candidate fields -- top-level
+     * columns AND the {@code data} JSONB blob -- rather than applying one shared
+     * {@code review_status}. Every patch is applied inside one {@code @Transactional};
+     * ANY single-candidate failure rolls back the WHOLE batch.
+     *
+     * <p>Body shape (snake_case via the global Jackson naming strategy):</p>
+     * <pre>
+     * {
+     *   "patches": [
+     *     {
+     *       "candidate_id": "uuid",          // required; the candidate to patch
+     *       "name": "Order.process",          // optional top-level field patches
+     *       "review_status": "approved",      // (only non-null fields are written)
+     *       "data": { "interface_type": "REST_API" } // partial data overlay (merged)
+     *     }
+     *   ]
+     * }
+     * </pre>
+     *
+     * <p>Returns {@link BulkCandidateEditResponse} (applied count + the updated
+     * candidate DTOs). Maps the standard exceptions to the conventional statuses,
+     * mirroring {@link #updateCandidate}: the run-guard {@code NoSuchElementException}
+     * -&gt; 404; a not-found / cross-run candidate id (an {@code IllegalArgumentException}
+     * whose message contains "not found") -&gt; 404; any other bad input -&gt; 400.</p>
+     */
+    @PostMapping("/bulk-edit")
+    public ResponseEntity<?> bulkEdit(
+            @PathVariable UUID projectId,
+            @PathVariable UUID architectureId,
+            @PathVariable UUID runId,
+            @RequestBody BulkCandidateEditRequest request) {
+        log.debug(
+            "POST /api/model/projects/{}/architectures/{}/discovery/runs/{}/candidates/bulk-edit patches={}",
+            projectId, architectureId, runId,
+            request == null || request.patches() == null ? 0 : request.patches().size());
+
+        try {
+            BulkCandidateEditResponse response = discoveryCandidateService.bulkEditInArchitecture(
+                runId, projectId, architectureId, request);
+            return ResponseEntity.ok(response);
+        } catch (NoSuchElementException e) {
+            log.debug("Run not found in architecture for candidate bulk edit: {}", e.getMessage());
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            String message = e.getMessage();
+            if (message != null && message.contains("not found")) {
+                log.warn("Candidate not found for bulk edit on run {}: {}", runId, message);
+                return ResponseEntity.status(404).body(Map.of("error", message));
+            }
+            log.warn("Bad request on candidate bulk edit for run {}: {}", runId, message);
+            return ResponseEntity.badRequest().body(Map.of("error", message));
         }
     }
 

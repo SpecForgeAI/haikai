@@ -173,6 +173,56 @@ export interface BelowGateCandidate {
  * pre-model-aware callers that read only the original five counts are
  * unaffected.
  */
+/**
+ * A single per-candidate reason entry on {@link SaveBackResult.reasons} (the
+ * "reason arm"). Collected at EVERY skip/reuse/create site so the save-result
+ * chip + the C1 remediation panel can break the opaque `entitiesSkipped`
+ * integer down by reason CLASS instead of guessing. Additive: pre-reason-arm
+ * callers ignore it.
+ *
+ * `reason` is the broad CLASS; `reusedSubclass` further splits a `reused`
+ * outcome; `missingField` names the specific blocking/degrading field for the
+ * blocked + quality-gap classes so the panel can group by it.
+ */
+export interface SaveBackReasonEntry {
+  /** The discovery candidate this entry describes. */
+  candidateId: string;
+  /** The candidate type (e.g. `business_logics`, `endpoints`). */
+  candidateType: string;
+  /** The candidate (display) name at the time of save-back. */
+  name: string;
+  /**
+   * The parent/owning class context when known (e.g. a `business_logics`
+   * candidate's `data.controllerClassName ?? data.className`). Empty string
+   * when no class context is available.
+   */
+  class: string;
+  /**
+   * The broad reason CLASS for this candidate's outcome:
+   * - `created`       newly minted into the model
+   * - `reused`        matched an existing/earlier entity (see `reusedSubclass`)
+   * - `suppressed`    auto-suppressed exact duplicate of a pre-existing entity
+   * - `possible`      normalized-only possible duplicate (reviewable)
+   * - `blocked`       did NOT commit (missing/unresolved reference, bad type)
+   * - `quality_gap`   committed but missing an important field
+   */
+  reason: 'created' | 'reused' | 'suppressed' | 'possible' | 'blocked' | 'quality_gap';
+  /**
+   * For `reused`, which sub-class of reuse occurred:
+   * - `intra-scan`   matched an entity an EARLIER candidate in THIS save minted
+   * - `pre-existing` matched an entity that existed in the model BEFORE this save
+   * - `already-saved` this exact candidate was committed in a PRIOR save run
+   *                   (filtered pre-loop; never re-entered the merge)
+   */
+  reusedSubclass?: 'intra-scan' | 'pre-existing' | 'already-saved';
+  /**
+   * The specific field that is missing/unresolved (blocked) or empty
+   * (quality_gap), so the C1 panel can GROUP affected candidates by it.
+   * Omitted for created/reused/suppressed/possible.
+   */
+  missingField?: string;
+}
+
 export interface SaveBackResult {
   projectId: string;
   runId: string;
@@ -218,6 +268,15 @@ export interface SaveBackResult {
    * the deterministic core never silently drops evidence.
    */
   findingsEmitted: DiscoveryFindingCreatePayload[];
+  /**
+   * The per-candidate "reason arm": one {@link SaveBackReasonEntry} for every
+   * candidate that was created, reused, suppressed, left as a possible
+   * duplicate, blocked, or committed-with-a-quality-gap. Lets the save-result
+   * chip + the C1 remediation panel break the opaque skip count down by reason
+   * CLASS (and distinguish intra-scan / pre-existing / already-saved reuse).
+   * Additive: pre-reason-arm callers simply ignore it.
+   */
+  reasons: SaveBackReasonEntry[];
 }
 
 // ============================================================================
@@ -408,6 +467,38 @@ export function normalizeNameForMatch(raw: unknown): string {
     s = s.slice(0, -1); // "owners" -> "owner" (but leave "address" alone)
   }
   return s;
+}
+
+/**
+ * Read the parent/owning CLASS context for a candidate, for the reason arm and
+ * the `business_logics` on-collision qualifier. For a `business_logics`
+ * candidate the parent class lives in the `data` blob (NOT a structural FK,
+ * because the type is top-level) -- read it the SAME way
+ * `discovery-service/src/services/candidateIdentity.ts` does
+ * (`data.controllerClassName ?? data.className`). Returns an empty string when
+ * no class context is available (the qualifier then leaves the candidate for
+ * the C1 fallback group rather than guessing).
+ */
+export function readCandidateClassContext(candidate: DiscoveryCandidateDto): string {
+  const data = (candidate?.data || {}) as Record<string, unknown>;
+  const cls =
+    (typeof data.controllerClassName === 'string' && data.controllerClassName) ||
+    (typeof data.className === 'string' && data.className) ||
+    '';
+  return typeof cls === 'string' ? cls.trim() : '';
+}
+
+/**
+ * Build a base {@link SaveBackReasonEntry} (without `reason`) from a candidate.
+ * The caller stamps `reason` (+ optional `reusedSubclass` / `missingField`).
+ */
+export function baseReasonEntry(candidate: DiscoveryCandidateDto): Omit<SaveBackReasonEntry, 'reason'> {
+  return {
+    candidateId: candidate.id,
+    candidateType: candidate.candidate_type,
+    name: candidate.name,
+    class: readCandidateClassContext(candidate),
+  };
 }
 
 /**
@@ -1763,6 +1854,83 @@ function buildPossibleEntityCollisionPayload(args: {
 }
 
 /**
+ * `evidence_gap` gapType + severity tokens for the durable Blocked /
+ * Quality-gap findings (2026-06-20). These reuse the SAME `evidence_gap`
+ * finding-type + the established gapType vocabulary the discovery-service
+ * registry already uses, so the linked candidate findings dedupe + render
+ * alongside the other evidence-gap findings. Mapped from the reason arm's
+ * `missingField` (quality-gap) or the candidate type (blocked).
+ */
+const FINDING_TYPE_EVIDENCE_GAP = 'evidence_gap';
+const FINDING_CATEGORY_EVIDENCE_GAP = 'evidence_gap';
+
+/**
+ * Choose the `evidence_gap` gapType STRING for a candidate gap finding. The
+ * vocabulary mirrors the discovery-side registry: `interface_missing_contract_detail`,
+ * `data_entity_missing_attributes`, `endpoint_missing_response_schema`,
+ * `candidate_conflict`, `ambiguous_relationship`.
+ */
+function gapTypeForCandidateGap(kind: 'blocked' | 'quality_gap', candidateType: string, missingField?: string): string {
+  if (kind === 'quality_gap') {
+    if (missingField === 'interface_type') return 'interface_missing_contract_detail';
+    if (missingField === 'attributes') return 'data_entity_missing_attributes';
+    if (missingField === 'operation_verb' || missingField === 'path_or_address') return 'endpoint_missing_response_schema';
+    return 'candidate_conflict';
+  }
+  // blocked: relationship / interface-link / data-effect blocks are ambiguous
+  // references; everything else is a generic candidate conflict.
+  if (
+    candidateType.includes('relationship') ||
+    candidateType.includes('interface_logical') ||
+    candidateType.includes('endpoint_data_effects') ||
+    candidateType.includes('data_movements')
+  ) {
+    return 'ambiguous_relationship';
+  }
+  return 'candidate_conflict';
+}
+
+/**
+ * Build a durable linked {@link DiscoveryFindingCreatePayload} for a Blocked or
+ * Quality-gap candidate (2026-06-20, Task Group 2). The finding is LINKED to the
+ * candidate itself (`targetType: 'discovery_candidate'`) so the "what's wrong"
+ * signal survives a page reload, and it rides the SAME saveBackFindings ->
+ * `bulkCreateDiscoveryFindings` best-effort path the other save-back findings
+ * use (so it is suppressed under the commit=false dry-run alongside them).
+ */
+function buildCandidateGapFinding(args: {
+  kind: 'blocked' | 'quality_gap';
+  candidateId: string;
+  candidateType: string;
+  candidateName: string;
+  reasonText: string;
+  missingField?: string;
+}): DiscoveryFindingCreatePayload {
+  const isBlocked = args.kind === 'blocked';
+  const gapType = gapTypeForCandidateGap(args.kind, args.candidateType, args.missingField);
+  return {
+    findingType: FINDING_TYPE_EVIDENCE_GAP,
+    category: FINDING_CATEGORY_EVIDENCE_GAP,
+    severity: isBlocked ? 'medium' : 'low',
+    title: isBlocked
+      ? `Candidate "${args.candidateName}" was blocked from committing`
+      : `Candidate "${args.candidateName}" committed with a quality gap`,
+    summary: args.reasonText,
+    detailJson: {
+      gapType,
+      candidateType: args.candidateType,
+      missingField: args.missingField ?? null,
+      outcome: isBlocked ? 'blocked' : 'quality_gap',
+    },
+    source: 'save-back',
+    createdByStage: 'candidate-save-back.candidateGap',
+    links: [
+      { linkType: isBlocked ? 'blocked_candidate' : 'quality_gap_candidate', targetType: 'discovery_candidate', targetId: args.candidateId },
+    ],
+  };
+}
+
+/**
  * Guarded entity-point resolution for a binding side (the false-merge guard's
  * single primitive, Task Group 5.3). Resolves `name` to its data_entity_point
  * id THROUGH the shared {@link resolveEntityPoint} (the matcher itself is
@@ -2116,6 +2284,13 @@ export function createEmptyModelShell(): any {
  *   correct model_file row in multi-arch projects).
  * @param runId - The discovery run UUID
  * @param mode - Save-back mode: 'auto' (default) or 'manual'
+ * @param commit - When `true` (default) the resolution is PERSISTED (model
+ *   PUT, candidate `committed` transition, provenance mappings, findings).
+ *   When `false` the SAME real ~25-branch resolution runs against the drafted
+ *   model in memory and the would-commit / would-still-block projection (incl.
+ *   the reason arm) is returned WITHOUT any persistence side-effect -- the
+ *   server-side dry-run the C1 preview relies on (preview cannot drift from
+ *   commit because it is the same code path).
  * @returns Promise resolving to the save-back result summary
  * @throws Error if project not found, model fetch fails, or entity conversion fails
  */
@@ -2123,7 +2298,8 @@ export async function saveDiscoveryCandidatesToModel(
   projectId: string,
   architectureId: string,
   runId: string,
-  mode: SaveBackMode = 'auto'
+  mode: SaveBackMode = 'auto',
+  commit: boolean = true
 ): Promise<SaveBackResult> {
   // ===========================================================================
   // Step 1: Validate project and derive filename
@@ -2217,6 +2393,14 @@ export async function saveDiscoveryCandidatesToModel(
     existingMappings.map((m) => m.candidate_id)
   );
 
+  // Reason arm (2026-06-20): the already-saved candidates are filtered out
+  // pre-loop and never re-enter the merge, so they were previously UNCOUNTED.
+  // Capture them as explicit `reused` / `already-saved` reason entries so the
+  // honest breakdown chip can distinguish them from intra-scan / pre-existing.
+  const alreadySavedReasons: SaveBackReasonEntry[] = eligibleCandidates
+    .filter((c) => alreadySavedCandidateIds.has(c.id))
+    .map((c) => ({ ...baseReasonEntry(c), reason: 'reused' as const, reusedSubclass: 'already-saved' as const }));
+
   // Remove candidates that already have a mapping (previously saved back)
   eligibleCandidates = eligibleCandidates.filter(
     (c) => !alreadySavedCandidateIds.has(c.id)
@@ -2241,6 +2425,7 @@ export async function saveDiscoveryCandidatesToModel(
       enrichmentsApplied: 0,
       linksCreated: 0,
       findingsEmitted: [],
+      reasons: alreadySavedReasons,
     };
   }
 
@@ -2276,6 +2461,61 @@ export async function saveDiscoveryCandidatesToModel(
     const depthB = depthMap.get(b.id) ?? 0;
     return depthA - depthB;
   });
+  // ===========================================================================
+  // Step 7a: business_logics <class>.<method> qualification ON COLLISION
+  // (2026-06-20). The save-back dedup (Pass 1, below) matches top-level
+  // candidates by NORMALIZED bare name only, so a second same-named
+  // business_logic from a DIFFERENT class (e.g. Order.process vs
+  // Payment.process, both bare `process`) false-collapses into one -- silently
+  // dropping a genuinely-distinct business logic. The discovery MERGE already
+  // keeps these distinct (candidateIdentity.ts keys on className + methodName);
+  // this re-applies that distinction at the save-back boundary.
+  //
+  // RULE (on-collision only): when a `business_logics` bare method name is
+  // duplicated across DIFFERENT parent classes within this run, rewrite each
+  // such candidate's `name` to `<className>.<methodName>` BEFORE the bare-name
+  // dedup. normalizeNameForMatch strips `. _ - <ws>`, so `Order.process` ->
+  // `orderprocess` stays distinct from `Payment.process` -> `paymentprocess`.
+  // A same-name + same-class pair stays a genuine duplicate (both qualify to the
+  // identical `<class>.<method>` and still collapse, as today). Candidates with
+  // NO class context are left UNqualified (routed to the C1 fallback group +
+  // surfaced as a finding/arm entry by Group 2) rather than guessed.
+  {
+    const BL_TYPES = new Set(['business_logics', 'business_logic']);
+    const blByBareName = new Map<string, DiscoveryCandidateDto[]>();
+    for (const c of sortedCandidates) {
+      if (!BL_TYPES.has(c.candidate_type)) continue;
+      const key = normalizeNameForMatch(c.name);
+      if (!key) continue;
+      const arr = blByBareName.get(key);
+      if (arr) arr.push(c);
+      else blByBareName.set(key, [c]);
+    }
+    for (const group of blByBareName.values()) {
+      if (group.length < 2) continue;
+      // Distinct NON-EMPTY classes present in this bare-name group.
+      const distinctClasses = new Set(
+        group
+          .map((c) => readCandidateClassContext(c))
+          .filter((cls) => cls.length > 0),
+      );
+      // Only a TRUE cross-class collision triggers qualification.
+      if (distinctClasses.size < 2) continue;
+      for (const c of group) {
+        const cls = readCandidateClassContext(c);
+        if (!cls) continue; // no class context -> leave for the C1 fallback group
+        const qualified = `${cls}.${c.name}`;
+        if (c.name !== qualified) {
+          console.log(
+            `[save-back] business_logics name-collision qualifier: "${c.name}" ` +
+              `(${c.id}) -> "${qualified}" (bare method name duplicated across ` +
+              `${distinctClasses.size} classes in this run)`,
+          );
+          c.name = qualified;
+        }
+      }
+    }
+  }
 
   // ===========================================================================
   // Step 8: Merge candidates into model (two-pass: entities first, then relationships)
@@ -2319,6 +2559,29 @@ export async function saveDiscoveryCandidatesToModel(
   const suppressedDuplicates: SuppressedDuplicate[] = [];
   const possibleDuplicates: PossibleDuplicate[] = [];
   const saveBackFindings: DiscoveryFindingCreatePayload[] = [];
+  // Reason arm collectors (2026-06-20). `reasons` accumulates the per-candidate
+  // outcome (created / reused+subclass / blocked / quality_gap). blocked +
+  // quality-gap are collected with their prose reason FIRST (so Group 2 can emit
+  // a durable linked finding for each) and then folded into `reasons`.
+  const reasons: SaveBackReasonEntry[] = [...alreadySavedReasons];
+  // Internal: a reason entry plus the human prose used for the linked finding
+  // summary (the public arm only carries the CLASS + missingField).
+  type DetailedReason = { entry: SaveBackReasonEntry; reasonText: string; alreadyHasFinding?: boolean };
+  const blockedReasons: DetailedReason[] = [];
+  const qualityGapReasons: DetailedReason[] = [];
+  /** Record a BLOCKED candidate (did NOT commit) on the reason arm. */
+  const recordBlocked = (
+    candidate: DiscoveryCandidateDto,
+    reasonText: string,
+    missingField?: string,
+    alreadyHasFinding?: boolean,
+  ): void => {
+    blockedReasons.push({
+      entry: { ...baseReasonEntry(candidate), reason: 'blocked', missingField },
+      reasonText,
+      alreadyHasFinding,
+    });
+  };
   let enrichmentsApplied = 0;
   let linksCreated = 0;
 
@@ -2383,6 +2646,7 @@ export async function saveDiscoveryCandidatesToModel(
       console.warn(
         `[save-back] Skipping candidate "${candidate.name}" (${candidate.id}): unknown type "${candidate.candidate_type}"`
       );
+      recordBlocked(candidate, `Unknown candidate type "${candidate.candidate_type}"`, 'candidate_type');
       entitiesSkipped++;
       continue;
     }
@@ -2404,6 +2668,7 @@ export async function saveDiscoveryCandidatesToModel(
               `[save-back] Skipping candidate "${candidate.name}" (${candidate.id}): ` +
               `parent "${candidate.parent_candidate_id}" not resolved to entity ID`
             );
+            recordBlocked(candidate, `Parent "${candidate.parent_candidate_id}" not resolved to an entity id`, config.parentFkField ?? 'parent');
             entitiesSkipped++;
             continue;
           }
@@ -2450,6 +2715,7 @@ export async function saveDiscoveryCandidatesToModel(
             `[save-back] Skipping orphan candidate "${candidate.name}" (${candidate.id}): ` +
             `type "${candidate.candidate_type}" requires parent FK "${config.parentFkField}" but has no parent_candidate_id or data.${config.parentFkField}`
           );
+          recordBlocked(candidate, `Orphan: requires parent FK "${config.parentFkField}" but none was provided`, config.parentFkField ?? 'parent');
           entitiesSkipped++;
           continue;
         }
@@ -2552,6 +2818,24 @@ export async function saveDiscoveryCandidatesToModel(
         entityType: targetArrayKey,
         action: 'reused',
       });
+      // Reason arm (2026-06-20): classify the reuse. The matched row in
+      // `targetArray` either EXISTED before this save (pre-existing, in the
+      // preExistingNamesByArray snapshot) or was minted by an EARLIER
+      // candidate in THIS save (intra-scan duplicate). already-saved is
+      // handled pre-loop (alreadySavedReasons).
+      {
+        const preExistingNamesForArray = preExistingNamesByArray[targetArrayKey];
+        const isPreExisting =
+          !config.parentFkField &&
+          !!preExistingNamesForArray &&
+          typeof existingEntity.name === 'string' &&
+          preExistingNamesForArray.has(existingEntity.name);
+        reasons.push({
+          ...baseReasonEntry(candidate),
+          reason: 'reused',
+          reusedSubclass: isPreExisting ? 'pre-existing' : 'intra-scan',
+        });
+      }
       entitiesSkipped++;
     } else {
       // Convert candidate to entity and push to target array
@@ -2569,6 +2853,7 @@ export async function saveDiscoveryCandidatesToModel(
         entityType: targetArrayKey,
         action: 'created',
       });
+      reasons.push({ ...baseReasonEntry(candidate), reason: 'created' });
       entitiesCreated++;
     }
   }
@@ -2675,6 +2960,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping logical_data_entity_relationships "${candidate.name}" (${candidate.id}): ` +
           `missing sourceEntity or targetEntity in candidate data`
         );
+        recordBlocked(candidate, 'Relationship is missing its source/target entity', 'sourceEntity');
         entitiesSkipped++;
         continue;
       }
@@ -2691,6 +2977,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping logical_data_entity_relationships "${candidate.name}" (${candidate.id}): ` +
           `source entity "${sourceName}" not found in model`
         );
+        recordBlocked(candidate, `Source entity "${sourceName}" not found in model`, 'sourceEntity');
         entitiesSkipped++;
         continue;
       }
@@ -2699,6 +2986,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping logical_data_entity_relationships "${candidate.name}" (${candidate.id}): ` +
           `target entity "${targetName}" not found in model`
         );
+        recordBlocked(candidate, `Target entity "${targetName}" not found in model`, 'targetEntity');
         entitiesSkipped++;
         continue;
       }
@@ -2713,6 +3001,7 @@ export async function saveDiscoveryCandidatesToModel(
           `"${sourceName}"->"${targetName}" resolved only by normalization -- left as a reviewable ` +
           `candidate (no relationship written; possible collision finding(s) raised)`,
         );
+        recordBlocked(candidate, `Relationship resolved only by normalization ("${sourceName}"->"${targetName}") -- left for review`, 'sourceEntity');
         entitiesSkipped++;
         continue;
       }
@@ -2786,6 +3075,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping interface_logical_entities "${candidate.name}" (${candidate.id}): ` +
           `missing interfaceClassName or logicalEntityName in candidate data`
         );
+        recordBlocked(candidate, 'Interface-logical-entity link is missing its interface or entity name', 'interfaceClassName');
         entitiesSkipped++;
         continue;
       }
@@ -2796,6 +3086,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping interface_logical_entities "${candidate.name}" (${candidate.id}): ` +
           `interface "${interfaceName}" not found in model`
         );
+        recordBlocked(candidate, `Interface "${interfaceName}" not found in model`, 'interfaceClassName');
         entitiesSkipped++;
         continue;
       }
@@ -2807,6 +3098,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping interface_logical_entities "${candidate.name}" (${candidate.id}): ` +
           `data entity "${entityName}" not found in model`
         );
+        recordBlocked(candidate, `Data entity "${entityName}" not found in model`, 'logicalEntityName');
         entitiesSkipped++;
         continue;
       }
@@ -2818,6 +3110,7 @@ export async function saveDiscoveryCandidatesToModel(
           `"${entityName}" matched only by normalization -- left as a reviewable candidate ` +
           `(no relationship written; possible collision finding raised)`,
         );
+        recordBlocked(candidate, `Data entity "${entityName}" resolved only by normalization -- left for review`, 'logicalEntityName');
         entitiesSkipped++;
         continue;
       }
@@ -2883,6 +3176,7 @@ export async function saveDiscoveryCandidatesToModel(
           `[save-back] Skipping endpoint_data_effects "${candidate.name}" (${candidate.id}): ` +
           `could not resolve ${conversion.unresolvedSide} side to a model id`
         );
+        recordBlocked(candidate, `Endpoint data-effect: could not resolve its ${conversion.unresolvedSide} side to a model id`, conversion.unresolvedSide ? `${conversion.unresolvedSide}` : 'endpoint');
         entitiesSkipped++;
         continue;
       }
@@ -2949,6 +3243,7 @@ export async function saveDiscoveryCandidatesToModel(
             `source service/interface could not be resolved to an application_point`
           );
         }
+        recordBlocked(candidate, 'Outbound data-movement: source service/interface could not be resolved to an application point', 'sourceService');
         entitiesSkipped++;
         continue;
       }
@@ -3000,6 +3295,7 @@ export async function saveDiscoveryCandidatesToModel(
         console.warn(
           `[save-back] enrich "${candidate.name}" (${candidate.id}): no target entity name on data -- skipping`,
         );
+        recordBlocked(candidate, 'Enrich candidate has no target entity name', 'targetEntityName');
         entitiesSkipped++;
         continue;
       }
@@ -3024,6 +3320,7 @@ export async function saveDiscoveryCandidatesToModel(
             { linkType: 'enrich_target_missing', targetType: 'discovery_candidate', targetId: candidate.id },
           ],
         });
+        recordBlocked(candidate, `Enrich target "${targetName}" no longer exists`, 'targetEntityName', true);
         entitiesSkipped++;
         continue;
       }
@@ -3212,6 +3509,7 @@ export async function saveDiscoveryCandidatesToModel(
         console.warn(
           `[save-back] link "${candidate.name}" (${candidate.id}): missing logical/physical name on data -- skipping`,
         );
+        recordBlocked(candidate, 'Link candidate is missing its logical/physical entity name', 'logicalEntityName');
         entitiesSkipped++;
         continue;
       }
@@ -3241,6 +3539,7 @@ export async function saveDiscoveryCandidatesToModel(
             { linkType: 'enrich_target_missing', targetType: 'discovery_candidate', targetId: candidate.id },
           ],
         });
+        recordBlocked(candidate, `Link endpoint "${missing}" no longer exists`, 'logicalEntityName', true);
         entitiesSkipped++;
         continue;
       }
@@ -3302,6 +3601,73 @@ export async function saveDiscoveryCandidatesToModel(
     entitiesCreated = Math.max(0, entitiesCreated - fkPruned);
   }
 
+
+  // ===========================================================================
+  // Step 9b: Quality-gap detection (2026-06-20). A candidate that COMMITTED but
+  // is missing an important field is recorded as a `quality_gap` reason (and, in
+  // Group 2, a durable linked finding) so the C1 panel can offer a bulk fill.
+  // Starter set (extensible): interface committed with only the DEFAULTED
+  // REST_API interface_type; endpoint with empty operation_verb and/or
+  // path_or_address; logical/physical entity committed with NO attributes.
+  // ===========================================================================
+  {
+    const qgEnts = model.metaModel?.entities || {};
+    const findCreatedRow = (key: string, id: string): any =>
+      (qgEnts[key] || []).find((e: any) => e?.id === id);
+    for (const action of candidateActions) {
+      if (action.action !== 'created') continue;
+      const candidate = sortedCandidates.find((c) => c.id === action.candidateId);
+      if (!candidate) continue;
+      const entity = findCreatedRow(action.entityType, action.entityId);
+      if (!entity) continue;
+      let gapField: string | undefined;
+      let gapText: string | undefined;
+      if (action.entityType === 'interfaces') {
+        const cdata = (candidate.data || {}) as Record<string, unknown>;
+        const explicit =
+          typeof cdata.interface_type === 'string' && cdata.interface_type.trim().length > 0;
+        if (!explicit && entity.interface_type === 'REST_API') {
+          gapField = 'interface_type';
+          gapText = 'Interface committed with only the defaulted REST_API interface_type';
+        }
+      } else if (action.entityType === 'endpoints') {
+        const noVerb = !entity.operation_verb;
+        const noPath = !entity.path_or_address;
+        if (noVerb || noPath) {
+          gapField = noVerb ? 'operation_verb' : 'path_or_address';
+          gapText = `Endpoint committed with empty ${
+            noVerb && noPath ? 'operation_verb and path_or_address' : (noVerb ? 'operation_verb' : 'path_or_address')
+          }`;
+        }
+      } else if (
+        action.entityType === 'logical_data_entities' ||
+        action.entityType === 'physical_data_entities'
+      ) {
+        const attrArrayKey =
+          action.entityType === 'logical_data_entities'
+            ? 'logical_data_attributes'
+            : 'physical_data_attributes';
+        const fkField =
+          action.entityType === 'logical_data_entities'
+            ? 'logical_entity_id'
+            : 'physical_entity_id';
+        const attrs = (qgEnts[attrArrayKey] || []).filter(
+          (a: any) => a?.[fkField] === entity.id,
+        );
+        if (attrs.length === 0) {
+          gapField = 'attributes';
+          gapText = 'Data entity committed with no attributes';
+        }
+      }
+      if (gapField && gapText) {
+        qualityGapReasons.push({
+          entry: { ...baseReasonEntry(candidate), reason: 'quality_gap', missingField: gapField },
+          reasonText: gapText,
+        });
+      }
+    }
+  }
+
   // ===========================================================================
   // Step 10: PUT updated model
   // ===========================================================================
@@ -3347,7 +3713,7 @@ export async function saveDiscoveryCandidatesToModel(
   }
 
   try {
-    await archModelClient.putModel(projectId, architectureId, filename, model);
+    if (commit) await archModelClient.putModel(projectId, architectureId, filename, model);
   } catch (phaseOneErr: any) {
     // Diagnostic logging (2026-04-21): the MCP error handler masks the
     // backend's actual error as a generic "Backend service error" 502. When
@@ -3391,7 +3757,7 @@ export async function saveDiscoveryCandidatesToModel(
       model.metaModel.relationships.endpoint_data_effects.push(...newEdes);
     }
     try {
-      await archModelClient.putModel(projectId, architectureId, filename, model);
+      if (commit) await archModelClient.putModel(projectId, architectureId, filename, model);
     } catch (relError: any) {
       console.warn(
         `[save-back] Phase-2 relationships PUT failed (status=${relError?.response?.status}). ` +
@@ -3417,7 +3783,7 @@ export async function saveDiscoveryCandidatesToModel(
       // 'pending_review' is the sentinel for legacy rows that somehow ended
       // up in the save-back set without an explicit prior review.
       const previousReviewStatus = candidate.review_status ?? 'pending_review';
-      await archModelClient.updateCandidate(projectId, architectureId, runId, action.candidateId, {
+      if (commit) await archModelClient.updateCandidate(projectId, architectureId, runId, action.candidateId, {
         status: 'committed',
         review_status: 'committed',
         reviewed_by: 'save-back',
@@ -3454,7 +3820,7 @@ export async function saveDiscoveryCandidatesToModel(
   }));
 
   try {
-    await archModelClient.bulkCreateCandidateEntityMappings(projectId, architectureId, runId, mappings);
+    if (commit) await archModelClient.bulkCreateCandidateEntityMappings(projectId, architectureId, runId, mappings);
   } catch (err) {
     // Log but do not fail -- the model and status updates are already persisted
     console.warn(
@@ -3485,9 +3851,45 @@ export async function saveDiscoveryCandidatesToModel(
         `candidate(s) left for review (normalized match, below the auto-accept gate).`,
     );
   }
+  // ===========================================================================
+  // Step 12.4: Durable linked findings for Blocked + Quality-gap candidates
+  // (2026-06-20, Task Group 2). EXTEND the existing saveBackFindings array so
+  // these ride the SAME best-effort bulkCreateDiscoveryFindings persistence
+  // (Step 12.5) -- which is already gated on `commit`, so NOTHING is written
+  // under the commit=false dry-run. Each finding LINKS to its candidate
+  // (targetType='discovery_candidate') so the signal survives a page reload.
+  // ===========================================================================
+  for (const b of blockedReasons) {
+    // Skip entries whose blocking site ALREADY emitted a durable finding
+    // (enrich/link target-gone) -- avoid a duplicate evidence_gap finding.
+    if (b.alreadyHasFinding) continue;
+    saveBackFindings.push(
+      buildCandidateGapFinding({
+        kind: 'blocked',
+        candidateId: b.entry.candidateId,
+        candidateType: b.entry.candidateType,
+        candidateName: b.entry.name,
+        reasonText: b.reasonText,
+        missingField: b.entry.missingField,
+      }),
+    );
+  }
+  for (const q of qualityGapReasons) {
+    saveBackFindings.push(
+      buildCandidateGapFinding({
+        kind: 'quality_gap',
+        candidateId: q.entry.candidateId,
+        candidateType: q.entry.candidateType,
+        candidateName: q.entry.name,
+        reasonText: q.reasonText,
+        missingField: q.entry.missingField,
+      }),
+    );
+  }
+
   if (saveBackFindings.length > 0) {
     try {
-      await archModelClient.bulkCreateDiscoveryFindings(projectId, architectureId, runId, saveBackFindings);
+      if (commit) await archModelClient.bulkCreateDiscoveryFindings(projectId, architectureId, runId, saveBackFindings);
     } catch (err) {
       // Soft-fail exactly like the discovery-service FindingEmitter: the model
       // is already saved; a findings-persistence failure must not abort.
@@ -3498,6 +3900,51 @@ export async function saveDiscoveryCandidatesToModel(
           }`,
       );
     }
+  }
+
+
+  // ===========================================================================
+  // Step 12.7: Assemble the per-candidate reason arm (2026-06-20). Pass 1 already
+  // pushed created + classified-reused entries; here we (a) add a generic
+  // created/reused entry for any candidateAction from the DEFERRED passes not yet
+  // represented, and (b) fold in suppressed / possible / blocked / quality-gap.
+  // ===========================================================================
+  {
+    const representedIds = new Set(reasons.map((r) => r.candidateId));
+    for (const action of candidateActions) {
+      if (representedIds.has(action.candidateId)) continue;
+      const candidate = sortedCandidates.find((c) => c.id === action.candidateId);
+      if (!candidate) continue;
+      if (action.action === 'created') {
+        reasons.push({ ...baseReasonEntry(candidate), reason: 'created' });
+      } else {
+        // Deferred-pass reuse (e.g. an existing relationship row matched). The
+        // intra-scan / pre-existing split is a top-level-entity distinction, so
+        // these carry the generic 'intra-scan' subclass.
+        reasons.push({ ...baseReasonEntry(candidate), reason: 'reused', reusedSubclass: 'intra-scan' });
+      }
+      representedIds.add(action.candidateId);
+    }
+    for (const sd of suppressedDuplicates) {
+      reasons.push({
+        candidateId: sd.candidateId,
+        candidateType: sd.entityType,
+        name: sd.candidateName,
+        class: '',
+        reason: 'suppressed',
+      });
+    }
+    for (const pd of possibleDuplicates) {
+      reasons.push({
+        candidateId: pd.candidateId,
+        candidateType: pd.entityType,
+        name: pd.candidateName,
+        class: '',
+        reason: 'possible',
+      });
+    }
+    for (const b of blockedReasons) reasons.push(b.entry);
+    for (const q of qualityGapReasons) reasons.push(q.entry);
   }
 
   // ===========================================================================
@@ -3517,5 +3964,6 @@ export async function saveDiscoveryCandidatesToModel(
     enrichmentsApplied,
     linksCreated,
     findingsEmitted: saveBackFindings,
+    reasons,
   };
 }

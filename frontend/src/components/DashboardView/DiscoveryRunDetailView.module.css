@@ -1059,3 +1059,74 @@
   background: #ffcdd2;
   border-color: #e57373;
 }
+
+/* ============================================================================
+ * Spec 2026-06-20 Skipped-candidate visibility + grouped bulk-fill (C1) --
+ * Task Group 6 (honest breakdown chip) + Task Group 7 (remediation panel).
+ *
+ * The breakdown chip renders inside the existing .saveApprovedSuccess box: a
+ * row of per-class tokens (clickable .breakdownTokenButton for the actionable
+ * Blocked / Quality-gap classes, read-only .breakdownTokenBadge otherwise),
+ * plus the intra-scan advisory note. Token palette mirrors .filterChip so it
+ * reads as a sibling of the existing chip language.
+ * ============================================================================ */
+
+.breakdownTokenRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.breakdownTokenBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #555;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.breakdownTokenButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid #ef9a9a;
+  border-radius: 16px;
+  background: #ffebee;
+  color: #c62828;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.breakdownTokenButton:hover {
+  background: #ffcdd2;
+  border-color: #e57373;
+}
+
+.breakdownTokenCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.breakdownAdvisory {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid #ffe082;
+  border-radius: 4px;
+  background: #fff8e1;
+  color: #8a5a00;
+  font-size: 11px;
+  line-height: 1.45;
+  font-weight: 400;
+}

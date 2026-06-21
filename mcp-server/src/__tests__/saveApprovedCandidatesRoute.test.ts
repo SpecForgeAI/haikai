@@ -105,12 +105,15 @@ describe('save_approved_candidates Route Handler', () => {
 
       await handler(mockReq as Request, mockRes as Response, mockNext);
 
-      // architectureId is forwarded as the second positional arg, and mode is always 'manual'
+      // architectureId is forwarded as the second positional arg, mode is always
+      // 'manual', and the dry-run flag resolves to a real commit (true) when the
+      // request omits `commit` (Spec 2026-06-20 skipped-candidate-visibility-bulk-fill).
       expect(candidateSaveBackService.saveDiscoveryCandidatesToModel).toHaveBeenCalledWith(
         PROJECT_ID,
         ARCH_ID,
         RUN_ID,
-        'manual'
+        'manual',
+        true
       );
 
       expect(jsonMock).toHaveBeenCalledWith(mockResponse);
@@ -330,6 +333,123 @@ describe('save_approved_candidates Route Handler', () => {
           }),
         })
       );
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================================
+  // Test 6: commit=false in the body threads a DRY-RUN (commit=false) to the
+  // service so the gateway preview flag actually reaches save-back.
+  // Spec 2026-06-20 skipped-candidate-visibility-bulk-fill (TG8 review gap).
+  // ============================================================================
+  describe('commit=false threads a dry-run through to the service', () => {
+    beforeEach(() => {
+      jest.resetModules();
+      jest.clearAllMocks();
+    });
+
+    it('calls saveDiscoveryCandidatesToModel with commit=false when the body has { commit: false }', async () => {
+      setupAxiosMock();
+      setupSessionMock();
+
+      const candidateSaveBackService = require('../services/candidateSaveBackService');
+      candidateSaveBackService.saveDiscoveryCandidatesToModel = jest
+        .fn()
+        .mockResolvedValue({
+          projectId: PROJECT_ID,
+          runId: RUN_ID,
+          entitiesCreated: 0,
+          entitiesSkipped: 1,
+          candidatesCommitted: 0,
+          reasons: [],
+        });
+
+      const handler = getHandler();
+
+      const mockReq = {
+        body: {
+          sessionId: 'session-123',
+          projectId: PROJECT_ID,
+          architectureId: ARCH_ID,
+          runId: RUN_ID,
+          commit: false,
+        },
+      } as Partial<Request>;
+
+      const jsonMock = jest.fn();
+      const statusMock = jest.fn().mockReturnThis();
+      const mockRes = { json: jsonMock, status: statusMock } as Partial<Response>;
+      const mockNext: NextFunction = jest.fn();
+
+      await handler(mockReq as Request, mockRes as Response, mockNext);
+
+      // The 5th positional arg (commit) is false -> the service runs in dry-run
+      // (projection-only) mode. The route maps commit !== false, so an explicit
+      // false reaches the service as false.
+      expect(candidateSaveBackService.saveDiscoveryCandidatesToModel).toHaveBeenCalledWith(
+        PROJECT_ID,
+        ARCH_ID,
+        RUN_ID,
+        'manual',
+        false
+      );
+      expect(statusMock).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
+    });
+  });
+
+  // ============================================================================
+  // Test 7: an explicit { commit: true } also commits (the flag is honoured both
+  // ways, not only defaulted).
+  // ============================================================================
+  describe('commit=true threads a real commit through to the service', () => {
+    beforeEach(() => {
+      jest.resetModules();
+      jest.clearAllMocks();
+    });
+
+    it('calls saveDiscoveryCandidatesToModel with commit=true when the body has { commit: true }', async () => {
+      setupAxiosMock();
+      setupSessionMock();
+
+      const candidateSaveBackService = require('../services/candidateSaveBackService');
+      candidateSaveBackService.saveDiscoveryCandidatesToModel = jest
+        .fn()
+        .mockResolvedValue({
+          projectId: PROJECT_ID,
+          runId: RUN_ID,
+          entitiesCreated: 1,
+          entitiesSkipped: 0,
+          candidatesCommitted: 1,
+        });
+
+      const handler = getHandler();
+
+      const mockReq = {
+        body: {
+          sessionId: 'session-123',
+          projectId: PROJECT_ID,
+          architectureId: ARCH_ID,
+          runId: RUN_ID,
+          commit: true,
+        },
+      } as Partial<Request>;
+
+      const jsonMock = jest.fn();
+      const statusMock = jest.fn().mockReturnThis();
+      const mockRes = { json: jsonMock, status: statusMock } as Partial<Response>;
+      const mockNext: NextFunction = jest.fn();
+
+      await handler(mockReq as Request, mockRes as Response, mockNext);
+
+      expect(candidateSaveBackService.saveDiscoveryCandidatesToModel).toHaveBeenCalledWith(
+        PROJECT_ID,
+        ARCH_ID,
+        RUN_ID,
+        'manual',
+        true
+      );
+      expect(statusMock).not.toHaveBeenCalled();
       expect(mockNext).not.toHaveBeenCalled();
     });
   });

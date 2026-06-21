@@ -35,6 +35,7 @@ import {
 import type {
   DiscoveryRunDto,
   DiscoveryCandidateDto,
+  SaveApprovedResult,
 } from '../../api/discoveryApi';
 import {
   useActiveArchitectureId,
@@ -59,6 +60,11 @@ import {
   computeServiceDeletedState,
   type ServiceDeletedState,
 } from './serviceDeletedHelpers';
+import {
+  DiscoveryBreakdownChip,
+  type DiscoveryBreakdownClass,
+} from './DiscoveryBreakdownChip';
+import { CandidateBulkFillPanel } from './CandidateBulkFillPanel';
 import styles from './DiscoveryRunDetailView.module.css';
 
 const VALID_STEPS = ['1a', '1b', '1c', '1d'] as const;
@@ -211,12 +217,33 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   // Save All Approved state + lastSaveTimestamp (Bug 3 hotfix counter).
   // -----------------------------------------------------------------------
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  // The legacy outcome string is no longer rendered directly -- the breakdown
+  // chip (TG6) reproduces the summary line from saveResult. The setter is kept
+  // so the existing reset sites stay valid; the value binding is dropped to
+  // satisfy noUnusedLocals.
+  const [, setSaveSuccess] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBackOpen, setSaveBackOpen] = useState<boolean>(false);
   const [lastSaveTimestamp, setLastSaveTimestamp] = useState<number | undefined>(
     undefined,
   );
+  // -----------------------------------------------------------------------
+  // Honest breakdown chip (TG6) + C1 remediation panel (TG7) state.
+  // saveResult holds the FULL save-back outcome (or dry-run preview) so the
+  // breakdown chip can split the opaque skip count by reason CLASS; clicking a
+  // token opens the C1 panel scoped to the clicked reason class.
+  // -----------------------------------------------------------------------
+  const [saveResult, setSaveResult] = useState<SaveApprovedResult | null>(null);
+  const [panelOpen, setPanelOpen] = useState<boolean>(false);
+  const [panelReasonClass, setPanelReasonClass] =
+    useState<DiscoveryBreakdownClass | null>(null);
+  const handleOpenBreakdownClass = useCallback((cls: DiscoveryBreakdownClass) => {
+    setPanelReasonClass(cls);
+    setPanelOpen(true);
+  }, []);
+  const handleClosePanel = useCallback(() => {
+    setPanelOpen(false);
+  }, []);
 
   const discoveryListUrl = useMemo(() => {
     if (!activeProject?.id || !activeArchitectureId) return null;
@@ -297,6 +324,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
       }
       setDetailLoading(true);
       setSaveSuccess(null);
+      setSaveResult(null);
       setSaveError(null);
       try {
         const [runDetail, countResult] = await Promise.all([
@@ -448,6 +476,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   const handleSaveApprovedClick = useCallback(() => {
     if (!runId || !selectedRun) return;
     setSaveSuccess(null);
+    setSaveResult(null);
     setSaveError(null);
     setSaveBackOpen(true);
   }, [runId, selectedRun]);
@@ -476,6 +505,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
 
     setSaveLoading(true);
     setSaveSuccess(null);
+    setSaveResult(null);
     setSaveError(null);
 
     const runArchitectureId = selectedRun.architecture_id;
@@ -504,6 +534,9 @@ export const DiscoveryRunDetailPage: React.FC = () => {
       setSaveSuccess(
         `Saved: ${result.entitiesCreated} created, ${result.entitiesSkipped} skipped, ${result.candidatesCommitted} committed${belowGateSuffix}`,
       );
+      // Hold the FULL outcome so the honest breakdown chip (TG6) can split the
+      // opaque skip count by reason CLASS and offer the C1 remediation panel.
+      setSaveResult(result);
 
       await Promise.all([
         fetchCandidatesForRun(runIdAtSave),
@@ -608,6 +641,35 @@ export const DiscoveryRunDetailPage: React.FC = () => {
     return list.find((a) => a.id === selectedRun.architecture_id) ?? null;
   }, [selectedRun?.architecture_id, archCtx.architectures]);
 
+  // Reference-field typeahead suggestions for the C1 panel: names of committed
+  // model entities (pick-from-existing only, v1) PLUS already-approved /
+  // committed candidate names. Defensive against a partially-mocked context.
+  const referenceSuggestions = useMemo<string[]>(() => {
+    const names = new Set<string>();
+    const entities = archCtx.state?.model?.metaModel?.entities as unknown as
+      | Record<string, Array<{ name?: string }>>
+      | undefined;
+    if (entities) {
+      for (const arr of Object.values(entities)) {
+        if (!Array.isArray(arr)) continue;
+        for (const e of arr) {
+          const n = (e as { name?: string }).name;
+          if (typeof n === 'string' && n.length > 0) names.add(n);
+        }
+      }
+    }
+    for (const c of candidates) {
+      if (
+        (c.review_status === 'approved' || c.review_status === 'committed') &&
+        typeof c.name === 'string' &&
+        c.name.length > 0
+      ) {
+        names.add(c.name);
+      }
+    }
+    return Array.from(names).sort();
+  }, [archCtx.state, candidates]);
+
   // -----------------------------------------------------------------------
   // Render: page wrapper without a project is the only short-circuit.
   // -----------------------------------------------------------------------
@@ -661,13 +723,11 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                 ? 'Save Remaining Approved'
                 : 'Save All Approved'}
           </button>
-          {saveSuccess && (
-            <span
-              className={styles.saveApprovedSuccess}
-              data-testid="save-approved-success"
-            >
-              {saveSuccess}
-            </span>
+          {saveResult && (
+            <DiscoveryBreakdownChip
+              result={saveResult}
+              onOpenClass={handleOpenBreakdownClass}
+            />
           )}
           {saveError && (
             <span
@@ -1102,6 +1162,26 @@ export const DiscoveryRunDetailPage: React.FC = () => {
           </>
         )}
       </div>
+
+      <CandidateBulkFillPanel
+        open={panelOpen}
+        scopeClass={panelReasonClass}
+        result={saveResult}
+        candidates={candidates}
+        referenceSuggestions={referenceSuggestions}
+        projectId={activeProject.id}
+        architectureId={
+          selectedRun?.architecture_id ?? activeArchitectureId ?? ''
+        }
+        runId={runId ?? ''}
+        onClose={handleClosePanel}
+        onApplied={() => {
+          if (runId && selectedRun?.architecture_id) {
+            void fetchCandidatesForRun(runId);
+            void refreshSelectedRunDetail(runId, selectedRun.architecture_id);
+          }
+        }}
+      />
 
       <SaveBackConfirmModal
         open={saveBackOpen}

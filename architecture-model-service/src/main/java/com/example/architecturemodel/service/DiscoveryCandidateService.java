@@ -125,6 +125,25 @@ public class DiscoveryCandidateService {
         return resolveConflict(runId, candidateId, attr, chosenValue, chosenSource, resolvedBy, resolvedAt);
     }
 
+    /**
+     * Architecture-scoped entry point for the ATOMIC bulk-candidate-EDIT write.
+     * Mirrors {@link #updateCandidateInArchitecture} (verify the run belongs to the
+     * (project, architecture) before delegating) but for the WHOLE curated patch set,
+     * and mirrors {@code DiscoveryCascadeReviewService.bulkReviewCascade} for the
+     * all-or-nothing transaction guarantee: every patch is applied inside one
+     * {@code @Transactional}, and any single-patch failure rolls back the WHOLE batch.
+     *
+     * Spec: Skipped-candidate visibility + grouped bulk-fill (C1) for discovery
+     * save-back (2026-06-20) -- Task Group 3.
+     */
+    @Transactional
+    public com.example.architecturemodel.model.dto.discovery.BulkCandidateEditResponse bulkEditInArchitecture(
+            UUID runId, UUID projectId, UUID architectureId,
+            com.example.architecturemodel.model.dto.discovery.BulkCandidateEditRequest request) {
+        runGuard.verify(runId, projectId, architectureId);
+        return bulkEdit(runId, request);
+    }
+
 
     /**
      * Bulk create or update candidates for a discovery run (upsert semantics).
@@ -554,6 +573,110 @@ public class DiscoveryCandidateService {
             attr, candidateId, runId, chosenSource, resolvedByLabel);
 
         return toDto(saved);
+    }
+
+    /**
+     * ATOMIC bulk-candidate-EDIT: apply a curated set of per-candidate field patches
+     * in ONE {@code @Transactional}.
+     *
+     * <p>The write half of the Skipped-candidate visibility + grouped bulk-fill (C1)
+     * spec (2026-06-20, Task Group 3). It mirrors
+     * {@code DiscoveryCascadeReviewService.bulkReviewCascade} for the all-or-nothing
+     * guarantee -- every patch applies inside this single transaction and ANY
+     * single-patch failure (unknown id, cross-run id, blank id) throws and rolls back
+     * the WHOLE batch, so a partial application can never be persisted. Unlike the
+     * cascade (one shared {@code review_status} across the set), each patch carries its
+     * own per-candidate field changes.</p>
+     *
+     * <p>Each patch reuses the PATCH-style top-level field semantics of
+     * {@link #updateCandidate} (only non-null fields written). The {@code data} blob is
+     * applied as a PARTIAL OVERLAY merged onto the existing candidate {@code data} JSONB
+     * -- mirroring the defensive-copy-then-merge {@code data} write in
+     * {@link #resolveConflict} (a passthrough map; NO schema / Liquibase change) -- so
+     * the C1 panel can fill ONE missing field without round-tripping the whole blob. A
+     * supplied {@code data} key with a {@code null} value clears that one key; keys not
+     * present in the overlay are preserved.</p>
+     *
+     * @param runId   the discovery run UUID (from the URL path)
+     * @param request the curated per-candidate patch set
+     * @return per-candidate applied results (count + the updated DTOs)
+     * @throws IllegalArgumentException null body, a patch with a null {@code candidate_id},
+     *                                  a candidate not found, or a candidate not in the run
+     */
+    @Transactional
+    public com.example.architecturemodel.model.dto.discovery.BulkCandidateEditResponse bulkEdit(
+            UUID runId,
+            com.example.architecturemodel.model.dto.discovery.BulkCandidateEditRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Bulk candidate edit request body is required");
+        }
+        List<com.example.architecturemodel.model.dto.discovery.BulkCandidateEditRequest.Patch> patches =
+            request.patches();
+        if (patches == null || patches.isEmpty()) {
+            // An empty curated set is a no-op (mirrors the cascade both-empty no-op).
+            return new com.example.architecturemodel.model.dto.discovery.BulkCandidateEditResponse(
+                0, 0, new ArrayList<>(), new ArrayList<>());
+        }
+
+        log.debug("Bulk editing {} candidate(s) for run: {}", patches.size(), runId);
+
+        List<UUID> appliedIds = new ArrayList<>(patches.size());
+        List<DiscoveryCandidateDto> applied = new ArrayList<>(patches.size());
+
+        for (com.example.architecturemodel.model.dto.discovery.BulkCandidateEditRequest.Patch patch : patches) {
+            if (patch == null || patch.candidateId() == null) {
+                // A null/identity-less patch aborts the whole atomic batch.
+                throw new IllegalArgumentException("Each bulk-edit patch requires a candidate_id");
+            }
+            UUID candidateId = patch.candidateId();
+
+            DiscoveryCandidateEntity entity = candidateRepository.findById(candidateId)
+                .orElseThrow(() -> new IllegalArgumentException("Candidate not found: " + candidateId));
+            if (!entity.getRunId().equals(runId)) {
+                throw new IllegalArgumentException(
+                    "Candidate " + candidateId + " does not belong to run " + runId);
+            }
+
+            // PATCH-style top-level fields: only non-null fields are written (mirrors
+            // updateCandidate). status/reviewStatus/operation/name/candidateType/confidence.
+            if (patch.name() != null) {
+                entity.setName(patch.name());
+            }
+            if (patch.candidateType() != null) {
+                entity.setCandidateType(patch.candidateType());
+            }
+            if (patch.status() != null) {
+                entity.setStatus(patch.status());
+            }
+            if (patch.reviewStatus() != null) {
+                entity.setReviewStatus(patch.reviewStatus());
+            }
+            if (patch.confidence() != null) {
+                entity.setConfidence(patch.confidence());
+            }
+            if (patch.operation() != null) {
+                entity.setOperation(patch.operation());
+            }
+
+            // data blob: PARTIAL OVERLAY (merge supplied keys onto existing data),
+            // defensively copied so the pre-write state is never mutated in place
+            // (mirrors resolveConflict). A null patch.data() leaves data untouched.
+            if (patch.data() != null) {
+                Map<String, Object> data = entity.getData() != null
+                    ? new HashMap<>(entity.getData())
+                    : new HashMap<>();
+                data.putAll(patch.data());
+                entity.setData(data);
+            }
+
+            DiscoveryCandidateEntity saved = candidateRepository.save(entity);
+            appliedIds.add(saved.getId());
+            applied.add(toDto(saved));
+        }
+
+        log.debug("Bulk edited {} candidate(s) for run: {}", applied.size(), runId);
+        return new com.example.architecturemodel.model.dto.discovery.BulkCandidateEditResponse(
+            applied.size(), patches.size(), appliedIds, applied);
     }
 
     /**

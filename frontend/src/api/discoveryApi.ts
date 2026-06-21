@@ -613,11 +613,113 @@ export interface DataMovementDto {
  *   the count on the existing save-back outcome line. Optional + absence-tolerant
  *   so pre-Spec-#3 responses (which omit it) parse cleanly.
  */
+/**
+ * One per-candidate entry on the save-back REASON ARM
+ * ({@link SaveApprovedResult.reasons}).
+ *
+ * Spec: Skipped-candidate visibility + grouped bulk-fill (C1) for discovery
+ * save-back (2026-06-20) -- Task Group 5. The MCP `SaveBackResult` collects ONE
+ * entry for EVERY candidate that was created / reused / suppressed / left a
+ * possible-duplicate / blocked / committed-with-a-quality-gap, so the honest
+ * breakdown chip (Group 6) and the C1 remediation panel (Group 7) can split the
+ * opaque `entitiesSkipped` integer by reason CLASS instead of guessing.
+ *
+ * WIRE FORMAT: camelCase. Unlike the snake_case AMS discovery DTOs in this
+ * module, the save-back result is authored by the MCP server (a TypeScript
+ * service) and the gateway save-approved proxy forwards that JS object VERBATIM,
+ * so the field names reach the browser camelCase exactly as the MCP
+ * `SaveBackReasonEntry` declares them. Every field is absence-tolerant.
+ */
+export interface SaveBackReasonEntry {
+  /** The discovery candidate this entry describes. */
+  candidateId: string;
+  /** The candidate type (e.g. `business_logics`, `endpoints`). */
+  candidateType: string;
+  /** The candidate (display) name at save-back time. */
+  name: string;
+  /**
+   * The parent/owning class context when known (e.g. a `business_logics`
+   * candidate's `data.controllerClassName ?? data.className`); empty string when
+   * no class context is available.
+   */
+  class: string;
+  /**
+   * The broad reason CLASS for this candidate's outcome: `created` (newly
+   * minted), `reused` (matched an existing/earlier entity -- see
+   * `reusedSubclass`), `suppressed` (auto-suppressed exact duplicate),
+   * `possible` (normalized-only possible duplicate, reviewable), `blocked` (did
+   * NOT commit -- missing/unresolved reference or bad type), or `quality_gap`
+   * (committed but missing an important field). Kept a wide-ish union so a new
+   * class on the wire still parses.
+   */
+  reason: 'created' | 'reused' | 'suppressed' | 'possible' | 'blocked' | 'quality_gap' | string;
+  /**
+   * For `reused`, which sub-class of reuse occurred: `intra-scan` (matched an
+   * entity an EARLIER candidate in THIS save minted), `pre-existing` (matched an
+   * entity that existed BEFORE this save), or `already-saved` (this exact
+   * candidate was committed in a PRIOR save run). These three MUST stay
+   * distinguished -- never collapsed into one "skipped".
+   */
+  reusedSubclass?: 'intra-scan' | 'pre-existing' | 'already-saved' | string;
+  /**
+   * The specific field that is missing/unresolved (blocked) or empty
+   * (quality_gap), so the C1 panel can GROUP affected candidates by it. Omitted
+   * for created/reused/suppressed/possible.
+   */
+  missingField?: string;
+}
+
+/**
+ * A re-discovered entity AUTO-SUPPRESSED as an EXACT duplicate of an
+ * already-persisted entity (the `suppressedDuplicates[]` arm). camelCase wire
+ * (MCP-authored, forwarded verbatim). Absence-tolerant.
+ */
+export interface SaveApprovedSuppressedDuplicate {
+  candidateId: string;
+  candidateName: string;
+  entityType: string;
+  existingEntityId: string;
+}
+
+/**
+ * A re-discovered entity that matched an existing entity only AFTER
+ * normalization (below the auto-accept gate) -- kept reviewable, never
+ * auto-applied (the `possibleDuplicates[]` arm). camelCase wire. Absence-tolerant.
+ */
+export interface SaveApprovedPossibleDuplicate {
+  candidateId: string;
+  candidateName: string;
+  entityType: string;
+  existingEntityId: string;
+  confidence: number;
+}
+
 export interface SaveApprovedResult {
   entitiesCreated: number;
   entitiesSkipped: number;
   candidatesCommitted: number;
   belowGateCount?: number;
+  /**
+   * The per-candidate REASON ARM (Skipped-candidate visibility + grouped
+   * bulk-fill (C1), 2026-06-20, Task Group 5). One {@link SaveBackReasonEntry}
+   * per candidate so the breakdown chip + C1 panel can split the opaque skip
+   * count by reason CLASS (and distinguish intra-scan / pre-existing /
+   * already-saved reuse). Already rides the wire on the MCP `SaveBackResult`;
+   * optional + absence-tolerant so pre-reason-arm responses parse cleanly.
+   */
+  reasons?: SaveBackReasonEntry[];
+  /**
+   * The auto-suppressed EXACT-duplicate set (the chip's `Suppressed duplicate`
+   * class). Already reaches the browser but was previously dropped by this type.
+   * Optional + absence-tolerant.
+   */
+  suppressedDuplicates?: SaveApprovedSuppressedDuplicate[];
+  /**
+   * The normalized-only POSSIBLE-duplicate set (the chip's `Possible duplicate`
+   * class). Already reaches the browser but was previously dropped by this type.
+   * Optional + absence-tolerant.
+   */
+  possibleDuplicates?: SaveApprovedPossibleDuplicate[];
 }
 
 /**
@@ -1125,6 +1227,180 @@ export async function saveApprovedCandidates(
   }
 
   return res.json() as Promise<SaveApprovedResult>;
+}
+
+/**
+ * DRY-RUN variant of {@link saveApprovedCandidates} (Skipped-candidate
+ * visibility + grouped bulk-fill (C1), 2026-06-20, Task Group 5).
+ *
+ * Sends `?commit=false` so the gateway threads the flag through to the MCP
+ * `save_approved_candidates` tool, which runs the REAL ~25-branch save-back
+ * resolution against the (already-drafted) candidate state and returns the
+ * would-commit / would-still-block PROJECTION WITHOUT persisting anything (no
+ * model PUT, no candidate transition, no finding emission). This is the C1
+ * panel's PREVIEW: because it runs the real path it CANNOT drift from the
+ * subsequent commit (mirrors the `commit=false` preview / `commit=true` commit
+ * pattern in `MigrationDeliveryBulkResolveModal`).
+ *
+ * Returns the SAME {@link SaveApprovedResult} shape as the committing call --
+ * including the `reasons[]` arm + `suppressedDuplicates[]` / `possibleDuplicates[]`
+ * -- so the preview renders identically to a real save outcome.
+ *
+ * @param projectId - The project identifier
+ * @param architectureId - The architecture the run is bound to
+ * @param runId - The discovery run identifier
+ * @returns Promise resolving to the would-commit / would-still-block projection
+ * @throws Error if the request fails (non-ok response)
+ */
+export async function previewSaveApprovedCandidates(
+  projectId: string,
+  architectureId: string,
+  runId: string
+): Promise<SaveApprovedResult> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/runs/${encodeURIComponent(runId)}/save-approved?commit=false`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // The flag also rides the body for transports that drop the query string;
+    // the gateway accepts either. Default (no flag) stays a real commit.
+    body: JSON.stringify({ commit: false }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Preview save approved candidates request failed: ${res.status}`);
+  }
+
+  return res.json() as Promise<SaveApprovedResult>;
+}
+
+/**
+ * Full per-candidate field UPDATE over the existing AMS `PUT /{candidateId}`
+ * (Skipped-candidate visibility + grouped bulk-fill (C1), 2026-06-20, Task
+ * Group 5). The AMS server has always supported a full-field candidate edit (it
+ * takes a whole {@link DiscoveryCandidateDto} and replaces the persisted row,
+ * `data` blob included) but the UI never wired it; this is the single-row
+ * companion to {@link bulkCandidateEdit} for a one-off per-candidate fix.
+ *
+ * snake_case wire (mirrors {@link reviewCandidate} / {@link getDiscoveryCandidates}).
+ * The PUT body is the FULL candidate DTO (the AMS endpoint does a wholesale
+ * replace, NOT a partial overlay -- for a partial `data` overlay across many
+ * rows use {@link bulkCandidateEdit}). Returns the updated DiscoveryCandidateDto.
+ *
+ * @param projectId - The project identifier
+ * @param architectureId - The architecture the run is bound to
+ * @param runId - The discovery run identifier
+ * @param candidateId - The candidate being updated
+ * @param update - The full candidate DTO to persist
+ * @returns Promise resolving to the updated DiscoveryCandidateDto
+ * @throws Error if the request fails (non-ok response)
+ */
+export async function updateCandidate(
+  projectId: string,
+  architectureId: string,
+  runId: string,
+  candidateId: string,
+  update: DiscoveryCandidateDto
+): Promise<DiscoveryCandidateDto> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/runs/${encodeURIComponent(runId)}/candidates/${encodeURIComponent(candidateId)}`;
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Update candidate request failed: ${res.status}`);
+  }
+
+  return res.json() as Promise<DiscoveryCandidateDto>;
+}
+
+/**
+ * One curated candidate patch in a {@link BulkCandidateEditRequest} (snake_case
+ * wire -- mirrors the AMS `BulkCandidateEditRequest.Patch`). PATCH-style: an
+ * omitted (undefined) top-level field leaves the persisted value untouched, and
+ * `data` is a PARTIAL OVERLAY merged onto the existing candidate `data` JSONB
+ * (supplied keys win; absent keys preserved; a key mapped to `null` clears that
+ * one key). `candidate_id` is required. The `data` map keys are a passthrough
+ * blob Jackson serializes VERBATIM (it does NOT snake_case map keys), so a
+ * camelCase `data` key like `controllerClassName` round-trips unchanged.
+ */
+export interface BulkCandidateEditPatch {
+  candidate_id: string;
+  name?: string;
+  candidate_type?: string;
+  status?: string;
+  review_status?: string;
+  confidence?: number;
+  operation?: string;
+  data?: Record<string, unknown>;
+}
+
+/** Request body for the atomic bulk-candidate-EDIT endpoint (snake_case wire). */
+export interface BulkCandidateEditRequest {
+  patches: BulkCandidateEditPatch[];
+}
+
+/**
+ * Response body for the atomic bulk-candidate-EDIT endpoint (snake_case wire --
+ * mirrors the AMS `BulkCandidateEditResponse`). The endpoint is ATOMIC: on a 2xx
+ * EVERY curated patch applied, so `applied_count === requested_count` and
+ * `applied` carries the FULL updated candidate rows (so the caller can refresh
+ * its grid directly without a follow-up GET). There is deliberately NO per-item
+ * `failed[]` arm -- any single-patch failure rolls the WHOLE batch back and
+ * surfaces as a non-2xx `{ error }` (handled by {@link bulkCandidateEdit}
+ * rejecting).
+ */
+export interface BulkCandidateEditResponse {
+  applied_count: number;
+  requested_count: number;
+  ids: string[];
+  applied: DiscoveryCandidateDto[];
+}
+
+/**
+ * ATOMIC bulk per-candidate field EDIT over a curated candidate set
+ * (Skipped-candidate visibility + grouped bulk-fill (C1), 2026-06-20, Task
+ * Group 5). POSTs the curated `patches` (each a per-candidate top-level field +
+ * `data`-overlay change) to the gateway bulk-edit route:
+ *   POST .../runs/:runId/candidates/bulk-edit
+ *
+ * The gateway is a pure proxy; the AMS endpoint applies all patches in ONE
+ * `@Transactional` -- so this resolves with the full applied result, or REJECTS
+ * on a non-2xx with NOTHING mutated (the whole batch rolled back). There is no
+ * partial success: treat any non-2xx as a WHOLE-BATCH failure. This is the
+ * primitive the C1 panel uses to bulk-fill the missing field(s) that blocked or
+ * degraded a group of candidates before re-attempting the save. snake_case wire.
+ *
+ * @param projectId - The project identifier
+ * @param architectureId - The architecture the run is bound to
+ * @param runId - The discovery run identifier
+ * @param patches - The curated per-candidate field patches
+ * @returns Promise resolving to the atomic { applied_count, requested_count, ids, applied[] }
+ * @throws Error if the request fails (non-2xx -> the atomic batch rolled back)
+ */
+export async function bulkCandidateEdit(
+  projectId: string,
+  architectureId: string,
+  runId: string,
+  patches: BulkCandidateEditPatch[]
+): Promise<BulkCandidateEditResponse> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/runs/${encodeURIComponent(runId)}/candidates/bulk-edit`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ patches } as BulkCandidateEditRequest),
+  });
+
+  if (!res.ok) {
+    // Non-2xx == the whole atomic batch rolled back (no partial result).
+    throw new Error(`Bulk candidate edit request failed: ${res.status}`);
+  }
+
+  return res.json() as Promise<BulkCandidateEditResponse>;
 }
 
 /**

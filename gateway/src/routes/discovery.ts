@@ -1535,6 +1535,45 @@ discoveryRouter.post(
 );
 
 /**
+ * POST /projects/:projectId/architectures/:architectureId/runs/:runId/candidates/bulk-edit
+ *
+ * ATOMIC bulk-candidate-EDIT (Skipped-candidate visibility + grouped bulk-fill
+ * (C1) for discovery save-back, 2026-06-20, Task Group 4). Forwards the
+ * snake_case patch body (`patches: [{ candidate_id, name?, candidate_type?,
+ * status?, review_status?, confidence?, operation?, data? }]`) to the AMS atomic
+ * bulk-edit endpoint POST .../discovery/runs/:runId/candidates/bulk-edit, passing
+ * the AMS status + body through verbatim. The endpoint is ATOMIC (all-or-nothing
+ * within ONE @Transactional): on a 2xx EVERY curated patch applied and the body
+ * carries { applied_count, requested_count, ids, applied[] }; any single-patch
+ * failure rolls the WHOLE batch back and surfaces as a non-2xx ({ error }) -- the
+ * gateway adds NONE of its own business logic (a structural sibling of the
+ * bulk-review-cascade proxy above).
+ *
+ * Registered alongside the other candidate-action proxies and BEFORE the more
+ * general `/candidates/:candidateId/review` PATCH so the literal `bulk-edit`
+ * segment is never captured as a candidateId (it is a POST so there is no actual
+ * collision, but registering here keeps the candidate-action routes together --
+ * mirrors the bulk-review-cascade note).
+ *
+ * Backend: POST {ams}/api/model/projects/:projectId/architectures/:architectureId/discovery/runs/:runId/candidates/bulk-edit
+ */
+discoveryRouter.post(
+  '/projects/:projectId/architectures/:architectureId/runs/:runId/candidates/bulk-edit',
+  async (req: Request, res: Response) => {
+    const { projectId, architectureId, runId } = req.params;
+    await proxyFindingsToAms({
+      req,
+      res,
+      routeLabel: 'discovery candidate bulk edit',
+      method: 'POST',
+      amsPath: amsCandidatesPathPrefix(projectId, architectureId, runId) + '/bulk-edit',
+      forwardBody: true,
+      logContext: { projectId, architectureId, runId },
+    });
+  }
+);
+
+/**
  * PATCH /projects/:projectId/architectures/:architectureId/runs/:runId/candidates/:candidateId/review
  * Proxies candidate review action to architecture-model-service.
  *
@@ -1689,6 +1728,19 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
   const requestId = (req as any).requestId || 'unknown';
   const { projectId, architectureId, runId } = req.params;
 
+  // Skipped-candidate visibility + grouped bulk-fill (C1), 2026-06-20, Task
+  // Group 4: thread a `commit=false` DRY-RUN flag through to the MCP
+  // save_approved_candidates tool so the C1 panel can PREVIEW the would-commit /
+  // would-still-block projection WITHOUT persisting. Accepted as either the
+  // `?commit=false` query param or a `{ commit: false }` body field; ONLY the
+  // explicit string/boolean false flips it to a dry run (default = true =
+  // commit), so existing callers that send neither are byte-for-byte unchanged.
+  // The gateway re-implements NO resolution -- it forwards the flag verbatim.
+  const rawCommit =
+    (req.query as Record<string, unknown> | undefined)?.commit ??
+    (req.body as Record<string, unknown> | undefined)?.commit;
+  const commit = !(rawCommit === false || rawCommit === 'false');
+
   try {
     const { mcpBaseUrl } = getConfig();
 
@@ -1715,6 +1767,7 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
           projectId,
           architectureId,
           runId,
+          commit,
         }),
       });
 
