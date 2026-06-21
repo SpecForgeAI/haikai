@@ -267,6 +267,20 @@ def _finalize_job(job, storage: JobStorage, response, job_id: str, extra: dict |
     storage.save_job(job)
 
 
+def _step_progress_percentage(step_num: int, total_steps: int) -> int:
+    """Completed-step progress as an int percent, clamped to JobProgress's [0, 100].
+
+    The denominator is the real workflow length (passed in), never a hardcoded
+    count -- a hardcoded 3 against a 4-step workflow (COMMANDS includes
+    /git-commit-preparation) produced percentage=133 and crashed JobProgress
+    validation (Field le=100). Clamping is belt-and-braces against any future
+    step-count drift.
+    """
+    if total_steps <= 0:
+        return 100
+    return min(100, max(0, int(step_num / total_steps * 100)))
+
+
 def run_orchestration(job_id: str, storage: JobStorage):
     """Execute orchestration job (write-spec + create-tasks + implement-tasks).
 
@@ -323,17 +337,33 @@ def run_orchestration(job_id: str, storage: JobStorage):
         )
 
         def on_step_complete(step_num: int, step_description: str):
-            """Checkpoint callback — saves progress to jobs.db after each step."""
-            job.progress = JobProgress(
-                current_step=step_num,
-                total_steps=3,
-                step_description=step_description,
-                percentage=int((step_num / 3) * 100),
-            )
-            storage.save_job(job)
-            logger.info(
-                f"Job {job_id}: checkpointed after step {step_num} ({step_description})"
-            )
+            """Checkpoint callback -- saves progress to jobs.db after each step.
+
+            Defensive: a progress-bookkeeping error must NEVER fail the
+            orchestration. A successful run must not be reported as failed just
+            because a step counter overflowed -- the original bug was step 4 of a
+            4-step workflow against a hardcoded total of 3, giving percentage=133
+            (> JobProgress's le=100), which raised ValidationError mid-run and
+            sank an otherwise-successful job. The denominator is now the real
+            workflow length and the percentage is clamped to [0, 100].
+            """
+            try:
+                total_steps = len(orchestrator.COMMANDS) or 1
+                job.progress = JobProgress(
+                    current_step=step_num,
+                    total_steps=total_steps,
+                    step_description=step_description,
+                    percentage=_step_progress_percentage(step_num, total_steps),
+                )
+                storage.save_job(job)
+                logger.info(
+                    f"Job {job_id}: checkpointed after step {step_num} ({step_description})"
+                )
+            except Exception as e:  # progress bookkeeping must never sink the job
+                logger.warning(
+                    f"Job {job_id}: progress checkpoint after step {step_num} "
+                    f"failed (non-fatal): {e}"
+                )
 
         logger.info(
             f"Running orchestration workflow for job {job_id} "
