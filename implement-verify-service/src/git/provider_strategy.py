@@ -100,7 +100,14 @@ class GitHubStrategy:
         if not repo_url.startswith(("https://", "http://")):
             return repo_url
         host, path = _parse_host_path(repo_url)
-        return f"https://{self.token}@{host}{path}.git"
+        # Put the token in the PASSWORD slot with a fixed username -- NOT the
+        # username slot. `https://<token>@host` leaves the password empty, so git
+        # prompts for one, which dies with "could not read Password ... No such
+        # device or address" on `git push` in a headless container (no TTY).
+        # `x-access-token:<token>` is GitHub's documented token-auth form and
+        # supplies both halves, so git never prompts. (Clone of a *public* repo
+        # worked before only because public reads need no auth; push does.)
+        return f"https://x-access-token:{self.token}@{host}{path}.git"
 
     def create_pull_request(
         self,
