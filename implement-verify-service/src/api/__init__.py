@@ -54,6 +54,7 @@ from ..haikai_crud_models import (
 from ..haikai_service import HaikaiService
 from ..git.git_manager import GitManager, GitManagerError
 from ..git.config import load_git_config, GitConfigError
+from ..git.coordination import read_coordination, CoordinationError
 from ..git.models import ProjectInitRequest, ProjectInitResponse
 from ..haikai_status_models import (
     OrchestrationStatusResponse,
@@ -734,9 +735,35 @@ def _require_git_manager(company: str, project: str) -> GitManager:
     # Validates company/project — see autoresearch:debug 260504-1229 #1.
     # _require_git_manager is called by 10 v2 git endpoints; this single
     # change closes the workspace-escape risk for all of them.
-    project_dir = _safe_project_dir(company, project)
+    product_root = _safe_project_dir(company, project)
+
+    # `POST /projects/init` clones each repo into a *subdirectory* of the
+    # product root (`product_root / <folder>`, see src/api/routes/projects.py)
+    # and writes coordination.yaml at the product root itself -- so the product
+    # root is NOT a git repo. Resolve the real repo directory from the
+    # coordination map so every V2 git op (pull/branch/commit/push) runs inside
+    # an actual git repo rather than the product root (which has no `.git`).
+    # mono vs poly is inferred from the map's length -- see src/git/coordination.py.
+    try:
+        repos = read_coordination(product_root)
+    except CoordinationError:
+        raise HTTPException(
+            status_code=400,
+            detail="Project not initialized. Call POST /projects/init first.",
+        )
+    if len(repos) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Polyrepo projects are not supported by the V2 git workflow "
+                f"(found {len(repos)} repos); it operates on a single repository."
+            ),
+        )
+    (repo_folder,) = repos.keys()
+    repo_dir = product_root / repo_folder
+
     gm = GitManager(
-        project_dir=project_dir,
+        project_dir=repo_dir,
         provider=git_config.provider,
         default_branch=git_config.default_branch,
         github_token=git_config.github_token,
