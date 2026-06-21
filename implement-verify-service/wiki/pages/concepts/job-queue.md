@@ -53,7 +53,7 @@ Same pattern of "use context managers for resource lifetime" used elsewhere in t
 
 ## Job types
 
-From `JobType` (`job_models.py:21-`):
+From `JobType` (`job_models.py:26-39`) — **11 values**:
 
 ```
 ORCHESTRATION       — full Haikai lifecycle
@@ -63,9 +63,35 @@ IMPLEMENT_TASKS     — single /implement-tasks call
 SHAPE_SPEC          — single /shape-spec call
 STANDARDS_PRODUCT   — product-mode standards run
 STANDARDS_GLOBAL    — global-mode standards run
+RUN_PIPELINE        — generic pipeline run
+VERIFY_TASK_GROUP   — verification-loop re-invoke (tasks.run_verify_task_group)
+BUG_INVESTIGATION   — /haikai:debug + /haikai:fix on an intake bug
+HAIBOX_VERIFY       — provision+run+replay in a haibox sandbox cell
 ```
 
 Each is wired in `tasks.py` to a function the worker dispatches to.
+
+> **Corrected [2026-06-21].** This page previously listed only the first 7 types.
+> The last 4 (`RUN_PIPELINE`, `VERIFY_TASK_GROUP`, `BUG_INVESTIGATION`,
+> `HAIBOX_VERIFY`) were added with the async-verification work and were missing
+> here. The job queue is now the substrate for the verification pipeline, not
+> just orchestration/standards — see below.
+
+## Verification jobs
+
+The job queue is how the [[async-verification-orchestration|verification-loop]]
+gets re-invoked. Because that loop is **stateless and one-shot** (D10.2), every
+async verdict starts a *fresh* job rather than resuming a parked one:
+
+| JobType | Enqueued by | Runs |
+|---|---|---|
+| `VERIFY_TASK_GROUP` | [[inbound-gateway]] on a CI webhook (`_enqueue_reinvoke`) | `/verify-task-group …` — reconstructs state from `verification_db`, re-evaluates the D5 gate |
+| `BUG_INVESTIGATION` | `POST /api/v2/bugs/` | `/haikai:debug` + `/haikai:fix`; POSTs outcome to `callback_url` |
+| `HAIBOX_VERIFY` | the verification-loop agent (per inline/haibox cell) | HaiboxClient provision + run + replay |
+
+So `jobs.db` carries *two* unrelated kinds of work: the long synchronous
+operations below, and the verification re-entries above. The shared
+`jobs_db_path()` helper (predict R2) keeps enqueue and poll on the same file.
 
 ## Worker lifecycle
 
@@ -98,6 +124,9 @@ Single-process, single-threaded by default. Multiple workers can run side-by-sid
 - [[chat-executors]] — sibling pattern but solving the opposite problem (streaming, not polling)
 - [[haikai-sdd]] — the most common consumer (orchestration jobs)
 - [[standards-pipeline]] — global/product standards jobs
+- [[inbound-gateway]] — enqueues `VERIFY_TASK_GROUP` / `BUG_INVESTIGATION`
+- [[async-verification-orchestration]] — the pipeline the verification jobs drive
+- [[endpoint-reference]] — the jobs/* REST surface in the full census
 
 ## Sources
 
