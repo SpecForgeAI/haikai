@@ -380,11 +380,40 @@ class GitManager:
         return sha
 
     def push_branch(self, branch: str):
-        """Push branch to origin."""
+        """Push branch to origin (refreshing the authenticated remote first)."""
+        self._refresh_origin_auth_url()
         self._run_git(
             ["git", "push", "origin", branch], check=True
         )
         logger.info("Pushed branch: %s", branch)
+
+    def _refresh_origin_auth_url(self) -> None:
+        """Rewrite `origin` to the current authenticated URL before pushing.
+
+        Existing clones can carry a stale/legacy auth URL -- e.g. a token in the
+        username slot with no password (``https://<token>@host``), which makes git
+        prompt for a password and fail in a headless container (no TTY). The fix
+        in the provider strategy only takes effect at *clone* time, so repos
+        cloned earlier stay broken. ``_build_authenticated_url`` is idempotent
+        (host/path come from ``urlparse``, which ignores embedded credentials and
+        strips ``.git``), so re-deriving from the current origin and updating it
+        self-heals the remote regardless of when the repo was cloned.
+
+        Best-effort: a missing origin or a non-https remote (ssh/file, which the
+        strategy leaves alone) is left untouched, and a failed rewrite never
+        blocks the push attempt itself.
+        """
+        result = self._run_git(["git", "remote", "get-url", "origin"], check=False)
+        if result.returncode != 0:
+            return
+        current = result.stdout.strip()
+        if not current.startswith(("https://", "http://")):
+            return
+        refreshed = self._build_authenticated_url(current)
+        if refreshed and refreshed != current:
+            self._run_git(
+                ["git", "remote", "set-url", "origin", refreshed], check=False
+            )
 
     def checkout_default_branch(self) -> bool:
         """Check out the configured default branch (`self.default_branch`).
