@@ -1454,6 +1454,97 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/cleanup
   }
 });
 
+/**
+ * POST /projects/:projectId/architectures/:architectureId/stage-imported-candidate
+ *
+ * Spec 2026-06-23 Import a Postman Collection into Capture (R5 / A4) -- Task
+ * Group 8 gateway wiring. Proxies the Postman "Add to architecture" candidate
+ * staging POST to architecture-model-service. Mirrors the /cleanup proxy shape:
+ * the gateway URL carries :projectId + :architectureId and the downstream URL
+ * embeds :architectureId between /projects/{projectId}/ and /discovery/... .
+ *
+ * The AMS endpoint stages ONE imported endpoint as an UN-APPROVED discovery
+ * candidate (review_status=pending_review) -- never a committed-architecture
+ * write. snake_case body + response pass through verbatim (R8).
+ *
+ * Backend: POST {architectureModelServiceBaseUrl}/api/model/projects/:projectId/architectures/:architectureId/discovery/stage-imported-candidate
+ */
+discoveryRouter.post('/projects/:projectId/architectures/:architectureId/stage-imported-candidate', async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || 'unknown';
+  const { projectId, architectureId } = req.params;
+
+  try {
+    const { architectureModelServiceBaseUrl } = getConfig();
+
+    logger.info('Processing discovery stage-imported-candidate proxy request', {
+      requestId,
+      projectId,
+      architectureId,
+    });
+
+    const proxyHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    try {
+      const url = `${architectureModelServiceBaseUrl}/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/discovery/stage-imported-candidate`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: proxyHeaders,
+        body: JSON.stringify(req.body ?? {}),
+      });
+
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+
+      logger.info('Discovery stage-imported-candidate proxy request completed', {
+        requestId,
+        projectId,
+        architectureId,
+        status: response.status,
+        success: response.ok,
+      });
+
+      return res.status(response.status).json(responseBody);
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+
+      logger.error('Discovery stage-imported-candidate proxy request failed', {
+        requestId,
+        projectId,
+        architectureId,
+        error: errorMessage,
+      });
+
+      return res.status(503).json({
+        error: {
+          code: 503,
+          message: 'Architecture model service unavailable',
+        },
+      });
+    }
+  } catch (error) {
+    logger.error('Discovery stage-imported-candidate proxy error', {
+      requestId,
+      projectId,
+      architectureId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return res.status(500).json({
+      error: {
+        code: 500,
+        message: 'Internal server error',
+      },
+    });
+  }
+});
+
 // ============================================================================
 // Spec 2026-04-05: Candidate Review and Approval Workflow (Increment 13)
 // Task Group 4: Gateway Proxy Routes for Review and Save-Approved

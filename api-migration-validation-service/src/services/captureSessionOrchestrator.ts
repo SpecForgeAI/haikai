@@ -27,6 +27,12 @@ import {
   type SequenceJson,
 } from './sequenceAssembly';
 import { createTracer } from '../trace';
+// Mode 1(b) Postman + LLM delta (Spec 2026-06-23 Import a Postman Collection
+// into Capture, R6). The two-stage bounded subtraction (code pre-filter +
+// LLM judge) lives in NET-NEW helpers; this loop only wires the per-op seam.
+import { computePostmanDelta } from './postmanDelta';
+import type { PostmanCapturedRequest } from './postmanDeltaStage1';
+import type { JudgeFn } from './postmanDeltaStage2';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -134,6 +140,31 @@ export interface OrchestratorDeps {
    * -- Task Group 9.
    */
   discoveryServiceClient?: DiscoveryServiceClient;
+  /**
+   * Mode 1(c) Postman-only run (Spec 2026-06-23, R4c / D3). When true the
+   * per-operation loop is SKIPPED entirely -- no planner, no
+   * `execute_http_request`. The imported Postman items were already fired as
+   * concrete `manual-capture` sends before `/start`, so there is nothing to
+   * generate. Defaults to false (today's behaviour unchanged).
+   */
+  postmanOnly?: boolean;
+  /**
+   * Mode 1(b) Postman + LLM delta (Spec 2026-06-23, R6 / D3). The captured
+   * Postman requests per operation, keyed by `OperationDto.operation_id`. When
+   * present for an operation, the per-op loop computes the two-stage bounded
+   * subtraction (Stage-1 code pre-filter + Stage-2 LLM judge) and only the
+   * survivors top up via `execute_http_request`, capped at
+   * `MAX_SCENARIOS_PER_OP` INCLUDING the captured Postman scenarios. Absent /
+   * empty -> the operation generates its full candidate set (today's behaviour).
+   */
+  postmanCapturedByOp?: Record<string, ReadonlyArray<PostmanCapturedRequest>>;
+  /**
+   * Mode 1(b) Stage-2 redundancy oracle. Injected so the orchestrator owns the
+   * gateway wiring and tests inject a deterministic stub. Only invoked for an
+   * operation that has captured Postman requests; absent -> the delta degrades
+   * to Stage-1-only subtraction (every Stage-1 survivor tops up).
+   */
+  judgeRedundantScenarios?: JudgeFn;
 }
 
 export interface OrchestratorOutcome {
@@ -1192,6 +1223,11 @@ export async function orchestrateCaptureSession(
   const discoveryClient: DiscoveryServiceClient =
     deps.discoveryServiceClient ?? defaultDiscoveryServiceClient;
   const discoveryRunId: string | null = deps.discoveryRunId ?? null;
+  // Mode 1(b)/(c) Postman import (Spec 2026-06-23). `postmanOnly` skips the
+  // whole per-op loop; `postmanCapturedByOp` drives the per-op delta when set.
+  const postmanOnly: boolean = deps.postmanOnly === true;
+  const postmanCapturedByOp = deps.postmanCapturedByOp ?? {};
+  const judgeRedundantScenarios: JudgeFn | undefined = deps.judgeRedundantScenarios;
 
   // Stable corr bag for every trace call on this session. project + arch are
   // the workflow-spanning grouping key; session is this capture's sub-thread.
@@ -1305,10 +1341,40 @@ export async function orchestrateCaptureSession(
 
     for (const op of deps.persistedOperations) {
       if (op.included !== true) continue;
+      // Mode 1(c) Postman only (R4c): skip the planner + execute_http_request
+      // loop entirely. The imported items were already captured via
+      // manual-capture before /start; there is nothing for the LLM to top up.
+      if (postmanOnly) continue;
       const oasOperation = deps.oasInventory.operations.find(
         (o) => o.operationId === op.operation_id,
       )?.oasOperation;
-      const scenarios = defaultScenarioSet(op, discoveryContext, oasOperation);
+      let scenarios = defaultScenarioSet(op, discoveryContext, oasOperation);
+      // Mode 1(b) delta (R6 / D3 / A5): when this operation carries already-
+      // captured Postman requests, subtract the covered candidates BEFORE
+      // generating so only the genuine delta tops up. Two-stage bounded
+      // subtraction (Stage-1 code pre-filter + Stage-2 LLM judge), capped at
+      // MAX_SCENARIOS_PER_OP INCLUDING the captured Postman scenarios. Per-op.
+      const postmanCaptured = postmanCapturedByOp[op.operation_id] ?? [];
+      if (postmanCaptured.length > 0) {
+        const delta = await computePostmanDelta({
+          operationId: op.operation_id,
+          method: op.method,
+          path: op.path,
+          candidates: scenarios,
+          captured: postmanCaptured,
+          // No injected judge -> Stage-1-only subtraction (a no-op judge that
+          // returns nothing redundant), so every Stage-1 survivor tops up.
+          judge:
+            judgeRedundantScenarios ?? (async () => [] as ReadonlyArray<string>),
+          maxScenariosPerOp: MAX_SCENARIOS_PER_OP,
+        });
+        scenarios = delta.topUp;
+        trace.detail(
+          'capture.postman_delta',
+          { operationId: op.operation_id, ...delta.stats },
+          corr,
+        );
+      }
       const seedSet = seedsForOperation(discoveryContext, op.method, op.path);
       // Snapshot each scenario's recorded captures HERE (the loop below resets
       // `runManager.scenarioCaptures` on the next `beginScenario`), keyed by

@@ -23,6 +23,10 @@ import {
   testApiConnectionStateless,
   type ApiBehaviourCaptureSessionDto,
   manualCapture,
+  addOperation,
+  type AddOperationRequest,
+  type AddOperationResponse,
+  type ApiBehaviourOperationDto,
   isSecretsNotLoadedError,
   SECRETS_NOT_LOADED_CODE,
   ApiBehaviourApiError,
@@ -613,5 +617,116 @@ describe('apiBehaviourClient -- updateCapturesBatch (Task 3.1 #2)', () => {
     });
     expect(body.items[1].id).toBe('cap-bad');
     expect(body.items[1].patch.reviewer_notes).toBe('n');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Add-operation client (Spec 2026-06-23 Import a Postman Collection into
+// Capture, Task 2.1). The new add-operation client posts a CAMELCASE request
+// body (this client owns its shape, like manualCapture) to the add-operation
+// action URL and parses the SNAKE_CASE AMS operation DTO verbatim (R8). The
+// other two Task 2.1 behaviours -- manualCapture body stays camelCase, and
+// isSecretsNotLoadedError detects the 409 SECRETS_NOT_LOADED -- are already
+// pinned by the manualCapture describe block above; these tests add the new
+// surface.
+// ---------------------------------------------------------------------------
+describe('apiBehaviourClient -- addOperation (Task 2.1)', () => {
+  const originalFetch = globalThis.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('POSTs a camelCase body to the add-operation action URL and parses the snake_case operation row', async () => {
+    // The created operation row comes back as the snake_case AMS DTO.
+    const operation: ApiBehaviourOperationDto = {
+      id: 'op-row-1',
+      session_id: 'session-uuid-1',
+      operation_id: 'POST_/pets',
+      method: 'POST',
+      path: '/pets',
+      summary: 'Create pet',
+      description: null,
+      included: true,
+      safe_to_execute: null,
+      request_schema_json: null,
+      response_schema_json: null,
+      oas_operation_json: null,
+      created_at: '2026-06-23T00:00:00Z',
+      updated_at: '2026-06-23T00:00:00Z',
+    };
+    const response: AddOperationResponse = {
+      sessionId: 'session-uuid-1',
+      operation,
+      created: true,
+    };
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => response,
+    });
+
+    const req: AddOperationRequest = {
+      endpointId: 'endpoint-9',
+      method: 'POST',
+      path: '/pets',
+      operationId: 'POST_/pets',
+      summary: 'Create pet',
+    };
+    const result = await addOperation(PROJECT_ID, ARCH_ID, 'session-uuid-1', req);
+
+    // The snake_case AMS row is parsed verbatim (included=true so the
+    // subsequent manual-capture send passes the OPERATION_NOT_INCLUDED guard).
+    expect(result).toEqual(response);
+    expect(result.operation.included).toBe(true);
+    expect(result.operation.session_id).toBe('session-uuid-1');
+    expect(result.created).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `/api/v1/projects/${PROJECT_ID}/architectures/${ARCH_ID}/api-behaviour/capture-sessions/session-uuid-1/add-operation`,
+    );
+    expect(options.method).toBe('POST');
+    expect(options.headers).toEqual({ 'Content-Type': 'application/json' });
+
+    // The request body is the camelCase shape this client owns -- NOT snake_case.
+    const body = JSON.parse(options.body);
+    expect(body.endpointId).toBe('endpoint-9');
+    expect(body.method).toBe('POST');
+    expect(body.path).toBe('/pets');
+    expect(body.operationId).toBe('POST_/pets');
+    // Snake_case keys must NOT leak into the request body.
+    expect(body.endpoint_id).toBeUndefined();
+    expect(body.operation_id).toBeUndefined();
+  });
+
+  it('omits endpointId for an architecture-unmatched endpoint the user kept', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      headers: { get: (h: string) => (h === 'content-type' ? 'application/json' : null) },
+      json: async () => ({ sessionId: 'session-uuid-1', operation: { id: 'op-2', included: true }, created: true }),
+    });
+
+    await addOperation(PROJECT_ID, ARCH_ID, 'session-uuid-1', {
+      method: 'GET',
+      path: '/widgets/7',
+    });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.method).toBe('GET');
+    expect(body.path).toBe('/widgets/7');
+    // No endpointId field at all (architecture-unmatched, kept-and-run path).
+    expect('endpointId' in body).toBe(false);
   });
 });

@@ -79,6 +79,7 @@ import {
   testDbConnection,
 } from '../../api/apiBehaviourClient';
 import { CaptureReviewPanel } from './CaptureReviewPanel';
+import { PostmanImportAppendModal } from '../ApiBehaviour/PostmanImportAppendModal';
 import { CoverageSummaryPanel } from './CoverageSummaryPanel';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
@@ -170,6 +171,11 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   // UI-local "secrets are loaded in this UI session" flag. Reset to false
   // on every mount per the conservative rule above.
   const [secretsLoadedLocal, setSecretsLoadedLocal] = useState(false);
+
+  // Mode 2 Postman append (Spec 2026-06-23, Task Group 8). Launched from this
+  // detail view; the modal replays the imported collection live via
+  // manual-capture and prompts re-enter-secrets on a purged finished session.
+  const [appendModalOpen, setAppendModalOpen] = useState(false);
 
   // Re-enter secrets prompt visible/hidden + transient form state.
   //
@@ -999,6 +1005,40 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
 
       {/* Review panel -- mounts once captures could exist. Read-only while
           the loop is still running to avoid racing the new service. */}
+      {/* Mode 2 append entry point (Spec 2026-06-23, R7/A6). Offered on
+          reviewable, non-running sessions -- the append replays the imported
+          collection live and lands captures into the review panel below. */}
+      {showReviewPanel && !reviewPanelReadOnly && (
+        <div className={styles.actionRow} data-testid="capture-session-append-row">
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() => setAppendModalOpen(true)}
+            data-testid="capture-session-append-postman"
+          >
+            Append a Postman collection
+          </button>
+        </div>
+      )}
+
+      {/* Lazy-mount: only construct the modal (and its import-run hook) once
+          the user opens it, so a closed modal never runs the staging hook. */}
+      {appendModalOpen && (
+        <PostmanImportAppendModal
+          open={appendModalOpen}
+          projectId={projectId}
+          architectureId={architectureId}
+          sessionId={sessionId}
+          secretsLoaded={secretsLoadedLocal}
+          mutatingCallsConfirmed={session.mutating_calls_confirmed ?? undefined}
+          onRequestReenterSecrets={() => setSecretsPromptOpen(true)}
+          onAppended={() => {
+            void fetchOnce();
+          }}
+          onClose={() => setAppendModalOpen(false)}
+        />
+      )}
+
       {showReviewPanel && (
         <CaptureReviewPanel
           projectId={projectId}

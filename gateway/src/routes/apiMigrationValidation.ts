@@ -498,7 +498,7 @@ apiMigrationValidationRouter.post('/api-migration-validation/llm-tool-loop', asy
 // where <action> is one of:
 //   parse-oas | test-api-connection | test-db-connection | start | cancel
 //   | secrets | extract-endpoints | reconcile-inventory | account-endpoints
-//   | manual-capture | data-type-defaults-preview
+//   | manual-capture | add-operation | data-type-defaults-preview
 //
 // Spec: 2026-06-11 Model-Seeded Capture Inventory -- Task Group 3 adds the
 // `reconcile-inventory` (configure-time + display reconciliation read) and
@@ -532,6 +532,7 @@ export const API_BEHAVIOUR_ACTION_PATHS = [
   'reconcile-inventory',
   'account-endpoints',
   'manual-capture',
+  'add-operation',
   'data-type-defaults-preview',
 ] as const;
 
@@ -674,7 +675,7 @@ async function proxyActionToService(
 }
 
 /**
- * Register all eleven action proxies under the gateway URL shape:
+ * Register all twelve action proxies under the gateway URL shape:
  *   POST /projects/:projectId/architectures/:architectureId/
  *        api-behaviour/capture-sessions/:sessionId/<action>
  *

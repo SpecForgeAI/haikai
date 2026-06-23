@@ -912,6 +912,75 @@ export async function getDiscoveryCandidates(
 }
 
 /**
+ * Stage ONE imported (Postman) endpoint as an un-approved discovery candidate
+ * scoped to a (project, architecture) pair -- the client side of "Add to
+ * architecture" for the Postman import flow.
+ *
+ * Spec 2026-06-23 Import a Postman Collection into Capture, R5 / A4 -- Task
+ * Group 5. The candidate is staged UN-APPROVED (`review_status: 'pending_review'`,
+ * `status: 'proposed'`) so it flows through the normal discovery review/approve
+ * path; it is NEVER a committed-architecture write. Task Group 8 binds this
+ * function to the `onStageDiscoveryCandidate` seam in
+ * `PostmanImportArchMatchStep`.
+ *
+ * The request + response are snake_case (R8): the AMS discovery candidate data
+ * plane is snake_case. `method` + `path` are required (the resolved imported
+ * request); `sourceItemName` / `summary` are optional traceability fields carried
+ * into the candidate `data`.
+ *
+ * NOTE (Task Group 8 follow-up): the AMS endpoint
+ * `POST .../discovery/stage-imported-candidate` is not yet proxied by the gateway
+ * `/api/v1/discovery/*` router; Group 8 must add the matching proxy hop before
+ * this call resolves end-to-end. The contract here is final so the binding is a
+ * thin pass-through.
+ *
+ * @param projectId - The project identifier
+ * @param architectureId - The architecture identifier the candidate is scoped to
+ * @param request - The imported endpoint (method + path required)
+ * @returns Promise resolving to the staged, un-approved candidate DTO
+ * @throws Error if the request fails (non-ok response)
+ */
+export async function stageImportedDiscoveryCandidate(
+  projectId: string,
+  architectureId: string,
+  request: {
+    method: string;
+    path: string;
+    name?: string | null;
+    sourceItemName?: string | null;
+    summary?: string | null;
+  }
+): Promise<DiscoveryCandidateDto> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/stage-imported-candidate`;
+
+  const body: Record<string, string> = {
+    method: request.method,
+    path: request.path,
+  };
+  if (request.name) {
+    body.name = request.name;
+  }
+  if (request.sourceItemName) {
+    body.source_item_name = request.sourceItemName;
+  }
+  if (request.summary) {
+    body.summary = request.summary;
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Stage imported candidate request failed: ${res.status}`);
+  }
+
+  return res.json() as Promise<DiscoveryCandidateDto>;
+}
+
+/**
  * Retrieves the candidate count for a specific discovery run.
  *
  * Spec 2026-05-01 Multi-Architecture Discovery Integration -- Task Group 7:

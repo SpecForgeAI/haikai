@@ -29,6 +29,7 @@ import type { OpenAPIV3 } from 'openapi-types';
 import { createSessionHttpExecutor } from '../services/httpExecutor';
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
 import { orchestrateCaptureSession } from '../services/captureSessionOrchestrator';
+import type { PostmanCapturedRequest } from '../services/postmanDeltaStage1';
 import { toCaptureSession } from '../services/archModelClient';
 import type { ApiAuthSecret, SecretsBundle } from '../types/secrets';
 import {
@@ -46,6 +47,13 @@ import type { HttpMethod } from '../types/oas';
 import { redactHeaders, redactJson, redactUrl } from '../services/redactor';
 import { normaliseBodyForAms } from '../services/amsBodyEnvelope';
 import { LLM_TOOL_CALL_TIMEOUT_MS } from '../config';
+import {
+  normaliseAddOperationBody,
+  findExistingOperationRow,
+  buildSynthesisedCreateBody,
+  toInventoryOperation,
+  type AddOperationBody,
+} from './addOperationSupport';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
 // is set). See docs/trace-logging.md. The /start orchestration writes the
@@ -579,6 +587,35 @@ interface StartCaptureBody {
    * existing `includeDiscoveryContext` / `discoveryRunIds` body fields.
    */
   coverageOverrideJustification?: string;
+  /**
+   * Postman-only run mode (Spec 2026-06-23 Import a Postman Collection into
+   * Capture, R4c / D3 Mode 1c). When true the orchestrator SKIPS the planner
+   * AND the per-scenario `execute_http_request` loop entirely -- the imported
+   * Postman items were already fired as concrete `manual-capture` sends before
+   * `/start`, so coverage is intentionally partial and the caller MUST also
+   * carry `coverageOverrideJustification` so the coverage gate does not fail
+   * closed. CamelCase, matching the other body fields.
+   */
+  postmanOnly?: boolean;
+  /**
+   * Mode 1(b) Postman + LLM delta (Spec 2026-06-23, R6 / D3). The captured
+   * Postman requests per operation, keyed by operation_id, built CLIENT-SIDE
+   * from the manual-capture sends the wizard fired before /start (method +
+   * path + the real response status class). Forwarded verbatim into the
+   * orchestrator deps so the per-op two-stage subtraction tops up only the
+   * delta. Absent/empty -> every operation generates its full candidate set
+   * (today behaviour). CamelCase, matching the other body fields.
+   */
+  postmanCapturedByOp?: Record<
+    string,
+    ReadonlyArray<{
+      method?: string | null;
+      path?: string | null;
+      expectedStatus?: string | null;
+      archetype?: string | null;
+      whichParam?: string | null;
+    }>
+  >;
 }
 
 /**
@@ -1504,6 +1541,141 @@ export function buildCaptureSessionActionsRouter(
   );
 
   // ----------------------------------------------------------------------
+  // POST /api/capture-sessions/:id/add-operation
+  // ----------------------------------------------------------------------
+  // Append ONE endpoint to the session as an `included=true` operation row
+  // BEFORE any `manual-capture` send (Spec 2026-06-23 Import a Postman
+  // Collection into Capture, R7/A2). An imported Postman item that maps to an
+  // endpoint NOT already in the session needs its operation row to exist (and
+  // be included) so the immediately-following `manual-capture` send passes the
+  // route OPERATION_NOT_FOUND / OPERATION_NOT_INCLUDED guards. This REUSES the
+  // SAME primitives as `account-endpoints` include: `synthesiseOperationFromEndpoint`
+  // over a committed endpoint row when `endpointId` is supplied, the
+  // `createOperation` snake_case AMS create shape (R8), and the
+  // `oasInventoryStore` append so `/start` sees the new row WITHOUT a re-parse.
+  // Idempotent: an operation already present for the session (by operation_id
+  // or method+path) is returned with `created:false` and never duplicated.
+  // The request body is camelCase (the frontend `addOperation` client owns the
+  // shape); the snake_case AMS create shape is applied here.
+  router.post('/api/capture-sessions/:id/add-operation', async (req: Request, res: Response) => {
+    const sessionId = req.params.id;
+    const projectId = extractProjectId(req);
+    if (!projectId) return fail(res, 400, 'projectId is required (query param or body field)');
+
+    const normalised = normaliseAddOperationBody((req.body || {}) as AddOperationBody);
+    if (!normalised.ok) {
+      return fail(res, normalised.error.status, normalised.error.message);
+    }
+    const target = normalised.value;
+
+    try {
+      const session = await archModelClient.getCaptureSession(projectId, sessionId);
+
+      // Idempotency: if the session already carries an operation row for this
+      // target (matched operation_id, else method+path), return it verbatim.
+      // No second row, no inventory double-append -- the caller can send through
+      // `manual-capture` against the existing row immediately.
+      const existingRows = await archModelClient.listOperationsBySession(projectId, sessionId);
+      const existing = findExistingOperationRow(existingRows, target);
+      if (existing) {
+        return res.status(200).json({ sessionId, operation: existing, created: false });
+      }
+
+      // Build the snake_case `createOperation` body. When `endpointId` matched a
+      // committed architecture endpoint, REUSE `synthesiseOperationFromEndpoint`
+      // (the SAME mapping `account-endpoints` include uses) so the row carries
+      // the model-endpoint metadata; otherwise synthesise from method+path.
+      let createBody: ReturnType<typeof buildSynthesisedCreateBody> | {
+        session_id: string;
+        operation_id: string;
+        method: string;
+        path: string;
+        summary: string | null;
+        description: string | null;
+        included: boolean;
+        safe_to_execute: null;
+        request_schema_json: unknown;
+        response_schema_json: unknown;
+        oas_operation_json: unknown;
+      };
+      let inventoryOp: ParsedOasOperation;
+      if (target.endpointId) {
+        const allEndpoints = await archModelClient.listEndpointsForArchitecture(
+          projectId,
+          session.architecture_id,
+        );
+        const endpoint = allEndpoints.find(
+          (e) => typeof e.id === 'string' && e.id === target.endpointId,
+        );
+        if (!endpoint) {
+          return fail(
+            res,
+            404,
+            `Endpoint ${target.endpointId} not found in architecture ${session.architecture_id}`,
+          );
+        }
+        const allInterfaces = await archModelClient.listInterfacesForArchitecture(
+          projectId,
+          session.architecture_id,
+        );
+        const parentInterface =
+          typeof endpoint.interface_id === 'string'
+            ? allInterfaces.find((i) => i.id === endpoint.interface_id)
+            : undefined;
+        const isSoap =
+          readInterfaceType(parentInterface as unknown as Record<string, unknown> | undefined) ===
+          'SOAP_API';
+        const op = synthesiseOperationFromEndpoint(endpoint, {
+          isSoap,
+          sourceMarker: 'model-endpoint-reconciliation',
+        });
+        createBody = {
+          session_id: sessionId,
+          operation_id: target.operationId ?? op.operationId,
+          method: methodUpper(op.method),
+          path: op.path || target.path,
+          summary: op.summary ?? target.summary ?? null,
+          description: op.description ?? target.description ?? null,
+          included: true,
+          safe_to_execute: null,
+          request_schema_json: op.requestSchema as unknown,
+          response_schema_json: op.responseSchema as unknown,
+          oas_operation_json: op.oasOperation as unknown,
+        };
+        inventoryOp = op;
+      } else {
+        createBody = buildSynthesisedCreateBody(sessionId, target);
+        inventoryOp = toInventoryOperation(target);
+      }
+
+      const created = await archModelClient.createOperation(projectId, createBody);
+
+      // Append the included row to the cached inventory so the orchestrator
+      // hand-off at /start sees it without a re-parse (mirrors
+      // `account-endpoints`). When no inventory is cached yet (e.g. a Mode 2
+      // append on a finished session), seed a fresh one.
+      const cached = oasInventoryStore.get(sessionId);
+      if (cached) {
+        oasInventoryStore.set(sessionId, {
+          ...cached,
+          operations: [...cached.operations, inventoryOp],
+        });
+      } else {
+        oasInventoryStore.set(sessionId, {
+          operations: [inventoryOp],
+          title: null,
+          version: null,
+        });
+      }
+
+      return res.status(201).json({ sessionId, operation: created, created: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'add-operation failed';
+      return fail(res, 500, message);
+    }
+  });
+
+  // ----------------------------------------------------------------------
   // POST /api/capture-sessions/:id/manual-capture
   // ----------------------------------------------------------------------
   // "Add New Behaviour" manual capture (spec 2026-06-20). A reviewer adds ONE
@@ -1828,6 +2000,22 @@ export function buildCaptureSessionActionsRouter(
     const maxFindings = typeof body.maxFindings === 'number' ? body.maxFindings : undefined;
     const maxEvidenceItems =
       typeof body.maxEvidenceItems === 'number' ? body.maxEvidenceItems : undefined;
+    // Mode 1c (Postman only): skip planner + execute_http_request loop.
+    const postmanOnly = body.postmanOnly === true;
+    // Mode 1b delta: the per-op captured-Postman map the wizard built from its
+    // pre-/start manual-capture sends (keyed by operation_id). Cast to the
+    // orchestrator deps shape (the wire fields are structurally identical:
+    // method/path/expectedStatus/archetype/whichParam). Absent/empty leaves
+    // the delta inert (no subtraction).
+    const postmanCapturedByOp:
+      | Record<string, ReadonlyArray<PostmanCapturedRequest>>
+      | undefined =
+      body.postmanCapturedByOp && typeof body.postmanCapturedByOp === 'object'
+        ? (body.postmanCapturedByOp as unknown as Record<
+            string,
+            ReadonlyArray<PostmanCapturedRequest>
+          >)
+        : undefined;
 
     try {
       const session = await archModelClient.getCaptureSession(projectId, sessionId);
@@ -2098,6 +2286,15 @@ export function buildCaptureSessionActionsRouter(
           Array.isArray(discoveryRunIds) && discoveryRunIds.length > 0
             ? discoveryRunIds[0]
             : null,
+        // Mode 1c (Postman only, R4c): the orchestrator skips the planner +
+        // execute_http_request loop entirely. The imported items were already
+        // fired as concrete manual-capture sends client-side before /start, so
+        // there is nothing for the LLM loop to top up.
+        postmanOnly,
+        // Mode 1b (R6): the per-op captured-Postman map drives the two-stage
+        // bounded subtraction; the Stage-2 judge is left to the orchestrator
+        // default (Stage-1-only when no judge is wired).
+        postmanCapturedByOp,
       }).catch(async (err) => {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[captureSessionActions] orchestrator failed for session ${sessionId}: ${msg}`);

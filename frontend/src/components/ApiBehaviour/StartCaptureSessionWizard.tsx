@@ -70,6 +70,13 @@ import {
 import { useArchitecture } from '../../contexts/ArchitectureContext';
 import type { Interface as InterfaceModel } from '../../types/model';
 import styles from './StartCaptureSessionWizard.module.css';
+import { PostmanImportWizardStep } from './PostmanImportWizardStep';
+import { usePostmanImportRun } from './usePostmanImportRun';
+import type { ImportedRequest } from '../../utils/postmanImport';
+import {
+  type PostmanRunMode,
+  modeUsesPostman,
+} from './postmanImportRunSupport';
 
 // ============================================================================
 // Props
@@ -308,6 +315,31 @@ export function StartCaptureSessionWizard({
   // a session row to exist before it can write operations).
   const draftSessionRef = useRef<ApiBehaviourCaptureSessionDto | null>(null);
 
+  // ---- Postman import (Spec 2026-06-23, Task Group 8) -------------------
+  // The 3-way run-mode selector + Postman upload + staging + arch-match live
+  // in the Step 4 (Endpoints) sub-section. postmanRunMode defaults to LLM-only
+  // so the existing behaviour is unchanged unless the user opts in. The parsed
+  // items are fired as concrete manual-capture sends AFTER /start (Mode 1b/c)
+  // by handleStart; the usePostmanImportRun hook owns the arch-match
+  // resolution state + the send loop.
+  const [postmanRunMode, setPostmanRunMode] = useState<PostmanRunMode>('llm');
+  const [importedRequests, setImportedRequests] = useState<ImportedRequest[]>([]);
+  const [draftSessionId, setDraftSessionId] = useState<string | null>(null);
+
+  // The shared send-orchestration hook (arch-match resolution state + the
+  // post-/start manual-capture send loop). Reads the live parsed operation
+  // rows + reconciliation so the staging table maps + classifies items and a
+  // "Keep & run" add-operation extends the rows before the send.
+  const postmanRun = usePostmanImportRun({
+    projectId,
+    architectureId,
+    sessionId: draftSessionId ?? '',
+    importedRequests,
+    operations: parsedOperations,
+    reconciliation,
+    mutatingCallsConfirmed: step2.mutatingCallsConfirmed,
+  });
+
   // ---- Step 5: Data-type formats (Spec 2026-06-20) --------------------
   // Classified preview rows (one per DISCOVERED category) fetched on the
   // Step 4 -> 5 advance from the amvs `data-type-defaults-preview` endpoint;
@@ -366,6 +398,9 @@ export function StartCaptureSessionWizard({
     setSubmitting(false);
     setError(null);
     draftSessionRef.current = null;
+    setDraftSessionId(null);
+    setPostmanRunMode('llm');
+    setImportedRequests([]);
     setDataTypeRows([]);
     setDataTypeDefaults({});
     setDataTypePreviewLoading(false);
@@ -606,6 +641,7 @@ export function StartCaptureSessionWizard({
         mutating_calls_confirmed: step2.mutatingCallsConfirmed,
       });
       draftSessionRef.current = created;
+      setDraftSessionId(created.id);
 
       await submitSecrets(projectId, architectureId, created.id, buildSecretsBundle());
 
@@ -1014,6 +1050,39 @@ export function StartCaptureSessionWizard({
       await updateCaptureSession(projectId, architectureId, session.id, {
         status: 'configured',
       });
+
+      // Mode 1 send orchestration (Spec 2026-06-23, R4). For a Postman mode we
+      // fire the imported items as concrete manual-capture sends BEFORE /start
+      // so (b) the per-op delta can subtract the captured set and (c) the
+      // Postman-only run has its captures in place. The session is `configured`
+      // + secrets were submitted on the Step 4 advance, so manual-capture clears
+      // its secrets / included-operation guards. Items that did not cleanly
+      // match are gated by the arch-match step (canSend) before any send.
+      let postmanCapturedByOp:
+        | Record<string, { method: string; path: string; expectedStatus: string | null }[]>
+        | undefined;
+      const usePostman = modeUsesPostman(postmanRunMode);
+      if (usePostman && importedRequests.length > 0) {
+        if (!postmanRun.canSend) {
+          setError(
+            'Resolve every flagged imported request (add to architecture, keep & run, or delete) before starting.',
+          );
+          setSubmitting(false);
+          return;
+        }
+        const result = await postmanRun.runSends();
+        postmanCapturedByOp = result.capturedByOp;
+        if (result.secretsRequired) {
+          // Secrets were purged / never loaded: surface the wizard error so the
+          // user can go back and re-enter them rather than starting half-sent.
+          setError(
+            'Secrets are not loaded for this session. Re-enter the API/DB secrets, then start again.',
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
+
       // Build the start request body. The wizard sends the discovery
       // selections only when the user has opted in via the section's
       // checkbox; the downstream service treats absent fields as defaults
@@ -1030,8 +1099,26 @@ export function StartCaptureSessionWizard({
         startBody.maxFindings = 100;
         startBody.maxEvidenceItems = 100;
       }
+      // Mode 1c (Postman only): skip the planner + LLM loop and carry the
+      // coverage-override so the gate does not fail closed on the intentionally
+      // partial coverage. The selector's run mode drives postmanOnly.
+      if (postmanRunMode === 'postman-only') {
+        startBody.postmanOnly = true;
+      }
+      // Mode 1b (Postman + LLM delta): forward the per-op captured map so the
+      // orchestrator subtracts the Postman-covered candidates before topping up.
+      if (postmanRunMode === 'postman-delta' && postmanCapturedByOp) {
+        startBody.postmanCapturedByOp = postmanCapturedByOp;
+      }
+      // The coverage-override justification rides any explicit override re-submit
+      // (the 409 dialog) AND is REQUIRED for Mode 1c. For Mode 1c with no manual
+      // justification supplied yet, default a Postman-only justification so the
+      // coverage gate accepts the deliberately-partial run.
       if (typeof justification === 'string' && justification.trim().length > 0) {
         startBody.coverageOverrideJustification = justification.trim();
+      } else if (postmanRunMode === 'postman-only') {
+        startBody.coverageOverrideJustification =
+          'Postman-only run: coverage is intentionally limited to the imported requests.';
       }
       const running = await startCaptureSession(
         projectId,
@@ -1062,6 +1149,9 @@ export function StartCaptureSessionWizard({
     submitting,
     includeDiscoveryContext,
     selectedDiscoveryRunIds,
+    postmanRunMode,
+    importedRequests,
+    postmanRun,
     onStarted,
     onClose,
   ]);
@@ -1732,6 +1822,27 @@ export function StartCaptureSessionWizard({
                   );
                 })}
               </div>
+
+              {/* Postman import (Spec 2026-06-23, Task Group 8). The 3-way
+                  run-mode selector + collection upload + the shared staging
+                  table + the arch-match warning step. Mode 1b/c fire the
+                  imported items as concrete manual-capture sends AFTER /start. */}
+              <PostmanImportWizardStep
+                projectId={projectId}
+                architectureId={architectureId}
+                sessionId={draftSessionId}
+                mode={postmanRunMode}
+                onModeChange={setPostmanRunMode}
+                importedRequests={importedRequests}
+                onImportedRequestsChange={setImportedRequests}
+                operations={parsedOperations}
+                reconciliation={reconciliation}
+                flagged={postmanRun.flagged}
+                resolutions={postmanRun.resolutions}
+                onResolutionChange={postmanRun.setResolution}
+                onOperationAdded={postmanRun.addOperationRow}
+                onDeleteItem={postmanRun.deleteItem}
+              />
 
               {/* ------------------------------------------------------------
                   Inventory reconciliation sections (Model-Seeded Capture

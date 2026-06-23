@@ -1,0 +1,184 @@
+/**
+ * PostmanImportStaging.module.css
+ *
+ * Spec 2026-06-23 Import a Postman Collection into Capture -- Task Group 3.
+ *
+ * Styles for the shared import staging table (used by both the Mode 1 wizard
+ * step and the Mode 2 detail-view modal). Reuses the established capture
+ * palette (the #2563eb primary-blue + slate neutrals already used across the
+ * ApiBehaviour wizard and the review modals) -- no new design tokens. The
+ * coverage panel renders the verbatim reconciliation payload; the per-item rows
+ * carry a method/path, the mapped operation (or "no match"), and an
+ * architecture-match status pill.
+ */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.intro {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* The verbatim reconciled-coverage panel. */
+.coveragePanel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.coverageFigure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.coverageLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.coverageValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.coverageSub {
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* The staged-item list. */
+.itemList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.itemHeader {
+  display: grid;
+  grid-template-columns: 1.6fr 1.4fr 1fr;
+  gap: 12px;
+  padding: 0 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1.6fr 1.4fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.itemRequest {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.methodPath {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.method {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d4ed8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.path {
+  font-size: 13px;
+  color: #1f2937;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.sourceName {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.mappedOperation {
+  font-size: 12px;
+  color: #1f2937;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.noMatch {
+  font-size: 12px;
+  color: #b45309;
+  font-style: italic;
+}
+
+/* Architecture-match status pills. */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.statusMatched {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.statusUnmatched {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+.statusNoOperation {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
+/* The per-item unsupported-body flag (non-application/json). */
+.unsupported {
+  font-size: 11px;
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+.emptyState {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  text-align: center;
+  padding: 16px 0;
+}

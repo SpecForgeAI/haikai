@@ -590,3 +590,12 @@
   font-size: 12px;
   word-break: break-all;
 }
+
+/* Mode 2 Postman append entry-point row (Spec 2026-06-23 Import a Postman
+ * Collection into Capture, Task Group 8). A simple flex row spacing the
+ * "Append a Postman collection" button below the action footer. */
+.actionRow {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0;
+}

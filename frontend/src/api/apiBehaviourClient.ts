@@ -1594,6 +1594,29 @@ export interface StartCaptureSessionRequest {
    * existing `includeDiscoveryContext` / `discoveryRunIds` body fields.
    */
   coverageOverrideJustification?: string;
+  /**
+   * Postman-only run mode (Spec 2026-06-23 Import a Postman Collection into
+   * Capture, R4c / D3 Mode 1c). When true the orchestrator skips the planner
+   * AND the per-scenario execute_http_request loop -- the imported Postman items
+   * were already fired as concrete manual-capture sends before /start, so
+   * coverage is intentionally partial and the caller MUST also carry
+   * coverageOverrideJustification so the coverage gate does not fail closed.
+   * CamelCase, matching the other body fields and the amvs /start handler
+   * (captureSessionActions.ts:598).
+   */
+  postmanOnly?: boolean;
+  /**
+   * Mode 1(b) Postman + LLM delta (Spec 2026-06-23, R6). The per-operation
+   * captured-Postman map the wizard builds from its pre-/start manual-capture
+   * sends (keyed by operation_id; method + path + the real response status
+   * class). The amvs /start handler forwards it into the orchestrator deps so
+   * the two-stage bounded subtraction tops up only the delta. Absent/empty ->
+   * the full candidate set generates (today behaviour). CamelCase wire field.
+   */
+  postmanCapturedByOp?: Record<
+    string,
+    Array<{ method: string; path: string; expectedStatus: string | null }>
+  >;
 }
 
 /**
@@ -1802,6 +1825,79 @@ export async function accountEndpoints(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
+    },
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Add-operation action (Spec 2026-06-23 Import a Postman Collection into
+// Capture, R7/R8). Mode 2 (and Mode 1 staging) can append endpoints NOT already
+// in the session. The amvs add-operation action creates the operation row with
+// included = true BEFORE the manual-capture send, reusing
+// synthesiseOperationFromEndpoint + the account-endpoints createOperation
+// snake_case AMS shape server-side. This client mirrors accountEndpoints:
+// actionUrl(..., 'add-operation') + a JSON POST. The request body is camelCase
+// (this client owns the shape); the snake_case AMS create shape is applied
+// server-side (R8). The created operation row comes back snake_case (AMS DTO),
+// so the staging UI can refresh without a re-list.
+// ----------------------------------------------------------------------------
+
+/**
+ * Body for the add-operation action. Appends ONE endpoint to the session as an
+ * included = true operation row so the subsequent manualCapture send passes the
+ * route OPERATION_NOT_FOUND / OPERATION_NOT_INCLUDED guards.
+ *
+ *   - endpointId  The committed architecture endpoint id when the imported item
+ *                 matched one (server reuses synthesiseOperationFromEndpoint).
+ *                 Omitted for an architecture-unmatched endpoint the user kept.
+ *   - method/path The concrete operation identity (always sent so the server can
+ *                 synthesise a row even with no endpointId); the path is the
+ *                 resolved path the import staged.
+ *   - operationId Optional explicit operation id; the server derives one from
+ *                 method/path when omitted.
+ *   - summary/description Optional human labels carried onto the row.
+ */
+export interface AddOperationRequest {
+  endpointId?: string | null;
+  method: string;
+  path: string;
+  operationId?: string | null;
+  summary?: string | null;
+  description?: string | null;
+}
+
+/**
+ * add-operation response: the created (or already-present) operation row.
+ * Snake_case AMS DTO (ApiBehaviourOperationDto) so the staging UI refreshes its
+ * row list verbatim; created distinguishes a fresh insert from an idempotent
+ * hit on an operation that already existed for the session.
+ */
+export interface AddOperationResponse {
+  sessionId: string;
+  operation: ApiBehaviourOperationDto;
+  created: boolean;
+}
+
+/**
+ * Append ONE endpoint to the session as an included = true operation row BEFORE
+ * any manual-capture send (R7/A2). Mirrors accountEndpoints / manualCapture:
+ * actionUrl(..., 'add-operation') + a JSON POST. The request body is camelCase
+ * (this client owns the shape); the validation service maps it to the snake_case
+ * AMS createOperation shape (R8). Returns the created snake_case operation row so
+ * the staging table refreshes without a separate list call.
+ */
+export async function addOperation(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  body: AddOperationRequest,
+): Promise<AddOperationResponse> {
+  return jsonRequest<AddOperationResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'add-operation'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     },
   );
 }
