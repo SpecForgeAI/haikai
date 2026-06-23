@@ -23,7 +23,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { getDiscoveryRuns } from '../../api/discoveryApi';
+import { deleteDiscoveryRun, getDiscoveryRuns } from '../../api/discoveryApi';
 import type { DiscoveryRunDto } from '../../api/discoveryApi';
 import { TierBadge } from './TierBadge';
 // Spec 2026-05-16 Database Discovery Packs -- Group 5: kind badge for the
@@ -97,6 +97,10 @@ export const DiscoveryRunsList: React.FC<DiscoveryRunsListProps> = ({
   const [runs, setRuns] = useState<DiscoveryRunDto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  /** Open right-click menu (cursor-anchored), or null when closed. */
+  const [menu, setMenu] = useState<{ runId: string; x: number; y: number } | null>(null);
+  /** The run id whose DELETE is in flight (greys its row). */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchRunList = useCallback(async () => {
     if (!architectureId) {
@@ -157,6 +161,69 @@ export const DiscoveryRunsList: React.FC<DiscoveryRunsListProps> = ({
     fetchRunList();
   }, [fetchRunList]);
 
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  /**
+   * Open the cursor-anchored "Delete" menu for a run. `preventDefault` stops the
+   * browser's native context menu; `stopPropagation` keeps the document-level
+   * dismiss listener (below) from immediately closing the menu we just opened.
+   */
+  const handleContextMenu = useCallback((e: React.MouseEvent, runId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ runId, x: e.clientX, y: e.clientY });
+  }, []);
+
+  // Dismiss the open menu on any outside click, a right-click elsewhere, or
+  // Escape. Row right-clicks stopPropagation, so they never reach these.
+  useEffect(() => {
+    if (!menu) return;
+    const onDismiss = () => closeMenu();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeMenu();
+    };
+    document.addEventListener('click', onDismiss);
+    document.addEventListener('contextmenu', onDismiss);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', onDismiss);
+      document.removeEventListener('contextmenu', onDismiss);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menu, closeMenu]);
+
+  /**
+   * Delete a run and all its child data (server cascades candidates / evidence /
+   * relationships / clusters / decision tasks / findings / capabilities), then
+   * refetch the list. A confirm guards the irreversible action; an in-progress
+   * run adds an extra warning line.
+   */
+  const handleDelete = useCallback(
+    async (run: DiscoveryRunDto) => {
+      closeMenu();
+      if (!architectureId) return;
+      const inProgress = ['RUNNING', 'PENDING'].includes((run.status ?? '').toUpperCase());
+      const message =
+        'Delete this discovery run and all its candidates, evidence, relationships, and findings?\n\n' +
+        'This cannot be undone.' +
+        (inProgress
+          ? '\n\nThis run is still in progress — deleting it now will stop tracking that run.'
+          : '');
+      if (!window.confirm(message)) return;
+      setDeletingId(run.id);
+      setError(null);
+      try {
+        await deleteDiscoveryRun(projectId, architectureId, run.id);
+        await fetchRunList();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete discovery run');
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [projectId, architectureId, fetchRunList, closeMenu],
+  );
+
   return (
     <div className={styles.runListSection} data-testid="discovery-runs-list">
       <div className={styles.runListHeader}>
@@ -189,8 +256,11 @@ export const DiscoveryRunsList: React.FC<DiscoveryRunsListProps> = ({
                 key={run.id}
                 className={`${styles.runListItem}${selectedRunId === run.id ? ` ${styles.runListItemSelected}` : ''}`}
                 onClick={() => onSelectRun(run.id)}
+                onContextMenu={(e) => handleContextMenu(e, run.id)}
                 data-testid="run-list-item"
                 data-run-id={run.id}
+                data-deleting={deletingId === run.id ? 'true' : undefined}
+                style={deletingId === run.id ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
               >
                 <span className={`${styles.statusBadge} ${getStatusClass(run.status)}`}>
                   {run.status}
@@ -245,6 +315,27 @@ export const DiscoveryRunsList: React.FC<DiscoveryRunsListProps> = ({
           })}
         </ul>
       )}
+      {menu && (() => {
+        const run = runs.find((r) => r.id === menu.runId);
+        if (!run) return null;
+        return (
+          <div
+            className={styles.runContextMenu}
+            style={{ top: menu.y, left: menu.x }}
+            data-testid="run-context-menu"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className={`${styles.runContextMenuItem} ${styles.runContextMenuItemDanger}`}
+              onClick={() => void handleDelete(run)}
+              data-testid="run-context-menu-delete"
+            >
+              Delete run
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 };

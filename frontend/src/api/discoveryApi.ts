@@ -836,6 +836,36 @@ export async function getDiscoveryRun(
 }
 
 /**
+ * Deletes a discovery run and all of its child data (candidates, evidence,
+ * relationships, clusters, decision tasks, findings, capabilities). Powers the
+ * Discovery Runs list right-click "Delete" action so a user can clean up
+ * test/iteration runs without starting a fresh project.
+ *
+ * Scoped to (projectId, architectureId): a run bound to a different
+ * architecture 404s server-side (cross-architecture deletion prevention),
+ * matching the GET scoping.
+ *
+ * @param projectId - The project identifier
+ * @param architectureId - The active architecture identifier
+ * @param runId - The discovery run identifier
+ * @returns Promise that resolves once the run is deleted (HTTP 204)
+ * @throws Error if the request fails (non-ok response, e.g. 404 / 503)
+ */
+export async function deleteDiscoveryRun(
+  projectId: string,
+  architectureId: string,
+  runId: string
+): Promise<void> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/runs/${encodeURIComponent(runId)}`;
+
+  const res = await fetch(url, { method: 'DELETE' });
+
+  if (!res.ok) {
+    throw new Error(`Discovery run delete failed: ${res.status}`);
+  }
+}
+
+/**
  * Retrieves candidates for a specific discovery run.
  *
  * Spec 2026-05-01 Multi-Architecture Discovery Integration -- Task Group 7:

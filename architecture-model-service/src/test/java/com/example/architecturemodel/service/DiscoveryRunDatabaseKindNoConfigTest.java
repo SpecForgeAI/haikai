@@ -70,7 +70,11 @@ class DiscoveryRunDatabaseKindNoConfigTest {
             candidateRepository,
             relationshipRepository,
             clusterRepository,
-            decisionTaskRepository
+            decisionTaskRepository,
+            // Capability repo is unused on this test's paths; a bare mock keeps
+            // the constructor satisfied without extra wiring.
+            org.mockito.Mockito.mock(
+                com.example.architecturemodel.repository.discovery.DiscoveryCapabilityRepository.class)
         );
     }
 

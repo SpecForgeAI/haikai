@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ApiBehaviourCaptureSessionDto,
+  deleteCaptureSession,
   listCaptureSessions,
 } from '../../api/apiBehaviourClient';
 import styles from './ApiBaselinesListPage.module.css';
@@ -65,6 +66,8 @@ export const CaptureSessionsList: React.FC<CaptureSessionsListProps> = ({
   const [sessions, setSessions] = useState<ApiBehaviourCaptureSessionDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The session id whose DELETE is in flight (disables that row's button). */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!architectureId) {
@@ -83,6 +86,39 @@ export const CaptureSessionsList: React.FC<CaptureSessionsListProps> = ({
       setLoading(false);
     }
   }, [projectId, architectureId]);
+
+  /**
+   * Delete a capture session and all its captured request/response rows (the
+   * server cascades scenarios / operations / diagnostics). Click must NOT
+   * bubble to the row's onSelect. A confirm guards the (irreversible) action;
+   * an in-progress session adds an extra warning line. Saved baselines created
+   * from the session are intentionally KEPT (the server does not cascade them).
+   */
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, session: ApiBehaviourCaptureSessionDto) => {
+      e.stopPropagation();
+      if (!architectureId) return;
+      const name = session.name || session.environment_name || '(unnamed)';
+      const running = ['running', 'configured'].includes((session.status ?? '').toLowerCase());
+      const message =
+        `Delete capture session "${name}"?\n\n` +
+        'This removes the session and all its captured request/response rows. ' +
+        'Saved baselines created from it are kept.' +
+        (running ? '\n\nThis session is still in progress — deleting it now will stop tracking that run.' : '');
+      if (!window.confirm(message)) return;
+      setDeletingId(session.id);
+      setError(null);
+      try {
+        await deleteCaptureSession(projectId, architectureId, session.id);
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete capture session');
+      } finally {
+        setDeletingId(null);
+      }
+    },
+    [projectId, architectureId, load],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -152,6 +188,16 @@ export const CaptureSessionsList: React.FC<CaptureSessionsListProps> = ({
                 {s.name || s.environment_name || '(unnamed)'}
               </span>
               <span className={styles.rowDate}>{formatDate(s.created_at)}</span>
+              <button
+                type="button"
+                className={styles.deleteButton}
+                disabled={deletingId === s.id}
+                onClick={(e) => void handleDelete(e, s)}
+                data-testid={`capture-session-delete-${s.id}`}
+                title="Delete this capture session and its captured rows"
+              >
+                {deletingId === s.id ? 'Deleting…' : 'Delete'}
+              </button>
             </li>
           ))}
         </ul>

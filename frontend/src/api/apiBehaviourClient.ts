@@ -1289,6 +1289,26 @@ export async function updateBaseline(
 }
 
 /**
+ * Delete a saved baseline and its child rows (baseline items, plus any
+ * diff/drift reports computed FROM or AGAINST it -- all cascade server-side).
+ * Powers the Saved Baselines list delete action so a user can clean up
+ * test/iteration baselines without starting a fresh project.
+ *
+ * Note: deleting a baseline does NOT touch the capture session it was saved
+ * from (the soft `session_id` back-reference is set null, not cascaded).
+ */
+export async function deleteBaseline(
+  projectId: string,
+  architectureId: string,
+  baselineId: string,
+): Promise<void> {
+  await jsonRequest<void>(
+    gatewayUrl(projectId, architectureId, 'baselines', baselineId),
+    { method: 'DELETE' },
+  );
+}
+
+/**
  * Fetch the server-side integrity verdict for a baseline (Spec 2026-06-17
  * Baseline Integrity & Provenance). Calls the AMS
  * `GET .../baselines/{id}/integrity` operation, which recomputes the hash

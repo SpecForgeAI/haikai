@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ApiBehaviourBaselineDto,
   BaselineStatus,
+  deleteBaseline,
   getCaptureSession,
   listBaselines,
   reconcileInventory,
@@ -92,6 +93,8 @@ export const BaselinesList: React.FC<BaselinesListProps> = ({
   const [error, setError] = useState<string | null>(null);
   /** The baseline id whose status PATCH is in flight (disables that row's button). */
   const [statusActionInFlight, setStatusActionInFlight] = useState<string | null>(null);
+  /** The baseline id whose DELETE is in flight (disables that row's button). */
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   /** baseline id -> read-only coverage info (absent = unavailable / legacy). */
   const [coverageInfo, setCoverageInfo] = useState<Record<string, BaselineCoverageInfo>>({});
 
@@ -137,6 +140,35 @@ export const BaselinesList: React.FC<BaselinesListProps> = ({
         );
       } finally {
         setStatusActionInFlight(null);
+      }
+    },
+    [projectId, architectureId, load],
+  );
+
+  /**
+   * Delete a baseline (and any diff/drift reports computed from it — the server
+   * cascades them), then reload so the row disappears. A confirm guards the
+   * irreversible action. Click must NOT bubble to the row's onSelect. Deleting
+   * a baseline does NOT delete the capture session it was saved from.
+   */
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, baseline: ApiBehaviourBaselineDto) => {
+      e.stopPropagation();
+      if (!architectureId) return;
+      const message =
+        `Delete baseline "${baseline.name || '(unnamed)'}"?\n\n` +
+        'This also removes any diff/drift reports computed from it. ' +
+        'The capture session it was saved from is kept.';
+      if (!window.confirm(message)) return;
+      setDeletingId(baseline.id);
+      setError(null);
+      try {
+        await deleteBaseline(projectId, architectureId, baseline.id);
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to delete baseline');
+      } finally {
+        setDeletingId(null);
       }
     },
     [projectId, architectureId, load],
@@ -285,6 +317,16 @@ export const BaselinesList: React.FC<BaselinesListProps> = ({
                   </button>
                 );
               })()}
+              <button
+                type="button"
+                className={styles.deleteButton}
+                disabled={deletingId === b.id}
+                onClick={(e) => void handleDelete(e, b)}
+                data-testid={`baseline-delete-${b.id}`}
+                title="Delete this baseline and any drift reports computed from it"
+              >
+                {deletingId === b.id ? 'Deleting…' : 'Delete'}
+              </button>
             </li>
           ))}
         </ul>

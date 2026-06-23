@@ -46,6 +46,29 @@
   cursor: pointer;
 }
 
+/* Per-row delete affordance on the Capture Sessions / Saved Baselines lists.
+ * Danger-tinted outline so it reads distinctly from the neutral Refresh /
+ * Activate / Archive controls it sits beside. */
+.deleteButton {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #ef9a9a;
+  background: #fff;
+  color: #c62828;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.deleteButton:hover:not(:disabled) {
+  background: #ffebee;
+}
+
+.deleteButton:disabled {
+  color: #9e9e9e;
+  border-color: #e0e0e0;
+  cursor: not-allowed;
+}
+
 .list {
   list-style: none;
   margin: 0;

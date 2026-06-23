@@ -48,4 +48,18 @@ public interface DiscoveryCapabilityRepository
      */
     List<DiscoveryCapabilityEntity> findByProjectIdAndArchitectureIdOrderByCreatedAtAsc(
         UUID projectId, UUID architectureId);
+
+    /**
+     * Delete every capability synthesised by a discovery run. Needed by the
+     * run-delete path: {@code discovery_capability.run_id} is a SOFT reference
+     * (nullable, no foreign key), so these rows do NOT ride the DB
+     * {@code ON DELETE CASCADE} chain off {@code discovery_run(id)} and must be
+     * removed explicitly to avoid orphaning them. The members of each deleted
+     * capability are removed by the DB {@code ON DELETE CASCADE} on
+     * {@code discovery_capability_member.capability_id}.
+     *
+     * @param runId the synthesising run UUID
+     * @return the number of capability rows deleted
+     */
+    long deleteByRunId(UUID runId);
 }

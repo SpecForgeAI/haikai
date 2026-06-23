@@ -753,6 +753,93 @@ discoveryRouter.get('/projects/:projectId/architectures/:architectureId/runs/:ru
 });
 
 /**
+ * DELETE /projects/:projectId/architectures/:architectureId/runs/:runId
+ * Proxies to architecture-model-service to delete a discovery run and all of
+ * its child data. Powers the Discovery Runs UI right-click "Delete" action.
+ *
+ * Backend: DELETE {architectureModelServiceBaseUrl}/api/model/projects/:projectId/architectures/:architectureId/discovery/runs/:runId
+ * Responds 204 on success, 404 when the run is not found in this architecture.
+ */
+discoveryRouter.delete('/projects/:projectId/architectures/:architectureId/runs/:runId', async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || 'unknown';
+  const { projectId, architectureId, runId } = req.params;
+
+  try {
+    const { architectureModelServiceBaseUrl } = getConfig();
+
+    logger.info('Processing discovery delete-run proxy request', {
+      requestId,
+      projectId,
+      architectureId,
+      runId,
+    });
+
+    try {
+      const url = `${architectureModelServiceBaseUrl}/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/discovery/runs/${encodeURIComponent(runId)}`;
+
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' },
+      });
+
+      logger.info('Discovery delete-run proxy request completed', {
+        requestId,
+        projectId,
+        architectureId,
+        runId,
+        status: response.status,
+        success: response.ok,
+      });
+
+      // 204 No Content carries no body -- forward the status verbatim without a
+      // JSON parse. Any non-204 (e.g. 404 with an error envelope) is relayed
+      // with whatever body the backend sent.
+      if (response.status === 204) {
+        return res.status(204).send();
+      }
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+      return res.status(response.status).json(responseBody);
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+
+      logger.error('Discovery delete-run proxy request failed', {
+        requestId,
+        projectId,
+        architectureId,
+        runId,
+        error: errorMessage,
+      });
+
+      return res.status(503).json({
+        error: {
+          code: 503,
+          message: 'Architecture model service unavailable',
+        },
+      });
+    }
+  } catch (error) {
+    logger.error('Discovery delete-run proxy error', {
+      requestId,
+      projectId,
+      architectureId,
+      runId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return res.status(500).json({
+      error: {
+        code: 500,
+        message: 'Internal server error',
+      },
+    });
+  }
+});
+
+/**
  * GET /projects/:projectId/architectures/:architectureId/runs/:runId/candidates/count
  * Proxies to architecture-model-service to get candidate count for a run.
  *

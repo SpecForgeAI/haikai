@@ -7,6 +7,7 @@ import com.example.architecturemodel.model.dto.discovery.LogFileMetaDto;
 import com.example.architecturemodel.model.dto.discovery.LogFilesPatchRequest;
 import com.example.architecturemodel.model.entity.DiscoveryConfigEntity;
 import com.example.architecturemodel.model.entity.DiscoveryRunEntity;
+import com.example.architecturemodel.repository.discovery.DiscoveryCapabilityRepository;
 import com.example.architecturemodel.repository.entity.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,6 +97,11 @@ public class DiscoveryRunService {
     private final DiscoveryRelationshipRepository relationshipRepository;
     private final DiscoveryClusterRepository clusterRepository;
     private final DiscoveryDecisionTaskRepository decisionTaskRepository;
+    // discovery_capability carries a SOFT run_id (nullable, NO foreign key), so
+    // it is the ONE child table that does not ride the DB ON DELETE CASCADE
+    // chain off discovery_run(id). A full run delete must remove its rows
+    // explicitly (its members cascade via their capability_id FK).
+    private final DiscoveryCapabilityRepository capabilityRepository;
 
     private static final Set<String> ALLOWED_STATUSES = Set.of(
         "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"
@@ -397,6 +403,68 @@ public class DiscoveryRunService {
             .filter(e -> architectureId.equals(e.getArchitectureId()))
             .map(this::toDto)
             .orElse(null);
+    }
+
+    /**
+     * Delete a discovery run and ALL of its child data, scoped to the given
+     * (project, architecture). Used by the Discovery Runs UI's right-click
+     * "Delete" action so a user can clean up test/iteration runs without
+     * starting a fresh project.
+     *
+     * <p>Scoping mirrors {@link #getRunInArchitecture}: the run is only removed
+     * when it belongs to BOTH the URL's {@code projectId} and
+     * {@code architectureId}. A run that does not exist, or that belongs to a
+     * different project/architecture, yields {@code false} so the controller can
+     * surface a 404 (no cross-architecture deletes).
+     *
+     * <p>Cascade: every HARD child of a run -- candidates, evidence,
+     * relationships, clusters (+ members), decision tasks, candidate-entity
+     * mappings, findings (+ links) -- carries a DB-level {@code ON DELETE
+     * CASCADE} foreign key to {@code discovery_run(id)}, so a single
+     * {@code runRepository.deleteById} removes them atomically in this
+     * transaction (the same mechanism {@link #cleanupOrphanedData} relies on).
+     * The ONE exception is {@code discovery_capability}, whose {@code run_id} is
+     * a soft, FK-less reference; its rows (and their members, which DO cascade
+     * off {@code capability_id}) are removed explicitly FIRST so the delete does
+     * not leave them orphaned.
+     *
+     * <p>NOTE: any runtime-log files the gateway wrote to disk under
+     * {@code {projectFolder}/discovery-runs/{runId}/logs/} are not this
+     * service's concern -- AMS only ever stored their metadata. Disk cleanup, if
+     * desired, is the gateway's responsibility.
+     *
+     * @param runId the run UUID to delete
+     * @param projectId the project UUID from the URL path (scoping)
+     * @param architectureId the architecture UUID from the URL path (scoping)
+     * @return {@code true} if a matching run was found and deleted; {@code false}
+     *         if no run matched the (runId, projectId, architectureId) scope
+     */
+    @Transactional
+    public boolean deleteRunInArchitecture(UUID runId, UUID projectId, UUID architectureId) {
+        log.debug("Deleting discovery run: {} scoped to project: {}, architecture: {}",
+            runId, projectId, architectureId);
+
+        DiscoveryRunEntity run = runRepository.findById(runId)
+            .filter(e -> projectId.equals(e.getProjectId()))
+            .filter(e -> architectureId.equals(e.getArchitectureId()))
+            .orElse(null);
+        if (run == null) {
+            return false;
+        }
+
+        // (1) Remove the FK-less capability rows first (members cascade via
+        // their capability_id FK) -- otherwise they'd be orphaned by the run
+        // delete below.
+        capabilityRepository.deleteByRunId(runId);
+
+        // (2) Delete the run row; the DB ON DELETE CASCADE chain removes every
+        // hard child (candidates / evidence / relationships / clusters /
+        // decision tasks / findings / mappings) in the same transaction.
+        runRepository.deleteById(runId);
+
+        log.info("Deleted discovery run {} (project {}, architecture {}) and its child data",
+            runId, projectId, architectureId);
+        return true;
     }
 
     /**

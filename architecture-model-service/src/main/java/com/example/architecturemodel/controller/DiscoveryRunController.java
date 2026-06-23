@@ -273,6 +273,41 @@ public class DiscoveryRunController {
     }
 
     /**
+     * DELETE /api/model/projects/{projectId}/architectures/{architectureId}/discovery/runs/{runId}
+     *
+     * Delete a discovery run and ALL of its child data (candidates, evidence,
+     * relationships, clusters, decision tasks, findings, capabilities), scoped
+     * to the project and architecture from the URL. Powers the Discovery Runs
+     * UI's right-click "Delete" action so a user can clean up test/iteration
+     * runs in place.
+     *
+     * Returns 204 No Content on success, or 404 if no run matches the
+     * (projectId, architectureId, runId) scope -- a run bound to a different
+     * architecture or project 404s (cross-architecture deletion prevention,
+     * matching the GET scoping).
+     *
+     * @param projectId the project UUID
+     * @param architectureId the architecture UUID (must match the run's bound id)
+     * @param runId the run UUID
+     * @return 204 if deleted; 404 if not found in this architecture
+     */
+    @DeleteMapping("/{runId}")
+    public ResponseEntity<Void> deleteRun(
+            @PathVariable UUID projectId,
+            @PathVariable UUID architectureId,
+            @PathVariable UUID runId) {
+        log.debug("DELETE /api/model/projects/{}/architectures/{}/discovery/runs/{}",
+            projectId, architectureId, runId);
+
+        boolean deleted = discoveryRunService.deleteRunInArchitecture(
+            runId, projectId, architectureId);
+        if (!deleted) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * PATCH /api/model/projects/{projectId}/architectures/{architectureId}/discovery/runs/{runId}/input-artifacts/log-files
      *
      * Merge a batch of runtime-log file metadata entries into the run's
