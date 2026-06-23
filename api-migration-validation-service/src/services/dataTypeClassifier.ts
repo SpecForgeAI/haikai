@@ -334,22 +334,118 @@ function classifyField(ev: FieldEvidence): DataTypeCategory | null {
 // ---------------------------------------------------------------------------
 
 /**
+ * The signal slots a Java TYPE projects onto so `classifyField` buckets a
+ * type-only code entry (2026-06-22). Temporal/uuid/enum MUST route through
+ * `oasFormat`/`hasEnum` (the signal-2 format branch + the enum signal), NOT
+ * `oasType` -- the bare-`oasType` branch only buckets boolean/integer/number, so
+ * a numeric/string token there would mis-bucket a date. numeric/decimal/boolean
+ * route through `oasType` (integer/number/boolean).
+ */
+interface TypeEvidenceSlots {
+  oasType: string | null;
+  oasFormat: string | null;
+  hasEnum: boolean;
+}
+
+const NO_TYPE_SLOTS: TypeEvidenceSlots = { oasType: null, oasFormat: null, hasEnum: false };
+
+/**
+ * Map a resolved Java field/param TYPE to the classifier evidence slots
+ * `classifyField` reads. Deterministic + pure. Mirrors the discovery
+ * type->category table (spec 2026-06-22). Matches by SIMPLE name after
+ * stripping generics + package (tolerates fully-qualified `java.time.*`). A
+ * type marked `<enum>` (the producer's enum marker) routes via `hasEnum`. An
+ * unrecognised type (incl. `String`/`Object`) yields no signal.
+ *
+ *   LocalDate -> date; LocalDateTime/Instant/OffsetDateTime/ZonedDateTime/Date/
+ *     Timestamp/Calendar -> date-time; LocalTime -> time.
+ *   BigDecimal/double/Double/float/Float -> number (decimal);
+ *   long/Long/int/Integer/short/Short/BigInteger -> integer (numeric_id);
+ *   boolean/Boolean -> boolean; UUID -> uuid; Java enum -> hasEnum.
+ */
+function typeEvidenceSlots(javaType: string | null): TypeEvidenceSlots {
+  if (!javaType || javaType.trim().length === 0) return NO_TYPE_SLOTS;
+  let t = javaType.trim();
+  // Enum marker (e.g. `OrderStatus<enum>`) -> the enum signal, before generics
+  // are stripped (the marker rides in the generic-bracket position).
+  if (/<\s*enum\s*>/i.test(t)) return { oasType: null, oasFormat: null, hasEnum: true };
+  // Strip generics (`List<LocalDate>` -> `List`); the producer already unwrapped
+  // one collection level, so the OUTER name is the element type here.
+  const lt = t.indexOf('<');
+  if (lt >= 0) t = t.slice(0, lt);
+  // Strip an array suffix and any package qualifier -> the SIMPLE name.
+  t = t.replace(/\[\]/g, '').trim();
+  const dot = t.lastIndexOf('.');
+  if (dot >= 0) t = t.slice(dot + 1);
+  const simple = t.trim();
+  switch (simple) {
+    // -- temporal (route via oasFormat, never oasType) --
+    case 'LocalDate':
+      return { oasType: null, oasFormat: 'date', hasEnum: false };
+    case 'LocalDateTime':
+    case 'Instant':
+    case 'OffsetDateTime':
+    case 'ZonedDateTime':
+    case 'Date':
+    case 'Timestamp':
+    case 'Calendar':
+      return { oasType: null, oasFormat: 'date-time', hasEnum: false };
+    case 'LocalTime':
+      return { oasType: null, oasFormat: 'time', hasEnum: false };
+    // -- uuid (route via oasFormat) --
+    case 'UUID':
+      return { oasType: null, oasFormat: 'uuid', hasEnum: false };
+    // -- decimal (route via oasType: number) --
+    case 'BigDecimal':
+    case 'double':
+    case 'Double':
+    case 'float':
+    case 'Float':
+      return { oasType: 'number', oasFormat: null, hasEnum: false };
+    // -- numeric_id (route via oasType: integer) --
+    case 'long':
+    case 'Long':
+    case 'int':
+    case 'Integer':
+    case 'short':
+    case 'Short':
+    case 'BigInteger':
+      return { oasType: 'integer', oasFormat: null, hasEnum: false };
+    // -- boolean (route via oasType: boolean) --
+    case 'boolean':
+    case 'Boolean':
+      return { oasType: 'boolean', oasFormat: null, hasEnum: false };
+    default:
+      return NO_TYPE_SLOTS;
+  }
+}
+
+/**
  * Project a code-scan `ParamFormat` (from `readRequestContractFacts`, C3) onto
  * the shared `FieldEvidence` shape. The code format/pattern is the signal-1
- * source; `pattern` (when concrete) doubles as a signal-3 hint.
+ * source (an ANNOTATION format -- it resolves BEFORE the bare-type signal-2
+ * branch, so "annotation beats type"); `pattern` (when concrete) doubles as a
+ * signal-3 hint. When the entry is TYPE-ONLY (no `format`/`pattern`), the
+ * resolved Java type is projected onto the signal-2 slots so `classifyField`
+ * buckets it from CODE (2026-06-22).
  */
 function evidenceFromCode(p: ParamFormat): FieldEvidence {
   // Prefer the concrete pattern as the code format label when present (it is the
-  // real `dd-MMM-yyyy`/regex), else the human format label.
+  // real `dd-MMM-yyyy`/regex), else the human format label. An ANNOTATION format
+  // here wins classification over the bare type (signal 1 before signal 2).
   const codeFormat = p.pattern ?? p.format ?? null;
+  // Project the Java type onto the signal-2 slots (temporal/uuid via oasFormat,
+  // enum via hasEnum, numeric/decimal/boolean via oasType). A type-only entry
+  // thus classifies from CODE; a concrete `codeFormat` still outranks it.
+  const slots = typeEvidenceSlots(p.javaType);
   return {
     name: p.name,
     location: p.location,
     codeFormat,
-    oasType: null,
-    oasFormat: null,
+    oasType: slots.oasType,
+    oasFormat: slots.oasFormat,
     pattern: p.pattern,
-    hasEnum: false,
+    hasEnum: slots.hasEnum,
   };
 }
 
@@ -376,12 +472,17 @@ function codeFormatLabel(p: ParamFormat): string | null {
 }
 
 /**
- * The concrete CONTRACT format string we display / collect for a contract field
- * (Col-3). Prefer the declared `format`, else the `pattern` regex; a bare
- * type-only field has no concrete format to show.
+ * The concrete CONTRACT format string we DISPLAY / collect for a contract field
+ * (Col-3). Prefer the declared `format`, else the `pattern` regex; when the
+ * contract carried neither but DID declare a shape, fall back to an `enum`
+ * marker, else the declared `type` (lower-cased). This is the DISPLAY label
+ * only -- the Col-4 SEED never uses the type fallback (a bare `type:string`
+ * must not seed Col-4 with "string"); see the contract loop in
+ * `classifyDataTypes`, which keeps `seedFromContract` to a real format/pattern.
  */
 function contractFormatLabel(c: ContractFieldFormat): string | null {
-  const v = c.format ?? c.pattern ?? null;
+  const v =
+    c.format ?? c.pattern ?? (c.hasEnum ? 'enum' : null) ?? (c.type ? c.type.toLowerCase() : null);
   return v && v.trim().length > 0 ? v.trim() : null;
 }
 
@@ -498,6 +599,24 @@ function newAccumulator(): RowAccumulator {
 }
 
 /**
+ * Read the ONE project-wide `inferred_date_format` off an endpoint's
+ * `request_contract` (2026-06-22). The Spring-Classic pack stamps a single
+ * top-level `{ format, source, confidence }` per endpoint contract (NOT onto
+ * per-field `param_formats`); we project its concrete `format` string
+ * (snake/camel-tolerant) so the code-evidence loop can apply it to a type-only
+ * date/datetime entry. Returns null when the contract carried none.
+ */
+function readInferredDateFormat(endpoint: Record<string, unknown>): string | null {
+  const blobRaw = endpoint.request_contract ?? endpoint.requestContract;
+  if (!blobRaw || typeof blobRaw !== 'object') return null;
+  const blob = blobRaw as Record<string, unknown>;
+  const idfRaw = blob.inferred_date_format ?? blob.inferredDateFormat;
+  if (!idfRaw || typeof idfRaw !== 'object') return null;
+  const fmt = (idfRaw as Record<string, unknown>).format;
+  return typeof fmt === 'string' && fmt.trim().length > 0 ? fmt.trim() : null;
+}
+
+/**
  * Inputs for {@link classifyDataTypes}. `endpoints` are the AMS endpoint rows
  * (each carrying a `request_contract` blob -> code evidence via
  * `readRequestContractFacts`, C3). `oasOperations` are the session's contract-
@@ -534,40 +653,68 @@ export function classifyDataTypes(input: ClassifyInput): DataTypeRow[] {
   };
 
   // ---- Code evidence (signal 1; chain-(a) position 1) ----------------------
+  // TYPE-ONLY entries (2026-06-22): a Spring-Classic `source: 'java-type'` entry
+  // carries a `javaType` and NO concrete `format`/`pattern`, so `codeFormatLabel`
+  // returns null. For a type-only DATE/DATETIME entry we apply the ONE project-
+  // wide `inferred_date_format` (read off the same contract): Col-2 DISPLAYS the
+  // global format when present (else the bare TYPE TOKEN, display-only), while the
+  // Col-4 SEED uses ONLY the CONCRETE global format -- a bare type token NEVER
+  // seeds (it falls through `seedColumnFour` to the per-category standard guess).
+  // This mirrors the contract-side seed/display split. Non-date categories
+  // (numeric_id/decimal/boolean/uuid/enum) classify purely from the type and are
+  // UNAFFECTED by `inferred_date_format`.
   for (const endpoint of input.endpoints ?? []) {
     if (!endpoint || typeof endpoint !== 'object') continue;
     const facts = readRequestContractFacts(endpoint);
     if (!facts) continue;
+    const globalDateFormat = readInferredDateFormat(endpoint);
     for (const pf of facts.paramFormats) {
       const cat = classifyField(evidenceFromCode(pf));
       if (!cat || !CLASSIFIABLE_CATEGORIES.has(cat)) continue;
       const a = ensure(cat);
+      // The concrete code-format label (pattern ?? format); null for type-only.
       const label = codeFormatLabel(pf);
-      pushDistinct(a.codeFormats, label);
-      if (label && !a.seedFromCode) a.seedFromCode = label;
+      // Type-only date/datetime: DISPLAY the global format when present, else the
+      // bare type token. The SEED only ever takes the concrete global format.
+      const isTypeOnlyTemporal = !label && (cat === 'date' || cat === 'datetime');
+      const displayLabel = label ?? (isTypeOnlyTemporal ? globalDateFormat ?? pf.javaType : null);
+      const seedLabel = label ?? (isTypeOnlyTemporal ? globalDateFormat : null);
+      pushDistinct(a.codeFormats, displayLabel);
+      if (seedLabel && !a.seedFromCode) a.seedFromCode = seedLabel;
       a.contributingFields.push({
         name: pf.name,
         location: pf.location,
-        codeFormat: label,
+        codeFormat: displayLabel,
         contractFormat: null,
       });
     }
   }
 
   // ---- Contract evidence (signals 2-4; chain-(a) position 2) ---------------
+  // SEED/DISPLAY SPLIT: the Col-3 DISPLAY label falls back format > pattern >
+  // enum > type so a typed-but-format-less field (e.g. an integer `customerId`,
+  // or a date whose contract is merely `type:string`) still shows its declared
+  // shape in the column instead of a bare em-dash. The Col-4 SEED, however, uses
+  // ONLY a real format/pattern -- never the type fallback -- so a date field
+  // whose contract is just `type:string` does NOT seed Col-4 with "string"; it
+  // falls through to the per-category standard guess (e.g. `yyyy-MM-dd`).
   for (const oasOp of input.oasOperations ?? []) {
     for (const cf of extractContractFieldFormats(oasOp)) {
       const cat = classifyField(evidenceFromContract(cf));
       if (!cat || !CLASSIFIABLE_CATEGORIES.has(cat)) continue;
       const a = ensure(cat);
-      const label = contractFormatLabel(cf);
-      pushDistinct(a.contractFormats, label);
-      if (label && !a.seedFromContract) a.seedFromContract = label;
+      const displayLabel = contractFormatLabel(cf); // format > pattern > enum > type
+      pushDistinct(a.contractFormats, displayLabel);
+      // Seed only off a CONCRETE format/pattern -- the type fallback is display-only.
+      const seedLabel = cf.format ?? cf.pattern ?? null;
+      if (seedLabel && seedLabel.trim().length > 0 && !a.seedFromContract) {
+        a.seedFromContract = seedLabel.trim();
+      }
       a.contributingFields.push({
         name: cf.name,
         location: cf.location,
         codeFormat: null,
-        contractFormat: label,
+        contractFormat: displayLabel,
       });
     }
   }

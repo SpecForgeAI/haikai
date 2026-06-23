@@ -116,6 +116,12 @@ const REQUEST_HEADER_ANNOTATION = 'RequestHeader';
 const JSON_FORMAT_ANNOTATION = 'JsonFormat';
 const DATE_TIME_FORMAT_ANNOTATION = 'DateTimeFormat';
 
+// Custom Jackson (de)serializer annotations (Signal #1 detect-or-flag). A
+// `using=SomeSerializer.class` hides the wire format inside a separate class
+// the deterministic scanner does NOT crack open -> it FLAGS the field.
+const JSON_SERIALIZE_ANNOTATION = 'JsonSerialize';
+const JSON_DESERIALIZE_ANNOTATION = 'JsonDeserialize';
+
 // JSR-380 / Jakarta-validation constraint annotations we recognise on bean
 // fields and on parameters (the common core; an unknown `*` constraint still
 // surfaces its annotation name verbatim). Mirrors the response scanner's set.
@@ -171,9 +177,18 @@ export interface ParamFormatEntry {
   name: string;
   /** 'body' | 'query' | 'path' | 'header'. */
   location: string;
-  format: string;
+  /** Concrete format label from an annotation; null on a type-only entry. */
+  format: string | null;
   pattern: string | null;
   source: string;
+  /**
+   * The resolved Java field/param TYPE (Signal #1), e.g. `LocalDate`,
+   * `BigDecimal`, `List<LocalDate>`. Carried on EVERY entry so the shape is
+   * uniform; on a type-only entry it is the ONLY format signal (format/pattern
+   * stay null). NEVER stuffed into format/pattern -- the consumer maps it to a
+   * category. Wire key on the emitted blob is the snake-case `java_type`.
+   */
+  javaType: string | null;
 }
 
 /** One request-validation constraint ({ field, constraint, failure_status, message }). */
@@ -187,6 +202,18 @@ export interface RequestValidationEntry {
 export interface RequestContractProvenance {
   source_files: string[];
   method_id: string | null;
+}
+
+/**
+ * The ONE project-wide date format resolved by the Signal-#2 global pass
+ * (`globalDateFormatScanner.resolveGlobalDateFormat`). Attached ONCE at the
+ * TOP LEVEL of each endpoint contract (never stamped onto per-field
+ * `param_formats`). Snake-case wire key: `inferred_date_format`.
+ */
+export interface InferredDateFormat {
+  format: string;
+  source: string;
+  confidence: number;
 }
 
 /** The full per-endpoint request contract -- the `request_contract` JSONB blob. */
@@ -205,6 +232,12 @@ export interface RequestContract {
   provenance_detail: RequestContractProvenance;
   /** Boxed Double inside the blob (null preserves through PATCH; never 0.0). */
   confidence: number | null;
+  /**
+   * The single project-wide date format (Signal #2), attached at the top
+   * level by the springClassic adapter when the global pass resolves one.
+   * Absent (never an empty object) when nothing resolves.
+   */
+  inferred_date_format?: InferredDateFormat;
 }
 
 /** Full deterministic scan output: contracts keyed by endpoint name. */
@@ -331,6 +364,128 @@ function buildClassIndex(files: SourceFileIR[]): Map<string, ClassEntry> {
     }
   }
   return byName;
+}
+
+// ---------------------------------------------------------------------------
+// Signal #1: Java field/param TYPE -> data-type category (deterministic, pure).
+//
+// The category is used ONLY to decide WHETHER a type-only `param_formats`
+// entry is worth emitting (anything that maps to a non-skip category). The
+// emitted entry carries the RAW Java type string; the amvs classifier maps the
+// type to its own vocabulary. `String`/`Object`/unknowns map to null (SKIP).
+// ---------------------------------------------------------------------------
+
+/** A type-only category, or null when the type must NOT emit an entry. */
+export type JavaTypeCategory =
+  | 'date'
+  | 'datetime'
+  | 'time'
+  | 'decimal'
+  | 'numeric_id'
+  | 'boolean'
+  | 'uuid'
+  | 'enum';
+
+// Simple-name -> category for the non-enum buckets (per the spec table).
+const JAVA_TYPE_CATEGORY: Record<string, JavaTypeCategory> = {
+  LocalDate: 'date',
+  LocalDateTime: 'datetime',
+  Instant: 'datetime',
+  OffsetDateTime: 'datetime',
+  ZonedDateTime: 'datetime',
+  Date: 'datetime',
+  Timestamp: 'datetime',
+  Calendar: 'datetime',
+  LocalTime: 'time',
+  BigDecimal: 'decimal',
+  double: 'decimal',
+  Double: 'decimal',
+  float: 'decimal',
+  Float: 'decimal',
+  long: 'numeric_id',
+  Long: 'numeric_id',
+  int: 'numeric_id',
+  Integer: 'numeric_id',
+  short: 'numeric_id',
+  Short: 'numeric_id',
+  BigInteger: 'numeric_id',
+  boolean: 'boolean',
+  Boolean: 'boolean',
+  UUID: 'uuid',
+};
+
+/**
+ * Unwrap ONE level of `List<X>` / `Collection<X>` / `Set<X>` / `X[]` and
+ * reduce to the inner element type. Returns the original (sans package +
+ * generics) when it is not a single-level container.
+ */
+function unwrapContainerType(rawType: string): string {
+  const t = rawType.trim();
+  // Array form `X[]` -> X.
+  if (t.endsWith('[]')) return simpleName(t.slice(0, -2).trim());
+  // Generic container `List<X>` / `java.util.List<X>` -> X (ONE level).
+  const lt = t.indexOf('<');
+  if (lt > 0 && t.endsWith('>')) {
+    const outer = simpleName(t.slice(0, lt).trim());
+    if (outer === 'List' || outer === 'Collection' || outer === 'Set' || outer === 'Iterable') {
+      const inner = t.slice(lt + 1, -1).trim();
+      // The inner type may itself be packaged/generic; take its simple name
+      // (we only unwrap ONE level, so a nested generic collapses to its head).
+      return simpleName(stripGenerics(inner));
+    }
+  }
+  return simpleName(stripGenerics(t));
+}
+
+/**
+ * Map a Java field/param type string to a data-type category, or null to
+ * SKIP (emit nothing). `List<X>`/`X[]` unwrap ONE level. Matching is by simple
+ * name after stripping generics + package, so a fully-qualified `java.time.*`
+ * is tolerated. `enums` is the set of simple names whose declaration is a Java
+ * `enum` (a non-enum unknown stays a SKIP). Exported for focused testing.
+ */
+export function javaTypeCategory(
+  rawType: string | undefined | null,
+  enums: Set<string>,
+): JavaTypeCategory | null {
+  if (!rawType) return null;
+  const name = unwrapContainerType(rawType);
+  if (!name) return null;
+  const mapped = JAVA_TYPE_CATEGORY[name];
+  if (mapped) return mapped;
+  if (enums.has(name)) return 'enum';
+  return null;
+}
+
+/**
+ * The wire `javaType` for a type-only entry: the unwrapped simple name, with an
+ * `<enum>` marker appended for a Java enum so the amvs classifier (which has no
+ * class index of its own) can route it via the enum signal. `unwrapContainerType`
+ * strips the `<enum>` back off, so `javaTypeCategory(wireJavaType(t, enums), enums)`
+ * still round-trips to 'enum'. Pure.
+ */
+function wireJavaType(rawType: string, enums: Set<string>): string {
+  const name = unwrapContainerType(rawType);
+  return enums.has(name) ? `${name}<enum>` : name;
+}
+
+/**
+ * Build the set of simple names that are declared as Java `enum`s anywhere in
+ * the scanned IR. The Java extractor does NOT surface enum declarations in
+ * `file.classes` (only class/interface/record), so resolve them from the
+ * verbatim `rawContent` already attached to every Java `SourceFileIR`. Pure;
+ * matches `enum <Name>` (optionally preceded by modifiers).
+ */
+function buildEnumIndex(files: SourceFileIR[]): Set<string> {
+  const enums = new Set<string>();
+  const re = /\benum\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+  for (const file of files) {
+    const raw = typeof file.rawContent === 'string' ? file.rawContent : '';
+    if (!raw) continue;
+    let m;
+    while ((m = re.exec(raw)) !== null) enums.add(m[1]);
+  }
+  return enums;
 }
 
 // ---------------------------------------------------------------------------
@@ -479,35 +634,67 @@ function boundParamName(p: ParameterIR): string {
 function readParamFormats(
   m: FunctionIR,
   index: Map<string, ClassEntry>,
+  enums: Set<string>,
 ): ParamFormatEntry[] {
   const out: ParamFormatEntry[] = [];
 
   for (const p of m.parameters) {
+    const isBody = hasAnnotation(p.annotations, REQUEST_BODY_ANNOTATION);
     // (1) Format directly on a path/query/header parameter.
     const direct = readFormatAnnotation(p.annotations);
     if (direct) {
+      // Annotation path UNCHANGED (format/pattern/source win downstream); the
+      // javaType is set for a uniform shape only.
       out.push({
         name: boundParamName(p),
         location: locationForParam(p),
         format: direct.format,
         pattern: direct.pattern,
         source: direct.source,
+        javaType: simpleName(stripGenerics(p.type)),
+      });
+    } else if (!isBody && javaTypeCategory(p.type, enums) !== null) {
+      // Type-only path: no format annotation, but the param Java type maps to
+      // a category -> emit a type-only entry carrying the resolved type. NEVER
+      // populate format/pattern from a type.
+      out.push({
+        name: boundParamName(p),
+        location: locationForParam(p),
+        format: null,
+        pattern: null,
+        source: 'java-type',
+        javaType: wireJavaType(p.type, enums),
       });
     }
     // (2) `@RequestBody SomeRequest body` -> walk the bean's fields for formats.
-    if (!hasAnnotation(p.annotations, REQUEST_BODY_ANNOTATION)) continue;
+    if (!isBody) continue;
     const beanType = stripGenerics(simpleName(p.type));
     const entry = index.get(beanType);
     if (!entry) continue;
     for (const f of entry.cls.fields as FieldIR[]) {
       const fmt = readFormatAnnotation(f.annotations);
-      if (!fmt) continue;
+      if (fmt) {
+        // Annotation field path UNCHANGED (still carries format/pattern/source).
+        out.push({
+          name: jsonFieldName(f),
+          location: 'body',
+          format: fmt.format,
+          pattern: fmt.pattern,
+          source: fmt.source,
+          javaType: simpleName(stripGenerics(f.type)),
+        });
+        continue;
+      }
+      // Type-only DTO field: no format annotation, but the field Java type
+      // maps to a category -> emit a body-located type-only entry.
+      if (javaTypeCategory(f.type, enums) === null) continue;
       out.push({
         name: jsonFieldName(f),
         location: 'body',
-        format: fmt.format,
-        pattern: fmt.pattern,
-        source: fmt.source,
+        format: null,
+        pattern: null,
+        source: 'java-type',
+        javaType: wireJavaType(f.type, enums),
       });
     }
   }
@@ -601,6 +788,9 @@ export function scanRequestContracts(
   files: SourceFileIR[],
 ): RequestContractScanOutput {
   const index = buildClassIndex(files);
+  // Signal #1: simple names declared as Java enums (resolved off rawContent;
+  // the extractor does not surface enum declarations in `file.classes`).
+  const enums = buildEnumIndex(files);
   const contractsByEndpointName = new Map<string, RequestContract>();
 
   for (const file of files) {
@@ -615,7 +805,7 @@ export function scanRequestContracts(
         const consumes = readConsumes(m);
         const requiredHeaders = readRequiredHeaders(m);
         const params = readRequestParams(m);
-        const paramFormats = readParamFormats(m, index);
+        const paramFormats = readParamFormats(m, index, enums);
         const requestValidation = readValidation(m, index);
 
         // Omit endpoints with no request facts at all (additive + nullable:
@@ -683,4 +873,70 @@ export function attachRequestContractsToCandidates(
     attached += 1;
   }
   return attached;
+}
+
+// ---------------------------------------------------------------------------
+// Signal #1 detect-or-flag: custom (de)serializer fields.
+// ---------------------------------------------------------------------------
+
+/** One request-body field whose format is hidden in a custom (de)serializer. */
+export interface CustomSerializerFieldHit {
+  /** The DTO field (wire name; a `@JsonProperty` rename is honoured). */
+  field: string;
+  /** Endpoint identity (`${httpMethod} ${fullPath}`). */
+  endpoint: string;
+  /** The referenced serializer/deserializer class simple name. */
+  serializerClass: string;
+}
+
+/** Pull the `using=` serializer class simple name off a (de)serialize annotation. */
+function usingSerializerClass(a: AnnotationIR | undefined): string | null {
+  if (!a) return null;
+  const using = annotationArg(a, 'using');
+  if (!using) return null;
+  // e.g. `MoneySerializer.class` / `com.foo.MoneySerializer.class` -> MoneySerializer.
+  const cleaned = stripQuotes(using).replace(/\.class$/, '');
+  const name = simpleName(stripGenerics(cleaned));
+  return name || null;
+}
+
+/**
+ * Detect request-body DTO fields annotated with a CUSTOM Jackson
+ * `@JsonSerialize` / `@JsonDeserialize(using=SomeSerializer.class)`. The wire
+ * format lives in the referenced serializer class, which the deterministic
+ * scanner does NOT crack open -- so it FLAGS the field (never guesses a
+ * format). Returns one hit per (field, endpoint) carrying the referenced
+ * serializer class. Pure; walks the SAME controller -> @RequestBody DTO path as
+ * `readParamFormats` so the endpoint identity lines up. The caller feeds each
+ * hit to `emissionSources.buildRequestFormatUnresolvedFinding`.
+ */
+export function detectCustomSerializerFields(
+  files: SourceFileIR[],
+): CustomSerializerFieldHit[] {
+  const index = buildClassIndex(files);
+  const hits: CustomSerializerFieldHit[] = [];
+  for (const file of files) {
+    if (!file.classes.some((c) => isController(c))) continue;
+    for (const cls of file.classes) {
+      if (!isController(cls)) continue;
+      for (const m of cls.methods) {
+        if (!isMappingMethod(m)) continue;
+        const endpoint = endpointNameFor(cls, m);
+        for (const p of m.parameters) {
+          if (!hasAnnotation(p.annotations, REQUEST_BODY_ANNOTATION)) continue;
+          const beanType = stripGenerics(simpleName(p.type));
+          const entry = index.get(beanType);
+          if (!entry) continue;
+          for (const f of entry.cls.fields as FieldIR[]) {
+            const ser =
+              usingSerializerClass(findAnnotation(f.annotations, JSON_SERIALIZE_ANNOTATION)) ??
+              usingSerializerClass(findAnnotation(f.annotations, JSON_DESERIALIZE_ANNOTATION));
+            if (!ser) continue;
+            hits.push({ field: jsonFieldName(f), endpoint, serializerClass: ser });
+          }
+        }
+      }
+    }
+  }
+  return hits;
 }

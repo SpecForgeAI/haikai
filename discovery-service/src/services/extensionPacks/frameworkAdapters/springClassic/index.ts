@@ -65,6 +65,11 @@ import {
   scanRequestContracts,
   attachRequestContractsToCandidates,
 } from './requestContractScanner';
+// Signal #2 (2026-06-22 Spring Classic code-evidence format extraction, Task
+// Group 2): the project-wide GLOBAL date-format resolver. Resolved ONCE per
+// scan and stamped as a single top-level `inferred_date_format` on each
+// endpoint `request_contract` (never onto per-field `param_formats`).
+import { resolveGlobalDateFormat } from './globalDateFormatScanner';
 // Spec #4 (Inbound Surface Completeness), Task Groups 2/3/4: JAX-RS, raw
 // servlet / web.xml / @WebServlet, and WebFlux RouterFunction detectors. These
 // emit the SAME canonical interfaces/endpoints candidate shape this adapter's
@@ -2541,6 +2546,14 @@ export function runSpringClassicAdapter(files: SourceFileIR[], runId: string): D
   // fails as a whole so a malformed IR cannot poison the run.
   try {
     const requestContractScan = scanRequestContracts(files);
+    // Signal #2: resolve the ONE project-wide date format and stamp it at the
+    // top level of every scanned request_contract (absent when none resolves).
+    const inferredDateFormat = resolveGlobalDateFormat(files);
+    if (inferredDateFormat) {
+      for (const contract of requestContractScan.contractsByEndpointName.values()) {
+        contract.inferred_date_format = inferredDateFormat;
+      }
+    }
     const requestAttached = attachRequestContractsToCandidates(
       out.candidates,
       requestContractScan,

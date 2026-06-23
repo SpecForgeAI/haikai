@@ -112,6 +112,14 @@ import {
   scanResponseContracts,
   buildResponseContractFindings,
 } from '../../extensionPacks/frameworkAdapters/springClassic/responseContractScanner';
+// Detect-or-flag custom (de)serializers (Spec 2026-06-22 code-evidence format
+// extraction, Task Group 3 / follow-up wiring): the pure detector finds
+// @JsonSerialize / @JsonDeserialize(using=Class) DTO fields whose wire format
+// is hidden in a separate class; the builder emits the matching evidence_gap
+// Finding. Wired here as a cross-file pass (peer of the response-contract /
+// outbound-integration passes) -- the detector had no production caller before.
+import { detectCustomSerializerFields } from '../../extensionPacks/frameworkAdapters/springClassic/requestContractScanner';
+import { buildRequestFormatUnresolvedFinding } from '../emissionSources';
 
 const FINDING_SOURCE = 'spring-classic-framework-pack';
 const CREATED_BY_STAGE = 'deterministic_spring_classic_analysis';
@@ -1241,6 +1249,49 @@ function scanOutboundIntegrations(
   return out;
 }
 
+/**
+ * Cross-file pass (Spec 2026-06-22 Spring Classic code-evidence format
+ * extraction, Task Group 3 / follow-up wiring): detect request-body DTO fields
+ * that hide their wire format inside a CUSTOM Jackson (de)serializer
+ * (@JsonSerialize / @JsonDeserialize(using=SomeClass.class)) and emit one
+ * `request_format_unresolved` evidence_gap Finding (severity info) per hit,
+ * carrying the field + endpoint + referenced serializer class. The format is
+ * NEVER guessed -- the field is flagged for manual review.
+ *
+ * Runs ONCE across the whole IR set (it walks the controller -> @RequestBody
+ * DTO path cross-file), AFTER the per-file passes -- a peer of the
+ * response-contract / outbound-integration cross-file passes above. Best-effort:
+ * capped at MAX_FINDINGS_PER_TYPE_PER_RUN and soft-fails as a whole so a
+ * malformed IR cannot poison the run. Emits via the SAME FindingEmitInput ->
+ * caller-emit path every other source uses (no parallel emitter).
+ */
+function scanCustomSerializerFindings(
+  irFiles: Map<string, SourceFileIR>,
+  counts: Map<string, number>,
+): FindingEmitInput[] {
+  const out: FindingEmitInput[] = [];
+  try {
+    const files = Array.from(irFiles.values());
+    for (const hit of detectCustomSerializerFields(files)) {
+      const finding = buildRequestFormatUnresolvedFinding({
+        field: hit.field,
+        endpoint: hit.endpoint,
+        serializerClass: hit.serializerClass,
+      });
+      if (!underCap(counts, finding.findingType)) break;
+      out.push(finding);
+      bumpCap(counts, finding.findingType);
+    }
+  } catch (err) {
+    console.warn(
+      `[springClassicFindingScanner] custom-(de)serializer pass failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    console.warn(`[diag-pack] scanner=spring_classic soft_fail=true category=request_format_unresolved_error`);
+  }
+  return out;
+}
+
 export function runSpringClassicFindingScanner(
   input: PackFindingScannerInput,
 ): FindingEmitInput[] {
@@ -1277,6 +1328,11 @@ export function runSpringClassicFindingScanner(
   // per-file passes -- a peer of the endpoint-data-effect + response-contract
   // cross-file passes above.
   collected.push(...scanOutboundIntegrations(input.irFiles, counts));
+  // Custom-(de)serializer detect-or-flag Findings (Spec 2026-06-22 code-evidence
+  // format extraction, Task Group 3 / follow-up wiring). Run ONCE across the
+  // whole IR set (cross-file controller -> @RequestBody DTO walk), AFTER the
+  // per-file passes -- a peer of the cross-file passes above.
+  collected.push(...scanCustomSerializerFindings(input.irFiles, counts));
 
   for (const [type, count] of counts) {
     if (count >= MAX_FINDINGS_PER_TYPE_PER_RUN) {

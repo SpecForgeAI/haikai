@@ -535,7 +535,13 @@ export type EvidenceGapType =
   | 'scanner_failed'
   | 'non_deterministic_endpoint'
   | 'possible_entity_collision'
-  | 'deferred_inbound_surface';
+  | 'deferred_inbound_surface'
+  // 2026-06-22 Spring Classic code-evidence format extraction (Task Group 3):
+  // a field whose wire format is hidden in a custom @JsonSerialize/
+  // @JsonDeserialize(using=Class) -- detect-or-flag (never guessed). snake_case
+  // to match its siblings (the closed union is the single source of truth amvs
+  // imports; NO kebab 'request-format-unresolved' literal exists anywhere).
+  | 'request_format_unresolved';
 
 /**
  * Source I (response-contract / unresolved-auth variant): emitted by the
@@ -679,6 +685,55 @@ export function buildEvidenceGapFinding(args: {
         targetId: args.candidateId,
       },
     ],
+  };
+}
+
+/**
+ * Source H (request-format-unresolved variant): evidence gap emitted by the
+ * Spring-Classic Signal-#1 walk when a request-body DTO field hides its wire
+ * format inside a CUSTOM (de)serializer -- `@JsonSerialize` /
+ * `@JsonDeserialize(using=SomeSerializer.class)`. The concrete format lives in
+ * the referenced serializer class, which the deterministic scanner does NOT
+ * crack open, so it FLAGS the field rather than guessing a format.
+ *
+ * Spec: 2026-06-22 Spring Classic code-evidence format extraction (Task Group 3).
+ *
+ * Shape (reuses the established `evidence_gap` Finding idiom -- NOT a new shape):
+ *   - `findingType: 'evidence_gap'`, `category: 'evidence_gap'`.
+ *   - severity `'info'` -- informational; the field is captured, the gap is only
+ *     that its format cannot be statically proven (no defect).
+ *   - `detailJson.gapType: 'request_format_unresolved'`, plus the `field`, the
+ *     `endpoint`, and the referenced `serializerClass`.
+ *   - NO candidate link (run-level on its endpoint identity, mirroring the other
+ *     scanner-emitted evidence-gap variants); NO format is ever guessed.
+ *
+ * `createdByStage='findings.requestContractScanner'` so the Findings tab can
+ * filter request-format gaps by origin.
+ */
+export function buildRequestFormatUnresolvedFinding(args: {
+  /** The DTO field whose format is hidden in a custom (de)serializer. */
+  field: string;
+  /** Endpoint identity (`${httpMethod} ${fullPath}`) the field belongs to. */
+  endpoint: string;
+  /** The referenced serializer/deserializer class (never cracked open). */
+  serializerClass: string;
+}): FindingEmitInput {
+  return {
+    findingType: 'evidence_gap',
+    category: 'evidence_gap',
+    severity: 'info',
+    title: `Request format unresolved: ${args.endpoint} -- ${args.field}`,
+    summary:
+      `Field "${args.field}" on endpoint "${args.endpoint}" uses a custom (de)serializer (${args.serializerClass}); its wire format is defined in that class and was NOT statically resolved (no format guessed). Review the serializer to capture the exact request format.`,
+    detailJson: {
+      gapType: 'request_format_unresolved' satisfies EvidenceGapType,
+      field: args.field,
+      endpoint: args.endpoint,
+      serializerClass: args.serializerClass,
+    },
+    source: 'pipeline_evidence_gap',
+    createdByStage: 'findings.requestContractScanner',
+    links: [],
   };
 }
 

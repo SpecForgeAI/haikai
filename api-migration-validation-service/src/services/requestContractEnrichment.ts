@@ -78,6 +78,15 @@ export interface ParamFormat {
   location: string | null;
   format: string | null;
   pattern: string | null;
+  /**
+   * The resolved Java field/param TYPE (e.g. `LocalDate`/`BigDecimal`/`UUID`),
+   * mined by the Spring-Classic pack for an UN-annotated field (`source:
+   * 'java-type'`). Carried so the classifier code-evidence path can bucket the
+   * field from the type. A type-only entry leaves `format`/`pattern` null -- the
+   * type is NEVER stuffed into `format`/`pattern` (that keeps the seed path and the
+   * OAS-override path separable; see `applyFormatToSchema`).
+   */
+  javaType: string | null;
 }
 
 /**
@@ -136,10 +145,15 @@ export function readRequestContractFacts(
     }
   }
 
-  // param_formats[] -> request date/number FORMAT overrides (Phase 2). Each
-  // entry is { name, location, format, pattern, source }; we project the bits
-  // the OAS param schema needs. A null/blank format AND null/blank pattern is
-  // useless (nothing to override) so it is dropped.
+  // param_formats[] -> request date/number FORMAT overrides (Phase 2) PLUS
+  // Spring-Classic type-only entries (2026-06-22). Each entry is
+  // { name, location, format, pattern, source, java_type? }; we project the bits
+  // the OAS param schema + the classifier need. An entry survives ONLY when it
+  // carries a format, a pattern, OR a javaType -- an entry with NONE of the
+  // three is useless (nothing to override, nothing to classify) so it is dropped.
+  // A type-only entry passes here PURELY by virtue of javaType; its
+  // format/pattern stay null (the type is NEVER stuffed into them) so the
+  // OAS-override path (applyFormatToSchema) stays a no-op for it.
   const paramFormats: ParamFormat[] = [];
   const rawFormats = blob.param_formats ?? blob.paramFormats;
   if (Array.isArray(rawFormats)) {
@@ -151,8 +165,9 @@ export function readRequestContractFacts(
       const location = readString(entry, 'location', 'in');
       const format = readString(entry, 'format');
       const pattern = readString(entry, 'pattern');
-      if (!format && !pattern) continue;
-      paramFormats.push({ name, location, format, pattern });
+      const javaType = readString(entry, 'java_type', 'javaType');
+      if (!format && !pattern && !javaType) continue;
+      paramFormats.push({ name, location, format, pattern, javaType });
     }
   }
 
@@ -267,12 +282,24 @@ function asConcreteSchema(v: unknown): Record<string, unknown> | null {
  * `x-amvs-source: code-scan` on the schema so the override is visible to
  * `get_oas_operation_detail` and the trace.
  *
+ * REGRESSION GUARD (2026-06-22): a TYPE-ONLY entry (a Spring-Classic
+ * `source: 'java-type'` entry carrying only a `javaType`, no concrete
+ * `format`/`pattern`) must NEVER override an existing OAS `format`/`pattern`
+ * with a bare type token. We early-return a no-op unless a concrete
+ * `format`/`pattern` is present, so a type-only entry that now flows through
+ * `readRequestContractFacts` (it survives the line-154 drop via `javaType`)
+ * cannot mutate `schema.format`/`schema.pattern` or stamp `x-amvs-source`.
+ * Concrete-format entries keep overriding exactly as before.
+ *
  * @returns true when something was actually overridden.
  */
 function applyFormatToSchema(
   schema: Record<string, unknown>,
   fmt: ParamFormat,
 ): boolean {
+  // No concrete format/pattern -> nothing to override (a javaType-only entry
+  // is a no-op here; the type token never becomes a wire format).
+  if (!fmt.pattern && !fmt.format) return false;
   let changed = false;
   if (fmt.pattern) {
     if (schema.pattern !== fmt.pattern) changed = true;

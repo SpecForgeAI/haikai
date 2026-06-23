@@ -1,0 +1,38 @@
+TITLE: Spring Classic code-evidence format extraction — Java types + global date-format (feeds the data-type-defaults classifier).
+
+PROBLEM: The API Baseline wizard Step 5 "Data-type formats" → "Code Format(s)" column is bare for Spring Classic codebases because `request_contract.param_formats` is populated ONLY from `@JsonFormat`/`@DateTimeFormat` annotations, which classic Spring code rarely uses. Two rich signals go unexploited:
+(1) The Java field/param TYPE is already captured by the tree-sitter Java AST and even rides on `request_contract.params[].type`, but it is DROPPED when building `param_formats`, and the amvs classifier's code-evidence path hard-sets `oasType: null` — so the type never reaches data-type classification from the code scan (even though the classifier already buckets integer/decimal/boolean from a type).
+(2) The real wire date format (e.g. `dd-MMM-yyyy`) in classic apps lives in converters / `ObjectMapper.setDateFormat` / `@InitBinder` + `CustomDateEditor` / `new SimpleDateFormat("…")` / `DateTimeFormatter.ofPattern("…")` / `spring.jackson.date-format` — NONE of which is scanned today (the only `SimpleDateFormat` touch is a CVE/migration import flag).
+
+GOAL: extract data-type formats from where Spring Classic actually puts them — the Java types and the ONE global converter-level date format — and feed them into `request_contract.param_formats` → the amvs classifier's code-evidence column + Col-4 seed. Deterministic, no LLM, no DB/schema change (additive loose JSONB).
+
+DECISIONS ALREADY MADE (from the review/discussion — do NOT relitigate):
+1. CORE scope = signal #1 + signal #2. #3 (`@Pattern(regexp=)` → format promotion) is a FAST-FOLLOW. Response-side serialization formats: decide in shaping (default: defer to keep v1 request-side).
+2. #1 Java TYPE → data-type category: carry the param/field Java type onto `param_formats` (EMIT an entry even when NO format annotation exists), map Java type → category — LocalDate→date; LocalDateTime/Instant/OffsetDateTime/ZonedDateTime/Timestamp→datetime; LocalTime→time; BigDecimal/double/float→decimal; Long/Integer/int/long/short→numeric_id; UUID→uuid; Boolean/boolean→boolean; Java enum→enum; everything else→string/unclassified — and WIRE it into the classifier's code-evidence path (supply the type so `classifyField` fires for numeric_id/decimal/boolean from CODE, plus the LocalDate→date etc. date mappings). The type is already in the AST/IR; this is mostly wiring a discarded value through.
+3. #2 ONE project-wide inferred wire date-format: a new scanner pass that finds the global date pattern from `@Configuration` `ObjectMapper.setDateFormat("…")` / `Jackson2ObjectMapperBuilder`; `@InitBinder` + `CustomDateEditor` / `registerCustomEditor(Date.class, new SimpleDateFormat("…"))`; bare `new SimpleDateFormat("…")` / `DateTimeFormatter.ofPattern("…")` literals in util/converter classes; `spring.jackson.date-format` in application.properties/yml. Use it as the FORMAT for type-only date/datetime fields + the Col-4 seed (code wins position 1). The custom `@JsonSerialize/@JsonDeserialize(using=Class)` case (format hidden in a separate class) is the hard case → DETECT-OR-FLAG (emit a "format unresolved" discovery Finding rather than guess).
+4. FEASIBILITY (verified): tree-sitter Java AST yields the types trivially; `@Configuration setDateFormat` + properties are AST/structured-reachable; method-body cases (`@InitBinder`/`new SimpleDateFormat`/`ofPattern`) use `rawContent` regex — an ESTABLISHED idiom in the pack (`responseContractScanner.parseSecurityJavaConfig` ~494-514, `readStatusCodes`). No LLM. No DB/schema change.
+5. FLOW/PERSISTENCE (additive, no schema change): scanner (`requestContractScanner.ts` `param_formats` + a new global-date-format pass) → `candidate.data.request_contract` → mcp-server `candidateSaveBackService.convertCandidateToEntity` case 'endpoints' (passes `data.request_contract` verbatim onto `entity.request_contract`) → AMS `EndpointEntity.request_contract` (jsonb) → amvs `requestContractEnrichment.readRequestContractFacts` → `dataTypeClassifier` code-evidence path.
+
+GROUNDED REUSE TARGETS (verified):
+- discovery-service springClassic: `requestContractScanner.ts` — `ParamFormatEntry` (~170-177: `{name,location,format,pattern,source}` — ADD a `javaType`), `readParamFormats` (~479-515: emit type-only entries when no annotation), `readFormatAnnotation` (~419-452: annotation path unchanged), `RequestParamEntry`/`params[].type` already carries the type (~157-162). The IR has the type: `ParameterIR.type`/`FieldIR.type` (`languageIR.ts` ~34-48), `extractTypeText` (`astUtils.ts` ~204-206), `toParameterIR`/`toFieldIR` (`extract.ts` ~53-69). rawContent-regex idiom: `responseContractScanner.ts` `parseSecurityJavaConfig` (~494-514). Config files reachable: `fileFilter.ts` `filterConfigFiles`/`isConfigFile` (~81-114). Existing SimpleDateFormat import flag (reference): `findings/packFindingScanners/javaFindingScanner.ts` (~92-94). Java AST: `languageExtractors/java/javaParser.ts`. Adapter attach point: `springClassic/index.ts` (~2542-2552 `attachRequestContractsToCandidates`; `extractRequestParams` ~656-675).
+- mcp-server `candidateSaveBackService.ts` `convertCandidateToEntity` case 'endpoints' (~1164; request_contract passthrough ~1232-1236).
+- AMS `EndpointEntity.request_contract` (~142-144, jsonb).
+- amvs `requestContractEnrichment.ts` `readRequestContractFacts` (~104-163; `ParamFormat` ~75-81 — ADD `javaType`; the drop-when-no-format-and-no-pattern at ~154 must ALLOW type-only entries through); `dataTypeClassifier.ts` `evidenceFromCode` (~341-354 — currently `oasType:null`; set from `javaType`) + `classifyField` (~263-330) + `seedColumnFour` (code wins).
+
+OPEN QUESTIONS for shaping:
+- The exact Java-type→category mapping table (primitives, boxed wrappers, `List<>`/arrays, qualified names like `java.time.LocalDate`, unknown → string/skip).
+- How #1 and #2 COMPOSE: a type-only date field's Col-2 code FORMAT should be the global inferred date-format (#2) when available, else just the category/type token (no concrete format); confirm the seed precedence (global date-format seeds Col-4 for dates; type token does NOT seed a bogus format — mirror the earlier seed/display split).
+- #2 precedence when multiple date-format sources disagree (ObjectMapper vs @InitBinder vs property): pick one with a precedence order? surface all as distinct code formats? confidence/provenance?
+- WHERE the global date-format attaches on `request_contract` (a top-level `inferred_date_format` per endpoint? a run-level fact? written as the `format` on type-only date `param_formats` entries?).
+- RESPONSE side (`responseContractScanner` serialization) in this spec or deferred.
+- The "format unresolved" custom-(de)serializer Finding: which finding type/gapType + severity.
+- Must NOT regress the EXISTING annotation→OAS-override consumer (`enrichInventoryWithRequestContracts`) when type-only `param_formats` entries now appear (an entry with a `javaType` but no concrete `format`/`pattern` must NOT override an OAS format with a type token).
+- Confidence/provenance tagging for the new type/global-format evidence vs the annotation evidence.
+
+NON-GOALS:
+- The data-type-defaults UI/classifier feature itself (already built; this only feeds it richer code evidence).
+- Other framework packs (non-Spring-Classic adapters) — Spring Classic only for v1 (note others as future).
+- LLM-based format inference (deterministic only).
+- Resolving formats hidden inside arbitrary custom (de)serializer classes (detect-or-flag only).
+- DB/schema changes (additive JSONB only).
+- @Pattern→format promotion (#3) unless the shaper finds it trivially foldable.

@@ -31,7 +31,7 @@
 import type { LanguagePack, TechHints } from '../../packTypes';
 import type { SourceFileIR } from '../../languageIR';
 import { extractJavaIR } from '../../languageExtractors/java';
-import { filterJavaFiles, isTestFile } from '../../languageExtractors/java/fileFilter';
+import { filterJavaFiles, filterConfigFiles, isTestFile } from '../../languageExtractors/java/fileFilter';
 import { parseHbmXml, isHbmXmlFile, type HbmClassMapping } from '../../languageExtractors/java/hbmXmlParser';
 import { mergeHbmMappingsIntoIr } from '../../languageExtractors/java/hbmXmlMerge';
 import { parseSpringBeansXml, isSpringBeansXml } from '../../languageExtractors/java/springBeansXmlParser';
@@ -259,6 +259,51 @@ export const javaLangPack: LanguagePack = {
       console.log(
         `[java-lang] Admitted ${webXmlAdmitted} web.xml deployment descriptor(s) ` +
           `with rawContent for servlet-mapping detection.`,
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Spring config-file admission (application[-profile].{properties,yml,yaml}).
+    //
+    // Spec: 2026-06-22 Spring Classic code-evidence format extraction --
+    // global-date-format ladder, rank-1 follow-up wiring.
+    //
+    // The global-date-format resolver (springClassic/globalDateFormatScanner.ts)
+    // reads spring.jackson.date-format off application.properties / .yml at the
+    // TOP of its precedence ladder (rank 1), but those config files never reached
+    // the IR files array the spring-classic adapter receives -- only .java,
+    // spring-bean .xml, WADL/WSDL/XSD, and web.xml were admitted -- so the
+    // rank-1 rung was inert in production (only the .java rungs fired). Admit
+    // the Spring config files here via the existing filterConfigFiles helper
+    // (its intended purpose; it matches application[-profile].{yml,yaml,
+    // properties}) so the resolver can read them.
+    //
+    // Admission is intentionally minimal and mirrors the WADL / web.xml branches
+    // above: structural IR fields stay EMPTY (no classes / functions), so the
+    // Java scanners that iterate file.classes simply see nothing for a config
+    // file -- it is NOT fed to the tree-sitter Java parser. rawContent carries
+    // the verbatim source so resolveGlobalDateFormat (and any future config
+    // reader) can scan it. language=spring-config is the discriminator.
+    // Test-file exclusion + no-clobber guard preserved.
+    let configFilesAdmitted = 0;
+    for (const [filePath, src] of filterConfigFiles(sourceFiles)) {
+      if (isTestFile(filePath)) continue;
+      if (irFiles.has(filePath)) continue;
+      irFiles.set(filePath, {
+        filePath,
+        language: 'spring-config',
+        packageOrNamespace: null,
+        imports: [],
+        classes: [],
+        functions: [],
+        rawContent: src,
+      });
+      configFilesAdmitted++;
+    }
+    if (configFilesAdmitted > 0) {
+      console.log(
+        `[java-lang] Admitted ${configFilesAdmitted} Spring config file(s) ` +
+          `(application*.{properties,yml,yaml}) with rawContent for deterministic pack scanning of spring config.`,
       );
     }
 

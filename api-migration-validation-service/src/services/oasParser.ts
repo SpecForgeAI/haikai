@@ -296,6 +296,55 @@ export async function parseOasFromObject(spec: object): Promise<ParsedOasInvento
   return buildInventory(dereferenced);
 }
 
+/**
+ * Merge PathItem-level `parameters` into a single operation's `parameters`.
+ *
+ * OAS allows `parameters` on the PathItem object; per the spec they are shared
+ * by EVERY operation on that path and are inherited by each operation, with an
+ * operation-level parameter OVERRIDING a path-level one on a `(name, in)`
+ * collision. Downstream consumers (notably `extractContractFieldFormats`, which
+ * reads `op.parameters` to surface Col-3 contract formats) only see the stored
+ * operation object, so a path-level `{id}` param would otherwise be dropped.
+ *
+ * Defensive + minimal: either array may be absent; `$ref` / non-object entries
+ * are passed through untouched (dereference has already run upstream, so refs
+ * are not expected, but a malformed entry must never throw). Returns a NEW array
+ * when a merge happens, the operation's own array (or undefined) otherwise --
+ * the path-level array is never mutated.
+ */
+function mergePathItemParameters(
+  op: OpenAPIV3.OperationObject,
+  pathLevel: OpenAPIV3.PathItemObject['parameters'],
+): OpenAPIV3.OperationObject {
+  if (!Array.isArray(pathLevel) || pathLevel.length === 0) return op;
+  const opParams = Array.isArray(op.parameters) ? op.parameters : [];
+
+  // Key an operation-level param by `name|in` so a path-level param with the
+  // same identity is skipped (operation-level wins per the OAS spec). `$ref` /
+  // malformed entries have no stable key, so they never suppress a path param.
+  const keyOf = (param: unknown): string | null => {
+    if (!param || typeof param !== 'object' || '$ref' in (param as object)) return null;
+    const rec = param as { name?: unknown; in?: unknown };
+    if (typeof rec.name !== 'string' || typeof rec.in !== 'string') return null;
+    return `${rec.name}|${rec.in}`;
+  };
+
+  const seen = new Set<string>();
+  for (const param of opParams) {
+    const k = keyOf(param);
+    if (k) seen.add(k);
+  }
+
+  // Inherit each path-level param the operation did not already declare.
+  const inherited = pathLevel.filter((param) => {
+    const k = keyOf(param);
+    return k === null ? true : !seen.has(k);
+  });
+  if (inherited.length === 0) return op;
+
+  return { ...op, parameters: [...opParams, ...inherited] };
+}
+
 function buildInventory(spec: OpenAPI.Document): ParsedOasInventory {
   if (!isOasV3(spec)) {
     throw new Error(
@@ -308,8 +357,11 @@ function buildInventory(spec: OpenAPI.Document): ParsedOasInventory {
     if (!pathItem) continue;
     const item = pathItem as OpenAPIV3.PathItemObject;
     for (const method of HTTP_METHODS) {
-      const op = item[method] as OpenAPIV3.OperationObject | undefined;
-      if (!op) continue;
+      const rawOp = item[method] as OpenAPIV3.OperationObject | undefined;
+      if (!rawOp) continue;
+      // Inherit PathItem-level `parameters` (operation-level wins on name+in)
+      // so shared path params (e.g. `{id}`) are not dropped from the stored op.
+      const op = mergePathItemParameters(rawOp, item.parameters);
       const operationId = op.operationId ?? synthesizeOperationId(method, routePath);
       operations.push({
         operationId,

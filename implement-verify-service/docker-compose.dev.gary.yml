@@ -1,5 +1,5 @@
 # Docker Compose for Standards Extractor API - Development
-# Usage: docker-compose -f docker-compose.dev.yml up --build
+# Usage: docker-compose -f docker-compose.dev.gary.yml up --build
 # Features: Hot reload via source code volume mounts
 
 services:

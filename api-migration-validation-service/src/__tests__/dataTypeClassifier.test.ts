@@ -270,6 +270,72 @@ test('no classifiable data types yields empty rows', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 8b. Contract TYPE fallback (bug fix 2026-06-22): a classified field whose
+//     contract declared only a `type` (no `format`/`pattern`) now shows that
+//     TYPE as its Col-3 contract-format label, instead of rendering an em-dash.
+//     This is the DISPLAY label only -- the Col-4 seed is covered in 8c.
+// ---------------------------------------------------------------------------
+test('contract type-only classified field shows its TYPE as the contract-format label', () => {
+  // `customerId`: classifies as numeric_id from `type: integer` (no format). The
+  // contract-format column now carries the declared type token `integer`.
+  const numericRows = classify({
+    oasOperations: [oasOpWithParams([{ name: 'customerId', in: 'path', type: 'integer' }])],
+  });
+  const numericId = rowFor(numericRows, 'numeric_id');
+  expect(numericId).toBeDefined();
+  expect(numericId!.contractFormats).toContain('integer');
+  // Transparency: the contributing field carries the same display label.
+  expect(numericId!.contributingFields).toEqual([
+    { name: 'customerId', location: 'path', codeFormat: null, contractFormat: 'integer' },
+  ]);
+
+  // A date field whose contract is merely `type: string` (no format) still
+  // CLASSIFIES via its name hint, and Col-3 now shows the declared type `string`.
+  const dateRows = classify({
+    oasOperations: [oasOpWithParams([{ name: 'orderDate', type: 'string' }])],
+  });
+  const date = rowFor(dateRows, 'date');
+  expect(date).toBeDefined();
+  expect(date!.contractFormats).toContain('string');
+
+  // GUARD (unchanged): a bare `type: string` field with NO id/date name hint
+  // still does NOT classify -- no positive signal -> no row at all.
+  expect(classify({ oasOperations: [oasOpWithParams([{ name: 'label', type: 'string' }])] })).toEqual(
+    [],
+  );
+});
+
+// ---------------------------------------------------------------------------
+// 8c. SEED/DISPLAY split (bug fix 2026-06-22): the Col-3 type fallback must NOT
+//     leak into the Col-4 SEED. A date field whose contract is only `type:
+//     string` shows `string` in Col-3 but its SEED falls through to the
+//     per-category standard guess (`yyyy-MM-dd`), never the bare type `string`.
+//     A date field WITH a real `format: date` still seeds from that format.
+// ---------------------------------------------------------------------------
+test('the contract TYPE fallback is display-only and never seeds Col-4 with a bare type', () => {
+  // type-only date: Col-3 shows `string`, but the SEED is the standard date
+  // guess -- the type fallback must not become the seeded default.
+  const typeOnly = classify({
+    oasOperations: [oasOpWithParams([{ name: 'orderDate', type: 'string' }])],
+  });
+  const typeOnlyDate = rowFor(typeOnly, 'date');
+  expect(typeOnlyDate).toBeDefined();
+  expect(typeOnlyDate!.contractFormats).toContain('string');
+  // Seed is the standard guess, NOT 'string'.
+  expect(typeOnlyDate!.defaultFormat).toBe('yyyy-MM-dd');
+  expect(typeOnlyDate!.defaultFormat).not.toBe('string');
+
+  // A real `format: date` still seeds from that format (unchanged behaviour).
+  const withFormat = classify({
+    oasOperations: [oasOpWithParams([{ name: 'orderDate', type: 'string', format: 'date' }])],
+  });
+  const withFormatDate = rowFor(withFormat, 'date');
+  expect(withFormatDate).toBeDefined();
+  expect(withFormatDate!.contractFormats).toContain('date');
+  expect(withFormatDate!.defaultFormat).toBe('date');
+});
+
+// ---------------------------------------------------------------------------
 // extractContractFieldFormats: covers requestBody body-property projection.
 // ---------------------------------------------------------------------------
 test('contract extraction covers requestBody schema properties (body location)', () => {
@@ -405,8 +471,11 @@ test('preview endpoint classifies code + contract evidence into rows', async () 
     { name: 'createdOn', location: 'query', code_format: 'dd-MMM-yyyy', contract_format: null },
   ]);
 
-  // Contract-derived numeric_id row from the integer path param.
+  // Contract-derived numeric_id row from the integer path param. The param
+  // declared only `type: integer` (no explicit `format`), so Col-3 now shows the
+  // declared TYPE as the contract-format label instead of an em-dash.
   expect(numericId).toBeDefined();
+  expect(numericId!.contract_formats).toContain('integer');
 
   // ONLY discovered categories -- never an empty one (e.g. no boolean row).
   expect(rows.find((r) => r.category === 'boolean')).toBeUndefined();
