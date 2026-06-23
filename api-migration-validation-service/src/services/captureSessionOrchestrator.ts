@@ -26,6 +26,10 @@ import {
   deriveSequenceVolatilePaths,
   type SequenceJson,
 } from './sequenceAssembly';
+import {
+  classifyObservedBehaviour,
+  type ResponseSemanticsConfig,
+} from './responseSemantics';
 import { createTracer } from '../trace';
 // Mode 1(b) Postman + LLM delta (Spec 2026-06-23 Import a Postman Collection
 // into Capture, R6). The two-stage bounded subtraction (code pre-filter +
@@ -545,7 +549,7 @@ export function seedsForOperation(
  * NEGATIVE scenario (its goal IS an error) survives while a corrected mistake on
  * a POSITIVE scenario does not.
  */
-export type ScenarioExpectedStatus = 'success' | 'not_found' | 'client_error';
+export type ScenarioExpectedStatus = 'success' | 'not_found' | 'client_error' | 'auth';
 
 export interface GeneratedScenario {
   name: string;
@@ -595,34 +599,38 @@ export const NON_CANONICAL_REVIEWER_NOTE = 'superseded_non_canonical';
  * Spec: 2026-06-17 Intent-Driven Canonical Capture.
  */
 export function selectCanonicalCapture(
-  captures: ReadonlyArray<{ captureId: string; status: number | null }>,
+  captures: ReadonlyArray<{ captureId: string; status: number | null; body?: unknown }>,
   expectedStatus: ScenarioExpectedStatus,
+  config?: ResponseSemanticsConfig | null,
 ): { captureId: string; status: number | null } | null {
-  const is2xx = (s: number | null): boolean => s !== null && s >= 200 && s < 300;
-  const is4xx = (s: number | null): boolean => s !== null && s >= 400 && s < 500;
-  const is404 = (s: number | null): boolean => s === 404;
+  // Intent-driven canonical selection, now SEMANTICS-aware (Spec 2026-06-23).
+  // The LLM-declared act-step case (precedence c) is handled by the CALL SITE
+  // (it passes the pinned capture directly and never reaches here). Here:
+  //   (b) the LAST capture whose OBSERVED behaviour matches the scenario's
+  //       intended class -- a 200-with-NO_DATA_FOUND body IS the `not_found`
+  //       behaviour, a 500 validation-reject IS the `client_error` behaviour,
+  //       so the legacy API's non-REST response is KEPT instead of discarded;
+  //   (a) failing an intent match, the LAST capture that is a USABLE ORACLE
+  //       (a real completed response, NOT a transport failure / unrecognized
+  //       5xx crash) -- so a scenario's sole completed round-trip is NEVER
+  //       dropped.
+  // Returns null ONLY when there is no usable oracle at all (every capture is a
+  // transport failure or an unrecognized 5xx crash); the caller then counts the
+  // scenario errored. Body-aware but tolerant of captures with no body (older
+  // callers / mocks): an absent body classifies by HTTP status class.
+  const classifyAt = (i: number) =>
+    classifyObservedBehaviour(captures[i].status, captures[i].body, config);
 
-  // Walk from the end so the FIRST match is the LAST (most-recent / corrected)
-  // capture, without mutating the caller's array.
-  const lastMatching = (
-    pred: (s: number | null) => boolean,
-  ): { captureId: string; status: number | null } | null => {
-    for (let i = captures.length - 1; i >= 0; i -= 1) {
-      if (pred(captures[i].status)) return captures[i];
-    }
-    return null;
-  };
-
-  switch (expectedStatus) {
-    case 'success':
-      return lastMatching(is2xx);
-    case 'not_found':
-      return lastMatching(is404) ?? lastMatching(is4xx);
-    case 'client_error':
-      return lastMatching(is4xx);
-    default:
-      return null;
+  // (b) intent match, most-recent first.
+  for (let i = captures.length - 1; i >= 0; i -= 1) {
+    const ob = classifyAt(i);
+    if (ob.observed && ob.bucket === expectedStatus) return captures[i];
   }
+  // (a) last usable oracle regardless of intent (never drop a real round-trip).
+  for (let i = captures.length - 1; i >= 0; i -= 1) {
+    if (classifyAt(i).observed) return captures[i];
+  }
+  return null;
 }
 
 // ===========================================================================
@@ -646,6 +654,13 @@ export interface CoverageDimensionResult {
   canonical_capture_id: string | null;
   /** Honest human-readable reason on a MISS; null when achieved. */
   reason: string | null;
+  /**
+   * NON-SCORING observation/deviation note (Spec 2026-06-23): a REST-convention
+   * deviation on an ACHIEVED dimension (e.g. "returns 200 for a missing
+   * resource", "no auth enforced") OR a crash anomaly on a MISS. Never affects
+   * `achieved` / the score; drives the Observations display only.
+   */
+  observation: string | null;
 }
 
 /** Per-endpoint coverage: the rubric dimensions + the achieved/total fraction. */
@@ -687,6 +702,11 @@ export interface CoverageSummary {
   dimensions_achieved: number;
   per_endpoint: EndpointCoverageResult[];
   auth_coverage: AuthCoverageResult;
+  /**
+   * NON-SCORING aggregated REST-convention deviations / anomalies across all
+   * dimensions (Spec 2026-06-23). Display-only; NOT part of `overall_score`.
+   */
+  observations: string[];
 }
 
 /**
@@ -697,7 +717,7 @@ export interface CoverageSummary {
  */
 export type ScenarioOutcomesByName = ReadonlyMap<
   string,
-  ReadonlyArray<{ captureId: string; status: number | null }>
+  ReadonlyArray<{ captureId: string; status: number | null; body?: unknown }>
 >;
 
 /**
@@ -753,11 +773,29 @@ export function scoreEndpointCoverage(
   op: Pick<OperationDto, 'operation_id' | 'method' | 'path'>,
   scenarios: ReadonlyArray<GeneratedScenario>,
   outcomesByName: ScenarioOutcomesByName,
+  config?: ResponseSemanticsConfig | null,
 ): EndpointCoverageResult {
   const dimensions: CoverageDimensionResult[] = scenarios.map((scenario) => {
     const captures = outcomesByName.get(scenario.name) ?? [];
-    const canonical = selectCanonicalCapture(captures, scenario.expectedStatus);
+    const canonical = selectCanonicalCapture(captures, scenario.expectedStatus, config);
     if (canonical) {
+      // ACHIEVED == behaviour observed. Derive a NON-SCORING deviation note from
+      // the canonical capture's observed semantics: a response-level deviation
+      // (e.g. 200-for-missing, 500-for-bad-input) or, for an auth scenario whose
+      // observed behaviour is NOT an auth rejection, "no auth enforced".
+      const canon = captures.find((c) => c.captureId === canonical.captureId);
+      const ob = canon
+        ? classifyObservedBehaviour(canon.status, canon.body, config)
+        : null;
+      let observation = ob?.observation ?? null;
+      if (
+        !observation &&
+        scenario.expectedStatus === 'auth' &&
+        ob &&
+        ob.bucket !== 'auth'
+      ) {
+        observation = `no auth enforced on ${op.method} ${op.path}`;
+      }
       return {
         name: scenario.name,
         type: scenario.type,
@@ -765,8 +803,15 @@ export function scoreEndpointCoverage(
         achieved: true,
         canonical_capture_id: canonical.captureId,
         reason: null,
+        observation,
       };
     }
+    // MISS == no usable oracle (only transport failures / unrecognized 5xx
+    // crashes). Surface the crash anomaly as a non-scoring observation.
+    const last = captures[captures.length - 1];
+    const anomaly = last
+      ? classifyObservedBehaviour(last.status, last.body, config).anomaly
+      : null;
     return {
       name: scenario.name,
       type: scenario.type,
@@ -774,6 +819,7 @@ export function scoreEndpointCoverage(
       achieved: false,
       canonical_capture_id: null,
       reason: coverageMissReason(scenario, captures),
+      observation: anomaly,
     };
   });
 
@@ -783,8 +829,8 @@ export function scoreEndpointCoverage(
     operation_id: op.operation_id,
     method: op.method,
     path: op.path,
-    // Score is display-only this iteration. An endpoint with no generated
-    // dimensions (should not happen -- happy_path is always added) scores 0.
+    // Score is display-only. An endpoint with no generated dimensions (should
+    // not happen -- happy_path is always added) scores 0.
     score: total > 0 ? achieved / total : 0,
     dimensions,
   };
@@ -815,12 +861,22 @@ export function assembleCoverageSummary(
   // The auth dimension always contributes exactly 1 to the denominator.
   const dimensionsTotal = endpointTotal + 1;
   const dimensionsAchieved = endpointAchieved + (authCoverage.achieved ? 1 : 0);
+  // NON-SCORING: aggregate every dimension's deviation/anomaly note into a
+  // deduped observations list. Display-only; never enters the score arithmetic.
+  const observations = Array.from(
+    new Set(
+      perEndpoint
+        .flatMap((e) => e.dimensions.map((d) => d.observation))
+        .filter((o): o is string => o !== null && o !== undefined),
+    ),
+  );
   return {
     overall_score: dimensionsTotal > 0 ? dimensionsAchieved / dimensionsTotal : 0,
     dimensions_total: dimensionsTotal,
     dimensions_achieved: dimensionsAchieved,
     per_endpoint: [...perEndpoint],
     auth_coverage: authCoverage,
+    observations,
   };
 }
 
@@ -961,9 +1017,14 @@ const MAX_ENUM_VALUES_PER_PARAM = 4;
 function classifyExpectedFromName(name: string): ScenarioExpectedStatus {
   const n = (name ?? '').toLowerCase();
   if (n.includes('404') || n.includes('not_found') || n.includes('notfound')) return 'not_found';
+  // Auth-negative scenarios get their OWN bucket (Spec 2026-06-23) so a
+  // "200 = no auth enforced" response is captured as behaviour + surfaced as an
+  // observation, NOT folded into client_error (removes the prior per-endpoint
+  // vs session-level auth double-count).
+  if (n.includes('auth')) return 'auth';
   if (
     n.includes('400') || n.includes('bad') || n.includes('invalid') ||
-    n.includes('auth') || n.includes('validation') || n.includes('error')
+    n.includes('validation') || n.includes('error')
   ) {
     return 'client_error';
   }
@@ -1253,6 +1314,11 @@ export async function orchestrateCaptureSession(
   // `selectAuthProbeEndpoint` filters out templated paths).
   const authProbeCandidates: AuthProbeCandidate[] = [];
   let coverageSummary: CoverageSummary | null = null;
+  // Per-API response-semantics config (Spec 2026-06-23). null === built-in
+  // default vocabulary (the valid empty state). TG4 threads the operator-
+  // confirmed per-session config here (mirroring `session.dataTypeDefaultsJson`).
+  const semanticsConfig: ResponseSemanticsConfig | null =
+    (session.behaviourSemanticsConfigJson as ResponseSemanticsConfig | null | undefined) ?? null;
 
   // ---- Pre-flight: secrets must exist (purged on terminal => fail fast)
   const secrets = secretsStore.get(session.id);
@@ -1499,7 +1565,15 @@ export async function orchestrateCaptureSession(
         // unchanged.
         const canonical = actStepCapture
           ? actStepCapture
-          : selectCanonicalCapture(scenarioCaptures, scenario.expectedStatus);
+          : selectCanonicalCapture(
+              scenarioCaptures.map((c) => ({
+                captureId: c.captureId,
+                status: c.status,
+                body: c.data?.responseBody,
+              })),
+              scenario.expectedStatus,
+              semanticsConfig,
+            );
 
         // Coverage accumulation: snapshot this scenario's ordered captures by
         // name (copy -- the array is reset on the next `beginScenario`). The
@@ -1508,7 +1582,11 @@ export async function orchestrateCaptureSession(
         // selection above (no second definition of coverage).
         outcomesByName.set(
           scenario.name,
-          scenarioCaptures.map((c) => ({ captureId: c.captureId, status: c.status })),
+          scenarioCaptures.map((c) => ({
+            captureId: c.captureId,
+            status: c.status,
+            body: c.data?.responseBody,
+          })),
         );
 
         let droppedCount = 0;
@@ -1522,9 +1600,11 @@ export async function orchestrateCaptureSession(
             await safeRejectNonCanonicalCapture(archClient, session.projectId, cap.captureId);
           }
         } else {
-          // No capture matched the intended outcome -- the scenario errored.
-          // Reject ALL of its captures as non-canonical so none reach the
-          // baseline or the human review's default view.
+          // No USABLE oracle at all -- every capture was a transport failure or
+          // an unrecognized 5xx crash (a 200-for-missing / 500-validation-reject
+          // is now KEPT as the canonical, not dropped). The scenario genuinely
+          // errored; reject ALL its captures so a pure crash / transport failure
+          // does not reach the baseline or the review default view.
           scenariosErrored += 1;
           for (const cap of scenarioCaptures) {
             droppedCount += 1;
@@ -1592,7 +1672,7 @@ export async function orchestrateCaptureSession(
 
       // Operation finished: score its rubric from the accumulated per-scenario
       // outcomes (PURE scorer reads the SAME `scenarios` array generation used).
-      const endpointCoverage = scoreEndpointCoverage(op, scenarios, outcomesByName);
+      const endpointCoverage = scoreEndpointCoverage(op, scenarios, outcomesByName, semanticsConfig);
       perEndpointCoverage.push(endpointCoverage);
 
       // Register this endpoint as an auth-probe candidate when it is safe to

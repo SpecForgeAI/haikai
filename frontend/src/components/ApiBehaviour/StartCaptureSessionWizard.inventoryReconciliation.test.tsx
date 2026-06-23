@@ -443,6 +443,11 @@ describe('409 override flow on Start (Task 4.1e)', () => {
 
     renderWizard();
     await driveWizardToStep5();
+    // driveWizardToStep5 auto-skips the empty Data-type preview to the Response-
+    // semantics step (step 6); advance once more (6 -> 7) to reach Start.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
+    });
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-start'));

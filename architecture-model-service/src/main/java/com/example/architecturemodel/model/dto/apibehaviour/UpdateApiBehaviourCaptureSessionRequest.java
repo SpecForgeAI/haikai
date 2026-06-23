@@ -93,8 +93,65 @@ public record UpdateApiBehaviourCaptureSessionRequest(
      * "field omitted" (PATCH-no-op), never "clear the map"; null-guarded in
      * the service update per the PATCH rule above.
      */
-    Map<String, String> dataTypeDefaultsJson
+    Map<String, String> dataTypeDefaultsJson,
+    /**
+     * Per-session operator-confirmed response-semantics config (Semantics-aware
+     * API Behaviour Baseline coverage, 2026-06-23, changeset 196) -- a
+     * structured JSON object mirroring the validation service's
+     * {@code ResponseSemanticsConfig}. PATCHed by the capture wizard's new
+     * semantics step. {@code null} (the whole field) means "field omitted"
+     * (PATCH-no-op), never "clear the config"; null-guarded in the service
+     * update per the PATCH rule above. JSONB; snake_case wire (AMS default).
+     */
+    Map<String, Object> behaviourSemanticsConfigJson
 ) {
+
+    /**
+     * Backward-compatible constructor preserving the pre-behaviour-semantics
+     * canonical signature (ends at {@code dataTypeDefaultsJson}; no
+     * {@code behaviourSemanticsConfigJson}). Delegates to the canonical
+     * constructor with a null semantics config (PATCH-no-op). Spec:
+     * Semantics-aware API Behaviour Baseline coverage (2026-06-23) -- Task
+     * Group 4.
+     */
+    public UpdateApiBehaviourCaptureSessionRequest(
+            String name,
+            String status,
+            String environmentName,
+            String apiBaseUrl,
+            String authType,
+            Map<String, Object> authConfigRedactedJson,
+            Map<String, Object> defaultHeadersRedactedJson,
+            Map<String, Object> oasSpecRefsJson,
+            Map<String, Object> dbConfigRedactedJson,
+            Boolean mutatingCallsConfirmed,
+            Instant startedAt,
+            Instant completedAt,
+            String errorMessage,
+            String kind,
+            UUID sourceBaselineId,
+            Integer scenariosAttempted,
+            Integer scenariosCompleted,
+            Integer scenariosErrored,
+            List<String> scopeInterfaceIdsJson,
+            String coverageOverrideJustification,
+            Integer coverageOverrideUnaccountedCount,
+            Instant coverageOverrideAt,
+            Map<String, Object> coverageSummaryJson,
+            Map<String, String> dataTypeDefaultsJson) {
+        this(name, status, environmentName, apiBaseUrl, authType,
+            authConfigRedactedJson, defaultHeadersRedactedJson,
+            oasSpecRefsJson, dbConfigRedactedJson, mutatingCallsConfirmed,
+            startedAt, completedAt, errorMessage,
+            kind, sourceBaselineId,
+            scenariosAttempted, scenariosCompleted, scenariosErrored,
+            scopeInterfaceIdsJson,
+            coverageOverrideJustification, coverageOverrideUnaccountedCount,
+            coverageOverrideAt,
+            coverageSummaryJson,
+            dataTypeDefaultsJson,
+            null);
+    }
 
     /**
      * Backward-compatible constructor preserving the pre-data-type-defaults
@@ -136,6 +193,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             coverageOverrideJustification, coverageOverrideUnaccountedCount,
             coverageOverrideAt,
             coverageSummaryJson,
+            null,
             null);
     }
 
@@ -177,6 +235,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             coverageOverrideJustification, coverageOverrideUnaccountedCount,
             coverageOverrideAt,
             null,
+            null,
             null);
     }
 
@@ -211,6 +270,7 @@ public record UpdateApiBehaviourCaptureSessionRequest(
             kind, sourceBaselineId,
             scenariosAttempted, scenariosCompleted, scenariosErrored,
             null, null, null, null,
+            null,
             null,
             null);
     }

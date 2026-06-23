@@ -184,6 +184,17 @@ export interface ApiBehaviourCaptureSessionDto {
    * survive the round-trip (not be dropped or coerced to a string).
    */
   data_type_defaults_json?: Record<string, string | null> | null;
+  /**
+   * Per-API operator-confirmed response-semantics config (Spec 2026-06-23
+   * Semantics-aware API Behaviour Baseline coverage; AMS changeset 196). A
+   * structured JSON blob mirroring the validation service's
+   * `ResponseSemanticsConfig` (optional `statusBucketOverride` /
+   * `notFoundMarkers` / `badRequestMarkers` / `fiveXxIsBadInput`). Null/absent
+   * = built-in default vocabulary (the valid empty state -- NO backfill).
+   * snake_case wire (AMS default; no `@CamelCaseWire`). PATCHed by the capture
+   * wizard's semantics step via {@link updateCaptureSession}.
+   */
+  behaviour_semantics_config_json?: Record<string, unknown> | null;
 }
 
 export interface CreateApiBehaviourCaptureSessionRequest {
@@ -204,6 +215,12 @@ export interface CreateApiBehaviourCaptureSessionRequest {
    * The map may be null/absent. snake_case wire (AMS default).
    */
   data_type_defaults_json?: Record<string, string | null> | null;
+  /**
+   * Per-API operator-confirmed response-semantics config (Spec 2026-06-23). A
+   * structured JSON blob; null/absent = built-in default vocabulary. snake_case
+   * wire (AMS default).
+   */
+  behaviour_semantics_config_json?: Record<string, unknown> | null;
 }
 
 /** PATCH body — every field optional; null preserves the column. */
@@ -229,6 +246,12 @@ export interface UpdateApiBehaviourCaptureSessionRequest {
    * (AMS null-guarded write path). snake_case wire (AMS default).
    */
   data_type_defaults_json?: Record<string, string | null> | null;
+  /**
+   * Per-API operator-confirmed response-semantics config (Spec 2026-06-23). A
+   * structured JSON blob; null/absent = built-in default vocabulary. snake_case
+   * wire (AMS default).
+   */
+  behaviour_semantics_config_json?: Record<string, unknown> | null;
 }
 
 export interface ApiBehaviourOperationDto {

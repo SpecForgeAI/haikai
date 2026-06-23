@@ -4483,3 +4483,48 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 196-capture-behaviour-semantics-config
+  # Spec: Semantics-aware API Behaviour Baseline coverage (2026-06-23) -- Task
+  #       Group 4 (config-persistence seam, AMS additive field).
+  #
+  # ONE new nullable JSONB column on api_behaviour_capture_sessions holding the
+  # operator-confirmed per-API response-semantics config as a structured JSON
+  # object:
+  #   behaviour_semantics_config_json JSONB NULL -- mirrors the validation
+  #   service's ResponseSemanticsConfig: optional statusBucketOverride
+  #   (status -> bucket), notFoundMarkers / badRequestMarkers (marker-vocabulary
+  #   overrides), and a fiveXxIsBadInput flag. ALL fields optional; a wholly-null
+  #   column means "use the built-in default vocabulary". Confirmed in the
+  #   capture wizard "Response semantics" step and read by the validation service
+  #   (captureSessionOrchestrator.ts), which feeds it into
+  #   classifyObservedBehaviour so "covered" reflects this API's real contract.
+  #   Per-session only. Map<String,Object> / @Type(JsonType), mirroring the
+  #   sibling data_type_defaults_json / coverage_summary_json JSONB columns.
+  #   Snake_case wire (AMS default -- NO @CamelCaseWire; TS clients are
+  #   snake_case). NULL = no config recorded (valid empty state = built-in
+  #   defaults).
+  #
+  # New nullable column, reference type, NO backfill, FORWARD-ONLY: existing rows
+  # are untouched and read back null. No @PrePersist defaulting -- null is the
+  # valid empty state. New changeset only (195 is the highest on disk at build
+  # time) -- never edit applied changesets. Column-only ALTER -> the
+  # not-columnExists precondition idiom (mirrors 189 / 194 / 195).
+  # ============================================================================
+  - changeSet:
+      id: 196-capture-behaviour-semantics-config
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: api_behaviour_capture_sessions
+              columnName: behaviour_semantics_config_json
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/196-capture-behaviour-semantics-config.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

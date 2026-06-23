@@ -80,6 +80,7 @@ public final class ApiBehaviourMapper {
             entity.getCoverageOverrideAt(),
             entity.getCoverageSummaryJson(),
             entity.getDataTypeDefaultsJson(),
+            entity.getBehaviourSemanticsConfigJson(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
         );

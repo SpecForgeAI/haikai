@@ -248,12 +248,16 @@ describe('Data-type formats step -- render + renumber (Task 6.1a)', () => {
       SESSION_ID,
     );
 
-    // Stepper renumber: step 5 = "Data-type formats", step 6 = "Start".
+    // Stepper renumber: step 5 = "Data-type formats", step 6 = "Response
+    // semantics", step 7 = "Start".
     expect(
       screen.getByTestId('start-capture-session-wizard-step-5'),
     ).toHaveTextContent('Data-type formats');
     expect(
       screen.getByTestId('start-capture-session-wizard-step-6'),
+    ).toHaveTextContent('Response semantics');
+    expect(
+      screen.getByTestId('start-capture-session-wizard-step-7'),
     ).toHaveTextContent('Start');
 
     // 4-column header + the discovered rows render.
@@ -319,7 +323,7 @@ describe('Data-type formats step -- render + renumber (Task 6.1a)', () => {
 });
 
 describe('Data-type formats step -- auto-skip (Task 6.1a)', () => {
-  it('skips the step and lands directly on Start (step 6) when the preview is empty', async () => {
+  it('skips the Data-type step and lands on Response semantics (step 6) when the preview is empty', async () => {
     vi.mocked(dataTypeDefaultsPreview).mockResolvedValue(EMPTY_PREVIEW);
     renderWizard();
     await driveWizardToStep4();
@@ -331,14 +335,18 @@ describe('Data-type formats step -- auto-skip (Task 6.1a)', () => {
     expect(
       screen.queryByTestId('start-capture-session-wizard-data-type-table'),
     ).not.toBeInTheDocument();
-    // The wizard is on Start (step 6): the Start button is present and no PATCH
-    // of data_type_defaults_json happened on the skip.
-    expect(
-      screen.getByTestId('start-capture-session-wizard-start'),
-    ).toBeInTheDocument();
+    // The wizard auto-skips the Data-type step to the Response-semantics step
+    // (step 6), which always shows. Start is NOT yet reachable (it is step 7).
     expect(
       screen.getByTestId('start-capture-session-wizard-step-6'),
     ).toHaveClass(/stepActive/);
+    expect(
+      screen.getByTestId('behaviour-semantics-use-defaults'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('start-capture-session-wizard-start'),
+    ).not.toBeInTheDocument();
+    // No PATCH of data_type_defaults_json happened on the skip.
     expect(updateCaptureSession).not.toHaveBeenCalledWith(
       PROJECT_ID,
       ARCH_ID,
@@ -378,7 +386,7 @@ describe('Data-type formats step -- edit, no-default + persist (Task 6.1b, 6.1c)
       screen.getByTestId('start-capture-session-wizard-data-type-default-enum'),
     ).toBeDisabled();
 
-    // Advance (step 5 -> 6) PATCHes the map.
+    // Advance (step 5 -> 6, Data-type -> Response semantics) PATCHes the map.
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
     });
@@ -408,24 +416,32 @@ describe('Data-type formats step -- edit, no-default + persist (Task 6.1b, 6.1c)
     expect(map.enum).toBeNull();
     expect(map.date).toBe('yyyy/MM/dd');
 
-    // Renumber intact: Start is now reachable at step 6.
+    // Advance once more (step 6 -> 7, Response semantics -> Start).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
+    });
+    // Renumber intact: Start is now reachable at step 7.
     expect(
       screen.getByTestId('start-capture-session-wizard-start'),
     ).toBeInTheDocument();
   });
 
-  it('fires /start from the step-6 Start button (renumber leaves Start reachable)', async () => {
+  it('fires /start from the step-7 Start button (renumber leaves Start reachable)', async () => {
     vi.mocked(dataTypeDefaultsPreview).mockResolvedValue(PREVIEW_WITH_ROWS);
     renderWizard();
     await driveWizardToStep4();
     await advanceFromStep4();
 
-    // Step 5 -> 6.
+    // Step 5 -> 6 (Data-type -> Response semantics).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
+    });
+    // Step 6 -> 7 (Response semantics -> Start).
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
     });
 
-    // Step 6: Start.
+    // Step 7: Start.
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-start'));
     });

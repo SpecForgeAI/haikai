@@ -300,6 +300,29 @@ public class ApiBehaviourCaptureSessionEntity {
     @Column(name = "data_type_defaults_json", columnDefinition = "jsonb")
     private Map<String, String> dataTypeDefaultsJson;
 
+    /**
+     * Per-session operator-confirmed response-semantics config (Semantics-aware
+     * API Behaviour Baseline coverage, 2026-06-23, changeset 196): a structured
+     * JSON object steering how the capture scorer maps an observed status +
+     * response body to a coverage bucket for a legacy API that violates REST
+     * conventions. Shape mirrors the validation service's
+     * {@code ResponseSemanticsConfig} (optional {@code statusBucketOverride} /
+     * {@code notFoundMarkers} / {@code badRequestMarkers} / {@code fiveXxIsBadInput}).
+     * Confirmed in the capture wizard's new semantics step and read by
+     * {@code captureSessionOrchestrator.ts} (which feeds it into
+     * {@code classifyObservedBehaviour}). Snake_case wire (AMS default).
+     *
+     * <p>{@code null} (the whole column) = no config recorded -- the valid empty
+     * state meaning "use the built-in default vocabulary"; NO backfill, FORWARD-
+     * ONLY. JSONB via {@code @Type(JsonType.class)}, mirroring the sibling
+     * {@code dataTypeDefaultsJson} / {@code coverageSummaryJson} columns;
+     * reference type, no primitive-wipe risk per
+     * {@code project_primitive_double_dto_overwrite.md}.</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "behaviour_semantics_config_json", columnDefinition = "jsonb")
+    private Map<String, Object> behaviourSemanticsConfigJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

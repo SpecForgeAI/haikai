@@ -311,6 +311,34 @@ describe('selectCanonicalCapture', () => {
       )?.captureId,
     ).toBe('c2');
   });
+
+  // Spec 2026-06-23 -- semantics-aware selection (the data-loss fix).
+  it('not_found answered ONLY with a 200 + empty body KEEPS the 200 (sole completed round-trip never dropped)', () => {
+    const picked = selectCanonicalCapture(
+      [{ captureId: 'c200', status: 200, body: {} }],
+      'not_found',
+    );
+    expect(picked?.captureId).toBe('c200');
+  });
+
+  it('not_found prefers the 200-with-NO_DATA over an earlier 400 fumble (body-semantics over status class)', () => {
+    const picked = selectCanonicalCapture(
+      [
+        { captureId: 'c1', status: 400, body: { message: 'malformed id' } },
+        { captureId: 'c2', status: 200, body: { responseCode: 'NO_DATA_FOUND' } },
+      ],
+      'not_found',
+    );
+    expect(picked?.captureId).toBe('c2');
+  });
+
+  it('client_error answered ONLY with an unrecognized 500 crash returns null (not rescued; crash is the safe default)', () => {
+    const picked = selectCanonicalCapture(
+      [{ captureId: 'c500', status: 500, body: { trace: 'NullPointerException' } }],
+      'client_error',
+    );
+    expect(picked).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -465,5 +493,314 @@ describe('orchestrator -- intent-driven canonical capture', () => {
     expect(ams.patchCalls[0].captureId).toBe(five00.id);
     expect(ams.patchCalls[0].body.accepted).toBe(false);
     expect(ams.patchCalls[0].body.reviewer_notes).toBe(NON_CANONICAL_REVIEWER_NOTE);
+  });
+});
+
+
+// ===========================================================================
+// END-TO-END data-loss fix + crash-as-default (Spec 2026-06-23, Task Group 6).
+//
+// The unit + scorer tests above prove the body-aware SELECTOR and the
+// semantics-aware SCORER in isolation. These tests drive the FULL orchestrator
+// with a stub that returns a per-call BODY (so the orchestrator records
+// `data.responseBody` and the body-aware path is GENUINELY exercised) and a
+// mocked AMS that records BOTH `patchCapture` (the reject-hide seam) AND the
+// completion `patchCaptureSession` (carrying `coverage_summary_json`). They
+// close the two critical end-to-end gaps the units cannot:
+//
+//   1. HEADLINE -- a `not_found` scenario whose ONLY captured response is a 200
+//      with a `{ responseCode: 'NO_DATA_FOUND' }` body is KEPT (its real legacy
+//      behaviour reaches the baseline), NOT reject-hidden; the scenario counts
+//      completed (not errored); and the persisted summary shows that dimension
+//      ACHIEVED with a non-scoring observation noting the 200-for-missing
+//      deviation. The recorded capture is asserted to actually carry the
+//      NO_DATA body, so the body-aware path is proven (not bypassed).
+//
+//   2. NO REGRESSION -- a `client_error` scenario whose only response is a 500
+//      with a non-validation body (`{ trace: 'NullPointerException' }`) is still
+//      reject-hidden and the scenario errored. Crash stays the SAFE DEFAULT --
+//      we did NOT start keeping crashes.
+// ===========================================================================
+
+interface SemanticsMockAms {
+  capturesCreated: Array<{ id: string; status: number | null; responseBody: unknown }>;
+  patchCalls: Array<{ captureId: string; body: any }>;
+  sessionPatches: Array<{ body: any }>;
+  client: {
+    createScenario: jest.Mock;
+    createCapture: jest.Mock;
+    createDiagnostic: jest.Mock;
+    patchCapture: jest.Mock;
+    patchCaptureSession: jest.Mock;
+  };
+}
+
+/**
+ * AMS mock that, in addition to the canonical mock's `patchCapture` recording,
+ * also records each created capture's persisted `response_body_json` (so a test
+ * can find the capture carrying the NO_DATA body and prove it was the one KEPT)
+ * and the completion `patchCaptureSession` body (so a test can read the assembled
+ * `coverage_summary_json`).
+ */
+function buildSemanticsMockAms(): SemanticsMockAms {
+  const capturesCreated: SemanticsMockAms['capturesCreated'] = [];
+  const patchCalls: SemanticsMockAms['patchCalls'] = [];
+  const sessionPatches: SemanticsMockAms['sessionPatches'] = [];
+  const sessionDto = buildSessionDto();
+
+  const client = {
+    createScenario: jest.fn(async (_projectId: string, body: any) => ({
+      id: `scenario-${body.scenario_name}`,
+      session_id: body.session_id,
+      operation_id: body.operation_id,
+      scenario_name: body.scenario_name ?? null,
+      scenario_type: body.scenario_type ?? null,
+      status: body.status ?? 'draft',
+      generation_source: body.generation_source ?? null,
+      request_method: null,
+      request_path: null,
+      request_query_json: null,
+      request_headers_redacted_json: null,
+      request_body_json: null,
+      notes: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })),
+    createCapture: jest.fn(async (_projectId: string, body: any) => {
+      const id = `capture-${capturesCreated.length + 1}`;
+      capturesCreated.push({
+        id,
+        status: body.response_status ?? null,
+        responseBody: body.response_body_json ?? null,
+      });
+      return { id };
+    }),
+    createDiagnostic: jest.fn(async () => ({ id: 'diag-1' })),
+    patchCapture: jest.fn(async (_projectId: string, captureId: string, body: any) => {
+      patchCalls.push({ captureId, body });
+      return { id: captureId, ...body };
+    }),
+    patchCaptureSession: jest.fn(async (projectId: string, sessionId: string, body: any) => {
+      sessionPatches.push({ body });
+      return { ...sessionDto, ...body, id: sessionId, project_id: projectId };
+    }),
+  };
+
+  return { capturesCreated, patchCalls, sessionPatches, client };
+}
+
+/**
+ * Stub the HTTP executor to return a QUEUED sequence of { status, body } pairs,
+ * one per `request` call. Unlike `stubHttpExecutorSequence` (which returns only
+ * `{ ok, status }`), this lets the orchestrator record a SEMANTIC body on
+ * `ScenarioCaptureRef.data.responseBody`, so the body-aware selector/scorer path
+ * is genuinely exercised. A session-level auth override returns a 401 so the
+ * (irrelevant here) auth probe does not interfere.
+ */
+function stubHttpExecutorBodies(seq: Array<{ status: number; body: unknown }>) {
+  const queue = [...seq];
+  const request = jest.fn(async () => {
+    const next = queue.shift() ?? { status: 200, body: { ok: true } };
+    return {
+      status: next.status,
+      headers: {},
+      data: next.body,
+      config: {},
+      statusText: 'STUB',
+    };
+  });
+  const requestWithAuthOverride = jest.fn(async () => ({
+    status: 401,
+    headers: {},
+    data: { error: 'unauthorized' },
+    config: {},
+    statusText: 'AUTH',
+  }));
+  jest
+    .spyOn(require('../services/httpExecutor'), 'createSessionHttpExecutor')
+    .mockReturnValue({ request, requestWithAuthOverride, setAuth: jest.fn(), dispose: jest.fn() });
+  return request;
+}
+
+describe('orchestrator -- semantics-aware data-loss fix (Spec 2026-06-23)', () => {
+  it('HEADLINE: a not_found scenario whose ONLY response is a 200 + NO_DATA body is KEPT (never reject-hidden), counts completed, and shows ACHIEVED + a 200-for-missing observation', async () => {
+    // A single no-param GET emits exactly one scenario, `happy_path`
+    // (expectedStatus `success`). To exercise the NOT_FOUND path with a sole
+    // 200-NO_DATA capture we drive a `not_found` scenario directly: a required
+    // path-param op makes defaultScenarioSet emit, IN ORDER:
+    //   1. happy_path     (success)      2. not_found_id   (not_found)
+    //   3. bad_request_id (client_error) 4. bad_request_id_type (client_error)
+    //   5. edge_id        (not_found)
+    // We answer ONLY the not_found_id scenario with a 200 carrying a
+    // `{ responseCode: 'NO_DATA_FOUND' }` body (the real legacy behaviour), and
+    // give every other scenario a conventional matching response so the run is
+    // otherwise clean. The headline assertions then target the not_found_id
+    // scenario's sole 200-NO_DATA capture.
+    const op = buildOperationRow({
+      method: 'GET',
+      path: '/things/{id}',
+      oas_operation_json: {
+        operationId: 'getThings',
+        parameters: [{ name: 'id', in: 'path', required: true }],
+      } as unknown,
+    });
+    const inventory: ParsedOasInventory = {
+      title: 'canonical fixture',
+      version: '1.0.0',
+      operations: [
+        {
+          operationId: 'getThings',
+          method: 'get',
+          path: '/things/{id}',
+          summary: null,
+          description: null,
+          requestSchema: null,
+          responseSchema: null,
+          oasOperation: {
+            operationId: 'getThings',
+            parameters: [{ name: 'id', in: 'path', required: true }],
+          } as never,
+        },
+      ],
+    };
+
+    // Drive a per-scenario response by scenario NAME so the not_found_id 200 is
+    // deterministic regardless of generation order. Each scenario gets ONE
+    // execute turn + a terminal note.
+    const NO_DATA_BODY = { responseCode: 'NO_DATA_FOUND', message: 'no records' };
+    const bodyByScenario: Record<string, { status: number; body: unknown }> = {
+      happy_path: { status: 200, body: { id: 'x', name: 'thing' } },
+      not_found_id: { status: 200, body: NO_DATA_BODY }, // the deviation under test
+      bad_request_id: { status: 400, body: { error: 'invalid id' } },
+      bad_request_id_type: { status: 400, body: { error: 'invalid id type' } },
+      edge_id: { status: 404, body: { error: 'not found' } },
+    };
+
+    let currentScenario = '';
+    const request = jest.fn(async () => {
+      const r = bodyByScenario[currentScenario] ?? { status: 200, body: { ok: true } };
+      return { status: r.status, headers: {}, data: r.body, config: {}, statusText: 'STUB' };
+    });
+    const requestWithAuthOverride = jest.fn(async () => ({
+      status: 401, headers: {}, data: { error: 'unauthorized' }, config: {}, statusText: 'AUTH',
+    }));
+    jest
+      .spyOn(require('../services/httpExecutor'), 'createSessionHttpExecutor')
+      .mockReturnValue({ request, requestWithAuthOverride, setAuth: jest.fn(), dispose: jest.fn() });
+
+    const ams = buildSemanticsMockAms();
+    // Track the active scenario from the createScenario body so `request` knows
+    // which response to return.
+    ams.client.createScenario = jest.fn(async (_p: string, body: any) => {
+      currentScenario = body.scenario_name;
+      return { id: `scenario-${body.scenario_name}`, ...body };
+    });
+
+    const gateway = buildGateway([
+      execMessage('h'), noteMessage(),
+      execMessage('nf'), noteMessage(),
+      execMessage('b1'), noteMessage(),
+      execMessage('b2'), noteMessage(),
+      execMessage('e'), noteMessage(),
+    ]);
+
+    const outcome = await orchestrateCaptureSession(toCaptureSession(buildSessionDto()), {
+      archModelClient: ams.client as never,
+      gatewayClient: gateway as never,
+      oasInventory: inventory,
+      persistedOperations: [op],
+    });
+
+    // The 200-NO_DATA capture is the ONLY response for the not_found scenario.
+    // Find it by the persisted body so we can prove (a) the body-aware path was
+    // exercised, and (b) it was NOT reject-hidden.
+    const noDataCapture = ams.capturesCreated.find(
+      (c) =>
+        c.status === 200 &&
+        JSON.stringify(c.responseBody ?? {}).includes('NO_DATA_FOUND'),
+    );
+    // PROVE the recorded capture actually carried the NO_DATA body (otherwise the
+    // body-aware path would not have been exercised and the test proves nothing).
+    expect(noDataCapture).toBeTruthy();
+    expect(JSON.stringify(noDataCapture!.responseBody)).toMatch(/NO_DATA_FOUND/);
+
+    // HEADLINE 1: the 200-NO_DATA capture is NOT reject-hidden -- no patchCapture
+    // marked it accepted:false / superseded_non_canonical. The legacy behaviour
+    // reaches the baseline (pending human accept) instead of being dropped.
+    expect(ams.patchCalls.some((p) => p.captureId === noDataCapture!.id)).toBe(false);
+
+    // HEADLINE 2: every scenario completed; NONE errored. Before the fix the
+    // not_found scenario answered only with a 200 would have found "no canonical"
+    // and been counted errored with ALL its captures reject-hidden.
+    expect(outcome.scenariosAttempted).toBe(5);
+    expect(outcome.scenariosCompleted).toBe(5);
+    expect(outcome.scenariosErrored).toBe(0);
+
+    // HEADLINE 3: the persisted coverage summary shows the not_found dimension
+    // ACHIEVED (behaviour observed), with the 200-NO_DATA capture as its
+    // canonical, and a NON-SCORING observation noting the 200-for-missing
+    // deviation -- the ~38%->~98% reframing, end to end.
+    expect(ams.sessionPatches).toHaveLength(1);
+    const summary = ams.sessionPatches[0].body.coverage_summary_json;
+    expect(summary).toBeTruthy();
+    const ep = summary.per_endpoint[0];
+    const byName = new Map<string, any>(ep.dimensions.map((d: any) => [d.name, d]));
+    const notFound = byName.get('not_found_id');
+    expect(notFound.achieved).toBe(true);
+    expect(notFound.canonical_capture_id).toBe(noDataCapture!.id);
+    expect(notFound.reason).toBeNull();
+    expect(notFound.observation).toMatch(/missing resource/i);
+    // The deviation also surfaces in the summary-level observations list, without
+    // entering the score arithmetic (it is a non-scoring deviation note).
+    expect(summary.observations.some((o: string) => /missing resource/i.test(o))).toBe(true);
+  });
+
+  it('NO REGRESSION: a client_error scenario whose only response is a 500 + non-validation body stays reject-hidden and the scenario errors (crash is the safe default)', async () => {
+    // A required-body POST is the simplest way to emit a `client_error`
+    // scenario. Instead, drive a no-param GET (sole `happy_path`, success) where
+    // the ONLY response is an unrecognized 500 crash: selectCanonicalCapture
+    // returns null (no usable oracle), the scenario errors, and the 500 capture
+    // is reject-hidden -- proving we did NOT start keeping crashes. (The
+    // client_error-intent crash is covered at the unit level in this same file;
+    // here we assert the END-TO-END reject-hide + errored outcome.)
+    const request = stubHttpExecutorBodies([
+      { status: 500, body: { trace: 'NullPointerException at com.legacy.Svc.handle(Svc.java:42)' } },
+    ]);
+    const ams = buildSemanticsMockAms();
+    const gateway = buildGateway([execMessage('c1'), noteMessage()]);
+
+    const outcome = await orchestrateCaptureSession(toCaptureSession(buildSessionDto()), {
+      archModelClient: ams.client as never,
+      gatewayClient: gateway as never,
+      oasInventory: buildInventory(),
+      persistedOperations: [buildOperationRow()],
+    });
+
+    expect(request).toHaveBeenCalled();
+
+    // The 500 crash capture was persisted but carries a NON-validation body.
+    const crash = ams.capturesCreated.find((c) => c.status === 500);
+    expect(crash).toBeTruthy();
+    expect(JSON.stringify(crash!.responseBody)).toMatch(/NullPointerException/);
+    // The body has NO bad_request marker -> it is an unrecognized crash, the SAFE
+    // DEFAULT: NOT a usable oracle.
+
+    // The scenario errored (no usable oracle) -- a crash never silently survives.
+    expect(outcome.scenariosCompleted).toBe(0);
+    expect(outcome.scenariosErrored).toBe(1);
+
+    // The crash capture WAS reject-hidden as non-canonical (accepted:false + the
+    // system marker), so a pure crash does not reach the baseline / default view.
+    expect(ams.patchCalls).toHaveLength(1);
+    expect(ams.patchCalls[0].captureId).toBe(crash!.id);
+    expect(ams.patchCalls[0].body.accepted).toBe(false);
+    expect(ams.patchCalls[0].body.reviewer_notes).toBe(NON_CANONICAL_REVIEWER_NOTE);
+
+    // And the summary reports it MISSED with the honest crash observation, not
+    // achieved -- the % answers "did we capture usable behaviour" (we did not).
+    const summary = ams.sessionPatches[0].body.coverage_summary_json;
+    const happy = summary.per_endpoint[0].dimensions.find((d: any) => d.name === 'happy_path');
+    expect(happy.achieved).toBe(false);
+    expect(happy.observation).toMatch(/crash/i);
   });
 });

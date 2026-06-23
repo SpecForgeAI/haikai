@@ -240,8 +240,8 @@ describe('coverage summary helpers (pure)', () => {
       path: '/x',
       score: 0.5,
       dimensions: [
-        { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c', reason: null },
-        { name: 'not_found_id', type: 'not_found', expected_status: 'not_found', achieved: false, canonical_capture_id: null, reason: 'r' },
+        { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c', reason: null, observation: null },
+        { name: 'not_found_id', type: 'not_found', expected_status: 'not_found', achieved: false, canonical_capture_id: null, reason: 'r', observation: null },
       ],
     };
     expect(isThinEndpoint(allNegMissing)).toBe(true);
@@ -272,7 +272,7 @@ describe('CaptureSessionDetailView -- coverage surfacing (Task 3.3 / 3.5)', () =
     // Overall score + dimensions tally.
     expect(
       within(panel).getByTestId('capture-session-coverage-summary-overall'),
-    ).toHaveTextContent('Oracle coverage: 50% (3 of 6 dimensions pinned)');
+    ).toHaveTextContent('Behaviour observed/captured: 50% (3 of 6 dimensions captured)');
 
     // Per-endpoint badges (both endpoints rendered).
     const endpoints = within(panel).getAllByTestId(
@@ -349,7 +349,7 @@ describe('SaveAsBaselineModal -- coverage surfacing (Task 3.4)', () => {
     const panel = screen.getByTestId('save-as-baseline-coverage-summary');
     expect(
       within(panel).getByTestId('save-as-baseline-coverage-summary-overall'),
-    ).toHaveTextContent('Oracle coverage: 50%');
+    ).toHaveTextContent('Behaviour observed/captured: 50%');
     expect(panel).toHaveTextContent(
       'no capture matched the intended client_error class',
     );

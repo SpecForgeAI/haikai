@@ -63,6 +63,8 @@ import {
   ApiBehaviourApiError,
 } from '../../api/apiBehaviourClient';
 import { DataTypeFormatsStep } from './DataTypeFormatsStep';
+import { BehaviourSemanticsConfigStep } from './BehaviourSemanticsConfigStep';
+import type { ResponseSemanticsConfig } from './behaviourSemanticsConfig';
 import {
   MigrationDiscoveryContext,
   fetchMigrationDiscoveryContext,
@@ -99,7 +101,7 @@ export interface StartCaptureSessionWizardProps {
 // Internal types
 // ============================================================================
 
-type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 type AuthType = 'none' | 'bearer' | 'basic' | 'header';
 type DbType = 'none' | 'postgres' | 'sybase';
@@ -355,6 +357,17 @@ export function StartCaptureSessionWizard({
   >({});
   const [dataTypePreviewLoading, setDataTypePreviewLoading] = useState(false);
 
+  // ---- Step 6: Response semantics (Spec 2026-06-23) -------------------
+  // The operator's per-API response-semantics config (how this API's statuses +
+  // body markers map to outcome buckets). `null` === untouched === built-in
+  // default vocabulary (the valid empty state -- NO backfill). Persisted onto the
+  // draft session as `behaviour_semantics_config_json` on the Step 6 -> 7 advance,
+  // mirroring exactly how Step 5 persists `data_type_defaults_json`. The config
+  // shape + default marker vocabulary come from the local hand-mirror
+  // `behaviourSemanticsConfig.ts` (the frontend must NOT import from amvs).
+  const [behaviourSemanticsConfig, setBehaviourSemanticsConfig] =
+    useState<ResponseSemanticsConfig | null>(null);
+
   // ---- Discovery Context (Step 1 collapsed section, Task Group 4) ------
   // The wizard fires a single read-only POST to the gateway proxy on open
   // to fetch the latest-relevant discovery context for the active
@@ -404,6 +417,7 @@ export function StartCaptureSessionWizard({
     setDataTypeRows([]);
     setDataTypeDefaults({});
     setDataTypePreviewLoading(false);
+    setBehaviourSemanticsConfig(null);
     // Reset discovery section state too -- a fresh open recomputes from
     // the latest AMS aggregation.
     setDiscoveryCtx(null);
@@ -841,7 +855,8 @@ export function StartCaptureSessionWizard({
   /**
    * Step 5 -> 6 advance. Persists the operator's confirmed Col-4 defaults onto
    * the draft session as `data_type_defaults_json` via the existing
-   * `updateCaptureSession` PATCH path, then shows the Start step. The map is
+   * `updateCaptureSession` PATCH path, then shows the Response-semantics step
+   * (Step 6). The map is
    * `category -> string | null`: a non-null string is the default, `null` is
    * the explicit "no default" decision (the run gets no nudge for that type and
    * the AMS round-trip preserves the `null` value). Empty-string entries are an
@@ -874,6 +889,38 @@ export function StartCaptureSessionWizard({
     submitting,
     dataTypeRows,
     dataTypeDefaults,
+  ]);
+
+  /**
+   * Step 6 -> 7 advance. Persists the operator's per-API response-semantics
+   * config onto the draft session as `behaviour_semantics_config_json` via the
+   * SAME `updateCaptureSession` PATCH path Step 5 uses for the data-type
+   * defaults, then shows the Start step. A `null` config (untouched === built-in
+   * defaults, the valid empty state) is persisted as `null`; the AMS write path
+   * is null-guarded and the absent/empty config resolves to the built-in
+   * vocabulary -- NO backfill.
+   */
+  const handleAdvanceToStep7 = useCallback(async () => {
+    const session = draftSessionRef.current;
+    if (!session || submitting) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await updateCaptureSession(projectId, architectureId, session.id, {
+        behaviour_semantics_config_json:
+          (behaviourSemanticsConfig as Record<string, unknown> | null) ?? null,
+      });
+      setStep(7);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    projectId,
+    architectureId,
+    submitting,
+    behaviourSemanticsConfig,
   ]);
 
   /**
@@ -1192,7 +1239,7 @@ export function StartCaptureSessionWizard({
 
         {/* Stepper */}
         <div className={styles.stepper} data-testid="start-capture-session-wizard-stepper">
-          {([1, 2, 3, 4, 5, 6] as WizardStep[]).map((n, idx) => (
+          {([1, 2, 3, 4, 5, 6, 7] as WizardStep[]).map((n, idx) => (
             <React.Fragment key={n}>
               {idx > 0 && (
                 <span className={styles.stepSeparator} aria-hidden="true">
@@ -1216,6 +1263,8 @@ export function StartCaptureSessionWizard({
                   ? 'Endpoints'
                   : n === 5
                   ? 'Data-type formats'
+                  : n === 6
+                  ? 'Response semantics'
                   : 'Start'}
               </span>
             </React.Fragment>
@@ -2168,6 +2217,14 @@ export function StartCaptureSessionWizard({
           )}
 
           {step === 6 && (
+            <BehaviourSemanticsConfigStep
+              value={behaviourSemanticsConfig}
+              styles={styles}
+              onChange={(next) => setBehaviourSemanticsConfig(next)}
+            />
+          )}
+
+          {step === 7 && (
             <>
               <p className={styles.helperText}>
                 Review the redacted configuration below, then start the
@@ -2402,6 +2459,17 @@ export function StartCaptureSessionWizard({
             </button>
           )}
           {step === 6 && (
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={handleAdvanceToStep7}
+              disabled={submitting}
+              data-testid="start-capture-session-wizard-next"
+            >
+              {submitting ? 'Saving…' : 'Next'}
+            </button>
+          )}
+          {step === 7 && (
             <button
               type="button"
               className={styles.primaryButton}

@@ -39,6 +39,12 @@ import { secretsStore } from '../services/secretsStore';
 import { runManager } from '../services/runManager';
 import type { ParsedOasInventory } from '../types/oas';
 import type { AssistantMessage } from '../types/llm';
+import {
+  resolveConfig,
+  USE_BUILT_IN_DEFAULTS,
+  DEFAULT_NOT_FOUND_MARKERS,
+  type ResponseSemanticsConfig,
+} from '../services/responseSemantics';
 
 // ---------------------------------------------------------------------------
 // SCORER -- single-source rubric, no drift.
@@ -135,8 +141,8 @@ describe('assembleCoverageSummary -- overall folds the auth dimension as +1', ()
         path: '/a',
         score: 0.5,
         dimensions: [
-          { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c1', reason: null },
-          { name: 'bad_request_x', type: 'bad_request', expected_status: 'client_error', achieved: false, canonical_capture_id: null, reason: 'missed' },
+          { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c1', reason: null, observation: null },
+          { name: 'bad_request_x', type: 'bad_request', expected_status: 'client_error', achieved: false, canonical_capture_id: null, reason: 'missed', observation: null },
         ],
       },
     ];
@@ -160,6 +166,86 @@ describe('assembleCoverageSummary -- overall folds the auth dimension as +1', ()
     expect(summary2.dimensions_total).toBe(3);
     expect(summary2.dimensions_achieved).toBe(1);
     expect(summary2.overall_score).toBeCloseTo(1 / 3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SEMANTICS-AWARE coverage (Spec 2026-06-23) -- behaviour-observed scoring, the
+// auth bucket, the 5xx crash-vs-validation split, and the non-scoring
+// observations channel.
+// ---------------------------------------------------------------------------
+
+describe('scoreEndpointCoverage -- semantics-aware (Spec 2026-06-23)', () => {
+  const opx = { operation_id: 'sx', method: 'GET', path: '/things/{id}' };
+  type Outcomes = Map<string, Array<{ captureId: string; status: number | null; body?: unknown }>>;
+
+  it('a not_found scenario answered with a 200 + NO_DATA_FOUND body is ACHIEVED (behaviour observed), not a miss', () => {
+    const outcomes: Outcomes = new Map([
+      ['not_found_id', [{ captureId: 'c200', status: 200, body: { responseCode: 'NO_DATA_FOUND' } }]],
+    ]);
+    const result = scoreEndpointCoverage(
+      opx,
+      [{ name: 'not_found_id', type: 'not_found', expectedStatus: 'not_found' }],
+      outcomes,
+    );
+    const d = result.dimensions[0];
+    expect(d.achieved).toBe(true); // the headline data-loss fix
+    expect(d.canonical_capture_id).toBe('c200'); // the real response is KEPT
+    expect(d.observation).toMatch(/missing resource/i); // surfaced as a deviation, not a miss
+    expect(d.reason).toBeNull();
+  });
+
+  it('an auth scenario answered with a 200 is ACHIEVED and flagged "no auth enforced"', () => {
+    const outcomes: Outcomes = new Map([
+      ['auth_missing_token', [{ captureId: 'ca', status: 200, body: { ok: true } }]],
+    ]);
+    const result = scoreEndpointCoverage(
+      opx,
+      [{ name: 'auth_missing_token', type: 'auth_error', expectedStatus: 'auth' }],
+      outcomes,
+    );
+    const d = result.dimensions[0];
+    expect(d.achieved).toBe(true);
+    expect(d.observation).toMatch(/no auth enforced/i);
+  });
+
+  it('a 500 validation-reject is KEPT (achieved); an unrecognized 500 crash is a MISS (crash is the safe default)', () => {
+    const outcomes: Outcomes = new Map([
+      ['bad_request_validation', [{ captureId: 'cv', status: 500, body: { message: 'validation failed: bad date' } }]],
+      ['bad_request_crash', [{ captureId: 'cc', status: 500, body: { trace: 'NullPointerException at ...' } }]],
+    ]);
+    const result = scoreEndpointCoverage(
+      opx,
+      [
+        { name: 'bad_request_validation', type: 'validation_error', expectedStatus: 'client_error' },
+        { name: 'bad_request_crash', type: 'validation_error', expectedStatus: 'client_error' },
+      ],
+      outcomes,
+    );
+    const byName = new Map(result.dimensions.map((d) => [d.name, d]));
+    expect(byName.get('bad_request_validation')!.achieved).toBe(true);
+    expect(byName.get('bad_request_validation')!.canonical_capture_id).toBe('cv');
+    const crash = byName.get('bad_request_crash')!;
+    expect(crash.achieved).toBe(false);
+    expect(crash.observation).toMatch(/crash/i);
+  });
+
+  it('observations aggregate into the summary WITHOUT affecting the score', () => {
+    const ep = scoreEndpointCoverage(
+      opx,
+      [{ name: 'not_found_id', type: 'not_found', expectedStatus: 'not_found' }],
+      new Map([
+        ['not_found_id', [{ captureId: 'c200', status: 200, body: { responseCode: 'NO_DATA_FOUND' } }]],
+      ]) as Outcomes,
+    );
+    const authMissed: AuthCoverageResult = { achieved: false, representative_operation_id: null, probes: [] };
+    const summary = assembleCoverageSummary([ep], authMissed);
+    // The deviation is surfaced as a non-scoring observation...
+    expect(summary.observations.some((o) => /missing resource/i.test(o))).toBe(true);
+    // ...and the endpoint dimension still counts as achieved (behaviour observed),
+    // so the score reflects achieved/total only -- (1 endpoint achieved + auth missed)/(1+1).
+    expect(summary.dimensions_achieved).toBe(1);
+    expect(summary.overall_score).toBeCloseTo(1 / 2);
   });
 });
 
@@ -535,6 +621,150 @@ describe('orchestrator -- coverage summary persists on the completion PATCH (sna
     expect(summary.auth_coverage.probes.every((p: any) => /no safe representative endpoint/.test(p.reason))).toBe(true);
     // The missed auth dimension still contributes +1 to the denominator only.
     expect(summary.dimensions_total).toBe(summary.per_endpoint[0].dimensions.length + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONFIG PLUMBING (Spec: 2026-06-23 Semantics-aware coverage, Task Group 4) --
+// the per-API response-semantics config persists on the session
+// (`behaviour_semantics_config_json`, AMS changeset 196), is hydrated by
+// `toCaptureSession` onto `session.behaviourSemanticsConfigJson`, and is
+// threaded by the orchestrator into `classifyObservedBehaviour` (the scorer +
+// selector). ABSENT config === built-in defaults (forward-only, no backfill).
+// ---------------------------------------------------------------------------
+
+describe('per-API semantics config -- persistence seam + orchestrator threading', () => {
+  // A session DTO whose ONLY scenario capture will be a 500 with NO recognizable
+  // validation body -- i.e. an unrecognized 5xx the classifier treats as a
+  // crash (NOT a usable oracle) by default. Optionally carries the wire config
+  // blob so we can prove the operator override reaches the classifier.
+  function buildSessionDtoWithSemantics(
+    cfg?: Record<string, unknown> | null,
+  ): CaptureSessionDto {
+    return { ...buildSessionDto(), behaviour_semantics_config_json: cfg ?? null };
+  }
+
+  // Stub `createSessionHttpExecutor` so the LLM `execute_http_request` call
+  // returns a 500 carrying a stack-trace-shaped body with NO bad_request marker
+  // (no "validation" / "invalid" / etc.). By default this is an unrecognized
+  // crash; with `fiveXxIsBadInput` it becomes a deliberate client-error oracle.
+  function stubExecutorReturning500Crash() {
+    const request = jest.fn(async () => ({
+      status: 500,
+      headers: {},
+      data: { trace: 'NullPointerException at com.legacy.Svc.handle(Svc.java:42)' },
+      config: {},
+      statusText: 'Internal Server Error',
+    }));
+    const requestWithAuthOverride = jest.fn(async () => ({
+      status: 401,
+      headers: {},
+      data: { error: 'unauthorized' },
+      config: {},
+      statusText: 'AUTH',
+    }));
+    jest
+      .spyOn(require('../services/httpExecutor'), 'createSessionHttpExecutor')
+      .mockReturnValue({ request, requestWithAuthOverride, setAuth: jest.fn(), dispose: jest.fn() });
+    return { request };
+  }
+
+  it('(a) ABSENT config -> the orchestrator resolves built-in defaults: a normal run still scores happy_path achieved', async () => {
+    // No `behaviour_semantics_config_json` on the session (the valid empty
+    // state). A normal 200 happy_path scores exactly as before -- proving the
+    // null/absent config does NOT break the existing default-vocabulary path.
+    stubExecutorForCoverage();
+    const ams = buildMockAms();
+    const gateway = buildGateway([execMessage('tc-1'), noteMessage()]);
+
+    const session = toCaptureSession(buildSessionDtoWithSemantics(null));
+    expect(session.behaviourSemanticsConfigJson).toBeNull();
+
+    await orchestrateCaptureSession(session, {
+      archModelClient: ams.client as never,
+      gatewayClient: gateway as never,
+      oasInventory: buildInventory(),
+      persistedOperations: [buildOperationRow()],
+    });
+
+    const summary = ams.sessionPatches[0].body.coverage_summary_json;
+    const happy = summary.per_endpoint[0].dimensions.find((d: any) => d.name === 'happy_path');
+    expect(happy.achieved).toBe(true);
+    expect(happy.canonical_capture_id).toBeTruthy();
+  });
+
+  it('(b) a PRESENT config { fiveXxIsBadInput: true } threads through: a 500-with-no-validation-body scores ACHIEVED instead of a crash MISS', async () => {
+    // Same op + same 500-crash response in BOTH runs; only the per-API config
+    // differs. This proves the config reaches `classifyObservedBehaviour` via
+    // the orchestrator (session.behaviourSemanticsConfigJson -> semanticsConfig
+    // -> scorer + selector).
+
+    // --- Run 1: NO config -> the 500 is an unrecognized crash -> happy_path is
+    //     a MISS (crash is the safe default), and the crash anomaly surfaces.
+    stubExecutorReturning500Crash();
+    const amsNoCfg = buildMockAms();
+    await orchestrateCaptureSession(toCaptureSession(buildSessionDtoWithSemantics(null)), {
+      archModelClient: amsNoCfg.client as never,
+      gatewayClient: buildGateway([execMessage('c1'), noteMessage()]) as never,
+      oasInventory: buildInventory(),
+      persistedOperations: [buildOperationRow()],
+    });
+    const sumNoCfg = amsNoCfg.sessionPatches[0].body.coverage_summary_json;
+    const happyNoCfg = sumNoCfg.per_endpoint[0].dimensions.find((d: any) => d.name === 'happy_path');
+    expect(happyNoCfg.achieved).toBe(false); // unrecognized 5xx = crash = NOT covered
+    expect(happyNoCfg.observation).toMatch(/crash/i);
+
+    jest.restoreAllMocks();
+    if (runManager.has(SESSION_ID)) runManager.end(SESSION_ID);
+    secretsStore.set({ sessionId: SESSION_ID, api: { type: 'bearer', bearerToken: 'plaintext-token' }, loadedAt: Date.now() });
+
+    // --- Run 2: config declares this API returns 5xx for bad input -> the SAME
+    //     500 is now a deliberate client-error oracle -> happy_path ACHIEVED.
+    stubExecutorReturning500Crash();
+    const amsCfg = buildMockAms();
+    const cfg: ResponseSemanticsConfig = { fiveXxIsBadInput: true };
+    await orchestrateCaptureSession(
+      toCaptureSession(buildSessionDtoWithSemantics(cfg as unknown as Record<string, unknown>)),
+      {
+        archModelClient: amsCfg.client as never,
+        gatewayClient: buildGateway([execMessage('c2'), noteMessage()]) as never,
+        oasInventory: buildInventory(),
+        persistedOperations: [buildOperationRow()],
+      },
+    );
+    const sumCfg = amsCfg.sessionPatches[0].body.coverage_summary_json;
+    const happyCfg = sumCfg.per_endpoint[0].dimensions.find((d: any) => d.name === 'happy_path');
+    expect(happyCfg.achieved).toBe(true); // config reached classifyObservedBehaviour
+    expect(happyCfg.canonical_capture_id).toBeTruthy(); // the 500 response is KEPT
+  });
+
+  it('(c) the (use built-in defaults) sentinel round-trips as "explicitly default" -- same effective vocabulary as untouched', () => {
+    // UNTOUCHED (absent) and EXPLICITLY-DEFAULT (sentinel) resolve to the SAME
+    // effective built-in vocabulary; the sentinel is a deliberate, round-trippable
+    // choice distinct from an untouched row -- but it never alters the markers.
+    const untouched = resolveConfig(undefined);
+    const explicitlyDefault = resolveConfig({
+      notFoundMarkers: USE_BUILT_IN_DEFAULTS,
+      badRequestMarkers: USE_BUILT_IN_DEFAULTS,
+      statusBucketOverride: { 200: USE_BUILT_IN_DEFAULTS },
+    });
+    expect(explicitlyDefault.notFoundMarkers).toEqual([...DEFAULT_NOT_FOUND_MARKERS]);
+    expect(explicitlyDefault.notFoundMarkers).toEqual(untouched.notFoundMarkers);
+    expect(explicitlyDefault.badRequestMarkers).toEqual(untouched.badRequestMarkers);
+    // A sentinel status entry resolves to "leave it to markers + status class" --
+    // i.e. it is NOT added to the concrete override map.
+    expect(explicitlyDefault.statusBucketOverride).toEqual({});
+  });
+
+  it('toCaptureSession hydrates behaviourSemanticsConfigJson from the snake_case wire field (null preserved)', () => {
+    // Hydration round-trip: the snake_case wire blob lands on the camelCase
+    // domain projection the orchestrator reads; absent === null (built-in
+    // defaults), and a present config is carried verbatim.
+    expect(toCaptureSession(buildSessionDtoWithSemantics(null)).behaviourSemanticsConfigJson).toBeNull();
+    const hydrated = toCaptureSession(
+      buildSessionDtoWithSemantics({ fiveXxIsBadInput: true, badRequestMarkers: { mode: 'extend', markers: ['boom'] } }),
+    ).behaviourSemanticsConfigJson;
+    expect(hydrated).toEqual({ fiveXxIsBadInput: true, badRequestMarkers: { mode: 'extend', markers: ['boom'] } });
   });
 });
 

@@ -140,6 +140,16 @@ export interface CaptureSessionDto {
    * `dataTypeDefaults` prompt block.
    */
   data_type_defaults_json?: Record<string, string | null> | null;
+  /**
+   * Per-API operator-confirmed response-semantics config (Semantics-aware API
+   * Behaviour Baseline coverage, 2026-06-23; AMS changeset 196). Structured
+   * JSON blob on the wire as `behaviour_semantics_config_json` (mirrors the AMS
+   * `ResponseSemanticsConfig` shape). snake_case wire (AMS default -- NO
+   * @CamelCaseWire on the AMS side). Null/absent on legacy sessions = built-in
+   * default vocabulary. Hydrated onto `CaptureSession.behaviourSemanticsConfigJson`
+   * and consumed by the orchestrator's `classifyObservedBehaviour`.
+   */
+  behaviour_semantics_config_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -2072,5 +2082,11 @@ export function toCaptureSession(dto: CaptureSessionDto): CaptureSession {
     // "no default") and the null/absent whole-field empty state.
     dataTypeDefaultsJson:
       (dto.data_type_defaults_json as CaptureSession["dataTypeDefaultsJson"]) ?? null,
+    // Semantics-aware coverage (2026-06-23): hydrate the operator per-API
+    // response-semantics config so the orchestrator can thread it into
+    // `classifyObservedBehaviour`. Null/absent === built-in default vocabulary
+    // (the valid empty state; no backfill).
+    behaviourSemanticsConfigJson:
+      (dto.behaviour_semantics_config_json as CaptureSession["behaviourSemanticsConfigJson"]) ?? null,
   };
 }

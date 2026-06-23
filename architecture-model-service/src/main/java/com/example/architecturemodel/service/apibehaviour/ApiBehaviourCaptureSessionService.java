@@ -294,6 +294,14 @@ public class ApiBehaviourCaptureSessionService {
         if (request.dataTypeDefaultsJson() != null) {
             entity.setDataTypeDefaultsJson(request.dataTypeDefaultsJson());
         }
+        // Response-semantics config (Spec: Semantics-aware API Behaviour Baseline
+        // coverage, 2026-06-23; changeset 196) -- persisted by the capture wizard
+        // semantics step. Null-guarded reference field per the PATCH rule: an
+        // absent key (Jackson-bound to null) preserves any existing config; it
+        // never wipes a previously-recorded config back to null.
+        if (request.behaviourSemanticsConfigJson() != null) {
+            entity.setBehaviourSemanticsConfigJson(request.behaviourSemanticsConfigJson());
+        }
 
         // Kind + pairing invariant — null-guarded per PATCH semantics. If
         // either field appears in the body, re-check the invariant against

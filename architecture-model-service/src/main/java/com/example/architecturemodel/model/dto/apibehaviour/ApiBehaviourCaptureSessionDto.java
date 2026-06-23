@@ -108,6 +108,17 @@ public record ApiBehaviourCaptureSessionDto(
      * snake_case wire (AMS default -- NO {@code @CamelCaseWire}).
      */
     Map<String, String> dataTypeDefaultsJson,
+    /**
+     * Per-session operator-confirmed response-semantics config (Semantics-aware
+     * API Behaviour Baseline coverage, 2026-06-23, changeset 196). A structured
+     * JSON object mirroring the validation service's {@code ResponseSemanticsConfig}
+     * (optional {@code statusBucketOverride} / {@code notFoundMarkers} /
+     * {@code badRequestMarkers} / {@code fiveXxIsBadInput}). {@code null} = no
+     * config recorded = "use the built-in default vocabulary" (the valid empty
+     * state; FORWARD-ONLY, no backfill). JSONB; snake_case wire (AMS default --
+     * NO {@code @CamelCaseWire}).
+     */
+    Map<String, Object> behaviourSemanticsConfigJson,
     Instant createdAt,
     Instant updatedAt
 ) {
@@ -159,6 +170,7 @@ public record ApiBehaviourCaptureSessionDto(
             coverageOverrideAt,
             coverageSummaryJson,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -207,6 +219,7 @@ public record ApiBehaviourCaptureSessionDto(
             coverageOverrideAt,
             null,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -247,6 +260,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             scenariosAttempted, scenariosCompleted, scenariosErrored,
             null, null, null, null,
+            null,
             null,
             null,
             createdAt, updatedAt);
@@ -291,6 +305,7 @@ public record ApiBehaviourCaptureSessionDto(
             null, null, null, null,
             null,
             null,
+            null,
             createdAt, updatedAt);
     }
 
@@ -328,6 +343,7 @@ public record ApiBehaviourCaptureSessionDto(
             kind, sourceBaselineId,
             null, null, null,
             null, null, null, null,
+            null,
             null,
             null,
             createdAt, updatedAt);

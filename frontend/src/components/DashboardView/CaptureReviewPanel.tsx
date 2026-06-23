@@ -368,6 +368,15 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   // Save-as-baseline modal visibility.
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 
+  // "Show N system-hidden captures" reveal (Spec 2026-06-23). COLLAPSED by
+  // default. When expanded, lists the captures the orchestrator auto-rejected as
+  // non-canonical fumbles (`isAutoRejectedFumble`) -- normally hidden from the
+  // review table -- and offers a RE-ACCEPT affordance so a reviewer can rescue a
+  // wrongly-hidden real response. Re-accept reuses the existing accept PATCH
+  // (`accepted:true`); the row then stops being a fumble and flows into the
+  // baseline through the unchanged `accepted === true` path.
+  const [showHiddenCaptures, setShowHiddenCaptures] = useState(false);
+
   // Best-effort batch warning (Spec 2026-06-20 R2/R4). Accept All / Reject All
   // now collapse to a SINGLE `updateCapturesBatch` call; a non-atomic batch can
   // return `failed[]` (rows that did not patch) while the rest committed. Surface
@@ -470,6 +479,16 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   // off `visibleCaptures`, never the raw `captures` array.
   const visibleCaptures = useMemo(
     () => captures.filter((c) => !isAutoRejectedFumble(c)),
+    [captures],
+  );
+
+  // The complement of `visibleCaptures`: the system-hidden (auto-rejected
+  // non-canonical fumble) captures. Surfaced ONLY through the collapsed
+  // "Show N system-hidden captures" reveal so a reviewer can audit + re-accept
+  // them. Re-accepting one flips its `accepted` to true, so it leaves this list
+  // and joins `visibleCaptures` on the next render. Spec 2026-06-23.
+  const hiddenCaptures = useMemo(
+    () => captures.filter((c) => isAutoRejectedFumble(c)),
     [captures],
   );
 
@@ -1344,6 +1363,80 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
           )}
         </tbody>
       </table>
+
+      {/* "Show N system-hidden captures" reveal (Spec 2026-06-23). Collapsed by
+          default. Lists the auto-rejected non-canonical fumble captures the
+          table hides, with a RE-ACCEPT affordance per row. Re-accept reuses the
+          existing accept PATCH (`accepted:true`); the row then leaves the hidden
+          list and flows into the baseline through the unchanged accepted filter.
+          Display-only otherwise -- never shown when there are no hidden rows. */}
+      {hiddenCaptures.length > 0 && (
+        <div
+          className={styles.hiddenCapturesSection}
+          data-testid="capture-review-hidden-section"
+        >
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => setShowHiddenCaptures((v) => !v)}
+            aria-expanded={showHiddenCaptures}
+            data-testid="capture-review-hidden-toggle"
+          >
+            {showHiddenCaptures ? 'Hide' : 'Show'} {hiddenCaptures.length} system-hidden
+            capture{hiddenCaptures.length === 1 ? '' : 's'}
+          </button>
+          {showHiddenCaptures && (
+            <table
+              className={styles.reviewTable}
+              data-testid="capture-review-hidden-table"
+            >
+              <thead>
+                <tr>
+                  <th>Operation</th>
+                  <th>Scenario</th>
+                  <th>Status</th>
+                  <th>Attempt</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {hiddenCaptures.map((cap) => {
+                  const op = operations.find((o) => o.id === cap.operation_id);
+                  const scenario = scenarios.find((sc) => sc.id === cap.scenario_id);
+                  return (
+                    <tr
+                      key={cap.id}
+                      data-testid="capture-review-hidden-row"
+                      data-capture-id={cap.id}
+                    >
+                      <td>{op ? operationLabel(op) : cap.operation_id}</td>
+                      <td>{scenario?.scenario_name ?? '(unnamed)'}</td>
+                      <td>
+                        {cap.response_status ??
+                          (cap.error_type ? `err:${cap.error_type}` : '—')}
+                      </td>
+                      <td>{cap.attempt_number ?? '—'}</td>
+                      <td>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className={styles.smallButton}
+                            onClick={() => handleAccept(cap)}
+                            disabled={actionInFlight !== null}
+                            data-testid="capture-review-hidden-reaccept"
+                          >
+                            Re-accept
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
       {saveModalOpen && (
         <SaveAsBaselineModal

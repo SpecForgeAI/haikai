@@ -8,6 +8,8 @@
  * Spec: 2026-05-15 API Behaviour Baseline Capture Service -- Task Group 4.
  */
 
+import type { ResponseSemanticsConfig } from '../services/responseSemantics';
+
 export type CaptureSessionStatus =
   | 'draft'
   | 'configured'
@@ -75,6 +77,18 @@ export interface CaptureSession {
    * `dataTypeDefaults` prompt block. Null/absent on legacy sessions.
    */
   dataTypeDefaultsJson?: Record<string, string | null> | null;
+  /**
+   * Per-API operator-confirmed response-semantics config (Semantics-aware API
+   * Behaviour Baseline coverage, 2026-06-23; AMS changeset 196). A structured
+   * `ResponseSemanticsConfig` (optional `statusBucketOverride` /
+   * `notFoundMarkers` / `badRequestMarkers` / `fiveXxIsBadInput`) steering how
+   * the scorer maps an observed status + body to a coverage bucket for a legacy
+   * API that violates REST conventions. Hydrated from the AMS DTO
+   * `behaviour_semantics_config_json` and threaded into the orchestrator's
+   * `classifyObservedBehaviour`. Null/absent === built-in default vocabulary
+   * (the valid empty state; forward-only, no backfill on legacy sessions).
+   */
+  behaviourSemanticsConfigJson?: ResponseSemanticsConfig | null;
 }
 
 export type ScenarioType =

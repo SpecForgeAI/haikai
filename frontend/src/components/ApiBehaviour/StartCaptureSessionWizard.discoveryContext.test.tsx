@@ -343,11 +343,16 @@ describe('Discovery Context section -- start payload (Task 4.1 #5, #6)', () => {
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
     });
-    // Step 4 -> 5 (no operations, just transition).
+    // Step 4 -> (Data-type auto-skipped: empty preview) -> Response semantics
+    // (step 6), which always shows.
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
     });
-    // Step 5: Start.
+    // Step 6 -> 7 (Response semantics -> Start).
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('start-capture-session-wizard-next'));
+    });
+    // Step 7: Start.
     await act(async () => {
       fireEvent.click(screen.getByTestId('start-capture-session-wizard-start'));
     });

@@ -155,7 +155,10 @@ describe('defaultScenarioSet', () => {
     expect(defaultScenarioSet(makeOp('POST', '/owners'), ctx)).toEqual([
       { name: 'happy_path', type: 'happy_path', expectedStatus: 'success' },
       { name: 'error_404', type: 'error', expectedStatus: 'not_found' },
-      { name: 'auth_missing_token', type: 'auth_variant', expectedStatus: 'client_error' },
+      // Spec 2026-06-23: auth-negative scenarios route to their OWN `auth`
+      // bucket (no longer folded into client_error), so a "200 = no auth
+      // enforced" response is captured + flagged, not hidden.
+      { name: 'auth_missing_token', type: 'auth_variant', expectedStatus: 'auth' },
     ]);
   });
 

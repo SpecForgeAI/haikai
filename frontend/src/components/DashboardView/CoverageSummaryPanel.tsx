@@ -45,6 +45,12 @@ export interface CoverageDimension {
   canonical_capture_id: string | null;
   /** Honest human-readable reason on a MISS; null when achieved. */
   reason: string | null;
+  /**
+   * NON-SCORING REST-convention deviation note for this dimension (e.g.
+   * "returns 200 for a missing resource"); null when the behaviour was
+   * conventional. snake_case wire (`observation`). Spec 2026-06-23.
+   */
+  observation: string | null;
 }
 
 /** Per-endpoint coverage: the rubric dimensions + the achieved/total fraction. */
@@ -91,6 +97,14 @@ export interface CoverageSummary {
   dimensions_achieved: number;
   per_endpoint: EndpointCoverage[];
   auth_coverage: AuthCoverage;
+  /**
+   * NON-SCORING "Observations / REST-convention deviations" list (e.g.
+   * "returns 200 for a missing resource", "no auth enforced", "possible
+   * crash"). DISPLAY-ONLY: it does NOT enter `overall_score` /
+   * `dimensions_achieved`. snake_case wire (`observations`). Defaults to `[]`
+   * for legacy / pre-fix summaries. Spec 2026-06-23.
+   */
+  observations: string[];
 }
 
 // ============================================================================
@@ -121,6 +135,12 @@ function toNullableNum(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+/** Coerce to a string[] (drops non-strings); a non-array yields []. Never throws. */
+function toStrArray(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((x): x is string => typeof x === 'string');
+}
+
 function parseDimension(raw: unknown): CoverageDimension {
   const o = isObject(raw) ? raw : {};
   return {
@@ -130,6 +150,7 @@ function parseDimension(raw: unknown): CoverageDimension {
     achieved: toBool(o.achieved),
     canonical_capture_id: toNullableStr(o.canonical_capture_id),
     reason: toNullableStr(o.reason),
+    observation: toNullableStr(o.observation),
   };
 }
 
@@ -197,6 +218,7 @@ export function parseCoverageSummary(
     dimensions_achieved: toNum(raw.dimensions_achieved),
     per_endpoint,
     auth_coverage: parseAuthCoverage(raw.auth_coverage),
+    observations: toStrArray(raw.observations),
   };
 }
 
@@ -296,10 +318,17 @@ export const CoverageSummaryPanel: React.FC<CoverageSummaryPanelProps> = ({
   return (
     <div className={classes.banner} data-testid={testId} role="status">
       <strong data-testid={`${testId}-overall`}>
-        Oracle coverage: {formatScorePct(summary.overall_score)} (
+        Behaviour observed/captured: {formatScorePct(summary.overall_score)} (
         {summary.dimensions_achieved} of {summary.dimensions_total} dimensions
-        pinned)
+        captured)
       </strong>
+      <span
+        className={classes.badge}
+        data-testid={`${testId}-metric-note`}
+      >
+        This % means how much of the intended behaviour we captured — not how
+        closely the API follows REST conventions (see deviations below).
+      </span>
 
       {summary.per_endpoint.length === 0 && (
         <span data-testid={`${testId}-no-endpoints`}>
@@ -369,6 +398,28 @@ export const CoverageSummaryPanel: React.FC<CoverageSummaryPanelProps> = ({
           </ul>
         )}
       </div>
+
+      {/* NON-SCORING "Observations / REST-convention deviations" list (Spec
+          2026-06-23). DISPLAY-ONLY: these never affect the % above; they record
+          HOW this API departs from REST conventions (e.g. returns 200 for a
+          missing resource, no auth enforced, possible crash). Rendered on both
+          host surfaces (CaptureSessionDetailView + SaveAsBaselineModal). */}
+      {summary.observations.length > 0 && (
+        <div data-testid={`${testId}-observations`}>
+          <strong>Observations / REST-convention deviations (non-scoring)</strong>
+          <ul data-testid={`${testId}-observations-list`}>
+            {summary.observations.map((obs, i) => (
+              <li
+                key={`${i}-${obs}`}
+                className={warnClass}
+                data-testid={`${testId}-observation`}
+              >
+                {obs}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
