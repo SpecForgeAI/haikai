@@ -214,6 +214,16 @@ import {
   type BulkReviewAction,
   type ResolvedBulkActionSet,
 } from '../Discovery/resolveBulkActionSet';
+import {
+  BatchResolveConflictsModal,
+  type BatchRowSelections,
+  type BatchResolveResult,
+} from '../Discovery/BatchResolveConflictsModal';
+import {
+  batchResolveCommit,
+  selectionsToCommitUnits,
+} from '../Discovery/batchResolveCommit';
+import type { ConflictRow } from '../Discovery/batchResolveConflictsSupport';
 import styles from './DiscoveryRunDetailView.module.css';
 
 export interface DiscoveryCandidateTableProps {
@@ -525,6 +535,14 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
   const [conflictModalCandidateId, setConflictModalCandidateId] = useState<
     string | null
   >(null);
+
+  // Spec 3 (2026-06-23) Batch "Resolve Conflicts": run-wide conflict chooser.
+  // Aggregates every live conflict across candidates into one modal; commit
+  // loops the existing single-attribute resolve endpoint best-effort. `result`
+  // drives the pinned banner + Retry relabel + all-success auto-close.
+  const [batchModalOpen, setBatchModalOpen] = useState<boolean>(false);
+  const [batchInFlight, setBatchInFlight] = useState<boolean>(false);
+  const [batchResult, setBatchResult] = useState<BatchResolveResult | null>(null);
 
   // Spec 2 (2026-06-02) Task Group 5.4: cascade-confirm modal state. When the
   // user clicks a bulk Approve/Reject/Defer button, we resolve the FULL
@@ -1098,6 +1116,94 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
     }
   }
 
+  // Spec 3 (2026-06-23) Batch "Resolve Conflicts": aggregate EVERY live conflict
+  // across all candidates in the run into the modal's row shape (one row per
+  // conflicted attribute). Recomputes when the candidate list reference changes,
+  // so resolved rows drop out after a commit feeds back via onCandidatesChange.
+  const batchConflictRows = useMemo<ConflictRow[]>(() => {
+    const rows: ConflictRow[] = [];
+    for (const c of candidates) {
+      for (const entry of getUnresolvedConflicts(c)) {
+        rows.push({
+          candidateId: c.id,
+          candidateName: c.name,
+          type: c.candidate_type,
+          attr: entry.attr,
+          options: entry.options,
+        });
+      }
+    }
+    return rows;
+  }, [candidates]);
+
+  // Spec 3 (2026-06-23): run the best-effort batch commit (TG3 helper loops the
+  // existing single-attribute resolve endpoint, stamping `reviewer (batch)`),
+  // then mirror handleResolveConflicts' optimistic candidate update + backbone-
+  // snapshot patch for every resolved (candidate, attribute) so the resolved
+  // rows clear and the approve-gate + the top-button N update immediately. The
+  // modal stays open on partial failure (keeping only the failed rows selected)
+  // and auto-closes on all-success (both handled inside the modal via `result`).
+  async function handleBatchResolveConfirm(selections: BatchRowSelections) {
+    const units = selectionsToCommitUnits(batchConflictRows, selections);
+    if (units.length === 0) return;
+    setBatchInFlight(true);
+    try {
+      const result = await batchResolveCommit(
+        { projectId, architectureId, runId },
+        units,
+        candidates,
+      );
+      onCandidatesChange(result.candidates);
+
+      // Patch the held backbone snapshot for every candidate that transitioned
+      // live -> clean, mirroring handleResolveConflicts' Bug-2 patch so the
+      // bulk-Approve gate + the whole-run live-conflict scalar recompute now.
+      setReviewModel((prev) => {
+        if (!prev) return prev;
+        const updatedById = new Map(result.candidates.map((c) => [c.id, c]));
+        let liveDelta = 0;
+        let changed = false;
+        const nodes = prev.nodes.map((n) => {
+          const updatedCandidate = updatedById.get(n.id);
+          if (!updatedCandidate) return n;
+          const stillLive = getUnresolvedConflicts(updatedCandidate).length > 0;
+          const wasLive = n.conflict_state.has_live_conflict;
+          if (wasLive === stillLive) return n;
+          changed = true;
+          if (wasLive && !stillLive) liveDelta += 1;
+          return {
+            ...n,
+            conflict_state: {
+              has_live_conflict: stillLive,
+              live_conflict_attrs: getUnresolvedConflicts(updatedCandidate).map(
+                (e) => e.attr,
+              ),
+            },
+          };
+        });
+        if (!changed) return prev;
+        return {
+          ...prev,
+          nodes,
+          aggregations: {
+            ...prev.aggregations,
+            live_conflict_count: Math.max(
+              0,
+              prev.aggregations.live_conflict_count - liveDelta,
+            ),
+          },
+        };
+      });
+
+      setBatchResult({ resolved: result.resolved, failed: result.failed });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Batch conflict resolution failed:', err);
+    } finally {
+      setBatchInFlight(false);
+    }
+  }
+
   if (candidates.length === 0) {
     return <div className={styles.emptyMessage} data-testid="candidate-table-empty">No candidates found for this run.</div>;
   }
@@ -1167,6 +1273,27 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
               cascade-confirm modal (pre-selecting the full Spec 1 blast-radius
               for the seeded scope) instead of firing the per-row fan-out. The
               labels / gating are unchanged; the apply is atomic on Confirm. */}
+          {/* Spec 3 (2026-06-23) Batch "Resolve Conflicts": opens the run-wide
+              conflict chooser. FIRST in the bulk row; neutral style (no
+              approve/reject colour); enabled only when the run has >= 1 live
+              (unresolved) conflict. N = the whole-run unresolvedConflictCount,
+              the SAME scalar the Approve gate reads. */}
+          <button
+            className={`${styles.actionButton}${unresolvedConflictCount === 0 ? ` ${styles.actionButtonDisabled}` : ''}`}
+            disabled={unresolvedConflictCount === 0}
+            title={
+              unresolvedConflictCount === 0
+                ? 'No unresolved conflicts to resolve'
+                : `Resolve ${unresolvedConflictCount} conflicted candidate(s) in one place`
+            }
+            onClick={() => {
+              setBatchResult(null);
+              setBatchModalOpen(true);
+            }}
+            data-testid="bulk-resolve-conflicts"
+          >
+            {`Resolve Conflicts (${unresolvedConflictCount})`}
+          </button>
           <button
             className={`${styles.actionButton} ${styles.actionButtonApprove}${actionableCount === 0 || unresolvedConflictCount > 0 ? ` ${styles.actionButtonDisabled}` : ''}`}
             disabled={actionableCount === 0 || unresolvedConflictCount > 0}
@@ -1597,6 +1724,23 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
             handleResolveConflicts(conflictModalCandidate.id, selections);
           }
         }}
+      />
+
+      {/* Spec 3 (2026-06-23) Batch "Resolve Conflicts": run-wide chooser that
+          aggregates EVERY live conflict across candidates. Commit loops the same
+          single-attribute resolve endpoint best-effort (reviewer (batch)
+          provenance); resolved rows clear via onCandidatesChange + the backbone
+          patch. Coexists with the per-row badge + single-candidate modal above. */}
+      <BatchResolveConflictsModal
+        isOpen={batchModalOpen}
+        rows={batchConflictRows}
+        inFlight={batchInFlight}
+        result={batchResult}
+        onClose={() => {
+          setBatchModalOpen(false);
+          setBatchResult(null);
+        }}
+        onConfirm={handleBatchResolveConfirm}
       />
 
       {/* Spec 2 (2026-06-02) Task Group 5.3/5.4: cascade-confirm modal. A THIN

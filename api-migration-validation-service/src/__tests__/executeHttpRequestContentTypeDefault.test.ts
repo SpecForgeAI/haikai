@@ -287,4 +287,59 @@ describe('execute_http_request -- Content-Type default for mutating verbs (Fix #
       Object.keys(getHeaders).some((k) => k.toLowerCase() === 'content-type');
     expect(hasContentType).toBe(false);
   });
+
+  it('(e) replaces a caller-set enum-style Content-Type (APPLICATION_JSON) with the resolved default', async () => {
+    startRun();
+    const request = jest.fn(async () => okResponse(204));
+    const ctx = buildContext({ httpExecutor: buildHttpExecutor(request) });
+
+    await executeHttpRequestTool.handler(
+      {
+        operationId: 'setFavourite',
+        method: 'put',
+        path: '/favourite',
+        headers: { 'Content-Type': 'APPLICATION_JSON' },
+      },
+      ctx,
+    );
+
+    const h = sentHeaders(request);
+    // The unparseable enum token never reaches the wire; it is replaced by the
+    // contract-resolved default (application/json when the op has no contract).
+    expect(h?.['Content-Type']).toBe('application/json');
+    // And the bad value is not also left behind under any key casing.
+    const contentTypeValues = Object.entries(h ?? {})
+      .filter(([k]) => k.toLowerCase() === 'content-type')
+      .map(([, v]) => v);
+    expect(contentTypeValues).toEqual(['application/json']);
+  });
+
+  it('(f) an invalid caller Content-Type falls back to the enriched op media type (no enum->media-type map needed)', async () => {
+    startRun();
+    const request = jest.fn(async () => okResponse(204));
+    const op = buildOasOp('setFavourite', 'put', '/favourite', {
+      operationId: 'setFavourite',
+      requestBody: { content: { 'application/xml': { schema: { type: 'object' } } } },
+      responses: {},
+    });
+    const ctx = buildContext({
+      httpExecutor: buildHttpExecutor(request),
+      oasInventory: { title: 'T', version: '1', operations: [op] },
+    });
+
+    await executeHttpRequestTool.handler(
+      {
+        operationId: 'setFavourite',
+        method: 'put',
+        path: '/favourite',
+        headers: { 'Content-Type': 'APPLICATION_XML' },
+      },
+      ctx,
+    );
+
+    // The contract resolver picks the right media type for the op, so a bogus
+    // `APPLICATION_XML` lands on `application/xml` -- intent preserved without a
+    // hand-curated enum-token map.
+    expect(sentHeaders(request)?.['Content-Type']).toBe('application/xml');
+  });
 });

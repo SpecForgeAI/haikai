@@ -384,18 +384,43 @@ const handler: ToolHandler = async (args, ctx) => {
   // The check is case-INSENSITIVE on the caller's header keys (HTTP header
   // names are case-insensitive; a caller-set `content-type`, `Content-Type`,
   // or `CONTENT-TYPE` must all be preserved, not overridden).
+  //
+  // The caller-set Content-Type is honored ONLY when its VALUE is a
+  // syntactically valid `type/subtype` media type. The LLM sometimes emits an
+  // enum-style constant name instead -- e.g. Spring's `APPLICATION_JSON`
+  // (the constant NAME, whose value is actually `application/json`), picked up
+  // from an OAS/discovery finding or its Java priors. The target cannot parse
+  // that as a media type and rejects the request 415 / 500. Such a value is
+  // treated as UNSET: the bad header is stripped (so it never reaches the wire)
+  // and the contract-resolved default below fills in the correct media type.
+  // ONLY Content-Type is validated this way -- every other header (auth,
+  // custom, correlation ids, ...) passes through verbatim and untouched.
   let effectiveHeaders: Record<string, string> | undefined = headers;
+  const callerContentTypeEntry = headers
+    ? Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')
+    : undefined;
+  const callerContentTypeIsValidMediaType =
+    !!callerContentTypeEntry &&
+    typeof callerContentTypeEntry[1] === 'string' &&
+    /^[\w.+-]+\/[\w.+-]+/.test(callerContentTypeEntry[1].trim());
+
+  // Drop a present-but-invalid caller Content-Type so it cannot reach the wire
+  // (and so the defaulting below is free to replace it). A valid caller value
+  // is preserved verbatim, including its original key casing.
+  if (callerContentTypeEntry && !callerContentTypeIsValidMediaType) {
+    effectiveHeaders = Object.fromEntries(
+      Object.entries(headers ?? {}).filter(
+        ([k]) => k.toLowerCase() !== 'content-type',
+      ),
+    );
+  }
+
   const shouldDefaultContentType =
     body !== undefined || CONTENT_TYPE_DEFAULTING_VERBS.has(method);
-  if (shouldDefaultContentType) {
-    const callerHasContentType = headers
-      ? Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')
-      : false;
-    if (!callerHasContentType) {
-      const mediaType =
-        resolveOperationContentType(ctx, operationId) ?? 'application/json';
-      effectiveHeaders = { ...(headers ?? {}), 'Content-Type': mediaType };
-    }
+  if (shouldDefaultContentType && !callerContentTypeIsValidMediaType) {
+    const mediaType =
+      resolveOperationContentType(ctx, operationId) ?? 'application/json';
+    effectiveHeaders = { ...(effectiveHeaders ?? {}), 'Content-Type': mediaType };
   }
 
   const start = Date.now();
@@ -843,7 +868,11 @@ export const executeHttpRequestTool: ToolRegistryEntry = {
       method: { type: 'string', description: 'HTTP verb (lowercase); must match the OAS operation.' },
       path: { type: 'string', description: 'Resolved URL path (no scheme/host).' },
       query: { type: 'object', description: 'Optional query parameters.' },
-      headers: { type: 'object', description: 'Optional ad-hoc headers (do NOT include auth headers).' },
+      headers: {
+        type: 'object',
+        description:
+          'Optional ad-hoc headers (do NOT include auth headers). For Content-Type, pass the media-type value (e.g. application/json), not a constant name like APPLICATION_JSON.',
+      },
       body: { description: 'Optional JSON body.' },
       authMode: {
         type: 'string',
