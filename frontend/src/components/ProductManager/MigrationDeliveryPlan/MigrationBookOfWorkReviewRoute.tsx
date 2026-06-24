@@ -56,6 +56,9 @@ export function MigrationBookOfWorkReviewRoute() {
       projectId={projectId}
       bookId={bookId}
       onOpenBacklog={() => navigate(`${archScopedPrefix}/product/backlog`)}
+      onBackToPlans={() =>
+        navigate(`${archScopedPrefix}/migration-delivery-plan`)
+      }
     />
   );
 }

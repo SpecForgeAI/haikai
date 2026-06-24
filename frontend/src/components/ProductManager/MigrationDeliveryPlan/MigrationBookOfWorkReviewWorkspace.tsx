@@ -74,6 +74,7 @@ import MigrationBookOfWorkSaveToBacklogDialog, {
 import MigrationBookOfWorkPostSaveView from './MigrationBookOfWorkPostSaveView';
 import { computeFindingsCoverage } from '../../../utils/findingsCoverage';
 import { buildUnaddressedFindingEntry } from '../../../config/gapWayfindingRegistry';
+import { useToast } from '../../../contexts/ToastContext';
 import styles from './MigrationBookOfWork.module.css';
 
 export interface MigrationBookOfWorkReviewWorkspaceProps {
@@ -83,6 +84,8 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
   initialDraft?: MigrationBookOfWorkDraft;
   /** Optional navigation callback exposed to the post-save view. */
   onOpenBacklog?: () => void;
+  /** Optional "back to the Migration Delivery Plans list" navigation callback. */
+  onBackToPlans?: () => void;
 }
 
 /**
@@ -242,12 +245,20 @@ function severityBadgeClass(severity: string): string {
 
 export const MigrationBookOfWorkReviewWorkspace: React.FC<
   MigrationBookOfWorkReviewWorkspaceProps
-> = ({ projectId, bookId, initialDraft, onOpenBacklog }) => {
+> = ({ projectId, bookId, initialDraft, onOpenBacklog, onBackToPlans }) => {
+  const { showToast } = useToast();
   const [draft, setDraft] = useState<MigrationBookOfWorkDraft | null>(
     initialDraft ?? null,
   );
   const [loading, setLoading] = useState<boolean>(!initialDraft);
   const [error, setError] = useState<string | null>(null);
+
+  // Save-draft feedback (point 1): the previous implementation gave no
+  // positive signal on success and silently swallowed failures. We now track
+  // an explicit lifecycle so the header can show saving / saved / error.
+  const [saveDraftState, setSaveDraftState] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
 
   const items: MigrationBookOfWorkItem[] = useMemo(
     () => draft?.bookOfWork?.items ?? [],
@@ -451,6 +462,32 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     const ids = [selectedItemId, ...descendantIds(selectedItemId, childrenIdx)];
     setStateFor(ids, 'selected');
   }, [items, selectedItemId]);
+
+  // Per-row checkbox toggle (point 2). Toggling any node cascades to its whole
+  // subtree so a parent checkbox selects/deselects every child. We never touch
+  // `saved` items (they hold a real workItemId). On select we skip `excluded`
+  // items (a deliberate keep-out); on deselect we only flip items currently
+  // `selected` back to `draft`, leaving `excluded` marks intact.
+  const handleToggleSelectItem = useCallback(
+    (itemId: string, selected: boolean) => {
+      const childrenIdx = buildChildrenIndex(items);
+      const ids = [itemId, ...descendantIds(itemId, childrenIdx)];
+      setSaveStateById((prev) => {
+        const next = { ...prev };
+        for (const id of ids) {
+          const cur = next[id] ?? 'draft';
+          if (cur === 'saved') continue;
+          if (selected) {
+            if (cur !== 'excluded') next[id] = 'selected';
+          } else if (cur === 'selected') {
+            next[id] = 'draft';
+          }
+        }
+        return next;
+      });
+    },
+    [items],
+  );
 
   const handleExcludeSelected = useCallback(() => {
     const ids = Object.entries(saveStateById)
@@ -681,8 +718,14 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
 
   const handleSaveDraft = useCallback(async () => {
     if (!draft) return;
+    if (!hasUnsavedChanges) {
+      // Nothing to persist -- give explicit feedback rather than a dead click.
+      showToast('No unsaved review changes to save.', 'info');
+      return;
+    }
     // Apply the current frontend saveStateById onto the items blob and
     // PUT the whole `book_of_work_json` back so the deltas are persisted.
+    setSaveDraftState('saving');
     const updatedItems: MigrationBookOfWorkItem[] = items.map((i) => ({
       ...i,
       saveState: saveStateById[i.id] ?? 'draft',
@@ -691,12 +734,32 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       ...(draft.bookOfWork ?? { items: [] }),
       items: updatedItems,
     };
-    const updated = await updateMigrationBookOfWork(projectId, bookId, {
-      bookOfWork: nextBlob,
-    });
-    setDraft(updated);
-    setPersistedSaveStateById({ ...saveStateById });
-  }, [draft, items, saveStateById, projectId, bookId]);
+    try {
+      const updated = await updateMigrationBookOfWork(projectId, bookId, {
+        bookOfWork: nextBlob,
+      });
+      setDraft(updated);
+      setPersistedSaveStateById({ ...saveStateById });
+      setSaveDraftState('saved');
+      showToast('Draft saved.', 'success');
+    } catch (err) {
+      setSaveDraftState('error');
+      showToast(
+        err instanceof Error
+          ? `Failed to save draft: ${err.message}`
+          : 'Failed to save draft.',
+        'error',
+      );
+    }
+  }, [
+    draft,
+    items,
+    saveStateById,
+    projectId,
+    bookId,
+    hasUnsavedChanges,
+    showToast,
+  ]);
 
   // ----- Render -----
   if (loading) {
@@ -744,6 +807,16 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     <div className={styles.workspace} data-testid="review-workspace">
       <div className={styles.workspaceHeader}>
         <div>
+          {onBackToPlans && (
+            <button
+              type="button"
+              className={styles.backLink}
+              onClick={onBackToPlans}
+              data-testid="back-to-plans-button"
+            >
+              {'\u2190'} Back to plans
+            </button>
+          )}
           <h1 className={styles.workspaceTitle}>
             {draft.title ?? 'Migration Delivery Plan'}
           </h1>
@@ -773,22 +846,36 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
               {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand all epics'}
             </button>
           )}
-          {hasUnsavedChanges && (
+          {hasUnsavedChanges ? (
             <span
               className={styles.unsavedIndicator}
               data-testid="unsaved-review-changes-indicator"
             >
               Unsaved review changes
             </span>
+          ) : (
+            saveDraftState === 'saved' && (
+              <span
+                className={styles.savedIndicator}
+                data-testid="draft-saved-indicator"
+              >
+                {'\u2713'} All changes saved
+              </span>
+            )
           )}
           <button
             type="button"
             className={styles.selectButton}
             onClick={() => void handleSaveDraft()}
-            disabled={!hasUnsavedChanges || archived}
+            disabled={archived || saveDraftState === 'saving'}
+            title={
+              hasUnsavedChanges
+                ? 'Persist your review selections to this draft'
+                : 'No unsaved review changes'
+            }
             data-testid="save-draft-button"
           >
-            Save draft
+            {saveDraftState === 'saving' ? 'Saving\u2026' : 'Save draft'}
           </button>
         </div>
       </div>
@@ -883,20 +970,8 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
 
       <div className={styles.workspaceBody}>
         <div className={styles.leftPanel}>
-          <MigrationBookOfWorkFilters value={filters} onChange={setFilters} />
-          <MigrationBookOfWorkHierarchyTree
-            items={visibleItems}
-            selectedItemId={selectedItemId}
-            saveStateById={saveStateById}
-            onSelectItem={setSelectedItemId}
-            expansionStateById={expansionStateById}
-            liveExpandingEpicIds={liveExpandingEpicIds}
-            onExpandEpic={
-              showExpandControls
-                ? (epicId) => void handleExpandEpic(epicId)
-                : undefined
-            }
-          />
+          {/* Action toolbar pinned ABOVE the scrollable hierarchy (point 4)
+              so every action stays visible regardless of tree scroll. */}
           <MigrationBookOfWorkSelectionControls
             onSelectAll={handleSelectAll}
             onDeselectAll={handleDeselectAll}
@@ -906,6 +981,21 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             onSave={openSaveDialog}
             subtreeDisabled={!selectedItemId}
             readOnly={archived}
+          />
+          <MigrationBookOfWorkFilters value={filters} onChange={setFilters} />
+          <MigrationBookOfWorkHierarchyTree
+            items={visibleItems}
+            selectedItemId={selectedItemId}
+            saveStateById={saveStateById}
+            onSelectItem={setSelectedItemId}
+            onToggleSelect={archived ? undefined : handleToggleSelectItem}
+            expansionStateById={expansionStateById}
+            liveExpandingEpicIds={liveExpandingEpicIds}
+            onExpandEpic={
+              showExpandControls
+                ? (epicId) => void handleExpandEpic(epicId)
+                : undefined
+            }
           />
         </div>
         <div className={styles.rightPanel}>

@@ -16,7 +16,7 @@
  * the item detail drawer. Subtree expand/collapse is local state.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import type {
   MigrationBookOfWorkItem,
   MigrationBookOfWorkConfidence,
@@ -137,6 +137,41 @@ function buildAdjacency(items: MigrationBookOfWorkItem[]): {
   return { roots, childrenOf };
 }
 
+/**
+ * Tri-state checkbox. React has no declarative `indeterminate` prop, so the
+ * DOM flag is set imperatively via a ref. A node is `indeterminate` when SOME
+ * (but not all) of its selectable subtree is selected; `checked` wins over
+ * `indeterminate` when the whole subtree is selected.
+ */
+const TriStateCheckbox: React.FC<{
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+  testId?: string;
+  ariaLabel?: string;
+}> = ({ checked, indeterminate, onChange, disabled, testId, ariaLabel }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = !checked && indeterminate;
+  }, [checked, indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      className={styles.nodeCheckbox}
+      checked={checked}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      data-testid={testId}
+      // The checkbox owns selection-for-save; the row owns drawer focus.
+      // Stop both events so toggling never also opens the drawer.
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.checked)}
+    />
+  );
+};
+
 // ============================================================================
 // Props + Component
 // ============================================================================
@@ -151,6 +186,12 @@ export interface MigrationBookOfWorkHierarchyTreeProps {
    */
   saveStateById: Record<string, MigrationBookOfWorkSaveState>;
   onSelectItem: (itemId: string) => void;
+  /**
+   * Per-row selection toggle driving `saveState 'selected'`. Toggling a
+   * parent cascades to its whole subtree (the parent owns the cascade). When
+   * omitted (read-only views) the checkboxes are hidden.
+   */
+  onToggleSelect?: (itemId: string, selected: boolean) => void;
   /**
    * Per-epic phase-2 expansion state keyed by epic item id (Spec
    * 2026-06-11). Lives in the parent (review workspace) -- seeded from the
@@ -175,12 +216,42 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
   selectedItemId,
   saveStateById,
   onSelectItem,
+  onToggleSelect,
   expansionStateById,
   liveExpandingEpicIds,
   onExpandEpic,
 }) => {
   const { roots, childrenOf } = useMemo(() => buildAdjacency(items), [items]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  // Per-node selection aggregate over its OWN subtree (incl. self), counting
+  // only "selectable" items -- those not already `saved`/`excluded`. Drives
+  // the tri-state checkbox: fully-checked when every selectable descendant is
+  // selected, indeterminate when only some are. Computed post-order so each
+  // node reads its children's tallies in O(n) total.
+  const selectionAggById = useMemo(() => {
+    const agg = new Map<string, { selectable: number; selected: number }>();
+    const visit = (
+      item: MigrationBookOfWorkItem,
+    ): { selectable: number; selected: number } => {
+      const cached = agg.get(item.id);
+      if (cached) return cached;
+      const st = saveStateById[item.id];
+      const selfSelectable = st !== 'saved' && st !== 'excluded';
+      let selectable = selfSelectable ? 1 : 0;
+      let selected = st === 'selected' ? 1 : 0;
+      for (const child of childrenOf.get(item.id) ?? []) {
+        const c = visit(child);
+        selectable += c.selectable;
+        selected += c.selected;
+      }
+      const res = { selectable, selected };
+      agg.set(item.id, res);
+      return res;
+    };
+    for (const r of roots) visit(r);
+    return agg;
+  }, [roots, childrenOf, saveStateById]);
 
   const toggle = useCallback((id: string) => {
     setCollapsed((prev) => {
@@ -223,6 +294,12 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
         isStaleExpanding);
     const gaps = gapCount(item);
     const isSelected = selectedItemId === item.id;
+    const agg = selectionAggById.get(item.id) ?? { selectable: 0, selected: 0 };
+    const checkboxChecked = agg.selectable > 0 && agg.selected === agg.selectable;
+    const checkboxIndeterminate = agg.selected > 0 && agg.selected < agg.selectable;
+    // Disabled when there is nothing toggleable in the subtree (every node is
+    // already `saved`/`excluded`) or the view is read-only (no handler).
+    const checkboxDisabled = onToggleSelect === undefined || agg.selectable === 0;
     const rowClass = [
       styles.nodeRow,
       isSelected ? styles.nodeRowSelected : '',
@@ -251,6 +328,16 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
             }
           }}
         >
+          {onToggleSelect !== undefined && (
+            <TriStateCheckbox
+              checked={checkboxChecked}
+              indeterminate={checkboxIndeterminate}
+              disabled={checkboxDisabled}
+              onChange={(c) => onToggleSelect(item.id, c)}
+              testId={`hierarchy-node-checkbox-${item.id}`}
+              ariaLabel={`Select ${item.title} for saving`}
+            />
+          )}
           {children.length > 0 ? (
             <button
               type="button"

@@ -94,6 +94,7 @@ import { LlmCallerFn } from './migrationBookOfWorkHandler';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
 import { getElementsInventory } from './architectureModelClient';
 import { fetchMigrationDiscoveryContext } from './migrationDiscoveryContextClient';
+import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -300,7 +301,7 @@ export function selectExpandableEpics(
  * input order notwithstanding.
  */
 function inventorySortKey(item: InventoryWorkItem): string {
-  return `${item.kind} ${item.path ?? item.name} ${item.id}`;
+  return `${item.kind} ${item.path ?? item.name} ${item.id}`;
 }
 
 /**
@@ -641,6 +642,12 @@ function normalise(text: string): string {
  * be resolved keeps `baselineId=null`, which the layer-2 override routes to
  * the bespoke path (`missing_baseline`) — unverifiable facts are never
  * stamped.
+ *
+ * Baseline resolution uses the CANONICAL AMS endpoint→baseline coverage join
+ * (`fetchEndpointBaselineCoverage`, keyed by the endpoint element id) — NOT
+ * the old baseline-NAME substring match, which never matched a descriptively
+ * named baseline and so reported every endpoint as "missing baseline" even at
+ * full capture coverage. Finding attachment is a separate best-effort pass.
  */
 const defaultFetchEpicInventory: FetchEpicInventoryFn = async ({
   projectId,
@@ -673,31 +680,44 @@ const defaultFetchEpicInventory: FetchEpicInventoryFn = async ({
     }
   }
 
-  // Best-effort fact enrichment (baselines by name-match, findings by
-  // title/summary mention). Failure here only degrades to the conservative
-  // bespoke path — it never blocks expansion.
+  // Baseline + finding enrichment applies ONLY to API endpoints (database
+  // tables have no baseline concept). Both passes are best-effort: a failure
+  // degrades the affected endpoints to the conservative bespoke path and never
+  // blocks expansion.
   if (items.length > 0 && source.kind === 'api_endpoint') {
+    // Baselines: canonical endpoint→baseline coverage from AMS, joined by the
+    // endpoint element id (matches the inventory instance id).
+    try {
+      const coverage = await fetchEndpointBaselineCoverage(projectId, architectureId);
+      for (const item of items) {
+        const baselineId = coverage.get(item.id);
+        if (baselineId) item.baselineId = baselineId;
+      }
+    } catch (error) {
+      logger.warn('Expansion baseline coverage lookup failed; endpoints stay conservative (bespoke path)', {
+        projectId,
+        stream,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Findings: best-effort attachment by title/summary mention of the
+    // endpoint name (unchanged heuristic; drives the `attached_finding`
+    // bespoke override).
     try {
       const context = await fetchMigrationDiscoveryContext(projectId, {
         currentArchitectureId: currentArchitectureId ?? architectureId,
         targetArchitectureId: targetArchitectureId ?? undefined,
       });
-      const baselines = context.apiBehaviourBaselineSummary?.baselines ?? [];
       const findings = context.highPriorityFindings ?? [];
       for (const item of items) {
         const needle = normalise(item.name);
-        const baseline = baselines.find(
-          (b) =>
-            b.status === 'active' &&
-            (normalise(b.name).includes(needle) || needle.includes(normalise(b.name)))
-        );
-        if (baseline) item.baselineId = baseline.baselineId;
         item.attachedFindingIds = findings
           .filter((f) => normalise(`${f.title} ${f.summary ?? ''}`).includes(needle))
           .map((f) => f.findingId);
       }
     } catch (error) {
-      logger.warn('Expansion inventory fact enrichment failed; items stay conservative (bespoke path)', {
+      logger.warn('Expansion finding enrichment failed; items stay conservative (bespoke path)', {
         projectId,
         stream,
         error: error instanceof Error ? error.message : String(error),
@@ -732,7 +752,12 @@ function describeInventoryItem(item: InventoryWorkItem): string {
   ];
   if (item.method) parts.push(`method=${item.method}`);
   if (item.path) parts.push(`path=${item.path}`);
-  parts.push(`baselineId=${item.baselineId ?? 'MISSING'}`);
+  // baselineId is an API-endpoint-only concept. NEVER surface it for db_table
+  // items — describing a table as `baselineId=MISSING` makes the LLM apply a
+  // bogus "missing baseline" readiness reason to schema stories.
+  if (item.kind === 'api_endpoint') {
+    parts.push(`baselineId=${item.baselineId ?? 'MISSING'}`);
+  }
   if ((item.attachedFindingIds?.length ?? 0) > 0) {
     parts.push(`attachedFindings=[${item.attachedFindingIds!.join(', ')}]`);
   }
@@ -779,7 +804,7 @@ export function buildExpansionBatchPrompt(args: {
   );
   lines.push('- Write full bespoke stories ONLY for items you classify "exceptional".');
   lines.push(
-    '- Classify "exceptional" when the facts show attached findings, live conflicts, a MISSING baseline, complex SOAP schemas, or readiness other than ready_for_spec.'
+    '- Classify "exceptional" when the facts show attached findings, live conflicts, a MISSING baseline (API endpoints ONLY — database tables have no baseline; never cite a missing baseline for a db_table item), complex SOAP schemas, or readiness other than ready_for_spec.'
   );
   return lines.join('\n');
 }
