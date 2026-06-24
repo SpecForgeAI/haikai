@@ -1,5 +1,6 @@
 package com.example.architecturemodel.model.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Map;
@@ -30,6 +31,17 @@ import java.util.UUID;
  * post-create in the canonical flow except {@code bookOfWorkJson}, which is
  * rewritten on explicit Save Draft or save-to-backlog (Q-16).</p>
  *
+ * <p>Belt-and-braces dual-tolerance (Spec 2026-06-23 fix): the snake_case
+ * {@link JsonProperty} names are canonical (serialization + the frontend read
+ * contract), but {@link JsonAlias} entries ALSO accept the camelCase spellings
+ * a (mis)configured gateway might send -- mirroring
+ * {@code AppendGeneratedMigrationBookOfWorkItemsRequest}. The gateway create
+ * body had been sending camelCase keys + a bare-array book of work, which AMS
+ * silently dropped (unknown properties are tolerated), persisting a null
+ * {@code book_of_work_json} + null architecture ids (empty "book of work" +
+ * blank arch labels). {@code book_of_work_json} is intentionally NOT aliased to
+ * the bare-array spelling -- it must arrive as an object {@code { "items": [...] }}.</p>
+ *
  * <p>Spec: Product Manager Migration Delivery Plan + Draft Book-of-Work
  * Generation (2026-05-17) -- Task Group 1.</p>
  *
@@ -58,9 +70,11 @@ public record GeneratedMigrationBookOfWorkDto(
     UUID projectId,
 
     @JsonProperty("current_architecture_id")
+    @JsonAlias({"currentArchitectureId"})
     UUID currentArchitectureId,
 
     @JsonProperty("target_architecture_id")
+    @JsonAlias({"targetArchitectureId"})
     UUID targetArchitectureId,
 
     @JsonProperty("status")
@@ -73,15 +87,19 @@ public record GeneratedMigrationBookOfWorkDto(
     String summary,
 
     @JsonProperty("generation_inputs_json")
+    @JsonAlias({"generationInputsJson", "generationInputs"})
     Map<String, Object> generationInputsJson,
 
     @JsonProperty("generation_summary_json")
+    @JsonAlias({"generationSummaryJson", "generationSummary"})
     Map<String, Object> generationSummaryJson,
 
     @JsonProperty("quality_assessment_json")
+    @JsonAlias({"qualityAssessmentJson", "qualityAssessment"})
     Map<String, Object> qualityAssessmentJson,
 
     @JsonProperty("book_of_work_json")
+    @JsonAlias({"bookOfWorkJson"})
     Map<String, Object> bookOfWorkJson,
 
     @JsonProperty("created_by_task")

@@ -660,15 +660,24 @@ export type LlmCallerFn = (input: {
   projectId: string;
 }) => Promise<{ content: string }>;
 
+/**
+ * The AMS create-draft request body. AMS speaks snake_case at the wire (its
+ * global Jackson is SNAKE_CASE with fail-on-unknown-properties:false), and
+ * `book_of_work_json` binds to a `Map<String,Object>` shaped `{ items: [...] }`
+ * -- NOT a bare array. Sending camelCase keys / a bare array here makes AMS
+ * silently persist nulls for every unmatched field (the migration-book-of-work
+ * "empty book of work + blank architecture" bug, fixed 2026-06-23). Keys MUST
+ * match `GeneratedMigrationBookOfWorkDto`'s `@JsonProperty` names exactly.
+ */
 export interface AmsCreateRequestBody {
   title: string;
   summary: string;
-  currentArchitectureId: string;
-  targetArchitectureId: string;
-  generationInputs: Record<string, unknown>;
-  generationSummary: Record<string, unknown>;
-  qualityAssessment: Record<string, unknown>;
-  bookOfWork: GeneratedMigrationBookOfWork['items'];
+  current_architecture_id: string;
+  target_architecture_id: string;
+  generation_inputs_json: Record<string, unknown>;
+  generation_summary_json: Record<string, unknown>;
+  quality_assessment_json: Record<string, unknown>;
+  book_of_work_json: { items: GeneratedMigrationBookOfWork['items'] };
 }
 
 export type AmsCreateFn = (
@@ -1125,12 +1134,13 @@ export async function generateMigrationBookOfWork(
   const body: AmsCreateRequestBody = {
     title: validated.title,
     summary: validated.summary,
-    currentArchitectureId,
-    targetArchitectureId,
-    generationInputs: validated.generationInputs,
-    generationSummary: validated.generationSummary,
-    qualityAssessment: validated.qualityAssessment,
-    bookOfWork: validated.items,
+    current_architecture_id: currentArchitectureId,
+    target_architecture_id: targetArchitectureId,
+    generation_inputs_json: validated.generationInputs,
+    generation_summary_json: validated.generationSummary,
+    quality_assessment_json: validated.qualityAssessment,
+    // AMS `book_of_work_json` is an object `{ items: [...] }`, not a bare array.
+    book_of_work_json: { items: validated.items },
   };
   const { draftId, summary } = await createDraft(projectId, body);
 

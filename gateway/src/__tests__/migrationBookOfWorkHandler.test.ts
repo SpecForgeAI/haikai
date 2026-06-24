@@ -232,7 +232,7 @@ describe('Migration Delivery Plan gateway orchestration handler (Spec 2026-05-17
     // Inspect the body POSTed to AMS to confirm the prerequisite story is
     // carried through unchanged.
     const postedBody = createDraft.mock.calls[0][1];
-    const story = postedBody.bookOfWork.find((i: { id: string }) => i.id === 'S1');
+    const story = postedBody.book_of_work_json.items.find((i: { id: string }) => i.id === 'S1');
     expect(story).toBeDefined();
     expect(story.readiness).toBe('needs_focused_context');
     expect(story.workstream).toBe('discovery_gap_resolution');
@@ -401,7 +401,7 @@ describe('Migration Delivery Plan gateway orchestration handler (Spec 2026-05-17
   });
 
   // Test 8: AMS POST shape — the JSON sent to AMS includes the four sibling JSONB blobs
-  it('AMS POST shape — body carries generationInputs / generationSummary / qualityAssessment / bookOfWork sibling blobs', async () => {
+  it('AMS POST shape — body uses AMS snake_case keys + book_of_work_json:{items} (NOT camelCase / bare array)', async () => {
     const fixture = loadFixture();
     const fetchContext = jest.fn().mockResolvedValue(fixture);
     const callLlm = jest.fn().mockResolvedValue({ content: makeValidBookOfWorkJson() });
@@ -423,14 +423,18 @@ describe('Migration Delivery Plan gateway orchestration handler (Spec 2026-05-17
     expect(postedBody).toMatchObject({
       title: expect.any(String),
       summary: expect.any(String),
-      currentArchitectureId: fixture.currentArchitectureId,
-      targetArchitectureId: fixture.targetArchitectureId,
-      generationInputs: expect.any(Object),
-      generationSummary: expect.any(Object),
-      qualityAssessment: expect.any(Object),
-      bookOfWork: expect.any(Array),
+      current_architecture_id: fixture.currentArchitectureId,
+      target_architecture_id: fixture.targetArchitectureId,
+      generation_inputs_json: expect.any(Object),
+      generation_summary_json: expect.any(Object),
+      quality_assessment_json: expect.any(Object),
+      book_of_work_json: { items: expect.any(Array) },
     });
-    expect(postedBody.bookOfWork.length).toBeGreaterThan(0);
+    // Regression guard: the OLD camelCase / bare-array spellings must be ABSENT
+    // (sending them made AMS silently persist a null book_of_work_json).
+    expect(postedBody.bookOfWork).toBeUndefined();
+    expect(postedBody.currentArchitectureId).toBeUndefined();
+    expect(postedBody.book_of_work_json.items.length).toBeGreaterThan(0);
   });
 
   // Smoke test: buildUserPrompt includes both the context and the wizard answers
@@ -502,9 +506,9 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
     // EXACTLY ONE AMS write carrying the assembled set (3 streams x 4 items).
     expect(createDraft).toHaveBeenCalledTimes(1);
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.bookOfWork).toHaveLength(12);
+    expect(postedBody.book_of_work_json.items).toHaveLength(12);
     // Namespaced ids: the per-stream hierarchies stay intact and never collide.
-    const ids = postedBody.bookOfWork.map((i: { id: string }) => i.id);
+    const ids = postedBody.book_of_work_json.items.map((i: { id: string }) => i.id);
     expect(new Set(ids).size).toBe(12);
     expect(ids).toContain('target_service_api_implementation:I1');
     expect(ids).toContain('cutover_rollback_decommission:S1');
@@ -673,7 +677,7 @@ describe('Migration Delivery Plan — phase-1 skeleton generation (Spec 2026-06-
 
     // The assembled draft contains NO story items and NO acceptance criteria.
     const [, postedBody] = createDraft.mock.calls[0];
-    const items = postedBody.bookOfWork as Array<{
+    const items = postedBody.book_of_work_json.items as Array<{
       type: string;
       acceptanceCriteria: string[];
     }>;
@@ -701,7 +705,7 @@ describe('Migration Delivery Plan — phase-1 skeleton generation (Spec 2026-06-
     );
 
     const [, postedBody] = createDraft.mock.calls[0];
-    const items = postedBody.bookOfWork as Array<{
+    const items = postedBody.book_of_work_json.items as Array<{
       type: string;
       expansionState?: string;
     }>;
@@ -736,7 +740,7 @@ describe('Migration Delivery Plan — phase-1 skeleton generation (Spec 2026-06-
     const prompt = callLlm.mock.calls[0][0].userPrompt as string;
     expect(prompt).not.toContain('SKELETON MODE');
     const [, postedBody] = createDraft.mock.calls[0];
-    const items = postedBody.bookOfWork as Array<{ type: string; expansionState?: string }>;
+    const items = postedBody.book_of_work_json.items as Array<{ type: string; expansionState?: string }>;
     // Full plan including the story; legacy path does NOT seed expansion state.
     expect(items.some((i) => i.type === 'story')).toBe(true);
     expect(items.every((i) => i.expansionState === undefined)).toBe(true);
