@@ -243,6 +243,11 @@ function severityBadgeClass(severity: string): string {
   return styles.badge;
 }
 
+/** Drag-resizable detail-panel width bounds. */
+const RIGHT_PANEL_MIN_WIDTH = 280;
+const RIGHT_PANEL_MAX_WIDTH = 760;
+const RIGHT_PANEL_DEFAULT_WIDTH = 420;
+
 export const MigrationBookOfWorkReviewWorkspace: React.FC<
   MigrationBookOfWorkReviewWorkspaceProps
 > = ({ projectId, bookId, initialDraft, onOpenBacklog, onBackToPlans }) => {
@@ -259,6 +264,36 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   const [saveDraftState, setSaveDraftState] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle');
+
+  // Drag-resizable detail panel. Width lives in component state; the handle
+  // between the two panels drives it from the body's right edge.
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(
+    RIGHT_PANEL_DEFAULT_WIDTH,
+  );
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const resizingRef = useRef(false);
+  const startRightPanelResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current || !bodyRef.current) return;
+      const rect = bodyRef.current.getBoundingClientRect();
+      const next = Math.max(
+        RIGHT_PANEL_MIN_WIDTH,
+        Math.min(RIGHT_PANEL_MAX_WIDTH, rect.right - ev.clientX),
+      );
+      setRightPanelWidth(next);
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+  }, []);
 
   const items: MigrationBookOfWorkItem[] = useMemo(
     () => draft?.bookOfWork?.items ?? [],
@@ -968,7 +1003,11 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         </section>
       )}
 
-      <div className={styles.workspaceBody}>
+      <div
+        className={styles.workspaceBody}
+        ref={bodyRef}
+        data-testid="workspace-body"
+      >
         <div className={styles.leftPanel}>
           {/* Action toolbar pinned ABOVE the scrollable hierarchy (point 4)
               so every action stays visible regardless of tree scroll. */}
@@ -998,7 +1037,19 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             }
           />
         </div>
-        <div className={styles.rightPanel}>
+        <div
+          className={styles.resizeHandle}
+          onMouseDown={startRightPanelResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize detail panel"
+          data-testid="right-panel-resize-handle"
+        />
+        <div
+          className={styles.rightPanel}
+          style={{ width: rightPanelWidth }}
+          data-testid="right-panel"
+        >
           <MigrationBookOfWorkItemDrawer
             item={selectedItem}
             dbMigrationPack={(() => {

@@ -105,7 +105,9 @@
 }
 
 .rightPanel {
-  width: min(420px, 35vw);
+  /* Width is controlled inline by the drag handle (defaults to 420px); never
+     flex-shrink so the chosen width holds and the left panel takes the rest. */
+  flex: 0 0 auto;
   background: #ffffff;
   display: flex;
   flex-direction: column;
@@ -113,6 +115,20 @@
      user scrolls a long hierarchy (point 3). */
   min-height: 0;
   overflow-y: auto;
+}
+
+/* Draggable divider between the hierarchy and the detail panel. */
+.resizeHandle {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: #e5e7eb;
+  border-left: 1px solid #d1d5db;
+  transition: background 0.15s ease;
+}
+
+.resizeHandle:hover,
+.resizeHandle:active {
+  background: #93c5fd;
 }
 
 /* ------------------------------------------------------------------ */
@@ -178,8 +194,19 @@
 .treeContainer {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  /* Scroll BOTH axes: vertical for a long hierarchy, horizontal for wide rows
+     (deep indent + long titles + the badge row). */
+  overflow: auto;
   padding: 12px 16px;
+}
+
+/* Canvas sized to its widest row. `min-width: 100%` keeps row backgrounds /
+   selection highlights spanning the full panel when content is narrow, while
+   `width: max-content` lets it grow past the panel so the container scrolls
+   horizontally instead of clipping. */
+.treeScrollContent {
+  width: max-content;
+  min-width: 100%;
 }
 
 .nodeCheckbox {
@@ -254,12 +281,14 @@
 }
 
 .nodeTitle {
-  flex: 1;
+  /* grow to right-align the badges on narrow rows, but never SHRINK below the
+     title's own width (flex-shrink: 0) — that shrink is what used to ellipsis-
+     truncate titles and prevented horizontal overflow. The full title now
+     contributes to row width so wide rows scroll horizontally. */
+  flex: 1 0 auto;
   font-size: 13px;
   color: #1f2937;
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

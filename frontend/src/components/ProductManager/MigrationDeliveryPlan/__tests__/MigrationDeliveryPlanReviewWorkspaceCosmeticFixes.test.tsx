@@ -291,6 +291,56 @@ describe('Review workspace cosmetic fixes -- save-draft feedback (point 1)', () 
   });
 });
 
+describe('Review workspace -- horizontal scroll canvas + resizable detail panel', () => {
+  beforeEach(() => {
+    mockGetMigrationBookOfWork.mockReset();
+  });
+
+  it('wraps the hierarchy in a horizontal-scroll canvas', async () => {
+    mockGetMigrationBookOfWork.mockResolvedValueOnce(makeDraft(makeLinearItems()));
+    renderWorkspace();
+    await waitFor(() =>
+      expect(screen.getByTestId('review-workspace')).toBeInTheDocument(),
+    );
+    // The scroll canvas wraps the tree rows so wide rows overflow-scroll
+    // instead of clipping.
+    const canvas = screen.getByTestId('hierarchy-scroll-content');
+    expect(canvas).toBeInTheDocument();
+    expect(canvas).toContainElement(screen.getByTestId('hierarchy-node-init-1'));
+  });
+
+  it('drags the resize handle to change the detail panel width', async () => {
+    mockGetMigrationBookOfWork.mockResolvedValueOnce(makeDraft(makeLinearItems()));
+    renderWorkspace();
+    await waitFor(() =>
+      expect(screen.getByTestId('review-workspace')).toBeInTheDocument(),
+    );
+
+    const rightPanel = screen.getByTestId('right-panel');
+    // Default width.
+    expect(rightPanel).toHaveStyle({ width: '420px' });
+
+    // Pin the body's right edge so the handler can compute a width from clientX.
+    const body = screen.getByTestId('workspace-body');
+    body.getBoundingClientRect = () =>
+      ({ right: 1000, left: 0, top: 0, bottom: 0, width: 1000, height: 0, x: 0, y: 0, toJSON() {} }) as DOMRect;
+
+    fireEvent.mouseDown(screen.getByTestId('right-panel-resize-handle'));
+    // Drag left to clientX=600 → width = 1000 - 600 = 400 (within bounds).
+    fireEvent.mouseMove(window, { clientX: 600 });
+    expect(rightPanel).toHaveStyle({ width: '400px' });
+
+    // Drag past the max bound → clamped to 760.
+    fireEvent.mouseMove(window, { clientX: 100 });
+    expect(rightPanel).toHaveStyle({ width: '760px' });
+
+    fireEvent.mouseUp(window);
+    // After mouseUp, further moves are ignored.
+    fireEvent.mouseMove(window, { clientX: 900 });
+    expect(rightPanel).toHaveStyle({ width: '760px' });
+  });
+});
+
 describe('Review workspace cosmetic fixes -- back navigation (point 5)', () => {
   beforeEach(() => {
     mockGetMigrationBookOfWork.mockReset();

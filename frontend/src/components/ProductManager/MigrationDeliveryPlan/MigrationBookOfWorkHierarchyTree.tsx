@@ -447,7 +447,15 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
 
   return (
     <div className={styles.treeContainer} data-testid="hierarchy-tree">
-      {roots.map(renderNode)}
+      {/* Inner canvas sized to its widest row so the container can scroll
+          HORIZONTALLY when rows (deep indent + long titles + badges) exceed
+          the panel width, instead of clipping them. */}
+      <div
+        className={styles.treeScrollContent}
+        data-testid="hierarchy-scroll-content"
+      >
+        {roots.map(renderNode)}
+      </div>
     </div>
   );
 };

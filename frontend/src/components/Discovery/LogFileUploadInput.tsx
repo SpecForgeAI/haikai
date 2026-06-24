@@ -145,7 +145,7 @@ export function LogFileUploadInput({
       const ext = getLowerExtension(file.name);
       if (!ACCEPTED_EXTENSIONS.includes(ext as (typeof ACCEPTED_EXTENSIONS)[number])) {
         errors.push(
-          `"${file.name}" was rejected: unsupported file extension. Allowed: ${ACCEPTED_EXTENSIONS.join(', ')}.`,
+          `"${file.name}" was rejected: unsupported file extension. This upload is for runtime logs only (allowed: ${ACCEPTED_EXTENSIONS.join(', ')}). API contracts such as .wadl/.xsd/OpenAPI are not uploaded here — they are scanned from your codebase, or attached in the API Behaviour Baseline capture flow.`,
         );
         continue;
       }
@@ -192,8 +192,9 @@ export function LogFileUploadInput({
         Upload Log Files
       </label>
       <p className={styles.helperText} data-testid="log-file-upload-input-helper">
-        Optional. Upload runtime log files to attach them to this discovery run. Log processing will be used by later
-        discovery steps.
+        Optional. Runtime logs only (.log, .txt, .jsonl, .ndjson) &mdash; correlated by later
+        discovery steps. Source and API-contract files (e.g. .wadl, .xsd, OpenAPI) are scanned
+        from your codebase, not uploaded here.
       </p>
       <input
         id="log-file-upload-input-files"
