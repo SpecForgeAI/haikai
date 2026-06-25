@@ -242,8 +242,10 @@ def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
 
     Skipped per target if no batch commit landed (nothing to push). Must run while
     the per-project git lock is still held (it pushes the shared working tree)."""
-    auto_push = getattr(git_config, "auto_push", False)
-    auto_pr = getattr(git_config, "auto_pr", False)
+    import types as _types
+
+    from ..api.git_workflow import apply_git_workflow
+
     body = "Batch orchestration. Specs (in order):\n" + "\n".join(
         f"- {s}" for s in spec_names
     )
@@ -263,19 +265,26 @@ def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
             bitbucket_username=git_config.bitbucket_username,
             bitbucket_app_password=git_config.bitbucket_app_password,
         )
-        rec = {"spec": batch_name, "repo": folder, "branch": branch,
-               "commit_sha": None, "pr_url": None, "error": None}
-        try:
-            if auto_push:
-                gm.push_branch(branch)
-                if auto_pr:
-                    rec["pr_url"] = gm.create_pull_request(
-                        title=f"feature: {batch_name}", branch=branch, body=body,
-                    )
-        except GitManagerError as e:
-            rec["error"] = f"Batch finalize failed for {batch_name}/{folder}: {e}"
-            logger.error(rec["error"])
-        results.append(rec)
+        # Reuse the single git-sequence helper (push+PR only — the branch is
+        # already committed). Keeps the auto_push/auto_pr gating + error policy in
+        # ONE place (apply_git_workflow), not re-implemented here.
+        one = _types.SimpleNamespace(errors=[], commit_sha=None, branch=None, pr_url=None)
+        apply_git_workflow(
+            gm=gm,
+            git_config=git_config,
+            branch=branch,
+            commit_msg="",  # already committed by the per-spec commit_only calls
+            pr_title=f"feature: {batch_name}",
+            pr_body=body,
+            response_obj=one,
+            push_pr_only=True,
+            error_label=f"batch {batch_name}" + (f"/{folder}" if folder else ""),
+        )
+        results.append({
+            "spec": batch_name, "repo": folder, "branch": branch,
+            "commit_sha": None, "pr_url": one.pr_url,
+            "error": one.errors[0] if one.errors else None,
+        })
 
 
 def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
