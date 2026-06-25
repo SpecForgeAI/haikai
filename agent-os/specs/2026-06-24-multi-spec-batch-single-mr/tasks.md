@@ -1,34 +1,35 @@
 # Tasks: Multi-Spec Batch → Single Merge Request
 
-**Focus:** N specs → N commits on ONE branch (not new branches). One MR at the end,
-after the existing per-spec self-verification finishes. No new verification wiring.
 **Scope:** implement-verify-service, Python — a multi-spec mode on `run_orchestration`.
 **Delivery:** `haikai:plan` scope, `haikai:ship`-style execute, `haikai:debug`+`haikai:fix` repair.
 **Tests:** no-mock real-git (`tests/_realgit.py`); negative-control each.
 
-## TG1 — Batch input
-- [ ] 1.1 `OrchestrationRequest` (`src/haikai_models.py`): add `batch_name?: str`; require when `len(spec_intents) > 1`. Order = execution order.
-- [ ] 1.2 Test: accepts ordered batch + batch_name; rejects >1 without batch_name; single-spec unchanged.
+## Phase 1 — batch commits → one MR  (DONE)
+- [x] 1.1 `batch_name?: str` on `OrchestrationRequest`; set ⇒ batch mode; order = execution order.
+- [x] 1.2 `_git_one_spec(..., batch_name)`: one `feature/<batch_name>` branch, commit each spec (`commit_only`), no reset. Single-spec unchanged. Real-git test + negative control.
+- [x] 1.3 `_finalize_batch_git`: push + one PR after the run, inside the per-project lock. Real-remote PR verified.
+- [x] 1.4 Deploy fix: batch consolidates the single branch (`_deploy_completed_run`). Real haibox deploy of a batch branch verified.
 
-## TG2 — One accumulating branch (THE core change)
-- [ ] 2.1 Batch mode in `run_orchestration`/`on_spec_complete`/`_git_one_spec`: create `feature/<batch_name>` once; commit each spec onto it; **drop `checkout_back_to_default`** between specs. Single-spec mode unchanged.
-- [ ] 2.2 Real-git test: 2-spec batch → BOTH specs as 2 commits on ONE branch. Negative-control: reintroduce per-spec reset → must go red.
-- [ ] 2.3 Retire/replace `tests/job_queue/test_orchestration_multispec_b2.py` (it asserts the superseded per-spec-isolated branches).
+## Phase 2 — verification gate + repair (Option C)
 
-## TG3 — One deferred MR after self-verification
-- [ ] 3.1 Move PR creation OUT of the per-spec `_git_one_spec` loop. Batch mode: push + open exactly ONE PR **after** the run, once the last spec's self-verification finished and the batch wasn't fail-stopped. Body lists component specs in order. Honour `GIT_AUTO_PR`.
-- [ ] 3.2 Confirm the existing implement-tasks Phase-3 self-verification still runs per spec unchanged (the gate reuses it — no new verification code).
-- [ ] 3.3 Real-git test: completed batch → one branch pushed, one PR (or `auto_pr=false` → push only); fail-stopped batch → no PR.
+### TG5 — Per-spec repair loop (clone `run_bug_investigation`)
+- [ ] 5.1 After a spec is implemented, run `/haikai:debug` → `/haikai:fix` for that spec via the executor — model the call on `run_bug_investigation` (`tasks.py:1065`): `/haikai:fix` runs the repo's own tests, fixes, auto-reverts on red.
+- [ ] 5.2 Outer cap **≥10** as a loop counter in `run_orchestration` (env `BATCH_REPAIR_CAP`). NOT `recorder.py`'s `ATTEMPT_CAP`. No `repair-engine`, no cells, no `jobs.db`.
+- [ ] 5.3 Heal → continue; un-healable in ≤10 → fail-stop (no MR), record failing spec.
+- [ ] 5.4 Real test (executor stubbed — true external LLM, real git): a spec that "fixes green" → batch continues; a spec that never heals → fail-stop, no PR, failing spec recorded.
 
-## TG4 — Repair ≥10 + fail-stop (D1)
-- [ ] 4.1 `ATTEMPT_CAP = 3` (`src/verification/recorder.py:30`) → raise/parameterize to ≥10 (env-read preferred). Repair = `haikai:debug`/`haikai:fix` via `repair-engine`.
-- [ ] 4.2 Test: ≥10 attempts honoured by guarded `open_repair`; exhausted → fail-stop, no MR, failing spec recorded.
+### TG6 — Gate the MR on the fix outcome
+- [ ] 6.1 Pass/fail = the outcome of `/haikai:fix` (ended green, corroborated by git changing — reuse the `_git_changed_files` check). Do NOT parse `final-verification.md`; do NOT gate on file-exists.
+- [ ] 6.2 `_finalize_batch_git` opens the one PR ONLY when every spec ended green; otherwise fail-stop, no PR.
+- [ ] 6.3 Real-git test: all-green batch → one PR; any spec un-healed → no PR.
 
-## TG5 — Terminology + docs
-- [ ] 5.1 No `batch`/`cell` identifiers; disambiguate git-branch vs verification "branch".
-- [ ] 5.2 Supersede note: batch mode replaces per-spec-isolated branches/MRs for coupled slices (single-spec unchanged).
+### TG7 — Trigger (cheap, optional)
+- [ ] 7.1 Run the fix step per spec (`/haikai:fix` self-detects red, no-ops/reverts when green). Optionally skip when the self-verification report clearly shows green — but never treat that report as the authoritative gate.
+
+## Out of Scope (this spec)
+- **Option B** — deterministic pinned-test gate + D8 discovery/pinning layer (future hardening).
+- Gateway/frontend; the independent verify-task-group/D5 gate; cross-repo single-MR.
 
 ## Verification
-Every Python change has a no-mock real-git test + negative control. TG2 (one branch)
-is the core; prove the per-spec reset is gone and a fail-stopped batch opens no MR.
-</content>
+Phase 2 changes use the no-mock policy: real git, the LLM executor stubbed (true external),
+each guarded by a negative control (a never-healing spec must produce NO PR).

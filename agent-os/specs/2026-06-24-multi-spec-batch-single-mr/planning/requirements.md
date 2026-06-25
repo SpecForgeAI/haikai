@@ -14,27 +14,29 @@ Single-spec requests with no `batch_name` behave exactly as today.
 1. **Order:** specs orchestrate strictly in `spec_intents` order, one fully before the next.
 2. **One branch:** `feature/<batch_name>` is created once off the default branch; every spec
    commits onto it (one commit per spec). No per-spec branch, no reset-to-default between specs.
-3. **Fail-stop with repair:** a spec whose required steps or verification fail enters the
-   `repair-engine` loop (`haikai:debug`/`haikai:fix`, **≥10** attempts). Healed → continue to the
-   next spec; exhausted → **stop the batch**, record the failing `spec_name`, open **no** MR.
-4. **Self-verification (reused, not new):** each spec already ends with the mandatory
-   `implement-tasks` Phase-3 self-verification (runs the tests, writes
-   `verifications/final-verification.md`). The batch relies on this as-is; no new verification
-   wiring. The MR gate is simply "the batch was not fail-stopped and the last spec's
-   self-verification finished."
-5. **One MR:** after the last spec's self-verification finishes (and no fail-stop), push the
-   branch and open exactly **one** PR (body lists the component specs in order). Gated by
-   `GIT_AUTO_PR`. A fail-stopped batch → no PR.
+3. **Per-spec repair (Option C):** after a spec is implemented, run `/haikai:debug` →
+   `/haikai:fix` for it via the executor — model on `run_bug_investigation` (`tasks.py:1065`).
+   `/haikai:fix` runs the repo's own tests, applies an atomic fix, and **auto-reverts on red**,
+   so the fix step is itself test-gated. Outer cap **≥10** is a loop counter in
+   `run_orchestration` (`BATCH_REPAIR_CAP`), NOT `recorder.py`'s `ATTEMPT_CAP`; no
+   `repair-engine`/cells/`jobs.db`. Healed → continue; un-healable in ≤10 → **stop the batch**,
+   record the failing `spec_name`, open **no** MR.
+4. **The gate = the fix step's outcome, not the report:** pass/fail comes from the outcome of
+   `/haikai:fix` (ended green, corroborated by git actually changing — reuse the
+   `_git_changed_files` check). Do NOT parse `final-verification.md`; do NOT gate on file-exists.
+   (`haikai:learn` 2026-06-25: that report is self-graded LLM prose, unreliable.)
+5. **One MR:** when **every** spec ended green, push the branch and open exactly **one** PR
+   (body lists the component specs in order). Gated by `GIT_AUTO_PR`. Any un-healed spec → no PR.
 
 ## Non-goals
 - No gateway/frontend changes (the `batch_name` surface there is a later concern).
 - No cross-repo (polyrepo) single-MR — git can't span repos.
-- **No new verification engine and no wiring of the independent `verify-task-group`/CI/D5 gate
-  onto the MR** — the existing per-spec self-verification is the gate. (A stronger independent
-  gate is a later spec if wanted.)
+- **No deterministic verifier (Option B) and no wiring of the independent `verify-task-group`/CI/D5
+  gate** — the gate is the agentic `/haikai:fix` outcome (Option C). A deterministic pinned-test
+  gate (D8 discovery) is future hardening.
 
-## The actual focus
-N specs land as N **commits on one branch** instead of a branch per spec. The Python change is
-in `_git_one_spec`/`on_spec_complete` (one branch, no reset) + moving the single PR to after the
-run. Verification and repair are existing mechanisms, reused.
-</content>
+## Status
+- **Phase 1 (batch commits → one MR): DONE** — `_git_one_spec` batch mode + `_finalize_batch_git`
+  + the deploy fix; real-remote PR and real haibox deploy verified.
+- **Phase 2 (gate + repair): Option C** — per-spec `/haikai:debug`+`/haikai:fix` loop, gate on
+  the fix outcome (rules 3-5 above).
