@@ -55,6 +55,11 @@ vi.mock('../../../../contexts/ArchitectureContext', () => ({
     const m = { model: { metaModel: { entities: { services: [], app_components: [] } } } };
     return () => m;
   })(),
+  // Spec 4 (Task Group 6): the tab now reads the CURRENT architecture id via
+  // this hook for the vulnerability-reduction fetch. `null` here => the
+  // reduction hook degrades to a null delta (no current-state fetch), which is
+  // the correct non-blocking no-op for these unrelated tab tests.
+  useActiveArchitectureId: () => null,
 }));
 
 import { ArchitectConversationTab } from '../ArchitectConversationTab';
@@ -99,14 +104,18 @@ beforeEach(() => {
   vi.mocked(fetchNextQuestion)
     .mockResolvedValueOnce({
       question: {
-        decisionCode: 'service.runtime',
+        // NON-versioned parent question (was service.runtime, now a versioned
+        // code rendering the dedicated framework+version control). The synthetic
+        // single choice + cascade below drive the override behaviour under test,
+        // which is orthogonal to versioning.
+        decisionCode: 'service.processModel',
         group: 'A',
-        orderInGroup: 1,
-        promptText: 'What runtime should target services use?',
+        orderInGroup: 4,
+        promptText: 'What process model should target services use?',
         staticContextLeadIn: null,
         expectedAnswerShape: 'single-choice',
         choices: ['Java 21'],
-        defaultsWhenUnchanged: 'current runtime',
+        defaultsWhenUnchanged: 'current process model',
         optional: false,
       } as PendingQuestion,
       phase: 'preset-walk',

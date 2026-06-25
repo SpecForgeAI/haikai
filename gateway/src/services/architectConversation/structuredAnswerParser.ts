@@ -19,6 +19,15 @@
  *   the LLM's responsibility; the v1 library has no `structured` entries —
  *   the path exists for forward-compat with Group J or future additions).
  *
+ * Spec 2026-06-24-target-conversation-tech-stack-constraints (FR5 capture half):
+ * a `structured` answer for a `versioned` code (`service.language`,
+ * `service.framework`, `service.runtime`, `db.engine`, `db.driver`,
+ * `ui.framework`, `build.tool`) is the decoupled `{ framework, version }` value
+ * and is validated against that shape (`parseFrameworkVersion`) rather than the
+ * generic plain-object check — a payload missing `framework` or `version` is
+ * rejected. Non-versioned `structured` codes keep the generic plain-object
+ * acceptance.
+ *
  * IMPORTANT: This file is pure validation. No I/O, no LLM, no orchestration.
  */
 
@@ -26,6 +35,10 @@ import type {
   ExpectedAnswerShape,
   QuestionLibraryEntry,
 } from '../../config/architect-conversation/questionLibrary';
+import {
+  parseFrameworkVersion,
+  type FrameworkVersion,
+} from '../../config/architect-conversation/frameworkVersionShape';
 
 // ---------------------------------------------------------------------------
 // Result discriminator
@@ -130,6 +143,20 @@ function parseStructured(raw: unknown): ParsedAnswer<Record<string, unknown>> {
   return { ok: true, value: raw as Record<string, unknown> };
 }
 
+/**
+ * Validate a `structured` payload for a `versioned` code as the decoupled
+ * `{ framework, version }` shape (FR5). Rejects a payload missing/blank
+ * `framework` or `version`. The accepted value is the canonical
+ * `FrameworkVersion` (trimmed), ready for the capture envelope.
+ */
+function parseVersionedStructured(raw: unknown): ParsedAnswer<FrameworkVersion> {
+  const result = parseFrameworkVersion(raw);
+  if (!result.ok) {
+    return { ok: false, reason: result.reason };
+  }
+  return { ok: true, value: result.value };
+}
+
 // ---------------------------------------------------------------------------
 // Public dispatcher
 // ---------------------------------------------------------------------------
@@ -142,10 +169,15 @@ function parseStructured(raw: unknown): ParsedAnswer<Record<string, unknown>> {
  * For `single-choice`/`multi-choice` the validator enforces membership of the
  * entry's `choices` array per the closed-set contract in spec §"Question
  * library config".
+ *
+ * For `structured` the validator branches on `entry.versioned` (FR5): a
+ * versioned code's payload is validated as `{ framework, version }`; a
+ * non-versioned code's payload keeps the generic plain-object acceptance.
  */
 export function parseStructuredAnswer(
   raw: unknown,
-  entry: Pick<QuestionLibraryEntry, 'expectedAnswerShape' | 'choices' | 'code'>,
+  entry: Pick<QuestionLibraryEntry, 'expectedAnswerShape' | 'choices' | 'code'> &
+    Partial<Pick<QuestionLibraryEntry, 'versioned'>>,
 ): ParsedAnswer {
   const shape: ExpectedAnswerShape = entry.expectedAnswerShape;
   switch (shape) {
@@ -156,7 +188,9 @@ export function parseStructuredAnswer(
     case 'multi-choice':
       return parseMultiChoice(raw, entry.choices);
     case 'structured':
-      return parseStructured(raw);
+      return entry.versioned === true
+        ? parseVersionedStructured(raw)
+        : parseStructured(raw);
     default: {
       // Exhaustiveness guard.
       const exhaustive: never = shape;

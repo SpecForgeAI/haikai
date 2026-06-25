@@ -59,6 +59,11 @@ import {
 } from './generatedMigrationBookOfWorkSchema';
 import { logger } from './logger';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
+import {
+  TargetManifestArtifactWire,
+  fetchLatestTargetManifestArtifacts as defaultFetchLatestTargetManifestArtifacts,
+} from './targetManifestArtifactsClient';
+import { SEED_BUILD_FILES_STORY_KIND } from './migrationSeedBuildFilesEnrichment';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -698,6 +703,75 @@ export type AcceptedFindingsFetcherFn = (
   runIds: string[]
 ) => Promise<AcceptedFindingSnapshotEntry[]>;
 
+/**
+ * Reads the persisted CONFIRMED target dependency-manifest artifacts (one per
+ * tag) for a target architecture. Used at book-of-work CREATION time to decide
+ * whether to prepend the FIRST-sequenced `seed_build_files` story: when at
+ * least one confirmed manifest exists for the target architecture, the seed
+ * story is minted so the spec-gen carriage later emits the verbatim build
+ * file(s). Defaults to the real gateway -> AMS client
+ * (`fetchLatestTargetManifestArtifacts`); injected in tests so no live AMS is
+ * required. The CALLER owns the fail-soft posture (a read throw -> no seed,
+ * logged via `[diag-gateway]`, never breaks book creation).
+ */
+export type TargetManifestArtifactsFetcherFn = (
+  projectId: string,
+  targetArchitectureId: string,
+) => Promise<TargetManifestArtifactWire[]>;
+
+/**
+ * Stable title + description for the minted seed-build-files story. The story
+ * is recognised downstream by its `kind` marker (SEED_BUILD_FILES_STORY_KIND),
+ * NOT by its title; the enrichment carriage fills its spec text from the
+ * verbatim confirmed manifest bytes at spec-gen time.
+ */
+export const SEED_BUILD_FILES_STORY_TITLE_AT_CREATION =
+  'Seed build files — authoritative dependency manifests';
+
+const SEED_BUILD_FILES_STORY_DESCRIPTION_AT_CREATION =
+  'Dedicated seed-build-files story, sequenced FIRST. It carries the verbatim ' +
+  'confirmed target dependency manifest(s) (pom.xml / package.json) and MUST be ' +
+  'implemented before any other story: the rest of the build is constructed on ' +
+  'top of these authoritative files. The verbatim file(s) are injected into this ' +
+  'story by the seed-build-files enrichment carriage at spec-gen time; do not ' +
+  'edit by hand.';
+
+/**
+ * Build the FIRST-sequenced seed-build-files story item to prepend onto a
+ * freshly-assembled book of work. Mirrors the `MigrationBookOfWorkItem` shape
+ * (all required fields populated) and carries the `seed_build_files` `kind`
+ * marker the downstream carriage (`isSeedBuildFilesStory`) recognises.
+ * `sequenceOrder: 0` sits below the assembly's renumbered 1..N so the seed is
+ * always the FIRST item. PURE — exported for the focused unit test.
+ */
+export function buildSeedBuildFilesStoryItem(): MigrationBookOfWorkItem {
+  return {
+    id: 'seed-build-files',
+    type: 'story',
+    parentId: null,
+    title: SEED_BUILD_FILES_STORY_TITLE_AT_CREATION,
+    description: SEED_BUILD_FILES_STORY_DESCRIPTION_AT_CREATION,
+    acceptanceCriteria: [],
+    workstream: 'target_infrastructure_environment_implementation',
+    sequenceOrder: 0,
+    tags: ['seed_build_files'],
+    confidence: 'high',
+    readiness: 'ready_for_spec',
+    readinessReasons: [],
+    missingInputs: [],
+    recommendedNextAction:
+      'Write the verbatim dependency manifest file(s) at their resolved per-module path FIRST, before any other story.',
+    traceabilitySummary:
+      'Carries the confirmed target dependency manifest(s) persisted at upload time (target_manifest_artifacts).',
+    // Non-schema marker fields read opaquely off the AMS book_of_work_json blob
+    // (Map<String,Object>) by the enrichment carriage — mirrors how the carriage
+    // already reads `kind` / `provenance` off blob items. The handler prepends
+    // this item AFTER schema validation, so it never reaches the hierarchy
+    // validator (which would otherwise require a story to parent a feature).
+    ...({ kind: SEED_BUILD_FILES_STORY_KIND } as Record<string, unknown>),
+  } as MigrationBookOfWorkItem;
+}
+
 export interface MigrationBookOfWorkHandlerDeps {
   fetchContext?: ContextResolverFn;
   callLlm?: LlmCallerFn;
@@ -708,6 +782,16 @@ export interface MigrationBookOfWorkHandlerDeps {
    * discovery run; injected in tests so no live AMS is required.
    */
   fetchAcceptedFindings?: AcceptedFindingsFetcherFn;
+  /**
+   * Confirmed target manifest-artifacts reader (Spec 2026-06-25 follow-up:
+   * seed-story minting relocated to book CREATION time). Defaults to the real
+   * gateway -> AMS client; injected in tests. Gates whether the FIRST-sequenced
+   * `seed_build_files` story is prepended onto the book: prepend IFF this read
+   * returns >= 1 artifact for the target architecture. FAIL-SOFT at the call
+   * site — a read throw (or an absent targetArchitectureId) logs + skips the
+   * seed and NEVER breaks book creation.
+   */
+  fetchTargetManifestArtifacts?: TargetManifestArtifactsFetcherFn;
   /** Number of LLM invocations recorded — exposed for the single-call test. */
   llmInvocationCounter?: { count: number };
   /** Optional override for the system prompt (defaults to reading the markdown file). */
@@ -875,6 +959,8 @@ export async function generateMigrationBookOfWork(
   const createDraft = deps.createDraft ?? defaultCreateDraft;
   const fetchAcceptedFindings =
     deps.fetchAcceptedFindings ?? defaultFetchAcceptedFindings;
+  const fetchTargetManifestArtifacts =
+    deps.fetchTargetManifestArtifacts ?? defaultFetchLatestTargetManifestArtifacts;
   const systemPrompt = deps.systemPromptOverride ?? readDefaultSystemPrompt();
 
   // ----- Stage 1: load context (Q-12) -----
@@ -1131,6 +1217,56 @@ export async function generateMigrationBookOfWork(
   console.log(
     `[diag-gateway] pm_migration_delivery_plan stage=saving_draft projectId=${projectId}`
   );
+  // ----- Seed-build-files story (Spec 2026-06-25 confirmed-manifest producer
+  // wiring follow-up): mint the FIRST-sequenced `seed_build_files` story HERE,
+  // at book CREATION time, where the bookId/items are minted and a confirmed
+  // manifest can be checked. It rides the initial `book_of_work_json` blob that
+  // AMS `createDraft` persists WITHOUT per-item kind validation (only the
+  // add-item path validates `kind`), so this SIDESTEPS the AMS ALLOWED_KINDS 400
+  // entirely — no AMS change. Gate: prepend IFF >= 1 confirmed manifest artifact
+  // exists for the target architecture. FAIL-SOFT: a read throw OR an absent
+  // targetArchitectureId logs via `[diag-gateway]` and skips the seed — book
+  // creation is NEVER broken. Idempotency is intrinsic (a fresh book is minted
+  // per generation), so no dedup is needed here.
+  if (typeof targetArchitectureId === 'string' && targetArchitectureId.length > 0) {
+    try {
+      const artifacts = await fetchTargetManifestArtifacts(
+        projectId,
+        targetArchitectureId,
+      );
+      if (Array.isArray(artifacts) && artifacts.length > 0) {
+        // sequenceOrder:0 sits below the assembly's renumbered 1..N -> FIRST.
+        validated = {
+          ...validated,
+          items: [buildSeedBuildFilesStoryItem(), ...validated.items],
+        };
+        console.log(
+          `[diag-gateway] pm_migration_delivery_plan stage=seed_build_files_prepended ` +
+            `projectId=${projectId} targetArchitectureId=${targetArchitectureId} ` +
+            `artifactCount=${artifacts.length} sequence_order=0`
+        );
+      } else {
+        console.log(
+          `[diag-gateway] pm_migration_delivery_plan stage=seed_build_files_skipped ` +
+            `projectId=${projectId} targetArchitectureId=${targetArchitectureId} ` +
+            `reason=no_confirmed_manifest`
+        );
+      }
+    } catch (err) {
+      // Fail-soft: never break book creation on a manifest-read hiccup.
+      console.warn(
+        `[diag-gateway] pm_migration_delivery_plan stage=seed_build_files_skipped ` +
+          `projectId=${projectId} targetArchitectureId=${targetArchitectureId} ` +
+          `reason=manifest_read_failed error=${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  } else {
+    console.log(
+      `[diag-gateway] pm_migration_delivery_plan stage=seed_build_files_skipped ` +
+        `projectId=${projectId} reason=no_target_architecture_id`
+    );
+  }
+
   const body: AmsCreateRequestBody = {
     title: validated.title,
     summary: validated.summary,

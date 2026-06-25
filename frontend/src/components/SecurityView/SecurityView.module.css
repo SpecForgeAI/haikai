@@ -1,0 +1,585 @@
+/**
+ * SecurityView styles
+ *
+ * Spec: 2026-06-24 Vulnerability store + manual capture + current-state view
+ *       (Spec 1 of 6) -- Task Group 5.
+ *       2026-06-24 Automated Vulnerability Enrichment (Spec 2 of 6) -- Task
+ *       Group 6 adds the scan-control + "automated enrichment unavailable" note
+ *       + "fix version unknown" styles at the bottom of this file.
+ *
+ * Layout mirrors the sibling top-level pages (`ApiBaselinesListPage`,
+ * `DiscoveryRunDetailView`) for visual parity; the severity palette mirrors the
+ * established `info..critical` badge colours used by the discovery / drift
+ * findings surfaces so the colour language is consistent product-wide.
+ */
+
+.container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.sectionTitle {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  color: #444;
+}
+
+.emptyMessage {
+  padding: 12px;
+  color: #888;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.muted {
+  color: #bbb;
+}
+
+.errorBanner {
+  padding: 8px 12px;
+  background-color: #ffebee;
+  border: 1px solid #ffcdd2;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Severity badges (info..critical palette)
+ * ------------------------------------------------------------------------- */
+
+.severityBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #e2e8f0;
+  color: #334155;
+  cursor: default;
+}
+
+.severityCritical { background: #fee2e2; color: #991b1b; }
+.severityHigh     { background: #fed7aa; color: #9a3412; }
+.severityMedium   { background: #fef9c3; color: #854d0e; }
+.severityLow      { background: #dcfce7; color: #166534; }
+.severityInfo     { background: #dbeafe; color: #1e40af; }
+
+.sourceBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #ede9fe;
+  color: #5b21b6;
+  cursor: default;
+}
+
+.matchBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: default;
+}
+
+.matchMatched   { background: #E8F5E9; color: #2E7D32; }
+.matchUnmatched { background: #FFF3E0; color: #E65100; }
+
+/* ---------------------------------------------------------------------------
+ * Severity roll-up strip
+ * ------------------------------------------------------------------------- */
+
+.rollupSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.rollupRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rollupCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 72px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.rollupCardTotal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 72px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: #1f2937;
+  color: #fff;
+}
+
+.rollupCount {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.rollupLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Group-by-library
+ * ------------------------------------------------------------------------- */
+
+.groupSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.groupTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.groupTable th,
+.groupTable td {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.groupTable th {
+  background: #fafafa;
+  font-weight: 600;
+  color: #555;
+}
+
+.groupRowUnmatched {
+  background: #fff8f0;
+}
+
+.groupCoordinateCell {
+  max-width: 360px;
+  word-break: break-word;
+}
+
+.groupTotalCell {
+  font-weight: 600;
+}
+
+.groupSevCell {
+  text-align: center;
+}
+
+.coordinate {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.unmatchedHeading {
+  font-weight: 700;
+  color: #E65100;
+}
+
+.miniBadge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * Upload control
+ * ------------------------------------------------------------------------- */
+
+.uploadSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dropZone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.dropZoneActive {
+  border-color: #1976d2;
+  background: #e3f2fd;
+}
+
+.dropHint {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.fileInput {
+  display: none;
+}
+
+.uploadSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 8px 12px;
+  background: #E8F5E9;
+  border: 1px solid #A5D6A7;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #2E7D32;
+}
+
+.summaryStat strong {
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------------------
+ * Report history
+ * ------------------------------------------------------------------------- */
+
+.historySection {
+  display: flex;
+  flex-direction: column;
+}
+
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.historyRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.historyRow:last-child {
+  border-bottom: none;
+}
+
+.historyName {
+  font-weight: 500;
+  flex: 1;
+}
+
+.latestBadge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.historyMeta {
+  color: #666;
+  font-size: 12px;
+}
+
+.historyDate {
+  color: #888;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Filters + report table
+ * ------------------------------------------------------------------------- */
+
+.tableSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tableHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.tableCount {
+  font-size: 12px;
+  color: #888;
+}
+
+.filtersBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filterText {
+  padding: 5px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.filterSelect {
+  padding: 5px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.reportTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.reportTable th,
+.reportTable td {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.reportTable th {
+  background: #fafafa;
+  font-weight: 600;
+  color: #555;
+  white-space: nowrap;
+}
+
+.dataRow:hover {
+  background: #fafafa;
+}
+
+.cveCell {
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.titleCell {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coordinateCell {
+  font-family: monospace;
+  max-width: 220px;
+  word-break: break-word;
+}
+
+.fixedInCell {
+  font-family: monospace;
+}
+
+/* ---------------------------------------------------------------------------
+ * Pager + buttons
+ * ------------------------------------------------------------------------- */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.pagerLabel {
+  font-size: 13px;
+  color: #555;
+}
+
+.primaryButton {
+  background: #1976d2;
+  color: #fff;
+  border: 1px solid #1976d2;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.primaryButton:disabled {
+  background: #b0bec5;
+  border-color: #b0bec5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: #fff;
+  color: #444;
+  border: 1px solid #ccc;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.secondaryButton:disabled {
+  background: #f5f5f5;
+  color: #9e9e9e;
+  border-color: #e0e0e0;
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------------------------
+ * Spec 2 (Automated Vulnerability Enrichment, Task Group 6):
+ *   - the "automated" source badge variant,
+ *   - the "Scan for vulnerabilities" control + informational availability note,
+ *   - the "remaining -- fix version unknown" label.
+ * ------------------------------------------------------------------------- */
+
+/* The automated badged set is tinted distinctly from the manual/internal violet
+ * so a reconciled/automated row reads at a glance (still a calm, non-alarming
+ * colour -- it is additive data, not a warning). */
+.sourceBadgeAutomated {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.scanSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scanRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.scanHint {
+  font-size: 12px;
+  color: #666;
+}
+
+/* The availability note is INFORMATIONAL (role="status"), never a blocking
+ * error banner. Both variants are calm: the OK variant green, the unavailable
+ * variant a muted amber/grey -- it reassures (the workflow continued) rather
+ * than alarms. Mirrors the findings-coverage roll-up note tone. */
+.scanNote {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.scanNoteOk {
+  background: #E8F5E9;
+  border: 1px solid #A5D6A7;
+  color: #2E7D32;
+}
+
+.scanNoteUnavailable {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+}
+
+/* "remaining -- fix version unknown" -- surfaced as data, muted but legible
+ * (NOT an em-dash blank, NOT an error red). */
+.fixUnknown {
+  font-family: inherit;
+  font-style: italic;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ============================================================================
+ * Target-status column (Spec 4 -- Task Group 7.4). Reads the ONE shared delta;
+ * every value is an ESTIMATE. Palette aligned with the reduction panel.
+ * ========================================================================== */
+.targetStatusCell {
+  white-space: nowrap;
+}
+
+.targetStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.targetStatusText {
+  font-weight: 700;
+}
+
+.targetStatusDetail {
+  font-weight: 400;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.targetStatusEstimate {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.02rem 0.3rem;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.targetStatusEliminated { background: #dcfce7; color: #166534; }
+.targetStatusRemaining  { background: #fef9c3; color: #854d0e; }
+.targetStatusNewly      { background: #fee2e2; color: #991b1b; }
+.targetStatusUnknown    { background: transparent; color: #888; }

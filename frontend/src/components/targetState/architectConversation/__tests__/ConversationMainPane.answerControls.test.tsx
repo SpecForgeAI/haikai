@@ -30,13 +30,17 @@ const baseProps = {
 
 function question(overrides: Partial<PendingQuestion> = {}): PendingQuestion {
   return {
-    decisionCode: 'build.tool',
-    group: 'G',
-    orderInGroup: 1,
-    promptText: 'What build tool?',
+    // NOTE: `db.migrations` is a NON-versioned single-choice code. (`build.tool`,
+    // the former fixture, is now a `versioned` code and renders the dedicated
+    // framework+version control — see VersionedAnswerControl.test.tsx for that
+    // surface; these tests cover the generic single-choice answer controls.)
+    decisionCode: 'db.migrations',
+    group: 'C',
+    orderInGroup: 2,
+    promptText: 'What schema-migration tool?',
     staticContextLeadIn: null,
     expectedAnswerShape: 'single-choice',
-    choices: ['Gradle 8', 'Maven 3.9'],
+    choices: ['Flyway 10', 'Liquibase 4'],
     defaultsWhenUnchanged: 'current tool',
     optional: false,
     ...overrides,
@@ -63,8 +67,8 @@ describe('ConversationMainPane answer controls (2026-06-01 redesign)', () => {
     ).toBeNull();
 
     // No option is pre-selected; clicking a choice captures it verbatim.
-    fireEvent.click(screen.getByTestId('architect-conversation-choice-Maven 3.9'));
-    expect(onCaptureAnswer).toHaveBeenCalledWith('build.tool', 'Maven 3.9', 'Maven 3.9');
+    fireEvent.click(screen.getByTestId('architect-conversation-choice-Liquibase 4'));
+    expect(onCaptureAnswer).toHaveBeenCalledWith('db.migrations', 'Liquibase 4', 'Liquibase 4');
   });
 
   it('shows the "Not applicable" opt-out on EVERY question (optional or not) and captures the marker', () => {
@@ -110,7 +114,7 @@ describe('ConversationMainPane answer controls (2026-06-01 redesign)', () => {
       target: { value: 'Bazel' },
     });
     fireEvent.click(screen.getByTestId('architect-conversation-custom-submit'));
-    expect(onCaptureAnswer).toHaveBeenCalledWith('build.tool', 'Bazel', 'Bazel');
+    expect(onCaptureAnswer).toHaveBeenCalledWith('db.migrations', 'Bazel', 'Bazel');
   });
 
   it('captures a multi-choice question as an array after confirming the selection', () => {

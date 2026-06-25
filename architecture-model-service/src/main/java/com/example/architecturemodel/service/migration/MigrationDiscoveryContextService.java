@@ -475,7 +475,12 @@ public class MigrationDiscoveryContextService {
             readiness,
             contextWarnings,
             targetStateDecisionsSummary,
-            scenarioSeeds
+            scenarioSeeds,
+            // Estimated current->target CVE reduction (Spec 4 Task Group 4):
+            // ABSENT (null) here -- the reduction is computed by the gateway delta
+            // service (the single source of truth) and is null when there is no
+            // target snapshot, honouring the strict ABSENT-when-no-target contract.
+            null
         );
     }
 

@@ -182,6 +182,36 @@ export interface MigrationReadinessAssessment {
   gaps?: string[];
 }
 
+/**
+ * OPTIONAL estimated current->target CVE reduction roll-up (Spec 4 -- Vulnerability
+ * Reduction + Steering, 2026-06-24). Mirrors the AMS
+ * {@code MigrationDiscoveryContextDto.EstimatedReductionSummary} record
+ * field-for-field (camelCase wire -- this DTO emits explicit camelCase via
+ * {@code @JsonProperty}).
+ *
+ * Per-bucket totals modelled on the gateway delta service's roll-up (the
+ * `findingsCoverage.ts` before/after analogue): {@code total} current CVEs graded,
+ * plus the eliminated / remaining / newly-introduced counts. {@code newlyIntroduced}
+ * is the OSV target-scan badged set -- it is {@code null} (absent) on the
+ * graceful-degrade path where the scan did not run, distinct from a present
+ * {@code 0} meaning "scanned, none found". {@code estimate} is always {@code true}
+ * when the block is present so every surface inherits the ESTIMATE label.
+ *
+ * Fail-soft contract (STRICT ABSENT-when-no-target): the WHOLE block is
+ * {@code null} / absent whenever there is no target snapshot to grade against --
+ * NEVER a zeroed reduction. Consumers hide their reduction roll-up entirely on
+ * {@code null} (the `findingsCoverage.ts` null-on-no-snapshot rule) and MUST NOT
+ * block the host flow on it.
+ */
+export interface MigrationEstimatedReductionSummary {
+  estimate?: boolean | null;
+  total?: number | null;
+  eliminated?: number | null;
+  remaining?: number | null;
+  /** Absent (null) when the OSV target scan did not run (graceful degrade). */
+  newlyIntroduced?: number | null;
+}
+
 export interface MigrationDiscoveryContext {
   projectId: string;
   currentArchitectureId: string;
@@ -205,6 +235,14 @@ export interface MigrationDiscoveryContext {
   architectureMappingsSummary?: MigrationArchitectureMappingsSummary | null;
   readinessAssessment?: MigrationReadinessAssessment | null;
   contextWarnings?: string[];
+  /**
+   * Spec 4 (2026-06-24) -- the OPTIONAL estimated current->target CVE reduction
+   * roll-up as an ADDITIONAL summary block. Nullable + fail-soft: ABSENT when no
+   * target snapshot exists (never a zeroed reduction), labelled an ESTIMATE when
+   * present. Consumers hide their reduction roll-up on null and NEVER block the
+   * host flow on it.
+   */
+  estimatedReduction?: MigrationEstimatedReductionSummary | null;
 }
 
 // ============================================================================

@@ -7,7 +7,7 @@
 
 import express from 'express';
 import { getConfig } from './config';
-import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, migrationExecutionRouter } from './routes';
+import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, vulnerabilitiesRouter, vulnerabilityReductionRouter, migrationExecutionRouter } from './routes';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -138,6 +138,27 @@ app.use('/api/v1', dbMigrationPackRouter);
 // an architecture's interfaces — list / generate / zip download. Sibling of
 // the DB migration pack surface on the Migration Delivery Plan.
 app.use('/api/v1', oasExportRouter);
+// Vulnerabilities route (Spec 2026-06-24 Vulnerability store + manual capture +
+// current-state view, Spec 1 of 6 -- Task Group 3). Mounted at /api/v1 so the
+// router's internal paths resolve to
+// /api/v1/projects/:projectId/architectures/:architectureId/vulnerabilities[/reports|/rollup].
+// The POST .../reports route carries a multipart SCA-report upload (multer
+// memoryStorage), runs the LLM-flexible parse + XLSX-to-rows at the gateway,
+// and forwards the parsed rows to the AMS vulnerabilities ingest endpoint; the
+// GET read routes are JSON pass-throughs to architecture-model-service.
+app.use('/api/v1', vulnerabilitiesRouter);
+// Vulnerability Reduction + Steering routes (Spec 2026-06-24 Vulnerability
+// Reduction + Steering, Spec 4 of 6 -- Task Group 5). Mounted at /api/v1 so the
+// router's internal paths resolve to
+// /api/v1/projects/:projectId/target-architectures/:targetArchitectureId/vulnerability-reduction
+// (POST compute the estimate-labelled current->target reduction roll-up +
+// recommended-minimum-fixed version; the strictly-non-blocking OSV target scan),
+// /api/v1/projects/.../vulnerability-reduction/use-version (POST the one-click
+// "use this version" captured-decision write + recompute), and the verbatim
+// round-trip proxies GET/PUT
+// /api/v1/projects/:projectId/architectures/:architectureId/proceed-critical-override
+// to the Task Group 4 AMS proceed-critical override audit-trio endpoint.
+app.use('/api/v1', vulnerabilityReductionRouter);
 // Migration Shape-Spec Batch Generation routes (Spec 2026-05-19 -- follow-up
 // wiring). Mounted at /api/v1 so the router's internal paths resolve to
 // /api/v1/projects/:projectId/migration-books-of-work/:bookId/spec-generations/
@@ -293,6 +314,8 @@ if (require.main === module) {
     console.log(`[Gateway] Discovery Tech Hints Resolve endpoint: http://localhost:${config.port}/api/v1/discovery/tech-hints/resolve`);
     console.log(`[Gateway] API Migration Validation LLM relay: http://localhost:${config.port}/api/v1/api-migration-validation/llm-tool-loop`);
     console.log(`[Gateway] API Behaviour CRUD proxies: http://localhost:${config.port}/api/v1/projects/:projectId/architectures/:architectureId/api-behaviour/...`);
+    console.log(`[Gateway] Vulnerabilities upload+proxy: http://localhost:${config.port}/api/v1/projects/:projectId/architectures/:architectureId/vulnerabilities`);
+    console.log(`[Gateway] Vulnerability Reduction compute: http://localhost:${config.port}/api/v1/projects/:projectId/target-architectures/:targetArchitectureId/vulnerability-reduction`);
     console.log(`[Gateway] Migration Discovery Context proxy: http://localhost:${config.port}/api/v1/projects/:projectId/migration-discovery-context`);
     console.log(`[Gateway] Migration Book of Work generate: http://localhost:${config.port}/api/v1/projects/:projectId/migration-books-of-work/generate`);
     console.log(`[Gateway] Migration Book of Work read: http://localhost:${config.port}/api/v1/projects/:projectId/migration-books-of-work/:bookId`);

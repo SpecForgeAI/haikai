@@ -6,6 +6,8 @@ import com.example.architecturemodel.exception.LastArchitectureException;
 import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.mapper.ArchitectureMapper;
 import com.example.architecturemodel.model.dto.ArchitectureDto;
+import com.example.architecturemodel.model.dto.targetstate.ProceedCriticalOverrideDto;
+import com.example.architecturemodel.model.dto.targetstate.UpsertProceedCriticalOverrideRequest;
 import com.example.architecturemodel.model.entity.ArchitectureEntity;
 import com.example.architecturemodel.model.entity.ArchitectureTagEntity;
 import com.example.architecturemodel.repository.ArchitectureRepository;
@@ -283,6 +285,95 @@ public class ArchitectureService {
         return architectureMapper.toDto(
             saved,
             architectureTagRepository.findByArchitectureId(architectureId));
+    }
+
+    // ========================================================================
+    // Proceed-with-remaining-criticals override (Spec 4 Task Group 4)
+    //
+    // The architect-conversation "proceed" step hard-gates on any REMAINING
+    // CRITICAL CVE (Spec 4 steering). Overriding the gate records a once-per-
+    // target-architecture audit trio on the architecture row, mirroring the
+    // capture-session coverage-override trio. Read + write are null-guarded so a
+    // PATCH-style omitted field never wipes a column.
+    // ========================================================================
+
+    /**
+     * Reads the persisted "proceed with remaining criticals" override audit trio
+     * for an architecture (for the later read-only override banner). Returns a
+     * not-overridden default ({@code overridden=false}, all audit fields null)
+     * when no override has been recorded.
+     *
+     * @param projectId      project the architecture must belong to
+     * @param architectureId architecture id
+     * @return the override read DTO (never null)
+     * @throws ArchitectureNotFoundException if the architecture id does not exist
+     *           or belongs to a different project (mapped to 404)
+     */
+    @Transactional(readOnly = true)
+    public ProceedCriticalOverrideDto getProceedCriticalOverride(
+            UUID projectId, UUID architectureId) {
+        ArchitectureEntity entity = loadInProject(projectId, architectureId);
+        return ProceedCriticalOverrideDto.of(
+            entity.getProceedCriticalOverrideJustification(),
+            entity.getProceedRemainingCriticalCount(),
+            entity.getProceedCriticalOverrideAt());
+    }
+
+    /**
+     * Persists (upserts) the "proceed with remaining criticals" override audit
+     * trio on the target architecture. Null-guarded per
+     * {@code project_primitive_double_dto_overwrite.md}: a request that omits a
+     * field leaves the existing column untouched.
+     *
+     * <p>The justification is REQUIRED for a real override: a null/blank
+     * justification is rejected with {@link IllegalArgumentException} (mapped to
+     * 400) so the gate is never bypassed without a recorded reason -- mirroring
+     * the coverage-override contract. The timestamp defaults to {@code now()}
+     * when the request omits it.</p>
+     *
+     * @param projectId      project the architecture must belong to
+     * @param architectureId target architecture id
+     * @param request        the override trio (justification required)
+     * @return the persisted override read DTO
+     * @throws ArchitectureNotFoundException if the architecture id does not exist
+     *           or belongs to a different project (mapped to 404)
+     * @throws IllegalArgumentException      if the justification is null/blank
+     *           (mapped to 400) -- an override must always carry a reason
+     */
+    @Transactional
+    public ProceedCriticalOverrideDto upsertProceedCriticalOverride(
+            UUID projectId, UUID architectureId,
+            UpsertProceedCriticalOverrideRequest request) {
+        ArchitectureEntity entity = loadInProject(projectId, architectureId);
+
+        if (request == null
+                || request.proceedCriticalOverrideJustification() == null
+                || request.proceedCriticalOverrideJustification().isBlank()) {
+            throw new IllegalArgumentException(
+                "A proceed-with-remaining-criticals override requires a justification");
+        }
+
+        entity.setProceedCriticalOverrideJustification(
+            request.proceedCriticalOverrideJustification().trim());
+        // Boxed Integer: a null count leaves the prior audit count untouched
+        // (the count is informational; the justification is the gate record).
+        if (request.remainingCriticalCount() != null) {
+            entity.setProceedRemainingCriticalCount(request.remainingCriticalCount());
+        }
+        entity.setProceedCriticalOverrideAt(
+            request.proceedCriticalOverrideAt() != null
+                ? request.proceedCriticalOverrideAt()
+                : java.time.Instant.now());
+
+        ArchitectureEntity saved = architectureRepository.save(entity);
+        log.info("Recorded proceed-critical override for architecture {} in project {} "
+            + "(remainingCritical={})", architectureId, projectId,
+            saved.getProceedRemainingCriticalCount());
+
+        return ProceedCriticalOverrideDto.of(
+            saved.getProceedCriticalOverrideJustification(),
+            saved.getProceedRemainingCriticalCount(),
+            saved.getProceedCriticalOverrideAt());
     }
 
     // ========================================================================

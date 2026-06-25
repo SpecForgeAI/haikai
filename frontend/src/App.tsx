@@ -75,6 +75,12 @@ import { DiscoveryRunDetailPage } from './components/DashboardView/DiscoveryRunD
 import { ApiBaselinesListPage } from './components/DashboardView/ApiBaselinesListPage';
 import { CaptureSessionDetailPage } from './components/DashboardView/CaptureSessionDetailPage';
 import { BaselineDetailPage } from './components/DashboardView/BaselineDetailPage';
+// Spec 2026-06-24 Vulnerability store + manual capture + current-state view
+// -- Task Group 5. New top-level "Security" tab (peer of discovery /
+// api-behaviour). Mounted architecture-scoped under <AppShell> so it
+// inherits the TopBar + providers and survives ProjectLayout's
+// missing-architecture redirect via the `security` KNOWN_VIEW_SEGMENTS entry.
+import { SecurityView } from './components/SecurityView/SecurityView';
 // Spec 2026-05-19 PM Migration Shape-Spec Batch Generation -- follow-up route wiring
 // Workspace surface for batch-generated shape-specs, drill-into from the
 // WorkItem Implement tab's `ImplementTabShapeSpecCard`.
@@ -784,6 +790,17 @@ function AppRoutes() {
               element={<BaselineDetailPage />}
             />
           </Route>
+          {/*
+            Spec 2026-06-24 Vulnerability store + manual capture + current-state
+            view -- Task Group 5. The new top-level "Security" tab. Mounted as a
+            flat child of <AppShell> (peer of discovery / api-behaviour) so it
+            renders at the shell's <Outlet/> slot and survives ProjectLayout's
+            missing-architecture redirect (the `security` segment is registered
+            in KNOWN_VIEW_SEGMENTS). The view reads the active project +
+            architecture from context and lists the latest report's
+            vulnerabilities via vulnerabilitiesApi.ts.
+          */}
+          <Route path="security" element={<SecurityView />} />
           {/*
             Spec 2026-05-24 Target State Sub-tab + Deterministic Suggest -- Task Group 3.3
             Legacy top-level Target Architecture route. The view has been

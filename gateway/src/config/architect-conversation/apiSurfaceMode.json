@@ -1,0 +1,17 @@
+{
+  "_doc": "Canonical closed sets for the FR9 API like-for-like lock (Spec 2026-06-24-target-conversation-tech-stack-constraints). `apiSurfaceModes` are the two migration modes for the API surface: `like_for_like` (the WHOLE of Group B is auto-answered + LOCKED from the reconciled source contract / API Behaviour Baseline, treatment class `L`, read-only, NOT asked) and `may_change` (Group B reverts to its underlying H/I/G class and is asked normally). `like_for_like` is the DEFAULT whenever the architecture has a reconciled baseline / oracle. `lockedTreatmentMarker` is the single runtime treatment-class member (`locked`, surfaced as `L`) that supersedes H/I/G while like-for-like is active; it is NOT a `dependencyClass` and does not erase a question's underlying class. Both packages mirror these lists: the gateway (`apiSurfaceMode.ts` + `apiSurfaceLock.ts`) and the frontend (`architectConversationApi.ts`). Drift between the two TS declarations and this JSON file is enforced at test-time by `frontend/src/api/__tests__/apiSurfaceMode.contractWithGateway.test.ts` (mirroring the `scopeRefType.json` precedent). Update this file when adding or removing a mode / marker; both packages derive their constants from this single source of truth.",
+  "apiSurfaceModes": [
+    "like_for_like",
+    "may_change"
+  ],
+  "defaultMode": "like_for_like",
+  "lockedTreatmentMarker": "locked",
+  "lockableGroupBCodes": [
+    "api.protocol",
+    "api.versioning",
+    "api.contractFormat",
+    "api.auth",
+    "api.errorContract",
+    "api.rateLimiting"
+  ]
+}

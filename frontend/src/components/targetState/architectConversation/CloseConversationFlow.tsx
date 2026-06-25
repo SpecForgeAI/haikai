@@ -16,9 +16,23 @@
  * current and start new" affordance is UI-level prevention only -- a second
  * user opening the draft with an active session sees the affordance and can
  * choose to retire the in-flight session before starting their own.
+ *
+ * Spec 4 (2026-06-24-vulnerability-reduction-and-steering, Task Group 6) ADDS
+ * the critical hard-gate at this "proceed" step: when a shared reduction delta
+ * is supplied AND it carries a REMAINING CRITICAL CVE, the close button routes
+ * through {@link ProceedCriticalGate} — a blocking override dialog (justification
+ * required) persisting the audit trio + a later read-only banner. Only criticals
+ * gate; the close behaviour is otherwise unchanged (the gate is ADDITIVE and only
+ * engages when the delta + ids are provided).
  */
 
 import type { CapturedDecisionRow } from '../../../api/architectConversationApi';
+import type {
+  ProceedCriticalOverrideDto,
+  VulnerabilityDeltaResult,
+} from '../../../api/vulnerabilityReductionApi';
+import { remainingCriticalCves } from '../../../api/vulnerabilityReductionApi';
+import { ProceedCriticalGate } from './ProceedCriticalGate';
 import styles from './ArchitectConversation.module.css';
 
 export const CLOSE_GATE_CODES: readonly string[] = [
@@ -36,6 +50,21 @@ export interface CloseConversationFlowProps {
   isOwnedByCurrentUser: boolean;
   onClose: (summaryMarkdown: string) => Promise<void> | void;
   onRetireAndStartNew: () => Promise<void> | void;
+  /**
+   * Spec 4 (Task Group 6) — the critical hard-gate inputs. ALL optional: when
+   * `vulnerabilityDelta`, `projectId`, and `targetArchitectureId` are supplied
+   * AND the delta carries a remaining critical CVE, the close button routes
+   * through the {@link ProceedCriticalGate} (override-with-justification +
+   * persisted trio + read-only banner). When absent / no remaining critical, the
+   * close button behaves exactly as before.
+   */
+  vulnerabilityDelta?: VulnerabilityDeltaResult | null;
+  projectId?: string;
+  targetArchitectureId?: string;
+  /** The previously-persisted override trio (drives the read-only banner). */
+  proceedCriticalOverride?: ProceedCriticalOverrideDto | null;
+  /** Notifies the host that the override trio changed (so it can refresh the banner). */
+  onProceedCriticalOverridePersisted?: (override: ProceedCriticalOverrideDto) => void;
 }
 
 /**
@@ -86,6 +115,11 @@ export function CloseConversationFlow({
   isOwnedByCurrentUser,
   onClose,
   onRetireAndStartNew,
+  vulnerabilityDelta = null,
+  projectId,
+  targetArchitectureId,
+  proceedCriticalOverride = null,
+  onProceedCriticalOverridePersisted,
 }: CloseConversationFlowProps) {
   const unmetCodes = evaluateCloseGate(decisions);
   const gateMet = unmetCodes.length === 0;
@@ -113,6 +147,22 @@ export function CloseConversationFlow({
     );
   }
 
+  const proceed = () => onClose(buildCloseSummaryMarkdown(decisions));
+
+  // Spec 4: the critical hard-gate only engages when the delta + ids are wired
+  // AND there is a remaining critical CVE. Otherwise the close button is the
+  // unchanged plain control below.
+  const gateWired =
+    !!vulnerabilityDelta && !!projectId && !!targetArchitectureId;
+  const hasRemainingCritical =
+    gateWired && remainingCriticalCves(vulnerabilityDelta).length > 0;
+  const alreadyOverridden =
+    !!proceedCriticalOverride &&
+    proceedCriticalOverride.overridden === true &&
+    typeof proceedCriticalOverride.proceed_critical_override_justification === 'string' &&
+    proceedCriticalOverride.proceed_critical_override_justification.length > 0;
+  const useGate = gateWired && (hasRemainingCritical || alreadyOverridden);
+
   return (
     <div
       data-testid="architect-conversation-close-flow"
@@ -126,20 +176,34 @@ export function CloseConversationFlow({
           Answer all required questions before closing: {unmetCodes.join(', ')}.
         </p>
       )}
-      <button
-        type="button"
-        className={styles.primaryButton}
-        disabled={!gateMet || !isOpen}
-        onClick={() => void onClose(buildCloseSummaryMarkdown(decisions))}
-        title={
-          !gateMet
-            ? `Close gate not met: missing ${unmetCodes.join(', ')}`
-            : 'Close conversation with full summary'
-        }
-        data-testid="architect-conversation-close-button"
-      >
-        Close conversation
-      </button>
+
+      {useGate ? (
+        <ProceedCriticalGate
+          projectId={projectId as string}
+          architectureId={targetArchitectureId as string}
+          delta={vulnerabilityDelta ?? null}
+          persistedOverride={proceedCriticalOverride ?? null}
+          proceedEnabled={gateMet && isOpen}
+          onProceed={proceed}
+          onOverridePersisted={onProceedCriticalOverridePersisted}
+          proceedLabel="Close conversation"
+        />
+      ) : (
+        <button
+          type="button"
+          className={styles.primaryButton}
+          disabled={!gateMet || !isOpen}
+          onClick={() => void proceed()}
+          title={
+            !gateMet
+              ? `Close gate not met: missing ${unmetCodes.join(', ')}`
+              : 'Close conversation with full summary'
+          }
+          data-testid="architect-conversation-close-button"
+        >
+          Close conversation
+        </button>
+      )}
     </div>
   );
 }

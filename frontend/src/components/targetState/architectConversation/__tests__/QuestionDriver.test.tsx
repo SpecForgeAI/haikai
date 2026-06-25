@@ -44,6 +44,10 @@ vi.mock('../../../../contexts/ArchitectureContext', () => ({
     const m = { model: { metaModel: { entities: { services: [], app_components: [] } } } };
     return () => m;
   })(),
+  // Spec 4 (Task Group 6): the tab reads the CURRENT architecture id via this
+  // hook for the vulnerability-reduction fetch; null => the reduction hook
+  // degrades to a null delta (non-blocking no-op for these unrelated tests).
+  useActiveArchitectureId: () => null,
 }));
 
 import { ArchitectConversationTab } from '../ArchitectConversationTab';
@@ -73,11 +77,14 @@ beforeEach(() => {
   // phase, TG1.5 wire mirror). A pending question -> phase: 'preset-walk'.
   vi.mocked(fetchNextQuestion).mockResolvedValue({
     question: {
-      decisionCode: 'service.language',
+      // NON-versioned free-text fixture (was `service.language`, now a
+      // versioned code rendering the dedicated framework+version control;
+      // that surface is covered by VersionedAnswerControl.test.tsx).
+      decisionCode: 'service.processModel',
       group: 'A',
-      orderInGroup: 1,
-      promptText: 'Which language will the target service use?',
-      staticContextLeadIn: 'Service runtime language.',
+      orderInGroup: 4,
+      promptText: 'Which process model will the target service use?',
+      staticContextLeadIn: 'Service process model.',
       expectedAnswerShape: 'free-text',
       choices: null,
       defaultsWhenUnchanged: 'no change',
@@ -102,11 +109,11 @@ describe('Architect conversation question driver', () => {
     // The pending question prompt renders (it never did in the broken version).
     expect(
       await screen.findByTestId(
-        'architect-conversation-pending-question-service.language',
+        'architect-conversation-pending-question-service.processModel',
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('Which language will the target service use?'),
+      screen.getByText('Which process model will the target service use?'),
     ).toBeInTheDocument();
 
     // The answer input bar is reachable. For a free-text question the custom
@@ -133,7 +140,7 @@ describe('Architect conversation question driver', () => {
     const input = await screen.findByTestId(
       'architect-conversation-custom-input',
     );
-    fireEvent.change(input, { target: { value: 'Java 21' } });
+    fireEvent.change(input, { target: { value: 'single-process' } });
     fireEvent.click(
       screen.getByTestId('architect-conversation-custom-submit'),
     );
@@ -143,8 +150,8 @@ describe('Architect conversation question driver', () => {
         PROJECT_ID,
         TARGET,
         expect.objectContaining({
-          decisionCode: 'service.language',
-          value: 'Java 21',
+          decisionCode: 'service.processModel',
+          value: 'single-process',
         }),
       );
     });

@@ -1,0 +1,345 @@
+/*
+ * ManifestUploadPanel styles
+ *
+ * Spec: 2026-06-24-target-dependency-manifest-auto-answer (Spec 3) — Task Group 5
+ * (manifest-upload UI + provenance + inline edit + version-unknown affordance).
+ *
+ * Tonally matched to ArchitectConversation.module.css (same border / radius /
+ * accent palette) so the panel reads as a peer of the conversation surfaces.
+ */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 1rem;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.subheading {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #57606a;
+}
+
+/* --- file picker + selection rows --- */
+
+.dropRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.selectionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selectionItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+
+.fileName {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.kindBadge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: #ddf4ff;
+  border: 1px solid #0969da33;
+  color: #0550ae;
+}
+
+.tagInput {
+  flex: 1;
+  min-width: 140px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.tagInputMissing {
+  border-color: #cf222e;
+  background: #fff5f5;
+}
+
+.lockNote {
+  font-size: 0.72rem;
+  color: #57606a;
+}
+
+.removeButton {
+  background: none;
+  border: none;
+  color: #cf222e;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.tagWarning {
+  font-size: 0.75rem;
+  color: #cf222e;
+}
+
+/* --- uploaded-manifest status list --- */
+
+.statusList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.statusItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.statusParsed {
+  background: #eafaf0;
+  border: 1px solid #2da44e33;
+}
+
+.statusDropped {
+  background: #fff5f5;
+  border: 1px solid #cf222e33;
+}
+
+.statusBadge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.statusBadgeParsed {
+  background: #2da44e;
+  color: #ffffff;
+}
+
+.statusBadgeDropped {
+  background: #cf222e;
+  color: #ffffff;
+}
+
+.statusReason {
+  color: #57606a;
+  font-size: 0.78rem;
+}
+
+/* --- auto-answered decisions w/ provenance + inline edit --- */
+
+.decisionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decisionItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.decisionHeaderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.decisionCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: #57606a;
+}
+
+.resolvedChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: #ddf4ff;
+  border: 1px solid #0969da33;
+  color: #0550ae;
+}
+
+.resolvedChipUnknown {
+  background: #fff8c5;
+  border-color: #d4a72c66;
+  color: #7d4e00;
+}
+
+.provenanceBadge {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  color: #57606a;
+}
+
+.provenanceManual {
+  background: #fbefff;
+  border-color: #8250df55;
+  color: #6639ba;
+}
+
+.provenanceLine {
+  font-size: 0.75rem;
+  color: #57606a;
+}
+
+.sourceQuote {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.versionUnknownNote {
+  font-size: 0.75rem;
+  color: #7d4e00;
+}
+
+/* --- inline edit --- */
+
+.editRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.editInput {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.editError {
+  font-size: 0.75rem;
+  color: #cf222e;
+}
+
+/* --- shared buttons (local copies so the panel is self-contained) --- */
+
+.primaryButton {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #0969da;
+  border-radius: 6px;
+  background: #0969da;
+  color: #ffffff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #0860c8;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: #24292f;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #eef1f4;
+}
+
+.secondaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  color: #0969da;
+  cursor: pointer;
+  font-size: 0.82rem;
+  padding: 0;
+}
+
+/* --- banners --- */
+
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: #ddf4ff;
+  border: 1px solid #0969da33;
+  font-size: 0.85rem;
+}
+
+.bannerError {
+  background: #fff5f5;
+  border-color: #cf222e55;
+  color: #82071e;
+}
+
+.bannerWarn {
+  background: #fff8c5;
+  border-color: #d4a72c66;
+  color: #7d4e00;
+}
+
+.sectionLabel {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}

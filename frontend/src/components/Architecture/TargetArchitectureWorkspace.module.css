@@ -813,3 +813,16 @@
 /* The Architect Conversation right-side panel chrome now lives in the shared
    RightHandPanelShell (which reuses UnifiedChatPanel.module.css), so the bespoke
    .conversationOverlay styles that used to live here were removed. */
+
+/* Spec 4 (Task Group 7.2): the compare column wraps the estimated-reduction
+   panel ABOVE the compare table so the compare view's 5-column table contract is
+   untouched. The wrapper is the flex child the layout previously gave directly to
+   the compare panel; the inner compare panel keeps its own scroll. */
+.compareColumn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}

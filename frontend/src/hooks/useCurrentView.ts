@@ -64,7 +64,7 @@
 import { useLocation } from 'react-router-dom';
 import { ArchitectureDomain } from '../types/architectureDomain';
 
-export type CurrentView = 'metamodel' | 'diagrams' | 'product' | 'dashboard' | 'discovery' | 'target-architecture';
+export type CurrentView = 'metamodel' | 'diagrams' | 'product' | 'dashboard' | 'discovery' | 'target-architecture' | 'security';
 
 const KNOWN_VIEWS: ReadonlySet<CurrentView> = new Set([
   'metamodel',
@@ -75,6 +75,9 @@ const KNOWN_VIEWS: ReadonlySet<CurrentView> = new Set([
   // Spec 2026-05-20 Target Architecture Authoring Flow -- Task Group 6
   // New peer top-level view; lives at /.../target-architecture.
   'target-architecture',
+  // Spec 2026-06-24 Vulnerability store + manual capture -- Task Group 5
+  // New top-level "Security" view; lives at /.../security.
+  'security',
 ]);
 
 /**

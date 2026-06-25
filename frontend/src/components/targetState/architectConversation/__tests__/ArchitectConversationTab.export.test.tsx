@@ -49,6 +49,11 @@ vi.mock('../../../../contexts/ArchitectureContext', () => ({
     const m = { model: { metaModel: { entities: { services: [], app_components: [] } } } };
     return () => m;
   })(),
+  // Spec 4 (Task Group 6): the tab now reads the CURRENT architecture id via
+  // this hook for the vulnerability-reduction fetch. `null` here => the
+  // reduction hook degrades to a null delta (no current-state fetch), which is
+  // the correct non-blocking no-op for these unrelated tab tests.
+  useActiveArchitectureId: () => null,
 }));
 
 import { ArchitectConversationTab } from '../ArchitectConversationTab';

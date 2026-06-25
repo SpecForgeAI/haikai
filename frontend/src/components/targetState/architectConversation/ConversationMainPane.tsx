@@ -38,6 +38,9 @@ import {
   type TierFlags,
 } from '../../../api/architectConversationApi';
 import { CascadeSummaryControls } from './CascadeSummaryControls';
+import { VersionedAnswerControl } from './VersionedAnswerControl';
+import { isVersionedCode, buildFrameworkVersionCaptureValue } from './versionControlConfig';
+import { resolveFrameworkVersionChip, type FrameworkVersion } from '../../../api/architectConversationApi';
 import styles from './ArchitectConversation.module.css';
 
 /**
@@ -147,6 +150,17 @@ export interface ConversationMainPaneProps {
    * as before). The parent enters this STRICTLY after the preset walk exhausts.
    */
   openPhase?: OpenPhasePaneState;
+  /**
+   * Spec 4 (2026-06-24-vulnerability-reduction-and-steering, Task Group 6): a
+   * stable render slot for the inline NON-BLOCKING vulnerability nudge on the
+   * versioned-selection control. The parent supplies a node (typically a
+   * <VulnerabilityNudge>) scoped to the current versioned question; it is
+   * forwarded VERBATIM to VersionedAnswerControl's reserved `nudgeSlot` and
+   * rendered above the version input. The pane implements NO Spec 4 compute — it
+   * only threads the slot. Receives the current framework + version so the host
+   * can scope the nudge. Undefined => no nudge (the control renders as before).
+   */
+  versionedNudgeSlot?: (ctx: { decisionCode: string; framework: string | null; version: string }) => React.ReactNode;
 }
 
 export function ConversationMainPane({
@@ -168,6 +182,7 @@ export function ConversationMainPane({
   scrollToDecisionId = null,
   onScrolledToDecision,
   openPhase,
+  versionedNudgeSlot,
 }: ConversationMainPaneProps) {
   // Click-to-answer local state (2026-06-01). Reset whenever the pending
   // question changes so each question starts clean.
@@ -242,6 +257,22 @@ export function ConversationMainPane({
   // questions reveal it behind "Something else…".
   const showTextInput = !hasChoices || showCustom;
 
+  // Spec 2026-06-24 (FR5): the seven `versioned` codes render the decoupled
+  // framework+version control instead of plain chips. The offered `choices`
+  // ARE the (Task-Group-4-filtered) framework axis; the version axis is the
+  // dedicated control. Submitting captures the structured { framework, version }
+  // through the EXISTING capture path (envelope value string + resolved chip),
+  // so no gateway change is needed. Every other question renders as today.
+  const isVersioned = pendingQuestion ? isVersionedCode(pendingQuestion.decisionCode) : false;
+  const handleVersionedSubmit = (value: FrameworkVersion) => {
+    if (!pendingQuestion) return;
+    void onCaptureAnswer(
+      pendingQuestion.decisionCode,
+      buildFrameworkVersionCaptureValue(value),
+      resolveFrameworkVersionChip(value),
+    );
+  };
+
   // 2026-06-06 Open-Ended LLM Phase: when the open phase is engaged the preset
   // input bar is gone (the walk exhausted -> `pendingQuestion` is null) and the
   // pane renders the open-phase bottom controls instead.
@@ -302,6 +333,28 @@ export function ConversationMainPane({
             {pendingQuestion.promptText}
           </div>
 
+          {/* Spec 2026-06-24 (FR5): versioned codes render the decoupled
+              framework+version control; all other codes keep the existing
+              chips / custom / opt-out answer area below (additive). */}
+          {isVersioned ? (
+            <VersionedAnswerControl
+              decisionCode={pendingQuestion.decisionCode}
+              frameworkChoices={choices}
+              busy={answerBusy}
+              onSubmit={handleVersionedSubmit}
+              nudgeSlot={
+                versionedNudgeSlot
+                  ? (ctx) =>
+                      versionedNudgeSlot({
+                        decisionCode: pendingQuestion.decisionCode,
+                        framework: ctx.framework,
+                        version: ctx.version,
+                      })
+                  : undefined
+              }
+            />
+          ) : (
+          <>
           {/* Choices -- click to answer (single-choice) or toggle + confirm
               (multi-choice). No option is pre-selected; the user actively picks. */}
           {hasChoices && (
@@ -415,6 +468,8 @@ export function ConversationMainPane({
           >
             Not applicable to this migration
           </button>
+          </>
+          )}
 
           {/* Advanced -- per-element exception (rarely needed). */}
           {onOpenExceptionDialog && (

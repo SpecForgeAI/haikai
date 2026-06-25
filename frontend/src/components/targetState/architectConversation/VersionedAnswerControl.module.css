@@ -1,0 +1,134 @@
+/*
+ * VersionedAnswerControl styles — decoupled framework + version selection
+ * (Spec 2026-06-24-target-conversation-tech-stack-constraints, FR5).
+ * Palette + control shapes match ArchitectConversation.module.css.
+ */
+
+.versionedControl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.axisLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #57606a;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.chipRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.choiceButton {
+  padding: 0.4rem 0.85rem;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.choiceButton:hover:not(:disabled) {
+  background: #f3f6f9;
+  border-color: #0969da;
+}
+
+.choiceButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.choiceButtonSelected {
+  background: #ddf4ff;
+  border-color: #0969da;
+  font-weight: 600;
+}
+
+.versionAxis {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.6rem;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  background: #f6f8fa;
+}
+
+/* Stable Spec 4 nudge slot (FR8). Rendered above the version input; the control
+   itself implements no compute, so the slot is visually neutral when empty. */
+.nudgeSlot {
+  display: block;
+}
+
+.nudgeSlot:empty {
+  display: none;
+}
+
+.inputRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inputField {
+  flex: 1;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d0d7de;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.inputField:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.enrichmentNote {
+  color: #57606a;
+  font-size: 0.78rem;
+}
+
+.resolvedChipRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* The ONE resolved {framework, version} chip (e.g. `Spring Boot 3.4.1`). */
+.resolvedChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid #1f883d;
+  border-radius: 9999px;
+  background: #dafbe1;
+  color: #1a7f37;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.primaryButton {
+  align-self: flex-start;
+  background: #2da44e;
+  color: #ffffff;
+  border: 1px solid #1f883d;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: #2c974b;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

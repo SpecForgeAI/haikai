@@ -4528,3 +4528,95 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Spec: Vulnerability store + manual capture + current-state view (2026-06-24,
+  # Spec 1 of 6 in the CVE-reduction initiative) -- Task Group 1.
+  #
+  # Changeset 197 introduces the dedicated, queryable current-state vulnerability
+  # store: vulnerability_reports (one row per uploaded SCA report version --
+  # replace-latest / keep-history via is_latest + the no-silent-drop accounting)
+  # and vulnerabilities (one row per captured advisory, scoped to a report;
+  # coordinate + resolved-edge-version matching with unmatched/orphan flagging;
+  # raw_row + fixed_in_versions JSONB). This spec OWNS the entity contract Specs 2
+  # (OSV) and 4 (reduction) build on -- the affected_version / affected_version_range
+  # / fixed_in_versions / matched_declared_version columns are LOCKED for Spec 4.
+  # Enumish columns are plain TEXT (no DB enums), mirroring discovery_findings.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 196). Registered AFTER
+  # 196 with the not-tableExists precondition idiom (mirrors 135 / 184).
+  # ============================================================================
+  - changeSet:
+      id: 197-vulnerabilities
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: vulnerabilities
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/197-vulnerabilities.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Proceed-with-remaining-criticals override audit trio on the target
+  # architecture (Spec: Vulnerability Reduction + Steering, 2026-06-24, Spec 4
+  # of 6 -- Task Group 4). Mirrors the capture-session coverage-override trio
+  # (changeset 178): proceed_critical_override_justification /
+  # proceed_remaining_critical_count / proceed_critical_override_at, all NULLABLE,
+  # no backfill. The conversation proceed step is scoped to a target architecture,
+  # so the trio lives on the architecture row alongside draft_state / kind (144/147).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 197). Registered AFTER
+  # 197 with the not-columnExists precondition idiom (clean no-op on re-run).
+  # ============================================================================
+  - changeSet:
+      id: 198-architecture-proceed-critical-override
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: architecture
+              columnName: proceed_critical_override_justification
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/198-architecture-proceed-critical-override.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Confirmed target dependency manifest store (Spec: Confirmed Manifest
+  # Producer Wiring, 2026-06-25, Spec 5 Phase 2 -- Task Group 1). Single table
+  # target_manifest_artifacts: the durable home for the verbatim confirmed
+  # manifest bytes (pom.xml / package.json) so the already-built seed-build-files
+  # carriage can emit the file into the generated target codebase at spec-gen.
+  # Carries the replace-latest / keep-history lifecycle via is_latest, scoped per
+  # (project_id, target_architecture_id, tag) -- modelled on vulnerability_reports
+  # (197). content + package_lock_content are verbatim TEXT; resolved_dependencies
+  # is JSONB. Enumish columns (kind, ecosystem) are plain TEXT (no DB enums).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 198). Registered AFTER
+  # 198 with the not-tableExists precondition idiom (mirrors 197 / 135 / 184).
+  # ============================================================================
+  - changeSet:
+      id: 199-target-manifest-artifacts
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: target_manifest_artifacts
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/199-target-manifest-artifacts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

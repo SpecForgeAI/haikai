@@ -138,6 +138,7 @@ import {
   defaultWriteTargetTechStackDeps,
   type WriteTargetTechStackDeps,
 } from '../services/architectConversation/writeTargetTechStackMarkdown';
+import { registerTargetManifestUploadRoute } from './targetManifestUpload';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency container (test seam).
@@ -318,6 +319,15 @@ function buildArchitectLlmClient(): ArchitectLlmClient {
 // ---------------------------------------------------------------------------
 
 export const architectConversationRouter = Router();
+
+// ---------------------------------------------------------------------------
+// Spec 2026-06-24-target-dependency-manifest-auto-answer (Spec 3, Task Group 1):
+// mount the target dependency-manifest upload route ALONGSIDE the conversation
+// routes on this same router (no new top-level mount, no new captured-decision
+// endpoint). Full path:
+//   POST /api/projects/:projectId/target-architectures/:targetArchitectureId/target-manifests
+// ---------------------------------------------------------------------------
+registerTargetManifestUploadRoute(architectConversationRouter);
 
 // ---------------------------------------------------------------------------
 // Shared helpers

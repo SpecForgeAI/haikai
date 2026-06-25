@@ -65,6 +65,17 @@ import {
 } from '../services/migrationShapeSpecGenerationHandler';
 import { fetchProjectConfigWithDefaults } from '../services/architectureModelClient';
 import { autoSeedEpicCapturedDecision } from '../services/epicCapturedDecisionsClient';
+// Spec 5 Phase 2 (2026-06-25-confirmed-manifest-producer-wiring, Task Group 5):
+// the REAL production confirmed-manifest source. It reads the persisted LATEST
+// confirmed-manifest artifacts for `(projectId, targetArchitectureId)` (written
+// at upload by Task Group 3) via the Task Group 2 gateway -> AMS client, builds
+// the v1 convention service->module mapping (`tag -> <tag>/`, monorepo), and
+// returns the seed bundle (or null). It is a safe no-op when no
+// `targetArchitectureId` / no persisted artifacts, and fail-soft (a read hiccup
+// degrades to null, never throwing into the batch). This REPLACES the prior
+// honest-v1 no-op `defaultProductionSeedBuildFilesSource`; tests still inject a
+// concrete source.
+import { productionSeedBuildFilesSource } from '../services/migrationSeedBuildFilesProducer';
 
 export const migrationShapeSpecGenerationRouter = Router();
 
@@ -82,6 +93,13 @@ export const migrationShapeSpecGenerationRouter = Router();
 const productionDeps: ShapeSpecGenerationDeps = {
   fetchProjectConfig: fetchProjectConfigWithDefaults,
   autoSeedEpicCapturedDecision,
+  // Spec 5 Phase 2 (Task Group 5): the REAL seed-build-files carriage source
+  // (the one-line flip). It reads the persisted latest confirmed-manifest
+  // artifacts and emits the verbatim build file(s) per module; it stays a safe
+  // no-op (null) when there is no target architecture / nothing persisted, and
+  // is fail-soft (a read hiccup degrades to null). This is the ONLY change to
+  // the consumer-side carriage.
+  seedBuildFilesSource: productionSeedBuildFilesSource,
 };
 
 // ---------------------------------------------------------------------------

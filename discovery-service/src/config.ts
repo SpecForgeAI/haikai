@@ -177,3 +177,87 @@ export const OPERATIONAL_ARTIFACT_PRIORITY_DIRS: string[] = (() => {
     : DEFAULTS;
   return list.map((d) => d.toLowerCase());
 })();
+
+// ---------------------------------------------------------------------------
+// Automated Vulnerability Enrichment (OSV / advisory feed)
+// Spec: 2026-06-24 Automated Vulnerability Enrichment (Spec 2 of 6), Task Group 1.
+//
+// The OSV source is reached through the CORPORATE PROXY and likely a custom CA,
+// and is architected SWAPPABLE for an offline OSV mirror later. ALL of these are
+// env-driven (no hard-coded endpoints) and feed the proxy/CA-aware OSV client
+// (`vulnerabilityEnrichment/osvDevVulnerabilitySource.ts`). Egress here is
+// strictly NON-BLOCKING: if OSV / the proxy is unreachable the client degrades
+// to the "automated enrichment unavailable" path and the workflow continues.
+// ---------------------------------------------------------------------------
+
+/**
+ * Base URL of the OSV source. Default is OSV.dev online; point this at an
+ * offline OSV MIRROR later WITHOUT changing any caller (the endpoint selection
+ * is part of the swap seam). NO endpoint is ever hard-coded in the client.
+ * Mirrors the {@link ARCHITECTURE_MODEL_SERVICE_BASE_URL} env idiom above.
+ * Default: https://api.osv.dev
+ */
+export const OSV_API_BASE_URL: string =
+  process.env.OSV_API_BASE_URL || 'https://api.osv.dev';
+
+/**
+ * Per-request timeout (ms) for OSV calls. Kept modest so a hung proxy degrades
+ * to "unavailable" quickly rather than stalling enrichment; a timeout is one of
+ * the non-blocking degradation paths (never an error into the workflow).
+ * Default: 15000.
+ */
+export const OSV_REQUEST_TIMEOUT_MS: number =
+  parseInt(process.env.OSV_REQUEST_TIMEOUT_MS || '15000', 10);
+
+/**
+ * Standard outbound HTTPS proxy URL (`https://user:pass@host:port`) for OSV
+ * egress through the corporate proxy. Read from `HTTPS_PROXY` (preferred, the
+ * OSV base URL is https) then `HTTP_PROXY`, case-insensitively, matching the
+ * de-facto Unix env convention. Empty when unset (direct connection).
+ *
+ * NB: axios honours these same env vars natively, but resolving them here keeps
+ * proxy/CA selection explicit + testable on the injected client config (the
+ * Task Group 1 tests assert the agent/proxy is wired from env without hitting
+ * the network).
+ */
+export const OSV_HTTPS_PROXY: string =
+  process.env.HTTPS_PROXY || process.env.https_proxy ||
+  process.env.HTTP_PROXY || process.env.http_proxy || '';
+
+/**
+ * Standard `NO_PROXY` exclusion list (comma-separated hosts/domains/CIDRs).
+ * When the OSV host matches an entry, the client connects directly (proxy
+ * bypassed). Empty when unset. Read case-insensitively like {@link OSV_HTTPS_PROXY}.
+ */
+export const OSV_NO_PROXY: string =
+  process.env.NO_PROXY || process.env.no_proxy || '';
+
+/**
+ * Path to a custom CA certificate bundle (PEM) for corporate TLS interception.
+ * Read from `OSV_CA_CERT_FILE` then the standard Node `NODE_EXTRA_CA_CERTS`.
+ * When set + readable, the bytes are loaded onto the OSV client's HTTPS agent
+ * `ca` so the intercepting proxy's certificate is trusted. A missing/unreadable
+ * file is non-fatal -- it degrades to the default trust store, and any
+ * resulting TLS failure flows down the NON-BLOCKING "unavailable" path (never
+ * an error into the workflow). Empty when unset.
+ */
+export const OSV_CA_CERT_FILE: string =
+  process.env.OSV_CA_CERT_FILE || process.env.NODE_EXTRA_CA_CERTS || '';
+
+/**
+ * Whether to AUTO-trigger automated vulnerability enrichment off the
+ * run-complete path after every discovery run (Spec 2, Task Group 3, task 3.4).
+ *
+ * Mirrors {@link DISCOVERY_PERFORMANCE_AUTO_SCORE} exactly: ON by default; env
+ * kill-switch (`DISCOVERY_VULN_ENRICH_AUTO=false` to disable). Parsed with the
+ * identical `?? 'true' ... !== 'false'` idiom -- anything other than the literal
+ * string "false" (case-insensitive) leaves it ON.
+ *
+ * STRICTLY NON-BLOCKING: even when ON, the auto-trigger is fire-and-forget off
+ * `run_complete` (the `maybeTriggerVulnerabilityEnrichment` pattern in
+ * `runManager.ts`) so an OSV outage NEVER blocks or fails a run. The on-demand
+ * "Scan for vulnerabilities" route is unaffected by this flag.
+ * Default: true.
+ */
+export const DISCOVERY_VULN_ENRICH_AUTO: boolean =
+  (process.env.DISCOVERY_VULN_ENRICH_AUTO ?? 'true').toLowerCase() !== 'false';

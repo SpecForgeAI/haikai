@@ -1,6 +1,7 @@
 package com.example.architecturemodel.model.dto.migration;
 
 import com.example.architecturemodel.model.dto.targetstate.TargetStateDecisionsSummaryDto;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.Instant;
@@ -34,7 +35,21 @@ import java.util.UUID;
  * {@link TargetStateDecisionsSummaryDto#empty()} so existing consumers see a
  * consistent shape rather than a {@code null}. Existing fields above are
  * byte-identical to their pre-spec layout.</p>
+ *
+ * <p>Spec: Vulnerability Reduction + Steering (2026-06-24, Spec 4 of 6) --
+ * Task Group 4 ADDITIVELY adds the OPTIONAL {@code estimatedReduction} block
+ * (per-bucket totals: eliminated / remaining / newly-introduced, plus the
+ * {@code estimate} flag). Unlike {@code targetStateDecisionsSummary} (always an
+ * empty envelope), this block follows the strict ABSENT-when-no-target contract:
+ * it is {@code null} (and omitted from the wire via {@link JsonInclude}) whenever
+ * there is no target snapshot to grade against, so the roll-up NEVER asserts a
+ * reduction that has not been computed. The reduction itself is computed by the
+ * gateway delta service (the single source of truth) and is estimate-labelled at
+ * the data layer; AMS carries the optional, fail-soft shape so the frontend
+ * roll-up surface reads it through this aggregation. Existing fields are
+ * byte-identical to their pre-spec layout.</p>
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record MigrationDiscoveryContextDto(
     @JsonProperty("projectId")
     UUID projectId,
@@ -113,7 +128,20 @@ public record MigrationDiscoveryContextDto(
     TargetStateDecisionsSummaryDto targetStateDecisionsSummary,
 
     @JsonProperty("scenarioSeeds")
-    List<ScenarioSeedSetDto> scenarioSeeds
+    List<ScenarioSeedSetDto> scenarioSeeds,
+
+    /**
+     * OPTIONAL estimated current->target CVE reduction roll-up (Spec 4, Task
+     * Group 4). {@code null} -- and omitted from the wire via the class-level
+     * {@link JsonInclude} NON_NULL -- whenever there is no target snapshot to
+     * grade against (the strict ABSENT-when-no-target contract; never a zeroed
+     * block). When present, carries per-bucket totals and the {@code estimate}
+     * flag so every reporting surface inherits the ESTIMATE label. Computed by
+     * the gateway delta service (the single source of truth); AMS carries the
+     * fail-soft shape only.
+     */
+    @JsonProperty("estimatedReduction")
+    EstimatedReductionSummary estimatedReduction
 ) {
 
     // -----------------------------------------------------------------------
@@ -276,5 +304,34 @@ public record MigrationDiscoveryContextDto(
         @JsonProperty("path") String path,
         @JsonProperty("safeToExecute") Boolean safeToExecute,
         @JsonProperty("seeds") List<ScenarioSeedDto> seeds
+    ) {}
+
+    /**
+     * OPTIONAL estimated current->target CVE reduction roll-up (Spec:
+     * Vulnerability Reduction + Steering, 2026-06-24, Spec 4 -- Task Group 4).
+     *
+     * <p>Per-bucket totals modelled on the gateway delta service's
+     * {@code ReductionTotals} (the {@code findingsCoverage.ts} before/after
+     * analogue): {@code total} current CVEs graded, plus the {@code eliminated} /
+     * {@code remaining} / {@code newlyIntroduced} counts. {@code newlyIntroduced}
+     * is the OSV target-scan badged set -- {@code null} (omitted) on the
+     * graceful-degrade path where the scan did not run, distinct from a present
+     * {@code 0} meaning "scanned, none found".</p>
+     *
+     * <p>{@code estimate} is always {@code true} when this block is present so
+     * every reporting surface inherits the ESTIMATE label rather than re-deciding
+     * it. All counts are boxed so an absent value is preserved as {@code null}
+     * (never the primitive-default {@code 0}) per
+     * {@code project_primitive_double_dto_overwrite.md}. The WHOLE block is
+     * {@code null} (and wire-omitted) when there is no target snapshot -- the
+     * strict ABSENT-when-no-target contract, never a zeroed reduction.</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record EstimatedReductionSummary(
+        @JsonProperty("estimate") Boolean estimate,
+        @JsonProperty("total") Integer total,
+        @JsonProperty("eliminated") Integer eliminated,
+        @JsonProperty("remaining") Integer remaining,
+        @JsonProperty("newlyIntroduced") Integer newlyIntroduced
     ) {}
 }

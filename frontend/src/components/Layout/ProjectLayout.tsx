@@ -58,6 +58,10 @@ export const KNOWN_VIEW_SEGMENTS = new Set([
   // New peer top-level view; preserve the legacy redirect for
   // /projects/:p/target-architecture URLs.
   'target-architecture',
+  // Spec 2026-06-24 Vulnerability store + manual capture -- Task Group 5
+  // New top-level "Security" view; pre-add the segment so legacy
+  // /projects/:p/security URLs survive the missing-architecture redirect.
+  'security',
 ]);
 
 /**

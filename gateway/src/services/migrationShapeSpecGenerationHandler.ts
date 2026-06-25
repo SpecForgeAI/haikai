@@ -155,6 +155,16 @@ import {
 import {
   autoSeedEpicCapturedDecision as defaultAutoSeedEpicCapturedDecision,
 } from './epicCapturedDecisionsClient';
+// Spec 5 (2026-06-24-confirmed-manifest-to-target-codebase) — seed-build-files
+// carriage seam (Groups 3 + 4). Recognises the dedicated seed story, reads the
+// Spec 3 confirmed manifest(s) via the SeedBuildFilesSource seam, and assembles
+// the verbatim per-module write-block(s) appended to the seed story's spec text.
+import {
+  SeedBuildFilesSource,
+  SeedBuildFilesEnrichment,
+  isSeedBuildFilesStory,
+  resolveSeedBuildFilesEnrichment,
+} from './migrationSeedBuildFilesEnrichment';
 import {
   fetchProjectConfigWithDefaults as defaultFetchProjectConfigWithDefaults,
   DEFAULT_PER_STORY_TOKEN_CAP,
@@ -674,6 +684,16 @@ export interface ShapeSpecGenerationDeps {
    * never aborts the batch or the AMS persistence (R-12 posture).
    */
   putImplementState?: ImplementStatePutter;
+  /**
+   * Spec 5 (2026-06-24-confirmed-manifest-to-target-codebase, Groups 3 + 4):
+   * read Spec 3 CONFIRMED manifest(s) + service mapping for the dedicated
+   * seed-build-files story. The handler resolves the enrichment ONCE per batch
+   * and appends the verbatim per-module write-block(s) to the seed story only.
+   * When undefined (the honest v1 default) OR when it returns null (no confirmed
+   * manifest), the seed carriage is a safe NO-OP and ordinary stories are
+   * unchanged. CONSUMES the confirmed artifact as-is (no re-parse/re-resolve).
+   */
+  seedBuildFilesSource?: SeedBuildFilesSource;
 }
 
 // ---------------------------------------------------------------------------
@@ -2035,6 +2055,21 @@ async function runSinglePassBatch(
   const bow = await loadBookOfWork(projectId, bookOfWorkId);
   const existing = await loadExistingGenerations(projectId, bookOfWorkId);
 
+  // ----- Spec 5 (Group 4 trigger): resolve the confirmed-manifest seed
+  // carriage ONCE per batch. The SeedBuildFilesSource seam reads Spec 3
+  // CONFIRMED manifest(s) + service mapping from the confirmed-target source
+  // (consumes them as-is — no re-parse/re-resolve/re-curate, D7). When no source
+  // is wired (the honest v1 default) OR no confirmed manifest exists, this is a
+  // safe NO-OP (enrichment.text === null) and ordinary stories are untouched.
+  // NEVER throws — a confirmed-manifest read hiccup degrades to a no-op so the
+  // batch can never be broken by it.
+  const seedBuildFilesEnrichment: SeedBuildFilesEnrichment =
+    await resolveSeedBuildFilesEnrichment(deps.seedBuildFilesSource, {
+      projectId,
+      bookOfWorkId,
+      targetArchitectureId: bow.targetArchitectureId ?? null,
+    });
+
   // ----- Stage 3 + 4: select + filter -----
   const targetSet =
     input.targetWorkItemIds && input.targetWorkItemIds.length > 0
@@ -2101,7 +2136,15 @@ async function runSinglePassBatch(
     // confidence / implement-state / persistence) runs UNCHANGED — only the
     // context source + the prompt flavour differ. Manual adds NEVER route
     // through D3's discovered operational_capability / capability path.
-    const manualAdd = isManualAdd(story);
+    // Spec 5 (Group 3.3): the dedicated seed-build-files story is recognised by
+    // its stable kind marker. It carries NO discovered context (its purpose is
+    // to write the verbatim build file), so it runs the SAME description-grounded
+    // path a manual add uses — it reaches the generated branch without the
+    // discovered-context resolver / insufficient-context short-circuit. The
+    // verbatim manifest write-block(s) are appended to its spec text at the
+    // enrichment anchor below (Group 3.2).
+    const seedBuildFilesStory = isSeedBuildFilesStory(story);
+    const manualAdd = isManualAdd(story) || seedBuildFilesStory;
     const manualAddFlavour: ManualAddFlavour | undefined = manualAdd
       ? resolveManualAddFlavour(story)
       : undefined;
@@ -2364,10 +2407,27 @@ async function runSinglePassBatch(
     // `generated_spec_text` body (the prefix is untouched). Computed here so the
     // pass-2 no-meaningful-change comparison weighs the SAME enriched body that
     // pass 1 persisted (both passes append the pack identically).
-    const enrichedSpecText = appendInlineTestPack(
+    let enrichedSpecText = appendInlineTestPack(
       generated.specText,
       generatedAfterCitation.tests
     );
+    // Spec 5 (Group 3.2): for the dedicated seed-build-files story ONLY,
+    // append the verbatim per-module "write this exact file" block(s) onto the
+    // generated spec text. This is a surgical INSERTION at the existing
+    // enrichment anchor — every other story is untouched (ordinary feature
+    // stories never receive a manifest). The block(s) were assembled ONCE per
+    // batch from the Spec 3 confirmed manifest(s) (Group 4 trigger); when there
+    // is no confirmed manifest the enrichment text is null and nothing is
+    // appended (safe no-op). Appending here (rather than overwriting) keeps the
+    // pass-2 no-meaningful-change comparison weighing the SAME enriched body.
+    if (seedBuildFilesStory && seedBuildFilesEnrichment.text) {
+      enrichedSpecText = `${enrichedSpecText}\n\n${seedBuildFilesEnrichment.text}`;
+      console.log(
+        `[diag-gateway] pm_migration_shape_spec_generation seed_build_files_injected ` +
+          `workItemId=${workItemId} carried=${seedBuildFilesEnrichment.carriedCount} ` +
+          `skipped=${seedBuildFilesEnrichment.skipped.length}`
+      );
+    }
 
     // Parser-extracted structured arrays. AMS re-parses at write time as
     // the canonical source; the gateway computes them here for the

@@ -161,3 +161,20 @@ export { dbMigrationPackRouter } from './dbMigrationPack';
 // Deterministic OpenAPI 3.0 contracts assembled from the architecture model
 // via the existing mcp gap engine; read-only, download = regeneration.
 export { oasExportRouter } from './oasExport';
+
+// Vulnerabilities route (Spec: 2026-06-24 Vulnerability store + manual capture +
+// current-state view, Spec 1 of 6 -- Task Group 3). Multipart SCA-report upload
+// + LLM-flexible parse (whole-doc | column-mapping) + XLSX-to-rows, forwarded to
+// the AMS vulnerabilities ingest endpoint; read pass-throughs for the latest
+// list, report history, and severity/group-by-library rollup.
+export { vulnerabilitiesRouter } from './vulnerabilities';
+
+// Vulnerability Reduction + Steering routes (Spec: 2026-06-24 Vulnerability
+// Reduction + Steering, Spec 4 of 6 -- Task Group 5). Exposes the shared
+// current->target delta service (Task Group 2) + the recommended-minimum-fixed
+// version and the strictly-non-blocking OSV target scan (Task Group 3) to the
+// frontend; wires the one-click "use this version" captured-decision write
+// through the existing { value, sourceQuote, sourceFile } envelope + recompute;
+// and round-trips the Task Group 4 AMS proceed-critical override audit trio
+// verbatim (GET/PUT) for the critical hard-gate.
+export { vulnerabilityReductionRouter } from './vulnerabilityReduction';

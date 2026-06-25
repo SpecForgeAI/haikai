@@ -94,6 +94,11 @@ import {
   listCapturedDecisions,
   type CapturedDecisionDto,
 } from '../../api/architectConversationApi';
+import {
+  useVulnerabilityReduction,
+} from '../targetState/architectConversation/useVulnerabilityReduction';
+import type { TargetCoordinateFateInput } from '../../api/vulnerabilityReductionApi';
+import { VulnerabilityReductionPanel } from './VulnerabilityReductionPanel';
 import styles from './TargetArchitectureWorkspace.module.css';
 
 // ---------------------------------------------------------------------------
@@ -349,6 +354,49 @@ export const TargetArchitectureWorkspace: React.FC = () => {
     () => targets.find(t => t.draftState === 'active') ?? null,
     [targets],
   );
+
+  // -----------------------------------------------------------------------
+  // Spec 4 (2026-06-24-vulnerability-reduction-and-steering) -- Task Group 7.2:
+  // the estimated current->target CVE reduction panel, hosted ABOVE the compare
+  // table (the compare view's 5-column contract is untouched). The roll-up is
+  // read from the ONE shared Task Group 2 delta via `useVulnerabilityReduction`
+  // -- per-surface re-derivation is a DEFECT.
+  //
+  // The workspace assembles a mapping-aware fate map from the
+  // `architecture_element_mappings`-derived "decommissioned in target"
+  // annotations: a decommissioned LIBRARY (whose `name` is the coordinate
+  // `group:artifact` / npm package -- per the libraries-table convention) is a
+  // `removed` fate, which ELIMINATES its CVEs by removal (no version bump needed,
+  // honoured even for a no-known-fix CVE). Coordinates with a live target version
+  // are graded by the conversation surface (which holds the manifest-resolved
+  // versions); here the decommission fates are the durable, queryable signal. The
+  // panel hides entirely when there is no fate map (no target snapshot) --
+  // mirroring `findingsCoverage.ts`'s null-on-no-snapshot rule.
+  const decommissionFateByCoordinate = useMemo<Record<string, TargetCoordinateFateInput>>(() => {
+    const out: Record<string, TargetCoordinateFateInput> = {};
+    for (const ann of decommissionedAnnotations) {
+      const coordinate = (ann.name ?? '').trim();
+      // Only library-style coordinates (group:artifact or an npm package) can be
+      // matched to a current CVE coordinate; skip plain element names that carry
+      // no coordinate shape so we never fabricate a fate for a non-library row.
+      if (coordinate.length === 0) continue;
+      const looksLikeCoordinate = coordinate.includes(':') || coordinate.includes('/') || coordinate.includes('.');
+      if (!looksLikeCoordinate) continue;
+      out[coordinate] = { kind: 'removed', via: 'decommissioned' };
+    }
+    return out;
+  }, [decommissionedAnnotations]);
+
+  const hasReductionFates = Object.keys(decommissionFateByCoordinate).length > 0;
+
+  const { reduction: workspaceReduction } = useVulnerabilityReduction({
+    projectId: projectId ?? '',
+    currentArchitectureId: activeArchitectureId,
+    targetArchitectureId: selectedDraftId,
+    targetResolvedDependencies: [],
+    extraFateByCoordinate: hasReductionFates ? decommissionFateByCoordinate : null,
+  });
+  const workspaceVulnDelta = workspaceReduction?.delta ?? null;
 
   // -----------------------------------------------------------------------
   // Initial + post-mutation draft fetch.
@@ -933,14 +981,22 @@ export const TargetArchitectureWorkspace: React.FC = () => {
           />
         )}
         {viewMode === 'compare' && (
-          <TargetArchitectureCompareView
+          <div className={styles.compareColumn} data-testid="target-arch-compare-column">
+            <VulnerabilityReductionPanel
+              delta={workspaceVulnDelta}
+              osvNote={workspaceReduction?.osv && !workspaceReduction.osv.available ? workspaceReduction.osv.note ?? null : null}
+              heading="Estimated vulnerability reduction (current vs target)"
+              testIdSuffix="compare"
+            />
+            <TargetArchitectureCompareView
             currentInventory={currentInventory}
             targetInventory={inventory}
             mappings={mappings}
             decommissionedAnnotations={decommissionedAnnotations}
             capturedDecisions={capturedDecisions}
-            onOpenInConversation={handleOpenInConversation}
-          />
+              onOpenInConversation={handleOpenInConversation}
+            />
+          </div>
         )}
         {viewMode === 'table' && (
           <UnmappedElementsPanel

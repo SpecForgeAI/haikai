@@ -31,8 +31,23 @@ import java.util.UUID;
  * anchor for the active-target stale-marking pipeline. Boxed {@link Instant}
  * (NEVER primitive) so PATCH semantics preserve null.</p>
  *
+ * <p><b>Vulnerability Reduction + Steering extension (2026-06-24, Spec 4, Task
+ * Group 4):</b> Liquibase changeset 198 adds the
+ * "proceed with remaining criticals" override audit trio
+ * ({@link #proceedCriticalOverrideJustification},
+ * {@link #proceedRemainingCriticalCount}, {@link #proceedCriticalOverrideAt}).
+ * The architect-conversation proceed step hard-gates on any remaining CRITICAL
+ * CVE; overriding it records this audit trio ONCE PER TARGET ARCHITECTURE
+ * (the proceed step is scoped to a target architecture), mirroring the
+ * capture-session coverage-override trio (changeset 178). All three are NULLABLE
+ * and boxed (NEVER primitive) so PATCH semantics preserve null per
+ * {@code project_primitive_double_dto_overwrite.md} -- a request that omits a
+ * field never silently wipes the column, and an un-overridden architecture
+ * carries all three null.</p>
+ *
  * Spec: Multi-Architecture Plumbing (Spec #1).
  * Extended: Target Architecture Authoring Flow (2026-05-20) -- Task Groups 1 and 3.
+ * Extended: Vulnerability Reduction + Steering (2026-06-24) -- Task Group 4.
  */
 @Entity
 @Table(name = "architecture")
@@ -115,6 +130,45 @@ public class ArchitectureEntity {
      */
     @Column(name = "last_marked_stale_at")
     private Instant lastMarkedStaleAt;
+
+    /**
+     * Justification recorded when the architect-conversation "proceed" step is
+     * explicitly OVERRIDDEN while remaining CRITICAL CVEs exist (Spec 4 steering
+     * hard-gate). {@code null} = no override (the common case; the proceed step
+     * was not blocked, or it was blocked and the user fixed the criticals rather
+     * than overriding).
+     *
+     * <p>NULLABLE; boxed {@link String} so a PATCH that omits the field arrives as
+     * null and the persist handler null-guards the assignment per
+     * {@code project_primitive_double_dto_overwrite.md}. Added by Liquibase
+     * changeset 198 (Vulnerability Reduction + Steering, Task Group 4).</p>
+     */
+    @Column(name = "proceed_critical_override_justification")
+    private String proceedCriticalOverrideJustification;
+
+    /**
+     * The remaining CRITICAL CVE count AT OVERRIDE TIME -- the audit snapshot of
+     * how many critical CVEs were still unaddressed when the proceed gate was
+     * overridden. {@code null} = no override.
+     *
+     * <p>Boxed {@link Integer} -- PATCH-mutable numerics must be boxed (NEVER
+     * primitive) per {@code project_primitive_double_dto_overwrite.md} so an
+     * absent / zero value is preserved through (de)serialisation without the
+     * primitive-default-to-zero hazard. Added by Liquibase changeset 198.</p>
+     */
+    @Column(name = "proceed_remaining_critical_count")
+    private Integer proceedRemainingCriticalCount;
+
+    /**
+     * Timestamp of the proceed-with-remaining-criticals override. {@code null} =
+     * no override.
+     *
+     * <p>NULLABLE; boxed {@link Instant} (NEVER primitive) so PATCH semantics
+     * preserve null per {@code project_primitive_double_dto_overwrite.md}. Added
+     * by Liquibase changeset 198.</p>
+     */
+    @Column(name = "proceed_critical_override_at")
+    private Instant proceedCriticalOverrideAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default

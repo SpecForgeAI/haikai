@@ -26,6 +26,17 @@ import {
   validateQuestionLibrary,
 } from '../loadConfigs';
 import { evaluateRelevance } from '../../../services/architectConversation/relevanceEvaluator';
+import {
+  resolveBranchSubset,
+  hasBranchList,
+  languageBucketOf,
+} from '../branchLists';
+import {
+  LOCKABLE_GROUP_B_CODES,
+  API_SURFACE_MODES,
+  DEFAULT_API_SURFACE_MODE,
+  LOCKED_TREATMENT_MARKER,
+} from '../apiSurfaceMode';
 import type { RelevanceContext } from '../questionLibrary';
 
 // ---------------------------------------------------------------------------
@@ -100,6 +111,9 @@ describe('validateQuestionLibrary — cascade reference resolution', () => {
     const tamperedEntry: QuestionLibraryEntry = {
       code: 'synthetic.test.entry',
       group: 'A',
+      dependencyClass: 'independent',
+      foundationalInputs: [],
+      versioned: false,
       orderInGroup: 99,
       prompt: 'synthetic',
       expectedAnswerShape: 'single-choice',
@@ -151,6 +165,9 @@ describe('validateQuestionLibrary — scope_ref_type closed set', () => {
     const tamperedEntry: QuestionLibraryEntry = {
       code: 'synthetic.bad.scope',
       group: 'A',
+      dependencyClass: 'independent',
+      foundationalInputs: [],
+      versioned: false,
       orderInGroup: 99,
       prompt: 'synthetic',
       expectedAnswerShape: 'free-text',
@@ -450,5 +467,317 @@ describe('architect tier-gating — evaluateRelevance skip behaviour', () => {
         expect(isAsked(code, ctx)).toBe(true);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task Group 1 (Spec 2026-06-24-target-conversation-tech-stack-constraints) —
+// the finalized per-question dependency matrix encoded as QuestionLibraryEntry
+// metadata (FR1). The matrix is the authoritative artifact that drives runtime
+// filtering. These tests assert the LOCKED tallies + invariants, NOT every one
+// of the 51 rows individually (per tasks.md 1.1: keep to 2-8 tests).
+// ---------------------------------------------------------------------------
+
+describe('dependency matrix metadata (Spec 6 FR1)', () => {
+  // The seven codes that render the FR5 framework+version control.
+  const VERSIONED_CODES = [
+    'service.language',
+    'service.framework',
+    'service.runtime',
+    'db.engine',
+    'db.driver',
+    'ui.framework',
+    'build.tool',
+  ];
+
+  // The LOCKED independent bucket called out in tasks.md 1.1 — these are
+  // classified independent and must NEVER carry foundationalInputs.
+  const LOCKED_INDEPENDENT_CODES = [
+    'cutover.strategy',
+    'cutover.dataMigration',
+    'cutover.rollback',
+    'cutover.parallelRunWindow',
+    'api.auth',
+    'api.rateLimiting',
+    'secrets.management',
+    'tracing.framework',
+  ];
+
+  it('every entry carries dependencyClass / foundationalInputs / versioned', () => {
+    for (const entry of QUESTION_LIBRARY) {
+      expect(['hard-dependent', 'grey', 'independent']).toContain(
+        entry.dependencyClass
+      );
+      expect(Array.isArray(entry.foundationalInputs)).toBe(true);
+      expect(typeof entry.versioned).toBe('boolean');
+    }
+  });
+
+  it('the dependencyClass tally is exactly 15 hard-dependent / 9 grey / 27 independent', () => {
+    const tally: Record<string, number> = {
+      'hard-dependent': 0,
+      grey: 0,
+      independent: 0,
+    };
+    for (const entry of QUESTION_LIBRARY) {
+      tally[entry.dependencyClass] += 1;
+    }
+    expect(tally).toEqual({
+      'hard-dependent': 15,
+      grey: 9,
+      independent: 27,
+    });
+  });
+
+  it('db.engine and ui.framework are independent (freely-chosen branchers), NOT hard-dependent', () => {
+    for (const code of ['db.engine', 'ui.framework']) {
+      const entry = QUESTION_LIBRARY.find((e) => e.code === code)!;
+      expect(entry).toBeDefined();
+      expect(entry.dependencyClass).toBe('independent');
+      expect(entry.foundationalInputs).toEqual([]);
+      // They ARE versioned (each drives its group + renders the version control).
+      expect(entry.versioned).toBe(true);
+    }
+  });
+
+  it('the LOCKED independent bucket is class independent and never given foundationalInputs', () => {
+    for (const code of LOCKED_INDEPENDENT_CODES) {
+      const entry = QUESTION_LIBRARY.find((e) => e.code === code)!;
+      expect(entry).toBeDefined();
+      expect(entry.dependencyClass).toBe('independent');
+      expect(entry.foundationalInputs).toEqual([]);
+      expect(entry.versioned).toBe(false);
+    }
+    // And, generally, EVERY independent row has an empty foundationalInputs.
+    for (const entry of QUESTION_LIBRARY) {
+      if (entry.dependencyClass === 'independent') {
+        expect(entry.foundationalInputs).toEqual([]);
+      }
+    }
+  });
+
+  it('the versioned set is EXACTLY the seven framework/version codes', () => {
+    const versioned = QUESTION_LIBRARY.filter((e) => e.versioned).map(
+      (e) => e.code
+    );
+    expect(new Set(versioned)).toEqual(new Set(VERSIONED_CODES));
+    expect(versioned).toHaveLength(VERSIONED_CODES.length);
+  });
+
+  it('a representative hard/grey row names a real foundational code', () => {
+    // service.framework (H) keys off service.language; service.healthcheck (G)
+    // keys off service.framework; db.driver (H) keys off db.engine. Every named
+    // foundational code resolves to a real library entry.
+    const allCodes = new Set(QUESTION_LIBRARY.map((e) => e.code));
+    const framework = QUESTION_LIBRARY.find((e) => e.code === 'service.framework')!;
+    expect(framework.dependencyClass).toBe('hard-dependent');
+    expect(framework.foundationalInputs).toContain('service.language');
+
+    const healthcheck = QUESTION_LIBRARY.find(
+      (e) => e.code === 'service.healthcheck'
+    )!;
+    expect(healthcheck.dependencyClass).toBe('grey');
+    expect(healthcheck.foundationalInputs.length).toBeGreaterThan(0);
+
+    // Every hard/grey row (except the primary brancher service.language) names
+    // at least one foundational input, and every named input resolves.
+    for (const entry of QUESTION_LIBRARY) {
+      if (entry.dependencyClass !== 'independent' && entry.code !== 'service.language') {
+        expect(entry.foundationalInputs.length).toBeGreaterThan(0);
+      }
+      for (const fi of entry.foundationalInputs) {
+        expect(allCodes.has(fi)).toBe(true);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task Group 2 (Spec 6) — deterministic branch-lists + compatibility matrix +
+// loader-time FR1 validation. PURE DATA on this path (no LLM). Keep to 2-8
+// tests per tasks.md 2.1.
+// ---------------------------------------------------------------------------
+
+describe('deterministic branch-lists (Spec 6 FR2)', () => {
+  it('LOCKED worked example: service.language="Java 21" narrows service.framework to JVM-only', () => {
+    const subset = resolveBranchSubset('service.framework', {
+      'service.language': 'Java 21',
+    });
+    expect(subset).toBeDefined();
+    const set = new Set(subset!);
+    // Only the three JVM frameworks are offered.
+    expect(set).toEqual(new Set(['Spring Boot 3.4', 'Quarkus 3', 'Micronaut 4']));
+    // And FastAPI / NestJS / Gin / ASP.NET are EXCLUDED.
+    for (const excluded of ['FastAPI 0.115', 'NestJS 10', 'Gin 1.10', 'ASP.NET 8']) {
+      expect(set.has(excluded)).toBe(false);
+    }
+  });
+
+  it('Micronaut 4 is present in the real service.framework choices (LOCKED example precondition)', () => {
+    const framework = QUESTION_LIBRARY.find((e) => e.code === 'service.framework')!;
+    expect(framework.choices).toContain('Micronaut 4');
+    // Every branch-list subset is a real subset of the question choices.
+    const jvm = resolveBranchSubset('service.framework', { 'service.language': 'Java 21' })!;
+    for (const choice of jvm) {
+      expect(framework.choices).toContain(choice);
+    }
+  });
+
+  it('an unrecognised foundational answer yields the FULL set (fail-open, no silent narrowing)', () => {
+    expect(languageBucketOf('Some Exotic Lang 9')).toBeUndefined();
+    // No recognised bucket => resolver returns undefined => caller offers all.
+    expect(
+      resolveBranchSubset('service.framework', { 'service.language': 'Some Exotic Lang 9' })
+    ).toBeUndefined();
+    // A code with no branch-list at all also returns undefined.
+    expect(hasBranchList('cutover.strategy')).toBe(false);
+    expect(resolveBranchSubset('cutover.strategy', {})).toBeUndefined();
+  });
+});
+
+describe('validateQuestionLibrary — FR1 dependency-matrix validation', () => {
+  it('the real library produces ZERO new FR1 errors (regression guard)', () => {
+    const errors = validateQuestionLibrary(QUESTION_LIBRARY);
+    const fr1 = errors.filter((e) =>
+      [
+        'unknown-dependency-class',
+        'unresolved-foundational-input',
+        'missing-branch-or-matrix-coverage',
+      ].includes(e.kind)
+    );
+    expect(fr1).toEqual([]);
+    // Every hard/grey entry is covered by a branch-list OR a matrix rule.
+  });
+
+  it('flags an unknown dependencyClass', () => {
+    const tampered: QuestionLibrary = [
+      ...QUESTION_LIBRARY,
+      {
+        ...QUESTION_LIBRARY[0],
+        code: 'synthetic.bad.class',
+        dependencyClass: 'mystery' as unknown as QuestionLibraryEntry['dependencyClass'],
+      } as QuestionLibraryEntry,
+    ];
+    const errors = validateQuestionLibrary(tampered);
+    const hit = errors.filter((e) => e.kind === 'unknown-dependency-class');
+    expect(hit).toHaveLength(1);
+    expect(hit[0]).toMatchObject({
+      kind: 'unknown-dependency-class',
+      ownerCode: 'synthetic.bad.class',
+      offendingValue: 'mystery',
+    });
+  });
+
+  it('flags a foundationalInputs code that does not resolve to a real entry', () => {
+    const tamperedEntry: QuestionLibraryEntry = {
+      ...QUESTION_LIBRARY.find((e) => e.code === 'service.framework')!,
+      code: 'synthetic.bad.foundational',
+      dependencyClass: 'grey',
+      foundationalInputs: ['does.not.exist'],
+    };
+    const tampered: QuestionLibrary = [...QUESTION_LIBRARY, tamperedEntry];
+    const errors = validateQuestionLibrary(tampered);
+    const hit = errors.filter((e) => e.kind === 'unresolved-foundational-input');
+    expect(hit).toHaveLength(1);
+    expect(hit[0]).toMatchObject({
+      kind: 'unresolved-foundational-input',
+      ownerCode: 'synthetic.bad.foundational',
+      missingCode: 'does.not.exist',
+    });
+  });
+
+  it('flags a hard-dependent / grey entry with NO branch-list or matrix coverage', () => {
+    const tamperedEntry: QuestionLibraryEntry = {
+      ...QUESTION_LIBRARY[0],
+      code: 'synthetic.uncovered',
+      dependencyClass: 'hard-dependent',
+      foundationalInputs: ['service.language'],
+    };
+    const tampered: QuestionLibrary = [...QUESTION_LIBRARY, tamperedEntry];
+    const errors = validateQuestionLibrary(tampered);
+    const hit = errors.filter(
+      (e) =>
+        e.kind === 'missing-branch-or-matrix-coverage' &&
+        e.ownerCode === 'synthetic.uncovered'
+    );
+    expect(hit).toHaveLength(1);
+    // The combined loader throws on this structured error.
+    expect(() => {
+      const e = validateQuestionLibrary(tampered);
+      if (e.length > 0) {
+        throw new Error('Architect-conversation config validation failed');
+      }
+    }).toThrow(/validation failed/);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Task Group 7 (Spec 6) — API like-for-like lock matrix metadata (FR9 / FR1
+// `L` treatment). EXACTLY the six Group B codes carry `lockableFromSource:
+// true`; each STILL records its underlying H/I/G class (the `L` treatment is a
+// RUNTIME supersession, it does not erase the base class). Keep to 2-8 tests.
+// ---------------------------------------------------------------------------
+
+describe('api like-for-like lock metadata (Spec 6 FR9)', () => {
+  const GROUP_B_CODES = [
+    'api.protocol',
+    'api.versioning',
+    'api.contractFormat',
+    'api.auth',
+    'api.errorContract',
+    'api.rateLimiting',
+  ];
+
+  it('EXACTLY the six Group B codes carry lockableFromSource: true; every other code is false/absent', () => {
+    const lockable = QUESTION_LIBRARY.filter((e) => e.lockableFromSource === true).map(
+      (e) => e.code,
+    );
+    expect(new Set(lockable)).toEqual(new Set(GROUP_B_CODES));
+    expect(lockable).toHaveLength(6);
+
+    // Every non-Group-B entry is false or absent (never true).
+    for (const entry of QUESTION_LIBRARY) {
+      if (!GROUP_B_CODES.includes(entry.code)) {
+        expect(entry.lockableFromSource === true).toBe(false);
+      }
+    }
+  });
+
+  it('the matrix lockable set matches the shared LOCKABLE_GROUP_B_CODES source-of-truth', () => {
+    const lockable = QUESTION_LIBRARY.filter((e) => e.lockableFromSource === true).map(
+      (e) => e.code,
+    );
+    expect(new Set(lockable)).toEqual(new Set(LOCKABLE_GROUP_B_CODES));
+  });
+
+  it('each lockable Group B row STILL records its underlying H/I/G dependencyClass (L supersedes, does not erase)', () => {
+    // The underlying classes per spec.md Group B: api.protocol=I, api.versioning=G,
+    // api.contractFormat=H, api.auth=I, api.errorContract=G, api.rateLimiting=I.
+    const expectedBaseClass: Record<string, string> = {
+      'api.protocol': 'independent',
+      'api.versioning': 'grey',
+      'api.contractFormat': 'hard-dependent',
+      'api.auth': 'independent',
+      'api.errorContract': 'grey',
+      'api.rateLimiting': 'independent',
+    };
+    for (const code of GROUP_B_CODES) {
+      const entry = QUESTION_LIBRARY.find((e) => e.code === code)!;
+      expect(entry).toBeDefined();
+      // The L treatment is NOT a dependencyClass — the base class is intact.
+      expect(entry.dependencyClass).toBe(expectedBaseClass[code]);
+      expect(['hard-dependent', 'grey', 'independent']).toContain(
+        entry.dependencyClass,
+      );
+    }
+  });
+
+  it('the shared api.surfaceMode closed set + the locked marker are well-formed', () => {
+    expect(new Set(API_SURFACE_MODES)).toEqual(
+      new Set(['like_for_like', 'may_change']),
+    );
+    expect(DEFAULT_API_SURFACE_MODE).toBe('like_for_like');
+    expect(LOCKED_TREATMENT_MARKER).toBe('locked');
   });
 });

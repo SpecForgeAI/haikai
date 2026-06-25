@@ -34,6 +34,8 @@ import {
   MappingMutationRules,
   MappingTypeChange,
 } from './mappingMutationRules';
+import { hasBranchList } from './branchLists';
+import { hasCompatibilityRule } from './compatibilityMatrix';
 
 // ---------------------------------------------------------------------------
 // Closed sets (exported for downstream consumers + tests)
@@ -86,7 +88,15 @@ export type ValidationError =
   | {
       kind: 'mutation-rule-missing-for-library-code';
       decisionCode: string;
-    };
+    }
+  // --- Spec 2026-06-24-target-conversation-tech-stack-constraints (FR1 validation) ---
+  | { kind: 'unknown-dependency-class'; ownerCode: string; offendingValue: string }
+  | {
+      kind: 'unresolved-foundational-input';
+      ownerCode: string;
+      missingCode: string;
+    }
+  | { kind: 'missing-branch-or-matrix-coverage'; ownerCode: string };
 
 // ---------------------------------------------------------------------------
 // Question library validator
@@ -143,6 +153,50 @@ export function validateQuestionLibrary(
           kind: 'unresolved-cascade-ref',
           ownerCode: entry.code,
           missingCode: cascade.decisionCode,
+        });
+      }
+    }
+
+    // --- Dependency-matrix metadata validation (Spec 6 FR1) ---
+
+    // dependencyClass must be one of the known enum values.
+    const KNOWN_DEPENDENCY_CLASSES = ['hard-dependent', 'grey', 'independent'];
+    if (!KNOWN_DEPENDENCY_CLASSES.includes(entry.dependencyClass)) {
+      errors.push({
+        kind: 'unknown-dependency-class',
+        ownerCode: entry.code,
+        offendingValue: String(entry.dependencyClass),
+      });
+    }
+
+    // Every foundationalInputs code must resolve to a real library entry.
+    for (const fic of entry.foundationalInputs) {
+      if (!allCodes.has(fic)) {
+        errors.push({
+          kind: 'unresolved-foundational-input',
+          ownerCode: entry.code,
+          missingCode: fic,
+        });
+      }
+    }
+
+    // Every hard-dependent / grey entry that KEYS ON a foundational input must
+    // have deterministic coverage: a branch-list (hard-dependent) OR a
+    // compatibility-matrix rule (grey). A branch-list also satisfies a grey
+    // entry. Entries with NO foundationalInputs are the primary/sub-foundational
+    // branchers (e.g. `service.language`) -- narrowed by nothing, so they need
+    // no branch-list. Independent entries need none either.
+    if (
+      (entry.dependencyClass === 'hard-dependent' ||
+        entry.dependencyClass === 'grey') &&
+      entry.foundationalInputs.length > 0
+    ) {
+      const covered =
+        hasBranchList(entry.code) || hasCompatibilityRule(entry.code);
+      if (!covered) {
+        errors.push({
+          kind: 'missing-branch-or-matrix-coverage',
+          ownerCode: entry.code,
         });
       }
     }

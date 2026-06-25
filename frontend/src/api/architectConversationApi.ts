@@ -63,6 +63,126 @@ export const ALLOWED_SCOPE_REF_TYPES: readonly ScopeRefType[] = [
   'class',
 ];
 
+// ----------------------------------------------------------------------------
+// Decoupled {framework, version} captured-answer shape
+//   Spec: 2026-06-24-target-conversation-tech-stack-constraints (FR5 + FR8)
+//
+// Mirrors the gateway source-of-truth
+// (gateway/src/config/architect-conversation/frameworkVersionShape.ts). The
+// seven versioned codes (service.language / service.framework /
+// service.runtime / db.engine / db.driver / ui.framework / build.tool) capture
+// ONE resolved { framework, version } value (rendered as a single chip such as
+// `Spring Boot 3.4.1`) -- never a framework x version cartesian product.
+//
+// The closed version SENTINEL set is mirrored from
+// gateway/src/config/architect-conversation/frameworkVersionShape.json. Drift
+// between this frontend mirror and the gateway-side JSON is enforced at
+// test-time by src/api/__tests__/frameworkVersionShape.contractWithGateway.test.ts
+// (mirroring the ScopeRefType precedent).
+// ----------------------------------------------------------------------------
+
+/**
+ * Closed set of version-axis SENTINEL strings (non-concrete versions). A
+ * concrete version is any non-empty string NOT in this set (e.g. `3.4.1`).
+ * `version-unknown` is the Spec 3 manifest-auto-answer state when a manifest
+ * cannot resolve a concrete version (steering degrades gracefully -- no guess).
+ */
+export type VersionSentinel = 'version-unknown';
+
+export const VERSION_SENTINELS: readonly VersionSentinel[] = ['version-unknown'];
+
+/** The Spec 3 "manifest could not resolve a concrete version" sentinel. */
+export const VERSION_UNKNOWN: VersionSentinel = 'version-unknown';
+
+/** True iff `version` is a known sentinel (non-concrete) rather than a real version. */
+export function isVersionSentinel(version: string): version is VersionSentinel {
+  return (VERSION_SENTINELS as readonly string[]).includes(version);
+}
+
+/**
+ * The resolved `{ framework, version }` value captured for a versioned question.
+ * `framework` is the chosen single-select chip; `version` is a concrete version
+ * string OR a {@link VersionSentinel}. Both fields are required + non-empty.
+ * Mirrors the gateway `FrameworkVersion` shape field-for-field.
+ */
+export interface FrameworkVersion {
+  framework: string;
+  version: string;
+}
+
+/**
+ * Resolve the SINGLE chip label for a `{ framework, version }` pair (mirrors the
+ * gateway `resolveFrameworkVersionChip`). A `version-unknown` sentinel renders as
+ * `<framework> (version unknown)`; any other concrete version is appended
+ * verbatim. Exactly one chip per pair -- never a cartesian grid.
+ */
+export function resolveFrameworkVersionChip(value: FrameworkVersion): string {
+  if (isVersionSentinel(value.version)) {
+    if (value.version === VERSION_UNKNOWN) {
+      return value.framework + ' (version unknown)';
+    }
+    return value.framework + ' (' + value.version + ')';
+  }
+  return (value.framework + ' ' + value.version).trim();
+}
+
+
+// ----------------------------------------------------------------------------
+// API like-for-like lock — `api.surfaceMode` + the `L` (locked) treatment marker
+//   Spec: 2026-06-24-target-conversation-tech-stack-constraints (FR9 / FR1 `L`)
+//
+// Mirrors the gateway source-of-truth
+// (gateway/src/config/architect-conversation/apiSurfaceMode.ts +
+// apiSurfaceMode.json). The migration mode `api.surfaceMode` governs the API
+// surface (the whole of Group B): under `like_for_like` Group B is auto-answered
+// + LOCKED from the reconciled source contract / baseline (treatment class `L`,
+// read-only, NOT asked); under `may_change` Group B reverts to its underlying
+// H/I/G class and is asked normally. `like_for_like` is the DEFAULT whenever a
+// reconciled baseline / oracle is present.
+//
+// The closed mode set + the `locked` treatment marker are mirrored from
+// gateway/src/config/architect-conversation/apiSurfaceMode.json. Drift between
+// this frontend mirror and the gateway-side JSON is enforced at test-time by
+// src/api/__tests__/apiSurfaceMode.contractWithGateway.test.ts (mirroring the
+// ScopeRefType precedent).
+// ----------------------------------------------------------------------------
+
+/**
+ * The closed set of `api.surfaceMode` migration modes (FR9):
+ *   - 'like_for_like' Group B auto-answered + LOCKED from source, NOT asked.
+ *   - 'may_change'    Group B reverts to its underlying H/I/G class + asked.
+ */
+export type ApiSurfaceMode = 'like_for_like' | 'may_change';
+
+export const API_SURFACE_MODES: readonly ApiSurfaceMode[] = [
+  'like_for_like',
+  'may_change',
+];
+
+/** The default mode applied when a reconciled API Behaviour Baseline is present. */
+export const DEFAULT_API_SURFACE_MODE: ApiSurfaceMode = 'like_for_like';
+
+/**
+ * The single runtime treatment-class marker (`locked`, surfaced as `L`) that
+ * supersedes a Group B question's underlying H/I/G class while `like_for_like`
+ * is active. NOT a dependency class — a question's underlying class is intact.
+ */
+export type LockedTreatmentMarker = 'locked';
+
+export const LOCKED_TREATMENT_MARKER: LockedTreatmentMarker = 'locked';
+
+/** True iff `mode` is a known closed-set `api.surfaceMode` value. */
+export function isApiSurfaceMode(mode: string): mode is ApiSurfaceMode {
+  return (API_SURFACE_MODES as readonly string[]).includes(mode);
+}
+
+/**
+ * Read-only affordance label rendered on a Group B question locked under API
+ * like-for-like (FR9). The frontend renders the question's resolved value +
+ * provenance with this badge, NOT as editable choices.
+ */
+export const API_LIKE_FOR_LIKE_LOCK_LABEL = 'locked — API like-for-like';
+
 export type DecisionScope =
   | { kind: 'architecture' }
   | { kind: 'element'; refType: ScopeRefType; refId: string };

@@ -226,13 +226,16 @@ describe('ConversationMainPane — open-phase turn rendering', () => {
 
   it('keeps the universal "Not applicable" opt-out on PRESET questions (invariant preserved)', () => {
     const presetQuestion: PendingQuestion = {
-      decisionCode: 'build.tool',
-      group: 'G',
-      orderInGroup: 1,
-      promptText: 'What build tool?',
+      // NON-versioned preset question (was `build.tool`, now a versioned code
+      // rendering the dedicated framework+version control); the universal
+      // opt-out invariant applies to every NON-versioned preset question.
+      decisionCode: 'db.migrations',
+      group: 'C',
+      orderInGroup: 2,
+      promptText: 'What schema-migration tool?',
       staticContextLeadIn: null,
       expectedAnswerShape: 'single-choice',
-      choices: ['Gradle 8', 'Maven 3.9'],
+      choices: ['Flyway 10', 'Liquibase 4'],
       defaultsWhenUnchanged: 'current tool',
       optional: false,
     };
@@ -249,7 +252,7 @@ describe('ConversationMainPane — open-phase turn rendering', () => {
     const optOut = screen.getByTestId('architect-conversation-not-needed');
     expect(optOut).toBeInTheDocument();
     fireEvent.click(optOut);
-    expect(onCaptureAnswer).toHaveBeenCalledWith('build.tool', OPT_OUT_ANSWER_VALUE, 'N/A');
+    expect(onCaptureAnswer).toHaveBeenCalledWith('db.migrations', OPT_OUT_ANSWER_VALUE, 'N/A');
   });
 });
 
@@ -293,6 +296,10 @@ vi.mock('../../../../contexts/ArchitectureContext', () => ({
     const m = { model: { metaModel: { entities: { services: [], app_components: [] } } } };
     return () => m;
   })(),
+  // Spec 4 (Task Group 6): the tab reads the CURRENT architecture id via this
+  // hook for the vulnerability-reduction fetch; null => the reduction hook
+  // degrades to a null delta (non-blocking no-op for these unrelated tests).
+  useActiveArchitectureId: () => null,
 }));
 
 import { ArchitectConversationTab } from '../ArchitectConversationTab';

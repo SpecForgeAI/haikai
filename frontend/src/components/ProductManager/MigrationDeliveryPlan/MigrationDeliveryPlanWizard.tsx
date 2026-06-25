@@ -38,6 +38,12 @@
  *     the other product-manager tasks (e.g. backlog, define-product); the
  *     entry point is `product-manager--migration-delivery-plan`.
  *
+ * Stage-7 closeout (Spec 5 Phase 2 follow-up, 2026-06-25): the final review
+ * screen ALSO surfaces a "Manifest Uploaded" line listing the confirmed
+ * dependency manifests persisted for the chosen target architecture. It is read
+ * via the gateway manifest-artifacts READ proxy (`fetchLatestTargetManifests`)
+ * and is FAIL-SOFT — a degraded read renders "None" and never blocks Generate.
+ *
  * The wizard is intentionally self-contained: it imports a small API client
  * (`migrationDeliveryPlanApi`) and the existing
  * `fetchMigrationDiscoveryContext` resolver, and signals completion by
@@ -63,6 +69,11 @@ import {
   MigrationDataAndCutoverAssumptions,
   MigrationDeliveryPlanWizardAnswers,
 } from '../../../api/migrationDeliveryPlanApi';
+import {
+  fetchLatestTargetManifests,
+  formatLatestTargetManifestLabel,
+  type LatestTargetManifest,
+} from '../../../api/targetManifestApi';
 import styles from './MigrationDeliveryPlanWizard.module.css';
 
 // ============================================================================
@@ -260,6 +271,12 @@ export interface MigrationDeliveryPlanWizardProps {
   fetchContext?: typeof fetchMigrationDiscoveryContext;
   /** Test seam: override the gateway generate call. */
   generate?: typeof generateMigrationDeliveryPlan;
+  /**
+   * Test seam: override the confirmed-manifest read (Stage-7 closeout summary)
+   * so tests can return a synthetic list without hitting fetch. Defaults to the
+   * gateway manifest-artifacts READ proxy client.
+   */
+  fetchManifests?: typeof fetchLatestTargetManifests;
 }
 
 // ============================================================================
@@ -375,6 +392,7 @@ export function MigrationDeliveryPlanWizard({
   onGenerationError,
   fetchContext = fetchMigrationDiscoveryContext,
   generate = generateMigrationDeliveryPlan,
+  fetchManifests = fetchLatestTargetManifests,
 }: MigrationDeliveryPlanWizardProps) {
   // ---- Stage state ----
   const [stage, setStage] = useState<WizardStage>(1);
@@ -414,6 +432,9 @@ export function MigrationDeliveryPlanWizard({
     () => new Set()
   );
 
+  // ---- Stage 7: confirmed-manifest closeout summary (read-only, fail-soft) ----
+  const [manifestRows, setManifestRows] = useState<LatestTargetManifest[]>([]);
+
   // ---- Submit state (Stage 7) ----
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -433,6 +454,7 @@ export function MigrationDeliveryPlanWizard({
     setMigrationStyle('unsure_recommend');
     setDataAndCutoverAssumptions({});
     setTestPackExpectations(new Set());
+    setManifestRows([]);
     setSubmitting(false);
     setSubmitError(null);
   }, [open, initialCurrentArchitectureId, initialTargetArchitectureId]);
@@ -481,6 +503,29 @@ export function MigrationDeliveryPlanWizard({
       cancelled = true;
     };
   }, [open, projectId, currentArchitectureId, targetArchitectureId, fetchContext]);
+
+  // ---- Confirmed-manifest closeout fetch (Stage 7 review only) ----
+  // Mirrors the context-fetch effect: fires when the final review screen is
+  // shown and a target architecture is chosen, refetches if the target changes,
+  // and is FAIL-SOFT (the client resolves to [] on error — the line renders
+  // "None"; it never throws into the wizard). Gated on `stage === 7` so the
+  // read only runs when the closeout line is actually visible.
+  useEffect(() => {
+    if (!open) return;
+    if (stage !== 7 || !targetArchitectureId) {
+      setManifestRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const rows = await fetchManifests(projectId, targetArchitectureId);
+      if (cancelled) return;
+      setManifestRows(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, stage, projectId, targetArchitectureId, fetchManifests]);
 
   // ---- Toggle helpers ----
   const toggleMember = useCallback(
@@ -1016,6 +1061,17 @@ export function MigrationDeliveryPlanWizard({
   }
 
   function renderStage7() {
+    // Confirmed-manifest closeout line (Spec 5 Phase 2 follow-up): list each
+    // persisted manifest as "filename (tag)", comma-separated, or the literal
+    // "None" when the read returned nothing (the FAIL-SOFT path also lands here,
+    // since `fetchLatestTargetManifests` resolves to [] on error). The label
+    // formatter is pure (`formatLatestTargetManifestLabel`); empty labels are
+    // dropped so a degenerate row never injects a bare comma.
+    const manifestSummary =
+      manifestRows
+        .map((row) => formatLatestTargetManifestLabel(row))
+        .filter((label) => label.length > 0)
+        .join(', ') || 'None';
     return (
       <>
         <p className={styles.helperText}>
@@ -1041,6 +1097,10 @@ export function MigrationDeliveryPlanWizard({
               {architectures.find((a) => a.id === targetArchitectureId)?.name ??
                 targetArchitectureId}
             </span>
+          </div>
+          <div className={styles.readinessRow}>
+            <span className={styles.readinessKey}>Manifest Uploaded:</span>
+            <span data-testid="mdp-wizard-review-manifests">{manifestSummary}</span>
           </div>
           <div className={styles.readinessRow}>
             <span className={styles.readinessKey}>Intent:</span>

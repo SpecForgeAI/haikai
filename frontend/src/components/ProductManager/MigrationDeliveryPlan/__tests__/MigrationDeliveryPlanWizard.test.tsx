@@ -13,6 +13,9 @@
  *   5. Stage 4 — migration style radio group is mutually exclusive.
  *   6. Stage 5 — data/cutover answers persist across Back / Next navigation.
  *   7. Stage 3 + 6 — defaults populate from context where the spec says.
+ *   8. Stage 7 — confirmed-manifest "Manifest Uploaded" closeout line renders
+ *      "filename (tag)" entries comma-joined, and "None" on empty / error
+ *      (Spec 5 Phase 2 follow-up, 2026-06-25).
  *
  * Test strategy: pure-component testing with all external dependencies
  * stubbed via Vitest module mocks. We never hit fetch and never depend on
@@ -30,6 +33,7 @@ import {
 } from '../MigrationDeliveryPlanWizard';
 import type { MigrationDiscoveryContext } from '../../../../api/migrationDiscoveryContextApi';
 import type { GenerateMigrationDeliveryPlanResponse } from '../../../../api/migrationDeliveryPlanApi';
+import type { LatestTargetManifest } from '../../../../api/targetManifestApi';
 
 // ============================================================================
 // Fixtures
@@ -104,6 +108,8 @@ beforeEach(() => {
 function renderWizard(opts: {
   context?: MigrationDiscoveryContext | null;
   generateResult?: GenerateMigrationDeliveryPlanResponse;
+  manifests?: LatestTargetManifest[];
+  fetchManifests?: ReturnType<typeof vi.fn>;
   onGenerationComplete?: ReturnType<typeof vi.fn>;
   onClose?: ReturnType<typeof vi.fn>;
 } = {}) {
@@ -119,6 +125,10 @@ function renderWizard(opts: {
         summary: 'A short draft summary',
       }
     );
+  // Stage-7 confirmed-manifest read seam (fail-soft client). Defaults to an
+  // empty list so existing tests that never reach Stage 7 are unaffected.
+  const fetchManifests =
+    opts.fetchManifests ?? vi.fn().mockResolvedValue(opts.manifests ?? []);
   const utils = render(
     <MigrationDeliveryPlanWizard
       open
@@ -130,9 +140,10 @@ function renderWizard(opts: {
       // doesn't need vi.mock at module load.
       fetchContext={fetchContext as never}
       generate={generate as never}
+      fetchManifests={fetchManifests as never}
     />
   );
-  return { ...utils, fetchContext, generate, onGenerationComplete, onClose };
+  return { ...utils, fetchContext, generate, fetchManifests, onGenerationComplete, onClose };
 }
 
 // Drive the wizard from Stage 1 to Stage N by clicking Next N-1 times,
@@ -436,6 +447,71 @@ describe('MigrationDeliveryPlanWizard — context-derived defaults (Task 9.1 #7)
     expect(
       screen.getByTestId('mdp-wizard-test-pack-api_contract_compatibility')
     ).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+describe('MigrationDeliveryPlanWizard — Stage 7 confirmed-manifest closeout line (Task 9.1 #8)', () => {
+  it('renders "filename (tag)" entries comma-joined when the read returns manifests', async () => {
+    const fetchManifests = vi.fn().mockResolvedValue([
+      { manifestPath: 'services/orders/pom.xml', tag: 'orders-service', kind: 'maven_pom' },
+      { manifestPath: 'apps/web-bff/package.json', tag: 'web-bff', kind: 'npm_package' },
+    ] as LatestTargetManifest[]);
+    renderWizard({ fetchManifests });
+
+    await advanceToStage(7);
+
+    // The read fires once Stage 7 is shown, scoped to the chosen target arch.
+    await waitFor(() => {
+      expect(fetchManifests).toHaveBeenCalledWith(PROJECT_ID, TARGET_ARCH_ID);
+    });
+
+    const line = await screen.findByTestId('mdp-wizard-review-manifests');
+    await waitFor(() => {
+      expect(line).toHaveTextContent(
+        'pom.xml (orders-service), package.json (web-bff)'
+      );
+    });
+  });
+
+  it('derives the filename from kind when a row has an empty manifest path', async () => {
+    const fetchManifests = vi.fn().mockResolvedValue([
+      { manifestPath: '', tag: 'orders-service', kind: 'maven_pom' },
+    ] as LatestTargetManifest[]);
+    renderWizard({ fetchManifests });
+
+    await advanceToStage(7);
+
+    const line = await screen.findByTestId('mdp-wizard-review-manifests');
+    await waitFor(() => {
+      expect(line).toHaveTextContent('pom.xml (orders-service)');
+    });
+  });
+
+  it('renders "None" when the read returns no manifests', async () => {
+    const fetchManifests = vi.fn().mockResolvedValue([] as LatestTargetManifest[]);
+    renderWizard({ fetchManifests });
+
+    await advanceToStage(7);
+
+    const line = await screen.findByTestId('mdp-wizard-review-manifests');
+    await waitFor(() => {
+      expect(line).toHaveTextContent('None');
+    });
+  });
+
+  it('renders "None" when the read fails soft (client resolves to [])', async () => {
+    // The fail-soft client resolves to [] rather than throwing; the wizard
+    // treats that exactly like an empty list.
+    const fetchManifests = vi.fn().mockResolvedValue([] as LatestTargetManifest[]);
+    renderWizard({ fetchManifests });
+
+    await advanceToStage(7);
+
+    const line = await screen.findByTestId('mdp-wizard-review-manifests');
+    await waitFor(() => {
+      expect(line).toHaveTextContent('None');
+    });
+    expect(line.textContent).not.toContain('(');
   });
 });
 

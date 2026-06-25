@@ -9,6 +9,7 @@ import { packsRouter } from './packs';
 import { techHintsResolveRouter } from './techHintsResolve';
 import { preflightLibraryScanRouter } from './preflightLibraryScan';
 import { databaseRouter } from './database';
+import { vulnerabilityEnrichmentRouter } from './vulnerabilityEnrichment';
 
 /**
  * Discovery Routes Barrel
@@ -88,5 +89,13 @@ discoveryRouter.use('/tech-hints', techHintsResolveRouter);
 
 // Spec 2026-05-16: Database Discovery Packs -- Group 3 test-connection probe.
 discoveryRouter.use('/db', databaseRouter);
+
+// Spec 2026-06-24 Automated Vulnerability Enrichment (Spec 2) -- Task Group 3.
+// On-demand "Scan for vulnerabilities" trigger. Mounted at the discovery root
+// (its handler carries the full /projects/:p/architectures/:a/vulnerabilities/scan
+// path, like preflightLibraryScanRouter) so it sits alongside the runs router.
+// It runs OSV enrichment through the VulnerabilitySource interface (never
+// OSV.dev directly) and is STRICTLY NON-BLOCKING -- it always resolves.
+discoveryRouter.use('/', vulnerabilityEnrichmentRouter);
 
 export { discoveryRouter };

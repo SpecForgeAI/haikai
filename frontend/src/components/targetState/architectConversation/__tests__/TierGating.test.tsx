@@ -51,6 +51,10 @@ vi.mock('../../../../api/architectConversationApi', () => ({
 const mockUseArchitecture = vi.fn();
 vi.mock('../../../../contexts/ArchitectureContext', () => ({
   useArchitecture: () => mockUseArchitecture(),
+  // Spec 4 (Task Group 6): the tab reads the CURRENT architecture id via this
+  // hook for the vulnerability-reduction fetch; null => the reduction hook
+  // degrades to a null delta (non-blocking no-op for these unrelated tests).
+  useActiveArchitectureId: () => null,
 }));
 
 import { ArchitectConversationTab } from '../ArchitectConversationTab';

@@ -1,0 +1,6 @@
+{
+  "_doc": "Canonical sentinel members of the structured {framework, version} captured-answer value (Spec 2026-06-24-target-conversation-tech-stack-constraints, FR5/FR8). The `version` axis is normally a concrete version string (e.g. \"3.4.1\"), but a small closed set of SENTINEL strings stand in for non-concrete states. `version-unknown` is the Spec 3 manifest-auto-answer state: a manifest could not resolve a concrete version, so steering degrades gracefully (no guessing). Both packages mirror this list: the gateway (`structuredAnswerParser.ts` + `frameworkVersionShape.ts`) and the frontend (`architectConversationApi.ts`). Drift between the two TS declarations and this JSON file is enforced at test-time by `frontend/src/api/__tests__/frameworkVersionShape.contractWithGateway.test.ts` (mirroring the `scopeRefType.json` precedent). Update this file when adding or removing a sentinel; both packages derive their constants from this single source of truth.",
+  "versionSentinels": [
+    "version-unknown"
+  ]
+}

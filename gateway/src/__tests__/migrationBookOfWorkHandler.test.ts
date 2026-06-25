@@ -49,6 +49,16 @@ import { MigrationDiscoveryContext } from '../services/migrationDiscoveryContext
 import { LlmConcurrencyPool } from '../services/llmConcurrencyPool';
 import { GeneratedMigrationBookOfWork } from '../services/generatedMigrationBookOfWorkSchema';
 
+// Book-creation seed minting reads the confirmed-manifest store via the real AMS
+// client by default; stub it module-wide so these handler tests never make a live
+// fetch. Returning [] = "no confirmed manifest", so no seed story is prepended and
+// the existing item-count assertions stay unchanged. Tests that need a seed can
+// still inject `deps.fetchTargetManifestArtifacts` explicitly.
+jest.mock('../services/targetManifestArtifactsClient', () => ({
+  ...jest.requireActual('../services/targetManifestArtifactsClient'),
+  fetchLatestTargetManifestArtifacts: jest.fn().mockResolvedValue([]),
+}));
+
 const FIXTURE_PATH = path.resolve(
   __dirname,
   '..',

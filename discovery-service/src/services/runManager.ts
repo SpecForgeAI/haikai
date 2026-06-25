@@ -14,7 +14,8 @@ import { gatewayClient } from './gatewayClient';
 import { executeLlmFileAnalysis, sortCandidatesParentsFirst, ServiceScopedAnalysisOptions } from './llmFileAnalysisStep';
 import { buildTempDir, gitCloneRepoAccess, isGitRepoUrl, normalizeRepoLocation, normalizeRepoSubfolder } from './repoAccess';
 import { scoreRun as scorePerformanceRun } from './performancePostRun';
-import { DISCOVERY_PERFORMANCE_AUTO_SCORE } from '../config';
+import { runVulnerabilityEnrichment } from './vulnerabilityEnrichment/vulnerabilityEnrichmentService';
+import { DISCOVERY_PERFORMANCE_AUTO_SCORE, DISCOVERY_VULN_ENRICH_AUTO } from '../config';
 import { AnalyzerInput } from '../types';
 import { DiscoveryCandidate } from '../types/candidate';
 import { EvidenceAtom } from '../types/evidenceAtom';
@@ -1424,6 +1425,62 @@ function maybeTriggerPerformanceScoring(
 }
 
 /**
+ * Fire-and-forget post-run AUTOMATED VULNERABILITY ENRICHMENT trigger
+ * (Spec 2 -- Automated Vulnerability Enrichment, Task Group 3, task 3.4).
+ *
+ * Mirrors {@link maybeTriggerPerformanceScoring} EXACTLY: called from the
+ * COMPLETED branch of the run paths, gated by the {@link DISCOVERY_VULN_ENRICH_AUTO}
+ * env toggle (default ON). Runs `runVulnerabilityEnrichment` for the
+ * architecture through the `VulnerabilitySource` interface (online OSV.dev by
+ * default; an offline mirror swaps in via config -- never OSV.dev directly).
+ *
+ * STRICTLY NON-BLOCKING (HARD REQUIREMENT): `runVulnerabilityEnrichment` already
+ * ALWAYS resolves (it degrades every OSV/network/proxy/TLS/timeout/malformed
+ * failure to an `unavailable` / `error` outcome and never rejects). We STILL
+ * wrap the trigger in `Promise.resolve().then(...).catch(...)` -- the `.catch`
+ * is the FINAL backstop -- so that even an unexpected synchronous throw can
+ * NEVER bubble up and fail run completion. The run is ALREADY COMPLETED before
+ * this fires; enrichment is purely additive.
+ *
+ * The toggle is global-only (no per-run override needed): the on-demand
+ * "Scan for vulnerabilities" route is the user-driven path; this is the
+ * automatic after-discovery convenience pull.
+ */
+function maybeTriggerVulnerabilityEnrichment(
+  projectId: string,
+  architectureId: string,
+  runId: string,
+): void {
+  if (!DISCOVERY_VULN_ENRICH_AUTO) {
+    console.log(
+      `[RunManager] Skipping automated vulnerability enrichment for run ${runId} ` +
+        `(DISCOVERY_VULN_ENRICH_AUTO=false)`,
+    );
+    return;
+  }
+  // Fire-and-forget. Scheduled as a microtask; we do NOT await -- run
+  // completion has already been persisted and must not depend on enrichment.
+  Promise.resolve()
+    .then(() => runVulnerabilityEnrichment({ projectId, architectureId }))
+    .then((outcome) => {
+      console.log(
+        `[RunManager] Automated vulnerability enrichment for run ${runId} ` +
+          `(architecture ${architectureId}): status=${outcome.status}, ` +
+          `minted=${outcome.rowsMinted}, advisories=${outcome.advisoriesFound}` +
+          (outcome.unavailable ? `, unavailable(${outcome.unavailableReason ?? 'unknown'})` : '') +
+          ' (run completion is not affected)',
+      );
+    })
+    .catch((err) => {
+      console.warn(
+        `[RunManager] Automated vulnerability enrichment crashed for run ${runId}: ` +
+          (err instanceof Error ? err.message : String(err)) +
+          ' (run completion is not affected)',
+      );
+    });
+}
+
+/**
  * Starts a discovery run by sequentially executing steps 1a, 1b, 1c-llm-analysis.
  *
  * Before each step: validates the status transition, then updates the run
@@ -1593,6 +1650,11 @@ export async function startRun(projectId: string, runId: string, architectureId:
 
         // 2026-04-25: post-run performance scoring (fire-and-forget).
         maybeTriggerPerformanceScoring(projectId, runId, options);
+
+        // 2026-06-24 (Spec 2 Task Group 3): post-run automated vulnerability
+        // enrichment (fire-and-forget, STRICTLY NON-BLOCKING -- never affects
+        // run completion). Gated by DISCOVERY_VULN_ENRICH_AUTO (default on).
+        maybeTriggerVulnerabilityEnrichment(projectId, architectureId, runId);
       }
     } catch (error) {
       // Fail-fast: set failing step to "failed" with error detail, overall status to FAILED
@@ -2640,6 +2702,11 @@ async function startServiceScopedRun(
 
     // 2026-04-25: post-run performance scoring (fire-and-forget).
     maybeTriggerPerformanceScoring(projectId, runId, options);
+
+    // 2026-06-24 (Spec 2 Task Group 3): post-run automated vulnerability
+    // enrichment (fire-and-forget, STRICTLY NON-BLOCKING -- never affects run
+    // completion). Gated by DISCOVERY_VULN_ENRICH_AUTO (default on).
+    maybeTriggerVulnerabilityEnrichment(projectId, architectureId, runId);
 
   } catch (error) {
     // Fail-fast: set step to "failed", overall status to FAILED

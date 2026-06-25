@@ -71,7 +71,25 @@ import {
 } from '../../../api/architectConversationApi';
 import { ConversationMainPane, type OpenPhasePaneState } from './ConversationMainPane';
 import { SummaryPanel } from './SummaryPanel';
+import { VulnerabilityReductionPanel } from '../../Architecture/VulnerabilityReductionPanel';
 import { TechStackPrefillBanner } from './TechStackPrefillBanner';
+import { ManifestUploadPanel } from './ManifestUploadPanel';
+// Spec 4 (2026-06-24-vulnerability-reduction-and-steering, Task Group 6): the
+// inline non-blocking nudge + the shared-delta hook that feeds BOTH steering
+// surfaces (the nudge + the close-flow critical hard-gate). All additive +
+// strictly non-blocking — when the reduction inputs are unavailable the hook
+// returns a null delta and the surfaces no-op.
+import { VulnerabilityNudge } from './VulnerabilityNudge';
+import {
+  useVulnerabilityReduction,
+  type TargetResolvedDependency,
+} from './useVulnerabilityReduction';
+import {
+  getProceedCriticalOverride,
+  recommendedVersionForCoordinate,
+  type ProceedCriticalOverrideDto,
+} from '../../../api/vulnerabilityReductionApi';
+import type { TargetManifestUploadResponse } from '../../../api/targetManifestApi';
 import { ExceptionSubDialog } from './ExceptionSubDialog';
 import {
   CloseConversationFlow,
@@ -83,7 +101,7 @@ import {
 } from './RevisePriorAnswer';
 import { exportTranscript, slugifyForFilename } from './exportTranscript';
 import { Download } from 'lucide-react';
-import { useArchitecture } from '../../../contexts/ArchitectureContext';
+import { useArchitecture, useActiveArchitectureId } from '../../../contexts/ArchitectureContext';
 import type { ApplicationComponent, Service } from '../../../types/model';
 import { deriveServiceTier } from '../../../utils/deriveServiceTier';
 import styles from './ArchitectConversation.module.css';
@@ -250,6 +268,10 @@ export function ArchitectConversationTab({
   // user adjust this default; until then `derivedTiers` is sent verbatim.
   // -------------------------------------------------------------------------
   const { model } = useArchitecture();
+  // Spec 4 (Task Group 6): the CURRENT architecture id (the current-state
+  // vulnerabilities source for the reduction). Read from the active-architecture
+  // hook (same source the rest of the workspace uses).
+  const activeArchitectureId = useActiveArchitectureId();
   const derivedTiers: TierFlags = useMemo(() => {
     const appComponentsById = new Map<string, ApplicationComponent>();
     for (const ac of model.metaModel.entities.app_components ?? []) {
@@ -291,6 +313,86 @@ export function ArchitectConversationTab({
   // tier-confirmation turn has been acted on (Task Group 4), else the
   // client-derived default. Threaded into every next-question call below.
   const effectiveTiers: TierFlags = confirmedTiers ?? derivedTiers;
+
+  // ---------------------------------------------------------------------------
+  // Spec 4 (2026-06-24-vulnerability-reduction-and-steering, Task Group 6):
+  // the steering surfaces' shared-delta wiring. The resolved TARGET dependencies
+  // by coordinate are captured from the manifest upload response (Spec 3
+  // hand-off); the current-state vulnerabilities are read by the hook from the
+  // CURRENT architecture (`activeArchitectureId`). The reduction is computed
+  // ONCE here and READ by both the inline nudge and the close-flow critical
+  // hard-gate (single source of truth). Everything is strictly NON-BLOCKING:
+  // when inputs are unavailable the hook returns a null delta and the surfaces
+  // no-op (no nudge, gate open).
+  const [targetResolvedDeps, setTargetResolvedDeps] = useState<
+    TargetResolvedDependency[]
+  >([]);
+  const [proceedCriticalOverride, setProceedCriticalOverride] =
+    useState<ProceedCriticalOverrideDto | null>(null);
+
+  const {
+    reduction: vulnReduction,
+    useThisVersionFor,
+    recompute: recomputeReduction,
+  } = useVulnerabilityReduction({
+    projectId,
+    currentArchitectureId: activeArchitectureId,
+    targetArchitectureId: selectedTargetArchitectureId,
+    targetResolvedDependencies: targetResolvedDeps,
+  });
+  const vulnDelta = vulnReduction?.delta ?? null;
+
+  // Capture the resolved TARGET dependencies (by coordinate) from a manifest
+  // upload response so the delta can grade the current CVEs against them. The
+  // confirmed-manifest `resolvedDependencies` carry the coordinate + resolved
+  // version (Spec 5 hand-off shape). De-dup by coordinate (latest wins).
+  const captureTargetDepsFromUpload = useCallback(
+    (response: TargetManifestUploadResponse) => {
+      const confirmed = response.autoAnswer?.confirmedManifests ?? [];
+      const byCoord = new Map<string, TargetResolvedDependency>();
+      for (const manifest of confirmed) {
+        for (const dep of manifest.resolvedDependencies ?? []) {
+          const name = (dep.name ?? '').trim();
+          if (name.length === 0) continue;
+          byCoord.set(name, {
+            name,
+            resolvedVersion: dep.resolvedVersion,
+            versionUnknown: dep.versionUnknown,
+            ecosystem: manifest.ecosystem,
+          });
+        }
+      }
+      if (byCoord.size > 0) setTargetResolvedDeps([...byCoord.values()]);
+    },
+    [],
+  );
+
+  // Load the persisted proceed-critical override trio (the later read-only
+  // banner) for the TARGET architecture. Fail-soft — a read failure leaves the
+  // banner absent and never blocks the conversation.
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId || !selectedTargetArchitectureId) {
+      setProceedCriticalOverride(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      try {
+        const trio = await getProceedCriticalOverride(
+          projectId,
+          selectedTargetArchitectureId,
+        );
+        if (!cancelled) setProceedCriticalOverride(trio);
+      } catch {
+        if (!cancelled) setProceedCriticalOverride(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selectedTargetArchitectureId]);
 
   const refreshNextQuestion = useCallback(async () => {
     if (!selectedTargetArchitectureId || sessionStatus !== 'open') {
@@ -1102,6 +1204,20 @@ export function ArchitectConversationTab({
         >
           {isResumingPrior ? 'Start new conversation' : 'Start conversation'}
         </button>
+        {/* Spec 4 (Task Group 7.3): the "estimated reduction" CLOSE SUMMARY,
+            shown once the conversation is closed (resuming a prior session). It
+            reuses the shared reduction panel reading the ONE shared delta, so the
+            close summary, the persistent panel, the compare-view panel, and the
+            Migration Discovery Context roll-up all agree. Labelled an ESTIMATE;
+            hidden when there is no target snapshot. */}
+        {isResumingPrior && (
+          <VulnerabilityReductionPanel
+            delta={vulnDelta}
+            osvNote={vulnReduction?.osv && !vulnReduction.osv.available ? vulnReduction.osv.note ?? null : null}
+            heading="Estimated vulnerability reduction (conversation summary)"
+            testIdSuffix="close-summary"
+          />
+        )}
       </div>
     );
   }
@@ -1176,6 +1292,42 @@ export function ArchitectConversationTab({
           scrollToDecisionId={scrollToDecisionId}
           onScrolledToDecision={onScrolledToDecision}
           openPhase={openPhaseState}
+          versionedNudgeSlot={({ decisionCode, framework, version }) => {
+            // Spec 4: the inline NON-BLOCKING nudge. The recommended minimum
+            // fixed version is READ from the shared delta (never re-derived).
+            // Scope to the chosen framework's coordinate when resolvable; fall
+            // back to the highest-priority remaining recommendation otherwise.
+            void version;
+            const recommended = recommendedVersionForCoordinate(
+              vulnDelta,
+              framework ?? '',
+            );
+            if (!recommended) return null;
+            return (
+              <VulnerabilityNudge
+                recommendedVersion={recommended}
+                subjectLabel={framework}
+                busy={answerBusy}
+                onUseThisVersion={async (chosenVersion) => {
+                  // One-click write+recompute through the Task Group 5 envelope.
+                  await useThisVersionFor({
+                    decisionCode,
+                    value: framework
+                      ? { framework, version: chosenVersion }
+                      : chosenVersion,
+                    answerSummary: framework
+                      ? `${framework} ${chosenVersion}`
+                      : chosenVersion,
+                    conversationThreadId: envelope.threadId ?? null,
+                  });
+                  // Recompute-on-change + advance, NON-BLOCKING.
+                  recomputeReduction();
+                  void refreshEnvelope();
+                  void refreshNextQuestion();
+                }}
+              />
+            );
+          }}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <SummaryPanel
@@ -1184,12 +1336,55 @@ export function ArchitectConversationTab({
             onReviseDecision={setReviseDialog}
             onPreviewPromptOutput={() => void handlePreviewPromptOutput()}
           />
+          {/* Spec 4 (Task Group 7.3): the PERSISTENT, revisitable estimated-
+              reduction panel. Reads the ONE shared delta (`vulnDelta`); RECOMPUTES
+              on a manifest re-upload / manual answer edit because the reduction
+              hook re-runs when the captured target deps change (the Spec 3 iterate
+              loop) -- it never holds a stale snapshot. Hidden entirely until a
+              target snapshot exists (null delta). Labelled an ESTIMATE by the
+              panel itself. */}
+          <VulnerabilityReductionPanel
+            delta={vulnDelta}
+            osvNote={vulnReduction?.osv && !vulnReduction.osv.available ? vulnReduction.osv.note ?? null : null}
+            heading="Estimated vulnerability reduction"
+            testIdSuffix="conversation"
+          />
+          {/* Spec 2026-06-24-target-dependency-manifest-auto-answer (Spec 3,
+              Task Group 5): the target dependency-manifest upload surface. On a
+              successful upload the conversation envelope is refreshed so the
+              auto-answered captured-decision rows show in the SummaryPanel, and
+              the question walk advances past the now-answered codes. */}
+          <ManifestUploadPanel
+            projectId={projectId}
+            targetArchitectureId={selectedTargetArchitectureId}
+            conversationThreadId={envelope.threadId ?? null}
+            sessionId={envelope.currentSession?.sessionId ?? null}
+            onUploaded={(response) => {
+              // Spec 4: capture the resolved target deps so the reduction can
+              // recompute against the (re-)uploaded manifest (the iterate loop).
+              captureTargetDepsFromUpload(response);
+              recomputeReduction();
+              void refreshEnvelope();
+              void refreshNextQuestion();
+            }}
+            onManualEdit={() => {
+              // A manual answer edit also recomputes the reduction.
+              recomputeReduction();
+              void refreshEnvelope();
+              void refreshNextQuestion();
+            }}
+          />
           <CloseConversationFlow
             decisions={envelope.capturedDecisions}
             isOpen={hasOpenSession}
             isOwnedByCurrentUser={!!sessionOwnedByMe}
             onClose={handleCloseConversation}
             onRetireAndStartNew={handleRetireAndStartNew}
+            vulnerabilityDelta={vulnDelta}
+            projectId={projectId}
+            targetArchitectureId={selectedTargetArchitectureId ?? undefined}
+            proceedCriticalOverride={proceedCriticalOverride}
+            onProceedCriticalOverridePersisted={setProceedCriticalOverride}
           />
         </div>
       </div>

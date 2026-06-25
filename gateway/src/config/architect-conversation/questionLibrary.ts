@@ -70,6 +70,52 @@ export type ExpectedAnswerShape =
   | 'structured';
 
 // ---------------------------------------------------------------------------
+// Per-question dependency classification (Spec 2026-06-24-target-conversation-
+// tech-stack-constraints, FR1)
+//
+// Encodes the FINALIZED per-question dependency matrix (spec.md
+// "Per-Question Dependency Matrix", Groups A-J) as typed metadata ALONGSIDE
+// the existing `cascades` seed map (never replacing it).
+//
+//   - `hard-dependent` (H) — the offered `choices` branch on a foundational
+//     answer (e.g. Java 21 => only JVM frameworks). 15 such questions.
+//   - `grey`           (G) — clear-cut compatibility is resolved by the
+//     deterministic compatibility matrix; only the genuinely ambiguous
+//     residue is adjudicated by the LLM-judge. 9 such questions.
+//   - `independent`    (I) — a constant, never-filtered set (cutover, auth
+//     policy, rate limiting, secrets, tracing, the freely-chosen branchers
+//     `db.engine` / `ui.framework`, ...). 27 such questions.
+//
+// Tally LOCKED at 15 H / 9 G / 27 I (= 51) per the decisions doc. Under API
+// like-for-like (FR9) a fourth RUNTIME treatment `L` supersedes H/I/G for the
+// Group B set; that treatment is layered in a later task group and does NOT
+// erase the underlying `dependencyClass` recorded here.
+// ---------------------------------------------------------------------------
+
+export type DependencyClass = 'hard-dependent' | 'grey' | 'independent';
+
+// ---------------------------------------------------------------------------
+// API like-for-like lock (Spec 2026-06-24-target-conversation-tech-stack-
+// constraints, FR9 / FR1 `L` treatment)
+//
+// `L` (locked / auto-answered from source) is a fourth RUNTIME treatment that
+// supersedes H/I/G for the API-surface set (the whole of Group B) while the
+// migration mode `api.surfaceMode` resolves to `like_for_like`. It is NOT a
+// `dependencyClass`: each Group B row keeps its underlying H/I/G class on the
+// entry (the `L` treatment is computed at runtime by `apiSurfaceLock.ts`, it
+// does not erase the base class). The only metadata the library carries for it
+// is the per-entry `lockableFromSource` flag below.
+//
+// `TreatmentClass` is the runtime-effective class an entry resolves to: its
+// `dependencyClass` UNLESS the like-for-like lock has superseded it with
+// `'locked'`. The canonical `api.surfaceMode` enum + the `'locked'` marker
+// member live in the shared `apiSurfaceMode.json` source-of-truth (mirrored
+// into the frontend, drift-guarded by a contract test).
+// ---------------------------------------------------------------------------
+
+export type TreatmentClass = DependencyClass | 'locked';
+
+// ---------------------------------------------------------------------------
 // Question group identifiers (per spec §"Question library config")
 // A=Service runtime, B=API surface, C=Data persistence, D=Domain/DTO,
 // E=Frontend (relevance-gated), F=Cross-cutting, G=Infrastructure,
@@ -189,6 +235,39 @@ export interface QuestionLibraryEntry {
   cascades: readonly CascadeEntry[];
   /** Optional gateway-side predicate for auto-skip per Q7. */
   relevanceCondition?: RelevanceCondition;
+  /**
+   * Dependency classification from the finalized per-question matrix (FR1):
+   * `hard-dependent` branches on a foundational answer, `grey` is
+   * deterministic-matrix-then-LLM-judge, `independent` is never filtered.
+   * Populated on every one of the 51 entries; sits ALONGSIDE `cascades`.
+   */
+  dependencyClass: DependencyClass;
+  /**
+   * Decision code(s) the runtime filter keys on for this question. `[]` for
+   * `independent` rows (and for `service.language`, the primary brancher,
+   * which is narrowed by nothing). Each code resolves to a real library
+   * entry; the loader validates this (FR1 validation).
+   */
+  foundationalInputs: readonly string[];
+  /**
+   * Renders the FR5 decoupled framework+version control (one resolved chip).
+   * True for the seven versioned codes: `service.language`,
+   * `service.framework`, `service.runtime`, `db.engine`, `db.driver`,
+   * `ui.framework`, `build.tool`.
+   */
+  versioned: boolean;
+  /**
+   * API like-for-like lock metadata (FR9). `true` for EXACTLY the six Group B
+   * (API-surface) codes -- `api.protocol`, `api.versioning`,
+   * `api.contractFormat`, `api.auth`, `api.errorContract`, `api.rateLimiting`.
+   * When the migration mode `api.surfaceMode` resolves to `like_for_like`,
+   * these questions are auto-answered + LOCKED from the source contract /
+   * baseline (runtime treatment `L`, superseding the underlying
+   * `dependencyClass`) and NOT asked. `false`/absent on every other entry.
+   * Additive: the underlying H/I/G `dependencyClass` is still recorded; `L`
+   * supersedes it only while like-for-like is active.
+   */
+  lockableFromSource?: boolean;
   /** Closed-set scope_ref_type values that may pin an exception for this code. */
   allowedExceptionScopes: readonly ScopeRefType[];
 }
@@ -298,6 +377,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: [],
+    versioned: true,
     allowedExceptionScopes: ['service', 'method', 'class'],
   },
 
@@ -352,6 +434,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language', 'service.runtime'],
+    versioned: true,
     allowedExceptionScopes: ['service'],
   },
 
@@ -386,6 +471,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: true,
     allowedExceptionScopes: ['service'],
   },
 
@@ -401,6 +489,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current process model',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -430,6 +521,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -450,6 +544,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current healthcheck shape',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['service.framework'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -501,6 +598,10 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    lockableFromSource: true,
     allowedExceptionScopes: ['interface', 'endpoint'],
   },
 
@@ -521,6 +622,10 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current scheme',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['api.protocol'],
+    versioned: false,
+    lockableFromSource: true,
     allowedExceptionScopes: ['interface', 'endpoint'],
   },
 
@@ -536,6 +641,10 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current format',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['api.protocol'],
+    versioned: false,
+    lockableFromSource: true,
     allowedExceptionScopes: ['interface'],
   },
 
@@ -566,6 +675,10 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    lockableFromSource: true,
     allowedExceptionScopes: ['interface', 'endpoint'],
   },
 
@@ -586,6 +699,10 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current contract',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['api.protocol'],
+    versioned: false,
+    lockableFromSource: true,
     allowedExceptionScopes: ['endpoint'],
   },
 
@@ -601,6 +718,10 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current approach',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    lockableFromSource: true,
     allowedExceptionScopes: ['interface', 'endpoint'],
   },
 
@@ -659,6 +780,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: true,
     allowedExceptionScopes: ['physical_data_entity', 'physical_data_attribute'],
   },
 
@@ -674,6 +798,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current tool',
     cascades: [],
     relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['db.engine'],
+    versioned: false,
     allowedExceptionScopes: ['physical_data_entity'],
   },
 
@@ -689,6 +816,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current pool',
     cascades: [],
     relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -704,6 +834,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current strategy',
     cascades: [],
     relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service', 'method'],
   },
 
@@ -719,6 +852,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current usage',
     cascades: [],
     relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service', 'physical_data_entity'],
   },
 
@@ -742,6 +878,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current driver',
     cascades: [],
     relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['db.engine', 'service.language'],
+    versioned: true,
     allowedExceptionScopes: ['service'],
   },
 
@@ -776,6 +915,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'class'],
   },
 
@@ -797,6 +939,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current framework',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'method'],
   },
 
@@ -818,6 +963,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current strategy',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'class'],
   },
 
@@ -838,6 +986,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current model',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service', 'method'],
   },
 
@@ -889,6 +1040,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenUiTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: true,
     allowedExceptionScopes: ['service'],
   },
 
@@ -904,6 +1058,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current tool',
     cascades: [],
     relevanceCondition: onlyWhenUiTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['ui.framework'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -924,6 +1081,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current stack',
     cascades: [],
     relevanceCondition: onlyWhenUiTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['ui.framework'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -946,6 +1106,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current approach',
     cascades: [],
     relevanceCondition: onlyWhenUiTier,
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['ui.framework'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -968,6 +1131,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current system',
     cascades: [],
     relevanceCondition: onlyWhenUiTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['ui.framework'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1000,6 +1166,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
         sourceStandardId: 'std.logging.format.v1',
       },
     ],
+    dependencyClass: 'grey',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1014,6 +1183,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     choices: ['JSON one-line', 'key=value', 'plain text'],
     defaultsWhenUnchanged: 'current format',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1033,6 +1205,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current library',
     cascades: [],
+    dependencyClass: 'grey',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1052,6 +1227,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current library',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1072,6 +1250,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current source',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1095,6 +1276,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current tool',
     cascades: [],
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: true,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1114,6 +1298,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current runtime',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1134,6 +1321,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current image',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1153,6 +1343,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current CI',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1173,6 +1366,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current target',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1190,6 +1386,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current protocol',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service', 'interface'],
   },
 
@@ -1221,6 +1420,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
       },
     ],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1241,6 +1443,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current format',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['interservice.asyncBus'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'interface'],
   },
 
@@ -1261,6 +1466,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current mechanism',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1280,6 +1488,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     defaultsWhenUnchanged: 'current policy',
     cascades: [],
     relevanceCondition: onlyWhenServiceTier,
+    dependencyClass: 'grey',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'interface'],
   },
 
@@ -1296,6 +1507,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     choices: ['JUnit 5', 'Vitest', 'pytest', 'go test', 'NUnit 4'],
     defaultsWhenUnchanged: 'current framework',
     cascades: [],
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'class'],
   },
 
@@ -1315,6 +1529,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: 'current framework',
     cascades: [],
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1329,6 +1546,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     choices: ['Playwright', 'Cypress', 'REST Assured', 'Karate', 'none'],
     defaultsWhenUnchanged: 'current framework',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 
@@ -1343,6 +1563,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     choices: ['Pact 4', 'Spring Cloud Contract', 'none'],
     defaultsWhenUnchanged: 'current approach',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['interface'],
   },
 
@@ -1357,6 +1580,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     choices: ['Mockito 5', 'MockK', 'vi.mock', 'pytest-mock', 'gomock'],
     defaultsWhenUnchanged: 'current library',
     cascades: [],
+    dependencyClass: 'hard-dependent',
+    foundationalInputs: ['service.language'],
+    versioned: false,
     allowedExceptionScopes: ['service', 'class'],
   },
 
@@ -1378,6 +1604,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: '(no current — required choice)',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service', 'interface'],
   },
 
@@ -1397,6 +1626,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: '(no current — required choice)',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['physical_data_entity'],
   },
 
@@ -1415,6 +1647,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     ],
     defaultsWhenUnchanged: '(no current — required choice)',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service', 'interface'],
   },
 
@@ -1430,6 +1665,9 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     choices: ['no parallel run', 'hours', 'days', 'weeks'],
     defaultsWhenUnchanged: '(no current — required choice)',
     cascades: [],
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
     allowedExceptionScopes: ['service'],
   },
 ];

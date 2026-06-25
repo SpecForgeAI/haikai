@@ -976,6 +976,131 @@ function mapDecisionTaskToBackend(task: DecisionTask): Record<string, unknown> {
  * `architectureId` explicitly.
  * --------------------------------------------------------------------------
  */
+/**
+ * One vulnerability row as returned by the Spec 1 store
+ * (`GET .../vulnerabilities`). Snake_case wire (AMS default -- the AMS
+ * `VulnerabilityDto` carries NO `@CamelCaseWire`). Only the fields the
+ * discovery-service enrichment path reads/forwards are typed here; the row
+ * carries more (see the AMS `VulnerabilityDto`).
+ *
+ * Spec 2 -- Automated Vulnerability Enrichment, Task Group 2.
+ */
+export interface VulnerabilityRowDto {
+  id: string;
+  project_id: string;
+  architecture_id: string;
+  report_id: string;
+  ingested_at: string;
+  cve_id: string | null;
+  cwe: string | null;
+  title: string | null;
+  details: string | null;
+  cvss: number | null;
+  severity: string;
+  severity_raw: string | null;
+  affected_coordinate: string | null;
+  ecosystem: string | null;
+  affected_version: string | null;
+  affected_version_range: string | null;
+  fixed_in_versions: string[];
+  source: string;
+  raw_row: Record<string, unknown> | null;
+  match_status: string;
+  matched_library_id: string | null;
+  matched_declared_version: string | null;
+}
+
+/**
+ * Paged list envelope from `GET .../vulnerabilities` -- mirrors the AMS
+ * `VulnerabilitySearchResponse` (`items / total / page / size`, snake_case).
+ */
+export interface VulnerabilitySearchResponseDto {
+  items: VulnerabilityRowDto[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/**
+ * Minimal view of the AMS meta-model summary
+ * (`GET /api/projects/{projectId}/architectures/{architectureId}/meta-model-summary`).
+ * Only the `services` entity list is consumed by the OSV SBOM gatherer (Spec 2,
+ * Task Group 3) -- each `EntitySummary` carries `id` / `name` / `entity_type`
+ * (snake_case). Other summary sections are ignored here.
+ */
+export interface ArchMetaModelSummaryDto {
+  services?: Array<{ id?: string; name?: string; entity_type?: string }>;
+  [key: string]: unknown;
+}
+
+/**
+ * One already-parsed row for `POST .../vulnerabilities/reports` -- mirrors the
+ * AMS `IngestVulnerabilityRowDto` on the snake_case wire. AMS computes the
+ * normalized `severity` from `severity_raw` + `cvss` and stamps
+ * `source`/`project_id`/`architecture_id`/`ingested_at`/match-status at ingest.
+ */
+export interface IngestVulnerabilityRowDto {
+  cve_id: string | null;
+  cwe: string | null;
+  title: string | null;
+  details: string | null;
+  cvss: number | null;
+  severity_raw: string | null;
+  affected_coordinate: string | null;
+  ecosystem: string | null;
+  affected_version: string | null;
+  affected_version_range: string | null;
+  fixed_in_versions: string[];
+  native_advisory_id: string | null;
+  raw_row: Record<string, unknown>;
+}
+
+/**
+ * Request body for `POST .../vulnerabilities/reports` -- mirrors the AMS
+ * `IngestVulnerabilityReportRequest` (snake_case). For automated enrichment
+ * `source: 'automated'`, `format: 'osv'`, `parse_strategy: 'osv_api'`.
+ */
+export interface IngestVulnerabilityReportRequestDto {
+  source: string;
+  original_filename?: string | null;
+  format?: string | null;
+  parse_strategy?: string | null;
+  parser_dropped_count?: number | null;
+  parser_notes?: string | null;
+  rows: IngestVulnerabilityRowDto[];
+}
+
+/** Persisted report row from the Spec 1 store (subset; snake_case). */
+export interface VulnerabilityReportDto {
+  id: string;
+  project_id: string;
+  architecture_id: string;
+  source: string;
+  original_filename: string | null;
+  format: string | null;
+  is_latest: boolean;
+  parse_strategy: string | null;
+  row_count_ingested: number | null;
+  row_count_dropped: number | null;
+  notes: string | null;
+  uploaded_at: string | null;
+}
+
+/**
+ * Response from `POST .../vulnerabilities/reports` -- mirrors the AMS
+ * `VulnerabilityReportSummaryDto` (snake_case): the persisted report plus the
+ * ingested / dropped / matched tallies.
+ */
+export interface VulnerabilityReportSummaryDto {
+  report: VulnerabilityReportDto;
+  rows_received: number | null;
+  ingested_count: number | null;
+  dropped_duplicates: number | null;
+  dropped_unparseable: number | null;
+  matched_count: number | null;
+  unmatched_count: number | null;
+}
+
 class ArchModelClient {
   private readonly client: AxiosInstance;
 
@@ -2484,6 +2609,105 @@ class ArchModelClient {
     );
     return (response.data ?? []).map(mapCapabilityFromBackend);
   }
+
+  // ===========================================================================
+  // Vulnerability store methods (Spec 2 -- Automated Vulnerability Enrichment,
+  // Task Group 2, task 2.4).
+  //
+  // These read + write the SHARED Spec 1 `vulnerabilities` store via the SAME
+  // discovery -> gateway -> AMS path (this.client, snake_case wire) as the
+  // library/edge/findings methods above -- NO parallel persistence channel.
+  // The Spec 1 ingest endpoint (`POST .../vulnerabilities/reports`) already does
+  // replace-latest BY SOURCE, so minting an `automated` report supersedes only
+  // the prior `automated` rows and leaves manual/internal rows untouched
+  // (task 2.6 refresh). Reconciliation reads existing rows via the list
+  // endpoint. Both are architecture-scoped (NOT run-scoped): enrichment runs for
+  // an architecture, so callers pass `architectureId` explicitly.
+  // ===========================================================================
+
+  /**
+   * List the latest vulnerability rows for an architecture
+   * (`GET /api/model/projects/{projectId}/architectures/{architectureId}/vulnerabilities`).
+   * Used by enrichment reconciliation to read the existing (manual/internal)
+   * rows before minting the `automated` set. Paged; this pulls a large page so
+   * reconciliation sees the whole latest report in one call. 404-tolerant: a
+   * project/architecture with no report yet yields an empty list (enrichment
+   * then mints the first automated report).
+   */
+  async listVulnerabilities(
+    projectId: string,
+    architectureId: string,
+    options?: { source?: string; page?: number; size?: number },
+  ): Promise<VulnerabilitySearchResponseDto> {
+    const params: Record<string, string | number> = {
+      page: options?.page ?? 0,
+      size: options?.size ?? 500,
+    };
+    if (options?.source) {
+      params.source = options.source;
+    }
+    try {
+      const response = await this.client.get<VulnerabilitySearchResponseDto>(
+        `/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/vulnerabilities`,
+        { params },
+      );
+      return response.data ?? { items: [], total: 0, page: 0, size: 0 };
+    } catch (error) {
+      if ((error as AxiosError).response?.status === 404) {
+        return { items: [], total: 0, page: 0, size: 0 };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Ingest an already-built vulnerability report into the Spec 1 store
+   * (`POST /api/model/projects/{projectId}/architectures/{architectureId}/vulnerabilities/reports`).
+   * For automated enrichment the caller passes `source: 'automated'` and the
+   * mapped rows; AMS normalizes severity, dedups within the report, matches
+   * coordinates, and runs the replace-latest/keep-history lifecycle (demoting
+   * only the prior `automated` latest -- task 2.6 refresh). Returns the report
+   * summary (ingested / dropped / matched counts).
+   */
+  async ingestVulnerabilityReport(
+    projectId: string,
+    architectureId: string,
+    request: IngestVulnerabilityReportRequestDto,
+  ): Promise<VulnerabilityReportSummaryDto> {
+    const response = await this.client.post<VulnerabilityReportSummaryDto>(
+      `/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/vulnerabilities/reports`,
+      request,
+    );
+    return response.data;
+  }
+
+  /**
+   * Read the architecture's meta-model summary
+   * (`GET /api/projects/{projectId}/architectures/{architectureId}/meta-model-summary`).
+   * Used by the OSV SBOM gatherer (Spec 2, Task Group 3) to ENUMERATE the
+   * architecture's services (it then `getService`s each id for its
+   * `repo_location`). Read-only; 404-tolerant -- an architecture with no summary
+   * yields an empty `services` list (the SBOM is then empty and enrichment
+   * no-ops, non-blocking). NB the path is `/api/projects/...` (the summary
+   * controller's mapping), NOT the `/api/model/...` prefix the entity reads use.
+   */
+  async getMetaModelSummary(
+    projectId: string,
+    architectureId: string,
+  ): Promise<ArchMetaModelSummaryDto> {
+    try {
+      const response = await this.client.get<ArchMetaModelSummaryDto>(
+        `/api/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/meta-model-summary`,
+      );
+      return response.data ?? { services: [] };
+    } catch (error) {
+      if ((error as AxiosError).response?.status === 404) {
+        return { services: [] };
+      }
+      throw error;
+    }
+  }
+
 
 }
 
