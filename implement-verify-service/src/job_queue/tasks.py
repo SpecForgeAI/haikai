@@ -163,24 +163,38 @@ def _resolve_git_targets(request: OrchestrationRequest, workspace_dir: str):
     return (git_config, targets), None
 
 
-def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
-    """Run create-branch → commit → push → PR for ONE spec across all repo targets,
-    APPENDING a per-(spec, repo) record to ``results`` — never collapsing to one
-    scalar (C1/L3: a multi-spec run raises N branches/PRs and must report them ALL;
-    the prior last-write-wins fold dropped every spec but the last).
+def _batch_branch(batch_name: str, folder) -> str:
+    """The single shared branch a batch accumulates onto (per repo target)."""
+    return f"feature/{batch_name}--{folder}" if folder is not None else f"feature/{batch_name}"
 
-    Called INTERLEAVED by ``run_workflow``'s ``on_spec_complete`` — right after a
-    spec is generated and BEFORE the next one — so ``git add -A`` (inside
-    ``apply_git_workflow``) stages only THIS spec's files (B2). Each spec gets its
-    own ``feature/<spec>`` branch off default; ``checkout_back_to_default`` resets
-    the tree for the next spec (Gary's independent-per-spec model).
+
+def _git_one_spec(git_config, targets, results: list, spec_name: str,
+                  batch_name: "str | None" = None) -> None:
+    """Commit ONE spec across all repo targets, appending a per-(spec, repo) record
+    to ``results`` (C1/L3: never collapse to one scalar).
+
+    Two modes:
+
+    * **Legacy per-spec** (``batch_name=None``): create-branch → commit → push → PR
+      onto the spec's own ``feature/<spec>`` branch, then ``checkout_back_to_default``
+      resets the tree for the next spec (Gary's independent-per-spec model).
+    * **Batch** (``batch_name`` set): commit ONLY (``commit_only=True``) onto the
+      SHARED ``feature/<batch_name>`` branch and do NOT reset between specs, so the
+      N specs accumulate as N commits on one branch. Push + a single PR are deferred
+      to ``_finalize_batch_git`` after the run. ``git add -A`` still captures only this
+      spec's change because the prior specs' files are already committed/clean (B2).
     """
     import types as _types
 
     from ..api.git_workflow import apply_git_workflow
 
+    batch = batch_name is not None
     for folder, repo_dir in targets:
-        if folder is not None:
+        if batch:
+            branch = _batch_branch(batch_name, folder)
+            error_label = f"{batch_name}:{spec_name}" + (f"/{folder}" if folder else "")
+            pr_title = None  # PR deferred to the batch finalize
+        elif folder is not None:
             branch = f"feature/{spec_name}--{folder}"
             error_label = f"{spec_name}/{folder}"
             pr_title = f"feature: {spec_name} ({folder})"
@@ -210,7 +224,8 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
             pr_title=pr_title,
             pr_body=f"Orchestration output for {spec_name}",
             response_obj=one,
-            checkout_back_to_default=True,
+            commit_only=batch,                 # batch: commit only, defer push+PR
+            checkout_back_to_default=not batch,  # batch: accumulate, don't reset
             error_label=error_label,
         )
         results.append({
@@ -218,6 +233,49 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
             "commit_sha": one.commit_sha, "pr_url": one.pr_url,
             "error": one.errors[0] if one.errors else None,
         })
+
+
+def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
+                        spec_names: "list[str]") -> None:
+    """After all specs in a batch have committed onto the shared branch, push it
+    and open exactly ONE PR per repo target. Appends a per-(batch, repo) record.
+
+    Skipped per target if no batch commit landed (nothing to push). Must run while
+    the per-project git lock is still held (it pushes the shared working tree)."""
+    auto_push = getattr(git_config, "auto_push", False)
+    auto_pr = getattr(git_config, "auto_pr", False)
+    body = "Batch orchestration. Specs (in order):\n" + "\n".join(
+        f"- {s}" for s in spec_names
+    )
+    for folder, repo_dir in targets:
+        branch = _batch_branch(batch_name, folder)
+        # only finalize a target that actually received a commit this run
+        committed = any(
+            r.get("repo") == folder and r.get("commit_sha") for r in results
+        )
+        if not committed:
+            continue
+        gm = GitManager(
+            project_dir=str(repo_dir),
+            provider=git_config.provider,
+            default_branch=git_config.default_branch,
+            github_token=git_config.github_token,
+            bitbucket_username=git_config.bitbucket_username,
+            bitbucket_app_password=git_config.bitbucket_app_password,
+        )
+        rec = {"spec": batch_name, "repo": folder, "branch": branch,
+               "commit_sha": None, "pr_url": None, "error": None}
+        try:
+            if auto_push:
+                gm.push_branch(branch)
+                if auto_pr:
+                    rec["pr_url"] = gm.create_pull_request(
+                        title=f"feature: {batch_name}", branch=branch, body=body,
+                    )
+        except GitManagerError as e:
+            rec["error"] = f"Batch finalize failed for {batch_name}/{folder}: {e}"
+            logger.error(rec["error"])
+        results.append(rec)
 
 
 def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
@@ -376,13 +434,16 @@ def run_orchestration(job_id: str, storage: JobStorage):
         git_setup, git_err = _resolve_git_targets(request, workspace_dir)
         git_results: list = []  # C1/L3: one record per (spec, repo), never collapsed
 
+        batch_name = request.batch_name  # set => N specs accumulate onto one branch
+
         def on_spec_complete(spec_name: str, spec_idx: int) -> bool:
             # Returns True if THIS spec's git failed (L4: lets run_workflow stop
             # further generation under stop_on_error).
             if git_setup is None:
                 return False
             before = len(git_results)
-            _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name)
+            _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
+                          batch_name=batch_name)
             new = git_results[before:]
             # DETAIL: per-spec git result (branch/commit/PR/error) — concentrated
             # where the multi-spec branch/PR plumbing fails.
@@ -411,6 +472,14 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 on_step_complete=on_step_complete,
                 on_spec_complete=on_spec_complete,
             )
+            # Batch mode: all specs have committed onto the one shared branch; now
+            # push it + open exactly ONE PR per repo target. Inside the lock (R8) so
+            # a concurrent same-project job can't move the branch before we push.
+            if batch_name and git_setup is not None:
+                _finalize_batch_git(
+                    git_setup[0], git_setup[1], git_results, batch_name,
+                    [si.spec_name for si in request.spec_intents],
+                )
 
         # Fold the interleaved per-spec git results into the response.
         response.errors = list(response.errors or [])
