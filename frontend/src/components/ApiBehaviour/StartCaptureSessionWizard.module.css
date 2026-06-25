@@ -367,3 +367,40 @@
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* ----------------------------------------------------------------------------
+ * Test-connection result feedback (Step 2 "Test API connection")
+ *
+ * Three states so a token the target REFUSED cannot read as a green success:
+ *   Ok    (2xx)                              -> green
+ *   Warn  (401/403, "reachable but rejected") -> amber
+ *   Error (5xx / transport / other failure)   -> red
+ * Mirrors the errorBanner / discoveryWarningBanner colour rhythm.
+ * --------------------------------------------------------------------------*/
+
+.testConnectionResultOk,
+.testConnectionResultWarn,
+.testConnectionResultError {
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid transparent;
+}
+
+.testConnectionResultOk {
+  background-color: #e8f5e9;
+  border-color: #c8e6c9;
+  color: #2e7d32;
+}
+
+.testConnectionResultWarn {
+  background-color: #fff8e1;
+  border-color: #ffe082;
+  color: #6d4c00;
+}
+
+.testConnectionResultError {
+  background-color: #ffebee;
+  border-color: #ffcdd2;
+  color: #c62828;
+}

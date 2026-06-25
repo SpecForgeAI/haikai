@@ -243,4 +243,94 @@ describe('StartCaptureSessionWizard -- Test API connection button (Fix C)', () =
     );
     expect(result.textContent).toContain('ECONNREFUSED');
   });
+
+  it('"ssoToken (in header)" option sends a fixed `ssoToken` header with the TRIMMED value', async () => {
+    vi.mocked(useArchitecture).mockReturnValue(
+      mockArchitectureModel({ withInterface: true }),
+    );
+    vi.mocked(testApiConnectionStateless).mockResolvedValue({
+      success: true,
+      status: 200,
+      durationMs: 12,
+    });
+
+    render(
+      <StartCaptureSessionWizard
+        open={true}
+        projectId={PROJECT_ID}
+        architectureId={ARCH_ID}
+        onClose={vi.fn()}
+      />,
+    );
+
+    advanceToStep2();
+    fireEvent.change(screen.getByTestId('start-capture-session-wizard-base-url'), {
+      target: { value: 'https://api.nonprod.example.com' },
+    });
+    // The convenience option exposes a SINGLE value field (no header-name input).
+    fireEvent.change(screen.getByTestId('start-capture-session-wizard-auth-type'), {
+      target: { value: 'sso_token' },
+    });
+    const ssoInput = screen.getByTestId('start-capture-session-wizard-sso-token');
+    expect(ssoInput).toBeInTheDocument();
+    // A stray leading/trailing space (a common copy-paste slip) must be trimmed.
+    fireEvent.change(ssoInput, { target: { value: '  my-sso-token-value  ' } });
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByTestId('start-capture-session-wizard-test-connection'),
+      );
+      await Promise.resolve();
+    });
+
+    expect(testApiConnectionStateless).toHaveBeenCalledTimes(1);
+    const [, , body] = vi.mocked(testApiConnectionStateless).mock.calls[0];
+    // Fixed header name `ssoToken`, value trimmed, sent as an ordinary custom header.
+    expect(body.auth.type).toBe('header');
+    expect(body.auth.headerName).toBe('ssoToken');
+    expect(body.auth.headerValue).toBe('my-sso-token-value');
+  });
+
+  it('renders an amber "auth was rejected" result (NOT a green Success) on HTTP 401', async () => {
+    vi.mocked(useArchitecture).mockReturnValue(
+      mockArchitectureModel({ withInterface: true }),
+    );
+    // The probe REACHED the target (200 envelope) but auth was refused: the
+    // route reports success:true (status < 500) AND authRejected:true.
+    vi.mocked(testApiConnectionStateless).mockResolvedValue({
+      success: true,
+      status: 401,
+      durationMs: 23,
+      authRejected: true,
+    });
+
+    render(
+      <StartCaptureSessionWizard
+        open={true}
+        projectId={PROJECT_ID}
+        architectureId={ARCH_ID}
+        onClose={vi.fn()}
+      />,
+    );
+
+    advanceToStep2();
+    fireEvent.change(screen.getByTestId('start-capture-session-wizard-base-url'), {
+      target: { value: 'https://api.nonprod.example.com' },
+    });
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByTestId('start-capture-session-wizard-test-connection'),
+      );
+      await Promise.resolve();
+    });
+
+    const result = await screen.findByTestId(
+      'start-capture-session-wizard-test-connection-result',
+    );
+    expect(result.textContent).toContain('auth was rejected');
+    expect(result.textContent).toContain('401');
+    // Must NOT masquerade as a success.
+    expect(result.textContent).not.toContain('Success');
+  });
 });

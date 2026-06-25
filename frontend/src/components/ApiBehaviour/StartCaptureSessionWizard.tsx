@@ -103,7 +103,7 @@ export interface StartCaptureSessionWizardProps {
 
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-type AuthType = 'none' | 'bearer' | 'basic' | 'header';
+type AuthType = 'none' | 'bearer' | 'basic' | 'sso_token' | 'header';
 type DbType = 'none' | 'postgres' | 'sybase';
 
 interface Step2Config {
@@ -113,6 +113,8 @@ interface Step2Config {
   bearerToken: string;
   basicUsername: string;
   basicPassword: string;
+  /** Convenience "ssoToken (in header)" option: the token value only (header name is fixed to `ssoToken`). */
+  ssoToken: string;
   headerName: string;
   headerValue: string;
   defaultHeadersText: string; // one "Name: Value" per line
@@ -137,6 +139,7 @@ const DEFAULT_STEP2: Step2Config = {
   bearerToken: '',
   basicUsername: '',
   basicPassword: '',
+  ssoToken: '',
   headerName: '',
   headerValue: '',
   defaultHeadersText: '',
@@ -529,6 +532,9 @@ export function StartCaptureSessionWizard({
         return { type: 'bearer', token: '[REDACTED]' };
       case 'basic':
         return { type: 'basic', username: step2.basicUsername, password: '[REDACTED]' };
+      case 'sso_token':
+        // Stored/displayed as a fixed-name custom header (the value is redacted).
+        return { type: 'header', headerName: 'ssoToken', headerValue: '[REDACTED]' };
       case 'header':
         return { type: 'header', headerName: step2.headerName, headerValue: '[REDACTED]' };
       case 'none':
@@ -571,6 +577,16 @@ export function StartCaptureSessionWizard({
           username: step2.basicUsername,
           password: step2.basicPassword,
         };
+      case 'sso_token':
+        // Convenience: fixed header name `ssoToken`; the value is trimmed so a
+        // stray copied space/newline cannot corrupt the token. Sent as an
+        // ordinary custom header (type 'header' -> 'custom_header' server-side),
+        // so Test Connection and the capture run deliver the identical value.
+        return {
+          type: 'header',
+          headerName: 'ssoToken',
+          headerValue: step2.ssoToken.trim(),
+        };
       case 'header':
         return {
           type: 'header',
@@ -589,6 +605,12 @@ export function StartCaptureSessionWizard({
     if (step2.authType === 'basic') {
       apiAuth.username = step2.basicUsername;
       apiAuth.password = step2.basicPassword;
+    }
+    if (step2.authType === 'sso_token') {
+      // Fixed name + trimmed value (the convenience SSO-token option). Trimmed
+      // here too so the persisted secret matches what Test Connection probed.
+      apiAuth.headerName = 'ssoToken';
+      apiAuth.headerValue = step2.ssoToken.trim();
     }
     if (step2.authType === 'header') {
       apiAuth.headerName = step2.headerName;
@@ -648,7 +670,7 @@ export function StartCaptureSessionWizard({
         name: step2.envName,
         environment_name: step2.envName,
         api_base_url: step2.baseUrl,
-        auth_type: step2.authType,
+        auth_type: step2.authType === 'sso_token' ? 'header' : step2.authType,
         auth_config_redacted_json: buildAuthConfigRedacted(),
         default_headers_redacted_json: parseHeadersText(step2.defaultHeadersText),
         db_config_redacted_json: buildDbConfigRedacted(),
@@ -1547,6 +1569,7 @@ export function StartCaptureSessionWizard({
                   <option value="none">None</option>
                   <option value="bearer">Bearer token</option>
                   <option value="basic">Basic</option>
+                  <option value="sso_token">ssoToken (in header)</option>
                   <option value="header">Custom header</option>
                 </select>
               </div>
@@ -1582,6 +1605,19 @@ export function StartCaptureSessionWizard({
                     />
                   </div>
                 </>
+              )}
+              {step2.authType === 'sso_token' && (
+                <div className={styles.fieldGroup}>
+                  <label className={styles.label}>SSO token value</label>
+                  <input
+                    type="password"
+                    className={styles.input}
+                    value={step2.ssoToken}
+                    onChange={(e) => setStep2((s) => ({ ...s, ssoToken: e.target.value }))}
+                    data-testid="start-capture-session-wizard-sso-token"
+                    placeholder="Paste the ssoToken value — sent as the 'ssoToken' header (spaces trimmed)"
+                  />
+                </div>
               )}
               {step2.authType === 'header' && (
                 <>
@@ -1650,15 +1686,26 @@ export function StartCaptureSessionWizard({
                 {connResult && (
                   <div
                     className={
-                      connResult.ok && connResult.data.success
-                        ? styles.testConnectionResultOk
-                        : styles.testConnectionResultError
+                      connResult.ok && connResult.data.authRejected
+                        ? styles.testConnectionResultWarn
+                        : connResult.ok && connResult.data.success
+                          ? styles.testConnectionResultOk
+                          : styles.testConnectionResultError
                     }
                     role="status"
                     data-testid="start-capture-session-wizard-test-connection-result"
                   >
                     {connResult.ok ? (
-                      connResult.data.success ? (
+                      // Check auth-rejection FIRST: a 401/403 also satisfies the
+                      // `success` (<500) flag, but it means the token was refused
+                      // -- it must NOT render as a green "Success".
+                      connResult.data.authRejected ? (
+                        <span>
+                          Reachable, but auth was rejected — HTTP{' '}
+                          {connResult.data.status} ({connResult.data.durationMs} ms).
+                          Check the token is valid and not expired.
+                        </span>
+                      ) : connResult.data.success ? (
                         <span>
                           Success — HTTP {connResult.data.status} in{' '}
                           {connResult.data.durationMs} ms
@@ -2242,7 +2289,7 @@ export function StartCaptureSessionWizard({
                 </div>
                 <div>
                   <span className={styles.summaryKey}>Auth type:</span>
-                  {step2.authType}
+                  {step2.authType === 'sso_token' ? 'ssoToken (in header)' : step2.authType}
                 </div>
                 <div>
                   <span className={styles.summaryKey}>Mutating calls confirmed:</span>

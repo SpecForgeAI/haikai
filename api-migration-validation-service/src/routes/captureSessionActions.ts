@@ -1912,6 +1912,9 @@ export function buildCaptureSessionActionsRouter(
       return res.status(200).json({
         sessionId,
         success: result.status >= 200 && result.status < 500,
+        // 401/403 = reached but auth rejected; surfaced distinctly so the UI
+        // does not show a green "Success" for a token the target refused.
+        authRejected: result.status === 401 || result.status === 403,
         status: result.status,
         durationMs: result.durationMs,
       });

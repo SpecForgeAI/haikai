@@ -799,6 +799,8 @@ export interface TestApiConnectionResponse {
   sessionId: string;
   /** `status >= 200 && status < 500`. `false` = reachable but rejected. */
   success: boolean;
+  /** `true` when the target was reached but rejected auth (HTTP 401/403). */
+  authRejected?: boolean;
   /** HTTP status of the upstream probe (a GET on the base URL). */
   status: number;
   /** Wall-clock duration of the probe in milliseconds. */
@@ -847,6 +849,13 @@ export interface TestApiConnectionStatelessRequest {
 
 export interface TestApiConnectionStatelessResponse {
   success: boolean;
+  /**
+   * `true` when the probe REACHED the target but auth was rejected (HTTP
+   * 401/403). Surfaced distinctly from a green "Success" so a bad/expired
+   * token cannot masquerade as a working connection (the probe proves
+   * reachability + header wiring, not that the credentials were accepted).
+   */
+  authRejected?: boolean;
   status: number;
   durationMs: number;
   error?: string;
@@ -1704,6 +1713,11 @@ function mapAuthTypeToBackend(raw: string | undefined): string {
   if (!raw) return 'none';
   switch (raw) {
     case 'header':
+      return 'custom_header';
+    case 'sso_token':
+      // Convenience option: a fixed-name `ssoToken` custom header. On the wire
+      // it is an ordinary custom_header (the wizard supplies the fixed
+      // headerName + the trimmed headerValue).
       return 'custom_header';
     default:
       return raw;

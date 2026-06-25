@@ -277,6 +277,14 @@
   color: #C62828;
 }
 
+/* Reachable-but-auth-rejected (HTTP 401/403): amber, distinct from a green OK
+ * so a refused token never reads as a working connection. */
+.testResultWarn {
+  background: #FFF8E1;
+  border: 1px solid #FFE082;
+  color: #6D4C00;
+}
+
 /* ----------------------------------------------------------------------------
  * Page-header actions row (Spec 2026-05-25 Task Group 5)
  *

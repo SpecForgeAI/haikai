@@ -157,6 +157,11 @@ export function buildTestConnectionActionRouter(
         // A reachable target (any non-5xx status) is a success -- mirrors the
         // session-bound test's `>= 200 && < 500` posture.
         success: result.status >= 200 && result.status < 500,
+        // A 401/403 means the target was REACHED but explicitly rejected the
+        // auth. Surfaced distinctly so a bad/expired token cannot masquerade as
+        // a green "Success" -- the probe only proves reachability + header
+        // wiring, not that the credentials were accepted.
+        authRejected: result.status === 401 || result.status === 403,
         status: result.status,
         durationMs: result.durationMs,
       });

@@ -171,16 +171,16 @@ describe('CaptureSessionDetailView -- Test API result feedback (Bug 2)', () => {
     expect(result).toHaveTextContent('142ms');
   });
 
-  it('renders a visible FAILURE (not silence) when the probe RESOLVES with success:false (e.g. 401 returned as HTTP 200)', async () => {
+  it('renders a visible FAILURE (not silence) when the probe RESOLVES with success:false (e.g. a 5xx returned as HTTP 200)', async () => {
     vi.mocked(getCaptureSession).mockResolvedValue(
       buildSession({ status: 'configured' }),
     );
     // The route returns HTTP 200 (so the promise RESOLVES) but the target
-    // rejected the probe: success === false.
+    // failed: success === false (e.g. an upstream 5xx).
     vi.mocked(testApiConnection).mockResolvedValue({
       sessionId: SESSION_ID,
       success: false,
-      status: 401,
+      status: 503,
       durationMs: 88,
     });
 
@@ -203,8 +203,46 @@ describe('CaptureSessionDetailView -- Test API result feedback (Bug 2)', () => {
       'capture-session-detail-test-api-result',
     );
     expect(result).toHaveTextContent('API connection FAILED');
-    expect(result).toHaveTextContent('401');
+    expect(result).toHaveTextContent('503');
     expect(result).toHaveTextContent('88ms');
+  });
+
+  it('renders "reachable but auth REJECTED" (not a green OK) when the probe returns authRejected on HTTP 401', async () => {
+    vi.mocked(getCaptureSession).mockResolvedValue(
+      buildSession({ status: 'configured' }),
+    );
+    // Realistic 401: the route resolves with success:true (status < 500) AND
+    // authRejected:true. The component must NOT show a green "OK" for a token
+    // the target refused.
+    vi.mocked(testApiConnection).mockResolvedValue({
+      sessionId: SESSION_ID,
+      success: true,
+      status: 401,
+      durationMs: 88,
+      authRejected: true,
+    });
+
+    renderWithRouter(
+      <CaptureSessionDetailView
+        projectId={PROJECT_ID}
+        architectureId={ARCH_ID}
+        sessionId={SESSION_ID}
+      />,
+    );
+
+    await loadSecrets();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('capture-session-detail-test-api'));
+      await Promise.resolve();
+    });
+
+    const result = await screen.findByTestId(
+      'capture-session-detail-test-api-result',
+    );
+    expect(result).toHaveTextContent('auth REJECTED');
+    expect(result).toHaveTextContent('401');
+    expect(result).not.toHaveTextContent('API connection OK');
   });
 
   it('surfaces a thrown error via the error banner', async () => {

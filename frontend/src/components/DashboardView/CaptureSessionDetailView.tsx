@@ -969,16 +969,22 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           {apiTestResult && (
             <div
               className={
-                apiTestResult.success
-                  ? `${styles.testResult} ${styles.testResultOk}`
-                  : `${styles.testResult} ${styles.testResultFail}`
+                // Check auth-rejection FIRST: a 401/403 also satisfies `success`
+                // (<500), but the token was refused -- it must NOT read as OK.
+                apiTestResult.authRejected
+                  ? `${styles.testResult} ${styles.testResultWarn}`
+                  : apiTestResult.success
+                    ? `${styles.testResult} ${styles.testResultOk}`
+                    : `${styles.testResult} ${styles.testResultFail}`
               }
               role="status"
               data-testid="capture-session-detail-test-api-result"
             >
-              {apiTestResult.success
-                ? `API connection OK - ${apiTestResult.status} in ${apiTestResult.durationMs}ms`
-                : `API connection FAILED - ${apiTestResult.status} in ${apiTestResult.durationMs}ms`}
+              {apiTestResult.authRejected
+                ? `API connection: reachable but auth REJECTED - HTTP ${apiTestResult.status} in ${apiTestResult.durationMs}ms (check the token is valid/not expired)`
+                : apiTestResult.success
+                  ? `API connection OK - ${apiTestResult.status} in ${apiTestResult.durationMs}ms`
+                  : `API connection FAILED - ${apiTestResult.status} in ${apiTestResult.durationMs}ms`}
             </div>
           )}
           {dbTestResult && (
