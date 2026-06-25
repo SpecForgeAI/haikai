@@ -278,6 +278,42 @@ def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
         results.append(rec)
 
 
+def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
+                 cap: int = 10, timeout: int = 1800) -> tuple:
+    """Option C — per-spec verification gate + repair. Drive `/haikai:debug` →
+    `/haikai:fix` in ``repo_dir`` until the repo's own test suite is green, or the
+    cap is hit. `/haikai:fix` is TEST-GATED (keeps a change only if tests pass,
+    reverts otherwise — same idiom as `run_bug_investigation`), so the loop's
+    success signal is the verdict, not a git diff.
+
+    Returns ``(passed: bool, attempts: int, summary: str)``. The LLM executor is a
+    true external (stubbed in tests).
+    """
+    from src.claude_cli_executor import ClaudeCLIExecutor
+
+    executor = ClaudeCLIExecutor(str(repo_dir), anthropic_api_key)
+    summary = ""
+    for attempt in range(1, max(1, cap) + 1):
+        command = (
+            "Run /haikai:debug then /haikai:fix so this repository's own test suite passes "
+            f"for the just-implemented spec '{spec_name}'. Use the repo's tests as the verify "
+            "metric; haikai:fix keeps a change ONLY if its tests pass and reverts otherwise. "
+            "Make the minimal change; do nothing if the suite is already green. "
+            "Report at the end exactly one line: VERDICT=PASS if the test suite is green, "
+            "or VERDICT=FAIL if it is not."
+        )
+        try:
+            result = executor.execute(command, timeout=timeout)
+        except Exception as exc:  # an executor blow-up is a failed attempt, not a crash
+            summary = f"repair attempt {attempt} error: {exc}"
+            logger.warning("repair %s attempt %d errored: %s", spec_name, attempt, exc)
+            continue
+        summary = (result.get("stdout") or "")[-2000:]
+        if result.get("success") and "VERDICT=PASS" in summary:
+            return True, attempt, summary
+    return False, cap, summary
+
+
 def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
     """Pull request, API key, workspace dir, session id from env + job payload.
 
@@ -435,12 +471,31 @@ def run_orchestration(job_id: str, storage: JobStorage):
         git_results: list = []  # C1/L3: one record per (spec, repo), never collapsed
 
         batch_name = request.batch_name  # set => N specs accumulate onto one branch
+        # Option C: in batch mode, gate each spec on its own tests passing (repair
+        # via /haikai:debug+/haikai:fix) BEFORE committing it, so a red spec never
+        # reaches the single MR. Opt-out via BATCH_VERIFY_GATE=false.
+        gate_enabled = bool(batch_name) and os.getenv("BATCH_VERIFY_GATE", "true").lower() == "true"
+        repair_cap = int(os.getenv("BATCH_REPAIR_CAP", "10"))
+        batch_repair_failed: list = []
 
         def on_spec_complete(spec_name: str, spec_idx: int) -> bool:
             # Returns True if THIS spec's git failed (L4: lets run_workflow stop
             # further generation under stop_on_error).
             if git_setup is None:
                 return False
+            # Gate+repair this spec before it commits onto the batch branch.
+            if gate_enabled:
+                for _folder, _repo_dir in git_setup[1]:
+                    passed, attempts, _ = _repair_spec(
+                        _repo_dir, spec_name, anthropic_api_key, cap=repair_cap)
+                    _trace.detail("orchestration.gate",
+                                  {"spec": spec_name, "repo": _folder,
+                                   "passed": passed, "attempts": attempts}, _corr)
+                    if not passed:
+                        batch_repair_failed.append(spec_name)
+                        logger.error("Batch gate fail-stop: spec %s did not pass "
+                                     "after %d attempts — no MR", spec_name, attempts)
+                        return True  # stop the batch: no commit for this spec, no MR
             before = len(git_results)
             _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
                           batch_name=batch_name)
@@ -475,7 +530,8 @@ def run_orchestration(job_id: str, storage: JobStorage):
             # Batch mode: all specs have committed onto the one shared branch; now
             # push it + open exactly ONE PR per repo target. Inside the lock (R8) so
             # a concurrent same-project job can't move the branch before we push.
-            if batch_name and git_setup is not None:
+            # Gate (Option C): skip the MR entirely if any spec failed its gate.
+            if batch_name and git_setup is not None and not batch_repair_failed:
                 _finalize_batch_git(
                     git_setup[0], git_setup[1], git_results, batch_name,
                     [si.spec_name for si in request.spec_intents],
@@ -483,6 +539,11 @@ def run_orchestration(job_id: str, storage: JobStorage):
 
         # Fold the interleaved per-spec git results into the response.
         response.errors = list(response.errors or [])
+        if batch_repair_failed:
+            response.errors.append(
+                f"Batch verification gate (Option C): spec(s) {batch_repair_failed} did "
+                f"not pass after {repair_cap} repair attempts — no MR opened."
+            )
         if git_err:
             response.errors.append(git_err)
         else:

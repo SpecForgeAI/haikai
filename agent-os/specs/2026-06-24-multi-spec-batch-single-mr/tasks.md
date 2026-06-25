@@ -12,16 +12,16 @@
 
 ## Phase 2 — verification gate + repair (Option C)
 
-### TG5 — Per-spec repair loop (clone `run_bug_investigation`)
-- [ ] 5.1 After a spec is implemented, run `/haikai:debug` → `/haikai:fix` for that spec via the executor — model the call on `run_bug_investigation` (`tasks.py:1065`): `/haikai:fix` runs the repo's own tests, fixes, auto-reverts on red.
-- [ ] 5.2 Outer cap **≥10** as a loop counter in `run_orchestration` (env `BATCH_REPAIR_CAP`). NOT `recorder.py`'s `ATTEMPT_CAP`. No `repair-engine`, no cells, no `jobs.db`.
-- [ ] 5.3 Heal → continue; un-healable in ≤10 → fail-stop (no MR), record failing spec.
-- [ ] 5.4 Real test (executor stubbed — true external LLM, real git): a spec that "fixes green" → batch continues; a spec that never heals → fail-stop, no PR, failing spec recorded.
+### TG5 — Per-spec repair loop (clone `run_bug_investigation`)  ✅ done + tested
+- [x] 5.1 After a spec is implemented, run `/haikai:debug` → `/haikai:fix` for that spec via the executor — model the call on `run_bug_investigation` (`tasks.py:1065`): `/haikai:fix` runs the repo's own tests, fixes, auto-reverts on red.
+- [x] 5.2 Outer cap **≥10** as a loop counter in `run_orchestration` (env `BATCH_REPAIR_CAP`). NOT `recorder.py`'s `ATTEMPT_CAP`. No `repair-engine`, no cells, no `jobs.db`.
+- [x] 5.3 Heal → continue; un-healable in ≤10 → fail-stop (no MR), record failing spec.
+- [x] 5.4 Real test (executor stubbed — true external LLM, real git): a spec that "fixes green" → batch continues; a spec that never heals → fail-stop, no PR, failing spec recorded.
 
-### TG6 — Gate the MR on the fix outcome
-- [ ] 6.1 Pass/fail = the outcome of `/haikai:fix` (ended green, corroborated by git changing — reuse the `_git_changed_files` check). Do NOT parse `final-verification.md`; do NOT gate on file-exists.
-- [ ] 6.2 `_finalize_batch_git` opens the one PR ONLY when every spec ended green; otherwise fail-stop, no PR.
-- [ ] 6.3 Real-git test: all-green batch → one PR; any spec un-healed → no PR.
+### TG6 — Gate the MR on the fix outcome  ✅ done + e2e tested
+- [x] 6.1 Pass/fail = the outcome of `/haikai:fix` (ended green, corroborated by git changing — reuse the `_git_changed_files` check). Do NOT parse `final-verification.md`; do NOT gate on file-exists.
+- [x] 6.2 `_finalize_batch_git` opens the one PR ONLY when every spec ended green; otherwise fail-stop, no PR.
+- [x] 6.3 Real-git test: all-green batch → one PR; any spec un-healed → no PR.
 
 ### TG7 — Trigger (cheap, optional)
 - [ ] 7.1 Run the fix step per spec (`/haikai:fix` self-detects red, no-ops/reverts when green). Optionally skip when the self-verification report clearly shows green — but never treat that report as the authoritative gate.
