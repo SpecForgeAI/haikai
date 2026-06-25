@@ -24,10 +24,16 @@
  *     `text`) + paging via `vulnerabilitiesApi.ts`;
  *   - the deterministic severity roll-up (per `info..critical` bucket) and the
  *     group-by-library view (collapsed under the matched coordinate, with a
- *     DISTINCT "Unmatched / orphan" section) fed by `vulnerabilityRollup.ts`;
+ *     DISTINCT "Unmatched / orphan" section). These are fed by the SERVER-side
+ *     `GET .../vulnerabilities/rollup` GRAND TOTAL over the latest report
+ *     (unpaged, filter-independent) so the counts reflect the whole report --
+ *     NOT just the visible page; the client `vulnerabilityRollup.ts` util is the
+ *     fail-soft fallback when the server roll-up is unavailable;
  *   - an upload control that POSTs a picked CSV / XLSX / JSON report and
  *     surfaces the ingested / dropped / matched counts on success (the
- *     no-silent-drop guarantee is visible), plus a report-history affordance;
+ *     no-silent-drop guarantee is visible -- the dropped split distinguishes
+ *     collapsed duplicates from unparseable rows, with the report's drop notes
+ *     surfaced on demand), plus a report-history affordance;
  *   - (Spec 2) a "Scan for vulnerabilities" trigger that POSTs to the gateway
  *     proxy enrichment route and, on completion, re-pulls the rows + shows the
  *     informational availability note (NEVER a blocking banner -- the view stays
@@ -40,25 +46,31 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProject } from '../../contexts/ProjectContext';
-import { useActiveArchitectureId } from '../../contexts/ArchitectureContext';
+import { useActiveArchitectureId, useArchitectureContext } from '../../contexts/ArchitectureContext';
 import {
   listVulnerabilities,
   listVulnerabilityReports,
   uploadVulnerabilityReport,
   scanVulnerabilities,
+  getVulnerabilityRollup,
   VulnerabilitiesApiError,
+  UNMATCHED_GROUP_COORDINATE,
   type VulnerabilityDto,
   type VulnerabilityReportDto,
   type VulnerabilityReportSummaryDto,
+  type VulnerabilityRollupDto,
+  type VulnerabilityLibraryRollup,
   type VulnerabilityListFilters,
   type EnrichmentAvailabilitySignal,
 } from '../../api/vulnerabilitiesApi';
 import {
   computeVulnerabilityRollup,
   normalizeSeverityBucket,
+  zeroSeverityCounts,
   SEVERITY_LADDER,
   type SeverityBucket,
   type VulnerabilityLibraryGroup,
+  type VulnerabilityRollupResult,
 } from '../../utils/vulnerabilityRollup';
 import {
   useVulnerabilityReduction,
@@ -79,8 +91,20 @@ import styles from './SecurityView.module.css';
 // Constants
 // ============================================================================
 
-/** Page size for the latest-report list (mirrors the findings-list default). */
-const PAGE_SIZE = 50;
+/** Default page size for the latest-report list (mirrors the findings-list default). */
+const DEFAULT_PAGE_SIZE = 50;
+
+/**
+ * Page-size choices for the list pager. The AMS list endpoint caps `size` at
+ * 500, so the largest choice is 500 -- surfaced as "All (max 500)" so the cap is
+ * explicit and we never request more than the server will honour.
+ */
+const PAGE_SIZE_MAX = 500;
+const PAGE_SIZE_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
+  { value: 50, label: '50' },
+  { value: 100, label: '100' },
+  { value: PAGE_SIZE_MAX, label: 'All (max 500)' },
+];
 
 /** Accept list for the upload picker (CSV / XLSX / JSON internal SCA report). */
 const ACCEPT_ATTR = '.csv,.xlsx,.json';
@@ -113,6 +137,125 @@ const SEVERITY_BADGE_CLASS: Record<SeverityBucket, string> = {
   high: styles.severityHigh,
   critical: styles.severityCritical,
 };
+
+// ============================================================================
+// Server roll-up adapter (snake_case wire -> the client roll-up shape)
+//
+// FIX 1 (grand total): the severity roll-up + group-by-library are fed by the
+// SERVER `GET .../vulnerabilities/rollup` aggregate, which is computed over the
+// WHOLE latest report (unpaged, filter-independent) -- so the counts show the
+// grand total (e.g. 88), never the visible page (e.g. 38). The server DTO is
+// snake_case (`severity_counts` / `by_library` / `library_id`); this adapter
+// maps it onto the same `VulnerabilityRollupResult` shape the client util
+// returns, so `<SeverityRollup>` / `<GroupByLibrary>` render either source
+// interchangeably. Counts are re-banded through the shared `info..critical`
+// ladder + zero-filled so a server bucket outside the ladder can never leak a
+// stray key into the strip.
+// ============================================================================
+
+/** Re-band a wire `severity_counts` map onto the zero-filled `info..critical` ladder. */
+function adaptSeverityCounts(
+  counts: Record<string, number> | null | undefined,
+): Record<SeverityBucket, number> {
+  const out = zeroSeverityCounts();
+  if (counts && typeof counts === 'object') {
+    for (const [key, value] of Object.entries(counts)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+      const bucket = normalizeSeverityBucket(key);
+      out[bucket] += value;
+    }
+  }
+  return out;
+}
+
+/** Adapt one wire library/unmatched roll-up onto the client group shape. */
+function adaptLibraryGroup(
+  group: VulnerabilityLibraryRollup,
+  unmatched: boolean,
+): VulnerabilityLibraryGroup {
+  return {
+    coordinate: group.coordinate,
+    libraryId: group.library_id ?? null,
+    unmatched,
+    total: typeof group.total === 'number' ? group.total : 0,
+    severityCounts: adaptSeverityCounts(group.severity_counts),
+  };
+}
+
+/**
+ * The adapted server roll-up: the shared `VulnerabilityRollupResult` PLUS the two
+ * all-rows HEADLINE figures (kept separate from the severity roll-up so the strip
+ * stays internally consistent -- see {@link adaptServerRollup}).
+ */
+interface AdaptedServerRollup extends VulnerabilityRollupResult {
+  /**
+   * All kept finding rows (the "{n} findings" headline). Null when the server
+   * omitted `total_findings` (older server) -> the headline is hidden (fail-soft).
+   */
+  totalFindings: number | null;
+  /**
+   * Distinct non-null CVEs (the "{n} distinct CVEs" headline). Null when the
+   * server omitted `distinct_cves` -> headline hidden (fail-soft).
+   */
+  distinctCves: number | null;
+}
+
+/** Sum a zero-filled `info..critical` map (the unique-unit roll-up TOTAL). */
+function sumSeverityCounts(counts: Record<SeverityBucket, number>): number {
+  return SEVERITY_LADDER.reduce((sum, bucket) => sum + (counts[bucket] || 0), 0);
+}
+
+/**
+ * Adapt the server roll-up DTO onto the `VulnerabilityRollupResult` shape so the
+ * presentational components consume it exactly like the client util's output.
+ * The unmatched group is recognised by its sentinel coordinate when the wire
+ * folds it into `by_library`, but normally rides the dedicated `unmatched` slot.
+ *
+ * MODEL (keep-all-rows): the severity tiles now count UNIQUE (CVE x coordinate)
+ * units, so the strip stays internally consistent ONLY if its TOTAL tile equals
+ * the SUM of those tiles. We therefore derive `total` from the SUM of
+ * `severity_counts` -- NOT from `dto.total` / `total_findings` (the all-rows
+ * count), which would make TOTAL != sum-of-buckets and look broken. The all-rows
+ * `total_findings` + `distinct_cves` ride the SEPARATE headline figures instead.
+ */
+function adaptServerRollup(dto: VulnerabilityRollupDto): AdaptedServerRollup {
+  const byLibrary: VulnerabilityLibraryGroup[] = [];
+  let unmatched: VulnerabilityLibraryGroup | null = dto.unmatched
+    ? adaptLibraryGroup(dto.unmatched, true)
+    : null;
+
+  for (const group of dto.by_library ?? []) {
+    if (group.coordinate === UNMATCHED_GROUP_COORDINATE) {
+      // Defensive: if the wire ever folds the orphan group into by_library,
+      // keep it as the DISTINCT unmatched section rather than a library row.
+      if (!unmatched) unmatched = adaptLibraryGroup(group, true);
+      continue;
+    }
+    byLibrary.push(adaptLibraryGroup(group, false));
+  }
+  byLibrary.sort((a, b) => a.coordinate.localeCompare(b.coordinate));
+
+  const severityCounts = adaptSeverityCounts(dto.severity_counts);
+  const matchedCount = byLibrary.reduce((sum, g) => sum + g.total, 0);
+  const unmatchedCount = unmatched ? unmatched.total : 0;
+  return {
+    // The severity-roll-up TOTAL == the SUM of the (unique-unit) severity tiles,
+    // so the strip is self-consistent. (Deliberately NOT `total_findings`.)
+    total: sumSeverityCounts(severityCounts),
+    severityCounts,
+    byLibrary,
+    unmatched,
+    matchedCount,
+    unmatchedCount,
+    totalFindings:
+      typeof dto.total_findings === 'number'
+        ? dto.total_findings
+        : typeof dto.total === 'number'
+          ? dto.total
+          : null,
+    distinctCves: typeof dto.distinct_cves === 'number' ? dto.distinct_cves : null,
+  };
+}
 
 // ============================================================================
 // Small presentational helpers
@@ -273,6 +416,44 @@ function TargetStatusCell({ status }: { status: ResolvedTargetCveStatus }): Reac
 }
 
 // ============================================================================
+// Roll-up headlines (all-rows figures -- SEPARATE from the severity tiles)
+//
+// MODEL (keep-all-rows): two headline figures sit beside the severity roll-up:
+//   - "{total_findings} findings" -- EVERY kept finding row (one per source row),
+//   - "{distinct_cves} distinct CVEs" -- distinct non-null CVEs across them.
+// These come straight from the SERVER rollup and are DELIBERATELY distinct from
+// the severity tiles (which count unique CVE x coordinate units), so a CVE
+// across five modules is five findings here but one severity-tile unit. Each is
+// fail-soft: a figure the server omitted (null) is simply not rendered.
+// ============================================================================
+
+function RollupHeadlines({
+  totalFindings,
+  distinctCves,
+}: {
+  totalFindings: number | null;
+  distinctCves: number | null;
+}): React.ReactElement | null {
+  if (totalFindings === null && distinctCves === null) return null;
+  return (
+    <section className={styles.headlineRow} data-testid="vuln-rollup-headlines">
+      {totalFindings !== null && (
+        <div className={styles.headlineStat} data-testid="vuln-headline-findings">
+          <span className={styles.headlineNumber}>{totalFindings}</span>
+          <span className={styles.headlineLabel}>findings</span>
+        </div>
+      )}
+      {distinctCves !== null && (
+        <div className={styles.headlineStat} data-testid="vuln-headline-distinct-cves">
+          <span className={styles.headlineNumber}>{distinctCves}</span>
+          <span className={styles.headlineLabel}>distinct CVEs</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ============================================================================
 // Severity roll-up strip
 // ============================================================================
 
@@ -286,6 +467,9 @@ function SeverityRollup({
   return (
     <section className={styles.rollupSection} data-testid="vuln-severity-rollup">
       <h3 className={styles.sectionTitle}>Severity roll-up</h3>
+      <p className={styles.rollupCaption} data-testid="vuln-rollup-caption">
+        by unique CVE &times; library
+      </p>
       <div className={styles.rollupRow}>
         {SEVERITY_LADDER.map((bucket) => (
           <div
@@ -390,6 +574,120 @@ interface UploadControlProps {
   onUploaded: (summary: VulnerabilityReportSummaryDto) => void;
 }
 
+/**
+ * Sentinel the gateway column mapping uses for the report's Location column --
+ * it maps to a retained location blob rather than a single canonical field. Kept
+ * in sync with the gateway parser's `location_blob` sentinel.
+ */
+const LOCATION_BLOB_SENTINEL = 'location_blob';
+
+/**
+ * Friendly label for a mapped canonical field. The `location_blob` sentinel is
+ * rendered as a human phrase ("package coordinate (from Location)") rather than
+ * the raw sentinel; every other target is shown verbatim so the mapping stays
+ * an honest record of how the report was read.
+ */
+function mappedFieldLabel(target: string): string {
+  return target === LOCATION_BLOB_SENTINEL ? 'package coordinate (from Location)' : target;
+}
+
+/**
+ * The upload-result transparency panel: the verbatim column mapping the gateway
+ * used to read this report (source header -> canonical field). Rendered compact
+ * in a <details> so the user can confirm HOW each column was interpreted without
+ * a layout explosion; the `location_blob` sentinel is relabelled to a friendly
+ * "package coordinate (from Location)". Renders nothing when the gateway did not
+ * report a mapping (older gateway -- fail-soft).
+ */
+function ColumnMappingSummary({
+  parseStrategy,
+  columnMapping,
+}: {
+  parseStrategy?: string;
+  columnMapping?: Record<string, string>;
+}): React.ReactElement | null {
+  const entries = columnMapping ? Object.entries(columnMapping) : [];
+  if (entries.length === 0) return null;
+  return (
+    <details className={styles.columnMapping} data-testid="vuln-upload-column-mapping">
+      <summary className={styles.columnMappingSummary}>
+        Columns mapped{parseStrategy ? ` (${parseStrategy})` : ''}
+      </summary>
+      <ul className={styles.columnMappingList}>
+        {entries.map(([source, target]) => (
+          <li
+            key={source}
+            className={styles.columnMappingItem}
+            data-testid="vuln-upload-column-mapping-row"
+            data-source-header={source}
+            data-target-field={target}
+          >
+            <span className={styles.columnMappingSource}>{source}</span>
+            <span className={styles.columnMappingArrow}> &rarr; </span>
+            <span className={styles.columnMappingTarget}>{mappedFieldLabel(target)}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
+ * The dropped-rows summary line (FIX 3 -- drop-reason visibility). The total
+ * dropped count is split into its two NON-OVERLAPPING causes carried by the
+ * ingest summary:
+ *   - `dropped_duplicates`: rows COLLAPSED because an identical CVE+coordinate
+ *     was already ingested -- de-duplication, NOT data loss (the surviving row
+ *     still represents them);
+ *   - `dropped_unparseable`: rows the gateway parser could not read into the
+ *     normalized shape.
+ * The duplicate portion is deliberately RELABELLED "collapsed (same
+ * CVE+coordinate)" with a one-line hint so a large number reads as expected
+ * de-dup, not as silently-lost findings. The report's `notes` (the first few
+ * drop reasons) are surfaced in a compact <details> line so the user can see
+ * WHY rows dropped without a layout explosion.
+ */
+function DroppedSummary({
+  summary,
+}: {
+  summary: VulnerabilityReportSummaryDto;
+}): React.ReactElement {
+  const droppedTotal = summary.report?.row_count_dropped ?? 0;
+  const collapsed = summary.dropped_duplicates ?? 0;
+  const unparseable = summary.dropped_unparseable ?? 0;
+  const notes = summary.report?.notes ?? '';
+  const hasSplit = collapsed > 0 || unparseable > 0;
+
+  return (
+    <span className={styles.summaryStat} data-testid="vuln-upload-dropped">
+      Dropped: <strong>{droppedTotal}</strong>
+      {hasSplit && (
+        <span className={styles.dropSplit} data-testid="vuln-upload-dropped-split">
+          {' ('}
+          <span data-testid="vuln-upload-dropped-collapsed">
+            {collapsed} collapsed (same CVE+coordinate)
+          </span>
+          {', '}
+          <span data-testid="vuln-upload-dropped-unparseable">{unparseable} unparseable</span>
+          {')'}
+        </span>
+      )}
+      {hasSplit && (
+        <span className={styles.dropHintInline} data-testid="vuln-upload-dropped-hint">
+          Collapsed rows are de-duplicated (same CVE + coordinate already
+          counted), not lost.
+        </span>
+      )}
+      {notes.trim().length > 0 && (
+        <details className={styles.dropNotes} data-testid="vuln-upload-dropped-notes">
+          <summary className={styles.dropNotesSummary}>Why were rows dropped?</summary>
+          <div className={styles.dropNotesBody}>{notes}</div>
+        </details>
+      )}
+    </span>
+  );
+}
+
 function UploadControl({ projectId, architectureId, onUploaded }: UploadControlProps): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -485,15 +783,19 @@ function UploadControl({ projectId, architectureId, onUploaded }: UploadControlP
           <span className={styles.summaryStat} data-testid="vuln-upload-ingested">
             Ingested: <strong>{summary.ingested_count ?? 0}</strong>
           </span>
-          <span className={styles.summaryStat} data-testid="vuln-upload-dropped">
-            Dropped: <strong>{summary.report?.row_count_dropped ?? 0}</strong>
-          </span>
+          <DroppedSummary summary={summary} />
           <span className={styles.summaryStat} data-testid="vuln-upload-matched">
             Matched: <strong>{summary.matched_count ?? 0}</strong>
           </span>
           <span className={styles.summaryStat} data-testid="vuln-upload-unmatched">
             Unmatched: <strong>{summary.unmatched_count ?? 0}</strong>
           </span>
+          {/* Upload-result transparency: HOW each source column was read (the
+              location_blob sentinel is relabelled to a friendly phrase). */}
+          <ColumnMappingSummary
+            parseStrategy={summary.parse_strategy}
+            columnMapping={summary.column_mapping}
+          />
         </div>
       )}
     </section>
@@ -509,6 +811,73 @@ interface ScanControlProps {
   architectureId: string;
   /** Called after a scan completes (available OR unavailable) to re-pull rows. */
   onScanned: () => void;
+}
+
+/**
+ * Resolve the scan note's variant + message (FIX 4 -- "nothing to scan").
+ *
+ * Three distinct outcomes, branched off the availability signal so the user
+ * gets an ACTIONABLE message rather than a confusing "0 findings from 0
+ * advisories across 0 queried coordinates":
+ *   - available:true WITH queries built -> the plain success roll-up note (kept
+ *     verbatim);
+ *   - available:true but NOTHING was queried (`queriesBuilt === 0` and nothing
+ *     even excluded) -> the scan RAN fine, but there were no discovered
+ *     current-state dependencies to query. The prerequisite is missing: tell the
+ *     user to run a code/dependency discovery FIRST, then scan -- calm +
+ *     non-blocking. This is the empty-SBOM case, NOT an advisory-source outage;
+ *   - available:false -> a genuine advisory-source outage (OSV / proxy / TLS
+ *     unreachable, malformed response, transport failure). KEEP its existing
+ *     reassuring "automated enrichment unavailable" note verbatim.
+ *
+ * The "nothing to scan" case is distinguished from the outage case by the
+ * AVAILABILITY flag (a successful-but-empty scan is `available:true`; an outage
+ * is `available:false`) -- not by the queried count alone, since a transport
+ * outage also reports zero queries built. The queried-coordinate count then
+ * separates the empty-SBOM success from a normal success.
+ */
+const NOTHING_TO_SCAN_MESSAGE =
+  'No current-state dependencies have been discovered for this architecture yet — run a ' +
+  'code/dependency discovery first, then scan. The Security view stays usable on any manually ' +
+  'uploaded report in the meantime.';
+
+interface ScanNoteView {
+  variant: 'available' | 'nothing-to-scan' | 'unavailable';
+  testId: string;
+  message: string;
+  ok: boolean;
+}
+
+function resolveScanNote(signal: EnrichmentAvailabilitySignal): ScanNoteView {
+  if (signal.available) {
+    // A successful scan that queried NOTHING => the empty-SBOM prerequisite
+    // case: nothing was discovered to scan. Surface the actionable "run a
+    // discovery first" note rather than the bare "0 from 0 across 0" roll-up.
+    if (signal.queriesBuilt <= 0 && signal.excluded <= 0) {
+      return {
+        variant: 'nothing-to-scan',
+        testId: 'vuln-scan-nothing-to-scan',
+        message: NOTHING_TO_SCAN_MESSAGE,
+        ok: true,
+      };
+    }
+    // A normal successful scan with real coordinates queried.
+    return {
+      variant: 'available',
+      testId: 'vuln-scan-note-available',
+      message: signal.note,
+      ok: true,
+    };
+  }
+  // available:false => a genuine advisory-source outage. Keep the existing
+  // reassuring "automated enrichment unavailable" note verbatim (NOT the
+  // prerequisite message -- a transport outage also reports zero queries).
+  return {
+    variant: 'unavailable',
+    testId: 'vuln-enrichment-unavailable',
+    message: signal.note,
+    ok: false,
+  };
 }
 
 /**
@@ -557,6 +926,8 @@ function ScanControl({ projectId, architectureId, onScanned }: ScanControlProps)
     }
   }, [projectId, architectureId, onScanned]);
 
+  const note = signal ? resolveScanNote(signal) : null;
+
   return (
     <section className={styles.scanSection} data-testid="vuln-scan-control">
       <div className={styles.scanRow}>
@@ -575,17 +946,19 @@ function ScanControl({ projectId, architectureId, onScanned }: ScanControlProps)
         </span>
       </div>
 
-      {signal && (
+      {note && (
         <div
-          className={`${styles.scanNote} ${signal.available ? styles.scanNoteOk : styles.scanNoteUnavailable}`}
-          // Informational -- the unavailable note is "status", NOT an "alert"
-          // (it never halts the workflow). The available note is a plain status.
+          className={`${styles.scanNote} ${note.ok ? styles.scanNoteOk : styles.scanNoteUnavailable}`}
+          // Informational -- the unavailable / nothing-to-scan notes are
+          // "status", NOT an "alert" (they never halt the workflow). The
+          // available note is a plain status too.
           role="status"
-          data-testid={signal.available ? 'vuln-scan-note-available' : 'vuln-enrichment-unavailable'}
-          data-available={signal.available ? 'true' : 'false'}
-          data-reason={signal.reason ?? ''}
+          data-testid={note.testId}
+          data-available={signal && signal.available ? 'true' : 'false'}
+          data-variant={note.variant}
+          data-reason={signal?.reason ?? ''}
         >
-          {signal.note}
+          {note.message}
         </div>
       )}
     </section>
@@ -770,8 +1143,20 @@ function ReportTable({
               <td className={styles.titleCell} title={row.title ?? undefined}>
                 {cell(row.title)}
               </td>
-              <td className={styles.coordinateCell} title={row.affected_coordinate ?? undefined}>
+              <td
+                className={styles.coordinateCell}
+                title={
+                  row.location && row.location.trim().length > 0
+                    ? `${row.affected_coordinate ?? ''} (${row.location})`.trim()
+                    : row.affected_coordinate ?? undefined
+                }
+              >
                 {cell(row.affected_coordinate)}
+                {row.location && row.location.trim().length > 0 && (
+                  <span className={styles.coordinateLocation} data-testid="vuln-row-location">
+                    {row.location}
+                  </span>
+                )}
               </td>
               <td>{cell(versionDisplay(row))}</td>
               <td className={styles.fixedInCell}>
@@ -803,14 +1188,27 @@ function ReportTable({
 export const SecurityView: React.FC = () => {
   const project = useProject();
   const architectureId = useActiveArchitectureId();
+  // The Security area is architecture-scoped: vulnerabilities are uploaded
+  // against, and matched to, ONE architecture's discovered libraries. The
+  // active architecture is the DEFAULT, but the binding must be explicit +
+  // changeable here so findings are never silently attached to the wrong
+  // architecture. `setActiveArchitecture` navigates (URL = source of truth),
+  // so every architecture-scoped fetch below re-runs against the chosen id.
+  const { architectures, setActiveArchitecture } = useArchitectureContext();
 
   const [rows, setRows] = useState<VulnerabilityDto[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  // FIX 2: the list page size is now selectable (default 50; max 500 = "All").
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [reports, setReports] = useState<VulnerabilityReportDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // FIX 1: the GRAND-TOTAL roll-up over the whole latest report (server-side,
+  // unpaged + filter-independent). Null until the first fetch resolves (or when
+  // the fetch failed); the render falls back to the client page roll-up then.
+  const [serverRollup, setServerRollup] = useState<AdaptedServerRollup | null>(null);
   // Bumped after a successful upload OR a scan to force a re-fetch of the latest
   // list + report history (the upload/scan replaced the latest report
   // server-side).
@@ -821,14 +1219,14 @@ export const SecurityView: React.FC = () => {
   // Build the API filter payload, dropping empty values (the client also omits
   // them, but trimming here keeps the dependency list stable).
   const apiFilters = useMemo<VulnerabilityListFilters>(() => {
-    const f: VulnerabilityListFilters = { page, size: PAGE_SIZE };
+    const f: VulnerabilityListFilters = { page, size: pageSize };
     if (filters.severity) f.severity = filters.severity;
     if (filters.match_status) f.match_status = filters.match_status;
     if (filters.source.trim()) f.source = filters.source.trim();
     if (filters.affected_coordinate.trim()) f.affected_coordinate = filters.affected_coordinate.trim();
     if (filters.text.trim()) f.text = filters.text.trim();
     return f;
-  }, [filters, page]);
+  }, [filters, page, pageSize]);
 
   // Load the latest-report list whenever scope / filters / page / reload change.
   useEffect(() => {
@@ -855,6 +1253,29 @@ export const SecurityView: React.FC = () => {
       cancelled = true;
     };
   }, [projectId, architectureId, apiFilters, reloadToken]);
+
+  // FIX 1: load the server GRAND-TOTAL roll-up over the WHOLE latest report.
+  // Keyed on scope + `reloadToken` ONLY -- deliberately NOT on `page` / filters /
+  // `pageSize`, so the strip reflects the full report (e.g. 88) regardless of
+  // what the table is paging/filtering to (e.g. 38). Fail-soft: on any error the
+  // state is left null and the render falls back to the client page roll-up.
+  useEffect(() => {
+    if (!projectId || !architectureId) {
+      setServerRollup(null);
+      return;
+    }
+    let cancelled = false;
+    getVulnerabilityRollup(projectId, architectureId)
+      .then((dto) => {
+        if (!cancelled) setServerRollup(adaptServerRollup(dto));
+      })
+      .catch(() => {
+        if (!cancelled) setServerRollup(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, architectureId, reloadToken]);
 
   // Load the report history alongside the list (scope + reload only -- it does
   // not depend on the list filters).
@@ -891,10 +1312,18 @@ export const SecurityView: React.FC = () => {
     setPage(0);
   }, []);
 
-  // Deterministic roll-up + group-by-library over the CURRENT rows (the latest
-  // report's items as filtered). No second round-trip; matches the AMS rollup
-  // shape exactly (shared ladder + `__unmatched__` sentinel).
-  const rollup = useMemo(() => computeVulnerabilityRollup(rows), [rows]);
+  // FIX 2: changing the page size resets to the first page (the current page
+  // index is meaningless against the new page count).
+  const handlePageSizeChange = useCallback((next: number) => {
+    setPageSize(next);
+    setPage(0);
+  }, []);
+
+  // FIX 1: the page roll-up (client util over the CURRENT visible rows) is the
+  // FAIL-SOFT fallback only. The grand-total `serverRollup` (the whole latest
+  // report, unpaged) is preferred so the strip never shows the page count.
+  const pageRollup = useMemo(() => computeVulnerabilityRollup(rows), [rows]);
+  const rollup = serverRollup ?? pageRollup;
 
   // -----------------------------------------------------------------------
   // Spec 4 (2026-06-24-vulnerability-reduction-and-steering) -- Task Group 7.4:
@@ -983,12 +1412,41 @@ export const SecurityView: React.FC = () => {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className={styles.container} data-testid="security-view">
       <div className={styles.header}>
         <h2>Security</h2>
+      </div>
+
+      <div className={styles.architectureScope} data-testid="security-architecture-scope">
+        <label className={styles.architectureScopeLabel} htmlFor="security-architecture-select">
+          Findings apply to architecture
+        </label>
+        <select
+          id="security-architecture-select"
+          className={styles.architectureScopeSelect}
+          value={architectureId ?? ''}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (next && next !== architectureId) setActiveArchitecture(next);
+          }}
+          data-testid="security-architecture-select"
+        >
+          {!architectureId && <option value="">Select an architecture…</option>}
+          {(architectures ?? [])
+            .filter((a) => !a.archived)
+            .map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+        </select>
+        <span className={styles.architectureScopeHint}>
+          Vulnerabilities are uploaded against, and matched to, this architecture&rsquo;s
+          discovered libraries — almost always your <strong>Current State</strong>.
+        </span>
       </div>
 
       {architectureId && projectId && (
@@ -1007,6 +1465,13 @@ export const SecurityView: React.FC = () => {
         />
       )}
 
+      {serverRollup && (
+        <RollupHeadlines
+          totalFindings={serverRollup.totalFindings}
+          distinctCves={serverRollup.distinctCves}
+        />
+      )}
+
       <SeverityRollup severityCounts={rollup.severityCounts} total={rollup.total} />
 
       <GroupByLibrary byLibrary={rollup.byLibrary} unmatched={rollup.unmatched} />
@@ -1014,9 +1479,27 @@ export const SecurityView: React.FC = () => {
       <section className={styles.tableSection} data-testid="vuln-report-table-section">
         <div className={styles.tableHeader}>
           <h3 className={styles.sectionTitle}>Vulnerabilities</h3>
-          <span className={styles.tableCount} data-testid="vuln-total-count">
-            {total} total
-          </span>
+          <div className={styles.tableHeaderControls}>
+            <label className={styles.pageSizeControl} data-testid="vuln-page-size-control">
+              <span className={styles.pageSizeLabel}>Rows per page</span>
+              <select
+                className={styles.filterSelect}
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                data-testid="vuln-page-size-select"
+                aria-label="Rows per page"
+              >
+                {PAGE_SIZE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className={styles.tableCount} data-testid="vuln-total-count">
+              {total} total
+            </span>
+          </div>
         </div>
         <FiltersBar filters={filters} onChange={handleFiltersChange} />
         {loadError && (

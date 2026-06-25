@@ -357,7 +357,7 @@ export function TopBar({ children }: TopBarProps) {
   // page in File mode); this matches the previous behaviour where the
   // dispatch had no visible effect because no view component was mounted
   // to observe state.currentView.
-  const handleViewChange = (view: 'product' | 'metamodel' | 'diagrams' | 'dashboard') => {
+  const handleViewChange = (view: 'product' | 'metamodel' | 'diagrams' | 'dashboard' | 'security') => {
     if (!activeProject) return;
     if (!activeArchitectureId) return;
     navigate(
@@ -1269,6 +1269,16 @@ export function TopBar({ children }: TopBarProps) {
             data-testid="architecture-nav-button"
           >
             Architecture & Design
+          </button>
+          {/* Spec 2026-06-24 Vulnerability store + capture -- top-level Security tab,
+              placed to the LEFT of Diagrams. Route/segment/CurrentView already wired;
+              this button was the missing piece. Not feature-gated (always visible). */}
+          <button
+            className={`${styles.toggleButton} ${currentView === 'security' ? styles.active : ''}`}
+            onClick={() => handleViewChange('security')}
+            data-testid="security-nav-button"
+          >
+            Security
           </button>
           <button
             className={`${styles.toggleButton} ${currentView === 'diagrams' ? styles.active : ''}`}

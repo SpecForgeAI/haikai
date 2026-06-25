@@ -31,6 +31,38 @@
   font-size: 18px;
 }
 
+/* Explicit architecture-scope selector — makes the binding (which architecture
+ * the findings apply to) visible + changeable, defaulting to the active one. */
+.architectureScope {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #f5f7fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.architectureScopeLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+}
+
+.architectureScopeSelect {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.architectureScopeHint {
+  font-size: 12px;
+  color: #666;
+  flex-basis: 100%;
+}
+
 .sectionTitle {
   margin: 0 0 8px 0;
   font-size: 14px;
@@ -583,3 +615,169 @@
 .targetStatusRemaining  { background: #fef9c3; color: #854d0e; }
 .targetStatusNewly      { background: #fee2e2; color: #991b1b; }
 .targetStatusUnknown    { background: transparent; color: #888; }
+
+/* ============================================================================
+ * FIX 2 -- page-size selector in the table header (50 / 100 / All (max 500)).
+ * FIX 3 -- dropped-rows split + relabel + the compact drop-reason details.
+ * ========================================================================== */
+
+.tableHeaderControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pageSizeControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+}
+
+.pageSizeLabel {
+  white-space: nowrap;
+}
+
+/* The dropped-rows split + hint read as calm DATA (de-dup is expected), never
+ * as an error -- muted greys, not the red error palette. */
+.dropSplit {
+  color: #475569;
+}
+
+.dropHintInline {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  font-size: 11px;
+  font-style: italic;
+  color: #64748b;
+}
+
+.dropNotes {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.dropNotesSummary {
+  cursor: pointer;
+  font-size: 11px;
+  color: #1976d2;
+}
+
+.dropNotesBody {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: monospace;
+  font-size: 11px;
+  color: #475569;
+}
+
+/* ============================================================================
+ * Keep-all-rows model: the two all-rows HEADLINE figures ("{n} findings" +
+ * "{n} distinct CVEs"), the severity-roll-up caption ("by unique CVE x
+ * library"), the per-row module/location secondary line, and the upload-result
+ * column-mapping transparency panel.
+ * ========================================================================== */
+
+/* Headline figures sit ABOVE the severity strip; they are the all-rows counts
+ * (every kept finding row + distinct CVEs), DISTINCT from the unique-unit tiles
+ * below. Calm + prominent -- the headline number large, the label muted. */
+.headlineRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.headlineStat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.headlineNumber {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1f2937;
+}
+
+.headlineLabel {
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* The severity-roll-up caption clarifies the tiles count UNIQUE CVE x library
+ * units (so TOTAL == sum-of-tiles), distinct from the all-rows headline. */
+.rollupCaption {
+  margin: 0 0 8px 0;
+  font-size: 11px;
+  font-style: italic;
+  color: #94a3b8;
+}
+
+/* The per-row module/location secondary line under the coordinate -- compact +
+ * muted so per-module findings are distinguishable without crowding the cell. */
+.coordinateLocation {
+  display: block;
+  margin-top: 2px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #94a3b8;
+  word-break: break-word;
+}
+
+/* The upload-result column-mapping transparency panel (a compact <details>):
+ * the verbatim source-header -> canonical-field map the gateway used. */
+.columnMapping {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #2E7D32;
+}
+
+.columnMappingSummary {
+  cursor: pointer;
+  font-size: 11px;
+  color: #1b5e20;
+}
+
+.columnMappingList {
+  list-style: none;
+  margin: 4px 0 0 0;
+  padding: 6px 8px;
+  background: #f1f8f4;
+  border: 1px solid #c8e6c9;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.columnMappingItem {
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.columnMappingSource {
+  font-family: monospace;
+  color: #1b5e20;
+}
+
+.columnMappingArrow {
+  color: #66bb6a;
+}
+
+.columnMappingTarget {
+  font-family: monospace;
+  font-weight: 600;
+  color: #2E7D32;
+}

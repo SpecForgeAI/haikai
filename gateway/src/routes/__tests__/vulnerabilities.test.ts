@@ -236,6 +236,8 @@ describe('Vulnerabilities gateway route', () => {
       'affected_version',
       'affected_version_range',
       'fixed_in_versions',
+      'source_finding_id',
+      'location',
       'native_advisory_id',
       'raw_row',
     ].sort();

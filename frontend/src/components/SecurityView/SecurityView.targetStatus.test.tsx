@@ -20,7 +20,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../contexts/ProjectContext', () => ({ useProject: vi.fn() }));
-vi.mock('../../contexts/ArchitectureContext', () => ({ useActiveArchitectureId: vi.fn() }));
+vi.mock('../../contexts/ArchitectureContext', () => ({ useActiveArchitectureId: vi.fn(), useArchitectureContext: vi.fn() }));
 
 vi.mock('../../api/vulnerabilitiesApi', async () => {
   const actual = await vi.importActual<typeof import('../../api/vulnerabilitiesApi')>(
@@ -57,7 +57,7 @@ vi.mock('../../api/vulnerabilityReductionApi', async () => {
 });
 
 import { useProject } from '../../contexts/ProjectContext';
-import { useActiveArchitectureId } from '../../contexts/ArchitectureContext';
+import { useActiveArchitectureId, useArchitectureContext } from '../../contexts/ArchitectureContext';
 import {
   listVulnerabilities,
   listVulnerabilityReports,
@@ -102,6 +102,8 @@ function makeRow(over: Partial<VulnerabilityDto>): VulnerabilityDto {
     match_status: 'matched',
     matched_library_id: null,
     matched_declared_version: null,
+    source_finding_id: null,
+    location: null,
     ...over,
   };
 }
@@ -119,6 +121,10 @@ describe('SecurityView target-status column (Task 7.1 case (c))', () => {
   beforeEach(() => {
     (useProject as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ id: PROJECT_ID, name: 'P' });
     (useActiveArchitectureId as unknown as ReturnType<typeof vi.fn>).mockReturnValue(ARCH_ID);
+    (useArchitectureContext as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      architectures: [{ id: ARCH_ID, name: 'Current State', archived: false }],
+      setActiveArchitecture: vi.fn(),
+    });
     (listVulnerabilities as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(searchResponse(ROWS));
     (listVulnerabilityReports as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     (listDecommissionedInTargetAnnotations as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);

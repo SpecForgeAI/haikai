@@ -149,6 +149,18 @@ export interface VulnerabilityDto {
   match_status: VulnerabilityMatchStatus | string;
   matched_library_id: string | null;
   matched_declared_version: string | null;
+  /**
+   * Stable per-finding identity from the source report (the verbatim
+   * "Vulnerability ID" / finding-id column when present). Distinguishes the
+   * same CVE reported against several modules; null when the report omits it.
+   */
+  source_finding_id: string | null;
+  /**
+   * The verbatim module/location the finding was reported against (the report's
+   * Location column, retained as a blob). Surfaced compactly under the
+   * coordinate so per-module findings are distinguishable; null when absent.
+   */
+  location: string | null;
 }
 
 /**
@@ -189,6 +201,19 @@ export interface VulnerabilityReportSummaryDto {
   dropped_unparseable: number | null;
   matched_count: number | null;
   unmatched_count: number | null;
+  /**
+   * The parse strategy the gateway resolved for this upload (e.g.
+   * `column_mapping`). Surfaced alongside the column mapping so the user can see
+   * HOW the report was read. Optional -- absent on an older gateway.
+   */
+  parse_strategy?: string;
+  /**
+   * The verbatim source-header -> canonical-field map the gateway used (e.g.
+   * `{ "CVE": "cve_id", "Vulnerability": "title" }`). The Location column maps
+   * to the sentinel `"location_blob"`. Rendered in the upload-result
+   * transparency panel; optional (absent on an older gateway).
+   */
+  column_mapping?: Record<string, string>;
 }
 
 /** Pagination envelope for the list endpoint (`items / total / page / size`). */
@@ -222,7 +247,31 @@ export interface VulnerabilityLibraryRollup {
  */
 export interface VulnerabilityRollupDto {
   report_id: string | null;
+  /**
+   * Backward-compat ALIAS of {@link total_findings} (every kept finding row).
+   * Retained for callers that predate the headline split; NEW code should read
+   * {@link total_findings} for the all-rows headline and derive the severity
+   * roll-up TOTAL from the SUM of {@link severity_counts} (unique units).
+   */
   total: number;
+  /**
+   * All kept finding rows in the latest report (one per source row retained --
+   * the "keep ALL rows" model). The "{n} findings" headline figure. May be
+   * absent on an older server, in which case the headline is omitted (fail-soft).
+   */
+  total_findings?: number;
+  /**
+   * Distinct non-null CVEs across the kept rows. The "{n} distinct CVEs"
+   * headline figure. Absent on an older server (fail-soft -> headline omitted).
+   */
+  distinct_cves?: number;
+  /**
+   * Per-severity ladder counts of UNIQUE (CVE, coordinate) units -- a CVE across
+   * five modules counts ONCE; a no-CVE/SAST finding counts once. The severity
+   * tiles + their TOTAL are derived from these (the TOTAL tile == the SUM of
+   * these buckets), which is internally consistent but DISTINCT from the
+   * all-rows {@link total_findings} headline.
+   */
   severity_counts: Record<string, number>;
   by_library: VulnerabilityLibraryRollup[];
   unmatched: VulnerabilityLibraryRollup | null;

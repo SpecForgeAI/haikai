@@ -256,12 +256,32 @@ vulnerabilitiesRouter.post(
         });
       }
 
+      // TRANSPARENCY: surface the resolved column mapping the gateway parse used
+      // (source header -> field, incl. which column was parsed as the GitLab
+      // Location blob) so the frontend can show "mapping used." The mapping is a
+      // gateway-side artifact (AMS does not echo it), so we MERGE it onto the AMS
+      // JSON summary piped back. Non-JSON / empty AMS bodies still return it.
       res.status(upstream.status);
       if (responseBody === null || responseBody === undefined) {
-        return res.end();
+        // No AMS body to enrich; still return the mapping so the UI has it.
+        return res.json({
+          parse_strategy: parseResult.parseStrategy,
+          column_mapping: parseResult.columnMapping,
+        });
       }
       if (typeof responseBody === 'string') {
         return res.send(responseBody);
+      }
+      if (
+        responseBody &&
+        typeof responseBody === 'object' &&
+        !Array.isArray(responseBody)
+      ) {
+        return res.json({
+          ...(responseBody as Record<string, unknown>),
+          parse_strategy: parseResult.parseStrategy,
+          column_mapping: parseResult.columnMapping,
+        });
       }
       return res.json(responseBody);
     } catch (error) {

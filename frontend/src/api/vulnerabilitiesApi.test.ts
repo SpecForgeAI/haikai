@@ -87,6 +87,8 @@ describe('vulnerabilitiesApi', () => {
           match_status: 'matched',
           matched_library_id: 'lib-alpha',
           matched_declared_version: '1.2.3',
+          source_finding_id: 'FIND-001',
+          location: 'services/checkout/pom.xml',
         },
       ],
       total: 1,
@@ -111,6 +113,9 @@ describe('vulnerabilitiesApi', () => {
     expect(row.matched_declared_version).toBe('1.2.3');
     expect(row.severity_raw).toBe('Critical');
     expect(row.raw_row).toEqual({ Package: 'alpha', Severity: 'Critical' });
+    // Keep-all-rows model: the per-finding identity + module/location round-trip.
+    expect(row.source_finding_id).toBe('FIND-001');
+    expect(row.location).toBe('services/checkout/pom.xml');
   });
 
   it('serializes list filters onto the querystring with the AMS snake_case keys', async () => {
@@ -261,6 +266,8 @@ describe('vulnerabilitiesApi', () => {
     const rollup: VulnerabilityRollupDto = {
       report_id: 'r2',
       total: 2,
+      total_findings: 2,
+      distinct_cves: 2,
       severity_counts: { info: 0, low: 0, medium: 0, high: 1, critical: 1 },
       by_library: [
         {
@@ -298,6 +305,61 @@ describe('vulnerabilitiesApi', () => {
     expect(clientRollup.severityCounts).toEqual(serverRollup.severity_counts);
     expect(clientRollup.unmatchedCount).toBe(serverRollup.unmatched?.total);
     expect(clientRollup.byLibrary[0].coordinate).toBe(serverRollup.by_library[0].coordinate);
+  });
+
+  it('parses the keep-all-rows headline rollup fields + the upload column mapping verbatim', async () => {
+    // -- rollup: total_findings (all rows) + distinct_cves ride ALONGSIDE the
+    //    unique-unit severity_counts; the client surfaces them verbatim. --
+    const rollup: VulnerabilityRollupDto = {
+      report_id: 'r3',
+      total: 90,
+      total_findings: 90,
+      distinct_cves: 61,
+      severity_counts: { info: 2, low: 3, medium: 10, high: 10, critical: 5 },
+      by_library: [],
+      unmatched: null,
+    };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(okJson(rollup));
+    const serverRollup = await getVulnerabilityRollup(PROJECT_ID, ARCH_ID);
+    expect(serverRollup.total_findings).toBe(90);
+    expect(serverRollup.distinct_cves).toBe(61);
+
+    // -- upload: parse_strategy + column_mapping (incl. the location_blob
+    //    sentinel) round-trip through the upload result. --
+    const summary: VulnerabilityReportSummaryDto = {
+      report: {
+        id: 'r3',
+        project_id: PROJECT_ID,
+        architecture_id: ARCH_ID,
+        source: 'internal_report',
+        original_filename: 'scan.xlsx',
+        format: 'xlsx',
+        uploaded_at: '2026-06-24T10:00:00Z',
+        is_latest: true,
+        row_count_ingested: 90,
+        row_count_dropped: 0,
+        parse_strategy: 'column_mapping',
+        notes: null,
+      },
+      rows_received: 90,
+      ingested_count: 90,
+      dropped_duplicates: 0,
+      dropped_unparseable: 0,
+      matched_count: 80,
+      unmatched_count: 10,
+      parse_strategy: 'column_mapping',
+      column_mapping: { CVE: 'cve_id', Location: 'location_blob' },
+    };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve(summary),
+    });
+    const file = new File(['x'], 'scan.xlsx');
+    const result = await uploadVulnerabilityReport(PROJECT_ID, ARCH_ID, file);
+    expect(result.parse_strategy).toBe('column_mapping');
+    expect(result.column_mapping).toEqual({ CVE: 'cve_id', Location: 'location_blob' });
   });
 
   // --------------------------------------------------------------------------

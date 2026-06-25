@@ -4620,3 +4620,38 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Vulnerability per-module finding model (Spec: per-module finding model,
+  # 2026-06-25). Supersedes Spec 1's "dedup per (CVE x coordinate) at ingest"
+  # rule (197): an uploaded GitLab SCA report carries one finding row PER MODULE,
+  # each a distinct GitLab "Vulnerability ID" -- findings are NOT collapsed at
+  # ingest (every row kept, scoped to its module); counts are derived on read.
+  # Changeset 200 adds the two per-row provenance columns that make the keep-all
+  # model addressable: source_finding_id TEXT NULL (the source/GitLab unique
+  # finding id -- now the ONLY within-report dedup key; a literal duplicate id
+  # collapses, everything else is kept) + location TEXT NULL (the source
+  # file/module, e.g. core/pom.xml), plus a (report_id, source_finding_id) index.
+  # affected_version ALREADY EXISTS (197, LOCKED Spec-4 column) -- not re-added.
+  #
+  # Both columns NULLABLE, no backfill: existing rows read them back null.
+  # NEW changeset only -- never edit applied changesets (<= 199). Registered AFTER
+  # 199 with the not-columnExists precondition idiom (onFail MARK_RAN) so a re-run
+  # is a clean no-op (mirrors 195 / 198).
+  # ============================================================================
+  - changeSet:
+      id: 200-vulnerability-findings
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: vulnerabilities
+              columnName: source_finding_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/200-vulnerability-findings.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

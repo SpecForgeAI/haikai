@@ -39,6 +39,7 @@ vi.mock('../../contexts/ProjectContext', () => ({
 
 vi.mock('../../contexts/ArchitectureContext', () => ({
   useActiveArchitectureId: vi.fn(),
+  useArchitectureContext: vi.fn(),
 }));
 
 vi.mock('../../api/vulnerabilitiesApi', async () => {
@@ -51,19 +52,22 @@ vi.mock('../../api/vulnerabilitiesApi', async () => {
     listVulnerabilityReports: vi.fn(),
     uploadVulnerabilityReport: vi.fn(),
     scanVulnerabilities: vi.fn(),
+    getVulnerabilityRollup: vi.fn(),
   };
 });
 
 import { useProject } from '../../contexts/ProjectContext';
-import { useActiveArchitectureId } from '../../contexts/ArchitectureContext';
+import { useActiveArchitectureId, useArchitectureContext } from '../../contexts/ArchitectureContext';
 import {
   listVulnerabilities,
   listVulnerabilityReports,
   uploadVulnerabilityReport,
   scanVulnerabilities,
+  getVulnerabilityRollup,
   type VulnerabilityDto,
   type VulnerabilitySearchResponse,
   type VulnerabilityReportSummaryDto,
+  type VulnerabilityRollupDto,
   type ScanVulnerabilitiesResponse,
 } from '../../api/vulnerabilitiesApi';
 import { SecurityView } from './SecurityView';
@@ -95,6 +99,8 @@ function makeRow(overrides: Partial<VulnerabilityDto>): VulnerabilityDto {
     match_status: 'unmatched',
     matched_library_id: null,
     matched_declared_version: null,
+    source_finding_id: null,
+    location: null,
     ...overrides,
   };
 }
@@ -143,6 +149,41 @@ function listResponse(items: VulnerabilityDto[]): VulnerabilitySearchResponse {
   return { items, total: items.length, page: 0, size: 50 };
 }
 
+// A server roll-up DTO that mirrors the three default ROWS exactly (one
+// critical matched libfoo, one medium matched libbar, one high unmatched) so
+// the GRAND-TOTAL strip (FIX 1) renders the same counts the page would -- the
+// existing roll-up assertions stay valid while the strip is now server-fed.
+const DEFAULT_ROLLUP_DTO: VulnerabilityRollupDto = {
+  report_id: 'rep-1',
+  total: 3,
+  // Keep-all-rows model: total_findings (all kept rows) + distinct_cves ride
+  // ALONGSIDE the unique-unit severity_counts. Here each row is a distinct CVE
+  // under a distinct coordinate, so all three figures coincide at 3.
+  total_findings: 3,
+  distinct_cves: 3,
+  severity_counts: { info: 0, low: 0, medium: 1, high: 1, critical: 1 },
+  by_library: [
+    {
+      coordinate: 'org.example:libbar',
+      library_id: 'lib-bar',
+      total: 1,
+      severity_counts: { info: 0, low: 0, medium: 1, high: 0, critical: 0 },
+    },
+    {
+      coordinate: 'org.example:libfoo',
+      library_id: 'lib-foo',
+      total: 1,
+      severity_counts: { info: 0, low: 0, medium: 0, high: 0, critical: 1 },
+    },
+  ],
+  unmatched: {
+    coordinate: '__unmatched__',
+    library_id: null,
+    total: 1,
+    severity_counts: { info: 0, low: 0, medium: 0, high: 1, critical: 0 },
+  },
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(useProject).mockReturnValue({
@@ -150,8 +191,13 @@ beforeEach(() => {
     name: 'Sec project',
   } as unknown as ReturnType<typeof useProject>);
   vi.mocked(useActiveArchitectureId).mockReturnValue(ARCH_ID);
+  vi.mocked(useArchitectureContext).mockReturnValue({
+    architectures: [{ id: ARCH_ID, name: 'Current State', archived: false }],
+    setActiveArchitecture: vi.fn(),
+  } as unknown as ReturnType<typeof useArchitectureContext>);
   vi.mocked(listVulnerabilities).mockResolvedValue(listResponse(ROWS));
   vi.mocked(listVulnerabilityReports).mockResolvedValue([]);
+  vi.mocked(getVulnerabilityRollup).mockResolvedValue(DEFAULT_ROLLUP_DTO);
 });
 
 afterEach(() => {
@@ -169,6 +215,31 @@ function renderView() {
 }
 
 describe('SecurityView (Task 5.1)', () => {
+  it('exposes an explicit architecture selector that defaults to the active architecture and re-scopes on change', async () => {
+    const setActiveArchitecture = vi.fn();
+    vi.mocked(useArchitectureContext).mockReturnValue({
+      architectures: [
+        { id: ARCH_ID, name: 'Current State', archived: false },
+        { id: 'arch-target', name: 'Target X', archived: false },
+      ],
+      setActiveArchitecture,
+    } as unknown as ReturnType<typeof useArchitectureContext>);
+
+    renderView();
+
+    const select = (await screen.findByTestId(
+      'security-architecture-select',
+    )) as HTMLSelectElement;
+    // Defaults to the active architecture — the binding is visible, not hidden.
+    expect(select.value).toBe(ARCH_ID);
+    expect(within(select).getByText('Current State')).toBeInTheDocument();
+    expect(within(select).getByText('Target X')).toBeInTheDocument();
+
+    // Changing it re-scopes via setActiveArchitecture (which navigates).
+    fireEvent.change(select, { target: { value: 'arch-target' } });
+    expect(setActiveArchitecture).toHaveBeenCalledWith('arch-target');
+  });
+
   it('renders one report-table row per vulnerability with severity badge (raw on hover) and match-status indicator', async () => {
     renderView();
 
@@ -336,6 +407,36 @@ describe('SecurityView Task 6 end-to-end (replace-latest reflected in the latest
     vi.mocked(listVulnerabilities)
       .mockResolvedValueOnce(listResponse(STALE))
       .mockResolvedValue(listResponse(CORRECTED));
+
+    // The GRAND-TOTAL roll-up (FIX 1) is server-fed + re-fetched on upload, so it
+    // follows the same replace-latest progression: the stale rollup first, the
+    // corrected rollup after the re-upload bumps the reload token.
+    const STALE_ROLLUP: VulnerabilityRollupDto = {
+      report_id: 'rep-stale',
+      total: 1,
+      total_findings: 1,
+      distinct_cves: 1,
+      severity_counts: { info: 0, low: 1, medium: 0, high: 0, critical: 0 },
+      by_library: [
+        { coordinate: 'org.example:stale', library_id: 'lib-stale', total: 1, severity_counts: { info: 0, low: 1, medium: 0, high: 0, critical: 0 } },
+      ],
+      unmatched: null,
+    };
+    const CORRECTED_ROLLUP: VulnerabilityRollupDto = {
+      report_id: 'rep-corrected',
+      total: 3,
+      total_findings: 3,
+      distinct_cves: 3,
+      severity_counts: { info: 0, low: 0, medium: 1, high: 1, critical: 1 },
+      by_library: [
+        { coordinate: 'org.example:alpha', library_id: 'lib-alpha', total: 1, severity_counts: { info: 0, low: 0, medium: 0, high: 0, critical: 1 } },
+        { coordinate: 'org.example:beta', library_id: 'lib-beta', total: 1, severity_counts: { info: 0, low: 0, medium: 0, high: 1, critical: 0 } },
+      ],
+      unmatched: { coordinate: '__unmatched__', library_id: null, total: 1, severity_counts: { info: 0, low: 0, medium: 1, high: 0, critical: 0 } },
+    };
+    vi.mocked(getVulnerabilityRollup)
+      .mockResolvedValueOnce(STALE_ROLLUP)
+      .mockResolvedValue(CORRECTED_ROLLUP);
 
     const summary: VulnerabilityReportSummaryDto = {
       report: {
@@ -511,5 +612,373 @@ describe('SecurityView Spec 2 enrichment surfaces (Task 6.1)', () => {
     expect(within(automatedRow).getByTestId('vuln-source-badge').getAttribute('data-source')).toBe(
       'automated',
     );
+  });
+});
+
+// ============================================================================
+// Frontend-only Security-tab fixes (grand-total roll-up, page-size selector,
+// drop-reason split/relabel, scan "run discovery first" message).
+// ============================================================================
+describe('SecurityView frontend fixes (grand-total / page size / drop reasons / scan prerequisite)', () => {
+  // -- FIX 1: the roll-up + group-by-library reflect the SERVER GRAND TOTAL
+  //    (whole latest report), NOT the paged rows. --
+  it('FIX 1: feeds the severity roll-up + group-by-library from the server GRAND-TOTAL rollup, not the visible page', async () => {
+    // The table is paged to 2 visible rows, but the server rollup is the full
+    // 88-row report. The strip MUST show 88 (grand total), never 2 (the page).
+    const PAGE: VulnerabilityDto[] = [
+      makeRow({ id: 'p1', cve_id: 'CVE-PAGE-1', severity: 'critical', match_status: 'matched', affected_coordinate: 'org.example:alpha' }),
+      makeRow({ id: 'p2', cve_id: 'CVE-PAGE-2', severity: 'low', match_status: 'matched', affected_coordinate: 'org.example:beta' }),
+    ];
+    vi.mocked(listVulnerabilities).mockResolvedValue({ items: PAGE, total: 88, page: 0, size: 50 });
+
+    const grandTotal: VulnerabilityRollupDto = {
+      report_id: 'rep-latest',
+      total: 88,
+      // 88 kept rows; the unique-unit severity tiles also sum to 88 here. The
+      // distinct-CVE count is LOWER (a CVE can span several module rows) -- the
+      // two headlines are independent of the severity tiles.
+      total_findings: 88,
+      distinct_cves: 61,
+      severity_counts: { info: 4, low: 10, medium: 20, high: 30, critical: 24 },
+      by_library: [
+        { coordinate: 'org.example:zeta', library_id: 'lib-zeta', total: 50, severity_counts: { info: 0, low: 5, medium: 15, high: 20, critical: 10 } },
+        { coordinate: 'org.example:alpha', library_id: 'lib-alpha', total: 20, severity_counts: { info: 0, low: 0, medium: 5, high: 5, critical: 10 } },
+      ],
+      unmatched: { coordinate: '__unmatched__', library_id: null, total: 18, severity_counts: { info: 4, low: 5, medium: 0, high: 5, critical: 4 } },
+    };
+    vi.mocked(getVulnerabilityRollup).mockResolvedValue(grandTotal);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    // The strip shows the grand total (88), not the page (2).
+    await waitFor(() =>
+      expect(screen.getByTestId('vuln-rollup-total').getAttribute('data-count')).toBe('88'),
+    );
+    expect(screen.getByTestId('vuln-rollup-critical').getAttribute('data-count')).toBe('24');
+    expect(screen.getByTestId('vuln-rollup-high').getAttribute('data-count')).toBe('30');
+    expect(screen.getByTestId('vuln-rollup-medium').getAttribute('data-count')).toBe('20');
+    expect(screen.getByTestId('vuln-rollup-low').getAttribute('data-count')).toBe('10');
+    expect(screen.getByTestId('vuln-rollup-info').getAttribute('data-count')).toBe('4');
+
+    // Group-by-library is the server grouping (sorted), with the distinct orphan.
+    const libGroups = screen.getAllByTestId('vuln-group-library');
+    expect(libGroups.map((g) => g.getAttribute('data-coordinate'))).toEqual([
+      'org.example:alpha',
+      'org.example:zeta',
+    ]);
+    const orphan = screen.getByTestId('vuln-group-unmatched');
+    expect(orphan).toHaveTextContent(/unmatched \/ orphan/i);
+
+    // The server rollup is fetched once for the scope (not per page/filter).
+    expect(vi.mocked(getVulnerabilityRollup)).toHaveBeenCalledWith(PROJECT_ID, ARCH_ID);
+  });
+
+  it('FIX 1 (fail-soft): falls back to the client page roll-up when the server rollup fetch fails', async () => {
+    // Server rollup unavailable -> the strip still renders, from the page rows.
+    vi.mocked(getVulnerabilityRollup).mockRejectedValue(new Error('rollup 503'));
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    // The fallback page roll-up over the 3 default ROWS (critical/high/medium).
+    await waitFor(() =>
+      expect(screen.getByTestId('vuln-rollup-total').getAttribute('data-count')).toBe('3'),
+    );
+    expect(screen.getByTestId('vuln-rollup-critical').getAttribute('data-count')).toBe('1');
+    // The panel rendered despite the failed server rollup (no blank, no throw).
+    expect(screen.getByTestId('vuln-severity-rollup')).toBeInTheDocument();
+  });
+
+  // -- FIX 2: page-size selector. --
+  it('FIX 2: the page-size selector changes the requested size (incl. "All (max 500)") and resets to page 1', async () => {
+    // A 200-row report so paging is active at size 50 (totalPages = 4).
+    vi.mocked(listVulnerabilities).mockResolvedValue({ items: ROWS, total: 200, page: 0, size: 50 });
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    // Default size 50 was requested.
+    await waitFor(() =>
+      expect(vi.mocked(listVulnerabilities).mock.calls.some(([, , f]) => f?.size === 50)).toBe(true),
+    );
+
+    // Advance to page 2 so we can prove the size change resets to page 1.
+    fireEvent.click(screen.getByTestId('vuln-pager-next'));
+    await waitFor(() =>
+      expect(vi.mocked(listVulnerabilities).mock.calls.some(([, , f]) => f?.page === 1)).toBe(true),
+    );
+
+    // The "All (max 500)" choice maps to size 500 (the AMS cap), never more.
+    const select = screen.getByTestId('vuln-page-size-select') as HTMLSelectElement;
+    const allOption = within(select).getByText(/all \(max 500\)/i) as HTMLOptionElement;
+    expect(allOption.value).toBe('500');
+    fireEvent.change(select, { target: { value: '500' } });
+
+    // The next list call requests size 500 AND page 0 (reset).
+    await waitFor(() =>
+      expect(
+        vi.mocked(listVulnerabilities).mock.calls.some(([, , f]) => f?.size === 500 && f?.page === 0),
+      ).toBe(true),
+    );
+  });
+
+  // -- FIX 3: drop-reason split + relabel + the compact drop notes. --
+  it('FIX 3: splits Dropped into collapsed (relabelled) + unparseable and surfaces the report drop notes', async () => {
+    const summary: VulnerabilityReportSummaryDto = {
+      report: {
+        id: 'rep-drop',
+        project_id: PROJECT_ID,
+        architecture_id: ARCH_ID,
+        source: 'internal_report',
+        original_filename: 'big.csv',
+        format: 'csv',
+        uploaded_at: '2026-06-24T13:00:00Z',
+        is_latest: true,
+        row_count_ingested: 100,
+        row_count_dropped: 205,
+        parse_strategy: 'column_mapping',
+        notes: 'row 12: missing severity; row 40: unrecognised coordinate',
+      },
+      rows_received: 305,
+      ingested_count: 100,
+      dropped_duplicates: 197,
+      dropped_unparseable: 8,
+      matched_count: 60,
+      unmatched_count: 40,
+    };
+    vi.mocked(uploadVulnerabilityReport).mockResolvedValue(summary);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    const fileInput = screen.getByTestId('vuln-upload-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'big.csv', { type: 'text/csv' })] } });
+
+    const dropped = await screen.findByTestId('vuln-upload-dropped');
+    // The total + the split (197 collapsed + 8 unparseable).
+    expect(dropped).toHaveTextContent('205');
+    const collapsed = within(dropped).getByTestId('vuln-upload-dropped-collapsed');
+    expect(collapsed).toHaveTextContent('197');
+    // RELABELLED: collapsed (same CVE+coordinate) -- NOT "duplicates"/"lost".
+    expect(collapsed).toHaveTextContent(/collapsed \(same cve\+coordinate\)/i);
+    expect(collapsed).not.toHaveTextContent(/lost/i);
+    expect(within(dropped).getByTestId('vuln-upload-dropped-unparseable')).toHaveTextContent('8');
+    // The de-dup hint clarifies collapsed rows are not data loss.
+    expect(within(dropped).getByTestId('vuln-upload-dropped-hint')).toHaveTextContent(/not lost/i);
+
+    // The report's drop notes are surfaced (expandable) so the WHY is visible.
+    const notes = within(dropped).getByTestId('vuln-upload-dropped-notes');
+    expect(notes).toHaveTextContent(/missing severity/i);
+    expect(notes).toHaveTextContent(/unrecognised coordinate/i);
+  });
+
+  // -- FIX 4: the scan "nothing to scan" prerequisite message. --
+  it('FIX 4: a scan with zero queried coordinates shows the "run discovery first" prerequisite, distinct from an outage', async () => {
+    // A SUCCESSFUL scan (available:true) that queried NOTHING => the empty-SBOM
+    // prerequisite case: no current-state dependencies were discovered to scan.
+    // (An outage is available:false; this is a successful-but-empty scan.)
+    const nothing: ScanVulnerabilitiesResponse = {
+      status: 'ok',
+      availability: {
+        available: true,
+        reason: undefined,
+        note: 'Automated vulnerability enrichment ran: 0 findings from 0 advisories across 0 queried coordinates.',
+        queriesBuilt: 0,
+        excluded: 0,
+        advisoriesFound: 0,
+        rowsMinted: 0,
+        internalRowsEnriched: 0,
+        unknownFixRows: 0,
+      },
+    };
+    vi.mocked(scanVulnerabilities).mockResolvedValue(nothing);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+    fireEvent.click(screen.getByTestId('vuln-scan-button'));
+
+    const note = await screen.findByTestId('vuln-scan-nothing-to-scan');
+    // Actionable prerequisite, NOT the generic outage note.
+    expect(note).toHaveTextContent(/no current-state dependencies have been discovered/i);
+    expect(note).toHaveTextContent(/run a code\/dependency discovery first/i);
+    // Still informational (role="status"), never a blocking alert. The scan
+    // itself succeeded (available:true) -- it just had nothing to query.
+    expect(note.getAttribute('role')).toBe('status');
+    expect(note.getAttribute('data-available')).toBe('true');
+    expect(note.getAttribute('data-variant')).toBe('nothing-to-scan');
+    // It is NOT mislabelled as the advisory-source outage note.
+    expect(screen.queryByTestId('vuln-enrichment-unavailable')).toBeNull();
+  });
+
+  it('FIX 4: a genuine advisory-source outage (coordinates queried) KEEPS the existing unavailable note', async () => {
+    // available:false but queriesBuilt>0 => OSV/proxy outage, not "nothing to scan".
+    const outage: ScanVulnerabilitiesResponse = {
+      status: 'unavailable',
+      availability: {
+        available: false,
+        reason: 'proxy',
+        note: 'Automated enrichment unavailable (proxy). The Security view continues on the internal report alone; only the automated badged set is absent.',
+        queriesBuilt: 12,
+        excluded: 0,
+        advisoriesFound: 0,
+        rowsMinted: 0,
+        internalRowsEnriched: 0,
+        unknownFixRows: 0,
+      },
+    };
+    vi.mocked(scanVulnerabilities).mockResolvedValue(outage);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+    fireEvent.click(screen.getByTestId('vuln-scan-button'));
+
+    // The outage path keeps the existing unavailable note + testid.
+    const note = await screen.findByTestId('vuln-enrichment-unavailable');
+    expect(note).toHaveTextContent(/automated enrichment unavailable/i);
+    expect(note.getAttribute('data-variant')).toBe('unavailable');
+    // NOT misrouted to the prerequisite message.
+    expect(screen.queryByTestId('vuln-scan-nothing-to-scan')).toBeNull();
+  });
+});
+
+// ============================================================================
+// Keep-all-rows model: the two all-rows headlines, the self-consistent severity
+// TOTAL (== sum-of-tiles, NOT total_findings), the column-mapping transparency,
+// and a row surfacing a populated coordinate + module/location.
+// ============================================================================
+describe('SecurityView keep-all-rows model (headlines / self-consistent total / column mapping / location)', () => {
+  it('renders the two all-rows HEADLINE figures ("{n} findings" + "{n} distinct CVEs") from the server rollup, separate from the severity tiles', async () => {
+    // 90 kept rows, 61 distinct CVEs, but the unique-unit severity tiles sum to
+    // 30 -- the headlines are DISTINCT from the severity roll-up.
+    const dto: VulnerabilityRollupDto = {
+      report_id: 'rep-hl',
+      total: 90,
+      total_findings: 90,
+      distinct_cves: 61,
+      severity_counts: { info: 2, low: 3, medium: 10, high: 10, critical: 5 },
+      by_library: [],
+      unmatched: null,
+    };
+    vi.mocked(getVulnerabilityRollup).mockResolvedValue(dto);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    const headlines = await screen.findByTestId('vuln-rollup-headlines');
+    expect(within(headlines).getByTestId('vuln-headline-findings')).toHaveTextContent('90');
+    expect(within(headlines).getByTestId('vuln-headline-findings')).toHaveTextContent(/findings/i);
+    expect(within(headlines).getByTestId('vuln-headline-distinct-cves')).toHaveTextContent('61');
+    expect(within(headlines).getByTestId('vuln-headline-distinct-cves')).toHaveTextContent(
+      /distinct CVEs/i,
+    );
+  });
+
+  it('keeps the severity roll-up internally consistent: the TOTAL tile == the SUM of the (unique-unit) tiles, NOT total_findings', async () => {
+    // total_findings (90) deliberately DIVERGES from the severity-tile sum (30).
+    // The roll-up TOTAL must equal the SUM of the tiles (30), never 90.
+    const dto: VulnerabilityRollupDto = {
+      report_id: 'rep-consistent',
+      total: 90,
+      total_findings: 90,
+      distinct_cves: 61,
+      severity_counts: { info: 2, low: 3, medium: 10, high: 10, critical: 5 },
+      by_library: [],
+      unmatched: null,
+    };
+    vi.mocked(getVulnerabilityRollup).mockResolvedValue(dto);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('vuln-rollup-total').getAttribute('data-count')).toBe('30'),
+    );
+    // The TOTAL tile is the SUM of the (unique-unit) severity tiles (2+3+10+10+5
+    // = 30), and is DELIBERATELY NOT the all-rows total_findings (90).
+    const tileSum = (['info', 'low', 'medium', 'high', 'critical'] as const).reduce(
+      (acc, bucket) =>
+        acc + Number(screen.getByTestId(`vuln-rollup-${bucket}`).getAttribute('data-count')),
+      0,
+    );
+    expect(tileSum).toBe(30);
+    expect(screen.getByTestId('vuln-rollup-total').getAttribute('data-count')).not.toBe('90');
+    // The all-rows count surfaces ONLY via the separate headline.
+    expect(screen.getByTestId('vuln-headline-findings')).toHaveTextContent('90');
+  });
+
+  it('renders the upload column-mapping transparency (location_blob -> friendly "package coordinate (from Location)")', async () => {
+    const summary: VulnerabilityReportSummaryDto = {
+      report: {
+        id: 'rep-map',
+        project_id: PROJECT_ID,
+        architecture_id: ARCH_ID,
+        source: 'internal_report',
+        original_filename: 'sca.xlsx',
+        format: 'xlsx',
+        uploaded_at: '2026-06-24T14:00:00Z',
+        is_latest: true,
+        row_count_ingested: 4,
+        row_count_dropped: 0,
+        parse_strategy: 'column_mapping',
+        notes: null,
+      },
+      rows_received: 4,
+      ingested_count: 4,
+      dropped_duplicates: 0,
+      dropped_unparseable: 0,
+      matched_count: 4,
+      unmatched_count: 0,
+      parse_strategy: 'column_mapping',
+      column_mapping: {
+        CVE: 'cve_id',
+        Vulnerability: 'title',
+        Location: 'location_blob',
+        'Vulnerability ID': 'source_finding_id',
+      },
+    };
+    vi.mocked(uploadVulnerabilityReport).mockResolvedValue(summary);
+
+    renderView();
+    await screen.findAllByTestId('vuln-row');
+
+    const fileInput = screen.getByTestId('vuln-upload-file-input') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'sca.xlsx')] } });
+
+    const mapping = await screen.findByTestId('vuln-upload-column-mapping');
+    // Each source header -> canonical field is shown.
+    const rows = within(mapping).getAllByTestId('vuln-upload-column-mapping-row');
+    const pairs = rows.map((r) => [r.getAttribute('data-source-header'), r.getAttribute('data-target-field')]);
+    expect(pairs).toContainEqual(['CVE', 'cve_id']);
+    expect(pairs).toContainEqual(['Vulnerability', 'title']);
+    expect(pairs).toContainEqual(['Vulnerability ID', 'source_finding_id']);
+    // The Location -> location_blob sentinel is relabelled to a friendly phrase.
+    expect(mapping).toHaveTextContent(/package coordinate \(from Location\)/i);
+    expect(mapping).not.toHaveTextContent(/location_blob/i);
+  });
+
+  it('a finding row surfaces its populated coordinate AND its module/location secondary line', async () => {
+    // A dependency finding with a real coordinate AND a module/location.
+    const located = makeRow({
+      id: 'loc1',
+      cve_id: 'CVE-2024-9999',
+      title: 'Located finding',
+      severity: 'high',
+      affected_coordinate: 'org.example:libwidget',
+      location: 'services/checkout/pom.xml',
+      match_status: 'matched',
+      matched_library_id: 'lib-widget',
+    });
+    vi.mocked(listVulnerabilities).mockResolvedValue(listResponse([located]));
+
+    renderView();
+    const rows = await screen.findAllByTestId('vuln-row');
+    const row = rows.find((r) => r.getAttribute('data-vuln-id') === 'loc1')!;
+
+    // The real coordinate populates (not an em-dash placeholder).
+    expect(row).toHaveTextContent('org.example:libwidget');
+    // The module/location rides as a compact secondary line in the same row.
+    const location = within(row).getByTestId('vuln-row-location');
+    expect(location).toHaveTextContent('services/checkout/pom.xml');
   });
 });
