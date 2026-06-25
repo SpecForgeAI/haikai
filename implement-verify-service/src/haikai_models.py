@@ -62,6 +62,15 @@ class OrchestrationRequest(BaseModel):
         min_length=1,
         description="List of spec intents to orchestrate. Each pairs a spec folder name with its shape-spec session ID."
     )
+    batch_name: Optional[str] = Field(
+        default=None,
+        description=(
+            "When set, the spec_intents are treated as one tightly-coupled batch: "
+            "they accumulate as N commits onto a SINGLE branch `feature/<batch_name>` "
+            "(not a branch per spec), pushed + PR'd once at the end. Unset = legacy "
+            "per-spec branch/PR behaviour."
+        ),
+    )
     context_files: Optional[List[str]] = Field(
         default=None,
         description="List of paths to context files to include in requirements.md"
