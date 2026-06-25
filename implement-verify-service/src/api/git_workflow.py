@@ -41,6 +41,7 @@ def apply_git_workflow(
     *,
     commit_only: bool = False,
     checkout_back_to_default: bool = False,
+    push_pr_only: bool = False,
     error_label: Optional[str] = None,
 ) -> None:
     """Run the create-branch → commit → push → PR sequence.
@@ -70,6 +71,13 @@ def apply_git_workflow(
                          Used by `specs.py:write_spec_v2`, which only
                          records work-in-progress per spec
                          2026-03-15-deferred-branch-creation.
+        push_pr_only:    If True, the branch ALREADY exists and already carries
+                         its commits — skip create-branch + commit and only run
+                         push + PR (still gated by `auto_push`/`auto_pr`). NOT
+                         gated on a fresh commit SHA (there is none this call).
+                         Used by `tasks.py:_finalize_batch_git` to push the one
+                         shared batch branch + open a single PR after the run.
+                         Mutually exclusive with `commit_only`.
         checkout_back_to_default: If True, attempt
                          `git checkout <default_branch>` at the end.
                          Used by per-spec loops in orchestration.py +
@@ -80,6 +88,34 @@ def apply_git_workflow(
                          branch name.
     """
     label = error_label or branch
+
+    if push_pr_only:
+        # The branch is already created + committed (e.g. per-spec commit_only
+        # calls accumulated onto it). Push it + open one PR, reusing this helper's
+        # single error policy. No create, no commit, and NOT gated on a fresh sha.
+        try:
+            if response_obj is not None and hasattr(response_obj, "branch"):
+                response_obj.branch = branch
+            push_ok = False
+            if git_config is not None and git_config.auto_push:
+                gm.push_branch(branch)
+                push_ok = True
+            if push_ok and git_config is not None and git_config.auto_pr and pr_title:
+                pr_url = gm.create_pull_request(
+                    title=pr_title, branch=branch, body=pr_body or "",
+                )
+                if response_obj is not None and hasattr(response_obj, "pr_url"):
+                    response_obj.pr_url = pr_url
+            logger.info("Git workflow (push/PR only) OK for %s: branch=%s push=%s",
+                        label, branch, push_ok)
+        except (GitManagerError, GitConfigError) as e:
+            error_msg = f"Git workflow failed for {label}: {e}"
+            logger.error(error_msg)
+            if response_obj is not None and hasattr(response_obj, "errors"):
+                existing = getattr(response_obj, "errors", None) or []
+                existing.append(error_msg)
+                response_obj.errors = existing
+        return
 
     try:
         gm.create_feature_branch(branch)

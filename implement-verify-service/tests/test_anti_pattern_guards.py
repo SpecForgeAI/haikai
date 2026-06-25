@@ -380,6 +380,40 @@ class TestCommitAllPrecededByBranchCreation:
         )
 
 
+class TestPushPrGoThroughHelper:
+    """The git push + PR sequence has ONE home: `apply_git_workflow`
+    (`src/api/git_workflow.py`), with a single documented auto_push/auto_pr
+    gating + error-handling policy. A sibling that calls `gm.push_branch` /
+    `gm.create_pull_request` directly re-implements that policy and drifts
+    (the helper-exists-sibling-missed pattern). `_finalize_batch_git` was such
+    a sibling until it was folded into the helper via `push_pr_only=True`.
+
+    Only the helper itself and the `GitManager` definition may name these.
+    """
+
+    ALLOWED = {Path("src/api/git_workflow.py"), Path("src/git/git_manager.py")}
+
+    def test_push_and_pr_only_in_git_workflow_helper(self):
+        offenders = []
+        for p in (REPO_ROOT / "src").rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            rel = p.relative_to(REPO_ROOT)
+            if rel in self.ALLOWED:
+                continue
+            text = p.read_text(encoding="utf-8", errors="replace")
+            for i, l in enumerate(text.split("\n")):
+                if re.search(r"\.push_branch\(|\.create_pull_request\(", l):
+                    offenders.append(f"{rel}:{i + 1}: {l.strip()}")
+        assert offenders == [], (
+            "Found a direct `.push_branch(` / `.create_pull_request(` outside "
+            "apply_git_workflow. Route push+PR through "
+            "`apply_git_workflow(..., push_pr_only=True)` so the auto_push/"
+            "auto_pr gating + error policy stays in one home:\n"
+            + "\n".join(f"  {o}" for o in offenders)
+        )
+
+
 class TestMissingApiKeyUses503:
     """`structural_endpoints.py:372` set the precedent: missing-dependency
     errors return 503 ("operator action needed") not 500 ("server crash").
