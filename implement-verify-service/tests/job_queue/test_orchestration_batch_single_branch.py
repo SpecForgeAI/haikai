@@ -7,8 +7,12 @@ test_orchestration_multispec_b2.py.
 """
 from __future__ import annotations
 
-from src.job_queue.tasks import _git_one_spec, _finalize_batch_git
-from tests._realgit import seed_bare_remote, real_git_config, run_git
+import types
+
+from src.job_queue import tasks
+from src.job_queue.tasks import _git_one_spec, _finalize_batch_git, _deploy_completed_run
+from src.haikai_models import OrchestrationRequest, SpecIntent, OrchestrationOptions
+from tests._realgit import seed_bare_remote, real_git_config, run_git, local_repo_with_base, set_git_env
 
 BATCH = "checkout-feature"
 
@@ -73,3 +77,38 @@ def test_batch_single_branch_negative_control(tmp_path, monkeypatch):
 
     b_commit = run_git(["show", "--name-only", "--pretty=format:", f"feature/{BATCH}"], cwd=repo).split()
     assert b_commit == ["b.txt"], b_commit
+
+
+# ── deploy_on_complete: batch consolidates the ONE shared branch ─────────────
+
+def _deploy_branches_for(tmp_path, monkeypatch, *, batch_name):
+    """Run _deploy_completed_run with the haibox deploy daemon stubbed (a true
+    external) and capture which branches it was asked to consolidate."""
+    set_git_env(monkeypatch)
+    ws = tmp_path / "ws"
+    product = ws / "acme" / "shop"
+    local_repo_with_base(product)              # product root is a real git repo (single-repo target)
+    captured = {}
+    monkeypatch.setattr(
+        tasks, "consolidate_and_deploy",
+        lambda repo_dir, branches, target, **kw: captured.update(branches=branches) or {"base_url": "x"},
+    )
+    req = OrchestrationRequest(
+        company="acme", project="shop", batch_name=batch_name,
+        spec_intents=[SpecIntent(spec_name="ui-checkout"), SpecIntent(spec_name="svc-checkout")],
+        options=OrchestrationOptions(stop_on_error=True),
+        deploy_on_complete=True, target={"command": "echo hi"},
+    )
+    resp = types.SimpleNamespace(errors=[])
+    _deploy_completed_run(req, str(ws), resp)
+    return captured.get("branches")
+
+
+def test_batch_deploy_consolidates_single_branch(tmp_path, monkeypatch):
+    assert _deploy_branches_for(tmp_path, monkeypatch, batch_name="checkout") == ["feature/checkout"]
+
+
+def test_legacy_deploy_still_uses_per_spec_branches(tmp_path, monkeypatch):
+    assert _deploy_branches_for(tmp_path, monkeypatch, batch_name=None) == [
+        "feature/ui-checkout", "feature/svc-checkout",
+    ]

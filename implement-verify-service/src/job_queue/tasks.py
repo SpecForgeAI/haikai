@@ -965,6 +965,10 @@ def _deploy_completed_run(request: OrchestrationRequest, workspace_dir: str, res
     folder, repo_dir = targets[0]
     if request.integrate_branches:
         branches = request.integrate_branches
+    elif request.batch_name:
+        # Batch mode produced ONE shared branch carrying all specs' commits, not a
+        # branch per spec — consolidate that single branch (per-spec names don't exist).
+        branches = [_batch_branch(request.batch_name, folder)]
     elif folder is not None:
         branches = [f"feature/{si.spec_name}--{folder}" for si in request.spec_intents]
     else:
