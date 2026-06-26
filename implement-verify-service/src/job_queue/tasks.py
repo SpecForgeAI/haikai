@@ -163,24 +163,38 @@ def _resolve_git_targets(request: OrchestrationRequest, workspace_dir: str):
     return (git_config, targets), None
 
 
-def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
-    """Run create-branch → commit → push → PR for ONE spec across all repo targets,
-    APPENDING a per-(spec, repo) record to ``results`` — never collapsing to one
-    scalar (C1/L3: a multi-spec run raises N branches/PRs and must report them ALL;
-    the prior last-write-wins fold dropped every spec but the last).
+def _batch_branch(batch_name: str, folder) -> str:
+    """The single shared branch a batch accumulates onto (per repo target)."""
+    return f"feature/{batch_name}--{folder}" if folder is not None else f"feature/{batch_name}"
 
-    Called INTERLEAVED by ``run_workflow``'s ``on_spec_complete`` — right after a
-    spec is generated and BEFORE the next one — so ``git add -A`` (inside
-    ``apply_git_workflow``) stages only THIS spec's files (B2). Each spec gets its
-    own ``feature/<spec>`` branch off default; ``checkout_back_to_default`` resets
-    the tree for the next spec (Gary's independent-per-spec model).
+
+def _git_one_spec(git_config, targets, results: list, spec_name: str,
+                  batch_name: "str | None" = None) -> None:
+    """Commit ONE spec across all repo targets, appending a per-(spec, repo) record
+    to ``results`` (C1/L3: never collapse to one scalar).
+
+    Two modes:
+
+    * **Legacy per-spec** (``batch_name=None``): create-branch → commit → push → PR
+      onto the spec's own ``feature/<spec>`` branch, then ``checkout_back_to_default``
+      resets the tree for the next spec (Gary's independent-per-spec model).
+    * **Batch** (``batch_name`` set): commit ONLY (``commit_only=True``) onto the
+      SHARED ``feature/<batch_name>`` branch and do NOT reset between specs, so the
+      N specs accumulate as N commits on one branch. Push + a single PR are deferred
+      to ``_finalize_batch_git`` after the run. ``git add -A`` still captures only this
+      spec's change because the prior specs' files are already committed/clean (B2).
     """
     import types as _types
 
     from ..api.git_workflow import apply_git_workflow
 
+    batch = batch_name is not None
     for folder, repo_dir in targets:
-        if folder is not None:
+        if batch:
+            branch = _batch_branch(batch_name, folder)
+            error_label = f"{batch_name}:{spec_name}" + (f"/{folder}" if folder else "")
+            pr_title = None  # PR deferred to the batch finalize
+        elif folder is not None:
             branch = f"feature/{spec_name}--{folder}"
             error_label = f"{spec_name}/{folder}"
             pr_title = f"feature: {spec_name} ({folder})"
@@ -196,18 +210,6 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
             bitbucket_username=git_config.bitbucket_username,
             bitbucket_app_password=git_config.bitbucket_app_password,
         )
-        # Sync generated source files from product root into repo subdir so
-        # `git add -A` picks them up. Skip haikai/ metadata and coordination.yaml.
-        import shutil as _shutil
-        product_root = repo_dir.parent
-        for item in product_root.iterdir():
-            if item.name in {"coordination.yaml", "haikai", ".claude", "chat_logs", folder}:
-                continue
-            dst = repo_dir / item.name
-            if item.is_dir():
-                _shutil.copytree(item, dst, dirs_exist_ok=True)
-            else:
-                _shutil.copy2(item, dst)
         # Fresh per-(spec, repo) sink so apply_git_workflow's in-place mutation
         # captures THIS unit's branch/sha/pr/error, not a running last-write-wins.
         one = _types.SimpleNamespace(errors=[], commit_sha=None, branch=None, pr_url=None)
@@ -222,7 +224,8 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
             pr_title=pr_title,
             pr_body=f"Orchestration output for {spec_name}",
             response_obj=one,
-            checkout_back_to_default=True,
+            commit_only=batch,                 # batch: commit only, defer push+PR
+            checkout_back_to_default=not batch,  # batch: accumulate, don't reset
             error_label=error_label,
         )
         results.append({
@@ -230,6 +233,94 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str) -> None:
             "commit_sha": one.commit_sha, "pr_url": one.pr_url,
             "error": one.errors[0] if one.errors else None,
         })
+
+
+def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
+                        spec_names: "list[str]") -> None:
+    """After all specs in a batch have committed onto the shared branch, push it
+    and open exactly ONE PR per repo target. Appends a per-(batch, repo) record.
+
+    Skipped per target if no batch commit landed (nothing to push). Must run while
+    the per-project git lock is still held (it pushes the shared working tree)."""
+    import types as _types
+
+    from ..api.git_workflow import apply_git_workflow
+
+    body = "Batch orchestration. Specs (in order):\n" + "\n".join(
+        f"- {s}" for s in spec_names
+    )
+    for folder, repo_dir in targets:
+        branch = _batch_branch(batch_name, folder)
+        # only finalize a target that actually received a commit this run
+        committed = any(
+            r.get("repo") == folder and r.get("commit_sha") for r in results
+        )
+        if not committed:
+            continue
+        gm = GitManager(
+            project_dir=str(repo_dir),
+            provider=git_config.provider,
+            default_branch=git_config.default_branch,
+            github_token=git_config.github_token,
+            bitbucket_username=git_config.bitbucket_username,
+            bitbucket_app_password=git_config.bitbucket_app_password,
+        )
+        # Reuse the single git-sequence helper (push+PR only — the branch is
+        # already committed). Keeps the auto_push/auto_pr gating + error policy in
+        # ONE place (apply_git_workflow), not re-implemented here.
+        one = _types.SimpleNamespace(errors=[], commit_sha=None, branch=None, pr_url=None)
+        apply_git_workflow(
+            gm=gm,
+            git_config=git_config,
+            branch=branch,
+            commit_msg="",  # already committed by the per-spec commit_only calls
+            pr_title=f"feature: {batch_name}",
+            pr_body=body,
+            response_obj=one,
+            push_pr_only=True,
+            error_label=f"batch {batch_name}" + (f"/{folder}" if folder else ""),
+        )
+        results.append({
+            "spec": batch_name, "repo": folder, "branch": branch,
+            "commit_sha": None, "pr_url": one.pr_url,
+            "error": one.errors[0] if one.errors else None,
+        })
+
+
+def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
+                 cap: int = 10, timeout: int = 1800) -> tuple:
+    """Option C — per-spec verification gate + repair. Drive `/haikai:debug` →
+    `/haikai:fix` in ``repo_dir`` until the repo's own test suite is green, or the
+    cap is hit. `/haikai:fix` is TEST-GATED (keeps a change only if tests pass,
+    reverts otherwise — same idiom as `run_bug_investigation`), so the loop's
+    success signal is the verdict, not a git diff.
+
+    Returns ``(passed: bool, attempts: int, summary: str)``. The LLM executor is a
+    true external (stubbed in tests).
+    """
+    from src.backend_registry import _build_cli_executor
+
+    executor = _build_cli_executor(str(repo_dir), anthropic_api_key)
+    summary = ""
+    for attempt in range(1, max(1, cap) + 1):
+        command = (
+            "Run /haikai:debug then /haikai:fix so this repository's own test suite passes "
+            f"for the just-implemented spec '{spec_name}'. Use the repo's tests as the verify "
+            "metric; haikai:fix keeps a change ONLY if its tests pass and reverts otherwise. "
+            "Make the minimal change; do nothing if the suite is already green. "
+            "Report at the end exactly one line: VERDICT=PASS if the test suite is green, "
+            "or VERDICT=FAIL if it is not."
+        )
+        try:
+            result = executor.execute(command, timeout=timeout)
+        except Exception as exc:  # an executor blow-up is a failed attempt, not a crash
+            summary = f"repair attempt {attempt} error: {exc}"
+            logger.warning("repair %s attempt %d errored: %s", spec_name, attempt, exc)
+            continue
+        summary = (result.get("stdout") or "")[-2000:]
+        if result.get("success") and "VERDICT=PASS" in summary:
+            return True, attempt, summary
+    return False, cap, summary
 
 
 def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
@@ -388,13 +479,35 @@ def run_orchestration(job_id: str, storage: JobStorage):
         git_setup, git_err = _resolve_git_targets(request, workspace_dir)
         git_results: list = []  # C1/L3: one record per (spec, repo), never collapsed
 
+        batch_name = request.batch_name  # set => N specs accumulate onto one branch
+        # Option C: in batch mode, gate each spec on its own tests passing (repair
+        # via /haikai:debug+/haikai:fix) BEFORE committing it, so a red spec never
+        # reaches the single MR. Opt-out via BATCH_VERIFY_GATE=false.
+        gate_enabled = bool(batch_name) and os.getenv("BATCH_VERIFY_GATE", "true").lower() == "true"
+        repair_cap = int(os.getenv("BATCH_REPAIR_CAP", "10"))
+        batch_repair_failed: list = []
+
         def on_spec_complete(spec_name: str, spec_idx: int) -> bool:
             # Returns True if THIS spec's git failed (L4: lets run_workflow stop
             # further generation under stop_on_error).
             if git_setup is None:
                 return False
+            # Gate+repair this spec before it commits onto the batch branch.
+            if gate_enabled:
+                for _folder, _repo_dir in git_setup[1]:
+                    passed, attempts, _ = _repair_spec(
+                        _repo_dir, spec_name, anthropic_api_key, cap=repair_cap)
+                    _trace.detail("orchestration.gate",
+                                  {"spec": spec_name, "repo": _folder,
+                                   "passed": passed, "attempts": attempts}, _corr)
+                    if not passed:
+                        batch_repair_failed.append(spec_name)
+                        logger.error("Batch gate fail-stop: spec %s did not pass "
+                                     "after %d attempts — no MR", spec_name, attempts)
+                        return True  # stop the batch: no commit for this spec, no MR
             before = len(git_results)
-            _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name)
+            _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
+                          batch_name=batch_name)
             new = git_results[before:]
             # DETAIL: per-spec git result (branch/commit/PR/error) — concentrated
             # where the multi-spec branch/PR plumbing fails.
@@ -423,9 +536,23 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 on_step_complete=on_step_complete,
                 on_spec_complete=on_spec_complete,
             )
+            # Batch mode: all specs have committed onto the one shared branch; now
+            # push it + open exactly ONE PR per repo target. Inside the lock (R8) so
+            # a concurrent same-project job can't move the branch before we push.
+            # Gate (Option C): skip the MR entirely if any spec failed its gate.
+            if batch_name and git_setup is not None and not batch_repair_failed:
+                _finalize_batch_git(
+                    git_setup[0], git_setup[1], git_results, batch_name,
+                    [si.spec_name for si in request.spec_intents],
+                )
 
         # Fold the interleaved per-spec git results into the response.
         response.errors = list(response.errors or [])
+        if batch_repair_failed:
+            response.errors.append(
+                f"Batch verification gate (Option C): spec(s) {batch_repair_failed} did "
+                f"not pass after {repair_cap} repair attempts — no MR opened."
+            )
         if git_err:
             response.errors.append(git_err)
         else:
@@ -560,7 +687,7 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
         return
 
     try:
-        from src.claude_cli_executor import ClaudeCLIExecutor
+        from src.backend_registry import _build_cli_executor
         from src.safe_paths import UnsafePathError, safe_project_dir
 
         workspace_dir = Path(os.getenv("API_WORKSPACE_DIR", "."))
@@ -585,7 +712,7 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             f"verification_db={db_path}"
         )
         logger.info(f"Job {job_id}: launching verification-loop session: {command}")
-        executor = ClaudeCLIExecutor(str(project_dir), anthropic_api_key)
+        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
         result = executor.execute(command, timeout=payload.get("timeout_seconds", 1800))
 
         latest = storage.get_job(job_id)
@@ -908,6 +1035,10 @@ def _deploy_completed_run(request: OrchestrationRequest, workspace_dir: str, res
     folder, repo_dir = targets[0]
     if request.integrate_branches:
         branches = request.integrate_branches
+    elif request.batch_name:
+        # Batch mode produced ONE shared branch carrying all specs' commits, not a
+        # branch per spec — consolidate that single branch (per-spec names don't exist).
+        branches = [_batch_branch(request.batch_name, folder)]
     elif folder is not None:
         branches = [f"feature/{si.spec_name}--{folder}" for si in request.spec_intents]
     else:
@@ -1057,7 +1188,7 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
 
     summary, session_ok = "", False
     try:
-        from src.claude_cli_executor import ClaudeCLIExecutor
+        from src.backend_registry import _build_cli_executor
 
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
         # Drive haikai. The bug description is UNTRUSTED — fenced with an
@@ -1082,7 +1213,7 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
             "or VERDICT=NOFIX if a fix was warranted but none was kept."
         )
         logger.info(f"Job {job_id}: launching haikai bug investigation for {bug_id} in {project_dir}")
-        executor = ClaudeCLIExecutor(str(project_dir), anthropic_api_key)
+        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
         result = executor.execute(command, timeout=int((job.request_payload or {}).get("timeout_seconds", 1800)))
         session_ok = bool(result.get("success"))
         summary = (result.get("stdout") or "")[-2000:]
