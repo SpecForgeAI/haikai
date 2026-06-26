@@ -310,9 +310,9 @@ def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
     Returns ``(passed: bool, attempts: int, summary: str)``. The LLM executor is a
     true external (stubbed in tests).
     """
-    from src.claude_cli_executor import ClaudeCLIExecutor
+    from src.backend_registry import _build_cli_executor
 
-    executor = ClaudeCLIExecutor(str(repo_dir), anthropic_api_key)
+    executor = _build_cli_executor(str(repo_dir), anthropic_api_key)
     summary = ""
     for attempt in range(1, max(1, cap) + 1):
         command = (
@@ -699,7 +699,7 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
         return
 
     try:
-        from src.claude_cli_executor import ClaudeCLIExecutor
+        from src.backend_registry import _build_cli_executor
         from src.safe_paths import UnsafePathError, safe_project_dir
 
         workspace_dir = Path(os.getenv("API_WORKSPACE_DIR", "."))
@@ -724,7 +724,7 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             f"verification_db={db_path}"
         )
         logger.info(f"Job {job_id}: launching verification-loop session: {command}")
-        executor = ClaudeCLIExecutor(str(project_dir), anthropic_api_key)
+        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
         result = executor.execute(command, timeout=payload.get("timeout_seconds", 1800))
 
         latest = storage.get_job(job_id)
@@ -1200,7 +1200,7 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
 
     summary, session_ok = "", False
     try:
-        from src.claude_cli_executor import ClaudeCLIExecutor
+        from src.backend_registry import _build_cli_executor
 
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
         # Drive haikai. The bug description is UNTRUSTED — fenced with an
@@ -1225,7 +1225,7 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
             "or VERDICT=NOFIX if a fix was warranted but none was kept."
         )
         logger.info(f"Job {job_id}: launching haikai bug investigation for {bug_id} in {project_dir}")
-        executor = ClaudeCLIExecutor(str(project_dir), anthropic_api_key)
+        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
         result = executor.execute(command, timeout=int((job.request_payload or {}).get("timeout_seconds", 1800)))
         session_ok = bool(result.get("success"))
         summary = (result.get("stdout") or "")[-2000:]

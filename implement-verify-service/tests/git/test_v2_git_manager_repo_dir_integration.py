@@ -103,22 +103,32 @@ def test_require_git_manager_points_at_repo_folder_and_pull_succeeds(
     gm.pull_latest()
 
 
-def test_require_git_manager_rejects_polyrepo(tmp_path, monkeypatch, fake_git_config):
+def test_require_git_manager_accepts_polyrepo_uses_first_repo(
+    tmp_path, monkeypatch, fake_git_config
+):
+    # Polyrepo is now SUPPORTED: _require_git_manager no longer 400-rejects >1
+    # repo -- it builds the pre-flight GitManager for the FIRST repo folder, and
+    # the multi-repo iteration happens later in tasks._resolve_repo_targets. This
+    # guards the removal of the old "polyrepo not supported" rejection.
     monkeypatch.setattr(api, "API_WORKSPACE_DIR", tmp_path.resolve())
     monkeypatch.setattr(api, "load_git_config", lambda: fake_git_config)
 
     company, project = "acme", "multi"
     product_root = tmp_path / company / project
     product_root.mkdir(parents=True)
+    # coordination maps two repos; YAML insertion order = a then b
     (product_root / "coordination.yaml").write_text(
         'a: "https://example.com/a.git"\nb: "https://example.com/b.git"\n',
         encoding="utf-8",
     )
+    # the FIRST folder must be a real clone -- that's the one it pre-flights
+    remote = _make_remote_with_main(tmp_path)
+    _clone_into(remote, product_root / "a")
 
-    with pytest.raises(HTTPException) as ei:
-        api._require_git_manager(company, project)
-    assert ei.value.status_code == 400
-    assert "polyrepo" in str(ei.value.detail).lower()
+    gm = api._require_git_manager(company, project)  # must NOT raise
+
+    assert Path(gm.project_dir) == (product_root / "a").resolve()
+    assert (Path(gm.project_dir) / ".git").exists()
 
 
 def test_require_git_manager_uninitialized_is_400(tmp_path, monkeypatch, fake_git_config):
