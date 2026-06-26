@@ -379,3 +379,31 @@ def pending_cells_older_than(conn: sqlite3.Connection, cutoff_iso: str) -> list[
         (cutoff_iso,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def pending_cells(conn: sqlite3.Connection) -> list[dict]:
+    """Every cell whose LATEST verdict is `pending`, any age — the poll-fallback's
+    work-list (D9.1). Same projection as `pending_cells_older_than` without the
+    age cutoff."""
+    rows = conn.execute(
+        """
+        SELECT v.* FROM verdicts v
+        JOIN (SELECT orchestrate_id, task_group_id, repo, verifier, MAX(id) AS mid
+              FROM verdicts GROUP BY orchestrate_id, task_group_id, repo, verifier) last
+          ON v.id = last.mid
+        WHERE v.verdict = 'pending'
+        """,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def binding_for_cell(conn: sqlite3.Connection, orchestrate_id: str,
+                     task_group_id: str, repo: str) -> dict | None:
+    """The most recent ci_binding recorded for a cell's repo, or None. Lets the
+    poll-fallback recover the (provider, head_sha) it needs to query CI."""
+    row = conn.execute(
+        "SELECT * FROM ci_bindings WHERE orchestrate_id = ? AND task_group_id = ? AND repo = ?"
+        " ORDER BY rowid DESC LIMIT 1",
+        (orchestrate_id, task_group_id, repo),
+    ).fetchone()
+    return dict(row) if row else None

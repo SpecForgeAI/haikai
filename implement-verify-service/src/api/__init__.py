@@ -412,6 +412,12 @@ def _safe_project_dir(company: str, project: str) -> Path:
 # to be past their definition points before triggering the call.
 _recover_interrupted_jobs()
 
+# Start the async-verification liveness backstops (D10.5 TTL sweeper + D9.1
+# poll-fallback). Both existed but nothing drove them; this runs them on a timer
+# in a daemon thread. Off via VERIFY_MAINTENANCE=off.
+from src.verification.maintenance import start_background as _start_verify_maintenance
+_start_verify_maintenance()
+
 
 async def run_operation(request) -> OperationResponse:
     """
