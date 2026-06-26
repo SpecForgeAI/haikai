@@ -49,6 +49,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   triggerMigrate as defaultTriggerMigrate,
+  triggerMigrateSelected as defaultTriggerMigrateSelected,
   getLatestMigrationExecutionRun as defaultGetLatestRun,
   type MigrationDeliveryHierarchyNodeDto,
   type MigrationExecutionRunDto,
@@ -89,6 +90,17 @@ function collectStoryNodes(
   };
   walk(hierarchy);
   return out;
+}
+
+/** A branch-safe default batch name to prefill the "migrate selected" field. */
+function defaultBatchNameFor(bookId: string): string {
+  const short = (bookId || 'book').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toLowerCase();
+  const d = new Date();
+  const stamp =
+    `${d.getFullYear()}` +
+    `${String(d.getMonth() + 1).padStart(2, '0')}` +
+    `${String(d.getDate()).padStart(2, '0')}`;
+  return `migration-${short || 'book'}-${stamp}`;
 }
 
 /**
@@ -178,6 +190,11 @@ export interface MigrationDeliveryMigratePanelProps {
   project: string;
   /** Test seam: override the Migrate trigger. Defaults to the real client. */
   triggerMigrateFn?: typeof defaultTriggerMigrate;
+  /**
+   * Test seam: override the batch (migrate-selected) trigger. Defaults to the
+   * real client. Used by the additive "Migrate selected (one branch)" surface.
+   */
+  triggerMigrateSelectedFn?: typeof defaultTriggerMigrateSelected;
   /** Test seam: override the run-state read. Defaults to the real client. */
   fetchLatestRunFn?: typeof defaultGetLatestRun;
   /**
@@ -224,6 +241,7 @@ export const MigrationDeliveryMigratePanel: React.FC<
   company,
   project,
   triggerMigrateFn = defaultTriggerMigrate,
+  triggerMigrateSelectedFn = defaultTriggerMigrateSelected,
   fetchLatestRunFn = defaultGetLatestRun,
   onRunLoaded,
   onReviewCarryOver,
@@ -325,6 +343,92 @@ export const MigrationDeliveryMigratePanel: React.FC<
     }
   }, [triggerMigrateFn, projectId, bookId, company, project, loadRun]);
 
+  // ----- Migrate selected (batch -> one branch) ---------------------------
+  // The selectable set is the spec-ready, non-deferred stories (exactly the ones
+  // the gateway would dispatch). The user picks a subset; the chosen specs go to
+  // the implement-verify-service as ONE job -> one `feature/<batchName>` branch.
+  const selectableStories = useMemo(
+    () =>
+      collectStoryNodes(hierarchy).filter(
+        (n) =>
+          !!n.workItemId &&
+          !deferredWorkItemIds.has(n.workItemId) &&
+          isStorySpecReady(n),
+      ),
+    [hierarchy, deferredWorkItemIds],
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchName, setBatchName] = useState<string>(() => defaultBatchNameFor(bookId));
+  const [confirmBatchOpen, setConfirmBatchOpen] = useState<boolean>(false);
+
+  const toggleStory = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const allSelected =
+    selectableStories.length > 0 &&
+    selectableStories.every((n) => selectedIds.has(n.workItemId as string));
+
+  const toggleAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const everySelected =
+        selectableStories.length > 0 &&
+        selectableStories.every((n) => prev.has(n.workItemId as string));
+      return everySelected
+        ? new Set<string>()
+        : new Set(selectableStories.map((n) => n.workItemId as string));
+    });
+  }, [selectableStories]);
+
+  const handleConfirmMigrateSelected = useCallback(async () => {
+    setConfirmBatchOpen(false);
+    setLaunching(true);
+    setError(null);
+    setServerBlockReasons(null);
+    try {
+      const result: TriggerMigrateResult = await triggerMigrateSelectedFn(
+        projectId,
+        bookId,
+        {
+          company,
+          project,
+          selectedWorkItemIds: Array.from(selectedIds),
+          batchName: batchName.trim() || undefined,
+        },
+      );
+      if (result.status === 'started') {
+        setSelectedIds(new Set());
+        await loadRun();
+      } else if (result.status === 'blocked') {
+        setServerBlockReasons(result.reasons);
+      } else {
+        setError(result.message);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to start the batch migration run',
+      );
+    } finally {
+      setLaunching(false);
+    }
+  }, [
+    triggerMigrateSelectedFn,
+    projectId,
+    bookId,
+    company,
+    project,
+    selectedIds,
+    batchName,
+    loadRun,
+  ]);
+
   const items = run?.items ?? [];
 
   return (
@@ -354,6 +458,114 @@ export const MigrationDeliveryMigratePanel: React.FC<
         >
           {launching ? 'Starting…' : 'Migrate'}
         </button>
+      </div>
+
+      {/* ----- Migrate selected (batch -> one branch). Additive to the whole-book
+          Migrate above: pick a subset of spec-ready stories and send them to the
+          implement-verify-service as ONE job -> one feature branch + one MR. ----- */}
+      <div data-testid="mdd-migrate-selected" style={{ marginTop: '0.75rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <h3 className={styles.sectionTitle}>Migrate selected (one branch)</h3>
+          <button
+            type="button"
+            className={styles.bulkButton}
+            data-testid="mdd-migrate-selected-button"
+            disabled={selectedIds.size === 0 || launching}
+            onClick={() => setConfirmBatchOpen(true)}
+            title={
+              selectedIds.size === 0
+                ? 'Select one or more spec-ready stories to batch into a single branch.'
+                : `Send ${selectedIds.size} spec(s) as one feature branch.`
+            }
+          >
+            {launching ? 'Starting…' : `Migrate selected (${selectedIds.size})`}
+          </button>
+        </div>
+
+        {selectableStories.length === 0 ? (
+          <p data-testid="mdd-migrate-selected-empty">
+            No spec-ready, non-deferred stories are available to batch yet.
+          </p>
+        ) : (
+          <>
+            <label style={{ display: 'block' }}>
+              Branch name (feature/&lt;name&gt;):{' '}
+              <input
+                type="text"
+                value={batchName}
+                onChange={(e) => setBatchName(e.target.value)}
+                data-testid="mdd-migrate-batch-name-input"
+                aria-label="Batch branch name"
+              />
+            </label>
+            <label style={{ display: 'block' }}>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                data-testid="mdd-migrate-select-all"
+              />{' '}
+              Select all ({selectableStories.length})
+            </label>
+            <ul
+              className={styles.defineTestsBannerList}
+              data-testid="mdd-migrate-selectable-list"
+            >
+              {selectableStories.map((node) => {
+                const id = node.workItemId as string;
+                return (
+                  <li key={id}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(id)}
+                        onChange={() => toggleStory(id)}
+                        data-testid={`mdd-migrate-select-${id}`}
+                      />{' '}
+                      {node.title || id}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+
+        {confirmBatchOpen && (
+          <div
+            className={styles.summaryBanner}
+            role="status"
+            data-testid="mdd-migrate-batch-confirm"
+          >
+            <span>
+              Migrate {selectedIds.size} selected spec(s) as ONE batch onto a
+              single branch <code>feature/{batchName.trim() || '(auto)'}</code>{' '}
+              (one merge request), deploying once built?
+            </span>
+            <button
+              type="button"
+              className={styles.dialogPrimaryButton}
+              data-testid="mdd-migrate-batch-confirm-yes"
+              onClick={() => void handleConfirmMigrateSelected()}
+            >
+              Start batch migration
+            </button>
+            <button
+              type="button"
+              className={styles.headerNavLink}
+              data-testid="mdd-migrate-batch-confirm-cancel"
+              onClick={() => setConfirmBatchOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ----- Hard-block reason list (CD-7). Rendered whenever the client-side

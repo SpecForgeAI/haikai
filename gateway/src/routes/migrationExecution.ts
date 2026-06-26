@@ -133,6 +133,105 @@ migrationExecutionRouter.post(
 );
 
 // ---------------------------------------------------------------------------
+// POST .../migrate-selected -- batch migrate a SELECTED subset (one branch)
+// ---------------------------------------------------------------------------
+
+/** Slugify a user batch name into a git-branch-safe `feature/<name>` segment. */
+function sanitizeBatchName(raw?: string): string {
+  if (!raw || typeof raw !== 'string') return '';
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]+/g, '-')
+    .replace(/^[-/]+|[-/]+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 60);
+}
+
+/** A fallback batch name when the UI doesn't supply one (branch-safe + unique-ish). */
+function defaultBatchName(bookId: string): string {
+  const short = (bookId || 'book').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase();
+  return `migration-${short}-${Date.now().toString(36).slice(-4)}`;
+}
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/migrate-selected',
+  async (req: Request, res: Response) => {
+    const requestId = (req as { requestId?: string }).requestId ?? 'unknown';
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as {
+      company?: string;
+      project?: string;
+      selected_work_item_ids?: unknown;
+      batch_name?: string;
+    };
+
+    if (!body.company || typeof body.company !== 'string' || body.company.trim() === '') {
+      return res.status(400).json({ status: 'error', message: 'company is required' });
+    }
+    if (!body.project || typeof body.project !== 'string' || body.project.trim() === '') {
+      return res.status(400).json({ status: 'error', message: 'project is required' });
+    }
+
+    const selected = Array.isArray(body.selected_work_item_ids)
+      ? body.selected_work_item_ids.filter(
+          (id): id is string => typeof id === 'string' && id.trim() !== ''
+        )
+      : [];
+    if (selected.length === 0) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'selected_work_item_ids must contain at least one work item id',
+      });
+    }
+
+    const batchName = sanitizeBatchName(body.batch_name) || defaultBatchName(bookId);
+
+    const scope: MigrateScope = {
+      projectId,
+      bookId,
+      company: body.company,
+      project: body.project,
+      selectedWorkItemIds: selected,
+      batchName,
+    };
+
+    logger.info('[diag-gateway] migration_execution_driver migrate_selected_trigger', {
+      requestId,
+      projectId,
+      bookId,
+      company: body.company,
+      project: body.project,
+      selectedCount: selected.length,
+      batchName,
+    });
+
+    try {
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      const result = await startMigration(scope, deps);
+      if (result.status === 'started') {
+        return res.status(202).json({ ...result, batchName });
+      }
+      if (result.status === 'blocked') {
+        return res.status(409).json(result);
+      }
+      // status === 'error'
+      return res.status(422).json(result);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver migrate_selected_error', {
+        requestId,
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res
+        .status(500)
+        .json({ status: 'error', message: 'Failed to start the batch migration run' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
 // GET run-state (run + items) -- the run-progress view
 // ---------------------------------------------------------------------------
 

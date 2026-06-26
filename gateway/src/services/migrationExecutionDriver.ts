@@ -71,6 +71,7 @@ import {
 } from './migrationDriverAmsReads';
 import {
   submitOrchestration,
+  submitOrchestrationBatch,
   OrchestrationSubmitResult,
 } from './migrationOrchestrationSubmit';
 import { recordWorkItemImplementationError } from './migrationWorkItemErrorSink';
@@ -143,6 +144,17 @@ export interface MigrateScope {
   company: string;
   /** Normalised product (orchestration `project`). */
   project: string;
+  /**
+   * Subset migrate (2026-06-26): when non-empty, restrict the run to these work
+   * items. Omitted/empty = the whole book (legacy behaviour).
+   */
+  selectedWorkItemIds?: string[] | null;
+  /**
+   * Batch migrate (2026-06-26): when set (non-empty), all selected specs are
+   * submitted as ONE job -> one `feature/<batchName>` branch + one MR (instead
+   * of the sequential one-job-per-spec dispatch).
+   */
+  batchName?: string | null;
 }
 
 /** The injectable dependency surface (the DI seam for tests). */
@@ -157,6 +169,12 @@ export interface MigrationDriverDeps {
   patchMigrationExecutionRunItem: typeof patchMigrationExecutionRunItem;
   findMigrationRunItemByJobId: typeof findMigrationRunItemByJobId;
   submitOrchestration: typeof submitOrchestration;
+  /**
+   * Batch submit (2026-06-26, subset migrate -> one branch). Optional + lazily
+   * defaulted to {@link submitOrchestrationBatch} so existing deps mocks/call
+   * sites that predate batch mode keep compiling.
+   */
+  submitOrchestrationBatch?: typeof submitOrchestrationBatch;
   recordWorkItemImplementationError: typeof recordWorkItemImplementationError;
   /** The headless shape-spec auto-answerer (Group 4); mocked in tests. */
   autoAnswerer: ShapeSpecAutoAnswerer;
@@ -347,6 +365,12 @@ export function evaluateHardBlock(params: {
   deferredWorkItemIds: Set<string>;
   hasActiveCurrentBaseline: boolean;
   /**
+   * Subset migrate: when non-empty, only the SELECTED stories are gated for
+   * spec-readiness (unselected stories are out of this run's scope and must not
+   * block it). The baseline + carry_over dimensions are unaffected.
+   */
+  selectedWorkItemIds?: Set<string> | null;
+  /**
    * The carry_over completeness coverage result (D4). When supplied, EACH
    * un-accounted behaviour-bearing item (capability OR un-grouped finding) adds
    * a `carry_over_not_accounted` reason — surfaced in the SAME `reasons[]` list
@@ -356,6 +380,7 @@ export function evaluateHardBlock(params: {
   carryOverCoverage?: CarryOverCoverageResult;
 }): HardBlockResult {
   const reasons: HardBlockResult['reasons'] = [];
+  const hasSelection = !!params.selectedWorkItemIds && params.selectedWorkItemIds.size > 0;
 
   for (const item of params.items) {
     // Only leaf STORY/TEST nodes carry specs; structural nodes are scaffolding.
@@ -363,6 +388,9 @@ export function evaluateHardBlock(params: {
     const isStoryNode = !!item.workItemId;
     if (!isStoryNode) continue;
     if (isDeferred(item, params.deferredWorkItemIds)) continue; // deferred drops out
+    if (hasSelection && !params.selectedWorkItemIds!.has(item.workItemId as string)) {
+      continue; // out of the selected subset
+    }
     if (!isStorySpecReady(item, params.specGens)) {
       reasons.push({
         code: 'story_not_spec_ready',
@@ -419,13 +447,22 @@ export function buildOrderedDispatchSet(params: {
   book: BookOfWork;
   specGens: SpecGeneration[];
   deferredWorkItemIds: Set<string>;
+  /**
+   * Subset migrate: when non-empty, dispatch ONLY these work items (the rest of
+   * the book is out of scope for this run). Omitted/empty = the whole book.
+   */
+  selectedWorkItemIds?: Set<string> | null;
 }): DispatchDescriptor[] {
   const items = params.book.book_of_work_json?.items ?? [];
   const ordered = walkBookOfWorkItems(items);
+  const hasSelection = !!params.selectedWorkItemIds && params.selectedWorkItemIds.size > 0;
 
   const descriptors: DispatchDescriptor[] = [];
   for (const item of ordered) {
     if (isDeferred(item, params.deferredWorkItemIds)) continue;
+    if (hasSelection && (!item.workItemId || !params.selectedWorkItemIds!.has(item.workItemId))) {
+      continue; // out of the selected subset
+    }
     const specGen = resolveSpecText(item, params.specGens);
     if (!specGen) continue; // structural / spec-less node -- not dispatched
     descriptors.push({
@@ -465,6 +502,7 @@ export function defaultMigrationDriverDeps(
     patchMigrationExecutionRunItem,
     findMigrationRunItemByJobId,
     submitOrchestration,
+    submitOrchestrationBatch,
     recordWorkItemImplementationError,
     autoAnswerer,
     buildResultsCallbackUrl,
@@ -502,6 +540,13 @@ export async function startMigration(
   const workItems = await deps.fetchWorkItems(projectId);
   const deferredWorkItemIds = collectDeferredWorkItemIds(workItems);
 
+  // Subset / batch migrate (2026-06-26). A non-empty selection scopes the run to
+  // those work items; a non-empty batchName makes it a BATCH (all selected specs
+  // submitted as ONE job -> one `feature/<batchName>` branch).
+  const selectedSet = new Set((scope.selectedWorkItemIds ?? []).filter((id) => !!id));
+  const isSubset = selectedSet.size > 0;
+  const isBatch = !!(scope.batchName && scope.batchName.trim());
+
   // 2. Pin the active current-state baseline (the oracle). Its absence is a
   //    hard-block reason.
   const architectureId = book.current_architecture_id ?? null;
@@ -517,8 +562,11 @@ export async function startMigration(
   //    Fail-soft: a reads failure logs + yields an EMPTY (ok) coverage so a
   //    transient AMS hiccup never wrongly blocks Migrate (the spec-ready +
   //    baseline dimensions still gate).
+  // The carry_over completeness gate is a WHOLE-BOOK concern (is every
+  // behaviour-bearing item accounted for?). It does not apply to a subset
+  // migrate, so it is skipped when a selection is active.
   let carryOverCoverage: CarryOverCoverageResult | undefined;
-  if (architectureId) {
+  if (architectureId && !isSubset) {
     try {
       const coverageInputs = await gatherCarryOverCoverageInputs({
         projectId,
@@ -551,6 +599,7 @@ export async function startMigration(
     items,
     specGens,
     deferredWorkItemIds,
+    selectedWorkItemIds: selectedSet,
     hasActiveCurrentBaseline: !!baseline,
     carryOverCoverage,
   });
@@ -565,9 +614,19 @@ export async function startMigration(
   }
 
   // 4. Build the ordered dispatch set (excludes deferred, includes TEST).
-  const dispatchSet = buildOrderedDispatchSet({ book, specGens, deferredWorkItemIds });
+  const dispatchSet = buildOrderedDispatchSet({
+    book,
+    specGens,
+    deferredWorkItemIds,
+    selectedWorkItemIds: selectedSet,
+  });
   if (dispatchSet.length === 0) {
-    return { status: 'error', message: 'No dispatchable specs in the book of work' };
+    return {
+      status: 'error',
+      message: isSubset
+        ? 'No dispatchable specs in the selected work items'
+        : 'No dispatchable specs in the book of work',
+    };
   }
 
   // 5. Create the AMS run + ordered items atomically (deploy_on_complete only
@@ -623,16 +682,21 @@ export async function startMigration(
     arch: architectureId,
   });
 
-  // 6. Dispatch the FIRST spec via the detached background runner, then return
-  //    immediately. Progression across specs is event-driven on callbacks.
-  const firstItem = (run.items ?? []).find((i) => (i.sequence_position ?? -1) === 0);
-  if (firstItem && firstItem.id) {
-    kickSpecRunner(scope, run, firstItem, dispatchSet[0], deps);
+  // 6. Dispatch. BATCH mode auto-answers ALL selected specs then submits them as
+  //    ONE job (one branch); the sequential mode kicks the FIRST spec and
+  //    advances on each build-results callback. Both return immediately.
+  if (isBatch) {
+    kickBatchRunner(scope, run, run.items ?? [], dispatchSet, deps);
   } else {
-    logger.error('[diag-gateway] migration_execution_driver first_item_missing', {
-      projectId,
-      runId,
-    });
+    const firstItem = (run.items ?? []).find((i) => (i.sequence_position ?? -1) === 0);
+    if (firstItem && firstItem.id) {
+      kickSpecRunner(scope, run, firstItem, dispatchSet[0], deps);
+    } else {
+      logger.error('[diag-gateway] migration_execution_driver first_item_missing', {
+        projectId,
+        runId,
+      });
+    }
   }
 
   return { status: 'started', runId, itemCount: dispatchSet.length };
@@ -778,6 +842,181 @@ export async function runSpecSegment(
 }
 
 // ============================================================================
+// Batch dispatch (subset migrate -> ONE branch)
+// ============================================================================
+
+/**
+ * Kick the detached batch runner: auto-answer ALL selected specs, then ONE
+ * batched submit (one branch). Like {@link kickSpecRunner} it never throws.
+ */
+export function kickBatchRunner(
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  items: MigrationExecutionRunItem[],
+  descriptors: DispatchDescriptor[],
+  deps: MigrationDriverDeps
+): void {
+  void runBatchSegment(scope, run, items, descriptors, deps).catch((error) => {
+    logger.error('[diag-gateway] migration_execution_driver batch_runner_crashed', {
+      projectId: scope.projectId,
+      runId: run.id,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  });
+}
+
+/**
+ * The batch segment (subset migrate): auto-answer EVERY selected spec to
+ * materialise its folder, then submit them all as ONE coupled batch
+ * (`batch_name` -> one `feature/<batch_name>` branch, one MR). The single job_id
+ * is correlated onto ALL run-items; the one build-results callback completes the
+ * whole batch. A per-item answer failure halts the run cleanly (no partial
+ * submit), preserving per-item failure isolation.
+ */
+export async function runBatchSegment(
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  items: MigrationExecutionRunItem[],
+  descriptors: DispatchDescriptor[],
+  deps: MigrationDriverDeps
+): Promise<void> {
+  const { projectId } = scope;
+  const runId = run.id as string;
+  const batchName = (scope.batchName ?? '').trim();
+
+  await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.DISPATCHING });
+
+  const ordered = items
+    .slice()
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+
+  // Phase 1: auto-answer EVERY spec first (collect spec_name + session_id).
+  const resolved: Array<{
+    item: MigrationExecutionRunItem;
+    specName: string;
+    sessionId: string | null;
+  }> = [];
+  for (const item of ordered) {
+    const runItemId = item.id as string;
+    const descriptor = descriptors.find((d) => d.sequencePosition === item.sequence_position);
+    if (!descriptor) {
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        'Could not resolve generated_spec_text for a batched spec.');
+      return;
+    }
+    await safePatchItem(deps, projectId, runItemId, { status: RUN_ITEM_STATUS.ANSWERING });
+    let answer: ShapeSpecAnswerResult;
+    try {
+      answer = await deps.autoAnswerer.driveAndAnswer({
+        projectId,
+        company: scope.company,
+        project: scope.project,
+        runItemId,
+        generatedSpecText: descriptor.generatedSpecText,
+      });
+    } catch (error) {
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        `Shape-spec auto-answer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return;
+    }
+    if (!answer.ok || !answer.specName) {
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        answer.error ?? 'Shape-spec stream concluded without a folder (spec_name).');
+      if (answer.decisionLog && answer.decisionLog.length > 0) {
+        await safePatchItem(deps, projectId, runItemId, {
+          auto_answer_decision_log_json: answer.decisionLog,
+        });
+      }
+      return;
+    }
+    await safePatchItem(deps, projectId, runItemId, {
+      status: RUN_ITEM_STATUS.SUBMITTING,
+      spec_name: answer.specName,
+      auto_answer_decision_log_json: answer.decisionLog ?? null,
+    });
+    resolved.push({ item, specName: answer.specName, sessionId: answer.sessionId ?? null });
+  }
+
+  if (resolved.length === 0) {
+    await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
+    return;
+  }
+
+  // Phase 2: ONE batched submit (one branch). deploy_on_complete=true -> the
+  // subset deploys big-bang and a single `deployed` callback completes the run
+  // (same deploy + reconcile semantics as a whole-book migrate).
+  const submitBatch = deps.submitOrchestrationBatch ?? submitOrchestrationBatch;
+  let submit: OrchestrationSubmitResult;
+  try {
+    submit = await submitBatch({
+      company: scope.company,
+      project: scope.project,
+      specs: resolved.map((r) => ({ specName: r.specName, sessionId: r.sessionId })),
+      batchName,
+      deployOnComplete: true,
+      callbackUrl: deps.buildResultsCallbackUrl,
+    });
+  } catch (error) {
+    await haltBatch(deps, scope, runId, resolved.map((r) => r.item),
+      `Batch orchestration submit failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    return;
+  }
+
+  if (!submit.ok || !submit.jobId) {
+    await haltBatch(deps, scope, runId, resolved.map((r) => r.item),
+      `Batch orchestration submit was not accepted: ${submit.error ?? 'no job_id returned'}`);
+    return;
+  }
+
+  // Correlate the SINGLE job_id onto ALL items (the batch callback key).
+  for (const r of resolved) {
+    await safePatchItem(deps, projectId, r.item.id as string, {
+      dispatched: true,
+      job_id: submit.jobId,
+      status: RUN_ITEM_STATUS.SUBMITTED,
+    });
+  }
+
+  logger.info('[diag-gateway] migration_execution_driver batch_submitted', {
+    projectId,
+    runId,
+    jobId: submit.jobId,
+    specCount: resolved.length,
+    batchName,
+  });
+  trace.step(`batch dispatched — ${resolved.length} specs on feature/${batchName}`, {
+    run: runId,
+    job: submit.jobId,
+    project: scope.project,
+  });
+}
+
+/** Halt a batch run: mark the run halted + every supplied item FAILED. */
+async function haltBatch(
+  deps: MigrationDriverDeps,
+  scope: MigrateScope,
+  runId: string,
+  items: MigrationExecutionRunItem[],
+  message: string
+): Promise<void> {
+  for (const item of items) {
+    if (!item.id) continue;
+    await safePatchItem(deps, scope.projectId, item.id, {
+      status: RUN_ITEM_STATUS.FAILED,
+      outcome: 'failed',
+      error_detail: message,
+    });
+  }
+  await safePatchRun(deps, scope.projectId, runId, { status: RUN_STATUS.HALTED });
+  logger.warn('[diag-gateway] migration_execution_driver batch_halted', {
+    projectId: scope.projectId,
+    runId,
+    itemCount: items.length,
+    message,
+  });
+}
+
+// ============================================================================
 // Event-driven advance (consumed by the Group 3 build-results door)
 // ============================================================================
 
@@ -893,6 +1132,19 @@ export async function advanceRunOnBuildResult(
     return 'noop_idempotent';
   }
 
+  // Batch (subset migrate): N run-items share ONE job_id -> one branch. The
+  // single callback completes the WHOLE batch. Sequential runs always have a
+  // UNIQUE job_id per item, so this branch never affects them.
+  const batchSiblings = (run.items ?? []).filter(
+    (i) =>
+      i.id &&
+      i.job_id === jobId &&
+      !(i.outcome && (TERMINAL_OUTCOMES as readonly string[]).includes(i.outcome))
+  );
+  if (batchSiblings.length > 1) {
+    return await advanceBatchOnBuildResult(input, scope, run, batchSiblings, deps);
+  }
+
   // Any terminal outcome that is not implemented/deployed halts the run. The
   // external service reports `error` (build error) on the job path and may report
   // `fix_unserved` / `not_fixed` on the bug path; all fold here. Only `rejected`
@@ -974,6 +1226,103 @@ export async function advanceRunOnBuildResult(
   // final spec, the run is fully implemented; the submit that carried
   // deploy_on_complete handles the deploy (a `deployed` callback will follow).
   return await dispatchNext(scope, run, item, deps);
+}
+
+/**
+ * Complete a BATCH run on its single build-results callback. All N run-items
+ * share one job_id (one branch), so the one callback completes the whole batch:
+ *   - a halting outcome -> halt the run + mark EVERY sibling FAILED/REJECTED;
+ *   - `deployed` -> mark every sibling DEPLOYED, mark the run deployed + kick the
+ *     full-baseline reconcile (same hand-off as a whole-book migrate);
+ *   - `implemented` (defensive; the batch submits deploy_on_complete=true) ->
+ *     mark every sibling IMPLEMENTED (run fully implemented).
+ * Idempotent: once the siblings are terminal, a duplicate callback no-ops at the
+ * matched-item idempotency guard upstream.
+ */
+async function advanceBatchOnBuildResult(
+  input: BuildResultAdvanceInput,
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  siblings: MigrationExecutionRunItem[],
+  deps: MigrationDriverDeps
+): Promise<AdvanceDecision> {
+  const projectId = scope.projectId;
+  const runId = run.id as string;
+  const { outcome, jobId } = input;
+
+  if (outcome !== 'implemented' && outcome !== 'deployed') {
+    trace.fail(`batch build-results: ${outcome}`, {
+      run: runId,
+      job: jobId,
+      project: scope.project,
+    });
+    const status =
+      outcome === 'rejected' ? RUN_ITEM_STATUS.REJECTED : RUN_ITEM_STATUS.FAILED;
+    for (const s of siblings) {
+      if (!s.id) continue;
+      await safePatchItem(deps, projectId, s.id, {
+        status,
+        outcome,
+        error_detail: input.summary ?? `Build-results reported ${outcome}`,
+      });
+    }
+    await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
+    logger.warn('[diag-gateway] migration_execution_driver batch_halted_on_callback', {
+      projectId,
+      runId,
+      jobId,
+      outcome,
+      itemCount: siblings.length,
+    });
+    return 'halted';
+  }
+
+  if (outcome === 'deployed') {
+    for (const s of siblings) {
+      if (!s.id) continue;
+      await safePatchItem(deps, projectId, s.id, {
+        status: RUN_ITEM_STATUS.DEPLOYED,
+        outcome: 'deployed',
+        target_base_url: input.targetBaseUrl ?? null,
+        pr_url: input.prUrl ?? null,
+      });
+    }
+    await safePatchRun(deps, projectId, runId, {
+      status: RUN_STATUS.DEPLOYED,
+      target_base_url: input.targetBaseUrl ?? null,
+    });
+    logger.info('[diag-gateway] migration_execution_driver batch_deployed', {
+      projectId,
+      runId,
+      jobId,
+      itemCount: siblings.length,
+      targetBaseUrl: input.targetBaseUrl ?? null,
+    });
+    trace.ok(`batch deployed — ${siblings.length} specs`, {
+      run: runId,
+      job: jobId,
+      project: scope.project,
+    });
+    kickFullReconcile(scope, runId, deps);
+    return 'deployed_recorded';
+  }
+
+  // outcome === 'implemented' (defensive; the batch submits deploy_on_complete=true)
+  for (const s of siblings) {
+    if (!s.id) continue;
+    await safePatchItem(deps, projectId, s.id, {
+      status: RUN_ITEM_STATUS.IMPLEMENTED,
+      outcome: 'implemented',
+      pr_url: input.prUrl ?? null,
+    });
+  }
+  logger.info('[diag-gateway] migration_execution_driver batch_implemented', {
+    projectId,
+    runId,
+    jobId,
+    itemCount: siblings.length,
+  });
+  return 'advanced_run_complete';
 }
 
 /**

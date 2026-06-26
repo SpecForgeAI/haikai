@@ -974,6 +974,76 @@ export async function triggerMigrate(
 }
 
 /**
+ * Kick off a BATCH migration for a SELECTED subset of a book's work items.
+ *
+ * POST /api/v1/projects/{projectId}/migration-books-of-work/{bookId}/migrate-selected
+ *
+ * The selected stories' specs are submitted to the implement-verify-service as
+ * ONE job -> one `feature/<batchName>` branch + one merge request (instead of a
+ * job/branch per spec). Same hard-block semantics as {@link triggerMigrate} but
+ * scoped to the selection; `blocked`/`error` are mapped (not thrown) exactly as
+ * the whole-book trigger, and only a network failure rejects.
+ *
+ * @param projectId Project owning the book of work.
+ * @param bookId    GeneratedMigrationBookOfWork id.
+ * @param body      `{ company, project, selectedWorkItemIds, batchName? }`.
+ */
+export async function triggerMigrateSelected(
+  projectId: string,
+  bookId: string,
+  body: {
+    company: string;
+    project: string;
+    selectedWorkItemIds: string[];
+    batchName?: string;
+  },
+): Promise<TriggerMigrateResult> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}/migrate-selected`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      company: body.company,
+      project: body.project,
+      // snake_case on the wire (the gateway route reads selected_work_item_ids /
+      // batch_name per the AMS wire convention).
+      selected_work_item_ids: body.selectedWorkItemIds,
+      ...(body.batchName ? { batch_name: body.batchName } : {}),
+    }),
+  });
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // fall through to the status-based fallback below
+  }
+  const obj = (payload ?? {}) as Record<string, unknown>;
+
+  if (res.status === 202 || obj.status === 'started') {
+    return {
+      status: 'started',
+      runId: String(obj.runId ?? ''),
+      itemCount: typeof obj.itemCount === 'number' ? obj.itemCount : 0,
+    };
+  }
+  if (res.status === 409 || obj.status === 'blocked') {
+    return {
+      status: 'blocked',
+      reasons: Array.isArray(obj.reasons) ? (obj.reasons as MigrateBlockReason[]) : [],
+    };
+  }
+  return {
+    status: 'error',
+    message:
+      typeof obj.message === 'string' && obj.message
+        ? obj.message
+        : `Failed to start the batch migration run: ${res.status} ${res.statusText}`,
+  };
+}
+
+/**
  * Read the latest Migration Execution run + items for a book of work (the
  * dashboard's run-progress lookup).
  *
