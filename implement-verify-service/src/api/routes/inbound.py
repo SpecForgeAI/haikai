@@ -358,3 +358,78 @@ async def verification_events(orchestrate_id: str, after: int = 0, stream: bool 
             await asyncio.sleep(1)
 
     return StreamingResponse(_sse(), media_type="text/event-stream")
+
+
+# ── D6 typed progress stream ────────────────────────────────────────────────
+# The raw events endpoint above emits the event store verbatim. This one is the
+# UI-facing projection (spec D6): raw event kinds → typed frames, every frame
+# carrying the cells_done / cells_total counters the per-repo lanes render, and
+# `from_seq` resume.
+
+_FRAME_TYPE = {
+    "verdict_recorded": "verdict",
+    "reinvoke_requested": "reinvoke",
+    "reinvoke_failed": "reinvoke",
+    "repair_opened": "repair",
+    "finding_received": "finding",
+    "hook_fired": "hook",
+}
+
+
+def _frame(event: dict, done: int, total: int) -> dict:
+    try:
+        data = json.loads(event.get("payload_json") or "{}")
+    except (TypeError, ValueError):
+        data = {}
+    ftype = _FRAME_TYPE.get(event["kind"], event["kind"])
+    # an observer-drift hook (a late async verdict flipped a settled cell) is its
+    # own frame type, not a generic hook.
+    if event["kind"] == "hook_fired" and (
+        data.get("transition") == "observer-drift" or data.get("handler") == "observer-drift"
+    ):
+        ftype = "drift"
+    return {
+        "seq": event["id"],
+        "type": ftype,
+        "kind": event["kind"],
+        "task_group_id": event.get("task_group_id"),
+        "repo": event.get("repo"),
+        "ts": event.get("created_at"),
+        "data": data,
+        "cells_done": done,
+        "cells_total": total,
+    }
+
+
+@router.get("/api/v2/orchestrations/{orchestrate_id}/stream")
+async def orchestration_stream(orchestrate_id: str, from_seq: int = 0, stream: bool = False,
+                               authenticated: bool = Depends(verify_api_key)):
+    """D6 progress projection — typed frames + cells_done/cells_total, `from_seq`
+    resume. JSON (default) or SSE (`stream=true`). Bearer-auth."""
+    if not stream:
+        conn = store.connect()
+        try:
+            done, total = store.cell_progress(conn, orchestrate_id)
+            frames = [_frame(e, done, total) for e in store.events_since(conn, orchestrate_id, from_seq)]
+        finally:
+            conn.close()
+        return JSONResponse({"cells_done": done, "cells_total": total, "frames": frames})
+
+    async def _sse():
+        import asyncio
+
+        last = from_seq
+        for _ in range(3600):  # bounded long-poll loop
+            conn = store.connect()
+            try:
+                done, total = store.cell_progress(conn, orchestrate_id)
+                events = store.events_since(conn, orchestrate_id, last)
+            finally:
+                conn.close()
+            for event in events:
+                last = event["id"]
+                frame = _frame(event, done, total)
+                yield f"id: {frame['seq']}\nevent: {frame['type']}\ndata: {json.dumps(frame)}\n\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(_sse(), media_type="text/event-stream")
