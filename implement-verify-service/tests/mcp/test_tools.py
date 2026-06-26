@@ -33,7 +33,9 @@ def test_every_spec_is_callable():
 
 def test_destructive_tools_enforce_confirm():
     # Every tool flagged destructive must refuse to act without confirm=True.
+    # Two dummy positional args cover both 1-arg (runners) and 2-arg
+    # (project-scoped) verbs; require_confirm fires before either is used.
     for spec in TOOLS:
         if spec.destructive:
             with pytest.raises(ConfirmationRequired):
-                spec.fn(1, confirm=False)
+                spec.fn(1, 1, confirm=False)

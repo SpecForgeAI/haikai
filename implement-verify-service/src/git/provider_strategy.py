@@ -25,7 +25,7 @@ Spec: pass-3 deep-src-smells findings D-O1 (switch) and D-B3
 from __future__ import annotations
 
 from typing import Optional, Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
@@ -201,13 +201,11 @@ class BitbucketStrategy:
 
 
 class GitLabStrategy:
-    """gitlab.com over HTTPS with an `oauth2:<token>` scheme.
+    """gitlab.com (or self-hosted) over HTTPS with an `oauth2:<token>` scheme.
 
-    PR (merge-request) creation via the GitLab API is not implemented
-    yet — V2 workflow today calls push but skips the PR step for
-    GitLab. Adding it is straightforward (`POST
-    /api/v4/projects/:id/merge_requests`) but out of scope for this
-    refactor.
+    Merge-request creation posts to `POST /api/v4/projects/:id/merge_requests`
+    on the same host the repo lives on (so self-hosted instances work without
+    extra config). The project id is the URL-encoded `group/name` path.
     """
 
     def __init__(self, token: Optional[str]) -> None:
@@ -231,7 +229,31 @@ class GitLabStrategy:
         base_branch: str,
         body: str,
     ) -> str:
-        raise GitProviderStrategyError(
-            "GitLab merge-request creation not implemented yet — set "
-            "GIT_AUTO_PR=false for GitLab projects."
-        )
+        if not self.token:
+            raise GitProviderStrategyError(
+                "GitLab merge-request creation needs a token (set GITLAB_TOKEN)."
+            )
+        host, path = _parse_host_path(repo_url)
+        project = quote(path.strip("/"), safe="")  # URL-encoded group/name path
+        url = f"https://{host}/api/v4/projects/{project}/merge_requests"
+        headers = {"PRIVATE-TOKEN": self.token}
+        payload = {
+            "source_branch": branch,
+            "target_branch": base_branch,
+            "title": title,
+            "description": body,
+        }
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                return resp.json()["web_url"]
+        except httpx.HTTPStatusError as e:
+            detail = e.response.text[:500] if e.response.text else ""
+            raise GitProviderStrategyError(
+                f"GitLab API error {e.response.status_code}: {detail}"
+            ) from e
+        except httpx.RequestError as e:
+            raise GitProviderStrategyError(
+                f"GitLab API request failed: {e}"
+            ) from e
