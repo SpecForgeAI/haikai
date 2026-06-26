@@ -149,6 +149,12 @@ Do not ask the user questions - make reasonable assumptions based on best practi
                         logger.warning(f"Specs directory does not exist: {specs_dir}")
 
                 if spec_name and spec_path:
+                    # Persist session to spec folder (active_session.json) so the
+                    # orchestrator's session gate can find it later.
+                    try:
+                        cli_executor.persist_session_to_spec(spec_name)
+                    except Exception as session_err:
+                        logger.warning(f"Failed to persist session to spec: {session_err}")
                     result = ShapeSpecResult(
                         spec_name=spec_name,
                         spec_intent=spec_intent[:200] + "..." if len(spec_intent) > 200 else spec_intent,
@@ -190,6 +196,17 @@ Do not ask the user questions - make reasonable assumptions based on best practi
         total_time = (end_time - start_time).total_seconds()
 
         success = all(r.status == "success" for r in results)
+
+        # Create project-level active_session.json for the orchestrator's
+        # session gate (only on a fully-successful batch).
+        if success:
+            try:
+                from .. import API_WORKSPACE_DIR as _ws
+                from ...chat.session_store import create_active_session
+                from pathlib import Path
+                create_active_session(Path(_ws), request.company, request.project)
+            except Exception as e:
+                logger.warning(f"Failed to create active_session: {e}")
 
         return ShapeSpecResponse(
             success=success,
