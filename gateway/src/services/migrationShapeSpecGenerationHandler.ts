@@ -325,6 +325,13 @@ export interface LoadedBookOfWorkItem {
    * discovered stories.
    */
   kind?: string | null;
+  /**
+   * Free-form tags on the `book_of_work_json` blob item (e.g. `seed_build_files`,
+   * `stream:<name>`, `provenance:scaffold`). Spec 6's scaffold story marks itself
+   * with the `seed_build_files` TAG (its `kind` is `operational` to satisfy AMS
+   * `ALLOWED_KINDS`), so the verbatim-manifest carriage recognises it by tag.
+   */
+  tags?: string[] | null;
 }
 
 export interface LoadedBookOfWork {
@@ -850,6 +857,12 @@ const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfWorkId) 
         (obj.provenance as string | null | undefined) ?? null,
       kind:
         (obj.kind as string | null | undefined) ?? null,
+      // Spec 6: carry the blob item's tags so the verbatim-manifest carriage
+      // recognises the scaffold story by its `seed_build_files` tag (its `kind`
+      // is `operational` to satisfy AMS ALLOWED_KINDS).
+      tags: Array.isArray(obj.tags)
+        ? (obj.tags as unknown[]).map((t) => String(t))
+        : null,
     });
   }
   return {

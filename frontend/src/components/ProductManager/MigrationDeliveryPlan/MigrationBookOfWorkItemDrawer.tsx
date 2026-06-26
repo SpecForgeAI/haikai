@@ -23,6 +23,15 @@
  * attached to (`db_migration_packs.work_item_id`), the drawer shows a pack
  * chip with a download action. The parent supplies the attachment lookup +
  * the download handler; the drawer stays presentational.
+ *
+ * Spec 2026-06-26 Book-of-Work Scaffold + Reference Names (Task Group 4):
+ * an optional `resolveRef(type, id)` lookup is injected by the parent so the
+ * architecture-reference and discovery-finding-reference chips can render as
+ * human-readable `name (id)` / `title (id)` instead of raw UUIDs. The drawer
+ * stays presentational -- the lookup is injected, never fetched here -- and
+ * always falls back to the raw id on a miss (never blank). Only those two
+ * reference lists opt in; evidence / API-baseline / mapping / source-context
+ * chips render verbatim.
  */
 
 import React from 'react';
@@ -30,6 +39,17 @@ import type {
   MigrationBookOfWorkItem,
 } from '../../../api/migrationBookOfWorkApi';
 import styles from './MigrationBookOfWork.module.css';
+
+/**
+ * Render-time reference resolver injected by the parent. Returns a
+ * human-readable label (`"name (id)"` / `"title (id)"`) for a known id, or
+ * the raw id on a miss (never blank). Kept optional so the drawer remains a
+ * standalone presentational component.
+ */
+export type ResolveRefFn = (
+  type: 'architecture' | 'discoveryFinding',
+  id: string,
+) => string;
 
 export interface MigrationBookOfWorkItemDrawerProps {
   item: MigrationBookOfWorkItem | null;
@@ -40,27 +60,48 @@ export interface MigrationBookOfWorkItemDrawerProps {
   dbMigrationPack?: { packId: string; workItemId: string | null } | null;
   /** Download action for the attached pack's on-demand zip. */
   onDownloadDbMigrationPack?: (packId: string) => void;
+  /**
+   * Optional reference-name resolver. When supplied, the architecture and
+   * discovery-finding reference chips render `resolveRef(type, value)` (raw
+   * id on miss). Other reference lists ignore it and render verbatim.
+   */
+  resolveRef?: ResolveRefFn;
 }
 
 function RefChipList({
   label,
   values,
   testId,
+  resolveRef,
+  resolveType,
 }: {
   label: string;
   values: string[];
   testId: string;
+  /**
+   * When both `resolveRef` and `resolveType` are supplied, each chip renders
+   * `resolveRef(resolveType, value) ?? value` (raw id on miss, never blank).
+   * Omitted on the verbatim reference lists.
+   */
+  resolveRef?: ResolveRefFn;
+  resolveType?: 'architecture' | 'discoveryFinding';
 }): React.ReactElement | null {
   if (!values || values.length === 0) return null;
   return (
     <div className={styles.section} data-testid={testId}>
       <h3 className={styles.sectionTitle}>{label}</h3>
       <div>
-        {values.map((v) => (
-          <span key={v} className={styles.refChip} title={v}>
-            {v}
-          </span>
-        ))}
+        {values.map((v) => {
+          const display =
+            resolveRef && resolveType
+              ? resolveRef(resolveType, v) ?? v
+              : v;
+          return (
+            <span key={v} className={styles.refChip} title={display}>
+              {display}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -68,7 +109,7 @@ function RefChipList({
 
 export const MigrationBookOfWorkItemDrawer: React.FC<
   MigrationBookOfWorkItemDrawerProps
-> = ({ item, dbMigrationPack, onDownloadDbMigrationPack }) => {
+> = ({ item, dbMigrationPack, onDownloadDbMigrationPack, resolveRef }) => {
   if (!item) {
     return (
       <div className={styles.drawerEmpty} data-testid="item-drawer-empty">
@@ -213,6 +254,8 @@ export const MigrationBookOfWorkItemDrawer: React.FC<
           label="Architecture references"
           values={item.architectureReferences ?? []}
           testId="item-drawer-architecture-references"
+          resolveRef={resolveRef}
+          resolveType="architecture"
         />
         <RefChipList
           label="API baseline references"
@@ -223,6 +266,8 @@ export const MigrationBookOfWorkItemDrawer: React.FC<
           label="Discovery finding references"
           values={item.discoveryFindingReferences ?? []}
           testId="item-drawer-discovery-finding-references"
+          resolveRef={resolveRef}
+          resolveType="discoveryFinding"
         />
         <RefChipList
           label="Mapping references"

@@ -51,6 +51,15 @@ export interface CloseConversationFlowProps {
   onClose: (summaryMarkdown: string) => Promise<void> | void;
   onRetireAndStartNew: () => Promise<void> | void;
   /**
+   * Spec 2026-06-26-target-conversation-save-resume-plan-sourcing (FR3 / Q9):
+   * when the close gate is MET but the rest of the walk is still incomplete,
+   * the host passes this non-blocking completeness summary. It renders a
+   * warning + answered/next-gap note ABOVE the Save control but never disables
+   * it — the gate (`CLOSE_GATE_CODES`) remains the only hard requirement to
+   * Save. `null`/absent => no warning (walk exhausted or gate unmet).
+   */
+  incompleteSummary?: { answeredCount: number; nextDecisionCode?: string | null } | null;
+  /**
    * Spec 4 (Task Group 6) — the critical hard-gate inputs. ALL optional: when
    * `vulnerabilityDelta`, `projectId`, and `targetArchitectureId` are supplied
    * AND the delta carries a remaining critical CVE, the close button routes
@@ -115,6 +124,7 @@ export function CloseConversationFlow({
   isOwnedByCurrentUser,
   onClose,
   onRetireAndStartNew,
+  incompleteSummary = null,
   vulnerabilityDelta = null,
   projectId,
   targetArchitectureId,
@@ -173,8 +183,28 @@ export function CloseConversationFlow({
           style={{ fontSize: '0.85rem', color: '#57606a', margin: 0 }}
           data-testid="architect-conversation-close-gate-hint"
         >
-          Answer all required questions before closing: {unmetCodes.join(', ')}.
+          Answer all required questions before saving: {unmetCodes.join(', ')}.
         </p>
+      )}
+
+      {/* Spec FR3/Q9: the gate is met but the walk is not finished. NON-BLOCKING
+          completeness summary + warning -- Save stays enabled below. */}
+      {gateMet && incompleteSummary && (
+        <div
+          className={styles.banner}
+          role="status"
+          data-testid="architect-conversation-incomplete-warning"
+        >
+          <span>
+            You can save now, but the conversation is not complete yet.{' '}
+            {incompleteSummary.answeredCount} decision
+            {incompleteSummary.answeredCount === 1 ? '' : 's'} captured so far
+            {incompleteSummary.nextDecisionCode
+              ? ` (next: ${incompleteSummary.nextDecisionCode})`
+              : ''}
+            . You can reopen and continue later.
+          </span>
+        </div>
       )}
 
       {useGate ? (
@@ -186,7 +216,7 @@ export function CloseConversationFlow({
           proceedEnabled={gateMet && isOpen}
           onProceed={proceed}
           onOverridePersisted={onProceedCriticalOverridePersisted}
-          proceedLabel="Close conversation"
+          proceedLabel="Save Conversation"
         />
       ) : (
         <button
@@ -196,12 +226,12 @@ export function CloseConversationFlow({
           onClick={() => void proceed()}
           title={
             !gateMet
-              ? `Close gate not met: missing ${unmetCodes.join(', ')}`
-              : 'Close conversation with full summary'
+              ? `Save gate not met: missing ${unmetCodes.join(', ')}`
+              : 'Save the conversation with its full summary'
           }
           data-testid="architect-conversation-close-button"
         >
-          Close conversation
+          Save Conversation
         </button>
       )}
     </div>

@@ -57,7 +57,8 @@ public record ArchitectureDto(
     String draftState,
     Instant createdAt,
     Instant updatedAt,
-    Long elementCount
+    Long elementCount,
+    Instant conversationSavedAt
 ) {
 
     /**
@@ -104,5 +105,34 @@ public record ArchitectureDto(
             Instant updatedAt) {
         this(id, projectId, name, description, tags, archived, kind, draftState,
             createdAt, updatedAt, null);
+    }
+
+    /**
+     * Backward-compatible 11-arg constructor preserving the pre-conversation-
+     * save-marker signature (the canonical form prior to the Target-State
+     * Conversation Save/Resume/Plan-Sourcing spec, 2026-06-26). Delegates to
+     * the canonical 12-arg constructor with {@code conversationSavedAt}
+     * defaulted to {@code null}.
+     *
+     * <p>Added so existing callers that build the DTO via the 11-arg signature
+     * (e.g. {@code TargetArchitecturePromoteService#listTargets} prior to this
+     * change, the Terraform export fixtures, and clone/seed test fixtures)
+     * continue to compile and run without modification -- same compatibility
+     * pattern as the 8-arg + 10-arg overloads above.</p>
+     */
+    public ArchitectureDto(
+            UUID id,
+            UUID projectId,
+            String name,
+            String description,
+            List<String> tags,
+            Boolean archived,
+            String kind,
+            String draftState,
+            Instant createdAt,
+            Instant updatedAt,
+            Long elementCount) {
+        this(id, projectId, name, description, tags, archived, kind, draftState,
+            createdAt, updatedAt, elementCount, null);
     }
 }

@@ -60,6 +60,10 @@ import {
   listDbMigrationPacks,
   type DbMigrationPackDto,
 } from '../../../api/dbMigrationPackApi';
+import {
+  listArchitectures,
+  type Architecture,
+} from '../../../api/architecturesApi';
 import MigrationBookOfWorkHierarchyTree from './MigrationBookOfWorkHierarchyTree';
 import MigrationBookOfWorkFilters, {
   EMPTY_FILTERS,
@@ -345,6 +349,82 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       cancelled = true;
     };
   }, [projectId]);
+
+  // ----- Architecture name resolution (Spec 2026-06-26, Task Group 4) -----
+  // One `listArchitectures(projectId)` fetch serves BOTH the inspector's
+  // architecture-reference chips (via `resolveRef`) and the header's
+  // current/target arch ids. Soft-fails to an empty list so every arch id
+  // falls back to its raw UUID -- never blank, never blocking.
+  const [architectures, setArchitectures] = useState<Architecture[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void listArchitectures(projectId)
+      .then((list) => {
+        if (!cancelled) setArchitectures(list);
+      })
+      .catch(() => {
+        /* soft-fail: raw arch ids everywhere */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const archNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of architectures) {
+      if (a && typeof a.id === 'string' && typeof a.name === 'string') {
+        m.set(a.id, a.name);
+      }
+    }
+    return m;
+  }, [architectures]);
+
+  // Discovery-finding titles come from the already-loaded create-time
+  // snapshot (`generationSummary.findingsCoverage.findings`) -- ZERO new
+  // fetch. Findings without a usable title fall back to the raw id.
+  const findingTitleById = useMemo(() => {
+    const m = new Map<string, string>();
+    const findings =
+      draft?.generationSummary?.findingsCoverage?.findings ?? [];
+    for (const f of findings) {
+      if (
+        f &&
+        typeof f.id === 'string' &&
+        typeof f.title === 'string' &&
+        f.title.length > 0
+      ) {
+        m.set(f.id, f.title);
+      }
+    }
+    return m;
+  }, [draft?.generationSummary]);
+
+  // Render-time resolver injected into the presentational drawer. Returns
+  // `"name (id)"` / `"title (id)"` on a hit and the raw id on a miss (never
+  // blank). Only architecture + discovery-finding refs opt in.
+  const resolveRef = useCallback(
+    (type: 'architecture' | 'discoveryFinding', id: string): string => {
+      if (type === 'architecture') {
+        const name = archNameById.get(id);
+        return name ? `${name} (${id})` : id;
+      }
+      const title = findingTitleById.get(id);
+      return title ? `${title} (${id})` : id;
+    },
+    [archNameById, findingTitleById],
+  );
+
+  // Header arch-id formatter (FR7): same `listArchitectures` result, raw-id
+  // fallback on miss / fetch failure.
+  const formatArchId = useCallback(
+    (id: string | null | undefined): string => {
+      if (!id) return id ?? '';
+      const name = archNameById.get(id);
+      return name ? `${name} (${id})` : id;
+    },
+    [archNameById],
+  );
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [dialogMode, setDialogMode] = useState<SaveToBacklogMode>('all');
   const [saveResponse, setSaveResponse] = useState<SaveToBacklogResponse | null>(
@@ -857,8 +937,15 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           </h1>
           <p className={styles.workspaceSubtitle}>
             Status: <code>{draft.status}</code> &middot;{' '}
-            Current arch: {draft.currentArchitectureId} &middot;{' '}
-            Target arch: {draft.targetArchitectureId}
+            Current arch:{' '}
+            <span data-testid="review-current-arch">
+              {formatArchId(draft.currentArchitectureId)}
+            </span>{' '}
+            &middot;{' '}
+            Target arch:{' '}
+            <span data-testid="review-target-arch">
+              {formatArchId(draft.targetArchitectureId)}
+            </span>
             {findingsCoverage && (
               <span data-testid="review-coverage-summary">
                 {' '}
@@ -1052,6 +1139,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         >
           <MigrationBookOfWorkItemDrawer
             item={selectedItem}
+            resolveRef={resolveRef}
             dbMigrationPack={(() => {
               if (!selectedItem) return null;
               const attached = dbMigrationPacks.find(

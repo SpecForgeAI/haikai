@@ -43,7 +43,7 @@ import {
   MigrationDiscoveryContextRequest,
 } from './migrationDiscoveryContextClient';
 import {
-  fetchActiveTargetArchitectureId,
+  fetchMostRecentSavedTargetArchitectureId,
   fetchLatestCapturedDecisions,
   TargetStateCapturedDecision,
 } from './targetStateCapturedDecisionsClient';
@@ -748,8 +748,8 @@ export class MigrationSpecContextResolver implements ContextResolver {
  *      includeSuperseded=false when the query parameter is absent)
  *
  * Returns three distinct outputs depending on state (Q12 from the requirements):
- *   - 'no target architecture defined yet'  -- active target architecture id is null
- *   - 'no decisions captured yet'           -- active target exists but list is empty
+ *   - 'no target architecture defined yet'  -- most-recent-saved target id is null
+ *   - 'no decisions captured yet'           -- saved target exists but list is empty
  *   - a bounded grouped-by-scope markdown summary, architecture-wide block first,
  *     then per-service / per-interface / per-element overrides (each non-empty
  *     scope rendered as its own subsection). Each line carries decisionCode,
@@ -815,37 +815,40 @@ async function fetchTier2FreeFactLabels(
 
 export class TargetStateDecisionsContextResolver implements ContextResolver {
   async resolve(projectId: string, _threadKey: string): Promise<string> {
-    let activeTargetId: string | null;
+    // Spec 2026-06-26 Task Group 3: source the plan from the most-recent-SAVED
+    // target conversation (decoupled from the "active" target architecture) so
+    // decisions authored against an un-promoted draft are visible to the plan.
+    let savedTargetId: string | null;
     try {
-      const response = await fetchActiveTargetArchitectureId(projectId);
-      activeTargetId = response?.activeTargetArchitectureId ?? null;
+      const response = await fetchMostRecentSavedTargetArchitectureId(projectId);
+      savedTargetId = response?.savedTargetArchitectureId ?? null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.debug('Target state decisions context: active target lookup failed', {
+      logger.debug('Target state decisions context: saved target lookup failed', {
         projectId,
         error: message,
       });
       console.warn(
-        `[diag-gw] resolver=target-state-decisions-context result=fallback reason=active_target_lookup_error`,
+        `[diag-gw] resolver=target-state-decisions-context result=fallback reason=saved_target_lookup_error`,
       );
       return `Target state decisions context unavailable: ${message}`;
     }
 
-    if (!activeTargetId) {
+    if (!savedTargetId) {
       console.log(
-        `[diag-gw] resolver=target-state-decisions-context result=ok reason=no_active_target`,
+        `[diag-gw] resolver=target-state-decisions-context result=ok reason=no_saved_conversation`,
       );
       return 'no target architecture defined yet';
     }
 
     let decisions: TargetStateCapturedDecision[];
     try {
-      decisions = await fetchLatestCapturedDecisions(projectId, activeTargetId);
+      decisions = await fetchLatestCapturedDecisions(projectId, savedTargetId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.debug('Target state decisions context: captured-decisions list failed', {
         projectId,
-        activeTargetId,
+        savedTargetId,
         error: message,
       });
       console.warn(
@@ -864,7 +867,9 @@ export class TargetStateDecisionsContextResolver implements ContextResolver {
     // Spec 2026-06-26 Task Group 7: read the persisted Tier-2 "free facts"
     // (manifest-declared tech outside the 51 questions) and feed them into the
     // prompt-ready output. Fail-soft inside the helper (no facts -> no section).
-    const tier2Facts = await fetchTier2FreeFactLabels(projectId, activeTargetId);
+    // Fetched against the SAME resolved saved target so decisions + facts bind
+    // to one target and cannot diverge (Task Group 3).
+    const tier2Facts = await fetchTier2FreeFactLabels(projectId, savedTargetId);
     const text = buildTargetStateDecisionsPromptText(decisions, tier2Facts);
     console.log(
       `[diag-gw] resolver=target-state-decisions-context result=ok char_count=${text.length} decision_count=${decisions.length} tier2_fact_count=${tier2Facts.length}`,
@@ -1071,9 +1076,10 @@ function renderDecisionBody(d: TargetStateCapturedDecision): string {
  * The AMS DTO field `project_parent_folder` IS the organisation root per
  * audit finding 1 (the naming predates the org/project hierarchy).
  *
- * Scoped to the project's active target architecture via
- * `fetchActiveTargetArchitectureId` (mirrors Spec 2's resolver pattern per
- * Q17). Returns:
+ * Scoped to the project's most-recent-saved target architecture via
+ * `fetchMostRecentSavedTargetArchitectureId` (Spec 2026-06-26 Task Group 3 --
+ * bound to the SAME id the decisions resolver uses so they cannot diverge).
+ * Returns:
  *   - the raw markdown content when the file exists,
  *   - the distinct sentinel "no migration target tech stack written yet"
  *     when the file is absent (distinguishable from empty / fetch-failed),
@@ -1092,23 +1098,32 @@ export class TargetTechStackContextResolver implements ContextResolver {
 
   async resolve(projectId: string, _threadKey: string): Promise<string> {
     // ---------------------------------------------------------------
-    // Resolve the active target architecture id -- the file is named
-    // after it. Mirrors the TargetStateDecisionsContextResolver shape.
+    // Resolve the most-recent-saved target architecture id -- the file is
+    // named after it. Mirrors the TargetStateDecisionsContextResolver shape.
     // ---------------------------------------------------------------
-    let activeTargetId: string | null;
+    // Spec 2026-06-26 Task Group 3: resolve the most-recent-SAVED target (the
+    // file is named after it). Bound to the SAME id the decisions resolver uses
+    // so decisions + tech-stack cannot diverge across "active" vs "saved".
+    let savedTargetId: string | null;
     try {
-      const response = await fetchActiveTargetArchitectureId(projectId);
-      activeTargetId = response?.activeTargetArchitectureId ?? null;
+      const response = await fetchMostRecentSavedTargetArchitectureId(projectId);
+      savedTargetId = response?.savedTargetArchitectureId ?? null;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      logger.debug('Target tech stack context: active target lookup failed', {
+      logger.debug('Target tech stack context: saved target lookup failed', {
         projectId,
         error: message,
       });
+      console.warn(
+        `[diag-gw] resolver=target-tech-stack-context result=fallback reason=saved_target_lookup_error`,
+      );
       return `Target tech stack context unavailable: ${message}`;
     }
 
-    if (!activeTargetId) {
+    if (!savedTargetId) {
+      console.log(
+        `[diag-gw] resolver=target-tech-stack-context result=ok reason=no_saved_conversation`,
+      );
       return 'no migration target tech stack written yet';
     }
 
@@ -1153,7 +1168,7 @@ export class TargetTechStackContextResolver implements ContextResolver {
     // file. Distinct miss message lets prompt readers tell the
     // file-absent case apart from empty-file / fetch-failed.
     // ---------------------------------------------------------------
-    const filename = `target-tech-stack-${activeTargetId.toLowerCase()}.md`;
+    const filename = `target-tech-stack-${savedTargetId.toLowerCase()}.md`;
     const filePath = path.join(orgRoot, safeName, 'agent-os', 'product', filename);
 
     if (this.perInvocationCache.has(filePath)) {

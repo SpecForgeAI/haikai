@@ -169,6 +169,59 @@ export function resolveTagsFromBody(body: Record<string, unknown> | undefined): 
 }
 
 // ---------------------------------------------------------------------------
+// Service-id resolution from the multipart body (Spec 2026-06-26 —
+// target-manifest-service-association)
+// ---------------------------------------------------------------------------
+//
+// PARALLEL to the tag seam above: the per-manifest target Service element id
+// (the FK persisted as `target_service_element_id`) arrives as a companion form
+// field. Two shapes are accepted, mirroring `resolveTagsFromBody`:
+//   1. Positional `serviceIds` list aligned with the file parts.
+//   2. A JSON `serviceIdsByFilename` object mapping `originalname` -> serviceId,
+//      which wins over the positional list. THIS is the shape the frontend sends.
+//
+// Unlike the tag (which is required and drops an untagged manifest), the service
+// id is a NULLABLE FK at this layer: a missing id resolves to `null` rather than
+// dropping the manifest (the UI enforces required-ness; AMS owns ownership
+// validation).
+
+interface ResolvedServiceIds {
+  positional: string[];
+  byFilename: Record<string, string>;
+}
+
+export function resolveServiceIdsFromBody(
+  body: Record<string, unknown> | undefined,
+): ResolvedServiceIds {
+  const positional: string[] = [];
+  const rawIds = body?.serviceIds;
+  if (Array.isArray(rawIds)) {
+    for (const v of rawIds) positional.push(typeof v === 'string' ? v : '');
+  } else if (typeof rawIds === 'string') {
+    positional.push(rawIds);
+  }
+
+  let byFilename: Record<string, string> = {};
+  const rawByFilename = body?.serviceIdsByFilename;
+  if (typeof rawByFilename === 'string' && rawByFilename.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawByFilename);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        for (const [k, val] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof val === 'string') byFilename[k] = val;
+        }
+      }
+    } catch {
+      // Malformed serviceIdsByFilename is ignored (positional list still applies);
+      // a manifest left without a service id simply carries a null FK.
+      byFilename = {};
+    }
+  }
+
+  return { positional, byFilename };
+}
+
+// ---------------------------------------------------------------------------
 // Response shape
 // ---------------------------------------------------------------------------
 
@@ -330,6 +383,8 @@ export function toTargetManifestArtifactInput(
     resolved_dependencies: artifact.resolvedDependencies.map(
       (d) => ({ ...d }) as Record<string, unknown>,
     ),
+    // Per-manifest FK to the chosen target-state `services` element (nullable).
+    target_service_element_id: artifact.targetServiceElementId ?? null,
     // Upload-global Tier-2 free facts (same set carried on every per-tag row).
     tier2_facts: tier2Facts.map((f) => ({ ...f })),
   };
@@ -566,9 +621,15 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
     deps,
   );
 
+  // Resolve the per-manifest target Service element id from the body (parallel
+  // to the tag seam) and carry it onto each confirmed artifact (-> the persisted
+  // `target_service_element_id` FK). Keyed by `manifestPath` (== file
+  // `originalname`), with a positional fallback.
+  const serviceIds = resolveServiceIdsFromBody(body);
   const confirmedManifests = buildConfirmedManifestArtifacts(
     parseResult.parsedManifests,
     orchestrated.resolvedManifests,
+    (manifestPath, index) => pickServiceId(serviceIds, manifestPath, index),
   );
 
   // -------------------------------------------------------------------------
@@ -651,6 +712,25 @@ function pickTag(tags: ResolvedTags, originalName: string, index: number): strin
     return positional.trim();
   }
   return '';
+}
+
+/**
+ * Resolve the per-manifest target Service element id (the nullable FK), parallel
+ * to {@link pickTag}: `serviceIdsByFilename` wins, then the positional list, else
+ * `null` (a missing id is a null FK, NOT a drop).
+ */
+function pickServiceId(
+  serviceIds: ResolvedServiceIds,
+  originalName: string,
+  index: number,
+): string | null {
+  const byName = serviceIds.byFilename[originalName];
+  if (typeof byName === 'string' && byName.trim().length > 0) return byName.trim();
+  const positional = serviceIds.positional[index];
+  if (typeof positional === 'string' && positional.trim().length > 0) {
+    return positional.trim();
+  }
+  return null;
 }
 
 function logDrop(dropped: UnparsedManifest, logContext: Record<string, string>): void {

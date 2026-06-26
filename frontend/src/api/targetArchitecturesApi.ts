@@ -92,6 +92,15 @@ export interface TargetArchitectureDto {
    * as `0`.
    */
   elementCount: number | null;
+  /**
+   * Save marker for the target-state architect conversation. ISO-8601 instant
+   * of the most recent "Save Conversation" stamp (AMS `conversation_saved_at`),
+   * or `null` when the conversation has never been saved. Drives the
+   * saved-conversation indicator/filter in the drafts list and the view-only
+   * resume landing. Spec 2026-06-26-target-conversation-save-resume-plan-sourcing
+   * (FR2/FR6). May be `null` when an older AMS build has not yet surfaced it.
+   */
+  conversationSavedAt?: string | null;
 }
 
 /** Seed mode discriminator -- mirrors the AMS request contract. */
@@ -178,6 +187,11 @@ interface TargetArchitectureWireDto {
   // globally so the canonical inbound key is `element_count`.
   elementCount?: number | null;
   element_count?: number | null;
+  // Spec 2026-06-26-target-conversation-save-resume-plan-sourcing (FR2): the
+  // conversation save marker. AMS emits snake_case (`conversation_saved_at`) by
+  // default; camelCase is accepted for parity with the other tolerant readers.
+  conversationSavedAt?: string | null;
+  conversation_saved_at?: string | null;
 }
 
 // ============================================================================
@@ -219,6 +233,13 @@ function readElementCount(wire: TargetArchitectureWireDto): number | null {
   return value;
 }
 
+function readConversationSavedAt(wire: TargetArchitectureWireDto): string | null {
+  // Tolerant of either wire casing; anything non-string lands as null ("never
+  // saved"), matching the elementCount/draftState "unknown -> null" degrade.
+  const value = wire.conversationSavedAt ?? wire.conversation_saved_at ?? null;
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 export function mapTargetArchitectureWireToDto(
   wire: TargetArchitectureWireDto,
 ): TargetArchitectureDto {
@@ -234,6 +255,7 @@ export function mapTargetArchitectureWireToDto(
     createdAt: wire.createdAt,
     updatedAt: wire.updatedAt,
     elementCount: readElementCount(wire),
+    conversationSavedAt: readConversationSavedAt(wire),
   };
 }
 

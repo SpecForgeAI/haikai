@@ -39,6 +39,7 @@ public record TargetManifestArtifactDto(
     String packageLockContent,
     List<Map<String, Object>> resolvedDependencies,
     List<Map<String, Object>> tier2Facts,
+    UUID targetServiceElementId,
     Boolean isLatest,
     Instant createdAt
 ) {
@@ -61,6 +62,7 @@ public record TargetManifestArtifactDto(
             e.getPackageLockContent(),
             e.getResolvedDependencies() == null ? List.of() : e.getResolvedDependencies(),
             e.getTier2Facts() == null ? List.of() : e.getTier2Facts(),
+            e.getTargetServiceElementId(),
             e.getIsLatest(),
             e.getCreatedAt()
         );

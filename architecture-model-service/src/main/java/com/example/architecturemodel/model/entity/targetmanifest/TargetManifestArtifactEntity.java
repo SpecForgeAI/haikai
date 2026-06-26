@@ -162,6 +162,27 @@ public class TargetManifestArtifactEntity {
     private List<Map<String, Object>> tier2Facts = new ArrayList<>();
 
     /**
+     * Logical foreign key to the target-state Application-domain {@code services}
+     * element (the codebase that builds this service) the manifest is bound to.
+     * Replaces the brittle free-text {@link #tag} association on new uploads and
+     * is the data-model foundation for precise scaffold-story homing.
+     *
+     * <p>LOGICAL FK only -- there is NO physical DB foreign-key constraint,
+     * because the referenced {@code services} elements are soft-deleted
+     * (archived), not hard-deleted; cleanup is logical (this column is nulled on
+     * archive of the chosen element). Validated at write to belong to the path
+     * {@code targetArchitectureId} and be non-archived. Nullable -- legacy rows
+     * read back null (no backfill); UI-required going forward. NO
+     * {@code @Builder.Default}.</p>
+     *
+     * <p>Spec: Target Manifest -&gt; Service Association (Foreign Key) (2026-06-26)
+     * -- Task Group 1. Snake_case wire ({@code targetServiceElementId} -&gt;
+     * {@code target_service_element_id}); NO {@code @CamelCaseWire}.</p>
+     */
+    @Column(name = "target_service_element_id")
+    private UUID targetServiceElementId;
+
+    /**
      * Latest-version flag. Exactly one row per
      * {@code (project_id, target_architecture_id, tag)} carries {@code true} at
      * a time; re-upload flips the prior latest to {@code false}. Defaults to

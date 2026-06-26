@@ -38,6 +38,21 @@ function pkgFile(name = 'package.json'): File {
   return new File(['{}'], name, { type: 'application/json' });
 }
 
+// The draft target architecture's services (the picker option list). The first
+// option carries a `repoSubfolder` of 'orders-service', so the derived tag is
+// exactly 'orders-service' (FR5) — matching the prior free-text tag value.
+const SERVICES = [
+  { id: 'svc-orders', name: 'Orders Service', repoSubfolder: 'orders-service' },
+  { id: 'svc-web', name: 'Web BFF', repoSubfolder: 'web-bff' },
+];
+
+/** Choose the Orders service in the picker for the manifest at `index`. */
+function pickOrdersService(index = 0): void {
+  fireEvent.change(screen.getByTestId(`manifest-service-select-${index}`), {
+    target: { value: 'svc-orders' },
+  });
+}
+
 function makeResponse(
   overrides: Partial<TargetManifestUploadResponse> = {},
 ): TargetManifestUploadResponse {
@@ -105,21 +120,24 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
   it('(a) requires a module/service tag per selected manifest before submit', async () => {
     const { deps, uploadSpy } = makeDeps(makeResponse());
     render(
-      <ManifestUploadPanel projectId={PROJECT} targetArchitectureId={ARCH} deps={deps} />,
+      <ManifestUploadPanel
+        projectId={PROJECT}
+        targetArchitectureId={ARCH}
+        services={SERVICES}
+        deps={deps}
+      />,
     );
 
     const input = screen.getByTestId('manifest-file-input') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [pomFile()] } });
 
-    // Selected, but no tag yet → submit disabled + a tag warning shown.
+    // Selected, but no service chosen yet → submit disabled + a warning shown.
     const submit = screen.getByTestId('manifest-upload-submit') as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(screen.getByTestId('manifest-tag-warning')).toBeTruthy();
 
-    // Supply a tag → submit enables.
-    fireEvent.change(screen.getByTestId('manifest-tag-input-0'), {
-      target: { value: 'orders-service' },
-    });
+    // Pick the target service → submit enables.
+    pickOrdersService();
     expect(submit.disabled).toBe(false);
 
     fireEvent.click(submit);
@@ -144,15 +162,18 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
     });
     const { deps } = makeDeps(response);
     render(
-      <ManifestUploadPanel projectId={PROJECT} targetArchitectureId={ARCH} deps={deps} />,
+      <ManifestUploadPanel
+        projectId={PROJECT}
+        targetArchitectureId={ARCH}
+        services={SERVICES}
+        deps={deps}
+      />,
     );
 
     fireEvent.change(screen.getByTestId('manifest-file-input'), {
       target: { files: [pomFile()] },
     });
-    fireEvent.change(screen.getByTestId('manifest-tag-input-0'), {
-      target: { value: 'orders-service' },
-    });
+    pickOrdersService();
     fireEvent.click(screen.getByTestId('manifest-upload-submit'));
 
     // Parsed manifest row shows its tag + a "parsed" status.
@@ -172,6 +193,7 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
       <ManifestUploadPanel
         projectId={PROJECT}
         targetArchitectureId={ARCH}
+        services={SERVICES}
         sessionId="sess-1"
         deps={deps}
       />,
@@ -180,9 +202,7 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
     fireEvent.change(screen.getByTestId('manifest-file-input'), {
       target: { files: [pomFile()] },
     });
-    fireEvent.change(screen.getByTestId('manifest-tag-input-0'), {
-      target: { value: 'orders-service' },
-    });
+    pickOrdersService();
     fireEvent.click(screen.getByTestId('manifest-upload-submit'));
 
     // The auto-answered decision shows its single resolved chip + manifest provenance.
@@ -251,6 +271,7 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
       <ManifestUploadPanel
         projectId={PROJECT}
         targetArchitectureId={ARCH}
+        services={SERVICES}
         sessionId="sess-1"
         deps={deps}
       />,
@@ -259,9 +280,7 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
     fireEvent.change(screen.getByTestId('manifest-file-input'), {
       target: { files: [pkgFile()] },
     });
-    fireEvent.change(screen.getByTestId('manifest-tag-input-0'), {
-      target: { value: 'orders-service' },
-    });
+    pickOrdersService();
     fireEvent.click(screen.getByTestId('manifest-upload-submit'));
 
     // The unknown answer renders the explicit "(version unknown)" chip + affordance.
@@ -307,6 +326,7 @@ describe('ManifestUploadPanel (Spec 2026-06-26, TG9 provenance + Tier-2 free fac
       <ManifestUploadPanel
         projectId={PROJECT}
         targetArchitectureId={ARCH}
+        services={SERVICES}
         sessionId="sess-1"
         deps={made.deps}
       />,
@@ -314,9 +334,7 @@ describe('ManifestUploadPanel (Spec 2026-06-26, TG9 provenance + Tier-2 free fac
     fireEvent.change(screen.getByTestId('manifest-file-input'), {
       target: { files: [pomFile()] },
     });
-    fireEvent.change(screen.getByTestId('manifest-tag-input-0'), {
-      target: { value: 'orders-service' },
-    });
+    pickOrdersService();
     fireEvent.click(screen.getByTestId('manifest-upload-submit'));
     return made;
   }

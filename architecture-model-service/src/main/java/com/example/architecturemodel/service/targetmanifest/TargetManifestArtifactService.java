@@ -1,8 +1,13 @@
 package com.example.architecturemodel.service.targetmanifest;
 
+import com.example.architecturemodel.exception.ValidationException;
 import com.example.architecturemodel.model.dto.targetmanifest.TargetManifestArtifactDto;
 import com.example.architecturemodel.model.dto.targetmanifest.TargetManifestArtifactInput;
+import com.example.architecturemodel.model.entity.ModelFileEntity;
+import com.example.architecturemodel.model.entity.ServiceEntity;
 import com.example.architecturemodel.model.entity.targetmanifest.TargetManifestArtifactEntity;
+import com.example.architecturemodel.repository.ModelFileRepository;
+import com.example.architecturemodel.repository.entity.ServiceRepository;
 import com.example.architecturemodel.repository.targetmanifest.TargetManifestArtifactRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,8 +45,18 @@ import java.util.UUID;
  * {@code (project_id, target_architecture_id)} -- the verbatim bytes the
  * producer emits into the generated target codebase.
  *
+ * <h2>Service-element ownership validation (Spec 2026-06-26, Task Group 2)</h2>
+ * Every non-null {@code target_service_element_id} carried by an artifact is
+ * validated UP-FRONT (before any row is written) to resolve to a {@code services}
+ * element that belongs to the path {@code targetArchitectureId} and is live
+ * (still present -- elements are soft-deleted by removal, so a removed/archived
+ * element no longer resolves). An unknown, removed/archived, or
+ * cross-architecture id is rejected with a {@link ValidationException} (HTTP
+ * 400) so a dangling logical FK is NEVER persisted.
+ *
  * <p>Spec: Confirmed Manifest Producer Wiring (2026-06-25, Spec 5 Phase 2) --
- * Task Group 1.</p>
+ * Task Group 1. Extended: Target Manifest -&gt; Service Association (Foreign Key)
+ * (2026-06-26) -- Task Group 2 (ownership validation + logical FK cleanup).</p>
  */
 @Service
 @ConditionalOnProperty(
@@ -53,6 +69,8 @@ import java.util.UUID;
 public class TargetManifestArtifactService {
 
     private final TargetManifestArtifactRepository repository;
+    private final ModelFileRepository modelFileRepository;
+    private final ServiceRepository serviceRepository;
 
     /**
      * Persist the confirmed manifest artifacts for a target architecture,
@@ -62,6 +80,12 @@ public class TargetManifestArtifactService {
      * Artifacts with a blank tag are SKIPPED (and logged) -- the tag is the
      * latest-flip + per-module placement key and must be present; nothing is
      * silently dropped without a log line.
+     *
+     * <p>Every non-null {@code target_service_element_id} is validated UP-FRONT
+     * (before any write) to belong to the path {@code targetArchitectureId} and
+     * to still resolve to a live {@code services} element; an unknown,
+     * removed/archived, or cross-architecture id aborts the whole write with a
+     * {@link ValidationException} so no dangling logical FK is persisted.</p>
      *
      * @param projectId            the owning project
      * @param targetArchitectureId the owning target architecture
@@ -74,6 +98,17 @@ public class TargetManifestArtifactService {
                                                          List<TargetManifestArtifactInput> artifacts) {
         List<TargetManifestArtifactInput> inputs =
             artifacts == null ? List.of() : artifacts;
+
+        // Validate EVERY non-null service-element FK up-front, before a single
+        // row is written, so a reject leaves the store untouched (no partial
+        // persist, no dangling FK).
+        for (TargetManifestArtifactInput input : inputs) {
+            if (input != null) {
+                validateServiceElementOwnership(
+                    projectId, targetArchitectureId, input.targetServiceElementId());
+            }
+        }
+
         int received = inputs.size();
         int persisted = 0;
         int skipped = 0;
@@ -122,6 +157,7 @@ public class TargetManifestArtifactService {
                     ? new ArrayList<>() : new ArrayList<>(input.resolvedDependencies()))
                 .tier2Facts(input.tier2Facts() == null
                     ? new ArrayList<>() : new ArrayList<>(input.tier2Facts()))
+                .targetServiceElementId(input.targetServiceElementId())
                 .isLatest(Boolean.TRUE)
                 .build();
             repository.save(entity);
@@ -134,6 +170,99 @@ public class TargetManifestArtifactService {
             projectId, targetArchitectureId, received, persisted, skipped);
 
         return findLatest(projectId, targetArchitectureId);
+    }
+
+    /**
+     * Ownership guard for a single artifact's {@code target_service_element_id}.
+     * A {@code null} id is allowed (the FK is optional on the wire / legacy
+     * rows). A non-null id MUST resolve to a {@code services} element that
+     * belongs to the model file of the path {@code (projectId,
+     * targetArchitectureId)} and still exists. Because {@code services} elements
+     * are soft-deleted by removal (no per-row {@code archived} flag; a removed
+     * element has no row), an archived element fails the {@code findById} lookup
+     * and is rejected exactly like an unknown id. A live element belonging to a
+     * DIFFERENT architecture fails the model-file match and is rejected as
+     * cross-architecture.
+     *
+     * @throws ValidationException (HTTP 400) when the id is unknown,
+     *         removed/archived, or cross-architecture.
+     */
+    private void validateServiceElementOwnership(UUID projectId,
+                                                 UUID targetArchitectureId,
+                                                 UUID serviceElementId) {
+        if (serviceElementId == null) {
+            return;
+        }
+
+        ModelFileEntity modelFile = modelFileRepository
+            .findByProjectIdAndArchitectureId(projectId, targetArchitectureId)
+            .orElseThrow(() -> new ValidationException(
+                "services", "service_element_not_in_architecture", "target_service_element_id",
+                serviceElementId.toString(), null,
+                "Target service element " + serviceElementId
+                    + " cannot be validated: no model file for project " + projectId
+                    + " architecture " + targetArchitectureId));
+
+        ServiceEntity service = serviceRepository.findById(serviceElementId.toString())
+            .orElseThrow(() -> new ValidationException(
+                "services", "service_element_not_found", "target_service_element_id",
+                serviceElementId.toString(), null,
+                "Target service element " + serviceElementId
+                    + " not found (unknown or archived)"));
+
+        if (!modelFile.getId().equals(service.getModelFileId())) {
+            throw new ValidationException(
+                "services", "service_element_not_in_architecture", "target_service_element_id",
+                serviceElementId.toString(), service.getName(),
+                "Target service element " + serviceElementId
+                    + " does not belong to architecture " + targetArchitectureId);
+        }
+    }
+
+    /**
+     * Logical FK cleanup on archive (removal) of a single target-state
+     * {@code services} element: null {@code target_service_element_id} on every
+     * dependent manifest row (latest and history) so the logical FK never
+     * dangles. There is NO physical DB foreign key (elements are soft-deleted,
+     * not hard-deleted), so this is the cascade.
+     *
+     * @param serviceElementId the archived/removed service element id (no-op if
+     *                         {@code null})
+     * @return the number of manifest rows whose FK was nulled
+     */
+    @Transactional
+    public int onServiceElementArchived(UUID serviceElementId) {
+        if (serviceElementId == null) {
+            return 0;
+        }
+        int cleared = repository.clearTargetServiceElementId(serviceElementId);
+        if (cleared > 0) {
+            log.info("Target manifest FK cleanup: nulled target_service_element_id on {} "
+                + "manifest row(s) for archived service element {}", cleared, serviceElementId);
+        }
+        return cleared;
+    }
+
+    /**
+     * Batch variant of {@link #onServiceElementArchived(UUID)} for the
+     * whole-model save path which removes several {@code services} elements at
+     * once. Null/empty input is a no-op.
+     *
+     * @param serviceElementIds the archived/removed service element ids
+     * @return the number of manifest rows whose FK was nulled
+     */
+    @Transactional
+    public int onServiceElementsArchived(Collection<UUID> serviceElementIds) {
+        if (serviceElementIds == null || serviceElementIds.isEmpty()) {
+            return 0;
+        }
+        int cleared = repository.clearTargetServiceElementIdIn(serviceElementIds);
+        if (cleared > 0) {
+            log.info("Target manifest FK cleanup: nulled target_service_element_id on {} "
+                + "manifest row(s) for {} archived service element(s)",
+                cleared, serviceElementIds.size());
+        }
+        return cleared;
     }
 
     /**

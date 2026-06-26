@@ -81,7 +81,7 @@ class TargetManifestArtifactPersistenceTest {
                                                      String lockContent,
                                                      List<Map<String, Object>> deps) {
         return new TargetManifestArtifactInput(
-            tag, kind, ecosystem, manifestPath, content, lockContent, deps, List.of());
+            tag, kind, ecosystem, manifestPath, content, lockContent, deps, List.of(), null);
     }
 
     @Test
@@ -230,7 +230,7 @@ class TargetManifestArtifactPersistenceTest {
         service.persistLatest(projectId, targetArchitectureId,
             List.of(new TargetManifestArtifactInput(
                 "orders", "pom", "MAVEN", "pom.xml", "<project/>", null,
-                List.of(dep("g:a", "1.0.0")), List.of(mcp, springAi))));
+                List.of(dep("g:a", "1.0.0")), List.of(mcp, springAi), null)));
         entityManager.clear();
 
         List<TargetManifestArtifactEntity> rows =
@@ -257,7 +257,7 @@ class TargetManifestArtifactPersistenceTest {
         // A fresh artifact with a NULL tier2_facts input reads back as empty (NOT null).
         service.persistLatest(projectId, targetArchitectureId,
             List.of(new TargetManifestArtifactInput(
-                "billing", "pom", "MAVEN", "pom.xml", "<project/>", null, List.of(), null)));
+                "billing", "pom", "MAVEN", "pom.xml", "<project/>", null, List.of(), null, null)));
         entityManager.clear();
         TargetManifestArtifactEntity billing =
             repository.findFirstByProjectIdAndTargetArchitectureIdAndTagAndIsLatestTrue(

@@ -2,8 +2,12 @@ package com.example.architecturemodel.repository.targetmanifest;
 
 import com.example.architecturemodel.model.entity.targetmanifest.TargetManifestArtifactEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -49,4 +53,40 @@ public interface TargetManifestArtifactRepository
     List<TargetManifestArtifactEntity>
         findByProjectIdAndTargetArchitectureIdAndIsLatestTrueOrderByTagAsc(
             UUID projectId, UUID targetArchitectureId);
+
+    /**
+     * Logical FK cleanup: null {@code target_service_element_id} on EVERY row
+     * (latest and historical) that points at the supplied target-state
+     * {@code services} element id. Invoked when a {@code services} element is
+     * archived (removed) from a target architecture so the manifest's logical
+     * FK never dangles -- there is NO physical DB foreign key (elements are
+     * soft-deleted, not hard-deleted), so the cascade is applied here.
+     *
+     * <p>Service element ids are globally unique UUIDs, so nulling by element id
+     * alone is precise and needs no {@code (project, target_architecture)}
+     * scoping. Returns the number of rows updated.</p>
+     *
+     * <p>Spec: Target Manifest -&gt; Service Association (Foreign Key)
+     * (2026-06-26) -- Task Group 2, FR6.</p>
+     */
+    @Modifying
+    @Query("UPDATE TargetManifestArtifactEntity e SET e.targetServiceElementId = null "
+        + "WHERE e.targetServiceElementId = :serviceElementId")
+    int clearTargetServiceElementId(@Param("serviceElementId") UUID serviceElementId);
+
+    /**
+     * Batch variant of {@link #clearTargetServiceElementId(UUID)}: null
+     * {@code target_service_element_id} on every row pointing at any of the
+     * supplied (archived/removed) service element ids. Used by the whole-model
+     * save path which removes several {@code services} elements at once.
+     * Returns the number of rows updated.
+     *
+     * <p>Spec: Target Manifest -&gt; Service Association (Foreign Key)
+     * (2026-06-26) -- Task Group 2, FR6.</p>
+     */
+    @Modifying
+    @Query("UPDATE TargetManifestArtifactEntity e SET e.targetServiceElementId = null "
+        + "WHERE e.targetServiceElementId IN :serviceElementIds")
+    int clearTargetServiceElementIdIn(
+        @Param("serviceElementIds") Collection<UUID> serviceElementIds);
 }

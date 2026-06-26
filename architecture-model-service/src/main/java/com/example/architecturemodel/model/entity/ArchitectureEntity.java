@@ -170,6 +170,28 @@ public class ArchitectureEntity {
     @Column(name = "proceed_critical_override_at")
     private Instant proceedCriticalOverrideAt;
 
+    /**
+     * Instant the target-state architect conversation was last saved. NULL
+     * until the first "Save Conversation" action stamps it; updated to
+     * {@code now()} on every save. Applies to {@code kind='target'} rows in
+     * practice, though the column is unconditional.
+     *
+     * <p>This single marker turns a target-state conversation into a
+     * saveable / resumable / listable object decoupled from promoting a draft
+     * to "active". The most-recent-saved + list-saved repository finders and
+     * the plan's saved-conversation sourcing all key off this timestamp;
+     * {@code conversation_status} is deferred (the timestamp drives every
+     * query -- a saved row IS NOT NULL, ordering is by this column DESC).</p>
+     *
+     * <p>NULLABLE; boxed {@link Instant} (NEVER primitive) so PATCH semantics
+     * preserve null per {@code project_primitive_double_dto_overwrite.md} -- a
+     * request that omits the field never silently wipes the column, exactly as
+     * {@link #lastMarkedStaleAt} does. Added by Liquibase changeset 203
+     * (Target-State Conversation Save/Resume/Plan-Sourcing, Task Group 1).</p>
+     */
+    @Column(name = "conversation_saved_at")
+    private Instant conversationSavedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

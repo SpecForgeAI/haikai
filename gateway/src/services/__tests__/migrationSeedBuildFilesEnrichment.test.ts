@@ -183,14 +183,27 @@ describe('seed-build-files enrichment (Spec 5, Groups 3 + 4)', () => {
     expect(none.text).toBeNull();
   });
 
-  it('recognises the dedicated seed story by its stable kind marker; ignores ordinary stories', () => {
+  it('recognises the dedicated seed story by its kind marker OR seed_build_files tag (Spec 6 scaffold); ignores ordinary stories', () => {
     const seed = { kind: SEED_BUILD_FILES_STORY_KIND } as LoadedBookOfWorkItem;
     const seedMixedCase = { kind: ' Seed_Build_Files ' } as LoadedBookOfWorkItem;
+    // Spec 6 scaffold story: kind is `operational`, the marker rides the tag.
+    const scaffold = {
+      kind: 'operational',
+      tags: ['seed_build_files', 'stream:target_service_api_implementation', 'provenance:scaffold'],
+    } as LoadedBookOfWorkItem;
+    const scaffoldMixedCase = {
+      kind: 'operational',
+      tags: [' Seed_Build_Files '],
+    } as LoadedBookOfWorkItem;
     const ordinary = { kind: 'api' } as LoadedBookOfWorkItem;
+    const ordinaryWithTags = { kind: 'api', tags: ['stream:x'] } as LoadedBookOfWorkItem;
     const noKind = {} as LoadedBookOfWorkItem;
     expect(isSeedBuildFilesStory(seed)).toBe(true);
     expect(isSeedBuildFilesStory(seedMixedCase)).toBe(true);
+    expect(isSeedBuildFilesStory(scaffold)).toBe(true);
+    expect(isSeedBuildFilesStory(scaffoldMixedCase)).toBe(true);
     expect(isSeedBuildFilesStory(ordinary)).toBe(false);
+    expect(isSeedBuildFilesStory(ordinaryWithTags)).toBe(false);
     expect(isSeedBuildFilesStory(noKind)).toBe(false);
   });
 

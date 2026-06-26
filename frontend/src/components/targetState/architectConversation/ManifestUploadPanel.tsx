@@ -30,10 +30,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  allManifestsTagged,
+  allManifestsHaveService,
+  deriveServiceModuleDir,
   resolvedTargetVersionChip,
   shortenManifestPath,
   uploadTargetManifests,
+  type ManifestServiceOption,
   type ResolvedTargetVersion,
   type SelectedManifest,
   type TargetManifestUploadResponse,
@@ -77,6 +79,14 @@ export const defaultManifestUploadPanelDeps: ManifestUploadPanelDeps = {
 export interface ManifestUploadPanelProps {
   projectId: string;
   targetArchitectureId: string;
+  /**
+   * The draft target architecture's Services — the option list for the required
+   * per-manifest Service picker (FR1). Sourced from
+   * `model.metaModel.entities.services` (or the `elements-inventory` `services`)
+   * at the mount site. Each option carries `repoSubfolder` so the panel can
+   * derive the persisted moduleDir `tag` (FR5).
+   */
+  services: ManifestServiceOption[];
   /** Thread id stamped on auto-answered + inline-edited rows (may be null). */
   conversationThreadId?: string | null;
   /** Session id required by the deterministic capture path for inline edits. */
@@ -131,6 +141,7 @@ function kindLabel(name: string): string {
 export function ManifestUploadPanel({
   projectId,
   targetArchitectureId,
+  services = [],
   conversationThreadId = null,
   sessionId = null,
   onUploaded,
@@ -185,7 +196,7 @@ export function ManifestUploadPanel({
               return lfDir === dir;
             }) ?? null;
         }
-        next.push({ file, tag: '', packageLock });
+        next.push({ file, tag: '', targetServiceElementId: '', packageLock });
       }
       return next;
     });
@@ -201,15 +212,27 @@ export function ManifestUploadPanel({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
-  const updateTag = useCallback((index: number, tag: string) => {
-    setSelected((prev) => prev.map((s, i) => (i === index ? { ...s, tag } : s)));
-  }, []);
+  const onServiceChange = useCallback(
+    (index: number, serviceId: string) => {
+      setSelected((prev) =>
+        prev.map((s, i) => {
+          if (i !== index) return s;
+          const svc = services.find((o) => o.id === serviceId);
+          // Derive the persisted moduleDir tag from the chosen Service (FR5);
+          // an empty/unknown selection clears both the FK and the derived tag.
+          const tag = svc ? deriveServiceModuleDir(svc) : '';
+          return { ...s, targetServiceElementId: serviceId, tag };
+        }),
+      );
+    },
+    [services],
+  );
 
   const removeSelected = useCallback((index: number) => {
     setSelected((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const canSubmit = allManifestsTagged(selected) && !busy && !disabledReason;
+  const canSubmit = allManifestsHaveService(selected) && !busy && !disabledReason;
 
   // Mutual exclusivity (Spec 2026-06-26): report whether a manifest is staged so
   // the parent can disable the sibling "Manually Answer Target State" input.
@@ -218,7 +241,7 @@ export function ManifestUploadPanel({
   }, [selected.length, onActiveChange]);
 
   const handleUpload = useCallback(async () => {
-    if (!allManifestsTagged(selected)) return;
+    if (!allManifestsHaveService(selected)) return;
     setBusy(true);
     setUploadError(null);
     try {
@@ -273,7 +296,7 @@ export function ManifestUploadPanel({
       <p className={styles.subheading}>
         Upload the target <code>pom.xml</code> / <code>package.json</code> for a
         module to auto-answer its framework, library, build-tool and driver
-        decisions. Tag each manifest with its target module/service. An optional{' '}
+        decisions. Pick the target service for each manifest. An optional{' '}
         <code>package-lock.json</code> pins exact npm versions.
       </p>
 
@@ -306,7 +329,7 @@ export function ManifestUploadPanel({
           <p className={styles.sectionLabel}>Selected manifests</p>
           <ul className={styles.selectionList} data-testid="manifest-selection-list">
             {selected.map((s, index) => {
-              const missingTag = s.tag.trim().length === 0;
+              const missingService = s.targetServiceElementId.trim().length === 0;
               return (
                 <li
                   key={`${s.file.name}-${index}`}
@@ -315,20 +338,25 @@ export function ManifestUploadPanel({
                 >
                   <span className={styles.fileName}>{s.file.name}</span>
                   <span className={styles.kindBadge}>{kindLabel(s.file.name)}</span>
-                  <input
-                    type="text"
+                  <select
                     className={
-                      missingTag
+                      missingService
                         ? `${styles.tagInput} ${styles.tagInputMissing}`
                         : styles.tagInput
                     }
-                    placeholder="Target module / service tag (required)"
-                    value={s.tag}
-                    onChange={(e) => updateTag(index, e.target.value)}
-                    data-testid={`manifest-tag-input-${index}`}
-                    aria-label={`Module or service tag for ${s.file.name}`}
-                    aria-invalid={missingTag}
-                  />
+                    value={s.targetServiceElementId}
+                    onChange={(e) => onServiceChange(index, e.target.value)}
+                    data-testid={`manifest-service-select-${index}`}
+                    aria-label={`Target service for ${s.file.name}`}
+                    aria-invalid={missingService}
+                  >
+                    <option value="">Select target service (required)</option>
+                    {services.map((svc) => (
+                      <option key={svc.id} value={svc.id}>
+                        {svc.name}
+                      </option>
+                    ))}
+                  </select>
                   {s.packageLock && (
                     <span className={styles.lockNote} data-testid="manifest-lock-note">
                       + {s.packageLock.name}
@@ -348,10 +376,9 @@ export function ManifestUploadPanel({
             })}
           </ul>
 
-          {!allManifestsTagged(selected) && (
+          {!allManifestsHaveService(selected) && (
             <p className={styles.tagWarning} data-testid="manifest-tag-warning">
-              Every manifest needs a target module/service tag before you can
-              upload.
+              Every manifest needs a target service before you can upload.
             </p>
           )}
 

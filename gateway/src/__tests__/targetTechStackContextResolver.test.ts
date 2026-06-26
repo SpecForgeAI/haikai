@@ -6,7 +6,7 @@
  *   - Resolver returns raw markdown when the file exists
  *   - Resolver returns distinct "no migration target tech stack written yet"
  *     message when the file is absent
- *   - Resolver scopes the read via fetchActiveTargetArchitectureId
+ *   - Resolver scopes the read via fetchMostRecentSavedTargetArchitectureId
  *   - Per-invocation cache hits do not re-read
  *   - Existing TechStackContextResolver behaviour unchanged (file-presence
  *     assertion)
@@ -32,6 +32,7 @@ jest.mock('../services/architectureModelClient', () => {
 
 jest.mock('../services/targetStateCapturedDecisionsClient', () => ({
   fetchActiveTargetArchitectureId: jest.fn(),
+  fetchMostRecentSavedTargetArchitectureId: jest.fn(),
   fetchLatestCapturedDecisions: jest.fn(),
 }));
 
@@ -52,7 +53,7 @@ import {
   fetchProductName,
   fetchProjectFolder,
 } from '../services/architectureModelClient';
-import { fetchActiveTargetArchitectureId } from '../services/targetStateCapturedDecisionsClient';
+import { fetchMostRecentSavedTargetArchitectureId } from '../services/targetStateCapturedDecisionsClient';
 import {
   TargetTechStackContextResolver,
   TechStackContextResolver,
@@ -63,8 +64,8 @@ import {
 
 const mockProjFolder = fetchProjectFolder as jest.MockedFunction<typeof fetchProjectFolder>;
 const mockProdName = fetchProductName as jest.MockedFunction<typeof fetchProductName>;
-const mockActiveTarget = fetchActiveTargetArchitectureId as jest.MockedFunction<
-  typeof fetchActiveTargetArchitectureId
+const mockActiveTarget = fetchMostRecentSavedTargetArchitectureId as jest.MockedFunction<
+  typeof fetchMostRecentSavedTargetArchitectureId
 >;
 
 let testRoot: string;
@@ -94,7 +95,7 @@ async function writeTargetFile(projectName: string, lowercasedUuid: string, cont
 // ---------------------------------------------------------------------------
 
 test('returns raw markdown when the target-tech-stack file exists', async () => {
-  mockActiveTarget.mockResolvedValue({ activeTargetArchitectureId: 'TARGET-A1B2' });
+  mockActiveTarget.mockResolvedValue({ savedTargetArchitectureId: 'TARGET-A1B2' });
   mockProjFolder.mockResolvedValue(testRoot);
   mockProdName.mockResolvedValue('alpha-project');
 
@@ -112,7 +113,7 @@ test('returns raw markdown when the target-tech-stack file exists', async () => 
 // ---------------------------------------------------------------------------
 
 test('returns the distinct "no migration target tech stack written yet" message when the file is absent', async () => {
-  mockActiveTarget.mockResolvedValue({ activeTargetArchitectureId: 'TARGET-A1B2' });
+  mockActiveTarget.mockResolvedValue({ savedTargetArchitectureId: 'TARGET-A1B2' });
   mockProjFolder.mockResolvedValue(testRoot);
   mockProdName.mockResolvedValue('alpha-project');
   // No file written.
@@ -128,7 +129,7 @@ test('returns the distinct "no migration target tech stack written yet" message 
 // ---------------------------------------------------------------------------
 
 test('returns miss message when no active target architecture id exists', async () => {
-  mockActiveTarget.mockResolvedValue({ activeTargetArchitectureId: null });
+  mockActiveTarget.mockResolvedValue({ savedTargetArchitectureId: null });
 
   const resolver = new TargetTechStackContextResolver();
   const content = await resolver.resolve('proj-1', 'thread-key');
@@ -141,7 +142,7 @@ test('returns miss message when no active target architecture id exists', async 
 // ---------------------------------------------------------------------------
 
 test('per-invocation cache: a second resolve on the same instance does not re-read', async () => {
-  mockActiveTarget.mockResolvedValue({ activeTargetArchitectureId: 'TARGET-A1B2' });
+  mockActiveTarget.mockResolvedValue({ savedTargetArchitectureId: 'TARGET-A1B2' });
   mockProjFolder.mockResolvedValue(testRoot);
   mockProdName.mockResolvedValue('alpha-project');
 
@@ -166,7 +167,7 @@ test('per-invocation cache: a second resolve on the same instance does not re-re
 // ---------------------------------------------------------------------------
 
 test('sanitises the project name and returns a fail-soft string on path-traversal attempts', async () => {
-  mockActiveTarget.mockResolvedValue({ activeTargetArchitectureId: 'TARGET-A1B2' });
+  mockActiveTarget.mockResolvedValue({ savedTargetArchitectureId: 'TARGET-A1B2' });
   mockProjFolder.mockResolvedValue(testRoot);
   mockProdName.mockResolvedValue('../etc');
 

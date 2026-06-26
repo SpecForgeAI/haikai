@@ -356,7 +356,8 @@ public class TargetArchitecturePromoteService {
                 base.draftState(),
                 base.createdAt(),
                 base.updatedAt(),
-                elementCount
+                elementCount,
+                base.conversationSavedAt()
             ));
         }
         return out;

@@ -170,15 +170,57 @@ export interface TargetManifestUploadResponse {
 // ============================================================================
 
 /**
- * A manifest file the user selected, paired with the REQUIRED target
- * module/service tag. An optional `packageLock` (npm only) may accompany a
- * `package.json` for exact-version pinning.
+ * A target Service option for the manifest picker. Mirrors the in-memory draft
+ * target architecture Service (which carries `repoSubfolder`) — the minimal
+ * shape the picker needs to populate options AND derive the persisted moduleDir
+ * tag (FR5). Spec 2026-06-26-target-manifest-service-association Task Group 4.
+ */
+export interface ManifestServiceOption {
+  /** The target-state `services` element id (the persisted FK). */
+  id: string;
+  /** Human-facing service name shown in the picker option. */
+  name: string;
+  /** Discovery's monorepo-scoping subfolder, when present. */
+  repoSubfolder?: string | null;
+}
+
+/**
+ * Derive the persisted module/service `tag` (== the monorepo moduleDir, FR5)
+ * from the chosen Service: the Service's `repoSubfolder` when present, else a
+ * slugified `name` (lowercase, non-alphanumeric runs collapsed to a single
+ * hyphen, leading/trailing hyphens trimmed). Pure + unit-testable. Because the
+ * persisted `tag` now equals this derived moduleDir, file placement is preserved
+ * with no producer change.
+ */
+export function deriveServiceModuleDir(service: ManifestServiceOption): string {
+  const sub = (service.repoSubfolder ?? '').trim();
+  if (sub.length > 0) return sub;
+  return service.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * A manifest file the user selected, paired with the REQUIRED chosen target
+ * Service. `targetServiceElementId` is the persisted FK; `tag` is the moduleDir
+ * derived from that Service (FR5) and is the producer's placement key. An
+ * optional `packageLock` (npm only) may accompany a `package.json` for
+ * exact-version pinning.
  */
 export interface SelectedManifest {
   /** The pom.xml / package.json file. */
   file: File;
-  /** REQUIRED target module/service tag — submit is blocked until non-empty. */
+  /**
+   * Module/service `tag` DERIVED from the chosen Service (FR5) — the persisted
+   * latest-flip key AND the producer's monorepo placement key.
+   */
   tag: string;
+  /**
+   * REQUIRED chosen target Service element id (the persisted FK) — submit is
+   * blocked until every selected manifest has a non-empty value.
+   */
+  targetServiceElementId: string;
   /** Optional package-lock.json paired with a package.json (npm only). */
   packageLock?: File | null;
 }
@@ -214,14 +256,15 @@ async function parseError(res: Response): Promise<TargetManifestApiError> {
 // ============================================================================
 
 /**
- * True iff EVERY selected manifest carries a non-empty (trimmed) module/service
- * tag. The upload control disables submit until this holds (Spec 3: reject an
- * untagged manifest — surfaced as a client-side block so the user is never
- * surprised by a server-side drop). An empty selection is NOT submittable.
+ * True iff EVERY selected manifest has a chosen target Service (a non-empty,
+ * trimmed `targetServiceElementId`). The upload control disables submit until
+ * this holds (Spec 2026-06-26: the Service picker is required per manifest —
+ * surfaced as a client-side block so the user is never surprised by a
+ * server-side drop). An empty selection is NOT submittable.
  */
-export function allManifestsTagged(selected: readonly SelectedManifest[]): boolean {
+export function allManifestsHaveService(selected: readonly SelectedManifest[]): boolean {
   if (selected.length === 0) return false;
-  return selected.every((s) => s.tag.trim().length > 0);
+  return selected.every((s) => s.targetServiceElementId.trim().length > 0);
 }
 
 // ============================================================================
@@ -254,9 +297,11 @@ export async function uploadTargetManifests(
 
   const fd = new FormData();
   const tagsByFilename: Record<string, string> = {};
+  const serviceIdsByFilename: Record<string, string> = {};
   for (const s of selected) {
     fd.append('files', s.file, s.file.name);
     tagsByFilename[s.file.name] = s.tag.trim();
+    serviceIdsByFilename[s.file.name] = s.targetServiceElementId.trim();
     if (s.packageLock) {
       // The paired lockfile rides the same `files` field; the gateway pairs it to
       // the package.json in the same directory. A lockfile needs no tag.
@@ -264,6 +309,7 @@ export async function uploadTargetManifests(
     }
   }
   fd.append('tagsByFilename', JSON.stringify(tagsByFilename));
+  fd.append('serviceIdsByFilename', JSON.stringify(serviceIdsByFilename));
   if (options.conversationThreadId) {
     fd.append('conversationThreadId', options.conversationThreadId);
   }

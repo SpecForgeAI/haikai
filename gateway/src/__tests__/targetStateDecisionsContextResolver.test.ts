@@ -93,8 +93,10 @@ function jsonResponse(status: number, body: unknown) {
   };
 }
 
-function activeTargetResponse(activeTargetArchitectureId: string | null) {
-  return jsonResponse(200, { activeTargetArchitectureId });
+function activeTargetResponse(savedTargetArchitectureId: string | null) {
+  // Spec 2026-06-26 Task Group 3: the resolver now defaults to the
+  // most-recent-SAVED target id endpoint (decoupled from "active").
+  return jsonResponse(200, { savedTargetArchitectureId });
 }
 
 function decision(
@@ -143,7 +145,7 @@ test('resolver returns "no target architecture defined yet" when no active targe
   expect(mockFetch).toHaveBeenCalledTimes(1);
   const [calledUrl] = mockFetch.mock.calls[0] as [string, RequestInit];
   expect(calledUrl).toBe(
-    'http://localhost:8080/api/projects/proj-test/active-target-architecture-id',
+    'http://localhost:8080/api/projects/proj-test/saved-target-architecture-id',
   );
 });
 

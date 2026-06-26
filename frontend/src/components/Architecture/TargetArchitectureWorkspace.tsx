@@ -1023,6 +1023,7 @@ export const TargetArchitectureWorkspace: React.FC = () => {
             selectedTargetArchitectureId={selectedDraftId}
             currentUserId={'current-user'}
             architectureName={selectedDraft?.name ?? undefined}
+            conversationSavedAt={selectedDraft?.conversationSavedAt ?? null}
             onEmptyStateRedirect={handleEmptyStateRedirectFromConversation}
             scrollToDecisionId={scrollToDecisionId}
             onScrolledToDecision={handleScrolledToDecision}
@@ -1101,6 +1102,15 @@ const DraftsPanel: React.FC<DraftsPanelProps> = ({
   suggestDisabled,
   highlightSuggest,
 }) => {
+  // Spec 2026-06-26-target-conversation-save-resume-plan-sourcing (FR6): an
+  // in-place filter that narrows the EXISTING drafts list to saved
+  // conversations (`conversationSavedAt != null`). Indicator (badge) + filter
+  // both read the same marker; this is NOT a parallel section.
+  const [savedOnly, setSavedOnly] = useState(false);
+  const savedCount = drafts.filter((d) => d.conversationSavedAt != null).length;
+  const visibleDrafts = savedOnly
+    ? drafts.filter((d) => d.conversationSavedAt != null)
+    : drafts;
   return (
     <div className={styles.draftsPanel} data-testid="target-arch-drafts-panel">
       <div className={styles.draftsHeader}>
@@ -1121,6 +1131,19 @@ const DraftsPanel: React.FC<DraftsPanelProps> = ({
           {suggestPending ? 'Suggesting...' : 'Suggest'}
         </button>
       </div>
+      <label
+        className={styles.savedFilterToggle}
+        data-testid="target-arch-saved-filter-toggle"
+        title="Show only target drafts with a saved conversation"
+      >
+        <input
+          type="checkbox"
+          checked={savedOnly}
+          onChange={(e) => setSavedOnly(e.target.checked)}
+          data-testid="target-arch-saved-filter-checkbox"
+        />
+        {' '}Saved conversations only ({savedCount})
+      </label>
       {suggestError && (
         <div
           className={styles.errorBanner}
@@ -1139,7 +1162,7 @@ const DraftsPanel: React.FC<DraftsPanelProps> = ({
         </div>
       )}
       <ul className={styles.draftsList}>
-        {drafts.map(draft => {
+        {visibleDrafts.map(draft => {
           const isActive = draft.draftState === 'active';
           const isSelected = draft.id === selectedDraftId;
           // Four-Spec Hardening Pass (2026-05-25), Item 3: badge EVERY draft
@@ -1160,6 +1183,7 @@ const DraftsPanel: React.FC<DraftsPanelProps> = ({
                 ? selectedDraftElementCount
                 : null;
           const isEmpty = resolvedElementCount === 0;
+          const isSavedConversation = draft.conversationSavedAt != null;
           return (
             <li
               key={draft.id}
@@ -1172,6 +1196,7 @@ const DraftsPanel: React.FC<DraftsPanelProps> = ({
               data-active={isActive ? 'true' : 'false'}
               data-selected={isSelected ? 'true' : 'false'}
               data-empty={isEmpty ? 'true' : 'false'}
+              data-saved-conversation={isSavedConversation ? 'true' : 'false'}
               onClick={() => onSelect(draft.id)}
             >
               <input
@@ -1189,6 +1214,15 @@ const DraftsPanel: React.FC<DraftsPanelProps> = ({
                 }}
               />
               <div className={styles.draftRowMeta}>
+                {isSavedConversation && (
+                  <span
+                    className={styles.savedBadge}
+                    data-testid={`target-arch-saved-badge-${draft.id}`}
+                    title={`Conversation saved ${draft.conversationSavedAt}`}
+                  >
+                    Saved
+                  </span>
+                )}
                 {isEmpty && (
                   <span
                     className={styles.emptyBadge}

@@ -85,6 +85,7 @@ class TargetManifestArtifactControllerTest {
             "package.json", content, lock,
             List.of(Map.of("name", "react", "version", "18.2.0")),
             List.of(Map.of("friendly_name", "MCP SDK", "coordinate", "io.modelcontextprotocol.sdk")),
+            null,
             true, NOW);
     }
 
@@ -100,7 +101,7 @@ class TargetManifestArtifactControllerTest {
                 "web", "package_json", "NPM", "package.json",
                 "{\n  \"name\": \"app\"\n}\n", "{\n}\n",
                 List.of(Map.of("name", "react", "version", "18.2.0")),
-                List.of(Map.of("friendly_name", "Spring AI", "coordinate", "spring-ai-openai"))))));
+                List.of(Map.of("friendly_name", "Spring AI", "coordinate", "spring-ai-openai")), null))));
 
         mockMvc.perform(post(
                 "/api/model/projects/{p}/target-architectures/{a}/manifest-artifacts",

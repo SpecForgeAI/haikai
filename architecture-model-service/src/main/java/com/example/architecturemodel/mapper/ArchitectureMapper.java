@@ -44,7 +44,9 @@ public class ArchitectureMapper {
             entity.getKind(),
             entity.getDraftState(),
             entity.getCreatedAt(),
-            entity.getUpdatedAt()
+            entity.getUpdatedAt(),
+            null,
+            entity.getConversationSavedAt()
         );
     }
 }

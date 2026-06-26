@@ -2,6 +2,7 @@ package com.example.architecturemodel.model.dto.targetmanifest;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * One confirmed manifest artifact in the write payload forwarded by the gateway
@@ -34,6 +35,11 @@ import java.util.Map;
  * @param tier2Facts            Tier-2 "free facts" (manifest tech outside the 51
  *                             questions) as { friendly_name, coordinate }
  *                             objects (stored as JSONB); informational only
+ * @param targetServiceElementId logical FK to the target-state {@code services}
+ *                             element (codebase) the manifest is bound to;
+ *                             validated at write to belong to the path
+ *                             {@code targetArchitectureId} and be non-archived;
+ *                             nullable on legacy rows, UI-required going forward
  */
 public record TargetManifestArtifactInput(
     String tag,
@@ -43,6 +49,7 @@ public record TargetManifestArtifactInput(
     String content,
     String packageLockContent,
     List<Map<String, Object>> resolvedDependencies,
-    List<Map<String, Object>> tier2Facts
+    List<Map<String, Object>> tier2Facts,
+    UUID targetServiceElementId
 ) {
 }

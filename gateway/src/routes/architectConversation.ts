@@ -84,6 +84,7 @@ import {
 } from '../services/targetStateConversationStore';
 import {
   fetchLatestCapturedDecisions,
+  stampConversationSaved as defaultStampConversationSaved,
   type TargetStateCapturedDecision,
 } from '../services/targetStateCapturedDecisionsClient';
 import type {
@@ -170,6 +171,14 @@ interface ArchitectConversationRouteDeps {
    */
   writeTargetTechStackDeps: WriteTargetTechStackDeps;
   /**
+   * Conversation-saved stamp client (Spec 2026-06-26, Task Group 3). The close
+   * handler calls this AFTER the CloseTurn append + tech-stack write to stamp
+   * `conversation_saved_at` on the target architecture. Fail-soft + additive:
+   * a throw is surfaced on the close payload without aborting the close turn.
+   * Tests override it to avoid a real AMS call.
+   */
+  stampConversationSaved: typeof defaultStampConversationSaved;
+  /**
    * Open-phase capture-path deps (Spec 2026-06-06-architect-conversation-open-
    * ended-phase, Task Group 4). `postCapturedDecision` is the AMS writer
    * boundary (reused VERBATIM) for both `adhoc.<slug>` decision rows and
@@ -192,6 +201,7 @@ let deps: ArchitectConversationRouteDeps = {
   llmClient: buildArchitectLlmClient(),
   openTurnPrefillDeps: defaultOpenTurnTechStackPrefillDeps,
   writeTargetTechStackDeps: defaultWriteTargetTechStackDeps,
+  stampConversationSaved: defaultStampConversationSaved,
   postCapturedDecision: defaultPostCapturedDecision,
   resolveOpenPhaseGrounding: defaultResolveOpenPhaseGrounding,
 };
@@ -219,6 +229,7 @@ export function resetArchitectConversationDeps(): void {
     llmClient: buildArchitectLlmClient(),
     openTurnPrefillDeps: defaultOpenTurnTechStackPrefillDeps,
     writeTargetTechStackDeps: defaultWriteTargetTechStackDeps,
+    stampConversationSaved: defaultStampConversationSaved,
     postCapturedDecision: defaultPostCapturedDecision,
     resolveOpenPhaseGrounding: defaultResolveOpenPhaseGrounding,
   };
@@ -893,7 +904,34 @@ architectConversationRouter.post(
         };
       }
 
-      res.status(200).json({ closeTurn, targetTechStackWrite });
+      // --------------------------------------------------------------
+      // Spec 2026-06-26 Task Group 3: stamp `conversation_saved_at` so the
+      // plan can source this saved conversation independently of "active".
+      // Fail-soft + additive (matches the tech-stack-write pattern): a stamp
+      // failure is reported on the close payload WITHOUT aborting the close
+      // turn -- the CloseTurn + tech-stack write have already succeeded.
+      // --------------------------------------------------------------
+      let conversationSavedStamp: unknown = null;
+      try {
+        const stamped = await deps.stampConversationSaved(projectId, targetArchitectureId);
+        conversationSavedStamp = {
+          kind: 'saved',
+          conversationSavedAt: stamped.conversationSavedAt,
+        };
+      } catch (stampErr) {
+        logger.warn('close-turn conversation-saved stamp failed; close still succeeds', {
+          projectId,
+          targetArchitectureId,
+          error: stampErr instanceof Error ? stampErr.message : 'Unknown error',
+        });
+        conversationSavedStamp = {
+          kind: 'failed',
+          reason: stampErr instanceof Error ? stampErr.message : String(stampErr),
+          conversationSavedAt: null,
+        };
+      }
+
+      res.status(200).json({ closeTurn, targetTechStackWrite, conversationSavedStamp });
     } catch (err) {
       handleOrchestratorError(res, err, 'close-conversation', {
         projectId,

@@ -83,12 +83,19 @@ import { LoadedBookOfWorkItem } from './migrationShapeSpecGenerationHandler';
 export const SEED_BUILD_FILES_STORY_KIND = 'seed_build_files';
 
 /**
- * True when the story is the dedicated seed-build-files story (recognised by its
- * `kind` marker). Tolerant of surrounding whitespace / case so an upstream
- * producer that stamps `Seed_Build_Files` still matches.
+ * True when the story is the dedicated seed-build-files story. Recognised by
+ * EITHER its `kind` marker (the original create-time seed story) OR a
+ * `seed_build_files` TAG (Spec 6's scaffold story, whose `kind` is `operational`
+ * to satisfy AMS `ALLOWED_KINDS`). Tolerant of surrounding whitespace / case so
+ * an upstream producer that stamps `Seed_Build_Files` still matches.
  */
 export function isSeedBuildFilesStory(story: LoadedBookOfWorkItem): boolean {
-  return (story.kind ?? '').trim().toLowerCase() === SEED_BUILD_FILES_STORY_KIND;
+  if ((story.kind ?? '').trim().toLowerCase() === SEED_BUILD_FILES_STORY_KIND) {
+    return true;
+  }
+  return (story.tags ?? []).some(
+    (t) => (t ?? '').trim().toLowerCase() === SEED_BUILD_FILES_STORY_KIND,
+  );
 }
 
 // ---------------------------------------------------------------------------

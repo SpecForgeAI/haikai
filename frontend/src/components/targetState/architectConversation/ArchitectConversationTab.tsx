@@ -90,7 +90,10 @@ import {
   recommendedVersionForCoordinate,
   type ProceedCriticalOverrideDto,
 } from '../../../api/vulnerabilityReductionApi';
-import type { TargetManifestUploadResponse } from '../../../api/targetManifestApi';
+import type {
+  ManifestServiceOption,
+  TargetManifestUploadResponse,
+} from '../../../api/targetManifestApi';
 import { ExceptionSubDialog } from './ExceptionSubDialog';
 import {
   CloseConversationFlow,
@@ -140,6 +143,14 @@ export interface ArchitectConversationTabProps {
    * null/empty so the filename always has a non-empty slug source.
    */
   architectureName?: string;
+  /**
+   * Spec 2026-06-26-target-conversation-save-resume-plan-sourcing (FR6): the
+   * selected draft's `conversation_saved_at` marker (ISO-8601) or `null`.
+   * When non-null the conversation is a SAVED conversation -- the no-active-
+   * session branch lands view-only (transcript + decisions) with an explicit
+   * "Reopen / continue" CTA instead of defaulting to a fresh start.
+   */
+  conversationSavedAt?: string | null;
 }
 
 /**
@@ -177,6 +188,7 @@ export function ArchitectConversationTab({
   scrollToDecisionId = null,
   onScrolledToDecision,
   architectureName,
+  conversationSavedAt = null,
 }: ArchitectConversationTabProps) {
   const [envelope, setEnvelope] = useState<ConversationEnvelope | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -308,6 +320,21 @@ export function ArchitectConversationTab({
     }
     return { hasUiTier, hasServiceTier, hasPersistenceTier };
   }, [model.metaModel.entities.services, model.metaModel.entities.app_components]);
+
+  // Spec 2026-06-26-target-manifest-service-association (Task Group 4): the
+  // option list for the manifest-upload Service picker. The draft target
+  // architecture's services already live in the workspace model (with
+  // `repo_subfolder` for moduleDir derivation, FR5) — map them to the picker's
+  // minimal { id, name, repoSubfolder } shape (no new fetch).
+  const manifestServiceOptions: ManifestServiceOption[] = useMemo(
+    () =>
+      (model.metaModel.entities.services ?? []).map((svc) => ({
+        id: svc.id,
+        name: svc.name,
+        repoSubfolder: svc.repo_subfolder ?? null,
+      })),
+    [model.metaModel.entities.services],
+  );
 
   // Spec 2026-06-05-architect-tier-gating (Half B, Task Group 4): the in-session
   // confirmed technology-tier set. Null until the user confirms/adjusts via the
@@ -1181,9 +1208,14 @@ export function ArchitectConversationTab({
   // No active session yet -- show start CTA.
   if (!envelope?.currentSession || envelope.currentSession.status === 'closed') {
     const isResumingPrior = envelope?.currentSession?.status === 'closed';
+    // Spec 2026-06-26-target-conversation-save-resume-plan-sourcing (FR6): a
+    // SAVED conversation (marker stamped) lands view-only EVEN when there is no
+    // closed session on this thread, instead of defaulting to a fresh start.
+    const isSavedConversation = conversationSavedAt != null;
+    const showViewOnly = (isResumingPrior || isSavedConversation) && !!envelope;
     return (
       <div className={styles.container} data-testid="architect-conversation-tab">
-        {isResumingPrior && envelope && (
+        {showViewOnly && envelope && (
           <ConversationMainPane
             turns={envelope.turns}
             pendingQuestion={null}
@@ -1199,25 +1231,52 @@ export function ArchitectConversationTab({
             onScrolledToDecision={onScrolledToDecision}
           />
         )}
-        <button
-          type="button"
-          className={styles.primaryButton}
-          onClick={() => void handleStartConversation()}
-          data-testid={
-            isResumingPrior
-              ? 'architect-conversation-start-new-button'
-              : 'architect-conversation-start-button'
-          }
-        >
-          {isResumingPrior ? 'Start new conversation' : 'Start conversation'}
-        </button>
+        {isSavedConversation ? (
+          // View-only resume surface: the primary action REOPENS the existing
+          // saved conversation (resumes the question walk via the existing start
+          // path); "Start new conversation" stays a distinct secondary action.
+          <div
+            data-testid="architect-conversation-saved-resume"
+            style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}
+          >
+            <button
+              type="button"
+              className={styles.primaryButton}
+              onClick={() => void handleStartConversation()}
+              data-testid="architect-conversation-reopen-continue-button"
+            >
+              Reopen / continue
+            </button>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => void handleStartConversation()}
+              data-testid="architect-conversation-start-new-button"
+            >
+              Start new conversation
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={() => void handleStartConversation()}
+            data-testid={
+              isResumingPrior
+                ? 'architect-conversation-start-new-button'
+                : 'architect-conversation-start-button'
+            }
+          >
+            {isResumingPrior ? 'Start new conversation' : 'Start conversation'}
+          </button>
+        )}
         {/* Spec 4 (Task Group 7.3): the "estimated reduction" CLOSE SUMMARY,
             shown once the conversation is closed (resuming a prior session). It
             reuses the shared reduction panel reading the ONE shared delta, so the
             close summary, the persistent panel, the compare-view panel, and the
             Migration Discovery Context roll-up all agree. Labelled an ESTIMATE;
             hidden when there is no target snapshot. */}
-        {isResumingPrior && (
+        {showViewOnly && (
           <VulnerabilityReductionPanel
             delta={vulnDelta}
             osvNote={vulnReduction?.osv && !vulnReduction.osv.available ? vulnReduction.osv.note ?? null : null}
@@ -1384,6 +1443,7 @@ export function ArchitectConversationTab({
           <ManifestUploadPanel
             projectId={projectId}
             targetArchitectureId={selectedTargetArchitectureId}
+            services={manifestServiceOptions}
             conversationThreadId={envelope.threadId ?? null}
             sessionId={envelope.currentSession?.sessionId ?? null}
             disabledReason={
@@ -1413,6 +1473,17 @@ export function ArchitectConversationTab({
             isOwnedByCurrentUser={!!sessionOwnedByMe}
             onClose={handleCloseConversation}
             onRetireAndStartNew={handleRetireAndStartNew}
+            incompleteSummary={
+              // FR3/Q9: gate met but the walk is not finished -> the close flow
+              // shows a NON-BLOCKING completeness warning. `pendingQuestion`
+              // non-null means more questions remain. Save stays enabled.
+              pendingQuestion
+                ? {
+                    answeredCount: envelope.capturedDecisions.length,
+                    nextDecisionCode: pendingQuestion.decisionCode ?? null,
+                  }
+                : null
+            }
             vulnerabilityDelta={vulnDelta}
             projectId={projectId}
             targetArchitectureId={selectedTargetArchitectureId ?? undefined}

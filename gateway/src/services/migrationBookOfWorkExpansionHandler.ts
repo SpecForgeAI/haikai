@@ -93,6 +93,10 @@ import {
 import { LlmCallerFn } from './migrationBookOfWorkHandler';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
 import { getElementsInventory } from './architectureModelClient';
+import {
+  TargetManifestArtifactWire,
+  fetchLatestTargetManifestArtifacts as defaultFetchLatestTargetManifestArtifacts,
+} from './targetManifestArtifactsClient';
 import { fetchMigrationDiscoveryContext } from './migrationDiscoveryContextClient';
 import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
 
@@ -194,6 +198,23 @@ export interface MigrationBookOfWorkExpansionDeps {
   systemPromptOverride?: string;
   /** Defaults to config `migrationPlanExpansionBatchSize` (env knob). */
   batchSizeOverride?: number;
+  /**
+   * Confirmed target-manifest reader for the expansion-time scaffold gate
+   * (Spec 2026-06-26). Defaults to the real gateway -> AMS client; injected
+   * in tests. CALLER owns the fail-soft posture.
+   */
+  fetchTargetManifestArtifacts?: (
+    projectId: string,
+    targetArchitectureId: string
+  ) => Promise<TargetManifestArtifactWire[]>;
+  /**
+   * Target-state `services` reader for scaffold service-name resolution.
+   * Defaults to the Applications-domain services walk; injected in tests.
+   */
+  fetchScaffoldServices?: (
+    projectId: string,
+    targetArchitectureId: string
+  ) => Promise<ScaffoldServiceElement[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1166,7 +1187,15 @@ async function runEpicPipeline(args: {
 
   // ----- Coverage check (code guarantee): EXACTLY one story per item -----
   const missing = inventory.filter((i) => !storiesByItemId.has(i.id)).map((i) => i.id);
-  const extras = [...storiesByItemId.keys()].filter((id) => !factsById.has(id));
+  const extras = [...storiesByItemId.keys()].filter(
+    (id) =>
+      !factsById.has(id) &&
+      // FR4 (Spec 2026-06-26): a non-inventory scaffold seed story
+      // (tags:['seed_build_files']) is injected post-pipeline, outside this
+      // map, so it must never count as an inventory "extra" -- exclude it
+      // defensively by tag should one ever surface here.
+      !(storiesByItemId.get(id)?.tags ?? []).includes(SEED_BUILD_FILES_TAG)
+  );
   if (missing.length > 0 || extras.length > 0) {
     throw new Error(
       `Coverage check failed for epic ${epic.id}: ` +
@@ -1192,6 +1221,397 @@ function streamOfEpic(epic: MigrationBookOfWorkItem): string {
   return epic.workstream;
 }
 
+// ---------------------------------------------------------------------------
+// Scaffold homing helpers (Spec 2026-06-26 Book-of-Work Scaffold + Reference
+// Names, Task Group 2) - ecosystem -> workstream, host-epic selection, and
+// service-name resolution. PURE over their inputs (no I/O) so they unit-test
+// cleanly; the orchestrator fetches the manifests + services and feeds them in.
+// ---------------------------------------------------------------------------
+
+/**
+ * Code-owned manifest-ecosystem -> book-of-work workstream map. Only the two
+ * implementation workstreams the scaffold homes into are mapped; every other
+ * ecosystem yields `null` (no scaffold host). Case-insensitive on the manifest
+ * `ecosystem` field.
+ */
+export const ECOSYSTEM_WORKSTREAM_MAP: Readonly<
+  Record<string, MigrationBookOfWorkWorkstream>
+> = {
+  maven: 'target_service_api_implementation',
+  npm: 'target_frontend_implementation',
+};
+
+/** Resolve a manifest ecosystem to its workstream (case-insensitive), or null. */
+export function workstreamForEcosystem(
+  ecosystem: string | null | undefined
+): MigrationBookOfWorkWorkstream | null {
+  if (typeof ecosystem !== 'string') return null;
+  return ECOSYSTEM_WORKSTREAM_MAP[ecosystem.trim().toLowerCase()] ?? null;
+}
+
+/** Last-resort human label for the `<service>` token, by workstream. */
+export function workstreamServiceLabel(
+  workstream: MigrationBookOfWorkWorkstream | null
+): string {
+  if (workstream === 'target_frontend_implementation') return 'frontend';
+  if (workstream === 'target_service_api_implementation') return 'service API';
+  return 'service';
+}
+
+/**
+ * The effective workstream of an epic: its `workstream` field when it is a known
+ * non-`unknown` value, else the stream parsed from its `stream:` tag / namespaced
+ * id (`streamOfEpic`). Keeps host-epic selection robust against skeleton epics
+ * that left `workstream` at the `unknown` sentinel.
+ */
+function effectiveWorkstreamOfEpic(epic: MigrationBookOfWorkItem): string {
+  const ws = epic.workstream;
+  if (
+    typeof ws === 'string' &&
+    ws !== 'unknown' &&
+    (MIGRATION_BOOK_OF_WORK_WORKSTREAMS as readonly string[]).includes(ws)
+  ) {
+    return ws;
+  }
+  return streamOfEpic(epic);
+}
+
+export interface ScaffoldHostResolution {
+  /** True iff the epic passed IS the scaffold host for a confirmed manifest. */
+  isHost: boolean;
+  /** The mapped workstream the scaffold homes into, or null when none applies. */
+  workstream: MigrationBookOfWorkWorkstream | null;
+  /** The lowest-`sequenceOrder` epic id in the mapped workstream, or null. */
+  hostEpicId: string | null;
+  /** The confirmed manifest selected for this workstream, or null. */
+  manifest: TargetManifestArtifactWire | null;
+}
+
+/**
+ * Decide whether `epic` is the scaffold HOST for any confirmed manifest, and if
+ * so which manifest. Pure over its inputs:
+ *
+ *   1. Index manifests by mapped workstream (first manifest wins per
+ *      workstream - multi-codebase homing is out of scope).
+ *   2. Take the epic's effective workstream; if no manifest maps to it -> not a
+ *      host (isHost:false, manifest:null).
+ *   3. The host epic is the lowest-`sequenceOrder` epic in that workstream
+ *      (tie-break by id for determinism); isHost iff that epic is `epic`.
+ *
+ * Works identically under single-epic expand and "Expand all": the answer
+ * depends only on the fetched book + manifests, never on click order.
+ */
+export function resolveScaffoldHostForEpic(args: {
+  epic: MigrationBookOfWorkItem;
+  items: MigrationBookOfWorkItem[];
+  manifests: TargetManifestArtifactWire[];
+}): ScaffoldHostResolution {
+  const { epic, items, manifests } = args;
+
+  const byWorkstream = new Map<MigrationBookOfWorkWorkstream, TargetManifestArtifactWire>();
+  for (const manifest of manifests ?? []) {
+    const ws = workstreamForEcosystem(manifest?.ecosystem);
+    if (ws && !byWorkstream.has(ws)) byWorkstream.set(ws, manifest);
+  }
+
+  const epicWorkstream = effectiveWorkstreamOfEpic(epic);
+  const manifest = byWorkstream.get(epicWorkstream as MigrationBookOfWorkWorkstream) ?? null;
+  if (!manifest) {
+    return { isHost: false, workstream: null, hostEpicId: null, manifest: null };
+  }
+  const workstream = epicWorkstream as MigrationBookOfWorkWorkstream;
+
+  let host: MigrationBookOfWorkItem | null = null;
+  for (const candidate of items) {
+    if (candidate.type !== 'epic') continue;
+    if (effectiveWorkstreamOfEpic(candidate) !== workstream) continue;
+    const cs = candidate.sequenceOrder ?? 0;
+    const hs = host?.sequenceOrder ?? 0;
+    if (host === null || cs < hs || (cs === hs && candidate.id < host.id)) {
+      host = candidate;
+    }
+  }
+  const hostEpicId = host?.id ?? null;
+  return { isHost: hostEpicId === epic.id, workstream, hostEpicId, manifest };
+}
+
+export interface ScaffoldServiceElement {
+  id: string;
+  name: string;
+}
+
+export interface ResolvedScaffoldService {
+  /** Display name for the `<service>` token. Never empty (never blocks). */
+  serviceName: string;
+  /** Resolved service element id for traceability; null when unresolved. */
+  serviceId: string | null;
+}
+
+/**
+ * Resolve the `<service>` label + traceability id for the scaffold story with a
+ * graceful fallback chain (FR5). NEVER blocks:
+ *   1. Spec-4 `target_service_element_id` FK -> the bound `services` element
+ *      name (when that element resolves in `services`).
+ *   2. Else, a single service by cardinality -> that service's name.
+ *   3. Else, the workstream/ecosystem label ("service API" / "frontend").
+ * Pure over its inputs.
+ */
+export function resolveScaffoldServiceName(args: {
+  manifest: TargetManifestArtifactWire;
+  workstream: MigrationBookOfWorkWorkstream | null;
+  services: ScaffoldServiceElement[];
+}): ResolvedScaffoldService {
+  const { manifest, workstream, services } = args;
+  const fk =
+    typeof manifest?.target_service_element_id === 'string' &&
+    manifest.target_service_element_id.length > 0
+      ? manifest.target_service_element_id
+      : null;
+  const list = Array.isArray(services) ? services : [];
+
+  // 1. FK -> bound services element name.
+  if (fk) {
+    const bound = list.find((s) => s.id === fk);
+    if (bound && typeof bound.name === 'string' && bound.name.length > 0) {
+      return { serviceName: bound.name, serviceId: fk };
+    }
+  }
+
+  // 2. Single service by cardinality.
+  if (list.length === 1 && typeof list[0].name === 'string' && list[0].name.length > 0) {
+    return { serviceName: list[0].name, serviceId: fk ?? list[0].id };
+  }
+
+  // 3. Workstream/ecosystem label - last resort, never blocks.
+  return { serviceName: workstreamServiceLabel(workstream), serviceId: fk };
+}
+
+/** Filename of the confirmed manifest for the scaffold story seed text. */
+export function scaffoldManifestFilename(manifest: TargetManifestArtifactWire): string {
+  const manifestPath = manifest?.manifest_path;
+  if (typeof manifestPath === 'string' && manifestPath.trim().length > 0) {
+    const segments = manifestPath.trim().split(/[\\/]/);
+    return segments[segments.length - 1] || manifestPath.trim();
+  }
+  const tag = manifest?.tag;
+  return typeof tag === 'string' && tag.length > 0 ? tag : 'the build manifest';
+}
+
+// ---------------------------------------------------------------------------
+// Scaffold feature+story injection (Spec 2026-06-26 Book-of-Work Scaffold +
+// Reference Names, Task Group 3). The scaffold work is parented properly into
+// the hierarchy (feature under the host epic, story under the feature) and rides
+// the SAME stamp -> schema-validate -> merged-hierarchy-validate -> single atomic
+// append path as the epic's stories, so it is hierarchy-legal BY CONSTRUCTION.
+// ---------------------------------------------------------------------------
+
+/** Code-owned scaffold feature title (FR3). */
+export const SCAFFOLD_FEATURE_TITLE = 'Scaffold & build foundation';
+
+/** The marker tag the downstream seed-build-files carriage keys on (FR4). */
+export const SEED_BUILD_FILES_TAG = 'seed_build_files';
+
+export interface ScaffoldInjection {
+  feature: MigrationBookOfWorkItem;
+  story: MigrationBookOfWorkItem;
+}
+
+/**
+ * Build the code-owned scaffold FEATURE ("Scaffold & build foundation",
+ * sequenced as the host epic's FIRST feature) and its single scaffold STORY
+ * (under that feature). PURE over its inputs and hierarchy-legal by
+ * construction (feature.parent = host epic; story.parent = scaffold feature).
+ */
+export function buildScaffoldFeatureAndStory(args: {
+  epic: MigrationBookOfWorkItem;
+  features: MigrationBookOfWorkItem[];
+  stream: string;
+  workstream: MigrationBookOfWorkWorkstream | null;
+  serviceName: string;
+  serviceId: string | null;
+  manifestFilename: string;
+}): ScaffoldInjection {
+  const { epic, features, stream, workstream, serviceName, serviceId, manifestFilename } = args;
+
+  // FIRST feature: sit one below the epic's lowest existing feature sequence.
+  const minFeatureSeq = features.reduce(
+    (m, f) => Math.min(m, f.sequenceOrder ?? 0),
+    features[0]?.sequenceOrder ?? 0
+  );
+  const featureSeq = minFeatureSeq - 1;
+  const ws = (workstream ?? workstreamForEpic(epic)) as MigrationBookOfWorkWorkstream;
+  const featureId = `${epic.id}-scaffold-feature`;
+  const storyId = `${epic.id}-scaffold-story`;
+
+  const feature: MigrationBookOfWorkItem = {
+    id: featureId,
+    type: 'feature',
+    parentId: epic.id,
+    title: SCAFFOLD_FEATURE_TITLE,
+    description:
+      `Scaffold the ${serviceName} application from the confirmed target dependency ` +
+      `manifest (${manifestFilename}) so the rest of the build is constructed on top of ` +
+      `the authoritative file. Sequenced FIRST under this epic.`,
+    acceptanceCriteria: [],
+    workstream: ws,
+    sequenceOrder: featureSeq,
+    tags: [`stream:${stream}`, 'provenance:scaffold'],
+    confidence: 'high',
+    readiness: 'ready_for_spec',
+    readinessReasons: [],
+    missingInputs: [],
+    recommendedNextAction: 'Expand the scaffold story and seed the build file(s) FIRST.',
+    traceabilitySummary:
+      'Code-owned scaffold feature injected at expansion for the confirmed target manifest.',
+  };
+
+  // FR3 seed sentence shared by title + description + acceptance criterion.
+  const seed =
+    `Scaffold the ${serviceName} app and reproduce ${manifestFilename} exactly as ` +
+    `confirmed, dependency-for-dependency.`;
+
+  const story: MigrationBookOfWorkItem = {
+    id: storyId,
+    type: 'story',
+    parentId: featureId,
+    title: seed,
+    description: seed,
+    acceptanceCriteria: [seed],
+    workstream: ws,
+    sequenceOrder: featureSeq,
+    // seed_build_files marks it for the downstream verbatim-manifest carriage;
+    // stream + provenance mirror the existing stamped-story tag conventions.
+    tags: [SEED_BUILD_FILES_TAG, `stream:${stream}`, 'provenance:scaffold'],
+    confidence: 'high',
+    readiness: 'ready_for_spec',
+    readinessReasons: [],
+    missingInputs: [],
+    recommendedNextAction:
+      'Write the verbatim confirmed dependency manifest at its resolved module path FIRST.',
+    traceabilitySummary:
+      `Carries the confirmed target dependency manifest (${manifestFilename}) for the ${serviceName} service.`,
+    // Carry the resolved service id for traceability + future multi-service
+    // homing (null when unresolved).
+    architectureReferences: serviceId ? [serviceId] : [],
+    // Opaque non-schema marker read off the blob by the description-grounded
+    // spec-gen flavour selector (mirrors how the old seed story stamped `kind`).
+    ...({ kind: 'operational' } as Record<string, unknown>),
+  } as MigrationBookOfWorkItem;
+
+  return { feature, story };
+}
+
+/**
+ * Default reader for the target-state `services` elements used by the scaffold
+ * service-name resolution. Collects the Applications-domain instances whose type
+ * name mentions "service". The CALLER owns the fail-soft posture.
+ */
+async function defaultFetchScaffoldServices(
+  projectId: string,
+  architectureId: string
+): Promise<ScaffoldServiceElement[]> {
+  const inventory = await getElementsInventory(projectId, architectureId);
+  const services: ScaffoldServiceElement[] = [];
+  for (const domain of inventory.domains ?? []) {
+    if (domain.name !== 'Applications') continue;
+    for (const type of domain.types ?? []) {
+      if (!/service/i.test(type.name)) continue;
+      for (const instance of type.instances ?? []) {
+        services.push({ id: instance.id, name: instance.name });
+      }
+    }
+  }
+  return services;
+}
+
+/**
+ * Resolve the scaffold feature+story to inject for THIS epic, or [] when none
+ * applies. Gated (FR2/FR3) on a confirmed manifest existing AT EXPANSION TIME
+ * AND this epic being the scaffold host (Group 2). FAIL-SOFT on the manifest /
+ * services reads: a read throw -> no scaffold, expand normally.
+ */
+async function buildScaffoldInjectionForEpic(args: {
+  projectId: string;
+  book: FetchedBookOfWork;
+  epic: MigrationBookOfWorkItem;
+  features: MigrationBookOfWorkItem[];
+  stream: string;
+  fetchTargetManifestArtifacts: (
+    projectId: string,
+    targetArchitectureId: string
+  ) => Promise<TargetManifestArtifactWire[]>;
+  fetchScaffoldServices: (
+    projectId: string,
+    targetArchitectureId: string
+  ) => Promise<ScaffoldServiceElement[]>;
+}): Promise<MigrationBookOfWorkItem[]> {
+  const {
+    projectId,
+    book,
+    epic,
+    features,
+    stream,
+    fetchTargetManifestArtifacts,
+    fetchScaffoldServices,
+  } = args;
+
+  const targetArchitectureId = book.targetArchitectureId;
+  if (!targetArchitectureId) return [];
+
+  let manifests: TargetManifestArtifactWire[] = [];
+  try {
+    manifests = await fetchTargetManifestArtifacts(projectId, targetArchitectureId);
+  } catch (error) {
+    logger.warn('Scaffold manifest gate read failed; expanding without scaffold', {
+      projectId,
+      epicId: epic.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+  if (!Array.isArray(manifests) || manifests.length === 0) return [];
+
+  const host = resolveScaffoldHostForEpic({ epic, items: book.items, manifests });
+  if (!host.isHost || !host.manifest) return [];
+
+  let services: ScaffoldServiceElement[] = [];
+  try {
+    services = await fetchScaffoldServices(projectId, targetArchitectureId);
+  } catch (error) {
+    logger.warn('Scaffold services read failed; falling back to workstream label', {
+      projectId,
+      epicId: epic.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    services = [];
+  }
+
+  const { serviceName, serviceId } = resolveScaffoldServiceName({
+    manifest: host.manifest,
+    workstream: host.workstream,
+    services,
+  });
+  const manifestFilename = scaffoldManifestFilename(host.manifest);
+  const { feature, story } = buildScaffoldFeatureAndStory({
+    epic,
+    features,
+    stream,
+    workstream: host.workstream,
+    serviceName,
+    serviceId,
+    manifestFilename,
+  });
+
+  console.log(
+    `[diag-gateway] pm_migration_delivery_plan stage=scaffold_injected projectId=${projectId} ` +
+      `epicId=${epic.id} featureId=${feature.id} storyId=${story.id} ` +
+      `manifest=${manifestFilename} service=${JSON.stringify(serviceName)} serviceId=${serviceId ?? 'null'}`
+  );
+  return [feature, story];
+}
+
+
+
 /**
  * Expand ONE epic end-to-end. Pipeline failures (batch/judge/rewrite after
  * retry, referential/coverage failures, hierarchy-validation failures) are
@@ -1210,6 +1630,10 @@ export async function expandMigrationBookOfWorkEpic(
   const fetchBook = deps.fetchBook ?? defaultFetchBook;
   const appendItems = deps.appendItems ?? defaultAppendItems;
   const fetchEpicInventory = deps.fetchEpicInventory ?? defaultFetchEpicInventory;
+  const fetchTargetManifestArtifacts =
+    deps.fetchTargetManifestArtifacts ?? defaultFetchLatestTargetManifestArtifacts;
+  const fetchScaffoldServices =
+    deps.fetchScaffoldServices ?? defaultFetchScaffoldServices;
   const callLlm = deps.callLlm ?? defaultCallLlm;
   const llmPool = deps.llmPool ?? getMigrationPlanLlmPool();
   const systemPrompt = deps.systemPromptOverride ?? readDefaultSystemPrompt();
@@ -1273,18 +1697,33 @@ export async function expandMigrationBookOfWorkEpic(
         deps: { callLlm, llmPool, fetchEpicInventory, systemPrompt, batchSize },
       });
 
+      // Scaffold injection (Spec 2026-06-26 FR2/FR3/FR5): when a confirmed
+      // manifest exists AND this epic is the scaffold host (Group 2), inject
+      // ONE code-owned feature + story, riding the SAME validate + atomic
+      // append path below so they are hierarchy-legal by construction. [] when
+      // no confirmed manifest or this epic is not the host (expand normally).
+      const scaffoldItems = await buildScaffoldInjectionForEpic({
+        projectId,
+        book,
+        epic,
+        features,
+        stream,
+        fetchTargetManifestArtifacts,
+        fetchScaffoldServices,
+      });
+
       // Validate every story against the item schema, then the FULL merged
       // hierarchy (no orphans/cycles/level-jumps/duplicate ids against the
       // merged document) BEFORE the atomic append.
       const itemErrors: string[] = [];
-      stories.forEach((story, idx) => {
+      [...scaffoldItems, ...stories].forEach((story, idx) => {
         const result = validateMigrationBookOfWorkItem(story, idx);
         if (!result.ok) itemErrors.push(...result.errors);
       });
       if (itemErrors.length > 0) {
         throw new Error(`Expanded stories failed schema validation: ${itemErrors.join('; ')}`);
       }
-      const merged = validateBookOfWorkHierarchy([...book.items, ...stories]);
+      const merged = validateBookOfWorkHierarchy([...book.items, ...scaffoldItems, ...stories]);
       if (!merged.ok) {
         throw new Error(
           `Merged book-of-work hierarchy validation failed: ${merged.errors.join('; ')}`
@@ -1298,7 +1737,7 @@ export async function expandMigrationBookOfWorkEpic(
       );
       await appendItems(projectId, bookId, {
         epic_id: epicId,
-        items: stories,
+        items: [...scaffoldItems, ...stories],
         expansion_state: 'expanded',
       });
       console.log(

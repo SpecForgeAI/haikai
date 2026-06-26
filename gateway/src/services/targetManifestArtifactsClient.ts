@@ -72,6 +72,13 @@ export interface TargetManifestArtifactInput {
   /** Resolved dependency entries, stored as JSONB (opaque objects). */
   resolved_dependencies: Record<string, unknown>[];
   /**
+   * FK to the chosen target-state Application-domain `services` element this
+   * manifest is bound to (snake_case wire -> `target_service_element_id`).
+   * Nullable: legacy / unbound uploads carry null. No `@CamelCaseWire` on the
+   * AMS side (this store speaks the snake_case default).
+   */
+  target_service_element_id: string | null;
+  /**
    * Tier-2 "free facts" (manifest tech outside the 51 questions) as
    * `{ friendly_name, coordinate }` objects, stored as JSONB. Optional /
    * absent-tolerant (legacy rows + Maven uploads with no free facts).
@@ -97,6 +104,8 @@ export interface TargetManifestArtifactWire {
   content: string | null;
   package_lock_content: string | null;
   resolved_dependencies: Record<string, unknown>[];
+  /** FK to the bound target-state `services` element; absent/null on legacy / unbound rows. */
+  target_service_element_id?: string | null;
   /** Tier-2 "free facts" (`{ friendly_name, coordinate }`); absent on legacy rows. */
   tier2_facts?: Tier2FactWire[];
   is_latest: boolean;

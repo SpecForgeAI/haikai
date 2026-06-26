@@ -141,4 +141,48 @@ public interface ArchitectureRepository extends JpaRepository<ArchitectureEntity
      */
     Optional<ArchitectureEntity> findFirstByProjectIdAndNameIgnoreCase(
         UUID projectId, String name);
+
+    /**
+     * Finds the project's MOST-RECENT-SAVED target-state conversation: the
+     * newest {@code kind='target' AND archived=false} row whose
+     * {@code conversation_saved_at} marker is set, ordered by that marker
+     * descending (LIMIT 1 via {@code findFirst}).
+     *
+     * <p>Decoupled from {@code draft_state='active'} on purpose -- a saved
+     * conversation lives on an un-promoted draft, so the plan must source it
+     * from the save marker, not from "active". Net-new for this spec; modelled
+     * on {@link #findFirstByProjectIdAndKindAndDraftStateAndArchivedFalseOrderByCreatedAtDesc}
+     * but ordered by {@code conversationSavedAt DESC}. Backs the gateway
+     * saved-id resolver default + the wizard's most-recent-saved default.</p>
+     *
+     * <p>Spec: Target-State Conversation Save/Resume/Plan-Sourcing
+     * (2026-06-26) -- Task Group 2 (FR2).</p>
+     *
+     * @param projectId the project UUID
+     * @param kind      {@code target} in practice
+     * @return the newest saved target row, or empty when the project has none
+     */
+    Optional<ArchitectureEntity> findFirstByProjectIdAndKindAndArchivedFalseAndConversationSavedAtIsNotNullOrderByConversationSavedAtDesc(
+        UUID projectId, String kind);
+
+    /**
+     * Lists every SAVED target-state conversation in the project: all
+     * {@code kind='target' AND archived=false} rows whose
+     * {@code conversation_saved_at} marker is set, newest-first. Same predicate
+     * as the most-recent-saved finder above, with no limit.
+     *
+     * <p>Backs the wizard's saved-conversation picker + the extended
+     * saved-conversations list. Net-new for this spec; modelled on
+     * {@link #findByProjectIdAndKindOrderByCreatedAtDesc} but filtered to saved
+     * rows and ordered by {@code conversationSavedAt DESC}.</p>
+     *
+     * <p>Spec: Target-State Conversation Save/Resume/Plan-Sourcing
+     * (2026-06-26) -- Task Group 2 (FR2).</p>
+     *
+     * @param projectId the project UUID
+     * @param kind      {@code target} in practice
+     * @return saved target rows newest-first; empty list when none are saved
+     */
+    List<ArchitectureEntity> findByProjectIdAndKindAndArchivedFalseAndConversationSavedAtIsNotNullOrderByConversationSavedAtDesc(
+        UUID projectId, String kind);
 }

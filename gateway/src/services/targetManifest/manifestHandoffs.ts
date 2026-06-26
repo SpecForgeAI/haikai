@@ -112,6 +112,15 @@ export interface ConfirmedManifestArtifact {
   packageLockContent: string | null;
   /** Group 2 resolved deps for this manifest (concrete / version-unknown). */
   resolvedDependencies: ResolvedDependency[];
+  /**
+   * The chosen target-state Service element id (FK to a `services` element) this
+   * manifest is bound to, or null when unbound (legacy upload / no pick). Carried
+   * onto the persisted `target_manifest_artifacts.target_service_element_id`
+   * (Spec 2026-06-26 target-manifest-service-association). Optional on the
+   * hand-off type so non-persist consumers (seed-build producer) ignore it; the
+   * builder below always populates it.
+   */
+  targetServiceElementId?: string | null;
 }
 
 /**
@@ -134,6 +143,13 @@ export interface ConfirmedManifestArtifact {
 export function buildConfirmedManifestArtifacts(
   parsedManifests: readonly ParsedManifest[],
   resolvedManifests: readonly ResolvedManifest[],
+  /**
+   * Resolves the chosen target-state Service element id for a manifest (by its
+   * `manifestPath` / positional index), parallel to the route's tag seam. Defaults
+   * to `() => null` so existing callers/tests that do not bind a service still
+   * produce a (null-FK) artifact.
+   */
+  resolveServiceElementId: (manifestPath: string, index: number) => string | null = () => null,
 ): ConfirmedManifestArtifact[] {
   const resolvedByPath = new Map<string, ResolvedManifest>();
   for (const r of resolvedManifests) {
@@ -154,6 +170,7 @@ export function buildConfirmedManifestArtifacts(
       content: parsed.rawManifestContent ?? parsed.rawPomContent ?? '',
       packageLockContent: parsed.packageLockContent ?? null,
       resolvedDependencies: resolved ? [...resolved.resolvedDependencies] : [],
+      targetServiceElementId: resolveServiceElementId(parsed.manifestPath, index),
     };
   });
 }

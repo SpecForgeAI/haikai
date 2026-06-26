@@ -11,6 +11,7 @@ import com.example.architecturemodel.repository.diagram.*;
 import com.example.architecturemodel.repository.entity.*;
 import com.example.architecturemodel.repository.relationship.*;
 import com.example.architecturemodel.repository.discovery.EndpointDataEffectRepository;
+import com.example.architecturemodel.repository.targetmanifest.TargetManifestArtifactRepository;
 import com.example.architecturemodel.service.export.DiagramCanonicalizer;
 import com.example.architecturemodel.service.export.DiagramSvgRenderer;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,6 +54,7 @@ class ModelServiceUserJourneyLinkTest {
     @Mock private ApplicationRepository applicationRepository;
     @Mock private ApplicationComponentRepository applicationComponentRepository;
     @Mock private ServiceRepository serviceRepository;
+    @Mock private TargetManifestArtifactRepository targetManifestArtifactRepository;
     @Mock private InterfaceRepository interfaceRepository;
     @Mock private EndpointRepository endpointRepository;
     @Mock private ClassRepository classRepository;
@@ -154,7 +156,7 @@ class ModelServiceUserJourneyLinkTest {
             // Entity repositories
             businessUserRepository, businessProcessRepository, processActivityRepository,
             businessPointRepository, applicationRepository, applicationComponentRepository,
-            serviceRepository, interfaceRepository, endpointRepository,
+            serviceRepository, targetManifestArtifactRepository, interfaceRepository, endpointRepository,
             classRepository, methodRepository,
             applicationPointRepository,
             logicalDataEntityRepository, logicalDataAttributeRepository,

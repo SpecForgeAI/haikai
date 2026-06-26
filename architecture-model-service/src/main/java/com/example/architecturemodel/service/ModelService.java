@@ -17,6 +17,7 @@ import com.example.architecturemodel.repository.*;
 import com.example.architecturemodel.repository.diagram.*;
 import com.example.architecturemodel.repository.entity.*;
 import com.example.architecturemodel.repository.relationship.*;
+import com.example.architecturemodel.repository.targetmanifest.TargetManifestArtifactRepository;
 import com.example.architecturemodel.mapper.discovery.EndpointDataEffectMapper;
 import com.example.architecturemodel.model.dto.discovery.EndpointDataEffectDto;
 import com.example.architecturemodel.repository.discovery.EndpointDataEffectRepository;
@@ -70,6 +71,9 @@ public class ModelService {
     private final ApplicationRepository applicationRepository;
     private final ApplicationComponentRepository applicationComponentRepository;
     private final ServiceRepository serviceRepository;
+    // Target Manifest -> Service Association (Spec 2026-06-26, Task Group 2):
+    // logical FK cleanup when a target-state services element is removed.
+    private final TargetManifestArtifactRepository targetManifestArtifactRepository;
     private final InterfaceRepository interfaceRepository;
     private final EndpointRepository endpointRepository;
     private final ClassRepository classRepository;
@@ -465,6 +469,16 @@ public class ModelService {
         Map<UUID, String> runServiceIdsToRestore =
             captureDiscoveryRunServiceFKs(modelFileId);
 
+        // Snapshot every service id present BEFORE the delete-and-re-insert
+        // cycle so we can detect which services this save REMOVED and null
+        // their dependent target-manifest logical FKs (Spec 2026-06-26 Task
+        // Group 2, FR6 -- there is no physical FK, so cleanup is applied here).
+        Set<String> preSaveServiceIds = serviceRepository.findByModelFileId(modelFileId)
+            .stream()
+            .map(ServiceEntity::getId)
+            .filter(java.util.Objects::nonNull)
+            .collect(Collectors.toSet());
+
         // Truncate & Insert strategy: Delete all existing data for this model file
         deleteAllDataForModelFile(modelFileId);
 
@@ -523,6 +537,11 @@ public class ModelService {
                 .collect(Collectors.toSet())
             : Set.of();
         restoreDiscoveryRunServiceFKs(runServiceIdsToRestore, survivingServiceIds);
+
+        // Logical FK cleanup: any service present before this save but no
+        // longer surviving was removed (archived) -- null its dependent
+        // target-manifest FKs so they never dangle.
+        nullManifestFksForRemovedServices(preSaveServiceIds, survivingServiceIds);
 
         MetaModelRelationshipsDto relationships = model.metaModel().relationships();
         log.debug("saveModel '{}': saving relationships - dataMovements={}",
@@ -1166,6 +1185,40 @@ public class ModelService {
         for (Map.Entry<UUID, String> entry : snapshots.entrySet()) {
             if (survivingServiceIds.contains(entry.getValue())) {
                 discoveryRunRepository.restoreServiceId(entry.getKey(), entry.getValue());
+            }
+        }
+    }
+
+    /**
+     * Logical FK cleanup companion to FR6 of the Target Manifest -> Service
+     * Association spec (2026-06-26). A target-state {@code services} element is
+     * "archived" by removal from the model (the whole-model save deletes and
+     * re-inserts the surviving services); any id present before the save but
+     * absent from {@code survivingServiceIds} was removed, so its dependent
+     * {@code target_manifest_artifacts.target_service_element_id} rows are
+     * nulled here. Non-UUID legacy ids can never be a service-element FK (those
+     * are UUIDs) and are skipped.
+     */
+    private void nullManifestFksForRemovedServices(Set<String> preSaveServiceIds,
+                                                   Set<String> survivingServiceIds) {
+        if (preSaveServiceIds.isEmpty()) {
+            return;
+        }
+        List<UUID> removed = new ArrayList<>();
+        for (String id : preSaveServiceIds) {
+            if (id != null && !survivingServiceIds.contains(id)) {
+                try {
+                    removed.add(UUID.fromString(id));
+                } catch (IllegalArgumentException ignored) {
+                    // Non-UUID service id -- cannot be a target_service_element_id.
+                }
+            }
+        }
+        if (!removed.isEmpty()) {
+            int cleared = targetManifestArtifactRepository.clearTargetServiceElementIdIn(removed);
+            if (cleared > 0) {
+                log.debug("saveModel: nulled target_service_element_id on {} manifest "
+                    + "row(s) for {} removed service element(s)", cleared, removed.size());
             }
         }
     }

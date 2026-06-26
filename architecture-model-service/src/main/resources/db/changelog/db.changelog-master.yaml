@@ -4688,3 +4688,70 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Logical FK from target_manifest_artifacts to a target-state `services`
+  # element (Spec: Target Manifest -> Service Association (Foreign Key),
+  # 2026-06-26 -- Task Group 1). Adds the target_service_element_id UUID
+  # column: a durable LOGICAL foreign key binding each confirmed manifest to
+  # the specific Application-domain service (codebase) that builds it,
+  # replacing the brittle free-text tag association on new uploads. NO
+  # physical FK constraint -- referenced elements are soft-deleted (archived),
+  # so cleanup is logical (the column is nulled on archive). The existing
+  # (project_id, target_architecture_id, tag) latest-flip key and all indexes
+  # are unchanged. Nullable, no backfill (legacy rows read back null).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 201). Registered
+  # AFTER 201 with the not-columnExists precondition idiom (onFail MARK_RAN) so
+  # a re-run is a clean no-op (mirrors 201 / 200 / 195 / 198).
+  # ============================================================================
+  - changeSet:
+      id: 202-target-manifest-service-element
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: target_manifest_artifacts
+              columnName: target_service_element_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/202-target-manifest-service-element.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Target-state conversation save marker (Spec: Target-State Conversation --
+  # Save, Resume, and Plan Sourcing Decoupled from "Active", 2026-06-26 --
+  # Task Group 1, FR1). Adds the conversation_saved_at TIMESTAMPTZ column on the
+  # architecture table: the "Save Conversation" action stamps now() so a
+  # target-state conversation becomes a saveable / resumable / listable object
+  # decoupled from promoting a draft to active. The most-recent-saved /
+  # list-saved finders and the plan's saved-conversation sourcing all key off
+  # this timestamp; conversation_status is deferred entirely (the timestamp
+  # drives every query). Applies to kind='target' rows in practice but the
+  # column is unconditional (mirrors last_marked_stale_at / changeset 147).
+  # Nullable, no backfill (legacy rows read back null = "never saved").
+  #
+  # NEW changeset only -- never edit applied changesets (<= 202). Registered
+  # AFTER 202 with the not-columnExists precondition idiom (onFail MARK_RAN) so
+  # a re-run is a clean no-op (mirrors 202 / 201 / 198).
+  # ============================================================================
+  - changeSet:
+      id: 203-architecture-conversation-saved-at
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: architecture
+              columnName: conversation_saved_at
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/203-architecture-conversation-saved-at.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

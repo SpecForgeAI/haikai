@@ -74,6 +74,15 @@ import {
   formatLatestTargetManifestLabel,
   type LatestTargetManifest,
 } from '../../../api/targetManifestApi';
+import {
+  listTargetArchitectures,
+  type TargetArchitectureDto,
+} from '../../../api/targetArchitecturesApi';
+import {
+  listCapturedDecisions,
+  resolveCapturedAnswerLabel,
+  type CapturedDecisionDto,
+} from '../../../api/architectConversationApi';
 import styles from './MigrationDeliveryPlanWizard.module.css';
 
 // ============================================================================
@@ -277,6 +286,21 @@ export interface MigrationDeliveryPlanWizardProps {
    * gateway manifest-artifacts READ proxy client.
    */
   fetchManifests?: typeof fetchLatestTargetManifests;
+  /**
+   * Test seam: list the project's target architectures so the wizard can
+   * filter to SAVED conversations (`conversationSavedAt != null`) and default
+   * to the most-recent-saved. Defaults to the target-architectures list client;
+   * a degraded read is fail-soft (empty list) and the selector falls back to
+   * the plain `architectures` list. Spec 2026-06-26 FR5.
+   */
+  fetchSavedTargets?: (projectId: string) => Promise<TargetArchitectureDto[]>;
+  /**
+   * Test seam: fetch the chosen saved conversation's captured-decision rows
+   * (the SAME rows the architect conversation reads) for the pre-flight
+   * readiness panel. Defaults to the captured-decisions list client; fail-soft
+   * to an empty list. Spec 2026-06-26 FR7.
+   */
+  fetchCapturedDecisions?: typeof listCapturedDecisions;
 }
 
 // ============================================================================
@@ -377,6 +401,130 @@ export function recommendMigrationStyle(
 }
 
 // ============================================================================
+// Pre-flight readiness (Spec 2026-06-26-target-conversation-save-resume-plan-
+// sourcing, FR7). Computed entirely from the chosen saved conversation's
+// captured-decision rows (the SAME rows the architect conversation reads) plus
+// its `conversationSavedAt` marker. Non-blocking: the panel names the inputs
+// the plan LLM would otherwise surface post-generation as "missing inputs".
+// ============================================================================
+
+/**
+ * Skip sentinels that are AUTO-SKIPPED, not gaps. Excluded from BOTH the
+ * answered numerator and the total denominator (FR7).
+ */
+export const PREFLIGHT_SKIP_SENTINELS = ['not_applicable', 'deferred'] as const;
+
+/** Foundational DB decisions the plan depends on (called out explicitly). */
+export const FOUNDATIONAL_DB_CODES = ['db.engine', 'db.migrations'] as const;
+
+/**
+ * The foundational decision codes whose absence is named as a gap up-front
+ * (exactly the inputs the plan LLM otherwise complains are missing).
+ */
+export const PREFLIGHT_FOUNDATIONAL_CODES = [
+  'service.language',
+  'api.protocol',
+  'db.engine',
+  'db.migrations',
+] as const;
+
+/**
+ * Tech-stack decision codes. If ANY carries a concrete answer, the
+ * `target-tech-stack-<id>.md` render has content (tech-stack written = yes).
+ */
+export const PREFLIGHT_TECH_STACK_CODES = [
+  'service.language',
+  'service.framework',
+  'service.runtime',
+  'db.engine',
+  'db.driver',
+  'ui.framework',
+  'build.tool',
+] as const;
+
+/** Minimal captured-decision row shape the readiness computation needs. */
+export interface PreflightDecisionRow {
+  decisionCode: string;
+  answerValue: string;
+  answerSummary: string | null;
+}
+
+/** Derived, non-blocking readiness snapshot for a chosen saved conversation. */
+export interface PreflightReadiness {
+  savedAt: string | null;
+  answeredCount: number;
+  totalCount: number;
+  dbEnginePresent: boolean;
+  dbMigrationsPresent: boolean;
+  techStackWritten: boolean;
+  namedGaps: string[];
+}
+
+type PreflightDecisionClass = 'answered' | 'skip' | 'unanswered';
+
+function isPreflightSkipLabel(label: string): boolean {
+  const normalised = label.trim().toLowerCase().replace(/\s+/g, '_');
+  return (PREFLIGHT_SKIP_SENTINELS as readonly string[]).includes(normalised);
+}
+
+function classifyPreflightDecision(
+  row: PreflightDecisionRow,
+): PreflightDecisionClass {
+  // Skip detection reads the underlying captured value (via the tolerant reader)
+  // AND the summary, so a friendly summary cannot mask a not_applicable/deferred
+  // sentinel. We deliberately do NOT write a new envelope parser (FR7).
+  const raw = resolveCapturedAnswerLabel(row.answerValue);
+  if (isPreflightSkipLabel(raw)) return 'skip';
+  if (row.answerSummary && isPreflightSkipLabel(row.answerSummary)) return 'skip';
+  const label = (row.answerSummary && row.answerSummary.trim()) || raw.trim();
+  if (!label) return 'unanswered';
+  return 'answered';
+}
+
+/**
+ * Compute the pre-flight readiness for a chosen saved conversation from its
+ * captured-decision rows. `not_applicable`/`deferred` rows are excluded from
+ * BOTH the answered numerator and the total denominator (auto-skipped, not
+ * gaps). Never throws.
+ */
+export function computePreflightReadiness(
+  savedAt: string | null,
+  decisions: PreflightDecisionRow[],
+): PreflightReadiness {
+  const byCode = new Map<string, PreflightDecisionClass>();
+  let answeredCount = 0;
+  let totalCount = 0;
+  for (const row of decisions) {
+    const cls = classifyPreflightDecision(row);
+    byCode.set(row.decisionCode, cls); // latest non-superseded row wins
+    if (cls === 'skip') continue; // excluded from BOTH numerator + denominator
+    totalCount += 1;
+    if (cls === 'answered') answeredCount += 1;
+  }
+  const isAnswered = (code: string): boolean => byCode.get(code) === 'answered';
+  const namedGaps = PREFLIGHT_FOUNDATIONAL_CODES.filter((code) => {
+    const cls = byCode.get(code);
+    // A skipped foundational code is auto-skipped (not a gap); answered is fine.
+    return cls !== 'answered' && cls !== 'skip';
+  });
+  return {
+    savedAt,
+    answeredCount,
+    totalCount,
+    dbEnginePresent: isAnswered('db.engine'),
+    dbMigrationsPresent: isAnswered('db.migrations'),
+    techStackWritten: PREFLIGHT_TECH_STACK_CODES.some((code) => isAnswered(code)),
+    namedGaps: [...namedGaps],
+  };
+}
+
+/** Format an ISO instant to a stable, locale-independent `YYYY-MM-DD` date. */
+export function formatSavedDate(iso: string | null | undefined): string {
+  if (!iso || typeof iso !== 'string') return 'unknown';
+  return iso.slice(0, 10);
+}
+
+// ============================================================================
 // Component
 // ============================================================================
 
@@ -393,6 +541,8 @@ export function MigrationDeliveryPlanWizard({
   fetchContext = fetchMigrationDiscoveryContext,
   generate = generateMigrationDeliveryPlan,
   fetchManifests = fetchLatestTargetManifests,
+  fetchSavedTargets = listTargetArchitectures,
+  fetchCapturedDecisions = listCapturedDecisions,
 }: MigrationDeliveryPlanWizardProps) {
   // ---- Stage state ----
   const [stage, setStage] = useState<WizardStage>(1);
@@ -435,6 +585,15 @@ export function MigrationDeliveryPlanWizard({
   // ---- Stage 7: confirmed-manifest closeout summary (read-only, fail-soft) ----
   const [manifestRows, setManifestRows] = useState<LatestTargetManifest[]>([]);
 
+  // ---- Saved-conversation binding (Spec 2026-06-26 FR5/FR7) ----
+  // Saved target-state conversations (conversationSavedAt != null), newest
+  // first; the target selector picks among these and the readiness panel
+  // reads the chosen one's captured decisions.
+  const [savedTargets, setSavedTargets] = useState<TargetArchitectureDto[]>([]);
+  const [capturedDecisions, setCapturedDecisions] = useState<
+    CapturedDecisionDto[]
+  >([]);
+
   // ---- Submit state (Stage 7) ----
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -455,6 +614,8 @@ export function MigrationDeliveryPlanWizard({
     setDataAndCutoverAssumptions({});
     setTestPackExpectations(new Set());
     setManifestRows([]);
+    setSavedTargets([]);
+    setCapturedDecisions([]);
     setSubmitting(false);
     setSubmitError(null);
   }, [open, initialCurrentArchitectureId, initialTargetArchitectureId]);
@@ -526,6 +687,69 @@ export function MigrationDeliveryPlanWizard({
       cancelled = true;
     };
   }, [open, stage, projectId, targetArchitectureId, fetchManifests]);
+
+  // ---- Saved-conversation fetch + default-target binding (FR5) ----
+  // Lists the project's target architectures, filters to SAVED conversations
+  // (conversationSavedAt != null), sorts most-recent-saved first, and defaults
+  // the target selection to the most-recent-saved. Fail-soft: a degraded read
+  // leaves the saved list empty and the selector falls back to `architectures`.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await fetchSavedTargets(projectId);
+        if (cancelled) return;
+        const saved = (rows ?? [])
+          .filter((r) => Boolean(r.conversationSavedAt))
+          .sort((a, b) =>
+            String(b.conversationSavedAt).localeCompare(
+              String(a.conversationSavedAt),
+            ),
+          );
+        setSavedTargets(saved);
+        if (saved.length > 0) {
+          const mostRecent = saved[0];
+          // Default to the most-recent-saved unless the current selection is
+          // already a saved target (lets the user pick another saved one).
+          setTargetArchitectureId((prev) =>
+            prev && saved.some((t) => t.id === prev) ? prev : mostRecent.id,
+          );
+        }
+      } catch {
+        if (!cancelled) setSavedTargets([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId, fetchSavedTargets]);
+
+  // ---- Captured-decisions fetch for the pre-flight readiness panel (FR7) ----
+  // Fires when a SAVED target is selected; reads the same captured-decision
+  // rows the architect conversation reads. Fail-soft to an empty list so the
+  // panel degrades gracefully (and so a non-saved selection never fetches).
+  useEffect(() => {
+    if (!open) return;
+    const isSaved = savedTargets.some((t) => t.id === targetArchitectureId);
+    if (!targetArchitectureId || !isSaved) {
+      setCapturedDecisions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await fetchCapturedDecisions(projectId, targetArchitectureId);
+        if (cancelled) return;
+        setCapturedDecisions(rows ?? []);
+      } catch {
+        if (!cancelled) setCapturedDecisions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId, targetArchitectureId, savedTargets, fetchCapturedDecisions]);
 
   // ---- Toggle helpers ----
   const toggleMember = useCallback(
@@ -704,6 +928,17 @@ export function MigrationDeliveryPlanWizard({
     const findingsCount = context?.findingsSummary?.totalFindings ?? 0;
     const baselineCount = context?.apiBehaviourBaselineSummary?.totalBaselines ?? 0;
     const mappingsCount = context?.architectureMappingsSummary?.totalMappings ?? 0;
+    // Pre-flight readiness binds to the chosen SAVED conversation (FR7). When
+    // the selection is not a saved target (e.g. the fail-soft fallback to the
+    // plain architectures list), no panel is shown.
+    const selectedSavedTarget =
+      savedTargets.find((t) => t.id === targetArchitectureId) ?? null;
+    const preflightReadiness = selectedSavedTarget
+      ? computePreflightReadiness(
+          selectedSavedTarget.conversationSavedAt ?? null,
+          capturedDecisions,
+        )
+      : null;
     return (
       <>
         <p className={styles.helperText}>
@@ -730,7 +965,7 @@ export function MigrationDeliveryPlanWizard({
             </select>
           </label>
           <label className={styles.label}>
-            Target architecture
+            Target architecture (saved conversation)
             <select
               className={styles.select}
               value={targetArchitectureId}
@@ -738,11 +973,23 @@ export function MigrationDeliveryPlanWizard({
               data-testid="mdp-wizard-target-arch"
             >
               <option value="">Select...</option>
-              {architectures.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
+              {/* FR5: pick a SAVED conversation (most-recent-saved is the
+                  default). The one choice flows into the context fetch +
+                  downstream stages, unifying decisions + tech-stack + mappings
+                  on a single target. Fail-soft: when no saved conversation
+                  exists, fall back to the plain architectures list so the
+                  wizard is never blocked. */}
+              {savedTargets.length > 0
+                ? savedTargets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} (saved {formatSavedDate(t.conversationSavedAt)})
+                    </option>
+                  ))
+                : architectures.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
             </select>
           </label>
         </div>
@@ -855,6 +1102,56 @@ export function MigrationDeliveryPlanWizard({
             </>
           )}
         </div>
+
+        {preflightReadiness && (
+          <div
+            className={styles.readinessCard}
+            data-testid="mdp-wizard-preflight-readiness"
+          >
+            <h4 className={styles.sectionTitle}>Saved conversation readiness</h4>
+            <p className={styles.subtle}>
+              Non-blocking pre-flight check for the chosen saved conversation.
+              You can still generate; these are the inputs the plan would
+              otherwise flag as missing.
+            </p>
+            <div className={styles.readinessRow}>
+              <span className={styles.readinessKey}>Saved:</span>
+              <span data-testid="mdp-wizard-preflight-saved-date">
+                {formatSavedDate(preflightReadiness.savedAt)}
+              </span>
+            </div>
+            <div className={styles.readinessRow}>
+              <span className={styles.readinessKey}>Decisions answered:</span>
+              <span data-testid="mdp-wizard-preflight-answered">
+                {preflightReadiness.answeredCount}/{preflightReadiness.totalCount}
+              </span>
+            </div>
+            <div className={styles.readinessRow}>
+              <span className={styles.readinessKey}>db.engine:</span>
+              <span data-testid="mdp-wizard-preflight-db-engine">
+                {preflightReadiness.dbEnginePresent ? 'present' : 'missing'}
+              </span>
+              <span className={styles.readinessKey}>db.migrations:</span>
+              <span data-testid="mdp-wizard-preflight-db-migrations">
+                {preflightReadiness.dbMigrationsPresent ? 'present' : 'missing'}
+              </span>
+            </div>
+            <div className={styles.readinessRow}>
+              <span className={styles.readinessKey}>Tech-stack written:</span>
+              <span data-testid="mdp-wizard-preflight-tech-stack">
+                {preflightReadiness.techStackWritten ? 'Yes' : 'No'}
+              </span>
+            </div>
+            <div className={styles.readinessRow}>
+              <span className={styles.readinessKey}>Named gaps:</span>
+              <span data-testid="mdp-wizard-preflight-gaps">
+                {preflightReadiness.namedGaps.length > 0
+                  ? preflightReadiness.namedGaps.join(', ')
+                  : 'none'}
+              </span>
+            </div>
+          </div>
+        )}
       </>
     );
   }
