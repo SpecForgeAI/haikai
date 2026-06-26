@@ -8,3 +8,4 @@
 - **Query Parameters**: Use query parameters for filtering, sorting, pagination, and search rather than creating separate endpoints
 - **HTTP Status Codes**: Return appropriate, consistent HTTP status codes that accurately reflect the response (200, 201, 400, 404, 500, etc.)
 - **Rate Limiting Headers**: Include rate limit information in response headers to help clients manage their usage
+- **Port Binding**: Servers MUST bind to `process.env.PORT` (or the language equivalent) with a fallback to a default (e.g., 3000). Never hardcode the listen port. Example: `app.listen(process.env.PORT || 3000)`. This lets the platform inject the port for health probes.

@@ -54,14 +54,26 @@ mkdir -p "$SPEC_PATH/planning/visuals"
 echo "Created spec folder: $SPEC_PATH"
 ```
 
-### Step 3: Create Implementation Folder
+### Step 3: Save Raw Idea
+
+Write the user's exact feature description to `initialization.md`, which the research phase expects to read:
+
+```bash
+cat > "$SPEC_PATH/planning/initialization.md" << 'EOF'
+# Initial Idea
+
+[User's exact description without modification]
+EOF
+```
+
+### Step 4: Create Implementation Folder
 
 Create 2 folders:
 - `$SPEC_PATH/implementation/`
 
 Leave this folder empty, for now. Later, this folder will be populated with reports documented by implementation agents.
 
-### Step 4: Output Confirmation
+### Step 5: Output Confirmation
 
 Return or output the following:
 

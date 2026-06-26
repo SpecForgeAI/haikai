@@ -210,6 +210,18 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str,
             bitbucket_username=git_config.bitbucket_username,
             bitbucket_app_password=git_config.bitbucket_app_password,
         )
+        # Sync generated source files from product root into repo subdir so
+        # `git add -A` picks them up. Skip haikai/ metadata and coordination.yaml.
+        import shutil as _shutil
+        product_root = repo_dir.parent
+        for item in product_root.iterdir():
+            if item.name in {"coordination.yaml", "haikai", ".claude", "chat_logs", folder}:
+                continue
+            dst = repo_dir / item.name
+            if item.is_dir():
+                _shutil.copytree(item, dst, dirs_exist_ok=True)
+            else:
+                _shutil.copy2(item, dst)
         # Fresh per-(spec, repo) sink so apply_git_workflow's in-place mutation
         # captures THIS unit's branch/sha/pr/error, not a running last-write-wins.
         one = _types.SimpleNamespace(errors=[], commit_sha=None, branch=None, pr_url=None)

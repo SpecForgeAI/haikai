@@ -13,7 +13,7 @@ python-gitlab>=4.2.0
 mcp>=1.0.0
 
 # LLM integration via LangChain (minimal installation)
-langchain-core>=0.1.0
+langchain-core>=0.1.0,<1.4.0
 langchain-openai>=0.0.5
 langchain-anthropic>=0.1.0
 langchain-google-genai>=0.0.5  # Optional: for Google Gemini support

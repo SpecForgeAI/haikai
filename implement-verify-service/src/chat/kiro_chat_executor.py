@@ -101,13 +101,21 @@ class KiroChatExecutor:
         logger.info(f"  Kiro CLI: {self.kiro_cli_path}")
 
     def _find_kiro_cli(self) -> Path:
-        """Locate kiro-cli binary."""
-        # Check PATH first
+        """Locate kiro-cli binary.
+
+        On Linux/WSL: checks PATH then ~/.local/bin.
+        On Windows: kiro-cli is a Linux ELF binary living in the WSL rootfs.
+                    We detect it there and set self._use_wsl = True so callers
+                    prepend ['wsl', ...] to every subprocess invocation.
+        """
+        self._use_wsl = False
+
+        # Check PATH first (works natively on Linux/WSL)
         kiro_path = shutil.which("kiro-cli")
         if kiro_path:
             return Path(kiro_path)
 
-        # Check common locations
+        # Check common native locations
         candidates = [
             Path.home() / ".local" / "bin" / "kiro-cli",
             Path("/usr/local/bin/kiro-cli"),
@@ -115,6 +123,33 @@ class KiroChatExecutor:
         for candidate in candidates:
             if candidate.exists():
                 return candidate
+
+        # Windows: kiro-cli lives inside the WSL rootfs - invoke via wsl.exe
+        if platform.system() == "Windows":
+            wsl_exe = shutil.which("wsl")
+            if wsl_exe:
+                try:
+                    result = subprocess.run(
+                        ["wsl", "which", "kiro-cli"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    wsl_path = result.stdout.strip()
+                    if wsl_path:
+                        self._use_wsl = True
+                        logger.info(f"Using kiro-cli via WSL: {wsl_path}")
+                        return Path(wsl_path)
+                except Exception:
+                    pass
+            # Fallback: known WSL install location
+            wsl_rootfs_candidates = [
+                Path(r"C:\Users") / os.environ.get("USERNAME", "") / "wsl" / "Ubuntu-24.04" / "rootfs" / "root" / ".local" / "bin" / "kiro-cli",
+            ]
+            for candidate in wsl_rootfs_candidates:
+                if candidate.exists():
+                    self._use_wsl = True
+                    logger.info(f"Found kiro-cli in WSL rootfs: {candidate}")
+                    # Return the Linux path for wsl to invoke
+                    return Path("/root/.local/bin/kiro-cli")
 
         raise ValueError(
             "kiro-cli not found in PATH or common locations. "
@@ -254,6 +289,11 @@ class KiroChatExecutor:
             "--trust-all-tools",
             "--wrap", "never",
         ]
+
+        # On Windows, invoke via wsl.exe: wsl /path/to/kiro-cli chat ...
+        if getattr(self, '_use_wsl', False):
+            kiro_linux_path = self.kiro_cli_path.as_posix()
+            cli_args = ["wsl", kiro_linux_path, "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never"]
 
         # Resume existing session unless starting fresh
         if not is_new_session:
