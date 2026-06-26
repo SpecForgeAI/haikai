@@ -757,15 +757,9 @@ def _require_git_manager(company: str, project: str) -> GitManager:
             status_code=400,
             detail="Project not initialized. Call POST /projects/init first.",
         )
-    if len(repos) != 1:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Polyrepo projects are not supported by the V2 git workflow "
-                f"(found {len(repos)} repos); it operates on a single repository."
-            ),
-        )
-    (repo_folder,) = repos.keys()
+    # Polyrepo: use the first repo for the pre-flight GitManager check.
+    # The actual multi-repo iteration happens in _resolve_repo_targets (tasks.py).
+    repo_folder = next(iter(repos))
     repo_dir = product_root / repo_folder
 
     gm = GitManager(

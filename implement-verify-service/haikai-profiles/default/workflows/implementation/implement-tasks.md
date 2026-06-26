@@ -1,3 +1,7 @@
+## Working Directory
+
+Read `haikai/specs/[this-spec]/planning/target-repo.md` for the `target_folder` value. Write ALL generated source code into that subdirectory (e.g. `api/` or `web/`). Do NOT write source files at the project root - they must go inside the target folder.
+
 Implement all tasks assigned to you and ONLY those task(s) that have been assigned to you.
 
 ## Implementation process:
