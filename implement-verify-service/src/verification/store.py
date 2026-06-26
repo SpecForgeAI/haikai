@@ -379,3 +379,51 @@ def pending_cells_older_than(conn: sqlite3.Connection, cutoff_iso: str) -> list[
         (cutoff_iso,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def pending_cells(conn: sqlite3.Connection) -> list[dict]:
+    """Every cell whose LATEST verdict is `pending`, any age — the poll-fallback's
+    work-list (D9.1). Same projection as `pending_cells_older_than` without the
+    age cutoff."""
+    rows = conn.execute(
+        """
+        SELECT v.* FROM verdicts v
+        JOIN (SELECT orchestrate_id, task_group_id, repo, verifier, MAX(id) AS mid
+              FROM verdicts GROUP BY orchestrate_id, task_group_id, repo, verifier) last
+          ON v.id = last.mid
+        WHERE v.verdict = 'pending'
+        """,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def cell_progress(conn: sqlite3.Connection, orchestrate_id: str) -> tuple[int, int]:
+    """(cells_done, cells_total) for an orchestration across all task groups (D6).
+    total = distinct cells that have any verdict; done = those whose LATEST
+    verdict is terminal (anything but `pending`). Derived from observed cells —
+    the declared expected-cell manifest lives in the workspace lock."""
+    rows = conn.execute(
+        """
+        SELECT v.verdict FROM verdicts v
+        JOIN (SELECT orchestrate_id, task_group_id, repo, verifier, MAX(id) AS mid
+              FROM verdicts WHERE orchestrate_id = ?
+              GROUP BY orchestrate_id, task_group_id, repo, verifier) last
+          ON v.id = last.mid
+        """,
+        (orchestrate_id,),
+    ).fetchall()
+    total = len(rows)
+    done = sum(1 for r in rows if r["verdict"] != "pending")
+    return done, total
+
+
+def binding_for_cell(conn: sqlite3.Connection, orchestrate_id: str,
+                     task_group_id: str, repo: str) -> dict | None:
+    """The most recent ci_binding recorded for a cell's repo, or None. Lets the
+    poll-fallback recover the (provider, head_sha) it needs to query CI."""
+    row = conn.execute(
+        "SELECT * FROM ci_bindings WHERE orchestrate_id = ? AND task_group_id = ? AND repo = ?"
+        " ORDER BY rowid DESC LIMIT 1",
+        (orchestrate_id, task_group_id, repo),
+    ).fetchone()
+    return dict(row) if row else None

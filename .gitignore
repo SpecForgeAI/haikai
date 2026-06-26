@@ -84,3 +84,4 @@ scratch-*
 
 # Haikai trace logging — host trace dir created by the docker-compose mount
 /.haikai-trace/
+.haikai/
