@@ -28,6 +28,16 @@ Which feature would you like to initiate a new spec for?
 
 **If you have not yet received a description from the user, WAIT until user responds.**
 
+### Step 1b: Determine Target Repository
+
+Read `coordination.yaml` at the project root. It maps folder names to repo URLs (e.g. `api: https://...`, `web: https://...`). Based on the spec intent description, determine which repo folder this spec targets.
+
+Write it to `$SPEC_PATH/planning/target-repo.md`:
+
+```bash
+echo "target_folder: [matched-folder]" > "$SPEC_PATH/planning/target-repo.md"
+```
+
 ### Step 2: Initialize Spec Structure
 
 Determine a kebab-case spec name from the user's description, then create the spec folder:
