@@ -100,6 +100,17 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: false,
         },
+        // Target dependency manifest UPLOAD + its manifest-artifacts READ proxy
+        // are gateway-OWNED (parse + auto-answer + AMS persistence VIA the
+        // gateway); AMS has no controller for them. Without this rule the
+        // catch-all `/api` below sends them to the model service (8080) and
+        // Spring 404s "No static resource". RegExp key (dynamic
+        // target-architectures path). MUST come before `/api`.
+        '^/api/projects/[^/]+/target-architectures/[^/]+/(target-manifests|manifest-artifacts)': {
+          target: chatApiTarget,
+          changeOrigin: true,
+          secure: false,
+        },
         // Architect Conversation question-library scope projection -- gateway-
         // owned (derived from the gateway question library); AMS has no such
         // route. MUST come before `/api`.
