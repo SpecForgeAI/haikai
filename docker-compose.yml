@@ -268,6 +268,10 @@ services:
       API_WORKSPACE_DIR: /app/workspace
       JOBS_DB_PATH: /app/workspace/jobs.db
       VERIFICATION_DB_PATH: /app/workspace/verify.db
+      # Chat/Implement backend selector — REQUIRED by the service (the chat +
+      # implement/orchestration endpoints fail closed with 503 if unset). Set
+      # here so the container always has it regardless of which .env is present.
+      CHAT_EXECUTOR: ${CHAT_EXECUTOR:-claude}
       HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
       HAIKAI_TRACE_FILE: /trace/trace.log
     ports:
@@ -299,6 +303,10 @@ services:
       JOBS_DB_PATH: /app/workspace/jobs.db
       VERIFICATION_DB_PATH: /app/workspace/verify.db
       WORKER_ID: worker-1
+      # The worker runs the implement/orchestration session and builds the chat
+      # executor for every job, so it needs CHAT_EXECUTOR too (503/job failure
+      # otherwise). Mirror of the API service value.
+      CHAT_EXECUTOR: ${CHAT_EXECUTOR:-claude}
       HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
       HAIKAI_TRACE_FILE: /trace/trace.log
     volumes:

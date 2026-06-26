@@ -144,6 +144,24 @@ public class TargetManifestArtifactEntity {
     private List<Map<String, Object>> resolvedDependencies = new ArrayList<>();
 
     /**
+     * Tier-2 "free facts" for this artifact -- manifest-declared technology
+     * OUTSIDE the 51 architecture questions (e.g. an MCP SDK, a Spring AI / LLM
+     * client), named by the upload LLM gap-fill. jsonb via the Hypersistence
+     * {@link JsonType} (mirrors {@link #resolvedDependencies}). Empty-array
+     * default (NOT null) so reads are total. Each element is a
+     * { friendly_name, coordinate } object. Informational only (never new
+     * questions); feeds the prompt-ready output.
+     *
+     * <p>Spec: Target Dependency-Manifest Auto-Answer (Comprehensive) + Tier-2
+     * Free Facts (2026-06-26) -- Task Group 7. Snake_case wire ({@code tier2Facts}
+     * -&gt; {@code tier2_facts}); NO {@code @CamelCaseWire}.</p>
+     */
+    @Type(JsonType.class)
+    @Column(name = "tier2_facts", columnDefinition = "jsonb")
+    @Builder.Default
+    private List<Map<String, Object>> tier2Facts = new ArrayList<>();
+
+    /**
      * Latest-version flag. Exactly one row per
      * {@code (project_id, target_architecture_id, tag)} carries {@code true} at
      * a time; re-upload flips the prior latest to {@code false}. Defaults to

@@ -1,16 +1,12 @@
 /**
- * Tests for the per-question static context lead-in render in
- * `ConversationMainPane`.
+ * Tests for the per-question static context lead-in in `ConversationMainPane`.
  *
- * Spec: 2026-05-26 Architect Conversation Enrichments (Batched #11 + #12)
- *
- * Covers (2 tests):
- *   A. When a `question` turn carries a non-empty `staticContextLeadIn`, the
- *      lead-in renders inside a `<small>` block with the `.contextLeadIn`
- *      class, above the prompt text in DOM order.
- *   B. When the field is `undefined` (older persisted turns) the lead-in is
- *      silently absent -- no `<small>` block, no banner, no placeholder
- *      (Pitfall 4 backward-compat assertion).
+ * Spec 2026-06-26-target-conversation-versioned-answer-bare-stem-ux (FR3): the
+ * italic static context lead-in that repeated the question text is DROPPED from
+ * the on-screen render. The `staticContextLeadIn` field stays on the turn shape
+ * (and in the Markdown export) for backward-compat, but the pane no longer paints
+ * it. These tests pin the removal so a regression that re-adds the on-screen
+ * lead-in goes red.
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -45,8 +41,8 @@ function renderPane(turns: ConversationTurn[]) {
   );
 }
 
-describe('ConversationMainPane -- staticContextLeadIn render (Spec 2026-05-26, #11)', () => {
-  it('renders the lead-in inside a <small className=contextLeadIn> block above the prompt', () => {
+describe('ConversationMainPane -- staticContextLeadIn is DROPPED (Spec 2026-06-26, FR3)', () => {
+  it('does NOT render the lead-in even when a question turn carries one; the prompt still renders', () => {
     const leadIn =
       'Database engine. Common modern picks: PostgreSQL, MySQL, SQL Server, Oracle, MongoDB, DynamoDB.';
     const questionTurn: QuestionTurn = {
@@ -59,60 +55,45 @@ describe('ConversationMainPane -- staticContextLeadIn render (Spec 2026-05-26, #
 
     renderPane([questionTurn]);
 
-    // The lead-in block is rendered with the expected data-testid and copy.
-    const leadInEl = screen.getByTestId(
-      'architect-conversation-turn-question-leadin-db.engine',
-    );
-    expect(leadInEl).toBeInTheDocument();
-    expect(leadInEl.textContent).toBe(leadIn);
-    // Tag name is <small> per spec.
-    expect(leadInEl.tagName.toLowerCase()).toBe('small');
-    // Class includes the CSS-modules-hashed `contextLeadIn` token.
-    expect(leadInEl.className).toMatch(/contextLeadIn/);
-
-    // DOM order: lead-in comes before the prompt text inside the turn wrapper.
+    // The question turn + its prompt text still render.
     const turnWrapper = screen.getByTestId(
       'architect-conversation-turn-question-db.engine',
     );
-    const innerHtml = turnWrapper.innerHTML;
-    const leadInIdx = innerHtml.indexOf(leadIn);
-    const promptIdx = innerHtml.indexOf('Which database engine?');
-    expect(leadInIdx).toBeGreaterThan(-1);
-    expect(promptIdx).toBeGreaterThan(-1);
-    expect(leadInIdx).toBeLessThan(promptIdx);
+    expect(turnWrapper).toBeInTheDocument();
+    expect(screen.getByText('Which database engine?')).toBeInTheDocument();
+
+    // The lead-in is GONE: no lead-in test id, no `.contextLeadIn` element, and the
+    // lead-in copy is absent from the rendered turn.
+    expect(
+      screen.queryByTestId(
+        'architect-conversation-turn-question-leadin-db.engine',
+      ),
+    ).toBeNull();
+    expect(turnWrapper.querySelector('[class*="contextLeadIn"]')).toBeNull();
+    expect(turnWrapper.textContent).not.toContain(leadIn);
   });
 
-  it('renders no muted block when staticContextLeadIn is undefined (backward-compat for older turns)', () => {
+  it('renders cleanly when staticContextLeadIn is undefined (older persisted turns)', () => {
     const questionTurn: QuestionTurn = {
       kind: 'question',
       decisionCode: 'service.language',
       promptText: 'Which language?',
       roundIndex: 1,
-      // Field deliberately omitted to model an older persisted turn from
-      // before this spec ships.
+      // Field deliberately omitted to model an older persisted turn.
     };
 
     renderPane([questionTurn]);
 
-    // The turn itself renders (prompt + label still present).
     expect(
       screen.getByTestId(
         'architect-conversation-turn-question-service.language',
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('Which language?')).toBeInTheDocument();
-
-    // The lead-in block MUST NOT be present. No banner, no placeholder.
     expect(
       screen.queryByTestId(
         'architect-conversation-turn-question-leadin-service.language',
       ),
     ).toBeNull();
-    // Defence in depth: no element with the `.contextLeadIn` class anywhere
-    // in the rendered tree.
-    const turnWrapper = screen.getByTestId(
-      'architect-conversation-turn-question-service.language',
-    );
-    expect(turnWrapper.querySelector('[class*="contextLeadIn"]')).toBeNull();
   });
 });

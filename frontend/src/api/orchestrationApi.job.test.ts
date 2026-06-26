@@ -86,6 +86,44 @@ describe('Orchestration Job API Functions', () => {
       expect(body.spec_intents).toEqual([{ spec_name: 'my-spec-intent' }]);
       expect(body.spec_intents[0]).not.toHaveProperty('session_id');
     });
+
+    // Batch feature (2026-06-26): a non-empty batchName enables multi-spec
+    // submissions (coupled batch -> single MR) and is sent as snake_case
+    // `batch_name` per the AMS wire convention.
+    it('includes batch_name and multiple spec_intents in batch mode', async () => {
+      const mockResponse = { job_id: 'job-batch', status: 'queued' };
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      await startOrchestrationJob(
+        'company',
+        'project',
+        [{ spec_name: 'spec-one' }, { spec_name: 'spec-two' }],
+        [],
+        'checkout-revamp',
+      );
+
+      const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      const body = JSON.parse(fetchCall[1].body);
+      expect(body.batch_name).toBe('checkout-revamp');
+      expect(body.spec_intents).toHaveLength(2);
+    });
+
+    it('omits batch_name when blank/whitespace', async () => {
+      const mockResponse = { job_id: 'job-x', status: 'queued' };
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      });
+
+      await startOrchestrationJob('company', 'project', [{ spec_name: 'spec-one' }], [], '   ');
+
+      const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      const body = JSON.parse(fetchCall[1].body);
+      expect(body).not.toHaveProperty('batch_name');
+    });
   });
 
   describe('pollJobStatus', () => {

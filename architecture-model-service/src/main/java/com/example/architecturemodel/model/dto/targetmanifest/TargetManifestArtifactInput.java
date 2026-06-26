@@ -31,6 +31,9 @@ import java.util.Map;
  * @param packageLockContent   verbatim lockfile content; nullable (present for
  *                             NPM, absent for Maven)
  * @param resolvedDependencies resolved dependency entries (stored as JSONB)
+ * @param tier2Facts            Tier-2 "free facts" (manifest tech outside the 51
+ *                             questions) as { friendly_name, coordinate }
+ *                             objects (stored as JSONB); informational only
  */
 public record TargetManifestArtifactInput(
     String tag,
@@ -39,6 +42,7 @@ public record TargetManifestArtifactInput(
     String manifestPath,
     String content,
     String packageLockContent,
-    List<Map<String, Object>> resolvedDependencies
+    List<Map<String, Object>> resolvedDependencies,
+    List<Map<String, Object>> tier2Facts
 ) {
 }

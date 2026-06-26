@@ -79,15 +79,18 @@ export interface SpecIntent {
 /**
  * Creates an orchestration job via POST /api/v2/jobs/orchestrations.
  *
- * Upstream contract is ONE spec per job — the gateway rejects
- * spec_intents.length > 1 with a 400, so callers must submit specs
- * one at a time (current part-based behaviour).
+ * One spec per job by default. To run MULTIPLE specs as one coupled batch
+ * (N commits on a single `feature/<batchName>` branch, opened as ONE merge
+ * request), pass a non-empty `batchName`; the gateway then accepts >1
+ * spec_intents. Without it the gateway still rejects multi-spec with a 400.
  * Returns a job ID for polling via pollJobStatus.
  *
  * @param company - Organisation/company name
  * @param project - Project name
  * @param specIntents - Array of spec intent objects with spec_name and session_id
  * @param contextFiles - Optional array of context file paths
+ * @param batchName - Optional batch name. Non-empty => batch mode (multiple
+ *   spec_intents allowed; single MR). snake_cased to `batch_name` on the wire.
  * @returns Promise resolving to { jobId: string }
  * @throws Error if the request fails
  */
@@ -96,6 +99,7 @@ export async function startOrchestrationJob(
   project: string,
   specIntents: SpecIntent[],
   contextFiles: string[] = [],
+  batchName?: string,
 ): Promise<{ jobId: string }> {
   const normalizedCompany = normalizeIdentifier(company);
   const normalizedProject = normalizeIdentifier(project);
@@ -106,11 +110,16 @@ export async function startOrchestrationJob(
     ...(session_id ? { session_id } : {}),
   }));
 
+  // Include batch_name only when non-empty — its presence is what enables
+  // batch mode upstream (snake_case per the AMS wire convention).
+  const trimmedBatchName = batchName?.trim() ?? '';
+
   const body = {
     company: normalizedCompany,
     project: normalizedProject,
     spec_intents: cleanedIntents,
     context_files: contextFiles,
+    ...(trimmedBatchName ? { batch_name: trimmedBatchName } : {}),
     options: {
       stop_on_error: true,
       retry_on_failure: false,

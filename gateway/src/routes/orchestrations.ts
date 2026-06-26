@@ -16,10 +16,11 @@
  *   its orchestrationClient.executeOrchestration service.
  * - RETIRED the string-based POST /v1/orchestrations proxy (the upstream
  *   contract now requires `spec_intents` as objects).
- * - POST /v2/jobs/orchestrations now enforces SINGLE-spec submissions
- *   (`spec_intents.length === 1`): the upstream contract is one spec per
- *   job. Multi-spec submissions get a clear 400; the UI submits specs
- *   one at a time (current part-based behaviour).
+ * - POST /v2/jobs/orchestrations enforces one-spec-per-job UNLESS a
+ *   non-empty `batch_name` is supplied, in which case N spec_intents run
+ *   as one coupled batch (N commits on a single `feature/<batch_name>`
+ *   branch, opened as ONE merge request). Multi-spec WITHOUT batch_name
+ *   still gets a clear 400.
  * - GET /v2/jobs/:job_id forwards the full JobDetailResponse transparently
  *   (status / progress / result / logs_url / started_at / completed_at /
  *   error) -- see the JobDetailResponse type below.
@@ -93,19 +94,30 @@ export interface SpecIntentObject {
  * Request body for creating an orchestration job.
  *
  * Spec 2026-02-06: Implement-Part Sequencing Workflow
- * Spec 2026-06-12: spec_intents must contain EXACTLY ONE element -- the
- * upstream contract is one spec per job. Multi-spec submissions are rejected
- * with a clear 400.
+ * Spec 2026-06-12: one spec per job by default.
+ * Batch mode: when a non-empty `batch_name` is set, spec_intents MAY contain
+ * more than one element -- the upstream service runs them as one coupled batch
+ * (N commits on a single `feature/<batch_name>` branch, opened as one MR).
+ * Multi-spec WITHOUT batch_name is rejected with a clear 400.
  */
 export interface CreateJobRequest {
   /** Organisation/company name */
   company: string;
   /** Project name */
   project: string;
-  /** Single-element array of spec intent objects with spec_name and session_id */
+  /**
+   * Spec intent objects (spec_name + optional session_id). Exactly one element
+   * unless `batch_name` is set, in which case multiple are allowed.
+   */
   spec_intents: SpecIntentObject[];
   /** Optional array of context file paths */
   context_files?: string[];
+  /**
+   * Optional batch name. Non-empty => batch mode: spec_intents may hold N
+   * elements that accumulate as N commits on one `feature/<batch_name>`
+   * branch and open a SINGLE merge request. Absent/empty => one-spec-per-job.
+   */
+  batch_name?: string;
   /** Orchestration options (optional) */
   options?: OrchestrationOptions;
 }
@@ -179,10 +191,12 @@ export interface JobDetailResponse {
  * Validates the job creation request body.
  *
  * Spec 2026-02-06: Implement-Part Sequencing Workflow
- * Spec 2026-06-12: enforces single-spec submissions (one spec per job per
- * the upstream contract).
+ * Spec 2026-06-12: one spec per job by default. Batch mode (a non-empty
+ * `batch_name`) allows multiple spec_intents in a single job.
+ *
+ * Exported for unit testing.
  */
-function validateCreateJobRequest(body: unknown): string | null {
+export function validateCreateJobRequest(body: unknown): string | null {
   if (!body || typeof body !== "object") {
     return "Request body is required";
   }
@@ -205,6 +219,13 @@ function validateCreateJobRequest(body: unknown): string | null {
     return "project cannot be empty";
   }
 
+  // Validate batch_name (optional). A non-empty value switches on batch mode,
+  // which is what permits more than one spec_intent below.
+  if (req.batch_name !== undefined && req.batch_name !== null && typeof req.batch_name !== "string") {
+    return "batch_name must be a string when provided";
+  }
+  const batchName = typeof req.batch_name === "string" ? req.batch_name.trim() : "";
+
   // Validate spec_intents (array of objects with spec_name and session_id)
   if (!req.spec_intents || !Array.isArray(req.spec_intents)) {
     return "spec_intents array is required";
@@ -212,11 +233,13 @@ function validateCreateJobRequest(body: unknown): string | null {
   if (req.spec_intents.length < 1) {
     return "spec_intents must contain at least one element";
   }
-  // Spec 2026-06-12: one spec per job -- the upstream contract executes a
-  // single spec per orchestration job. Submit multiple specs as separate
-  // jobs, one at a time.
-  if (req.spec_intents.length > 1) {
-    return "spec_intents must contain exactly one element: the orchestration service runs one spec per job. Submit additional specs as separate jobs.";
+  // One spec per job UNLESS batch mode is on. With a non-empty batch_name the
+  // upstream service accumulates the N specs as N commits on a single
+  // `feature/<batch_name>` branch and opens one MR. Multi-spec without a
+  // batch_name is rejected (the legacy per-spec-branch path is intentionally
+  // not exposed through the gateway).
+  if (req.spec_intents.length > 1 && batchName === "") {
+    return "spec_intents must contain exactly one element unless batch_name is set: provide a non-empty batch_name to run multiple specs as one coupled batch (single branch + merge request).";
   }
   for (let i = 0; i < req.spec_intents.length; i++) {
     const intent = req.spec_intents[i];
@@ -257,8 +280,9 @@ export const orchestrationsRouter = Router();
  *
  * Features:
  * - Server-side Bearer token injected via implementationLlmProxyClient
- * - Request validation for company, project, spec_intent (EXACTLY ONE spec
- *   per job -- Spec 2026-06-12)
+ * - Request validation for company, project, spec_intent (one spec per job,
+ *   or N specs when a non-empty batch_name enables batch mode -- Spec
+ *   2026-06-12 + batch)
  * - Opaque 502 for upstream auth failures (401/403)
  * - 503 for network errors
  * - Logging for job creation operations
@@ -306,11 +330,16 @@ orchestrationsRouter.post(
         spec_name,
         ...(session_id ? { session_id } : {}),
       }));
+      // Forward batch_name only when non-empty (the upstream treats its
+      // presence as "batch mode"). Trim so whitespace can't accidentally
+      // trigger it.
+      const batchName = typeof body.batch_name === "string" ? body.batch_name.trim() : "";
       const proxyBody = {
         company: body.company,
         project: body.project,
         spec_intents: cleanedIntents,
         context_files: body.context_files || [],
+        ...(batchName ? { batch_name: batchName } : {}),
         options: body.options || {
           stop_on_error: true,
           retry_on_failure: false,

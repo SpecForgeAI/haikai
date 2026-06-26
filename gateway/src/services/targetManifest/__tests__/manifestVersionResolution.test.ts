@@ -19,9 +19,11 @@ import {
   resolveMavenVersions,
   resolveNpmVersions,
   buildLockfileIndex,
+  resolveManifestVersions,
   VERSION_UNKNOWN,
 } from '../manifestVersionResolution';
 import { resolveMavenManifest, resolveNpmManifest } from '../manifestDependencyResolvers';
+import { ParsedManifest } from '../parsedManifestModel';
 
 function byName(rows: { name: string }[]): Record<string, any> {
   return Object.fromEntries(rows.map((r) => [r.name, r]));
@@ -145,5 +147,61 @@ describe('layered version resolution (Group 2)', () => {
     const idx = buildLockfileIndex(v1);
     expect(idx.get('react')).toBe('18.2.0');
     expect(idx.get('axios')).toBe('1.6.2');
+  });
+});
+
+describe('pomMetadata carry-through (Spec 2 Group 1)', () => {
+  const MAVEN_POM = `<project>
+    <properties>
+      <java.version>21</java.version>
+    </properties>
+    <dependencies>
+      <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.4</version></dependency>
+    </dependencies>
+    <build><plugins>
+      <plugin>
+        <groupId>org.flywaydb</groupId>
+        <artifactId>flyway-maven-plugin</artifactId>
+        <version>10.17.0</version>
+      </plugin>
+    </plugins></build>
+  </project>`;
+
+  it('(g) the MAVEN path carries the parsed pomMetadata (<properties> + <plugins>)', () => {
+    const parsed: ParsedManifest = {
+      status: 'parsed', ecosystem: 'MAVEN', kind: 'pom.xml', tag: 'svc',
+      manifestPath: 'services/orders/pom.xml',
+      declaredDependencies: resolveMavenManifest(MAVEN_POM, 'services/orders/pom.xml'),
+      rawPomContent: MAVEN_POM, packageLockContent: null,
+    };
+    const resolved = resolveManifestVersions(parsed);
+
+    expect(resolved.pomMetadata).not.toBeNull();
+    expect(resolved.pomMetadata!.properties['java.version']).toBe('21');
+    const flyway = resolved.pomMetadata!.plugins.find(
+      (p) => p.artifactId === 'flyway-maven-plugin',
+    );
+    expect(flyway).toBeDefined();
+    expect(flyway!.groupId).toBe('org.flywaydb');
+
+    // Additive only: the resolver rows are unchanged by the new field.
+    const pg = resolved.resolvedDependencies.find(
+      (d) => d.name === 'org.postgresql:postgresql',
+    );
+    expect(pg!.resolvedVersion).toBe('42.7.4');
+    expect(resolved.resolvedDependencies).toHaveLength(1);
+  });
+
+  it('(h) the NPM path carries no pomMetadata (null) and resolution is undisturbed', () => {
+    const pkg = JSON.stringify({ name: 'web', dependencies: { react: '18.2.0' } });
+    const parsed: ParsedManifest = {
+      status: 'parsed', ecosystem: 'NPM', kind: 'package.json', tag: 'web-ui',
+      manifestPath: 'apps/web/package.json',
+      declaredDependencies: resolveNpmManifest(pkg, 'apps/web/package.json'),
+      rawPomContent: null, packageLockContent: null,
+    };
+    const resolved = resolveManifestVersions(parsed);
+    expect(resolved.pomMetadata).toBeNull();
+    expect(resolved.resolvedDependencies[0].name).toBe('react');
   });
 });

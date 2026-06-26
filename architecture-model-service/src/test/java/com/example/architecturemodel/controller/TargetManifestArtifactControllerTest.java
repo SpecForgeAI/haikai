@@ -84,6 +84,7 @@ class TargetManifestArtifactControllerTest {
             ARTIFACT_ID, PROJECT_ID, TARGET_ARCH_ID, tag, "package_json", "NPM",
             "package.json", content, lock,
             List.of(Map.of("name", "react", "version", "18.2.0")),
+            List.of(Map.of("friendly_name", "MCP SDK", "coordinate", "io.modelcontextprotocol.sdk")),
             true, NOW);
     }
 
@@ -98,7 +99,8 @@ class TargetManifestArtifactControllerTest {
             List.of(new TargetManifestArtifactInput(
                 "web", "package_json", "NPM", "package.json",
                 "{\n  \"name\": \"app\"\n}\n", "{\n}\n",
-                List.of(Map.of("name", "react", "version", "18.2.0"))))));
+                List.of(Map.of("name", "react", "version", "18.2.0")),
+                List.of(Map.of("friendly_name", "Spring AI", "coordinate", "spring-ai-openai"))))));
 
         mockMvc.perform(post(
                 "/api/model/projects/{p}/target-architectures/{a}/manifest-artifacts",
@@ -112,7 +114,10 @@ class TargetManifestArtifactControllerTest {
             .andExpect(jsonPath("$[0].manifest_path").value("package.json"))
             .andExpect(jsonPath("$[0].package_lock_content").value("{\n}\n"))
             .andExpect(jsonPath("$[0].is_latest").value(true))
-            .andExpect(jsonPath("$[0].resolved_dependencies[0].name").value("react"));
+            .andExpect(jsonPath("$[0].resolved_dependencies[0].name").value("react"))
+            // Tier-2 free facts serialize snake_case on the response wire.
+            .andExpect(jsonPath("$[0].tier2_facts[0].friendly_name").value("MCP SDK"))
+            .andExpect(jsonPath("$[0].tier2_facts[0].coordinate").value("io.modelcontextprotocol.sdk"));
 
         // The snake_case body deserialized into the service input verbatim.
         @SuppressWarnings("unchecked")
@@ -131,6 +136,10 @@ class TargetManifestArtifactControllerTest {
         assertThat(one.packageLockContent()).isEqualTo("{\n}\n");
         assertThat(one.resolvedDependencies()).hasSize(1);
         assertThat(one.resolvedDependencies().get(0).get("name")).isEqualTo("react");
+        // Tier-2 free facts deserialize from the snake_case wire onto the input.
+        assertThat(one.tier2Facts()).hasSize(1);
+        assertThat(one.tier2Facts().get(0).get("friendly_name")).isEqualTo("Spring AI");
+        assertThat(one.tier2Facts().get(0).get("coordinate")).isEqualTo("spring-ai-openai");
     }
 
     @Test

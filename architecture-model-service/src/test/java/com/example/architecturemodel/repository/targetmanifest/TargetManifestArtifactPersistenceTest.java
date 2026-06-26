@@ -81,7 +81,7 @@ class TargetManifestArtifactPersistenceTest {
                                                      String lockContent,
                                                      List<Map<String, Object>> deps) {
         return new TargetManifestArtifactInput(
-            tag, kind, ecosystem, manifestPath, content, lockContent, deps);
+            tag, kind, ecosystem, manifestPath, content, lockContent, deps, List.of());
     }
 
     @Test
@@ -212,5 +212,56 @@ class TargetManifestArtifactPersistenceTest {
         List<TargetManifestArtifactDto> latest = service.findLatest(projectId, targetArchitectureId);
         assertThat(latest).hasSize(2);
         assertThat(repository.findAll()).hasSize(3); // billing(1) + orders(2 incl. history)
+    }
+
+    @Test
+    @DisplayName("tier2_facts JSONB round-trip: { friendly_name, coordinate } free-fact objects persist + read back intact; null reads back empty (Spec 2026-06-26 Task Group 7)")
+    void tier2FactsJsonbRoundTrip() {
+        UUID projectId = UUID.randomUUID();
+        UUID targetArchitectureId = UUID.randomUUID();
+
+        Map<String, Object> mcp = new LinkedHashMap<>();
+        mcp.put("friendly_name", "MCP SDK");
+        mcp.put("coordinate", "io.modelcontextprotocol.sdk");
+        Map<String, Object> springAi = new LinkedHashMap<>();
+        springAi.put("friendly_name", "Spring AI / LLM client");
+        springAi.put("coordinate", "spring-ai-openai");
+
+        service.persistLatest(projectId, targetArchitectureId,
+            List.of(new TargetManifestArtifactInput(
+                "orders", "pom", "MAVEN", "pom.xml", "<project/>", null,
+                List.of(dep("g:a", "1.0.0")), List.of(mcp, springAi))));
+        entityManager.clear();
+
+        List<TargetManifestArtifactEntity> rows =
+            repository.findByProjectIdAndTargetArchitectureIdAndIsLatestTrueOrderByTagAsc(
+                projectId, targetArchitectureId);
+        assertThat(rows).hasSize(1);
+        TargetManifestArtifactEntity reloaded = rows.get(0);
+
+        // The Tier-2 free facts JSONB round-trips intact (snake_case keys preserved).
+        assertThat(reloaded.getTier2Facts()).hasSize(2);
+        assertThat(reloaded.getTier2Facts().get(0).get("friendly_name")).isEqualTo("MCP SDK");
+        assertThat(reloaded.getTier2Facts().get(0).get("coordinate"))
+            .isEqualTo("io.modelcontextprotocol.sdk");
+        assertThat(reloaded.getTier2Facts().get(1).get("friendly_name"))
+            .isEqualTo("Spring AI / LLM client");
+
+        // The DTO surfaces the same tier2_facts (one per tag).
+        List<TargetManifestArtifactDto> latest = service.findLatest(projectId, targetArchitectureId);
+        assertThat(latest).hasSize(1);
+        assertThat(latest.get(0).tier2Facts()).hasSize(2);
+        assertThat(latest.get(0).tier2Facts().get(0).get("coordinate"))
+            .isEqualTo("io.modelcontextprotocol.sdk");
+
+        // A fresh artifact with a NULL tier2_facts input reads back as empty (NOT null).
+        service.persistLatest(projectId, targetArchitectureId,
+            List.of(new TargetManifestArtifactInput(
+                "billing", "pom", "MAVEN", "pom.xml", "<project/>", null, List.of(), null)));
+        entityManager.clear();
+        TargetManifestArtifactEntity billing =
+            repository.findFirstByProjectIdAndTargetArchitectureIdAndTagAndIsLatestTrue(
+                projectId, targetArchitectureId, "billing").orElseThrow();
+        assertThat(billing.getTier2Facts()).isNotNull().isEmpty();
     }
 }

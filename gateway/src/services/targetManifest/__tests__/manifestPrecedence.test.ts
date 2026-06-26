@@ -22,8 +22,10 @@ import { ParsedManifest } from '../parsedManifestModel';
 import { resolveMavenManifest } from '../manifestDependencyResolvers';
 import {
   deriveManifestAnswerCandidates,
+  dedupeCandidatesByPrecedence,
   TARGET_MANIFEST_AUTO_ANSWER_TASK_NAME,
 } from '../manifestAutoAnswerer';
+import type { ManifestAnswerCandidate } from '../manifestAutoAnswerer';
 import {
   filterCandidatesByPrecedence,
   recomputeResolvedTargetVersions,
@@ -306,4 +308,146 @@ test('(e) a tech-stack-prefill row is supersedable by a manifest; a user-walked 
   const filtered = await filterCandidatesByPrecedence('proj-1', 'arch-target', candidates, deps);
   expect(filtered.survivingCandidates.map((c) => c.decisionCode)).toContain('service.framework');
   expect(filtered.skippedManualCodes).not.toContain('service.framework');
+});
+
+// ---------------------------------------------------------------------------
+// (f)-(i) Spec 2 Group 6 — provenance precedence (deterministic > inferred >
+//         llm), all strictly BELOW manual; one write-immediately answer / code.
+// ---------------------------------------------------------------------------
+
+function candidate(
+  decisionCode: string,
+  provenance: ManifestAnswerCandidate['provenance'],
+  opts: { framework?: string; version?: string; sourceDependency?: string } = {},
+): ManifestAnswerCandidate {
+  return {
+    decisionCode,
+    answerKind: 'framework-version',
+    framework: opts.framework ?? 'X',
+    version: opts.version ?? '1.0',
+    sourceFile: 'pom.xml',
+    sourceQuote: 'evidence',
+    tag: 't',
+    provenance,
+    sourceDependency: opts.sourceDependency ?? 'com.example:x',
+  };
+}
+
+test('(f) de-dup precedence: deterministic > inferred > llm for the same code (order-independent)', () => {
+  const det = candidate('db.engine', 'deterministic', { framework: 'det' });
+  const inf = candidate('db.engine', 'inferred', { framework: 'inf' });
+  const llm = candidate('db.engine', 'llm', { framework: 'llm' });
+
+  // deterministic beats both, regardless of input order.
+  expect(dedupeCandidatesByPrecedence([llm, inf, det])).toEqual([
+    expect.objectContaining({ provenance: 'deterministic', framework: 'det' }),
+  ]);
+  // inferred beats llm.
+  expect(dedupeCandidatesByPrecedence([llm, inf])).toEqual([
+    expect.objectContaining({ provenance: 'inferred' }),
+  ]);
+  // llm alone survives (lowest non-manual rank).
+  expect(dedupeCandidatesByPrecedence([llm])).toEqual([
+    expect.objectContaining({ provenance: 'llm' }),
+  ]);
+});
+
+test('(g) manual-wins is STRICTLY above deterministic/inferred/llm: a manual row blocks even a deterministic candidate', async () => {
+  const latest = [manualRow('db.engine', { framework: 'MySQL', version: '8.4' })];
+  const deps: ManifestPrecedenceDeps = {
+    fetchLatestCapturedDecisions: (async () =>
+      latest) as ManifestPrecedenceDeps['fetchLatestCapturedDecisions'],
+  };
+  const candidates = [
+    candidate('db.engine', 'deterministic'),
+    candidate('db.driver', 'llm'),
+  ];
+
+  const filtered = await filterCandidatesByPrecedence('proj-1', 'arch-target', candidates, deps);
+
+  // db.engine has a manual winner => even the DETERMINISTIC candidate is skipped.
+  expect(filtered.skippedManualCodes).toContain('db.engine');
+  expect(filtered.survivingCandidates.map((c) => c.decisionCode)).not.toContain('db.engine');
+  // db.driver (llm) has no manual winner => it survives (write-immediately).
+  expect(filtered.survivingCandidates.map((c) => c.decisionCode)).toContain('db.driver');
+});
+
+test('(h) de-dup keeps EXACTLY ONE candidate per code across mixed provenance', () => {
+  const deduped = dedupeCandidatesByPrecedence([
+    candidate('service.framework', 'deterministic'),
+    candidate('db.engine', 'inferred'),
+    candidate('validation.framework', 'llm'),
+    candidate('db.engine', 'llm'), // loses to the inferred db.engine
+  ]);
+  expect(deduped.map((c) => c.decisionCode).sort()).toEqual([
+    'db.engine',
+    'service.framework',
+    'validation.framework',
+  ]);
+  // db.engine resolves to the inferred hit (beats the llm one).
+  expect(deduped.find((c) => c.decisionCode === 'db.engine')!.provenance).toBe('inferred');
+});
+
+test('(i) precedence filter preserves provenance + sourceDependency on surviving candidates (for the UI badge)', async () => {
+  const deps: ManifestPrecedenceDeps = {
+    fetchLatestCapturedDecisions: (async () =>
+      []) as ManifestPrecedenceDeps['fetchLatestCapturedDecisions'],
+  };
+  const c = candidate('db.engine', 'inferred', {
+    sourceDependency: 'org.postgresql:postgresql',
+  });
+  const filtered = await filterCandidatesByPrecedence('p', 'a', [c], deps);
+  const survivor = filtered.survivingCandidates[0];
+  expect(survivor.provenance).toBe('inferred');
+  expect(survivor.sourceDependency).toBe('org.postgresql:postgresql');
+});
+
+// ---------------------------------------------------------------------------
+// (j) Spec 2 Group 8 — recompute STAMPS the WIRE provenance from each candidate's
+//     internal provenance (deterministic => manifest, inferred => inferred, llm
+//     => llm) and carries the source dependency through for the UI badge. The
+//     manual overlay still wins and stamps 'manual' (no sourceDependency).
+// ---------------------------------------------------------------------------
+
+test('(j) recompute stamps wire provenance (deterministic=>manifest, inferred=>inferred, llm=>llm) + carries sourceDependency', () => {
+  const recomputed = recomputeResolvedTargetVersions({
+    resolvedManifests: [],
+    manifestCandidates: [
+      candidate('service.framework', 'deterministic', {
+        framework: 'Spring Boot',
+        version: '3.4.1',
+        sourceDependency: 'org.springframework.boot:spring-boot-starter-web',
+      }),
+      candidate('db.engine', 'inferred', {
+        framework: 'PostgreSQL',
+        version: 'version-unknown',
+        sourceDependency: 'org.postgresql:postgresql',
+      }),
+      candidate('validation.framework', 'llm', {
+        framework: 'Hibernate Validator',
+        version: '8.0.1',
+        sourceDependency: 'org.hibernate.validator:hibernate-validator',
+      }),
+    ],
+    latestDecisions: [],
+  });
+  const byCode = Object.fromEntries(recomputed.map((v) => [v.decisionCode, v]));
+
+  // deterministic-direct => wire 'manifest' (the historic default is preserved).
+  expect(byCode['service.framework'].provenance).toBe('manifest');
+  expect(byCode['service.framework'].sourceDependency).toBe(
+    'org.springframework.boot:spring-boot-starter-web',
+  );
+
+  // inferred => wire 'inferred'; family-only db.engine stays version-unknown and
+  // the driver coordinate rides through as the source dependency.
+  expect(byCode['db.engine'].provenance).toBe('inferred');
+  expect(byCode['db.engine'].versionUnknown).toBe(true);
+  expect(byCode['db.engine'].sourceDependency).toBe('org.postgresql:postgresql');
+
+  // llm => wire 'llm'; source dependency carried for the badge.
+  expect(byCode['validation.framework'].provenance).toBe('llm');
+  expect(byCode['validation.framework'].sourceDependency).toBe(
+    'org.hibernate.validator:hibernate-validator',
+  );
 });

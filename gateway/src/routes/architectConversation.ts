@@ -139,6 +139,7 @@ import {
   type WriteTargetTechStackDeps,
 } from '../services/architectConversation/writeTargetTechStackMarkdown';
 import { registerTargetManifestUploadRoute } from './targetManifestUpload';
+import { registerDecisionsFileImportRoute } from './decisionsFileImport';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency container (test seam).
@@ -237,7 +238,7 @@ export function resetArchitectConversationDeps(): void {
 // nominal types live in separate files).
 // ---------------------------------------------------------------------------
 
-function buildArchitectLlmClient(): ArchitectLlmClient {
+export function buildArchitectLlmClient(): ArchitectLlmClient {
   return {
     callLlmToolLoop: async (
       args: CallLlmToolLoopArgs,
@@ -328,6 +329,11 @@ export const architectConversationRouter = Router();
 //   POST /api/projects/:projectId/target-architectures/:targetArchitectureId/target-manifests
 // ---------------------------------------------------------------------------
 registerTargetManifestUploadRoute(architectConversationRouter);
+
+// Spec 2026-06-26-target-state-decisions-file-import (Spec 3): the decisions-file
+// import route mounts ALONGSIDE the manifest route on this same router. Full path:
+//   POST /api/projects/:projectId/target-architectures/:targetArchitectureId/decisions-file-import
+registerDecisionsFileImportRoute(architectConversationRouter);
 
 // ---------------------------------------------------------------------------
 // Shared helpers

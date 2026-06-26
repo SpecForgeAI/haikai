@@ -207,10 +207,25 @@ export interface ResolvedTargetVersion {
   version: string;
   /** True iff `version` is a sentinel (e.g. `version-unknown`). */
   versionUnknown: boolean;
-  /** Where this winning value came from. */
-  provenance: 'manifest' | 'manual';
+  /**
+   * Where this winning value came from. `manifest` = a deterministic-direct
+   * coordinate/property/plugin/build-tool witness; `inferred` = a badged
+   * write-immediately inference (e.g. db.driver=>db.engine, family-only); `llm`
+   * = the gap-fill suggestion; `manual` = a surviving manual edit (always wins).
+   * The `inferred`/`llm` members are ADDITIVE (Spec 2026-06-26 Task Group 8) — no
+   * AMS DTO change.
+   */
+  provenance: 'manifest' | 'manual' | 'inferred' | 'llm';
   /** `sourceFile` when manifest-derived (null for a manual answer). */
   sourceFile: string | null;
+  /**
+   * OPTIONAL source dependency/evidence coordinate that drove a manifest-derived
+   * value (e.g. `org.postgresql:postgresql`, carried onto an inferred `db.engine`
+   * or an LLM-suggested answer). Absent for a manual answer or a legacy row.
+   * Surfaced so the UI can badge "inferred from <driver>" / "from <dependency>".
+   * Spec 2026-06-26 Task Group 8 — purely additive.
+   */
+  sourceDependency?: string;
 }
 
 /** Parsed `{ framework, version }` out of a captured-decision `answerValue`. */
@@ -242,6 +257,28 @@ function readFrameworkVersionFromRow(
 }
 
 /**
+ * Map a candidate's INTERNAL provenance (`deterministic` / `inferred` / `llm`,
+ * absent === `deterministic`) to the WIRE provenance stamped on a
+ * manifest-derived {@link ResolvedTargetVersion}. Spec 2026-06-26 Task Group 8:
+ * deterministic-direct => `manifest` (the historic default), `inferred` =>
+ * `inferred`, `llm` => `llm`. The separate `manual` wire value is stamped only by
+ * the manual overlay below (never from a candidate).
+ */
+function wireProvenanceForCandidate(
+  provenance: ManifestAnswerCandidate['provenance'],
+): 'manifest' | 'inferred' | 'llm' {
+  switch (provenance) {
+    case 'inferred':
+      return 'inferred';
+    case 'llm':
+      return 'llm';
+    case 'deterministic':
+    default:
+      return 'manifest';
+  }
+}
+
+/**
  * Recompute the resolved target-version set AFTER a (re-)upload. Combines:
  *   - the SURVIVING manual `{framework, version}` answers (manual wins), and
  *   - the freshly-resolved manifest candidates for every other dependency code.
@@ -262,15 +299,19 @@ export function recomputeResolvedTargetVersions(args: {
 }): ResolvedTargetVersion[] {
   const byCode = new Map<string, ResolvedTargetVersion>();
 
-  // 1. Seed with the manifest candidates (manifest provenance).
+  // 1. Seed with the manifest candidates. The wire provenance is stamped from
+  //    each candidate's internal provenance (deterministic => manifest, inferred
+  //    => inferred, llm => llm) and the triggering source dependency is carried
+  //    through for the UI badge (Spec 2026-06-26 Task Group 8).
   for (const c of args.manifestCandidates) {
     byCode.set(c.decisionCode, {
       decisionCode: c.decisionCode,
       framework: c.framework,
       version: c.version,
       versionUnknown: isVersionSentinel(c.version),
-      provenance: 'manifest',
+      provenance: wireProvenanceForCandidate(c.provenance),
       sourceFile: c.sourceFile,
+      sourceDependency: c.sourceDependency,
     });
   }
 

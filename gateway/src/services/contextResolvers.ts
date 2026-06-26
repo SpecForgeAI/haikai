@@ -48,6 +48,10 @@ import {
   TargetStateCapturedDecision,
 } from './targetStateCapturedDecisionsClient';
 import {
+  TargetManifestArtifactWire,
+  fetchLatestTargetManifestArtifacts,
+} from './targetManifestArtifactsClient';
+import {
   ADHOC_CODE_PREFIX,
   ADHOC_DECISION_CREATED_BY_TASK,
   NOTE_CODE_PREFIX,
@@ -766,6 +770,49 @@ export class MigrationSpecContextResolver implements ContextResolver {
  * client, mirroring the MigrationDiscoveryContextResolver pattern. The gateway
  * proxy routes exist to serve the frontend and other gateway-external callers.
  */
+/**
+ * Fetch the persisted Tier-2 "free facts" for a target architecture and render
+ * them as "<friendly name> - <coordinate>" labels (em-dash separated; deduped,
+ * first-seen order).
+ *
+ * Reads the `tier2_facts` JSONB off the latest `target_manifest_artifacts` rows
+ * (one per tag; the upload-global facts are carried on every row, so a union +
+ * dedupe yields the set). FAIL-SOFT: any read error / malformed wire returns an
+ * empty list so the decisions prompt still renders. Spec 2026-06-26 Task Group 7.
+ */
+async function fetchTier2FreeFactLabels(
+  projectId: string,
+  targetArchitectureId: string,
+): Promise<string[]> {
+  try {
+    const artifacts = await fetchLatestTargetManifestArtifacts(projectId, targetArchitectureId);
+    const labels: string[] = [];
+    const seen = new Set<string>();
+    for (const artifact of artifacts as TargetManifestArtifactWire[]) {
+      const facts = Array.isArray(artifact.tier2_facts) ? artifact.tier2_facts : [];
+      for (const fact of facts) {
+        const friendly =
+          fact && typeof fact.friendly_name === 'string' ? fact.friendly_name.trim() : '';
+        const coordinate =
+          fact && typeof fact.coordinate === 'string' ? fact.coordinate.trim() : '';
+        if (friendly.length === 0 && coordinate.length === 0) continue;
+        const label = coordinate.length > 0 ? `${friendly} \u2014 ${coordinate}` : friendly;
+        if (seen.has(label)) continue;
+        seen.add(label);
+        labels.push(label);
+      }
+    }
+    return labels;
+  } catch (error) {
+    logger.debug('Target state decisions context: tier-2 free-facts fetch failed (fail-soft)', {
+      projectId,
+      targetArchitectureId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return [];
+  }
+}
+
 export class TargetStateDecisionsContextResolver implements ContextResolver {
   async resolve(projectId: string, _threadKey: string): Promise<string> {
     let activeTargetId: string | null;
@@ -814,9 +861,13 @@ export class TargetStateDecisionsContextResolver implements ContextResolver {
       return 'no decisions captured yet';
     }
 
-    const text = buildTargetStateDecisionsPromptText(decisions);
+    // Spec 2026-06-26 Task Group 7: read the persisted Tier-2 "free facts"
+    // (manifest-declared tech outside the 51 questions) and feed them into the
+    // prompt-ready output. Fail-soft inside the helper (no facts -> no section).
+    const tier2Facts = await fetchTier2FreeFactLabels(projectId, activeTargetId);
+    const text = buildTargetStateDecisionsPromptText(decisions, tier2Facts);
     console.log(
-      `[diag-gw] resolver=target-state-decisions-context result=ok char_count=${text.length} decision_count=${decisions.length}`,
+      `[diag-gw] resolver=target-state-decisions-context result=ok char_count=${text.length} decision_count=${decisions.length} tier2_fact_count=${tier2Facts.length}`,
     );
     return text;
   }
@@ -885,6 +936,7 @@ function isNoteRow(d: TargetStateCapturedDecision): boolean {
  */
 export function buildTargetStateDecisionsPromptText(
   decisions: readonly TargetStateCapturedDecision[],
+  tier2Facts: readonly string[] = [],
 ): string {
   // Split the open-phase rows OUT of the architecture-wide group so the preset
   // `### Architecture-wide` rendering is byte-faithful. `adhoc.*` and `note.*`
@@ -964,6 +1016,21 @@ export function buildTargetStateDecisionsPromptText(
     lines.push('### Free-form discussion notes');
     for (const d of discussionNotes) {
       lines.push(`- ${renderDecisionBody(d)}`);
+    }
+    lines.push('');
+  }
+
+  // ---------------------------------------------------------------------
+  // Tier-2 "free facts" from uploaded manifests (Spec 2026-06-26 Task
+  // Group 7). Additive + fail-soft: appended LAST, gated on facts actually
+  // existing, so a project with no manifest-declared Tier-2 tech renders
+  // exactly as before. Informational lower-level facts, NOT answers to the
+  // 51 questions.
+  // ---------------------------------------------------------------------
+  if (tier2Facts.length > 0) {
+    lines.push('### Lower-level facts (from manifests)');
+    for (const fact of tier2Facts) {
+      lines.push(`- ${fact}`);
     }
     lines.push('');
   }

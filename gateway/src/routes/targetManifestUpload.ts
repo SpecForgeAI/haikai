@@ -70,6 +70,7 @@ import {
 import {
   TargetManifestArtifactInput,
   TargetManifestArtifactWire,
+  Tier2FactWire,
   fetchLatestTargetManifestArtifacts,
   persistTargetManifestArtifacts,
 } from '../services/targetManifestArtifactsClient';
@@ -210,6 +211,15 @@ export interface TargetManifestAutoAnswerSlice {
    * per parsed manifest, carrying its tag + verbatim content + resolved deps).
    */
   confirmedManifests: ConfirmedManifestArtifact[];
+  /**
+   * Tier-2 "free facts" -- manifest-declared technology OUTSIDE the 51
+   * questions (labels of the form "<friendly name> - <coordinate>", em-dash
+   * separated), named by the upload LLM gap-fill. Informational +
+   * editable/removable (NEVER new questions); feeds the prompt-ready output /
+   * seed-build-files. Empty when the LLM is unwired or failed (fail-open).
+   * Also PERSISTED on the `target_manifest_artifacts` store (Task Group 7).
+   */
+  freeFacts: string[];
 }
 
 export interface TargetManifestUploadResponse {
@@ -253,7 +263,47 @@ export type PersistConfirmedManifestsSeam = (
   projectId: string,
   targetArchitectureId: string,
   artifacts: readonly ConfirmedManifestArtifact[],
+  tier2Facts?: readonly Tier2FactWire[],
 ) => Promise<void>;
+
+// ---------------------------------------------------------------------------
+// Tier-2 "free facts" persist mapping (Spec 2026-06-26, Task Group 7)
+//
+// The orchestrator surfaces the upload-global Tier-2 free facts as
+// "<friendly name> - <coordinate>" labels (em-dash separated, built by
+// `manifestLlmGapFill.buildLabel`). For PERSISTENCE we split each label back
+// into a { friendly_name, coordinate } object -- the shape the AMS
+// `tier2_facts` JSONB column stores (mirroring `resolved_dependencies`). The
+// split is on the LAST separator so a friendly name that itself contains it
+// still yields the right (space-free) coordinate; a separator-less label is
+// stored as a coordinate-less friendly name.
+// ---------------------------------------------------------------------------
+
+/** The em-dash separator the gap-fill label uses (mirrors `buildLabel`). */
+const FREE_FACT_LABEL_SEPARATOR = ' \u2014 ';
+
+/**
+ * Split the orchestrator's Tier-2 free-fact LABELS into the persisted
+ * `{ friendly_name, coordinate }` wire objects. Pure; tolerant of a malformed
+ * (separator-less) label. Exported for unit testing.
+ */
+export function freeFactsToTier2Wire(freeFacts: readonly string[]): Tier2FactWire[] {
+  const out: Tier2FactWire[] = [];
+  for (const raw of freeFacts) {
+    const label = typeof raw === 'string' ? raw.trim() : '';
+    if (label.length === 0) continue;
+    const idx = label.lastIndexOf(FREE_FACT_LABEL_SEPARATOR);
+    if (idx === -1) {
+      out.push({ friendly_name: label, coordinate: '' });
+    } else {
+      out.push({
+        friendly_name: label.slice(0, idx).trim(),
+        coordinate: label.slice(idx + FREE_FACT_LABEL_SEPARATOR.length).trim(),
+      });
+    }
+  }
+  return out;
+}
 
 /**
  * Maps one verified {@link ConfirmedManifestArtifact} onto the snake_case AMS
@@ -268,6 +318,7 @@ export type PersistConfirmedManifestsSeam = (
  */
 export function toTargetManifestArtifactInput(
   artifact: ConfirmedManifestArtifact,
+  tier2Facts: readonly Tier2FactWire[] = [],
 ): TargetManifestArtifactInput {
   return {
     tag: artifact.tag,
@@ -279,6 +330,8 @@ export function toTargetManifestArtifactInput(
     resolved_dependencies: artifact.resolvedDependencies.map(
       (d) => ({ ...d }) as Record<string, unknown>,
     ),
+    // Upload-global Tier-2 free facts (same set carried on every per-tag row).
+    tier2_facts: tier2Facts.map((f) => ({ ...f })),
   };
 }
 
@@ -292,8 +345,9 @@ export const defaultPersistConfirmedManifests: PersistConfirmedManifestsSeam = a
   projectId,
   targetArchitectureId,
   artifacts,
+  tier2Facts = [],
 ) => {
-  const payload = artifacts.map(toTargetManifestArtifactInput);
+  const payload = artifacts.map((a) => toTargetManifestArtifactInput(a, tier2Facts));
   await persistTargetManifestArtifacts(projectId, targetArchitectureId, payload);
 };
 
@@ -530,8 +584,12 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
   // -------------------------------------------------------------------------
   if (confirmedManifests.length > 0) {
     const persist = args.persistConfirmedManifests ?? defaultPersistConfirmedManifests;
+    // Carry the orchestrator's Tier-2 free facts into the persisted payload
+    // (split to { friendly_name, coordinate }); a write hiccup is still caught
+    // below, so this never blocks the response.
+    const tier2Facts = freeFactsToTier2Wire(orchestrated.freeFacts);
     try {
-      await persist(projectId, targetArchitectureId, confirmedManifests);
+      await persist(projectId, targetArchitectureId, confirmedManifests, tier2Facts);
       logger.info('[diag-gateway] target_manifest_upload persist_confirmed_manifests_ok', {
         projectId,
         targetArchitectureId,
@@ -574,6 +632,7 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
       skippedManualCodes: orchestrated.skippedManualCodes,
       resolvedTargetVersions: orchestrated.resolvedTargetVersions,
       confirmedManifests,
+      freeFacts: orchestrated.freeFacts,
     },
   };
 }
@@ -687,12 +746,24 @@ export function registerTargetManifestUploadRoute(
           : null;
 
       try {
+        // Spec 2 R5: thread the ONE gap-fill LLM client through the manifest
+        // path. A LAZY require avoids a LOAD-TIME circular import with
+        // architectConversation.ts (which registers THIS route at its module top
+        // level); buildArchitectLlmClient is only needed at REQUEST time, by when
+        // both modules are fully initialised. Fail-open inside the orchestrator —
+        // a missing/erroring LLM leaves the deterministic + inferred answers.
+        const { buildArchitectLlmClient } =
+          require('./architectConversation') as typeof import('./architectConversation');
         const response = await buildTargetManifestUploadResponseWithAutoAnswer({
           files,
           body,
           projectId,
           targetArchitectureId,
           conversationThreadId,
+          deps: {
+            ...defaultManifestUploadOrchestratorDeps,
+            llmClient: buildArchitectLlmClient(),
+          },
         });
         return res.status(200).json(response);
       } catch (err) {

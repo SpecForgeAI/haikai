@@ -226,16 +226,16 @@ describe('ConversationMainPane — open-phase turn rendering', () => {
 
   it('keeps the universal "Not applicable" opt-out on PRESET questions (invariant preserved)', () => {
     const presetQuestion: PendingQuestion = {
-      // NON-versioned preset question (was `build.tool`, now a versioned code
-      // rendering the dedicated framework+version control); the universal
-      // opt-out invariant applies to every NON-versioned preset question.
-      decisionCode: 'db.migrations',
+      // Genuinely NON-versioned preset question (`build.tool` / `db.migrations`
+      // are now versioned codes rendering the dedicated framework+version
+      // control); the universal opt-out applies to every NON-versioned question.
+      decisionCode: 'service.processModel',
       group: 'C',
       orderInGroup: 2,
-      promptText: 'What schema-migration tool?',
+      promptText: 'What service process model?',
       staticContextLeadIn: null,
       expectedAnswerShape: 'single-choice',
-      choices: ['Flyway 10', 'Liquibase 4'],
+      choices: ['Thread-per-request', 'Reactive'],
       defaultsWhenUnchanged: 'current tool',
       optional: false,
     };
@@ -252,7 +252,7 @@ describe('ConversationMainPane — open-phase turn rendering', () => {
     const optOut = screen.getByTestId('architect-conversation-not-needed');
     expect(optOut).toBeInTheDocument();
     fireEvent.click(optOut);
-    expect(onCaptureAnswer).toHaveBeenCalledWith('db.migrations', OPT_OUT_ANSWER_VALUE, 'N/A');
+    expect(onCaptureAnswer).toHaveBeenCalledWith('service.processModel', OPT_OUT_ANSWER_VALUE, 'N/A');
   });
 });
 

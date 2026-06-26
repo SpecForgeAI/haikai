@@ -51,11 +51,14 @@ import {
   postCapturedDecision as defaultPostCapturedDecision,
   CreateCapturedDecisionRequestBody,
 } from '../architectConversation/targetStateCapturedDecisionsWriter';
+import type { ArchitectLlmClient } from '../architectConversation/architectLlmClient';
 import {
   BUILD_TOOL_CODE,
-  buildToolFrameworkForEcosystem,
+  buildToolAnswerForEcosystem,
   matchManifestCoordinate,
 } from './manifestCodeMapping';
+import { deriveManifestPomFacts } from './manifestFactExtractors';
+import { deriveInferredCandidates } from './manifestInference';
 import { ResolvedManifest } from './manifestVersionResolution';
 
 /**
@@ -73,6 +76,13 @@ export const TARGET_MANIFEST_AUTO_ANSWER_TASK_NAME = 'target-manifest-auto-answe
 
 export interface ManifestAutoAnswererDeps {
   postCapturedDecision: typeof defaultPostCapturedDecision;
+  /**
+   * OPTIONAL single-shot LLM client for the gap-fill (Spec 2 R5). Threaded
+   * from the route via `buildArchitectLlmClient()`. ABSENT in unit tests + the
+   * default deps => the LLM step is skipped (deterministic + inferred only;
+   * fail-open).
+   */
+  llmClient?: ArchitectLlmClient;
 }
 
 export const defaultManifestAutoAnswererDeps: ManifestAutoAnswererDeps = {
@@ -89,6 +99,14 @@ export const defaultManifestAutoAnswererDeps: ManifestAutoAnswererDeps = {
  */
 export interface ManifestAnswerCandidate {
   decisionCode: string;
+  /**
+   * The answer kind (Spec 2 R2 union). `'framework-version'` (the default when
+   * omitted) writes the structured `{ framework, version }` envelope; for that
+   * kind `framework` is the bare stem and `version` is the resolved version.
+   * `'single-choice'` writes a plain-string value — for that kind `framework`
+   * carries the EXACT `questionLibrary.choices` string and `version` is unused.
+   */
+  answerKind?: 'framework-version' | 'single-choice';
   framework: string;
   /** Concrete version OR `version-unknown` (flows through unchanged). */
   version: string;
@@ -98,6 +116,21 @@ export interface ManifestAnswerCandidate {
   sourceQuote: string;
   /** Target module/service tag (carried for logging/recompute context). */
   tag: string;
+  /**
+   * Provenance of this candidate (Spec 2 R6): `deterministic` (a direct
+   * coordinate / property / plugin / build-tool witness), `inferred` (a badged
+   * write-immediately inference such as db.driver=>db.engine), or `llm` (the
+   * gap-fill suggestion). De-dup ranks deterministic > inferred > llm, all
+   * strictly below manual. Absent === `deterministic` (the historic default).
+   */
+  provenance?: 'deterministic' | 'inferred' | 'llm';
+  /**
+   * The source dependency/evidence that drove this candidate (e.g.
+   * `org.postgresql:postgresql` for a driver, carried onto the inferred
+   * `db.engine`). Surfaced so the UI can badge "from <dependency>" /
+   * "inferred from <driver>". Absent for legacy / synthetic candidates.
+   */
+  sourceDependency?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,77 +160,166 @@ export interface ManifestAutoAnswerOutcome {
 // ---------------------------------------------------------------------------
 
 /**
+ * Precedence rank for a candidate's provenance (higher wins). Spec 2 R6:
+ * `deterministic-direct > inferred > llm`. Manual is enforced SEPARATELY and
+ * strictly above all three (see `manifestPrecedence.ts`). An absent provenance
+ * is treated as `deterministic` (the historic default).
+ */
+export function candidateProvenanceRank(
+  provenance: ManifestAnswerCandidate['provenance'],
+): number {
+  switch (provenance) {
+    case 'llm':
+      return 1;
+    case 'inferred':
+      return 2;
+    case 'deterministic':
+    default:
+      return 3;
+  }
+}
+
+/**
+ * De-duplicate a candidate stream to EXACTLY ONE candidate per decision code,
+ * honouring Spec 2 R6 precedence: `deterministic-direct > inferred > llm`
+ * (manual is enforced separately, strictly above all three). Within the SAME
+ * provenance a concrete version beats a stored `version-unknown`; otherwise the
+ * first-seen candidate wins (deterministic in array order). Exported so the
+ * orchestrator can merge the LLM gap-fill candidates under the same rule.
+ */
+export function dedupeCandidatesByPrecedence(
+  candidates: readonly ManifestAnswerCandidate[],
+): ManifestAnswerCandidate[] {
+  const byCode = new Map<string, ManifestAnswerCandidate>();
+  for (const candidate of candidates) {
+    const existing = byCode.get(candidate.decisionCode);
+    if (!existing) {
+      byCode.set(candidate.decisionCode, candidate);
+      continue;
+    }
+    const existingRank = candidateProvenanceRank(existing.provenance);
+    const incomingRank = candidateProvenanceRank(candidate.provenance);
+    if (incomingRank > existingRank) {
+      byCode.set(candidate.decisionCode, candidate);
+      continue;
+    }
+    if (incomingRank < existingRank) {
+      continue;
+    }
+    // Same precedence: a concrete version supersedes a stored version-unknown.
+    if (existing.version === VERSION_UNKNOWN && candidate.version !== VERSION_UNKNOWN) {
+      byCode.set(candidate.decisionCode, candidate);
+    }
+    // Otherwise the first-seen candidate stays (deterministic).
+  }
+  return [...byCode.values()];
+}
+
+/**
  * Derive the de-duplicated auto-answer candidate set from resolved manifests.
  *
- * For every resolved dependency that witnesses a dependency-answerable decision
- * code (per `manifestCodeMapping.ts`), produce a `{ framework, version }`
- * candidate; additionally derive the `build.tool` candidate from each manifest's
- * ecosystem. Exactly ONE candidate is kept per decision code (one resolved chip
- * downstream):
- *   - the FIRST concrete-version match for a code wins;
- *   - a `version-unknown` match is kept ONLY if no concrete match exists for
- *     that code (so a real version always beats an unknown), and is itself
- *     replaced by a later concrete match.
+ * Three deterministic-direct sources feed the set: coordinate witnesses (per
+ * `manifestCodeMapping.ts`), pom property/plugin facts (per
+ * `manifestFactExtractors.ts`), and the ecosystem build tool. The INFERENCE
+ * layer (Spec 2 R4 — `db.driver`=>`db.engine`, `service.language`=>
+ * `service.runtime`) then runs OVER the de-duped deterministic set and is
+ * layered on top as badged, write-immediately candidates.
+ *
+ * Exactly ONE candidate is kept per decision code (one resolved chip
+ * downstream), honouring R6 precedence (`deterministic > inferred > llm`); a
+ * concrete version beats a `version-unknown` within the same provenance.
  *
  * Deterministic: manifests + dependencies are consumed in array order.
  */
 export function deriveManifestAnswerCandidates(
   manifests: readonly ResolvedManifest[],
 ): ManifestAnswerCandidate[] {
-  // decisionCode -> chosen candidate so far.
-  const byCode = new Map<string, ManifestAnswerCandidate>();
-
-  const consider = (candidate: ManifestAnswerCandidate): void => {
-    const existing = byCode.get(candidate.decisionCode);
-    if (!existing) {
-      byCode.set(candidate.decisionCode, candidate);
-      return;
-    }
-    // Prefer a concrete version over a previously-stored version-unknown.
-    const existingUnknown = existing.version === VERSION_UNKNOWN;
-    const incomingConcrete = candidate.version !== VERSION_UNKNOWN;
-    if (existingUnknown && incomingConcrete) {
-      byCode.set(candidate.decisionCode, candidate);
-    }
-    // Otherwise the first-seen candidate stays (deterministic).
-  };
+  const deterministic: ManifestAnswerCandidate[] = [];
 
   for (const manifest of manifests) {
-    // Coordinate-witnessed codes (service.framework / db.driver / ui.framework).
+    // Coordinate-witnessed codes. The registry returns a UNION (Spec 2 R2): a
+    // bare-stem framework-version answer, or a single-choice value (the exact
+    // questionLibrary choice) for the genuinely-non-versioned residue.
     for (const dep of manifest.resolvedDependencies) {
       const match = matchManifestCoordinate(dep);
       if (!match) continue;
-      consider({
-        decisionCode: match.decisionCode,
-        framework: match.framework,
-        version: dep.resolvedVersion,
-        sourceFile: dep.manifestPath,
-        // Evidence echoes the resolved coordinate/version (Group 2 evidence).
-        sourceQuote: dep.evidence,
+      if (match.kind === 'single-choice') {
+        deterministic.push({
+          decisionCode: match.decisionCode,
+          answerKind: 'single-choice',
+          // The single-choice value rides `framework`; the version slot is unused
+          // for a non-versioned code.
+          framework: match.value,
+          version: '',
+          sourceFile: dep.manifestPath,
+          sourceQuote: dep.evidence,
+          tag: manifest.tag,
+          provenance: 'deterministic',
+          sourceDependency: dep.name,
+        });
+      } else {
+        deterministic.push({
+          decisionCode: match.decisionCode,
+          answerKind: 'framework-version',
+          framework: match.framework,
+          version: dep.resolvedVersion,
+          sourceFile: dep.manifestPath,
+          // Evidence echoes the resolved coordinate/version (Group 2 evidence).
+          sourceQuote: dep.evidence,
+          tag: manifest.tag,
+          provenance: 'deterministic',
+          sourceDependency: dep.name,
+        });
+      }
+    }
+
+    // Property + plugin extractors (Spec 2 FR3): deterministic-direct facts from
+    // `<properties>` (java.version / kotlin.version => service.language) and
+    // `<plugins>` (flyway / liquibase maven-plugin => db.migrations), now
+    // reachable via the pomMetadata carried on the resolved manifest (FR1). Both
+    // are Spec-1 versioned codes => bare-stem framework-version answers.
+    for (const fact of deriveManifestPomFacts(manifest.pomMetadata)) {
+      deterministic.push({
+        decisionCode: fact.decisionCode,
+        answerKind: 'framework-version',
+        framework: fact.framework,
+        version: fact.version,
+        sourceFile: manifest.manifestPath,
+        sourceQuote: fact.evidence,
         tag: manifest.tag,
+        provenance: 'deterministic',
+        sourceDependency: fact.evidence,
       });
     }
 
     // Ecosystem-derived build tool. A manifest's existence witnesses its build
     // tool deterministically; the build tool has no single library coordinate.
-    const buildFramework = buildToolFrameworkForEcosystem(manifest.ecosystem);
-    if (buildFramework) {
-      consider({
+    // build.tool is a Spec-1 versioned code => a bare-stem `{ framework, version }`
+    // (e.g. `{ framework: 'Maven', version: '3.9' }`), NOT the old doubled label.
+    const buildTool = buildToolAnswerForEcosystem(manifest.ecosystem);
+    if (buildTool) {
+      deterministic.push({
         decisionCode: BUILD_TOOL_CODE,
-        framework: buildFramework,
-        // The build tool's version is the chip's own version (e.g. "Maven 3.9");
-        // there is no manifest-resolved version to attach, so the chip stands
-        // alone — model it as a concrete framework with no extra version (the
-        // version axis is the curated chip itself).
-        version: buildFramework,
+        answerKind: 'framework-version',
+        framework: buildTool.framework,
+        version: buildTool.version,
         sourceFile: manifest.manifestPath,
-        sourceQuote: `${manifest.manifestPath} (${buildFramework})`,
+        sourceQuote: `${manifest.manifestPath} (${buildTool.framework} ${buildTool.version})`,
         tag: manifest.tag,
+        provenance: 'deterministic',
+        sourceDependency: manifest.manifestPath,
       });
     }
   }
 
-  return [...byCode.values()];
+  // De-dup the deterministic set first (so inference reads ONE stable hit per
+  // code), then layer the inference (Spec 2 R4 — badged, write-immediately) ON
+  // TOP. Inference fills the codes no single coordinate/property witnesses
+  // (db.engine from the driver, service.runtime from the language) and can never
+  // override a deterministic hit (R6 precedence).
+  const deterministicByCode = dedupeCandidatesByPrecedence(deterministic);
+  const inferred = deriveInferredCandidates(deterministicByCode);
+  return dedupeCandidatesByPrecedence([...deterministicByCode, ...inferred]);
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +337,29 @@ export function buildManifestCapturedDecisionBody(
   candidate: ManifestAnswerCandidate,
   conversationThreadId: string | null,
 ): CreateCapturedDecisionRequestBody {
+  // Single-choice (non-versioned) codes write a plain-string `value` (the EXACT
+  // questionLibrary choice) through the SAME `{ value, sourceQuote, sourceFile }`
+  // envelope the LLM tech-stack pre-fill uses (openTurnTechStackPrefill.ts). No
+  // new AMS DTO; only the `value` shape differs from the versioned envelope.
+  if (candidate.answerKind === 'single-choice') {
+    return {
+      decisionCode: candidate.decisionCode,
+      scopeKind: 'architecture',
+      scopeRefType: null,
+      scopeRefId: null,
+      answerValue: JSON.stringify({
+        value: candidate.framework,
+        sourceQuote: candidate.sourceQuote,
+        sourceFile: candidate.sourceFile,
+      }),
+      answerSummary: candidate.framework,
+      standardsLookupRef: null,
+      conversationThreadId,
+      conversationTurnRef: null,
+      createdByTask: TARGET_MANIFEST_AUTO_ANSWER_TASK_NAME,
+    };
+  }
+  // Versioned codes write the structured `{ framework, version }` envelope.
   const envelope = buildFrameworkVersionEnvelope({
     value: { framework: candidate.framework, version: candidate.version },
     sourceQuote: candidate.sourceQuote,

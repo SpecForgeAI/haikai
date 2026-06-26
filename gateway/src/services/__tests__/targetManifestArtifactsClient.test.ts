@@ -213,4 +213,67 @@ describe('targetManifestArtifactsClient', () => {
       ).rejects.toThrow(/HTTP 404/);
     });
   });
+
+  describe('tier2_facts free facts (Task Group 7)', () => {
+    it('carries tier2_facts ({ friendly_name, coordinate }) snake_case in the POSTed write body', async () => {
+      const { persistTargetManifestArtifacts } = require('../targetManifestArtifactsClient');
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+      const artifacts = [
+        {
+          tag: 'orders-service',
+          kind: 'pom',
+          ecosystem: 'MAVEN',
+          manifest_path: 'pom.xml',
+          content: '<project/>',
+          package_lock_content: null,
+          resolved_dependencies: [],
+          tier2_facts: [{ friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol.sdk' }],
+        },
+      ];
+
+      await persistTargetManifestArtifacts(PROJECT_ID, TARGET_ARCH_ID, artifacts);
+
+      const [, options] = mockFetch.mock.calls[0];
+      const parsed = JSON.parse(options.body);
+      // The new Tier-2 column rides the SAME snake_case write body as a JSONB array.
+      expect(parsed.artifacts[0].tier2_facts).toEqual([
+        { friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol.sdk' },
+      ]);
+    });
+
+    it('round-trips tier2_facts verbatim on the READ seam (snake_case wire)', async () => {
+      const { fetchLatestTargetManifestArtifacts } = require('../targetManifestArtifactsClient');
+      const wireRow = {
+        id: 'row-3',
+        project_id: PROJECT_ID,
+        target_architecture_id: TARGET_ARCH_ID,
+        tag: 'orders-service',
+        kind: 'pom',
+        ecosystem: 'MAVEN',
+        manifest_path: 'pom.xml',
+        content: '<project/>\n',
+        package_lock_content: null,
+        resolved_dependencies: [],
+        tier2_facts: [{ friendly_name: 'Spring AI / LLM client', coordinate: 'spring-ai-openai' }],
+        is_latest: true,
+        created_at: '2026-06-26T00:00:00Z',
+      };
+      mockFetch.mockResolvedValueOnce(
+        new Response(JSON.stringify([wireRow]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+      const result = await fetchLatestTargetManifestArtifacts(PROJECT_ID, TARGET_ARCH_ID);
+      expect(result[0].tier2_facts).toEqual([
+        { friendly_name: 'Spring AI / LLM client', coordinate: 'spring-ai-openai' },
+      ]);
+    });
+  });
 });

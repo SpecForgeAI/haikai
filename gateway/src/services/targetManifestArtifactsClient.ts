@@ -47,6 +47,19 @@ import { logger } from './logger';
  * element objects pass through opaquely (the AMS DTO types them as
  * {@code List<Map<String, Object>>}).
  */
+/**
+ * One persisted Tier-2 "free fact" -- manifest-declared technology OUTSIDE the
+ * 51 architecture questions (e.g. an MCP SDK, a Spring AI / LLM client), named
+ * by the upload LLM gap-fill. Rides the SAME `target_manifest_artifacts` store
+ * (Spec 2026-06-26, Task Group 7) as a JSONB array element; snake_case wire
+ * (mirrors the AMS `tier2_facts` column's `{ friendly_name, coordinate }`
+ * shape). Informational only -- never a captured decision.
+ */
+export interface Tier2FactWire {
+  friendly_name: string;
+  coordinate: string;
+}
+
 export interface TargetManifestArtifactInput {
   tag: string;
   kind: string | null;
@@ -58,6 +71,12 @@ export interface TargetManifestArtifactInput {
   package_lock_content: string | null;
   /** Resolved dependency entries, stored as JSONB (opaque objects). */
   resolved_dependencies: Record<string, unknown>[];
+  /**
+   * Tier-2 "free facts" (manifest tech outside the 51 questions) as
+   * `{ friendly_name, coordinate }` objects, stored as JSONB. Optional /
+   * absent-tolerant (legacy rows + Maven uploads with no free facts).
+   */
+  tier2_facts?: Tier2FactWire[];
 }
 
 /**
@@ -78,6 +97,8 @@ export interface TargetManifestArtifactWire {
   content: string | null;
   package_lock_content: string | null;
   resolved_dependencies: Record<string, unknown>[];
+  /** Tier-2 "free facts" (`{ friendly_name, coordinate }`); absent on legacy rows. */
+  tier2_facts?: Tier2FactWire[];
   is_latest: boolean;
   created_at: string;
 }

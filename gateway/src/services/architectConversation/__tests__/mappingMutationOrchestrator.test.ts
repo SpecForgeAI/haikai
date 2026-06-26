@@ -407,7 +407,7 @@ describe('cascade-accept-batch -- one mutation call per cascaded decision id', (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const proposals = (orchestrator as any).constructor === DecisionCaptureOrchestrator
       ? // computeCascadeProposals is exported but invoking via the helper here keeps the test focused
-        (await import('../decisionCaptureOrchestrator')).computeCascadeProposals(entry, 'Java 21')
+        (await import('../decisionCaptureOrchestrator')).computeCascadeProposals(entry, { framework: 'Java', version: '21' })
       : [];
 
     expect(proposals.length).toBe(4);

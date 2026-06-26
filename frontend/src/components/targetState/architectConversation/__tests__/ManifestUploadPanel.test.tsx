@@ -295,3 +295,156 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
     );
   });
 });
+
+// ===========================================================================
+// Spec 2026-06-26 Task Group 9 — inferred/LLM provenance badges + Tier-2 facts
+// ===========================================================================
+
+describe('ManifestUploadPanel (Spec 2026-06-26, TG9 provenance + Tier-2 free facts)', () => {
+  async function uploadAndSettle(response: TargetManifestUploadResponse) {
+    const made = makeDeps(response);
+    render(
+      <ManifestUploadPanel
+        projectId={PROJECT}
+        targetArchitectureId={ARCH}
+        sessionId="sess-1"
+        deps={made.deps}
+      />,
+    );
+    fireEvent.change(screen.getByTestId('manifest-file-input'), {
+      target: { files: [pomFile()] },
+    });
+    fireEvent.change(screen.getByTestId('manifest-tag-input-0'), {
+      target: { value: 'orders-service' },
+    });
+    fireEvent.click(screen.getByTestId('manifest-upload-submit'));
+    return made;
+  }
+
+  it('(e) renders inferred + LLM-suggested provenance badges naming their source dependency', async () => {
+    const response = makeResponse({
+      autoAnswer: {
+        writtenCodes: ['db.engine', 'validation.framework'],
+        rowsWritten: 2,
+        partialFailureCodes: [],
+        aborted: false,
+        failureReason: null,
+        skippedManualCodes: [],
+        resolvedTargetVersions: [
+          {
+            decisionCode: 'db.engine',
+            framework: 'PostgreSQL',
+            version: 'version-unknown',
+            versionUnknown: true,
+            provenance: 'inferred',
+            sourceFile: 'services/orders/pom.xml',
+            sourceDependency: 'org.postgresql:postgresql',
+          },
+          {
+            decisionCode: 'validation.framework',
+            framework: 'Hibernate Validator',
+            version: '8.0.1',
+            versionUnknown: false,
+            provenance: 'llm',
+            sourceFile: 'services/orders/pom.xml',
+            sourceDependency: 'org.hibernate.validator:hibernate-validator',
+          },
+        ],
+        confirmedManifests: [],
+      },
+    });
+    await uploadAndSettle(response);
+
+    // inferred -> "inferred from <driver coordinate>".
+    const engine = await screen.findByTestId('manifest-decision-db.engine');
+    expect(engine.getAttribute('data-provenance')).toBe('inferred');
+    expect(
+      within(engine).getByTestId('manifest-decision-provenance').textContent,
+    ).toBe('inferred from org.postgresql:postgresql');
+
+    // llm -> "LLM-suggested from <coordinate>".
+    const validation = screen.getByTestId('manifest-decision-validation.framework');
+    expect(validation.getAttribute('data-provenance')).toBe('llm');
+    expect(
+      within(validation).getByTestId('manifest-decision-provenance').textContent,
+    ).toBe('LLM-suggested from org.hibernate.validator:hibernate-validator');
+
+    // No free facts in this response -> the Tier-2 section is omitted entirely.
+    expect(screen.queryByTestId('manifest-free-facts-section')).toBeNull();
+  });
+
+  it('(f) keeps the existing manifest source-file line + "from manifest" badge intact', async () => {
+    // The original closed badge behaviour (manifest -> "from manifest" + source
+    // line) is preserved unchanged for a deterministic manifest row.
+    await uploadAndSettle(makeResponse());
+    const decision = await screen.findByTestId('manifest-decision-service.framework');
+    expect(
+      within(decision).getByTestId('manifest-decision-provenance').textContent,
+    ).toBe('from manifest');
+    expect(within(decision).getByTestId('manifest-decision-source')).toBeTruthy();
+  });
+
+  it('(g) renders the Tier-2 free-facts section AFTER the decisions list, with remove (informational, never a question)', async () => {
+    const MCP = 'MCP SDK \u2014 io.modelcontextprotocol.sdk';
+    const SPRING_AI = 'Spring AI / LLM client \u2014 spring-ai-openai';
+    const base = makeResponse().autoAnswer!;
+    const response = makeResponse({
+      autoAnswer: { ...base, freeFacts: [MCP, SPRING_AI] },
+    });
+    const { captureSpy } = await uploadAndSettle(response);
+
+    const section = await screen.findByTestId('manifest-free-facts-section');
+    // Clearly informational (a "Lower-level details" heading), not a question.
+    expect(
+      within(section).getByTestId('manifest-free-facts-heading').textContent,
+    ).toMatch(/Lower-level details/i);
+
+    const items = within(section).getAllByTestId('manifest-free-fact-item');
+    expect(items).toHaveLength(2);
+    expect(
+      within(items[0]).getByTestId('manifest-free-fact-label').textContent,
+    ).toBe(MCP);
+
+    // Slotted AFTER the "Auto-answered decisions" list.
+    const decisionsHeading = screen.getByTestId('manifest-decisions-heading');
+    expect(
+      decisionsHeading.compareDocumentPosition(section) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Remove one fact -> it disappears; NO captured-decision write (informational).
+    fireEvent.click(within(items[0]).getByTestId('manifest-free-fact-remove'));
+    await waitFor(() =>
+      expect(within(section).getAllByTestId('manifest-free-fact-item')).toHaveLength(1),
+    );
+    expect(captureSpy).not.toHaveBeenCalled();
+  });
+
+  it('(h) lets the user edit a free-fact label inline without capturing an answer', async () => {
+    const base = makeResponse().autoAnswer!;
+    const response = makeResponse({
+      autoAnswer: {
+        ...base,
+        freeFacts: ['MCP SDK \u2014 io.modelcontextprotocol.sdk'],
+      },
+    });
+    const { captureSpy } = await uploadAndSettle(response);
+
+    const item = await screen.findByTestId('manifest-free-fact-item');
+    fireEvent.click(within(item).getByTestId('manifest-free-fact-edit'));
+    fireEvent.change(within(item).getByTestId('manifest-free-fact-input'), {
+      target: { value: 'Model Context Protocol SDK' },
+    });
+    fireEvent.click(within(item).getByTestId('manifest-free-fact-save'));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('manifest-free-fact-item')).getByTestId(
+          'manifest-free-fact-label',
+        ).textContent,
+      ).toBe('Model Context Protocol SDK'),
+    );
+    // An informational free fact is never a captured decision.
+    expect(captureSpy).not.toHaveBeenCalled();
+  });
+});

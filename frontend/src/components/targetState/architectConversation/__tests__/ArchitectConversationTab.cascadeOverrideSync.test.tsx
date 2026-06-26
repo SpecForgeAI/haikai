@@ -31,6 +31,16 @@ vi.mock('../../../../api/architectConversationApi', () => ({
   fetchPromptReadyOutput: vi.fn(),
   fetchQuestionLibraryScopes: vi.fn(),
   getActiveTargetArchitectureId: vi.fn(),
+  // Resolved-label helper (Spec 2026-06-26 FR4): ConversationMainPane resolves
+  // every captured turn's label through this. The fixtures here are plain
+  // single-choice strings (e.g. 'Maven 3.9') that resolve verbatim; an object
+  // value resolves to its `framework version` chip (mirrors the real impl).
+  resolveCapturedAnswerLabel: (v: unknown): string =>
+    v && typeof v === 'object' && 'framework' in v && 'version' in v
+      ? `${(v as { framework: string }).framework} ${(v as { version: string }).version}`.trim()
+      : typeof v === 'string'
+        ? v
+        : String(v),
   OPT_OUT_ANSWER_VALUE: '(not used)',
   ALLOWED_SCOPE_REF_TYPES: [
     'service',

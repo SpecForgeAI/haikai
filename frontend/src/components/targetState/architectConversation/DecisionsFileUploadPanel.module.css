@@ -1,0 +1,135 @@
+/* DecisionsFileUploadPanel — Spec 2026-06-26-target-state-decisions-file-import */
+
+.panel {
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.subheading {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #57606a);
+}
+
+.dropRow {
+  margin-top: 0.25rem;
+}
+
+.disabledNote {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-muted, #57606a);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fileName {
+  font-size: 0.85rem;
+  font-family: var(--mono, monospace);
+}
+
+.primaryButton {
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent, #1f6feb);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clearButton {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.banner {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.bannerError {
+  background: #ffebe9;
+  border: 1px solid #ff818266;
+  color: #82071e;
+}
+
+.summary {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.allAnswered {
+  margin: 0;
+  color: #1a7f37;
+  font-weight: 500;
+}
+
+.writtenList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.writtenItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 999px;
+}
+
+.provenanceBadge {
+  font-size: 0.7rem;
+  color: var(--text-muted, #57606a);
+  font-style: italic;
+}
+
+.sectionLabel {
+  margin: 0.25rem 0 0;
+  font-weight: 600;
+}
+
+.note {
+  margin: 0;
+  color: var(--text-muted, #57606a);
+}
+
+.badLines {
+  border-left: 3px solid #d4a72c;
+  padding-left: 0.6rem;
+}

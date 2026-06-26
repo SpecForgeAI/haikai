@@ -1,27 +1,42 @@
 /*
- * VersionedAnswerControl styles — decoupled framework + version selection
- * (Spec 2026-06-24-target-conversation-tech-stack-constraints, FR5).
+ * VersionedAnswerControl styles — decoupled framework + version selection.
+ * (Spec 2026-06-24-target-conversation-tech-stack-constraints, FR5; reworked by
+ * Spec 2026-06-26-target-conversation-versioned-answer-bare-stem-ux, FR3 — a
+ * COMPACT HORIZONTAL layout: bare-stem framework chips on the left, the version
+ * as a confirmed chip + "Edit version" on the right.)
  * Palette + control shapes match ArchitectConversation.module.css.
  */
 
 .versionedControl {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 
-.axisLabel {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #57606a;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+/* The compact horizontal arrangement: framework chips (left) flow next to the
+   version area (right); both wrap gracefully on narrow widths. */
+.compactRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
 }
 
-.chipRow {
+.frameworkSide {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The version axis sits to the RIGHT of the chips (not a tall vertical box). */
+.versionSide {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
 }
 
 .choiceButton {
@@ -50,14 +65,45 @@
   font-weight: 600;
 }
 
-.versionAxis {
+/* The ONE resolved {framework, version} chip (e.g. `Spring Boot 4.0`), or the
+   stem-only chip for a version-less stem. */
+.resolvedChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid #1f883d;
+  border-radius: 9999px;
+  background: #dafbe1;
+  color: #1a7f37;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* The compact "Edit version" escape hatch shown beside the confirmed chip. */
+.editButton {
+  background: none;
+  border: none;
+  color: #0969da;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  text-decoration: underline;
+}
+
+.editButton:hover:not(:disabled) {
+  color: #0a5dc2;
+}
+
+.editButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The revealed version editor (Edit version, or the toggle-OFF default view). */
+.versionEditor {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.6rem;
-  border: 1px solid #d8dee4;
-  border-radius: 6px;
-  background: #f6f8fa;
+  gap: 0.4rem;
 }
 
 /* Stable Spec 4 nudge slot (FR8). Rendered above the version input; the control
@@ -78,7 +124,8 @@
 
 .inputField {
   flex: 1;
-  padding: 0.45rem 0.6rem;
+  min-width: 8rem;
+  padding: 0.4rem 0.6rem;
   border: 1px solid #d0d7de;
   border-radius: 4px;
   font-size: 0.9rem;
@@ -94,34 +141,15 @@
   font-size: 0.78rem;
 }
 
-.resolvedChipRow {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-/* The ONE resolved {framework, version} chip (e.g. `Spring Boot 3.4.1`). */
-.resolvedChip {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.3rem 0.8rem;
-  border: 1px solid #1f883d;
-  border-radius: 9999px;
-  background: #dafbe1;
-  color: #1a7f37;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
 .primaryButton {
-  align-self: flex-start;
+  flex: 0 0 auto;
   background: #2da44e;
   color: #ffffff;
   border: 1px solid #1f883d;
   border-radius: 4px;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.9rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .primaryButton:hover:not(:disabled) {

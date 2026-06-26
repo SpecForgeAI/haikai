@@ -28,7 +28,7 @@
  * writes NO codebase artifact (Spec 5). It only uploads + surfaces.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   allManifestsTagged,
   resolvedTargetVersionChip,
@@ -85,6 +85,14 @@ export interface ManifestUploadPanelProps {
   onUploaded?: (response: TargetManifestUploadResponse) => void;
   /** Called after an inline manual edit is captured so the parent can refresh. */
   onManualEdit?: (decisionCode: string, value: FrameworkVersion) => void;
+  /**
+   * When set, the upload is DISABLED (the sibling "Manually Answer Target State"
+   * decisions-file input is active) and the reason is shown + used as a tooltip.
+   * Mutual exclusivity: only one bulk target-state input may be used at a time.
+   */
+  disabledReason?: string | null;
+  /** Reports active state (a manifest is staged) so the parent can disable the other box. */
+  onActiveChange?: (active: boolean) => void;
   deps?: ManifestUploadPanelDeps;
 }
 
@@ -127,6 +135,8 @@ export function ManifestUploadPanel({
   sessionId = null,
   onUploaded,
   onManualEdit,
+  disabledReason = null,
+  onActiveChange,
   deps = defaultManifestUploadPanelDeps,
 }: ManifestUploadPanelProps) {
   const [selected, setSelected] = useState<SelectedManifest[]>([]);
@@ -141,6 +151,13 @@ export function ManifestUploadPanel({
   const [manualOverrides, setManualOverrides] = useState<
     Record<string, ResolvedTargetVersion>
   >({});
+
+  // Tier-2 "free facts" (Spec 2026-06-26 Task Group 9): LLM-named manifest tech
+  // OUTSIDE the 51 questions, surfaced as an INFORMATIONAL, editable/removable
+  // list (NEVER questions). Seeded from each upload's `autoAnswer.freeFacts`;
+  // edit/remove are local-only (the gateway already persisted them). Reset on a
+  // fresh upload alongside the manual overrides.
+  const [freeFacts, setFreeFacts] = useState<string[]>([]);
 
   // -----------------------------------------------------------------------
   // File selection — split supported manifests from accompanying lockfiles,
@@ -192,7 +209,13 @@ export function ManifestUploadPanel({
     setSelected((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  const canSubmit = allManifestsTagged(selected) && !busy;
+  const canSubmit = allManifestsTagged(selected) && !busy && !disabledReason;
+
+  // Mutual exclusivity (Spec 2026-06-26): report whether a manifest is staged so
+  // the parent can disable the sibling "Manually Answer Target State" input.
+  useEffect(() => {
+    onActiveChange?.(selected.length > 0);
+  }, [selected.length, onActiveChange]);
 
   const handleUpload = useCallback(async () => {
     if (!allManifestsTagged(selected)) return;
@@ -207,6 +230,7 @@ export function ManifestUploadPanel({
       );
       setResponse(result);
       setManualOverrides({}); // a fresh upload recomputes everything
+      setFreeFacts(result.autoAnswer?.freeFacts ?? []); // re-seed the Tier-2 list
       setSelected([]); // clear the picker on success
       onUploaded?.(result);
     } catch (err) {
@@ -229,6 +253,15 @@ export function ManifestUploadPanel({
     const base = response?.autoAnswer?.resolvedTargetVersions ?? [];
     return base.map((d) => manualOverrides[d.decisionCode] ?? d);
   }, [response, manualOverrides]);
+
+  // Tier-2 free-fact edit/remove (local-only; informational list -- never a
+  // question or a captured-decision write).
+  const removeFreeFact = useCallback((index: number) => {
+    setFreeFacts((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+  const editFreeFact = useCallback((index: number, nextLabel: string) => {
+    setFreeFacts((prev) => prev.map((f, i) => (i === index ? nextLabel : f)));
+  }, []);
 
   return (
     <section
@@ -256,6 +289,16 @@ export function ManifestUploadPanel({
           aria-label="Choose manifest files"
         />
       </div>
+
+      {disabledReason && (
+        <p
+          className={styles.subheading}
+          data-testid="manifest-disabled-note"
+          title={disabledReason}
+        >
+          {disabledReason}
+        </p>
+      )}
 
       {/* --- selected files awaiting a tag + submit --- */}
       {selected.length > 0 && (
@@ -383,6 +426,42 @@ export function ManifestUploadPanel({
           </ul>
         </>
       )}
+
+      {/* --- Tier-2 free facts (Spec 2026-06-26 TG9): informational, NOT
+          questions; slotted AFTER the auto-answered decisions list. Omitted
+          entirely when the gateway returned no free facts. --- */}
+      {freeFacts.length > 0 && (
+        <section
+          className={styles.freeFactsSection}
+          data-testid="manifest-free-facts-section"
+          aria-label="Lower-level details detected"
+        >
+          <p
+            className={styles.sectionLabel}
+            data-testid="manifest-free-facts-heading"
+          >
+            Lower-level details detected
+          </p>
+          <p className={styles.freeFactsHint}>
+            Manifest-declared technology outside the standard decisions -
+            informational only, not questions. Edit or remove anything that is
+            noise.
+          </p>
+          <ul
+            className={styles.freeFactsList}
+            data-testid="manifest-free-facts-list"
+          >
+            {freeFacts.map((fact, index) => (
+              <FreeFactItem
+                key={`${fact}-${index}`}
+                label={fact}
+                onSave={(next) => editFreeFact(index, next)}
+                onRemove={() => removeFreeFact(index)}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
     </section>
   );
 }
@@ -435,6 +514,38 @@ function UploadedManifestStatusList({
       </ul>
     </div>
   );
+}
+
+// ===========================================================================
+// Provenance badge text (Spec 2026-06-26 Task Group 9)
+// ===========================================================================
+
+/**
+ * The provenance badge text for one auto-answered decision. Extends the original
+ * closed `'from manifest' | 'manually entered'` pair with the inferred /
+ * LLM-suggested provenance, each naming its SOURCE DEPENDENCY when known so the
+ * architect can see what drove the pre-filled answer:
+ *   - `manifest`  -> "from manifest"      (+ the source-file line below)
+ *   - `inferred`  -> "inferred from <sourceDependency>"
+ *   - `llm`       -> "LLM-suggested from <sourceDependency>"
+ *   - `manual`    -> "manually entered"
+ */
+function provenanceBadgeText(decision: ResolvedTargetVersion): string {
+  switch (decision.provenance) {
+    case 'manual':
+      return 'manually entered';
+    case 'inferred':
+      return decision.sourceDependency
+        ? `inferred from ${decision.sourceDependency}`
+        : 'inferred';
+    case 'llm':
+      return decision.sourceDependency
+        ? `LLM-suggested from ${decision.sourceDependency}`
+        : 'LLM-suggested';
+    case 'manifest':
+    default:
+      return 'from manifest';
+  }
 }
 
 // ===========================================================================
@@ -549,11 +660,15 @@ function AutoAnsweredDecision({
           className={
             decision.provenance === 'manual'
               ? `${styles.provenanceBadge} ${styles.provenanceManual}`
-              : styles.provenanceBadge
+              : decision.provenance === 'inferred'
+                ? `${styles.provenanceBadge} ${styles.provenanceInferred}`
+                : decision.provenance === 'llm'
+                  ? `${styles.provenanceBadge} ${styles.provenanceLlm}`
+                  : styles.provenanceBadge
           }
           data-testid="manifest-decision-provenance"
         >
-          {decision.provenance === 'manual' ? 'manually entered' : 'from manifest'}
+          {provenanceBadgeText(decision)}
         </span>
         {!editing && (
           <button
@@ -637,6 +752,100 @@ function AutoAnsweredDecision({
             </span>
           )}
         </div>
+      )}
+    </li>
+  );
+}
+
+// ===========================================================================
+// One Tier-2 "free fact" row (Spec 2026-06-26 Task Group 9)
+//   Informational, editable/removable. NEVER a question: it carries no
+//   answer/version, only the LLM-named "<friendly name> - <coordinate>" label.
+//   Edit/remove mutate the local list only (the gateway already persisted them).
+// ===========================================================================
+
+function FreeFactItem({
+  label,
+  onSave,
+  onRemove,
+}: {
+  label: string;
+  onSave: (nextLabel: string) => void;
+  onRemove: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+
+  return (
+    <li className={styles.freeFactItem} data-testid="manifest-free-fact-item">
+      {editing ? (
+        <div className={styles.editRow} data-testid="manifest-free-fact-edit-row">
+          <input
+            type="text"
+            className={styles.editInput}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            data-testid="manifest-free-fact-input"
+            aria-label={`Edit detail ${label}`}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onSave(draft.trim() || label);
+                setEditing(false);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className={styles.primaryButton}
+            onClick={() => {
+              onSave(draft.trim() || label);
+              setEditing(false);
+            }}
+            data-testid="manifest-free-fact-save"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => {
+              setDraft(label);
+              setEditing(false);
+            }}
+            data-testid="manifest-free-fact-cancel"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <>
+          <span
+            className={styles.freeFactLabel}
+            data-testid="manifest-free-fact-label"
+          >
+            {label}
+          </span>
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => {
+              setDraft(label);
+              setEditing(true);
+            }}
+            data-testid="manifest-free-fact-edit"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            className={styles.removeButton}
+            onClick={onRemove}
+            data-testid="manifest-free-fact-remove"
+          >
+            Remove
+          </button>
+        </>
       )}
     </li>
   );

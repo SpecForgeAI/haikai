@@ -40,7 +40,7 @@ import {
 import { CascadeSummaryControls } from './CascadeSummaryControls';
 import { VersionedAnswerControl } from './VersionedAnswerControl';
 import { isVersionedCode, buildFrameworkVersionCaptureValue } from './versionControlConfig';
-import { resolveFrameworkVersionChip, type FrameworkVersion } from '../../../api/architectConversationApi';
+import { resolveFrameworkVersionChip, resolveCapturedAnswerLabel, type FrameworkVersion } from '../../../api/architectConversationApi';
 import styles from './ArchitectConversation.module.css';
 
 /**
@@ -163,6 +163,35 @@ export interface ConversationMainPaneProps {
   versionedNudgeSlot?: (ctx: { decisionCode: string; framework: string | null; version: string }) => React.ReactNode;
 }
 
+/**
+ * Auto-select-recommended-version preference (Spec 2026-06-26, FR3). Sticky per
+ * machine in localStorage; defaults ON the first time. Drives the versioned
+ * answer control: ON => a framework-chip click commits the stem + its curated
+ * default version in ONE action; OFF => the two-step editable version field.
+ * localStorage ONLY -- no backend (Q3).
+ */
+const AUTO_SELECT_VERSION_STORAGE_KEY =
+  'architect-conversation.autoSelectRecommendedVersion';
+
+function readAutoSelectVersionPref(): boolean {
+  try {
+    const raw = window.localStorage.getItem(AUTO_SELECT_VERSION_STORAGE_KEY);
+    // Default ON the first time (no stored value yet).
+    return raw === null ? true : raw !== 'false';
+  } catch {
+    return true;
+  }
+}
+
+function writeAutoSelectVersionPref(value: boolean): void {
+  try {
+    window.localStorage.setItem(AUTO_SELECT_VERSION_STORAGE_KEY, String(value));
+  } catch {
+    // Non-fatal: a blocked/absent localStorage just means the toggle is not
+    // sticky this session; the in-session state still drives the control.
+  }
+}
+
 export function ConversationMainPane({
   turns,
   pendingQuestion,
@@ -190,6 +219,18 @@ export function ConversationMainPane({
   const [showCustom, setShowCustom] = useState(false);
   const [multiSelected, setMultiSelected] = useState<string[]>([]);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // FR3 auto-select toggle (conversation header, right-aligned, sticky in
+  // localStorage). Threaded into <VersionedAnswerControl autoSelect>.
+  const [autoSelectVersion, setAutoSelectVersion] = useState<boolean>(
+    readAutoSelectVersionPref,
+  );
+  const handleToggleAutoSelectVersion = () => {
+    setAutoSelectVersion((prev) => {
+      const next = !prev;
+      writeAutoSelectVersionPref(next);
+      return next;
+    });
+  };
 
   const pendingDecisionCode = pendingQuestion?.decisionCode ?? null;
   useEffect(() => {
@@ -283,6 +324,38 @@ export function ConversationMainPane({
       className={styles.mainPane}
       data-testid="architect-conversation-main-pane"
     >
+      {/* Conversation header (FR3): right-aligned auto-select-recommended-version
+          toggle. Default ON, sticky per machine in localStorage. */}
+      <div
+        data-testid="architect-conversation-pane-header"
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          padding: '0.4rem 1rem',
+          borderBottom: '1px solid #d0d7de',
+        }}
+      >
+        <label
+          data-testid="architect-conversation-auto-select-toggle"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            fontSize: '0.8rem',
+            color: '#57606a',
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={autoSelectVersion}
+            onChange={handleToggleAutoSelectVersion}
+            data-testid="architect-conversation-auto-select-toggle-input"
+          />
+          Auto-select recommended version
+        </label>
+      </div>
       <div
         className={styles.transcript}
         data-testid="architect-conversation-transcript"
@@ -325,11 +398,6 @@ export function ConversationMainPane({
             <div className={styles.turnLabel}>
               Question · {pendingQuestion.decisionCode} · group {pendingQuestion.group}
             </div>
-            {pendingQuestion.staticContextLeadIn && (
-              <small className={styles.contextLeadIn}>
-                {pendingQuestion.staticContextLeadIn}
-              </small>
-            )}
             {pendingQuestion.promptText}
           </div>
 
@@ -340,6 +408,7 @@ export function ConversationMainPane({
             <VersionedAnswerControl
               decisionCode={pendingQuestion.decisionCode}
               frameworkChoices={choices}
+              autoSelect={autoSelectVersion}
               busy={answerBusy}
               onSubmit={handleVersionedSubmit}
               nudgeSlot={
@@ -740,22 +809,12 @@ function TurnView({
             Question · {turn.decisionCode} · round {turn.roundIndex}
           </div>
           {/*
-            2026-05-26 Architect Conversation Enrichments (#11):
-            Curated framing paragraph above the prompt. Guard with a truthy
-            length check so older persisted question turns (pre-spec) that
-            do NOT carry the field render silently with no muted block,
-            no banner, no placeholder. Plain text only -- the field is a
-            `string`, rendered into a `<small>` block. No Markdown rendering,
-            no `dangerouslySetInnerHTML`.
+            Spec 2026-06-26 (FR3): the per-question static context lead-in is
+            DROPPED from the on-screen transcript render -- it repeated the
+            question text and cluttered the compact layout. The
+            `staticContextLeadIn` field stays on the turn shape and in the
+            Markdown export for backward-compat.
           */}
-          {turn.staticContextLeadIn != null && turn.staticContextLeadIn.length > 0 && (
-            <small
-              className={styles.contextLeadIn}
-              data-testid={`architect-conversation-turn-question-leadin-${turn.decisionCode}`}
-            >
-              {turn.staticContextLeadIn}
-            </small>
-          )}
           {turn.promptText}
         </div>
       );
@@ -805,7 +864,7 @@ function TurnView({
           <div className={styles.turnLabel}>Cascades accepted</div>
           {turn.cascadedDecisions.map((c) => (
             <div key={c.decisionCode}>
-              {c.decisionCode} → {String(c.answerValue)}
+              {c.decisionCode} → {resolveCapturedAnswerLabel(c.answerValue)}
             </div>
           ))}
         </div>
@@ -819,7 +878,7 @@ function TurnView({
           <div className={styles.turnLabel}>Cascade overridden</div>
           {turn.cascadedDecisions.map((c) => (
             <div key={c.decisionCode}>
-              {c.decisionCode} → {String(c.answerValue)} ({c.overrideReason})
+              {c.decisionCode} → {resolveCapturedAnswerLabel(c.answerValue)} ({c.overrideReason})
             </div>
           ))}
         </div>
@@ -836,7 +895,7 @@ function TurnView({
           className={`${styles.turn} ${styles.turnSystem}`}
           data-testid={`architect-conversation-turn-decision-captured-${turn.decisionCode}`}
         >
-          Decision captured: {turn.decisionCode} = {String(turn.answerValue)}
+          Decision captured: {turn.decisionCode} = {resolveCapturedAnswerLabel(turn.answerValue)}
         </div>
       );
     case 'mapping-mutation-summary':
@@ -857,7 +916,7 @@ function TurnView({
           data-testid={`architect-conversation-turn-exception-pinned-${turn.decisionCode}`}
         >
           Exception pinned: {turn.decisionCode} on {turn.scope.refType}{' '}
-          {turn.scope.refId} = {String(turn.answerValue)}
+          {turn.scope.refId} = {resolveCapturedAnswerLabel(turn.answerValue)}
         </div>
       );
     case 'edit-superseded':

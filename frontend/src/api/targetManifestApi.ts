@@ -96,8 +96,23 @@ export interface ResolvedTargetVersion {
   framework: string;
   version: string;
   versionUnknown: boolean;
-  provenance: 'manifest' | 'manual';
+  /**
+   * MIRRORS gateway `manifestPrecedence.ts` ResolvedTargetVersion.provenance.
+   * `manifest` = a deterministic-direct witness; `inferred` = a badged
+   * write-immediately inference (e.g. db.driver=>db.engine); `llm` = the gap-fill
+   * suggestion; `manual` = a surviving manual edit. The `inferred`/`llm` members
+   * are ADDITIVE (Spec 2026-06-26 Task Group 8) and kept lock-step with the
+   * gateway shape.
+   */
+  provenance: 'manifest' | 'manual' | 'inferred' | 'llm';
   sourceFile: string | null;
+  /**
+   * OPTIONAL source dependency/evidence coordinate that drove a manifest-derived
+   * value (e.g. `org.postgresql:postgresql`, carried onto an inferred `db.engine`
+   * or an LLM-suggested answer). Absent for a manual answer or a legacy gateway
+   * response (absent-tolerant). Spec 2026-06-26 Task Group 8 — additive mirror.
+   */
+  sourceDependency?: string;
 }
 
 /** One confirmed per-module/service-tagged manifest (Spec 5 hand-off). */
@@ -128,6 +143,14 @@ export interface TargetManifestAutoAnswerSlice {
   skippedManualCodes: string[];
   resolvedTargetVersions: ResolvedTargetVersion[];
   confirmedManifests: ConfirmedManifestArtifact[];
+  /**
+   * Tier-2 "free facts" -- manifest-declared tech OUTSIDE the 51 questions
+   * ("<friendly name> - <coordinate>" labels, em-dash separated). Informational
+   * + editable/removable (NEVER new questions); feeds the prompt-ready output /
+   * seed-build-files. Optional / absent-tolerant for older gateway responses.
+   * Spec 2026-06-26 Task Group 7.
+   */
+  freeFacts?: string[];
 }
 
 /** The full upload response. */

@@ -4655,3 +4655,36 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Tier-2 "free facts" on target_manifest_artifacts (Spec: Target
+  # Dependency-Manifest Auto-Answer Comprehensive + Tier-2 Free Facts,
+  # 2026-06-26 -- Task Group 7). Adds the tier2_facts JSONB column: the
+  # manifest-declared technology OUTSIDE the 51 architecture questions (e.g. an
+  # MCP SDK, a Spring AI / LLM client), named by the upload LLM gap-fill,
+  # persisted so they feed the prompt-ready output / seed-build-files. Each
+  # element is { friendly_name, coordinate } (mirrors resolved_dependencies on
+  # the same table). Informational only -- never new questions, never rides
+  # target_state_captured_decisions. Nullable, no backfill (legacy rows read
+  # back null).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 200). Registered
+  # AFTER 200 with the not-columnExists precondition idiom (onFail MARK_RAN) so
+  # a re-run is a clean no-op (mirrors 200 / 195 / 198).
+  # ============================================================================
+  - changeSet:
+      id: 201-target-manifest-tier2-facts
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: target_manifest_artifacts
+              columnName: tier2_facts
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/201-target-manifest-tier2-facts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

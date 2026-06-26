@@ -256,6 +256,36 @@ export type AutoSkipOutcome =
 // ---------------------------------------------------------------------------
 
 /**
+ * Derive the cascade trigger key from a captured answer value.
+ *
+ * - A single-choice answer IS the key (a plain string).
+ * - A versioned `{ framework, version }` answer keys the cascade off the BARE
+ *   STEM — `value.framework` (e.g. `{ framework: 'Java', version: '21' }` ->
+ *   `'Java'`) — so a versioned answer fires the same stem-keyed cascade a
+ *   single-choice stem would. The library's cascade trigger maps are re-keyed
+ *   to bare stems (Spec 2026-06-26) to pair with this derivation.
+ * - Anything else (number, boolean, array, null, or an object without a string
+ *   `framework`) is genuinely unkeyable and yields `null` (no cascades).
+ *
+ * Before this, an object value failed the `typeof === 'string'` guard and
+ * `computeCascadeProposals` returned `[]`, leaving every versioned-code cascade
+ * dead. Cascades still surface as EDITABLE PROPOSALS via the existing
+ * cascade-summary / accept / override path — never silent commits.
+ */
+function deriveCascadeTriggerKey(triggerAnswerValue: unknown): string | null {
+  if (typeof triggerAnswerValue === 'string') return triggerAnswerValue;
+  if (
+    triggerAnswerValue !== null &&
+    typeof triggerAnswerValue === 'object' &&
+    !Array.isArray(triggerAnswerValue)
+  ) {
+    const framework = (triggerAnswerValue as { framework?: unknown }).framework;
+    if (typeof framework === 'string') return framework;
+  }
+  return null;
+}
+
+/**
  * Walk the library entry's `cascades[]` array and return the cascade
  * proposals triggered by the user's chosen answer value. Each proposal pairs
  * the downstream decisionCode + the seed-map value + the `sourceStandardId`
@@ -273,8 +303,7 @@ export function computeCascadeProposals(
   triggerAnswerValue: unknown,
 ): PendingCascadeProposal[] {
   if (!Array.isArray(entry.cascades) || entry.cascades.length === 0) return [];
-  const triggerKey =
-    typeof triggerAnswerValue === 'string' ? triggerAnswerValue : null;
+  const triggerKey = deriveCascadeTriggerKey(triggerAnswerValue);
   if (triggerKey === null) return [];
 
   const proposals: PendingCascadeProposal[] = [];

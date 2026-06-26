@@ -30,7 +30,7 @@ import {
   computeAffectedDownstreamCodes,
   computeCascadeProposals,
 } from '../decisionCaptureOrchestrator';
-import { answerQuestion, CoordinatorDeps } from '../architectConversationCoordinator';
+import { answerQuestion, captureDeterministicAnswer, CoordinatorDeps } from '../architectConversationCoordinator';
 import type { CreateCapturedDecisionRequestBody } from '../targetStateCapturedDecisionsWriter';
 import type { TargetStateCapturedDecision } from '../../targetStateCapturedDecisionsClient';
 import type {
@@ -168,12 +168,13 @@ function singleAnswerLlmClient(value: unknown): ArchitectLlmClient {
 // ---------------------------------------------------------------------------
 // Test 1 — Happy path per-question + cascade-summary computation
 //
-// Answering `service.language = Java 21` triggers the inline cascade seed map
-// for `service.runtime` → Eclipse Temurin 21, `testing.unit` → JUnit 5,
-// `dto.style` → Java records, `build.tool` → Gradle 8 (each carrying the
-// entry's `sourceStandardId`). The coordinator wires the loop's parsed answer
-// to the orchestrator; the orchestrator writes ONE captured-decision row (the
-// primary answer — cascades are NOT yet written) and emits a `cascade-summary`
+// Answering `service.language` with the versioned {framework:'Java',
+// version:'21'} value (the bare-stem object the frontend control emits) fires
+// the inline cascade seed map for `service.runtime` -> Eclipse Temurin,
+// `testing.unit` -> JUnit, `dto.style` -> Java records, `build.tool` -> Gradle
+// (each carrying the entry's `sourceStandardId`). The deterministic capture
+// path (the real versioned-code path) writes ONE captured-decision row (the
+// primary answer; cascades are NOT yet written) and emits a `cascade-summary`
 // turn carrying all 4 proposals.
 // ---------------------------------------------------------------------------
 
@@ -188,17 +189,17 @@ describe('answerQuestion — primary answer with cascade summary', () => {
       appendTurn: deps.appendTurn,
     };
 
-    const outcome = await answerQuestion(
+    const outcome = await captureDeterministicAnswer(
       {
         projectId: 'p-1',
         targetArchitectureId: 't-1',
         sessionId: 'session-1',
         conversationThreadId: 'thread-abc',
         entry,
-        userResponse: 'Java 21 please',
-        capturedDecisionsContext: '(no prior decisions)',
-        inlineCascadeSeedMap: '(elided for test)',
-        llmClient: singleAnswerLlmClient('Java 21'),
+        // The versioned { framework, version } object the frontend control
+        // emits (this is the real versioned-code path).
+        value: { framework: 'Java', version: '21' },
+        answerText: 'Java 21',
         roundIndex: 1,
       },
       coordDeps,
@@ -212,7 +213,7 @@ describe('answerQuestion — primary answer with cascade summary', () => {
     expect(postCalls[0].body).toMatchObject({
       decisionCode: 'service.language',
       scopeKind: 'architecture',
-      answerValue: 'Java 21',
+      answerValue: JSON.stringify({ framework: 'Java', version: '21' }),
       standardsLookupRef: null,
       conversationTurnRef: null,
       createdByTask: ARCHITECT_CONVERSATION_TASK_NAME,
@@ -226,12 +227,12 @@ describe('answerQuestion — primary answer with cascade summary', () => {
     expect(summary.cascadedDecisions).toEqual([
       {
         decisionCode: 'service.runtime',
-        proposedValue: 'Eclipse Temurin 21',
+        proposedValue: 'Eclipse Temurin',
         sourceStandardId: 'std.runtime.v1',
       },
       {
         decisionCode: 'testing.unit',
-        proposedValue: 'JUnit 5',
+        proposedValue: 'JUnit',
         sourceStandardId: 'std.testing.unit.v1',
       },
       {
@@ -241,7 +242,7 @@ describe('answerQuestion — primary answer with cascade summary', () => {
       },
       {
         decisionCode: 'build.tool',
-        proposedValue: 'Gradle 8',
+        proposedValue: 'Gradle',
         sourceStandardId: 'std.build.v1',
       },
     ]);
@@ -269,7 +270,7 @@ describe('acceptCascadeBatch — sourceStandardId carried on every cascaded row'
     const orchestrator = new DecisionCaptureOrchestrator(deps);
     const entry = getEntry('service.language');
 
-    const proposals = computeCascadeProposals(entry, 'Java 21');
+    const proposals = computeCascadeProposals(entry, { framework: 'Java', version: '21' });
     expect(proposals.length).toBeGreaterThan(0);
 
     await orchestrator.acceptCascadeBatch({
@@ -313,7 +314,7 @@ describe('acceptCascadeBatch — shared conversationTurnRef', () => {
     });
     const orchestrator = new DecisionCaptureOrchestrator(deps);
     const entry = getEntry('service.language');
-    const proposals = computeCascadeProposals(entry, 'Java 21');
+    const proposals = computeCascadeProposals(entry, { framework: 'Java', version: '21' });
 
     const outcome = await orchestrator.acceptCascadeBatch({
       projectId: 'p-1',
@@ -354,7 +355,7 @@ describe('overrideCascade — single-row override with reason', () => {
     const orchestrator = new DecisionCaptureOrchestrator(deps);
     const entry = getEntry('service.language');
 
-    const proposals = computeCascadeProposals(entry, 'Java 21');
+    const proposals = computeCascadeProposals(entry, { framework: 'Java', version: '21' });
     expect(proposals.length).toBeGreaterThanOrEqual(2);
 
     // Accept the first N-1 proposals normally.
@@ -610,14 +611,14 @@ describe('DecisionCapturedTurn standardsLookupRef passthrough', () => {
     const { deps, appendCalls } = makeRecordingDeps();
     const orchestrator = new DecisionCaptureOrchestrator(deps);
     const entry = getEntry('service.language');
-    const proposals = computeCascadeProposals(entry, 'Java 21');
+    const proposals = computeCascadeProposals(entry, { framework: 'Java', version: '21' });
 
     await orchestrator.acceptCascadeBatch({
       projectId: 'p-1',
       targetArchitectureId: 't-1',
       sessionId: 'session-1',
       conversationThreadId: 'thread-abc',
-      proposals: [proposals[0]], // service.runtime → Eclipse Temurin 21
+      proposals: [proposals[0]], // service.runtime -> Eclipse Temurin (stem)
     });
 
     const decisionTurn = appendCalls.find(
@@ -627,3 +628,82 @@ describe('DecisionCapturedTurn standardsLookupRef passthrough', () => {
     expect(decisionTurn!.standardsLookupRef).toBe('std.runtime.v1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 2026-06-26-target-conversation-versioned-answer-bare-stem-ux, Task Group 2
+// computeCascadeProposals derives the trigger key from value.framework for a
+// versioned { framework, version } object answer (previously such objects failed
+// the typeof === 'string' guard and returned [], leaving versioned cascades
+// dead). Cascades remain EDITABLE PROPOSALS (PendingCascadeProposal[]) computed
+// purely -- never silent commits. Keep to a focused set per tasks.md 2.1.
+// ---------------------------------------------------------------------------
+
+describe('computeCascadeProposals -- versioned {framework, version} object answers', () => {
+  it('fires cascades keyed off value.framework (the bare stem) for an object answer', () => {
+    const entry = getEntry('service.language');
+    const proposals = computeCascadeProposals(entry, { framework: 'Java', version: '21.0.5' });
+    // Keyed under 'Java' -> the 4 service.language cascades with STEMMED seeds.
+    expect(proposals).toEqual([
+      { decisionCode: 'service.runtime', proposedValue: 'Eclipse Temurin', sourceStandardId: 'std.runtime.v1' },
+      { decisionCode: 'testing.unit', proposedValue: 'JUnit', sourceStandardId: 'std.testing.unit.v1' },
+      { decisionCode: 'dto.style', proposedValue: 'Java records', sourceStandardId: 'std.dto.v1' },
+      { decisionCode: 'build.tool', proposedValue: 'Gradle', sourceStandardId: 'std.build.v1' },
+    ]);
+  });
+
+  it('a bare-stem STRING answer resolves identically to the object answer', () => {
+    const entry = getEntry('service.language');
+    const fromString = computeCascadeProposals(entry, 'Java');
+    const fromObject = computeCascadeProposals(entry, { framework: 'Java', version: '21' });
+    expect(fromString).toEqual(fromObject);
+    expect(fromString).toHaveLength(4);
+  });
+
+  it('a plain-string trigger on a NON-versioned source still resolves (no regression)', () => {
+    // service.config is single-choice + NOT versioned: its string answer keys
+    // the cascade exactly as before the engine fix.
+    const entry = getEntry('service.config');
+    const proposals = computeCascadeProposals(entry, 'env vars + 12-factor');
+    expect(proposals).toEqual([
+      { decisionCode: 'secrets.management', proposedValue: 'Vault injector', sourceStandardId: 'std.secrets.v1' },
+    ]);
+  });
+
+  it('the two flipped-to-versioned source cascades still fire from an object answer', () => {
+    // logging.framework -> logging.format (trigger stem unchanged: 'pino').
+    const logging = getEntry('logging.framework');
+    expect(computeCascadeProposals(logging, { framework: 'pino', version: '9' })).toEqual([
+      { decisionCode: 'logging.format', proposedValue: 'JSON one-line', sourceStandardId: 'std.logging.format.v1' },
+    ]);
+    // interservice.asyncBus -> interservice.messageFormat (re-keyed Kafka 3.7 -> Kafka).
+    const bus = getEntry('interservice.asyncBus');
+    expect(computeCascadeProposals(bus, { framework: 'Kafka', version: '3.7' })).toEqual([
+      { decisionCode: 'interservice.messageFormat', proposedValue: 'Avro + Schema Registry', sourceStandardId: 'std.async.format.v1' },
+    ]);
+  });
+
+  it('genuinely unkeyable values short-circuit to [] (no cascades, no throw)', () => {
+    const entry = getEntry('service.language');
+    expect(computeCascadeProposals(entry, 42)).toEqual([]);
+    expect(computeCascadeProposals(entry, null)).toEqual([]);
+    expect(computeCascadeProposals(entry, ['Java', '21'])).toEqual([]); // arrays are not keyable
+    expect(computeCascadeProposals(entry, { version: '21' })).toEqual([]); // object missing framework
+    // An unknown stem yields no proposals (partial-function skip preserved).
+    expect(computeCascadeProposals(entry, { framework: 'COBOL', version: '85' })).toEqual([]);
+  });
+
+  it('returns editable PROPOSALS (PendingCascadeProposal[]) and writes NOTHING', () => {
+    const entry = getEntry('service.language');
+    const { deps, postCalls } = makeRecordingDeps();
+    const proposals = computeCascadeProposals(entry, { framework: 'Java', version: '21' });
+    // Pure computation: no captured-decision row is written.
+    expect(postCalls).toHaveLength(0);
+    expect(deps.postCapturedDecision).toBeDefined();
+    for (const p of proposals) {
+      expect(typeof p.decisionCode).toBe('string');
+      expect(typeof p.sourceStandardId).toBe('string');
+      expect(p).toHaveProperty('proposedValue');
+    }
+  });
+});
+

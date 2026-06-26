@@ -192,7 +192,7 @@ function SummaryRow({ row, onClick }: SummaryRowProps) {
     ? 'Deferred'
     : isNotApplicable
       ? 'N/A'
-      : unwrapped?.value ?? String(row.answerValue);
+      : unwrapped?.value ?? row.answerSummary ?? String(row.answerValue);
 
   return (
     <div

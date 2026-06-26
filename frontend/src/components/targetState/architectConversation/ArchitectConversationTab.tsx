@@ -74,6 +74,7 @@ import { SummaryPanel } from './SummaryPanel';
 import { VulnerabilityReductionPanel } from '../../Architecture/VulnerabilityReductionPanel';
 import { TechStackPrefillBanner } from './TechStackPrefillBanner';
 import { ManifestUploadPanel } from './ManifestUploadPanel';
+import { DecisionsFileUploadPanel } from './DecisionsFileUploadPanel';
 // Spec 4 (2026-06-24-vulnerability-reduction-and-steering, Task Group 6): the
 // inline non-blocking nudge + the shared-delta hook that feeds BOTH steering
 // surfaces (the nudge + the close-flow critical hard-gate). All additive +
@@ -186,6 +187,12 @@ export function ArchitectConversationTab({
   const [answerError, setAnswerError] = useState<string | null>(null);
   const [cascadeBusy, setCascadeBusy] = useState(false);
   const [cascadeError, setCascadeError] = useState<string | null>(null);
+
+  // Mutual exclusivity (Spec 2026-06-26-target-state-decisions-file-import): only
+  // one bulk target-state input may be active at a time. Each panel reports
+  // whether it has a file staged; the other is disabled while it does.
+  const [manifestActive, setManifestActive] = useState(false);
+  const [decisionsActive, setDecisionsActive] = useState(false);
 
   // Cascade-summary pending state: which cascade-summary turn is awaiting
   // user resolution + the parent decision id that triggered it.
@@ -1354,11 +1361,37 @@ export function ArchitectConversationTab({
               successful upload the conversation envelope is refreshed so the
               auto-answered captured-decision rows show in the SummaryPanel, and
               the question walk advances past the now-answered codes. */}
+          {/* Spec 2026-06-26-target-state-decisions-file-import (Spec 3): the
+              "Manually Answer Target State" decisions-file upload, JUST ABOVE the
+              manifest upload. The two bulk inputs are mutually exclusive — staging
+              a file in one disables the other (with a hover tooltip); clearing
+              re-enables. On import the envelope refreshes + the walk advances. */}
+          <DecisionsFileUploadPanel
+            projectId={projectId}
+            targetArchitectureId={selectedTargetArchitectureId}
+            conversationThreadId={envelope.threadId ?? null}
+            disabledReason={
+              manifestActive
+                ? 'Clear the selected manifest(s) to import a decisions file instead.'
+                : null
+            }
+            onActiveChange={setDecisionsActive}
+            onImported={() => {
+              void refreshEnvelope();
+              void refreshNextQuestion();
+            }}
+          />
           <ManifestUploadPanel
             projectId={projectId}
             targetArchitectureId={selectedTargetArchitectureId}
             conversationThreadId={envelope.threadId ?? null}
             sessionId={envelope.currentSession?.sessionId ?? null}
+            disabledReason={
+              decisionsActive
+                ? 'Clear the imported decisions file to upload a manifest instead.'
+                : null
+            }
+            onActiveChange={setManifestActive}
             onUploaded={(response) => {
               // Spec 4: capture the resolved target deps so the reduction can
               // recompute against the (re-)uploaded manifest (the iterate loop).

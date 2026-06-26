@@ -257,6 +257,7 @@ const AMS_INPUT_WIRE_KEYS = [
   'content',
   'package_lock_content',
   'resolved_dependencies',
+  'tier2_facts',
 ].sort();
 
 test('the gateway persist payload emits EXACTLY the AMS TargetManifestArtifactInput snake_case key set (no camelCase leak)', () => {

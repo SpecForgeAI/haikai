@@ -106,7 +106,7 @@ export default defineConfig(({ mode }) => {
         // catch-all `/api` below sends them to the model service (8080) and
         // Spring 404s "No static resource". RegExp key (dynamic
         // target-architectures path). MUST come before `/api`.
-        '^/api/projects/[^/]+/target-architectures/[^/]+/(target-manifests|manifest-artifacts)': {
+        '^/api/projects/[^/]+/target-architectures/[^/]+/(target-manifests|manifest-artifacts|decisions-file-import)': {
           target: chatApiTarget,
           changeOrigin: true,
           secure: false,

@@ -138,7 +138,8 @@ test('(a)+(b) writes captured-decision rows with the prefill envelope, new task 
   // service.framework (Spring Boot, parent-resolved 3.4.1), db.driver (pgjdbc
   // 42.7.4), and build.tool (Maven from the ecosystem) are all written.
   expect(Object.keys(byCode).sort()).toEqual(
-    ['build.tool', 'db.driver', 'service.framework'].sort(),
+    // Spec 2: db.engine is now ALSO written, INFERRED from the Postgres driver.
+    ['build.tool', 'db.driver', 'db.engine', 'service.framework'].sort(),
   );
 
   // Contract on the framework row.
@@ -168,8 +169,17 @@ test('(a)+(b) writes captured-decision rows with the prefill envelope, new task 
   expect(drvParsed.sourceFile).toBe('services/orders/pom.xml');
   expect(drvParsed.sourceQuote).toBe('org.postgresql:postgresql 42.7.4');
 
+  // db.engine is INFERRED from the Postgres driver — FAMILY ONLY, so the engine
+  // version is unknown (a driver never reveals the server version).
+  const engine = byCode['db.engine'];
+  const engineParsed = JSON.parse(engine.answerValue);
+  expect(engineParsed.value).toEqual({
+    framework: 'Postgres',
+    version: 'version-unknown',
+  });
+
   expect(outcome.aborted).toBe(false);
-  expect(outcome.rowsWritten).toBe(3);
+  expect(outcome.rowsWritten).toBe(4);
 });
 
 // ---------------------------------------------------------------------------
@@ -245,9 +255,18 @@ test('(e) non-dependency codes are never attempted', async () => {
   await runManifestAutoAnswer({ ...ARGS, resolvedManifests: [resolved] }, deps);
 
   const attemptedCodes = postCalls.map((c) => c.body.decisionCode);
-  // Every attempted code is within the dependency-answerable subset.
+  // Every attempted code is within the manifest-answerable surface: the
+  // coordinate/build-tool subset PLUS the extractor codes (service.language,
+  // db.migrations) and the INFERRED codes (db.engine, service.runtime).
+  const MANIFEST_ANSWERABLE = new Set<string>([
+    ...DEPENDENCY_ANSWERABLE_CODES,
+    'service.language',
+    'db.migrations',
+    'db.engine',
+    'service.runtime',
+  ]);
   for (const code of attemptedCodes) {
-    expect(DEPENDENCY_ANSWERABLE_CODES.has(code)).toBe(true);
+    expect(MANIFEST_ANSWERABLE.has(code)).toBe(true);
   }
   // Explicit non-dependency codes are absent.
   for (const nonDep of [
@@ -293,4 +312,149 @@ test('(f) de-dupes to one candidate per code, preferring a concrete version over
   const fw = candidates.find((c) => c.decisionCode === 'service.framework');
   expect(fw).toBeDefined();
   expect(fw!.version).toBe('3.4.1'); // concrete beat version-unknown
+});
+
+// ---------------------------------------------------------------------------
+// (g)-(k) Property + plugin extractors + bare-stem build.tool + single-choice
+//         witness (Spec 2 Group 3 — comprehensive auto-answer).
+// ---------------------------------------------------------------------------
+
+// A pom exercising the NEW witnesses: <java.version> (=> service.language Java),
+// a flyway-maven-plugin (=> db.migrations Flyway), a spring-cloud eureka client
+// (=> interservice.discoveryMechanism single-choice Eureka), plus the existing
+// Spring Boot framework + Postgres driver + Maven build tool.
+const RICH_POM = `<project>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.4.1</version>
+  </parent>
+  <properties>
+    <java.version>21</java.version>
+  </properties>
+  <dependencies>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.4</version></dependency>
+    <dependency><groupId>org.springframework.cloud</groupId><artifactId>spring-cloud-starter-netflix-eureka-client</artifactId><version>4.1.3</version></dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.flywaydb</groupId><artifactId>flyway-maven-plugin</artifactId><version>10.17.0</version></plugin>
+  </plugins></build>
+</project>`;
+
+function richResolvedManifest(path = 'services/orders/pom.xml', tag = 'orders-service') {
+  const parsed: ParsedManifest = {
+    status: 'parsed', ecosystem: 'MAVEN', kind: 'pom.xml', tag,
+    manifestPath: path,
+    declaredDependencies: resolveMavenManifest(RICH_POM, path),
+    rawPomContent: RICH_POM, packageLockContent: null,
+  };
+  return resolveManifestVersions(parsed);
+}
+
+test('(g) property extractor: <java.version> resolves service.language as a bare-stem Java candidate (deterministic-direct)', () => {
+  const candidates = deriveManifestAnswerCandidates([richResolvedManifest()]);
+  const lang = candidates.find((c) => c.decisionCode === 'service.language');
+  expect(lang).toBeDefined();
+  expect(lang!.answerKind).toBe('framework-version');
+  expect(lang!.framework).toBe('Java');
+  expect(lang!.version).toBe('21');
+});
+
+test('(h) property extractor: kotlin.version wins over java.version for service.language', () => {
+  const kotlinPom = `<project>
+    <properties>
+      <kotlin.version>2.0.21</kotlin.version>
+      <java.version>21</java.version>
+    </properties>
+    <dependencies>
+      <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>42.7.4</version></dependency>
+    </dependencies>
+  </project>`;
+  const parsed: ParsedManifest = {
+    status: 'parsed', ecosystem: 'MAVEN', kind: 'pom.xml', tag: 'svc',
+    manifestPath: 'pom.xml',
+    declaredDependencies: resolveMavenManifest(kotlinPom, 'pom.xml'),
+    rawPomContent: kotlinPom, packageLockContent: null,
+  };
+  const candidates = deriveManifestAnswerCandidates([resolveManifestVersions(parsed)]);
+  const lang = candidates.find((c) => c.decisionCode === 'service.language');
+  expect(lang!.framework).toBe('Kotlin');
+  expect(lang!.version).toBe('2.0.21');
+});
+
+test('(i) plugin extractor: a flyway-maven-plugin resolves db.migrations as a bare-stem Flyway candidate', () => {
+  const candidates = deriveManifestAnswerCandidates([richResolvedManifest()]);
+  const mig = candidates.find((c) => c.decisionCode === 'db.migrations');
+  expect(mig).toBeDefined();
+  expect(mig!.answerKind).toBe('framework-version');
+  expect(mig!.framework).toBe('Flyway');
+  expect(mig!.version).toBe('10.17.0');
+});
+
+test('(j) build.tool writes a bare-stem { framework: Maven, version: 3.9 } (de-doubled per Spec 1)', async () => {
+  const { deps, postCalls } = makeRecordingDeps();
+  await runManifestAutoAnswer({ ...ARGS, resolvedManifests: [richResolvedManifest()] }, deps);
+  const bt = postCalls.find((c) => c.body.decisionCode === 'build.tool')!.body;
+  expect(JSON.parse(bt.answerValue).value).toEqual({ framework: 'Maven', version: '3.9' });
+  expect(bt.answerSummary).toBe('Maven 3.9');
+});
+
+test('(k) a single-choice witness (Eureka) writes a plain-string value (exact choice), not a { framework, version }', async () => {
+  const { deps, postCalls } = makeRecordingDeps();
+  await runManifestAutoAnswer({ ...ARGS, resolvedManifests: [richResolvedManifest()] }, deps);
+  const disc = postCalls.find(
+    (c) => c.body.decisionCode === 'interservice.discoveryMechanism',
+  )!.body;
+  const parsedValue = JSON.parse(disc.answerValue);
+  expect(parsedValue.value).toBe('Eureka'); // plain string, NOT an object
+  expect(typeof parsedValue.value).toBe('string');
+  expect(disc.answerSummary).toBe('Eureka');
+});
+
+// ---------------------------------------------------------------------------
+// (l)-(n) Inference layer (Spec 2 Group 4 — badged, write-immediately).
+// ---------------------------------------------------------------------------
+
+test('(l) db.driver => db.engine is INFERRED family-only (version-unknown), badged inferred with the driver as source dependency', () => {
+  const candidates = deriveManifestAnswerCandidates([richResolvedManifest()]);
+  const engine = candidates.find((c) => c.decisionCode === 'db.engine');
+  expect(engine).toBeDefined();
+  // Family only — a driver never reveals the server version.
+  expect(engine!.answerKind).toBe('framework-version');
+  expect(engine!.framework).toBe('Postgres');
+  expect(engine!.version).toBe('version-unknown');
+  // Badged inferred + carries the driver coordinate as the source dependency.
+  expect(engine!.provenance).toBe('inferred');
+  expect(engine!.sourceDependency).toBe('org.postgresql:postgresql');
+
+  // The deterministic db.driver hit is UNCHANGED and still deterministic.
+  const driver = candidates.find((c) => c.decisionCode === 'db.driver');
+  expect(driver!.provenance).toBe('deterministic');
+});
+
+test('(m) service.language => service.runtime is INFERRED from the Spec-1 cascade seed, badged inferred', () => {
+  // RICH_POM has <java.version>21</java.version> => service.language Java =>
+  // infers service.runtime Eclipse Temurin (the cascade seed value).
+  const candidates = deriveManifestAnswerCandidates([richResolvedManifest()]);
+  const runtime = candidates.find((c) => c.decisionCode === 'service.runtime');
+  expect(runtime).toBeDefined();
+  expect(runtime!.framework).toBe('Eclipse Temurin');
+  expect(runtime!.version).toBe('version-unknown');
+  expect(runtime!.provenance).toBe('inferred');
+
+  // The deterministic service.language hit it was inferred from is preserved.
+  const language = candidates.find((c) => c.decisionCode === 'service.language');
+  expect(language!.framework).toBe('Java');
+  expect(language!.provenance).toBe('deterministic');
+});
+
+test('(n) inferred candidates are WRITE-IMMEDIATELY (in the candidate set, not held as proposals); exactly one per code', () => {
+  const candidates = deriveManifestAnswerCandidates([richResolvedManifest()]);
+  // db.engine + service.runtime (both inferred) ride the SAME candidate set the
+  // writer POSTs — there is no separate "proposal" channel.
+  const codes = candidates.map((c) => c.decisionCode);
+  expect(codes).toContain('db.engine');
+  expect(codes).toContain('service.runtime');
+  expect(new Set(codes).size).toBe(codes.length);
 });

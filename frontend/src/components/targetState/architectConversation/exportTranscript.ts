@@ -31,6 +31,7 @@
  * Markdown previewer.
  */
 
+import { resolveCapturedAnswerLabel } from '../../../api/architectConversationApi';
 import type { ConversationTurn, TierFlags } from '../../../api/architectConversationApi';
 
 // ---------------------------------------------------------------------------
@@ -200,7 +201,7 @@ function renderTurn(turn: ConversationTurn): string {
 
     case 'cascade-accepted': {
       const lines = turn.cascadedDecisions.map(
-        (c) => `- \`${c.decisionCode}\` → ${String(c.answerValue)}`,
+        (c) => `- \`${c.decisionCode}\` → ${resolveCapturedAnswerLabel(c.answerValue)}`,
       );
       return ['**Cascades accepted:**', '', ...lines].join('\n');
     }
@@ -208,7 +209,7 @@ function renderTurn(turn: ConversationTurn): string {
     case 'cascade-overridden': {
       const lines = turn.cascadedDecisions.map(
         (c) =>
-          `- \`${c.decisionCode}\` → ${String(c.answerValue)}  _(reason: ${c.overrideReason})_`,
+          `- \`${c.decisionCode}\` → ${resolveCapturedAnswerLabel(c.answerValue)}  _(reason: ${c.overrideReason})_`,
       );
       return ['**Cascades overridden:**', '', ...lines].join('\n');
     }
@@ -223,7 +224,7 @@ function renderTurn(turn: ConversationTurn): string {
           ? `; standard: ${turn.standardsLookupRef}`
           : '';
       return (
-        `**Captured:** \`${turn.decisionCode}\` = ${String(turn.answerValue)}  ` +
+        `**Captured:** \`${turn.decisionCode}\` = ${resolveCapturedAnswerLabel(turn.answerValue)}  ` +
         `_(scope: ${scopeFragment}; id: \`${turn.decisionId}\`${standardSuffix})_`
       );
     }
@@ -241,7 +242,7 @@ function renderTurn(turn: ConversationTurn): string {
 
     case 'exception-pinned':
       return (
-        `**Exception pinned:** \`${turn.decisionCode}\` = ${String(turn.answerValue)} ` +
+        `**Exception pinned:** \`${turn.decisionCode}\` = ${resolveCapturedAnswerLabel(turn.answerValue)} ` +
         `_(on ${turn.scope.refType}:${turn.scope.refId})_`
       );
 

@@ -126,6 +126,61 @@ export function resolveFrameworkVersionChip(value: FrameworkVersion): string {
   return (value.framework + ' ' + value.version).trim();
 }
 
+/**
+ * Type guard: a structured `{ framework, version }` object whose both fields are
+ * strings. Used to discriminate a versioned captured value from a plain-string
+ * single-choice value when resolving a turn's `answerValue` client-side.
+ */
+function isFrameworkVersionObject(v: unknown): v is FrameworkVersion {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { framework?: unknown }).framework === 'string' &&
+    typeof (v as { version?: unknown }).version === 'string'
+  );
+}
+
+/**
+ * Resolve the human-readable label for a captured-decision `answerValue` carried
+ * on the decision-captured / cascade-accepted / cascade-overridden /
+ * exception-pinned turns (which carry `answerValue` but NOT `answerSummary`,
+ * unlike `CapturedDecisionRow`). Produces the SAME resolved chip the SummaryPanel
+ * shows via `answerSummary`, resolved CLIENT-SIDE from the capture envelope:
+ *
+ *   - the JSON `{ value, sourceQuote, sourceFile }` envelope whose inner `value`
+ *     is a `{ framework, version }` object  -> `resolveFrameworkVersionChip`
+ *     (e.g. `Spring Boot 4.0`);
+ *   - the envelope whose inner `value` is a plain string -> that string verbatim;
+ *   - a bare `{ framework, version }` object -> `resolveFrameworkVersionChip`;
+ *   - any plain single-choice string (not JSON) -> the string verbatim.
+ *
+ * Never throws: a non-JSON / non-envelope value falls through to `String(...)`,
+ * matching the prior raw `String(answerValue)` behaviour for legacy rows.
+ */
+export function resolveCapturedAnswerLabel(answerValue: unknown): string {
+  // A bare structured value already in { framework, version } shape.
+  if (isFrameworkVersionObject(answerValue)) {
+    return resolveFrameworkVersionChip(answerValue);
+  }
+  if (typeof answerValue !== 'string') {
+    return String(answerValue);
+  }
+  // Try to unwrap the capture envelope. A plain single-choice answer is not
+  // valid JSON and falls through to the verbatim string.
+  try {
+    const parsed: unknown = JSON.parse(answerValue);
+    if (parsed !== null && typeof parsed === 'object' && 'value' in parsed) {
+      const inner = (parsed as { value: unknown }).value;
+      if (isFrameworkVersionObject(inner)) return resolveFrameworkVersionChip(inner);
+      if (typeof inner === 'string') return inner;
+      return String(inner);
+    }
+  } catch {
+    // Not JSON -> a plain single-choice string answer; fall through.
+  }
+  return answerValue;
+}
+
 
 // ----------------------------------------------------------------------------
 // API like-for-like lock — `api.surfaceMode` + the `L` (locked) treatment marker

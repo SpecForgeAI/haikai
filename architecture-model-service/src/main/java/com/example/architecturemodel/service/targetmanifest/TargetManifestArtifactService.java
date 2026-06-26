@@ -120,6 +120,8 @@ public class TargetManifestArtifactService {
                 .packageLockContent(input.packageLockContent())
                 .resolvedDependencies(input.resolvedDependencies() == null
                     ? new ArrayList<>() : new ArrayList<>(input.resolvedDependencies()))
+                .tier2Facts(input.tier2Facts() == null
+                    ? new ArrayList<>() : new ArrayList<>(input.tier2Facts()))
                 .isLatest(Boolean.TRUE)
                 .build();
             repository.save(entity);

@@ -31,6 +31,7 @@ import { DeclaredDependency, ManifestEcosystem } from './manifestDependencyResol
 import {
   parsePomMetadataFromString,
   resolvePropertyRef,
+  PomMetadata,
 } from './mavenPomMetadata';
 import { ParsedManifest } from './parsedManifestModel';
 
@@ -84,6 +85,17 @@ export interface ResolvedManifest {
   tag: string;
   manifestPath: string;
   resolvedDependencies: ResolvedDependency[];
+  /**
+   * The parsed pom `<properties>` / `<plugins>` / `<parent>` /
+   * `<dependencyManagement>` metadata (Spec 2 FR1 — the root-cause fix).
+   * `resolveMavenVersions` already parses this internally to resolve `${...}`
+   * placeholders, then DISCARDS it; carrying it forward here lets
+   * `deriveManifestAnswerCandidates` read `<properties>` (e.g. `java.version`)
+   * and `<plugins>` (flyway / liquibase) it could never see before. `null` on
+   * the npm path. PURELY ADDITIVE: the resolver rows + resolved-version
+   * behaviour are unchanged.
+   */
+  pomMetadata: PomMetadata | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -416,10 +428,21 @@ export function resolveManifestVersions(parsed: ParsedManifest): ResolvedManifes
           parsed.tag,
         );
 
+  // Carry the pom metadata forward for the MAVEN path (Spec 2 FR1). This is the
+  // SAME pure, regex-only parse `resolveMavenVersions` runs internally — projected
+  // here instead of dropped, so `deriveManifestAnswerCandidates` can reach
+  // `<properties>` (e.g. `java.version`) + `<plugins>` (flyway / liquibase). The
+  // npm path carries `null`. Additive only — no resolver row is changed.
+  const pomMetadata: PomMetadata | null =
+    parsed.ecosystem === 'MAVEN'
+      ? parsePomMetadataFromString(parsed.manifestPath, parsed.rawPomContent ?? '')
+      : null;
+
   return {
     ecosystem: parsed.ecosystem,
     tag: parsed.tag,
     manifestPath: parsed.manifestPath,
     resolvedDependencies,
+    pomMetadata,
   };
 }

@@ -28,6 +28,7 @@
 
 import {
   buildTargetManifestUploadResponseWithAutoAnswer,
+  freeFactsToTier2Wire,
   toTargetManifestArtifactInput,
   type PersistConfirmedManifestsSeam,
 } from '../../../routes/targetManifestUpload';
@@ -36,6 +37,12 @@ import { ManifestPrecedenceDeps } from '../manifestPrecedence';
 import type { ConfirmedManifestArtifact } from '../manifestHandoffs';
 import type { CreateCapturedDecisionRequestBody } from '../../architectConversation/targetStateCapturedDecisionsWriter';
 import type { TargetStateCapturedDecision } from '../../targetStateCapturedDecisionsClient';
+import { clearManifestLlmGapFillCache } from '../manifestLlmGapFill';
+import type {
+  ArchitectLlmClient,
+  CallSingleShotResponse,
+  SingleShotPrompt,
+} from '../../architectConversation/architectLlmClient';
 
 jest.mock('../../logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -112,6 +119,7 @@ interface PersistCall {
   projectId: string;
   targetArchitectureId: string;
   artifacts: ConfirmedManifestArtifact[];
+  tier2Facts: Array<{ friendly_name: string; coordinate: string }>;
 }
 
 function capturingPersist(): {
@@ -123,13 +131,54 @@ function capturingPersist(): {
     projectId,
     targetArchitectureId,
     artifacts,
+    tier2Facts,
   ) => {
-    calls.push({ projectId, targetArchitectureId, artifacts: [...artifacts] });
+    calls.push({
+      projectId,
+      targetArchitectureId,
+      artifacts: [...artifacts],
+      tier2Facts: tier2Facts ? tier2Facts.map((f) => ({ ...f })) : [],
+    });
   };
   return { seam, calls };
 }
 
 const BASE = { projectId: 'p1', targetArchitectureId: 't1' };
+
+// ---------------------------------------------------------------------------
+// Tier-2 free-facts fixtures (Task Group 7). EM_DASH is the literal U+2014 the
+// gap-fill label uses (mirrors the EM_DASH constant in manifestLlmGapFill.test.ts).
+// ---------------------------------------------------------------------------
+
+const EM_DASH = '—';
+
+/** A pom whose ONLY dependency is UNMATCHED by the registry (drives the gap-fill). */
+const MCP_POM = `<project>
+  <dependencies>
+    <dependency>
+      <groupId>io.modelcontextprotocol</groupId>
+      <artifactId>mcp-sdk</artifactId>
+      <version>0.5.0</version>
+    </dependency>
+  </dependencies>
+</project>`;
+
+/** A fake single-shot client returning ONE Tier-2 free fact and no answers. */
+function freeFactLlmClient(body: string): ArchitectLlmClient {
+  return {
+    callLlmToolLoop: async () => {
+      throw new Error('callLlmToolLoop not used in the manifest gap-fill');
+    },
+    callSingleShot: async (_p: SingleShotPrompt): Promise<CallSingleShotResponse> => ({
+      content: body,
+    }),
+  };
+}
+
+const MCP_LLM_BODY = JSON.stringify({
+  answers: [],
+  freeFacts: [{ friendlyName: 'MCP SDK', coordinate: 'io.modelcontextprotocol:mcp-sdk' }],
+});
 
 // ===========================================================================
 // (a) Persist attempted with the correctly-mapped snake_case payload
@@ -267,4 +316,90 @@ test('a persist write hiccup is swallowed + logged and the upload response is un
       c[0].includes('persist_confirmed_manifests_failed'),
   );
   expect(failedLogs.length).toBeGreaterThanOrEqual(1);
+});
+
+// ===========================================================================
+// (c) Tier-2 free facts (Task Group 7): label split + response surfacing +
+//     persist onto the EXISTING store + fail-soft.
+// ===========================================================================
+
+test('freeFactsToTier2Wire splits the friendly/coordinate labels into { friendly_name, coordinate } (last-separator + separator-less tolerant)', () => {
+  expect(
+    freeFactsToTier2Wire([
+      `MCP SDK ${EM_DASH} io.modelcontextprotocol.sdk`,
+      `Spring AI / LLM client ${EM_DASH} spring-ai-openai`,
+    ]),
+  ).toEqual([
+    { friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol.sdk' },
+    { friendly_name: 'Spring AI / LLM client', coordinate: 'spring-ai-openai' },
+  ]);
+
+  // A separator-less label keeps the whole string as the friendly name (no
+  // coordinate); blank / whitespace-only labels are dropped.
+  expect(freeFactsToTier2Wire(['LoneWord', '   '])).toEqual([
+    { friendly_name: 'LoneWord', coordinate: '' },
+  ]);
+});
+
+test('toTargetManifestArtifactInput defaults tier2_facts to [] and carries the provided facts (snake_case)', () => {
+  const artifact: ConfirmedManifestArtifact = {
+    tag: 'web',
+    ecosystem: 'NPM',
+    kind: 'package.json',
+    manifestPath: 'package.json',
+    content: '{}',
+    packageLockContent: null,
+    resolvedDependencies: [],
+  };
+  expect(toTargetManifestArtifactInput(artifact).tier2_facts).toEqual([]);
+  expect(
+    toTargetManifestArtifactInput(artifact, [
+      { friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol.sdk' },
+    ]).tier2_facts,
+  ).toEqual([{ friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol.sdk' }]);
+});
+
+test('Tier-2 free facts surface on autoAnswer.freeFacts AND persist (split) onto the existing store', async () => {
+  clearManifestLlmGapFillCache();
+  const { seam, calls } = capturingPersist();
+
+  const res = await buildTargetManifestUploadResponseWithAutoAnswer({
+    files: [multerFile('services/orders/pom.xml', MCP_POM)],
+    body: { tags: 'orders-service' },
+    ...BASE,
+    deps: { ...passingOrchestratorDeps(), llmClient: freeFactLlmClient(MCP_LLM_BODY) },
+    persistConfirmedManifests: seam,
+  });
+
+  // The response surfaces the friendly-name / coordinate label.
+  expect(res.autoAnswer).not.toBeNull();
+  expect(res.autoAnswer!.freeFacts).toEqual([
+    `MCP SDK ${EM_DASH} io.modelcontextprotocol:mcp-sdk`,
+  ]);
+
+  // The persist rode the EXISTING store seam, carrying the split structured facts.
+  expect(calls).toHaveLength(1);
+  expect(calls[0].tier2Facts).toEqual([
+    { friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol:mcp-sdk' },
+  ]);
+});
+
+test('a Tier-2 persist hiccup never blocks the response (fail-soft): freeFacts still surface', async () => {
+  clearManifestLlmGapFillCache();
+  const throwingPersist: PersistConfirmedManifestsSeam = async () => {
+    throw new Error('simulated AMS manifest-artifacts 500');
+  };
+
+  const res = await buildTargetManifestUploadResponseWithAutoAnswer({
+    files: [multerFile('services/orders/pom.xml', MCP_POM)],
+    body: { tags: 'orders-service' },
+    ...BASE,
+    deps: { ...passingOrchestratorDeps(), llmClient: freeFactLlmClient(MCP_LLM_BODY) },
+    persistConfirmedManifests: throwingPersist,
+  });
+
+  expect(res.autoAnswer).not.toBeNull();
+  expect(res.autoAnswer!.freeFacts).toEqual([
+    `MCP SDK ${EM_DASH} io.modelcontextprotocol:mcp-sdk`,
+  ]);
 });

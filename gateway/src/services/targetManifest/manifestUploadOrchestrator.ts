@@ -25,10 +25,19 @@ import {
   ManifestAutoAnswererDeps,
   ManifestAnswerCandidate,
   defaultManifestAutoAnswererDeps,
+  dedupeCandidatesByPrecedence,
   deriveManifestAnswerCandidates,
   runManifestAutoAnswer,
   ManifestAutoAnswerOutcome,
 } from './manifestAutoAnswerer';
+import {
+  ManifestLlmAnswer,
+  ManifestLlmAnswerableCode,
+  runManifestLlmGapFill,
+} from './manifestLlmGapFill';
+import { DEPENDENCY_ANSWERABLE_CODES } from './manifestCodeMapping';
+import { QUESTION_LIBRARY } from '../../config/architect-conversation/questionLibrary';
+import { VERSION_UNKNOWN } from '../../config/architect-conversation/frameworkVersionShape';
 import {
   ManifestPrecedenceDeps,
   ResolvedTargetVersion,
@@ -75,6 +84,107 @@ export interface ProcessManifestUploadResult {
    * manual edits; `version-unknown` passthrough). Spec 4 hand-off source.
    */
   resolvedTargetVersions: ResolvedTargetVersion[];
+  /**
+   * Tier-2 "free facts" — LLM-named manifest tech OUTSIDE the 51 questions
+   * (`"<friendly> — <coordinate>"` labels). Empty when the LLM is unwired or
+   * failed (fail-open). Surfaced + persisted by Task Group 7.
+   */
+  freeFacts: string[];
+}
+
+// ---------------------------------------------------------------------------
+// LLM gap-fill projection helpers (Spec 2 R5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The manifest-answerable decision-code surface the LLM gap-fill may propose
+ * answers for: the deterministic coordinate/build-tool set PLUS the
+ * property/plugin-extractor codes (`service.language`, `db.migrations`), the
+ * INFERRED codes (`db.engine`, `service.runtime`), and the clearly
+ * manifest-relevant combo code `testing.integration` the registry deliberately
+ * leaves to the LLM. NEVER includes a not-manifest code (cutover/auth/etc.).
+ */
+const MANIFEST_LLM_ANSWERABLE_SURFACE: ReadonlySet<string> = new Set<string>([
+  ...DEPENDENCY_ANSWERABLE_CODES,
+  'service.language',
+  'db.migrations',
+  'db.engine',
+  'service.runtime',
+  'testing.integration',
+]);
+
+/** Project the manifest-answerable codes still OPEN (not already answered). */
+function projectOpenAnswerableCodes(
+  answeredCodes: ReadonlySet<string>,
+): ManifestLlmAnswerableCode[] {
+  const out: ManifestLlmAnswerableCode[] = [];
+  for (const q of QUESTION_LIBRARY) {
+    if (!MANIFEST_LLM_ANSWERABLE_SURFACE.has(q.code)) continue;
+    if (answeredCodes.has(q.code)) continue;
+    out.push({
+      code: q.code,
+      prompt: q.prompt,
+      expectedAnswerShape: q.expectedAnswerShape,
+      choices: q.choices,
+      versioned: q.versioned,
+    });
+  }
+  return out;
+}
+
+/** Index resolved deps by coordinate for LLM-answer version/source recovery. */
+function indexResolvedDependencies(manifests: readonly ResolvedManifest[]): {
+  versionByCoord: Map<string, string>;
+  sourceFileByCoord: Map<string, string>;
+  tagByCoord: Map<string, string>;
+} {
+  const versionByCoord = new Map<string, string>();
+  const sourceFileByCoord = new Map<string, string>();
+  const tagByCoord = new Map<string, string>();
+  for (const m of manifests) {
+    for (const dep of m.resolvedDependencies) {
+      if (!versionByCoord.has(dep.name)) versionByCoord.set(dep.name, dep.resolvedVersion);
+      if (!sourceFileByCoord.has(dep.name)) sourceFileByCoord.set(dep.name, dep.manifestPath);
+      if (!tagByCoord.has(dep.name)) tagByCoord.set(dep.name, dep.tag);
+    }
+  }
+  return { versionByCoord, sourceFileByCoord, tagByCoord };
+}
+
+/**
+ * Convert an LLM-suggested answer into a write-immediately candidate badged
+ * `llm`. A versioned code recovers its version from the source dependency's
+ * resolved version (else `version-unknown`); a single-choice code writes the
+ * verbatim value. Provenance + source-dependency are carried for the UI badge.
+ */
+function llmAnswerToCandidate(
+  answer: ManifestLlmAnswer,
+  index: ReturnType<typeof indexResolvedDependencies> & {
+    fallbackSourceFile: string;
+    fallbackTag: string;
+  },
+): ManifestAnswerCandidate {
+  const sourceFile =
+    index.sourceFileByCoord.get(answer.sourceDependency) ?? index.fallbackSourceFile;
+  const tag = index.tagByCoord.get(answer.sourceDependency) ?? index.fallbackTag;
+  const recovered = index.versionByCoord.get(answer.sourceDependency);
+  const base = {
+    decisionCode: answer.decisionCode,
+    sourceFile,
+    sourceQuote: `${answer.value} (LLM-suggested from ${answer.sourceDependency})`,
+    tag,
+    provenance: 'llm' as const,
+    sourceDependency: answer.sourceDependency,
+  };
+  if (answer.versioned) {
+    return {
+      ...base,
+      answerKind: 'framework-version',
+      framework: answer.value,
+      version: recovered && recovered !== VERSION_UNKNOWN ? recovered : VERSION_UNKNOWN,
+    };
+  }
+  return { ...base, answerKind: 'single-choice', framework: answer.value, version: '' };
 }
 
 /**
@@ -91,8 +201,41 @@ export async function processManifestUpload(
     resolveManifestVersions(m),
   );
 
-  // 2. Derive candidate set (Group 3).
-  const allCandidates = deriveManifestAnswerCandidates(resolvedManifests);
+  // 2. Derive candidate set (Groups 3/4): deterministic-direct + inferred.
+  const baseCandidates = deriveManifestAnswerCandidates(resolvedManifests);
+
+  // 2b. The ONE LLM gap-fill (Spec 2 R5) — ONLY when a client is wired in.
+  //     FAIL-OPEN: any failure leaves the deterministic + inferred set standing.
+  //     LLM candidates ride the LOWEST non-manual precedence (de-dup never lets
+  //     them override a deterministic OR inferred hit). Tier-2 free facts are
+  //     captured separately for Task Group 7.
+  let allCandidates = baseCandidates;
+  let freeFacts: string[] = [];
+  if (deps.llmClient) {
+    const answeredCodes = new Set(baseCandidates.map((c) => c.decisionCode));
+    const gapFill = await runManifestLlmGapFill({
+      resolvedManifests,
+      answerableCodes: projectOpenAnswerableCodes(answeredCodes),
+      llmClient: deps.llmClient,
+    });
+    if (gapFill.kind === 'success') {
+      const firstManifest = resolvedManifests[0];
+      const index = {
+        ...indexResolvedDependencies(resolvedManifests),
+        fallbackSourceFile: firstManifest?.manifestPath ?? '',
+        fallbackTag: firstManifest?.tag ?? '',
+      };
+      const llmCandidates = gapFill.answers.map((a) => llmAnswerToCandidate(a, index));
+      allCandidates = dedupeCandidatesByPrecedence([...baseCandidates, ...llmCandidates]);
+      freeFacts = gapFill.freeFacts.map((f) => f.label);
+    } else {
+      logger.info('target-manifest upload: LLM gap-fill skipped (fail-open)', {
+        projectId: args.projectId,
+        targetArchitectureId: args.targetArchitectureId,
+        reason: gapFill.reason,
+      });
+    }
+  }
 
   // 3. Manual-wins precedence (Group 4).
   const precedence = await filterCandidatesByPrecedence(
@@ -145,5 +288,6 @@ export async function processManifestUpload(
     skippedManualCodes: precedence.skippedManualCodes,
     writeOutcome,
     resolvedTargetVersions,
+    freeFacts,
   };
 }

@@ -517,3 +517,105 @@ test('target-state-decisions-context registration is unchanged (single shared re
   // The key remains in the known-keys set after Task Group 5's renderer change.
   expect(getKnownContextKeys()).toContain('target-state-decisions-context');
 });
+
+// ===========================================================================
+// Task Group 7 (Spec 2026-06-26): Tier-2 "free facts" feed the prompt-ready
+// output. The builder appends a "### Lower-level facts (from manifests)" section
+// (additive + gated); the resolver reads the persisted facts off the
+// manifest-artifacts store (fail-soft) and passes them in.
+// ===========================================================================
+
+const EM_DASH = '—';
+
+function manifestArtifactRow(
+  tier2Facts: Array<{ friendly_name: string; coordinate: string }>,
+) {
+  return {
+    id: 'm1',
+    project_id: 'proj-test',
+    target_architecture_id: 'target-abc',
+    tag: 'orders',
+    kind: 'pom',
+    ecosystem: 'MAVEN',
+    manifest_path: 'pom.xml',
+    content: '<project/>',
+    package_lock_content: null,
+    resolved_dependencies: [],
+    tier2_facts: tier2Facts,
+    is_latest: true,
+    created_at: '2026-06-26T00:00:00Z',
+  };
+}
+
+test('buildTargetStateDecisionsPromptText appends the `### Lower-level facts (from manifests)` section when tier-2 facts are supplied (additive, last)', () => {
+  const rows = [decision({ decisionCode: 'db.engine', answerSummary: 'Postgres 18' })];
+
+  const text = buildTargetStateDecisionsPromptText(rows, [
+    `MCP SDK ${EM_DASH} io.modelcontextprotocol.sdk`,
+    `Spring AI / LLM client ${EM_DASH} spring-ai-openai`,
+  ]);
+
+  expect(text).toContain('### Lower-level facts (from manifests)');
+  expect(text).toContain(`- MCP SDK ${EM_DASH} io.modelcontextprotocol.sdk`);
+  expect(text).toContain(`- Spring AI / LLM client ${EM_DASH} spring-ai-openai`);
+  // The section is appended AFTER the preset architecture-wide block (additive).
+  expect(text.indexOf('### Architecture-wide')).toBeGreaterThan(-1);
+  expect(text.indexOf('### Architecture-wide')).toBeLessThan(
+    text.indexOf('### Lower-level facts (from manifests)'),
+  );
+});
+
+test('buildTargetStateDecisionsPromptText omits the facts section when there are none (default param == explicit empty == byte-faithful)', () => {
+  const rows = [decision({ decisionCode: 'db.engine', answerSummary: 'Postgres 18' })];
+
+  const withoutArg = buildTargetStateDecisionsPromptText(rows);
+  const withEmpty = buildTargetStateDecisionsPromptText(rows, []);
+
+  expect(withoutArg).not.toContain('### Lower-level facts (from manifests)');
+  // No behaviour drift: the new optional param defaults to the prior output.
+  expect(withEmpty).toBe(withoutArg);
+});
+
+test('the resolver reads persisted Tier-2 free facts off the manifest-artifacts store and feeds them into the prompt-ready output', async () => {
+  mockFetch.mockResolvedValueOnce(activeTargetResponse('target-abc'));
+  mockFetch.mockResolvedValueOnce(
+    jsonResponse(200, [decision({ decisionCode: 'db.engine', answerSummary: 'Postgres 18' })]),
+  );
+  mockFetch.mockResolvedValueOnce(
+    jsonResponse(200, [
+      manifestArtifactRow([
+        { friendly_name: 'MCP SDK', coordinate: 'io.modelcontextprotocol.sdk' },
+      ]),
+    ]),
+  );
+
+  const resolver = new TargetStateDecisionsContextResolver();
+  const out = await resolver.resolve('proj-test', 'project:proj-test:hub');
+
+  // Decisions still render AND the Tier-2 section is appended.
+  expect(out).toContain('`db.engine` = Postgres 18');
+  expect(out).toContain('### Lower-level facts (from manifests)');
+  expect(out).toContain(`- MCP SDK ${EM_DASH} io.modelcontextprotocol.sdk`);
+
+  // Three upstream calls: active-target + captured-decisions + manifest-artifacts.
+  expect(mockFetch).toHaveBeenCalledTimes(3);
+  const manifestUrl = mockFetch.mock.calls[2][0] as string;
+  expect(manifestUrl).toBe(
+    'http://localhost:8080/api/model/projects/proj-test/target-architectures/target-abc/manifest-artifacts',
+  );
+});
+
+test('the resolver is fail-soft if the Tier-2 fetch fails: decisions still render, no facts section, never throws', async () => {
+  mockFetch.mockResolvedValueOnce(activeTargetResponse('target-abc'));
+  mockFetch.mockResolvedValueOnce(
+    jsonResponse(200, [decision({ decisionCode: 'db.engine', answerSummary: 'Postgres 18' })]),
+  );
+  // manifest-artifacts read fails (non-2xx) -> the helper swallows + returns [].
+  mockFetch.mockResolvedValueOnce(jsonResponse(503, { error: 'AMS down' }));
+
+  const resolver = new TargetStateDecisionsContextResolver();
+  const out = await resolver.resolve('proj-test', 'project:proj-test:hub');
+
+  expect(out).toContain('`db.engine` = Postgres 18');
+  expect(out).not.toContain('### Lower-level facts (from manifests)');
+});

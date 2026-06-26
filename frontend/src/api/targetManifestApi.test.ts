@@ -21,7 +21,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   fetchLatestTargetManifests,
   formatLatestTargetManifestLabel,
+  resolvedTargetVersionChip,
   type LatestTargetManifest,
+  type ResolvedTargetVersion,
 } from './targetManifestApi';
 
 const PROJECT_ID = 'proj-1';
@@ -195,5 +197,116 @@ describe('targetManifestApi — formatLatestTargetManifestLabel', () => {
     expect(
       formatLatestTargetManifestLabel({ manifestPath: '', kind: '', tag: '' })
     ).toBe('');
+  });
+});
+
+// ============================================================================
+// ResolvedTargetVersion provenance wire contract (Spec 2026-06-26 Task Group 8)
+//   The provenance union additively gains 'inferred' + 'llm'; an OPTIONAL
+//   sourceDependency rides alongside the manifest sourceFile. Kept lock-step with
+//   the gateway shape (gateway/src/services/targetManifest/manifestPrecedence.ts);
+//   each typed literal below would fail to compile under the OLD 2-value union.
+// ============================================================================
+
+describe('targetManifestApi - ResolvedTargetVersion provenance wire contract (TG8)', () => {
+  it('the provenance union additively includes inferred + llm (alongside manifest/manual)', () => {
+    const rows: ResolvedTargetVersion[] = [
+      {
+        decisionCode: 'service.framework',
+        framework: 'Spring Boot',
+        version: '3.4.1',
+        versionUnknown: false,
+        provenance: 'manifest',
+        sourceFile: 'services/orders/pom.xml',
+        sourceDependency: 'org.springframework.boot:spring-boot-starter-web',
+      },
+      {
+        decisionCode: 'db.engine',
+        framework: 'PostgreSQL',
+        version: 'version-unknown',
+        versionUnknown: true,
+        provenance: 'inferred',
+        sourceFile: 'services/orders/pom.xml',
+        sourceDependency: 'org.postgresql:postgresql',
+      },
+      {
+        decisionCode: 'validation.framework',
+        framework: 'Hibernate Validator',
+        version: '8.0.1',
+        versionUnknown: false,
+        provenance: 'llm',
+        sourceFile: 'services/orders/pom.xml',
+        sourceDependency: 'org.hibernate.validator:hibernate-validator',
+      },
+      {
+        decisionCode: 'db.driver',
+        framework: 'pgjdbc',
+        version: '42.7.4',
+        versionUnknown: false,
+        provenance: 'manual',
+        sourceFile: null,
+      },
+    ];
+    expect(rows.map((r) => r.provenance)).toEqual([
+      'manifest',
+      'inferred',
+      'llm',
+      'manual',
+    ]);
+  });
+
+  it('sourceDependency round-trips through the wire and is absent-tolerant for legacy rows', () => {
+    const inferred: ResolvedTargetVersion = {
+      decisionCode: 'db.engine',
+      framework: 'PostgreSQL',
+      version: 'version-unknown',
+      versionUnknown: true,
+      provenance: 'inferred',
+      sourceFile: 'pom.xml',
+      sourceDependency: 'org.postgresql:postgresql',
+    };
+    const roundTrippedInferred = JSON.parse(
+      JSON.stringify(inferred),
+    ) as ResolvedTargetVersion;
+    expect(roundTrippedInferred.sourceDependency).toBe('org.postgresql:postgresql');
+
+    // A legacy gateway response (no sourceDependency) decodes without inventing it.
+    const legacy: ResolvedTargetVersion = {
+      decisionCode: 'build.tool',
+      framework: 'Maven',
+      version: '3.9',
+      versionUnknown: false,
+      provenance: 'manifest',
+      sourceFile: 'pom.xml',
+    };
+    const roundTrippedLegacy = JSON.parse(
+      JSON.stringify(legacy),
+    ) as ResolvedTargetVersion;
+    expect(roundTrippedLegacy.sourceDependency).toBeUndefined();
+    expect('sourceDependency' in roundTrippedLegacy).toBe(false);
+  });
+
+  it('the chip helper renders inferred / llm rows exactly like manifest/manual rows', () => {
+    expect(
+      resolvedTargetVersionChip({
+        decisionCode: 'db.engine',
+        framework: 'PostgreSQL',
+        version: 'version-unknown',
+        versionUnknown: true,
+        provenance: 'inferred',
+        sourceFile: 'pom.xml',
+        sourceDependency: 'org.postgresql:postgresql',
+      }),
+    ).toBe('PostgreSQL (version unknown)');
+    expect(
+      resolvedTargetVersionChip({
+        decisionCode: 'validation.framework',
+        framework: 'Hibernate Validator',
+        version: '8.0.1',
+        versionUnknown: false,
+        provenance: 'llm',
+        sourceFile: 'pom.xml',
+      }),
+    ).toBe('Hibernate Validator 8.0.1');
   });
 });

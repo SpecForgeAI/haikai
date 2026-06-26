@@ -479,8 +479,10 @@ describe('architect tier-gating — evaluateRelevance skip behaviour', () => {
 // ---------------------------------------------------------------------------
 
 describe('dependency matrix metadata (Spec 6 FR1)', () => {
-  // The seven codes that render the FR5 framework+version control.
+  // The 24 codes that render the FR5 framework+version control (Spec
+  // 2026-06-26 expanded the closed set from the original 7 to 24).
   const VERSIONED_CODES = [
+    // original 7
     'service.language',
     'service.framework',
     'service.runtime',
@@ -488,6 +490,24 @@ describe('dependency matrix metadata (Spec 6 FR1)', () => {
     'db.driver',
     'ui.framework',
     'build.tool',
+    // + 17 new (Spec 2026-06-26)
+    'db.migrations',
+    'db.connectionPool',
+    'validation.framework',
+    'domain.mappingStrategy',
+    'logging.framework',
+    'metrics.framework',
+    'tracing.framework',
+    'ui.buildTool',
+    'ui.stateManagement',
+    'ui.designSystem',
+    'ui.testing',
+    'testing.unit',
+    'testing.integration',
+    'testing.e2e',
+    'testing.contractTesting',
+    'testing.mocking',
+    'interservice.asyncBus',
   ];
 
   // The LOCKED independent bucket called out in tasks.md 1.1 — these are
@@ -546,7 +566,9 @@ describe('dependency matrix metadata (Spec 6 FR1)', () => {
       expect(entry).toBeDefined();
       expect(entry.dependencyClass).toBe('independent');
       expect(entry.foundationalInputs).toEqual([]);
-      expect(entry.versioned).toBe(false);
+      // tracing.framework flipped to versioned in the Spec 2026-06-26 24-code
+      // set; the rest of the LOCKED independent bucket stays version-less.
+      expect(entry.versioned).toBe(code === 'tracing.framework');
     }
     // And, generally, EVERY independent row has an empty foundationalInputs.
     for (const entry of QUESTION_LIBRARY) {
@@ -556,7 +578,7 @@ describe('dependency matrix metadata (Spec 6 FR1)', () => {
     }
   });
 
-  it('the versioned set is EXACTLY the seven framework/version codes', () => {
+  it('the versioned set is EXACTLY the 24 framework/version codes', () => {
     const versioned = QUESTION_LIBRARY.filter((e) => e.versioned).map(
       (e) => e.code
     );
@@ -779,5 +801,97 @@ describe('api like-for-like lock metadata (Spec 6 FR9)', () => {
     );
     expect(DEFAULT_API_SURFACE_MODE).toBe('like_for_like');
     expect(LOCKED_TREATMENT_MARKER).toBe('locked');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 2026-06-26-target-conversation-versioned-answer-bare-stem-ux, Task Group 1
+// — the versioned set expands from 7 to 24 codes, and every cascade trigger map
+// + every downstream seed targeting a versioned code is re-keyed from laden
+// strings to BARE STEMS. Keep to a small focused set per tasks.md 1.1.
+// ---------------------------------------------------------------------------
+
+describe('bare-stem question library (Spec 2026-06-26, Task Group 1)', () => {
+  const VERSIONED_24 = [
+    // original 7
+    'service.language', 'service.framework', 'service.runtime', 'db.engine',
+    'db.driver', 'ui.framework', 'build.tool',
+    // + 17 new (Spec 2026-06-26)
+    'db.migrations', 'db.connectionPool', 'validation.framework',
+    'domain.mappingStrategy', 'logging.framework', 'metrics.framework',
+    'tracing.framework', 'ui.buildTool', 'ui.stateManagement', 'ui.designSystem',
+    'ui.testing', 'testing.unit', 'testing.integration', 'testing.e2e',
+    'testing.contractTesting', 'testing.mocking', 'interservice.asyncBus',
+  ];
+
+  function cascadeOf(ownerCode: string, decisionCode: string) {
+    const owner = QUESTION_LIBRARY.find((e) => e.code === ownerCode)!;
+    const cascade = owner.cascades.find((c) => c.decisionCode === decisionCode)!;
+    expect(cascade).toBeDefined();
+    return cascade;
+  }
+
+  it('versioned: true is set on EXACTLY the closed set of 24 codes (7 original + 17 new)', () => {
+    const versioned = QUESTION_LIBRARY.filter((e) => e.versioned).map((e) => e.code);
+    expect(new Set(versioned)).toEqual(new Set(VERSIONED_24));
+    expect(versioned).toHaveLength(24);
+    expect(VERSIONED_24).toHaveLength(24);
+  });
+
+  it('cascade valueByTriggerValue maps are keyed by BARE STEMS, not laden version strings', () => {
+    // service.language -> service.runtime is keyed by the bare language stem.
+    const runtime = cascadeOf('service.language', 'service.runtime');
+    expect(Object.keys(runtime.valueByTriggerValue)).toContain('Java');
+    expect(Object.keys(runtime.valueByTriggerValue)).not.toContain('Java 21');
+    expect(Object.keys(runtime.valueByTriggerValue)).not.toContain('Java 17');
+
+    // service.framework -> logging.framework is keyed by the bare framework stem.
+    const logging = cascadeOf('service.framework', 'logging.framework');
+    expect(Object.keys(logging.valueByTriggerValue)).toContain('Spring Boot');
+    expect(Object.keys(logging.valueByTriggerValue)).not.toContain('Spring Boot 3.4');
+
+    // interservice.asyncBus (flipped to versioned) re-keyed 'Kafka 3.7' -> 'Kafka'.
+    const msg = cascadeOf('interservice.asyncBus', 'interservice.messageFormat');
+    expect(Object.keys(msg.valueByTriggerValue)).toContain('Kafka');
+    expect(Object.keys(msg.valueByTriggerValue)).not.toContain('Kafka 3.7');
+  });
+
+  it('downstream SEED VALUES targeting versioned codes are re-keyed to bare stems', () => {
+    // service.language -> service.runtime seeds the bare runtime stem.
+    expect(cascadeOf('service.language', 'service.runtime').valueByTriggerValue['Java'])
+      .toBe('Eclipse Temurin');
+    // -> testing.unit seeds the bare unit-test stem.
+    expect(cascadeOf('service.language', 'testing.unit').valueByTriggerValue['Java'])
+      .toBe('JUnit');
+    // -> build.tool seeds the bare build-tool stem (the gateway half of the
+    // doubled Maven 3.9 / Maven 3.9 envelope fix: a cascaded value is the stem).
+    expect(cascadeOf('service.language', 'build.tool').valueByTriggerValue['Java'])
+      .toBe('Gradle');
+    // db.engine -> db.migrations seeds the bare migrations stem.
+    expect(cascadeOf('db.engine', 'db.migrations').valueByTriggerValue['Postgres'])
+      .toBe('Flyway');
+  });
+
+  it('none of the re-keyed laden trigger strings remain in any cascade map', () => {
+    // 'Node 20 LTS' / 'Go 1.22 alpine' legitimately have NO trailing version to
+    // strip, so they stay; the strings below were explicitly re-keyed to stems.
+    const FORBIDDEN_LADEN_KEYS = [
+      'Java 21', 'Java 17', 'Kotlin 2.0', 'TypeScript/Node 20', 'Python 3.12',
+      'Go 1.22', 'C# 12', 'Spring Boot 3.4', 'Quarkus 3', 'NestJS 10',
+      'FastAPI 0.115', 'Postgres 18', 'MySQL 8.4', 'MS SQL Server 2022',
+      'Oracle 23ai', 'Sybase ASE 16', 'MongoDB 7', 'Eclipse Temurin 21',
+      'GraalVM 21', 'React 18', 'Vue 3', 'Angular 17', 'Kafka 3.7', 'RabbitMQ 3.13',
+    ];
+    const offenders: string[] = [];
+    for (const entry of QUESTION_LIBRARY) {
+      for (const cascade of entry.cascades) {
+        for (const key of Object.keys(cascade.valueByTriggerValue)) {
+          if (FORBIDDEN_LADEN_KEYS.includes(key)) {
+            offenders.push(`${entry.code} -> ${cascade.decisionCode}: '${key}'`);
+          }
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
