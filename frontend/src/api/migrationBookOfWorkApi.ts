@@ -443,17 +443,22 @@ export async function saveMigrationBookOfWorkToBacklog(
   const url = `${API_BASE}/api/projects/${encodeURIComponent(
     projectId,
   )}/migration-books-of-work/${encodeURIComponent(bookId)}/save-to-backlog`;
+  // AMS speaks snake_case at the wire (see CLAUDE.md "AMS wire format"); the
+  // SaveGeneratedMigrationBookOfWorkRequest record binds explicit snake_case
+  // @JsonProperty names. The camelCase `request` is the frontend-facing shape;
+  // it MUST be serialised to snake_case here or every key binds to null and the
+  // service rejects the missing `save_mode` with 400 Bad Request.
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      selectedItemIds: request.selectedItemIds,
-      excludedItemIds: request.excludedItemIds,
-      saveMode: request.saveMode,
-      statusForCreatedItems: request.statusForCreatedItems,
-      includeTraceabilityInDescription: request.includeTraceabilityInDescription,
-      includeReadinessInDescription: request.includeReadinessInDescription,
-      tagPrefix: request.tagPrefix,
+      selected_item_ids: request.selectedItemIds,
+      excluded_item_ids: request.excludedItemIds,
+      save_mode: request.saveMode,
+      status_for_created_items: request.statusForCreatedItems,
+      include_traceability_in_description: request.includeTraceabilityInDescription,
+      include_readiness_in_description: request.includeReadinessInDescription,
+      tag_prefix: request.tagPrefix,
     }),
   });
   if (!res.ok) {
