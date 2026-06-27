@@ -240,40 +240,85 @@ export interface SpecGenerationRow {
 }
 
 function mapRowDtoToRow(dto: SpecGenerationRowDto): SpecGenerationRow {
+  // Wire-case tolerance. TWO producers emit this row shape and they disagree on
+  // case: the AMS `/spec-generations` + batch-persist responses are snake_case,
+  // but the gateway batch-generation response returns its INTERNAL camelCase
+  // `MigrationStorySpecGenerationDto` rows verbatim (the route forwards `result`
+  // unchanged -- `toAmsWireShape` runs only on the AMS-persist path, NOT the
+  // response). Read snake_case first, then the camelCase alias, so the
+  // BatchResultsTable + StoryResultDrawer populate from EITHER producer. Without
+  // this, a freshly-run batch shows blank confidence / warnings / missing-inputs
+  // (and the "Resolve the missing inputs below" panel lists nothing) until a
+  // page reload re-fetches the snake_case rows from AMS. Extends the
+  // get(snake, camel) idiom already used for the impl-ready fields below.
+  const c = dto as unknown as Record<string, unknown>;
+  const s = (snake: string | null | undefined, key: string): string | null =>
+    (snake ?? (c[key] as string | null | undefined)) ?? null;
+  const a = <T>(snake: T[] | null | undefined, key: string): T[] =>
+    (snake ?? (c[key] as T[] | null | undefined)) ?? [];
   return {
-    id: dto.id,
-    projectId: dto.project_id,
-    workItemId: dto.work_item_id,
-    bookOfWorkId: dto.book_of_work_id,
-    bookItemId: dto.book_item_id,
+    id: s(dto.id, 'id'),
+    projectId: s(dto.project_id, 'projectId'),
+    workItemId: s(dto.work_item_id, 'workItemId'),
+    bookOfWorkId: s(dto.book_of_work_id, 'bookOfWorkId'),
+    bookItemId: s(dto.book_item_id, 'bookItemId'),
     status: dto.status,
-    confidence: dto.confidence,
-    predictedReadiness: dto.predicted_readiness,
-    generatedSpecText: dto.generated_spec_text,
-    warnings: dto.warnings_json ?? [],
-    missingInputs: dto.missing_inputs_json ?? [],
-    focusedContextRefs: dto.focused_context_refs_json,
-    evidenceRefs: dto.evidence_refs_json ?? [],
-    generatedAt: dto.generated_at,
-    errorMessage: dto.error_message,
-    generationAttemptNumber: dto.generation_attempt_number ?? 0,
-    createdByTask: dto.created_by_task,
-    createdAt: dto.created_at,
-    updatedAt: dto.updated_at,
+    confidence:
+      (dto.confidence ??
+        (c.confidence as SpecGenerationConfidence | null | undefined)) ?? null,
+    predictedReadiness:
+      (dto.predicted_readiness ??
+        (c.predictedReadiness as
+          | SpecGenerationPredictedReadiness
+          | null
+          | undefined)) ?? null,
+    generatedSpecText: s(dto.generated_spec_text, 'generatedSpecText'),
+    warnings: a(dto.warnings_json, 'warningsJson'),
+    missingInputs: a(dto.missing_inputs_json, 'missingInputsJson'),
+    focusedContextRefs:
+      (dto.focused_context_refs_json ??
+        (c.focusedContextRefsJson as
+          | Record<string, unknown>
+          | null
+          | undefined)) ?? null,
+    evidenceRefs: a(dto.evidence_refs_json, 'evidenceRefsJson'),
+    generatedAt: s(dto.generated_at, 'generatedAt'),
+    errorMessage: s(dto.error_message, 'errorMessage'),
+    generationAttemptNumber:
+      (dto.generation_attempt_number ??
+        (c.generationAttemptNumber as number | null | undefined)) ?? 0,
+    createdByTask: s(dto.created_by_task, 'createdByTask'),
+    createdAt: s(dto.created_at, 'createdAt'),
+    updatedAt: s(dto.updated_at, 'updatedAt'),
     // Cross-Story Context Injection (2026-05-20).
-    generationPass: dto.generation_pass ?? null,
-    pass1SpecText: dto.pass1_spec_text ?? null,
-    pass2ChangesSummary: dto.pass2_changes_summary ?? null,
-    budgetMetaJson: dto.budget_meta_json ?? null,
-    noMeaningfulChange: dto.no_meaningful_change ?? null,
-    decisionsJson: dto.decisions_json ?? null,
-    interfacesJson: dto.interfaces_json ?? null,
-    assumptionsJson: dto.assumptions_json ?? null,
+    generationPass:
+      (dto.generation_pass ??
+        (c.generationPass as number | null | undefined)) ?? null,
+    pass1SpecText: s(dto.pass1_spec_text, 'pass1SpecText'),
+    pass2ChangesSummary: s(dto.pass2_changes_summary, 'pass2ChangesSummary'),
+    budgetMetaJson:
+      (dto.budget_meta_json ??
+        (c.budgetMetaJson as Record<string, unknown> | null | undefined)) ??
+      null,
+    noMeaningfulChange:
+      (dto.no_meaningful_change ??
+        (c.noMeaningfulChange as boolean | null | undefined)) ?? null,
+    decisionsJson:
+      (dto.decisions_json ??
+        (c.decisionsJson as string[] | null | undefined)) ?? null,
+    interfacesJson:
+      (dto.interfaces_json ??
+        (c.interfacesJson as string[] | null | undefined)) ?? null,
+    assumptionsJson:
+      (dto.assumptions_json ??
+        (c.assumptionsJson as string[] | null | undefined)) ?? null,
     // In-Product Spec Editor + Confirm-Overwrite (2026-05-20).
-    manuallyEdited: dto.manually_edited ?? null,
-    lastManuallyEditedAt: dto.last_manually_edited_at ?? null,
-    lastManuallyEditedBy: dto.last_manually_edited_by ?? null,
-    previousSpecText: dto.previous_spec_text ?? null,
+    manuallyEdited:
+      (dto.manually_edited ??
+        (c.manuallyEdited as boolean | null | undefined)) ?? null,
+    lastManuallyEditedAt: s(dto.last_manually_edited_at, 'lastManuallyEditedAt'),
+    lastManuallyEditedBy: s(dto.last_manually_edited_by, 'lastManuallyEditedBy'),
+    previousSpecText: s(dto.previous_spec_text, 'previousSpecText'),
     // Implementation-Ready Migration Spec Generation (2026-06-14). Tolerant of
     // both the snake_case AMS wire and a camelCase gateway surface (belt-and-
     // braces, mirroring the existing get(snake, camel) idiom on the handler).
