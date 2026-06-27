@@ -1,6 +1,7 @@
 package com.example.architecturemodel.service;
 
 import com.example.architecturemodel.exception.ResourceNotFoundException;
+import com.example.architecturemodel.jackson.CamelCaseWire;
 import com.example.architecturemodel.mapper.MigrationStorySpecGenerationMapper;
 import com.example.architecturemodel.model.dto.MigrationStorySpecGenerationDto;
 import com.example.architecturemodel.model.entity.GeneratedMigrationBookOfWorkEntity;
@@ -1311,6 +1312,14 @@ public class MigrationStorySpecGenerationService {
         int index
     ) {}
 
+    // @CamelCaseWire: the sole consumer is the frontend spec-generation summary
+    // header (frontend/src/api/specGenerationApi.ts SpecGenerationSummaryDto),
+    // which reads camelCase keys and casts the response with no key coercion.
+    // Without this, the AMS global SNAKE_CASE default emits saved_story_count /
+    // total_stories / next_batch_size, every field deserialises to undefined on
+    // the client, and the summary header renders blank counts + "no remaining
+    // stories" regardless of how many stories are actually saved.
+    @CamelCaseWire
     public record SpecGenerationSummary(
         int totalStories,
         int savedStoryCount,

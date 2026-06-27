@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-  Install and/or run all 9 services in dev mode, each in its own Windows Terminal tab.
+  Install and/or run all 10 services in dev mode, each in its own Windows Terminal tab.
 
 .PARAMETER Action
   install | run | all   (default: all)
-    install -> mvn -DskipTests clean package  (maven)  /  npm ci  (npm)
-    run     -> mvn spring-boot:run            (maven)  /  npm run dev (npm)
+    install -> mvn -DskipTests clean package  (maven)  /  npm ci  (npm)  /  docker compose build (docker)
+    run     -> mvn spring-boot:run            (maven)  /  npm run dev (npm)  /  docker compose up   (docker)
     all     -> install then run
 
 .PARAMETER Exclude
@@ -49,7 +49,8 @@ $services = @(
   [pscustomobject]@{ Name='discovery-service';                 Type='npm'   },
   [pscustomobject]@{ Name='api-migration-validation-service';  Type='npm'   },
   [pscustomobject]@{ Name='mcp-server';                        Type='npm'   },
-  [pscustomobject]@{ Name='frontend';                          Type='npm'   }
+  [pscustomobject]@{ Name='frontend';                          Type='npm'   },
+  [pscustomobject]@{ Name='implement-verify-service';          Type='docker'; Compose='docker-compose.dev.yml' }
 )
 
 $knownNames = $services | ForEach-Object { $_.Name }
@@ -94,10 +95,12 @@ function Require-Command([string]$Name) {
   }
 }
 
-$needMaven = ($selected | Where-Object { $_.Type -eq 'maven' }).Count -gt 0
-$needNpm   = ($selected | Where-Object { $_.Type -eq 'npm'   }).Count -gt 0
-if ($needMaven) { Require-Command 'java'; Require-Command 'mvn' }
-if ($needNpm)   { Require-Command 'npm' }
+$needMaven  = ($selected | Where-Object { $_.Type -eq 'maven'  }).Count -gt 0
+$needNpm    = ($selected | Where-Object { $_.Type -eq 'npm'    }).Count -gt 0
+$needDocker = ($selected | Where-Object { $_.Type -eq 'docker' }).Count -gt 0
+if ($needMaven)  { Require-Command 'java'; Require-Command 'mvn' }
+if ($needNpm)    { Require-Command 'npm' }
+if ($needDocker) { Require-Command 'docker' }
 
 if ($doInstall) {
   Write-Host "=== INSTALL phase ===" -ForegroundColor Cyan
@@ -111,6 +114,9 @@ if ($doInstall) {
     try {
       if ($svc.Type -eq 'maven') {
         & mvn -DskipTests clean package
+      } elseif ($svc.Type -eq 'docker') {
+        # Build the dev image (source is volume-mounted at run time for hot reload).
+        & docker compose -f $svc.Compose build
       } else {
         & npm ci
       }
@@ -143,7 +149,10 @@ if ($doRun) {
     $path = Join-Path $repoRoot $svc.Name
     if (-not (Test-Path $path)) { throw "Service path not found: $path" }
 
-    $runCmd = if ($svc.Type -eq 'maven') { 'mvn spring-boot:run' } else { 'npm run dev' }
+    $runCmd =
+      if     ($svc.Type -eq 'maven')  { 'mvn spring-boot:run' }
+      elseif ($svc.Type -eq 'docker') { "docker compose -f $($svc.Compose) up" }
+      else                            { 'npm run dev' }
 
     if (-not $first) { $wtArgs.Add(';') }
     $first = $false
@@ -153,7 +162,9 @@ if ($doRun) {
     $wtArgs.Add('-d');       $wtArgs.Add($path)
     $wtArgs.Add('powershell')
     $wtArgs.Add('-NoExit')
-    if ($Trace -ne 'off') {
+    if ($Trace -ne 'off' -and $svc.Type -ne 'docker') {
+      # Docker services run in a container and won't inherit the tab's HAIKAI_TRACE
+      # env var, so the trace injection is skipped for them (plain -Command below).
       # Set HAIKAI_TRACE inside the tab. We need a "$env:...='x'; <run>" statement
       # separator (';'), but wt.exe treats a bare ';' as ITS OWN tab delimiter
       # (see the $wtArgs.Add(';') above) -- passing it via -Command splits the
