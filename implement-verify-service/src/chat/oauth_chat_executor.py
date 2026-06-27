@@ -112,15 +112,38 @@ class OAuthChatExecutor:
         logger.info(f"  OAuth token: {self.is_oauth_token}")
         logger.info(f"  Model: {self.model}")
     
+    def _refresh_oauth_token(self):
+        """Re-read the current OAuth token from the CLI credentials file.
+
+        OAuth/subscription access tokens are short-lived and the Claude CLI
+        rotates them; a worker that captured one at startup gets 401s once it's
+        refreshed elsewhere. When CLAUDE_OAUTH_CREDENTIALS_FILE points at the
+        CLI's `.credentials.json`, read the *current* token before each call so
+        the worker always tracks the live token. Opt-in; no-op without the env.
+        """
+        import os
+        path = os.environ.get("CLAUDE_OAUTH_CREDENTIALS_FILE")
+        if not path or not self.is_oauth_token:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                tok = (json.load(f).get("claudeAiOauth") or {}).get("accessToken")
+            if tok and tok != self.anthropic_api_key:
+                self.anthropic_api_key = tok
+                logger.info("Refreshed OAuth token from credentials file")
+        except Exception as e:
+            logger.warning(f"OAuth token refresh failed (using existing): {e}")
+
     def _create_client(self):
         """Create Anthropic client with OAuth-compatible headers.
-        
+
         CRITICAL: For OAuth tokens, we must prevent the SDK from reading
         ANTHROPIC_API_KEY from the environment, otherwise it sends BOTH
         X-Api-Key and Authorization: Bearer headers, causing auth failures.
         """
         import os
-        
+        self._refresh_oauth_token()
+
         beta_features = [
             "claude-code-20250219",
             "oauth-2025-04-20",
@@ -299,6 +322,9 @@ class OAuthChatExecutor:
             
             # Tool calling loop - continue until no more tools
             while True:
+                # Refresh the client so each call uses the live OAuth token
+                # (no-op unless CLAUDE_OAUTH_CREDENTIALS_FILE is set).
+                self._create_client()
                 # Create streaming message with tools
                 with self.client.messages.stream(
                     model=self.model,
