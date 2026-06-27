@@ -82,14 +82,14 @@ describe('framework/version shape drift-detection contract', () => {
       version: '3.4.1',
     };
     // Single resolved chip — never a framework x version cartesian grid.
-    expect(resolveFrameworkVersionChip(concrete)).toBe('Spring Boot 3.4 3.4.1');
+    expect(resolveFrameworkVersionChip(concrete)).toBe('Spring Boot 3.4.1');
 
     const unknown: FrameworkVersion = {
       framework: 'Spring Boot 3.4',
       version: VERSION_UNKNOWN,
     };
     expect(resolveFrameworkVersionChip(unknown)).toBe(
-      'Spring Boot 3.4 (version unknown)',
+      'Spring Boot (version unknown)',
     );
   });
 });

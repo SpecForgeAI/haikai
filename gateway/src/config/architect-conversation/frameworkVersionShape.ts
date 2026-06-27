@@ -138,14 +138,73 @@ export function parseFrameworkVersion(raw: unknown): ParseFrameworkVersionResult
  * unknown)` so the chip is honest about the unresolved version; any other
  * concrete version is appended verbatim.
  */
+/**
+ * Strip a trailing version-like token from a framework label so a choice whose
+ * label BAKES a version ("JUnit 5", "Spring Boot 3.4", "Kubernetes 1.30") does
+ * not double when the dedicated version field is appended (the "JUnit 5 5" bug).
+ * Only a trailing whitespace-separated token that STARTS WITH A DIGIT is dropped
+ * (so "Node 20 LTS", "oracle ojdbc11", "Chakra v3" are left intact), and never
+ * down to an empty stem. A clean bare stem ("JUnit") is returned unchanged.
+ */
+export function stripBakedVersionFromStem(framework: string): string {
+  const trimmed = (framework ?? '').trim();
+  const parts = trimmed.split(/\s+/);
+  if (parts.length > 1 && /^[0-9]/.test(parts[parts.length - 1])) {
+    return parts.slice(0, -1).join(' ');
+  }
+  return trimmed;
+}
+
 export function resolveFrameworkVersionChip(value: FrameworkVersion): string {
+  const framework = stripBakedVersionFromStem(value.framework);
   if (isVersionSentinel(value.version)) {
     if (value.version === VERSION_UNKNOWN) {
-      return `${value.framework} (version unknown)`;
+      return `${framework} (version unknown)`;
     }
-    return `${value.framework} (${value.version})`;
+    return `${framework} (${value.version})`;
   }
-  return `${value.framework} ${value.version}`.trim();
+  return `${framework} ${value.version}`.trim();
+}
+
+/** True iff `v` is a `{ framework, version }` object with both fields strings. */
+function isFrameworkVersionLike(v: unknown): v is FrameworkVersion {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    typeof (v as { framework?: unknown }).framework === 'string' &&
+    typeof (v as { version?: unknown }).version === 'string'
+  );
+}
+
+/**
+ * Resolve the persisted `answerSummary` chip for a captured answer value, or
+ * `null` when it is NOT a versioned `{ framework, version }` value (a plain
+ * single-choice answer keeps `answerSummary` null and renders via its already
+ * human-readable `answerValue`).
+ *
+ * Mirrors the frontend `resolveCapturedAnswerLabel` so the chip persisted here
+ * is the SAME one the conversation transcript + Decisions Captured panel show.
+ * The capture path stores versioned answers as the `{ value: { framework,
+ * version }, sourceQuote, sourceFile }` envelope (or, defensively, a bare
+ * `{ framework, version }` object) -- without this, `answerSummary` stayed null
+ * and BOTH the panel and the prompt-ready output dumped the raw JSON envelope.
+ */
+export function resolveCapturedAnswerSummary(answerValue: unknown): string | null {
+  if (isFrameworkVersionLike(answerValue)) {
+    return resolveFrameworkVersionChip(answerValue);
+  }
+  if (typeof answerValue === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(answerValue);
+      if (parsed !== null && typeof parsed === 'object' && 'value' in parsed) {
+        const inner = (parsed as { value: unknown }).value;
+        if (isFrameworkVersionLike(inner)) return resolveFrameworkVersionChip(inner);
+      }
+    } catch {
+      // Not JSON -> a plain single-choice string answer; no chip summary needed.
+    }
+  }
+  return null;
 }
 
 /**

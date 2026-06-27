@@ -47,6 +47,7 @@ vi.mock('../../../../api/architectConversationApi', () => ({
   pinException: vi.fn(),
   getActiveTargetArchitectureId: vi.fn(),
   fetchQuestionLibraryScopes: vi.fn().mockResolvedValue({}),
+  resolveCapturedAnswerLabel: vi.fn((value: unknown) => String(value)),
   ALLOWED_SCOPE_REF_TYPES: ['service'],
   OPT_OUT_ANSWER_VALUE: '(not used)',
   ArchitectConversationApiError: class extends Error {},

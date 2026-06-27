@@ -144,6 +144,18 @@ import {
 } from '../services/architectConversation/writeTargetTechStackMarkdown';
 import { registerTargetManifestUploadRoute } from './targetManifestUpload';
 import { registerDecisionsFileImportRoute } from './decisionsFileImport';
+import {
+  applyApiSurfaceLock,
+  deriveApiSurfaceLockDecisions,
+  resolveApiSurfaceMode,
+  suppressedGroupBCodes,
+  type SourceContractProvider,
+} from '../services/architectConversation/apiSurfaceLock';
+import { resolveBaselineSourceContractProvider } from '../services/architectConversation/baselineSourceContractProvider';
+import {
+  isApiSurfaceMode,
+  type ApiSurfaceMode,
+} from '../config/architect-conversation/apiSurfaceMode';
 
 // ---------------------------------------------------------------------------
 // Injectable dependency container (test seam).
@@ -192,6 +204,17 @@ interface ArchitectConversationRouteDeps {
    */
   postCapturedDecision: typeof defaultPostCapturedDecision;
   resolveOpenPhaseGrounding: typeof defaultResolveOpenPhaseGrounding;
+  /**
+   * API like-for-like lock (Spec 2026-06-24 FR9): resolve the production
+   * `SourceContractProvider` (a thin reader over the pinned current API
+   * Behaviour Baseline) for a project + architecture. Production wires the real
+   * baseline resolver; tests inject a fixture provider. Fail-soft -- a degrade
+   * provider (`hasReconciledBaseline: () => false`) leaves Group B asked as today.
+   */
+  resolveSourceContractProvider: (
+    projectId: string,
+    architectureId: string,
+  ) => Promise<SourceContractProvider>;
 }
 
 let deps: ArchitectConversationRouteDeps = {
@@ -207,6 +230,7 @@ let deps: ArchitectConversationRouteDeps = {
   stampConversationSaved: defaultStampConversationSaved,
   postCapturedDecision: defaultPostCapturedDecision,
   resolveOpenPhaseGrounding: defaultResolveOpenPhaseGrounding,
+  resolveSourceContractProvider: resolveBaselineSourceContractProvider,
 };
 
 /**
@@ -235,6 +259,7 @@ export function resetArchitectConversationDeps(): void {
     stampConversationSaved: defaultStampConversationSaved,
     postCapturedDecision: defaultPostCapturedDecision,
     resolveOpenPhaseGrounding: defaultResolveOpenPhaseGrounding,
+    resolveSourceContractProvider: resolveBaselineSourceContractProvider,
   };
 }
 
@@ -581,6 +606,45 @@ architectConversationRouter.get(
       const answeredCodes = new Set(decisions.map((d) => d.decisionCode));
 
       // -----------------------------------------------------------------
+      // Spec 2026-06-24-target-conversation-tech-stack-constraints (FR9):
+      // fold the API like-for-like SUPPRESSED Group B codes into the walk's skip
+      // set so `selectNextQuestion` never returns a locked `api.*` question.
+      // Locked codes are also persisted as captured decisions at open (so they
+      // already land in `answeredCodes`); re-deriving the suppressed set here via
+      // the module's own helpers keeps them skipped even if a row read lags.
+      // Composes with the pending-version-first + tier-gated walk below.
+      // Fail-soft: any resolution failure leaves the walk unchanged (Group B asked).
+      // -----------------------------------------------------------------
+      try {
+        const requestedMode: ApiSurfaceMode | null = isApiSurfaceMode(
+          String(req.query.apiSurfaceMode ?? ''),
+        )
+          ? (req.query.apiSurfaceMode as ApiSurfaceMode)
+          : null;
+        const sourceContractProvider = await deps.resolveSourceContractProvider(
+          projectId,
+          targetArchitectureId,
+        );
+        const lockMode = resolveApiSurfaceMode({
+          requestedMode,
+          hasReconciledBaseline: sourceContractProvider.hasReconciledBaseline(),
+        });
+        const lockDecisions = deriveApiSurfaceLockDecisions(sourceContractProvider);
+        for (const code of suppressedGroupBCodes(lockMode, lockDecisions)) {
+          answeredCodes.add(code);
+        }
+      } catch (lockErr) {
+        logger.warn(
+          'next-question api-surface-lock: suppression resolve failed; Group B asked normally',
+          {
+            projectId,
+            targetArchitectureId,
+            error: lockErr instanceof Error ? lockErr.message : 'Unknown error',
+          },
+        );
+      }
+
+      // -----------------------------------------------------------------
       // Spec 2026-06-27-target-manifest-version-unknown-pending-questions
       // (Task Group 3): surface persisted pending-version-confirmations FIRST,
       // ahead of the deterministic group A..J walk. A manifest upload may have
@@ -823,6 +887,48 @@ architectConversationRouter.post(
         );
 
       // -----------------------------------------------------------------
+      // Spec 2026-06-24-target-conversation-tech-stack-constraints (FR9):
+      // API like-for-like lock. When the API surface mode resolves to
+      // `like_for_like` AND a reconciled current API Behaviour Baseline is
+      // present, the six Group B `api.*` codes are AUTO-ANSWERED from the source
+      // contract (written as captured decisions with
+      // createdByTask='api-like-for-like-lock' + source provenance) and
+      // SUPPRESSED from the walk. Composes with tier-gating + the
+      // pending-version-first walk (both still run, in next-question). Fail-soft:
+      // any resolution/read failure degrades to asking Group B normally -- it
+      // must never abort the open turn.
+      // -----------------------------------------------------------------
+      let apiSurfaceLockOutcome: unknown = null;
+      try {
+        const requestedMode: ApiSurfaceMode | null = isApiSurfaceMode(
+          String(body.apiSurfaceMode ?? ''),
+        )
+          ? (body.apiSurfaceMode as ApiSurfaceMode)
+          : null;
+        const lockThread = await deps.loadConversation(projectId, targetArchitectureId);
+        const sourceContractProvider = await deps.resolveSourceContractProvider(
+          projectId,
+          targetArchitectureId,
+        );
+        apiSurfaceLockOutcome = await applyApiSurfaceLock(
+          {
+            projectId,
+            targetArchitectureId,
+            conversationThreadId: lockThread.threadId,
+            requestedMode,
+          },
+          { sourceContractProvider, postCapturedDecision: deps.postCapturedDecision },
+        );
+      } catch (lockErr) {
+        // Fail-soft: the lock must never abort the open-turn endpoint.
+        logger.warn('open-turn api-surface-lock: unexpected error; open turn still succeeds', {
+          projectId,
+          targetArchitectureId,
+          error: lockErr instanceof Error ? lockErr.message : 'Unknown error',
+        });
+      }
+
+      // -----------------------------------------------------------------
       // Spec 2026-05-25 Task Group 3: run the tech-stack pre-fill after the
       // open turn is appended.
       //   1. Auto-skip first -- filter the library to only the codes whose
@@ -884,7 +990,13 @@ architectConversationRouter.post(
 
       res
         .status(200)
-        .json({ sessionId, openTurn, tierConfirmationTurn, prefillSummaryTurn });
+        .json({
+          sessionId,
+          openTurn,
+          tierConfirmationTurn,
+          prefillSummaryTurn,
+          apiSurfaceLock: apiSurfaceLockOutcome,
+        });
     } catch (err) {
       handleOrchestratorError(res, err, 'open-conversation', {
         projectId,

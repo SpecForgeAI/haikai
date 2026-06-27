@@ -169,21 +169,21 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
     foundationalCode: 'service.language',
     byBucket: {
       // LOCKED worked example: Java/Kotlin (jvm) => JVM-only frameworks.
-      jvm: ['Spring Boot 3.4', 'Quarkus 3', 'Micronaut 4'],
-      node: ['NestJS 10'],
-      python: ['FastAPI 0.115'],
-      go: ['Gin 1.10'],
-      dotnet: ['ASP.NET 8'],
+      jvm: ['Spring Boot', 'Quarkus', 'Micronaut'],
+      node: ['NestJS'],
+      python: ['FastAPI'],
+      go: ['Gin'],
+      dotnet: ['ASP.NET'],
     },
   },
   'service.runtime': {
     foundationalCode: 'service.language',
     byBucket: {
-      jvm: ['Eclipse Temurin 21', 'GraalVM 21'],
+      jvm: ['Eclipse Temurin', 'GraalVM'],
       node: ['Node 20 LTS'],
-      python: ['CPython 3.12-slim'],
+      python: ['CPython'],
       go: ['Go 1.22 alpine'],
-      dotnet: ['.NET 8'],
+      dotnet: ['.NET'],
     },
   },
 
@@ -191,7 +191,7 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'db.migrations': {
     foundationalCode: 'db.engine',
     byBucket: {
-      sql: ['Flyway 10', 'Liquibase 4', 'none-managed-by-app'],
+      sql: ['Flyway', 'Liquibase', 'none-managed-by-app'],
       mongo: ['Mongock', 'none-managed-by-app'],
       dynamo: ['none-managed-by-app'],
     },
@@ -228,7 +228,7 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'validation.framework': {
     foundationalCode: 'service.language',
     byBucket: {
-      jvm: ['Bean Validation 3', 'Hibernate Validator', 'manual'],
+      jvm: ['Bean Validation', 'Hibernate Validator', 'manual'],
       node: ['class-validator', 'manual'],
       python: ['Pydantic v2', 'manual'],
       go: ['manual'],
@@ -240,9 +240,9 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'ui.buildTool': {
     foundationalCode: 'ui.framework',
     byBucket: {
-      react: ['Vite 5', 'Webpack 5', 'esbuild'],
-      vue: ['Vite 5', 'Webpack 5', 'esbuild'],
-      svelte: ['Vite 5', 'Webpack 5', 'esbuild'],
+      react: ['Vite', 'Webpack', 'esbuild'],
+      vue: ['Vite', 'Webpack', 'esbuild'],
+      svelte: ['Vite', 'Webpack', 'esbuild'],
       angular: ['Angular CLI'],
     },
   },
@@ -269,11 +269,11 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'build.tool': {
     foundationalCode: 'service.language',
     byBucket: {
-      jvm: ['Gradle 8', 'Maven 3.9'],
+      jvm: ['Gradle', 'Maven'],
       node: ['npm + tsc'],
       python: ['uv'],
       go: ['go build'],
-      dotnet: ['dotnet 8'],
+      dotnet: ['dotnet'],
     },
   },
   'container.baseImage': {
@@ -292,11 +292,11 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'testing.unit': {
     foundationalCode: 'service.language',
     byBucket: {
-      jvm: ['JUnit 5'],
+      jvm: ['JUnit'],
       node: ['Vitest'],
       python: ['pytest'],
       go: ['go test'],
-      dotnet: ['NUnit 4'],
+      dotnet: ['NUnit'],
     },
   },
   'testing.integration': {
@@ -313,11 +313,11 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'testing.mocking': {
     foundationalCode: 'service.language',
     byBucket: {
-      jvm: ['Mockito 5', 'MockK'],
+      jvm: ['Mockito', 'MockK'],
       node: ['vi.mock'],
       python: ['pytest-mock'],
       go: ['gomock'],
-      dotnet: ['Mockito 5'], // no curated .NET mock in v1 set; Other (advanced) covers Moq.
+      dotnet: ['Mockito'], // no curated .NET mock in v1 set; Other (advanced) covers Moq.
     },
   },
 
@@ -325,11 +325,11 @@ export const BRANCH_LISTS: Readonly<Record<string, BranchList>> = {
   'api.contractFormat': {
     foundationalCode: 'api.protocol',
     byBucket: {
-      rest: ['OpenAPI 3.1'],
+      rest: ['OpenAPI'],
       grpc: ['proto3'],
       graphql: ['GraphQL SDL'],
-      async: ['AsyncAPI 3'],
-      soap: ['WSDL 1.1'],
+      async: ['AsyncAPI'],
+      soap: ['WSDL'],
     },
   },
 };

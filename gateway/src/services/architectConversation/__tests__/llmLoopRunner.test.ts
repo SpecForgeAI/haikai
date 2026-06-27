@@ -278,7 +278,7 @@ describe('runArchitectQuestionLoop — happy path', () => {
   it('returns the parsed structured answer when the LLM submits a valid value on round 1', async () => {
     const entry = getServiceLanguageEntry();
     const { client, callCount } = sequencedClient([
-      submitAnswerResponse('Java 21', [
+      submitAnswerResponse('Java', [
         { decisionCode: 'service.runtime', proposedValue: 'Eclipse Temurin 21' },
         { decisionCode: 'testing.unit', proposedValue: 'JUnit 5' },
       ]),
@@ -294,7 +294,7 @@ describe('runArchitectQuestionLoop — happy path', () => {
 
     expect(result.outcome).toBe('answer');
     const ok = result as LoopAnswerOk;
-    expect(ok.answerValue).toBe('Java 21');
+    expect(ok.answerValue).toBe('Java');
     expect(ok.proposedCascades).not.toBeNull();
     expect(ok.proposedCascades).toEqual([
       { decisionCode: 'service.runtime', proposedValue: 'Eclipse Temurin 21' },
@@ -380,7 +380,7 @@ describe('runArchitectQuestionLoop — ambiguity then resolution within budget',
       // Round 1: ambiguity — call the lookup tool first.
       nonTerminalToolCall('lookup_current_state', { decisionCode: 'service.language' }),
       // Round 2: terminal submit with the resolved value.
-      submitAnswerResponse('Java 17'),
+      submitAnswerResponse('Java'),
     ]);
 
     const result = await runArchitectQuestionLoop({
@@ -394,7 +394,7 @@ describe('runArchitectQuestionLoop — ambiguity then resolution within budget',
 
     expect(result.outcome).toBe('answer');
     const ok = result as LoopAnswerOk;
-    expect(ok.answerValue).toBe('Java 17');
+    expect(ok.answerValue).toBe('Java');
     expect(ok.roundsUsed).toBe(2);
     expect(callCount()).toBe(2);
     expect(lookupCalls).toEqual([{ decisionCode: 'service.language' }]);
@@ -468,7 +468,7 @@ describe('runArchitectQuestionLoop — submit-answer parse recovery', () => {
       // Round 1: invalid value (not in choices).
       submitAnswerResponse('Brainfuck 0.1', undefined, 'call-bad'),
       // Round 2: a valid choice.
-      submitAnswerResponse('Java 21', undefined, 'call-good'),
+      submitAnswerResponse('Java', undefined, 'call-good'),
     ]);
 
     const result = await runArchitectQuestionLoop({
@@ -481,7 +481,7 @@ describe('runArchitectQuestionLoop — submit-answer parse recovery', () => {
 
     expect(result.outcome).toBe('answer');
     const ok = result as LoopAnswerOk;
-    expect(ok.answerValue).toBe('Java 21');
+    expect(ok.answerValue).toBe('Java');
     expect(ok.roundsUsed).toBe(2);
     expect(callCount()).toBe(2);
   });

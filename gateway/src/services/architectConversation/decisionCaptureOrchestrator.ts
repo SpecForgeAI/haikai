@@ -50,6 +50,7 @@ import {
   postCapturedDecision as defaultPostCapturedDecision,
 } from './targetStateCapturedDecisionsWriter';
 import type { TargetStateCapturedDecision } from '../targetStateCapturedDecisionsClient';
+import { resolveCapturedAnswerSummary } from '../../config/architect-conversation/frameworkVersionShape';
 import {
   defaultNotApplicableReason,
   evaluateRelevance,
@@ -385,7 +386,13 @@ function buildRequestBodyForArchitectureScope(
     scopeRefType: null,
     scopeRefId: null,
     answerValue: serialiseAnswer(answerValue),
-    answerSummary,
+    // Persist the resolved chip for versioned `{ framework, version }` answers
+    // when the caller did not supply an explicit summary (the primary /answer +
+    // revise paths pass null). Without this the row stored only the raw JSON
+    // envelope, so the Decisions Captured panel AND the prompt-ready output
+    // dumped the JSON instead of e.g. "OpenTelemetry SDK 1.27". Plain
+    // single-choice answers resolve to null and keep their readable answerValue.
+    answerSummary: answerSummary ?? resolveCapturedAnswerSummary(answerValue),
     standardsLookupRef,
     conversationThreadId,
     conversationTurnRef,

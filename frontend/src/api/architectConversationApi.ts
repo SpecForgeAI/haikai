@@ -116,14 +116,31 @@ export interface FrameworkVersion {
  * `<framework> (version unknown)`; any other concrete version is appended
  * verbatim. Exactly one chip per pair -- never a cartesian grid.
  */
+/**
+ * Strip a trailing version-like token from a framework label so a baked-version
+ * stem ("JUnit 5", "Kubernetes 1.30") does not double when the version field is
+ * appended (the "JUnit 5 5" bug). Mirrors the gateway `stripBakedVersionFromStem`:
+ * only a trailing whitespace-separated token STARTING WITH A DIGIT is dropped, and
+ * never down to an empty stem.
+ */
+export function stripBakedVersionFromStem(framework: string): string {
+  const trimmed = (framework ?? '').trim();
+  const parts = trimmed.split(/\s+/);
+  if (parts.length > 1 && /^[0-9]/.test(parts[parts.length - 1])) {
+    return parts.slice(0, -1).join(' ');
+  }
+  return trimmed;
+}
+
 export function resolveFrameworkVersionChip(value: FrameworkVersion): string {
+  const framework = stripBakedVersionFromStem(value.framework);
   if (isVersionSentinel(value.version)) {
     if (value.version === VERSION_UNKNOWN) {
-      return value.framework + ' (version unknown)';
+      return framework + ' (version unknown)';
     }
-    return value.framework + ' (' + value.version + ')';
+    return framework + ' (' + value.version + ')';
   }
-  return (value.framework + ' ' + value.version).trim();
+  return (framework + ' ' + value.version).trim();
 }
 
 /**

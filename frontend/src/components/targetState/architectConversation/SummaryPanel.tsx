@@ -32,6 +32,7 @@
 import { forwardRef, useMemo, useState } from 'react';
 import {
   OPT_OUT_ANSWER_VALUE,
+  resolveCapturedAnswerLabel,
   type CapturedDecisionRow,
 } from '../../../api/architectConversationApi';
 import styles from './ArchitectConversation.module.css';
@@ -192,7 +193,13 @@ function SummaryRow({ row, onClick }: SummaryRowProps) {
     ? 'Deferred'
     : isNotApplicable
       ? 'N/A'
-      : unwrapped?.value ?? row.answerSummary ?? String(row.answerValue);
+      // Versioned answers persist a `{ value: { framework, version }, ... }`
+      // capture envelope as `answerValue`. Manifest auto-answers also store a
+      // friendly `answerSummary` chip (so they render fine), but manually-captured
+      // answers leave `answerSummary` null -- without this resolver they dumped the
+      // raw JSON. `resolveCapturedAnswerLabel` unwraps the envelope into the same
+      // chip the transcript shows (and returns plain strings verbatim).
+      : unwrapped?.value ?? row.answerSummary ?? resolveCapturedAnswerLabel(row.answerValue);
 
   return (
     <div

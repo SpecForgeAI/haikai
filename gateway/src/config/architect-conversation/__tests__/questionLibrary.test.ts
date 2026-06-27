@@ -628,16 +628,16 @@ describe('deterministic branch-lists (Spec 6 FR2)', () => {
     expect(subset).toBeDefined();
     const set = new Set(subset!);
     // Only the three JVM frameworks are offered.
-    expect(set).toEqual(new Set(['Spring Boot 3.4', 'Quarkus 3', 'Micronaut 4']));
+    expect(set).toEqual(new Set(['Spring Boot', 'Quarkus', 'Micronaut']));
     // And FastAPI / NestJS / Gin / ASP.NET are EXCLUDED.
-    for (const excluded of ['FastAPI 0.115', 'NestJS 10', 'Gin 1.10', 'ASP.NET 8']) {
+    for (const excluded of ['FastAPI', 'NestJS', 'Gin', 'ASP.NET']) {
       expect(set.has(excluded)).toBe(false);
     }
   });
 
-  it('Micronaut 4 is present in the real service.framework choices (LOCKED example precondition)', () => {
+  it('Micronaut is present in the real service.framework choices (LOCKED example precondition)', () => {
     const framework = QUESTION_LIBRARY.find((e) => e.code === 'service.framework')!;
-    expect(framework.choices).toContain('Micronaut 4');
+    expect(framework.choices).toContain('Micronaut');
     // Every branch-list subset is a real subset of the question choices.
     const jvm = resolveBranchSubset('service.framework', { 'service.language': 'Java 21' })!;
     for (const choice of jvm) {

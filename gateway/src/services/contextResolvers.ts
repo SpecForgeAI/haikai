@@ -58,6 +58,7 @@ import {
   NOTE_CREATED_BY_TASK,
 } from './architectConversation/openPhaseCodes';
 import { buildRoadmapSummary } from './roadmapSummaryBuilder';
+import { resolveCapturedAnswerSummary } from '../config/architect-conversation/frameworkVersionShape';
 import { logger } from './logger';
 
 /**
@@ -1052,9 +1053,14 @@ export function buildTargetStateDecisionsPromptText(
  * Falls back to answerValue when answerSummary is missing.
  */
 function renderDecisionBody(d: TargetStateCapturedDecision): string {
+  // Prefer the persisted chip; for rows captured before the summary was
+  // persisted (or any row lacking one), resolve a versioned `{ framework,
+  // version }` envelope at render time so the prompt-ready output never leaks the
+  // raw JSON envelope into the downstream migration plan. Plain single-choice
+  // answers resolve to null and keep their already-readable answerValue.
   const summary = d.answerSummary && d.answerSummary.length > 0
     ? d.answerSummary
-    : (d.answerValue ?? '');
+    : (resolveCapturedAnswerSummary(d.answerValue) ?? d.answerValue ?? '');
   const standards = d.standardsLookupRef && d.standardsLookupRef.length > 0
     ? ` (standards: ${d.standardsLookupRef})`
     : '';

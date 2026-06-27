@@ -20,6 +20,7 @@ import { parseStructuredAnswer } from '../structuredAnswerParser';
 import {
   buildFrameworkVersionEnvelope,
   parseFrameworkVersion,
+  resolveCapturedAnswerSummary,
   resolveFrameworkVersionChip,
   isVersionSentinel,
   VERSION_UNKNOWN,
@@ -55,8 +56,10 @@ describe('framework/version capture envelope (TG5)', () => {
       sourceQuote: null,
       sourceFile: null,
     });
-    // answerSummary is the ONE resolved chip label — never a cartesian product.
-    expect(env.answerSummary).toBe('Spring Boot 3.4 3.4.1');
+    // answerSummary is the ONE resolved chip label — never a cartesian product,
+    // and never a doubled "Spring Boot 3.4 3.4.1": the baked stem version is
+    // stripped before the dedicated version is appended (2026-06-27 fix).
+    expect(env.answerSummary).toBe('Spring Boot 3.4.1');
   });
 
   it('threads Spec 3 manifest provenance (sourceQuote / sourceFile) into the same envelope', () => {
@@ -81,13 +84,72 @@ describe('framework/version capture envelope (TG5)', () => {
       framework: 'Spring Boot 3.4',
       version: VERSION_UNKNOWN,
     });
-    expect(chip).toBe('Spring Boot 3.4 (version unknown)');
+    // The baked stem version is stripped; the honest sentinel chip remains.
+    expect(chip).toBe('Spring Boot (version unknown)');
 
     // The sentinel value still validates (manifest auto-answer degrades, no guess).
     const env = buildFrameworkVersionEnvelope({
       value: { framework: 'Spring Boot 3.4', version: VERSION_UNKNOWN },
     });
     expect(JSON.parse(env.answerValue).value.version).toBe('version-unknown');
+  });
+});
+
+describe('resolveFrameworkVersionChip — baked-version strip (no doubling)', () => {
+  it('strips a trailing baked version so a version-laden stem never doubles', () => {
+    // The reported "JUnit 5 5" bug: stem already carries the version.
+    expect(resolveFrameworkVersionChip({ framework: 'JUnit 5', version: '5' })).toBe('JUnit 5');
+    expect(resolveFrameworkVersionChip({ framework: 'Kubernetes 1.30', version: '1.30' })).toBe(
+      'Kubernetes 1.30',
+    );
+    // The dedicated version field WINS over a baked stem version.
+    expect(resolveFrameworkVersionChip({ framework: 'Spring Boot 3.4', version: '4.0' })).toBe(
+      'Spring Boot 4.0',
+    );
+  });
+
+  it('leaves a clean bare stem and non-digit trailing tokens unchanged', () => {
+    expect(resolveFrameworkVersionChip({ framework: 'JUnit', version: '5' })).toBe('JUnit 5');
+    // 'v3' does not start with a digit -> not treated as a baked version.
+    expect(resolveFrameworkVersionChip({ framework: 'Chakra v3', version: '3.1' })).toBe(
+      'Chakra v3 3.1',
+    );
+  });
+});
+
+describe('resolveCapturedAnswerSummary (persisted chip fallback)', () => {
+  it('resolves the chip from the JSON capture envelope (the primary /answer path)', () => {
+    const envelope = JSON.stringify({
+      value: { framework: 'OpenTelemetry SDK', version: '1.27' },
+      sourceQuote: null,
+      sourceFile: null,
+    });
+    expect(resolveCapturedAnswerSummary(envelope)).toBe('OpenTelemetry SDK 1.27');
+  });
+
+  it('resolves the chip from a bare { framework, version } object', () => {
+    expect(
+      resolveCapturedAnswerSummary({ framework: 'Micrometer', version: '1.13' }),
+    ).toBe('Micrometer 1.13');
+  });
+
+  it('renders the version-unknown sentinel honestly', () => {
+    const envelope = JSON.stringify({
+      value: { framework: 'Postgres', version: VERSION_UNKNOWN },
+      sourceQuote: null,
+      sourceFile: null,
+    });
+    expect(resolveCapturedAnswerSummary(envelope)).toBe('Postgres (version unknown)');
+  });
+
+  it('returns null for a plain single-choice string (keeps its readable answerValue)', () => {
+    expect(resolveCapturedAnswerSummary('REST/JSON')).toBeNull();
+    expect(resolveCapturedAnswerSummary('Reactive')).toBeNull();
+  });
+
+  it('returns null for a non-versioned JSON envelope (e.g. a plain string value)', () => {
+    const envelope = JSON.stringify({ value: 'Postgres 18', sourceQuote: 'q', sourceFile: 'f' });
+    expect(resolveCapturedAnswerSummary(envelope)).toBeNull();
   });
 });
 

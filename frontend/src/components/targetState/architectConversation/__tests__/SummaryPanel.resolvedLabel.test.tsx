@@ -63,6 +63,33 @@ describe('SummaryPanel SummaryRow -- resolved labels (Spec 2026-06-26, FR4)', ()
     expect(el.textContent).not.toContain('"version"');
   });
 
+  it('resolves a versioned envelope to its chip even when answerSummary is null (manual capture)', () => {
+    // Regression: manually-captured versioned answers persist the
+    // `{ value: { framework, version }, ... }` envelope but leave answerSummary
+    // null (unlike manifest auto-answers, which store the chip). The panel must
+    // unwrap the envelope rather than dump the raw JSON.
+    render(
+      <SummaryPanel
+        decisions={[
+          row({
+            decisionCode: 'tracing.framework',
+            answerValue: JSON.stringify({
+              value: { framework: 'OpenTelemetry SDK', version: '1.27' },
+              sourceQuote: null,
+              sourceFile: null,
+            }),
+            answerSummary: null,
+          }),
+        ]}
+      />,
+    );
+    const el = rowEl('tracing.framework');
+    expect(el.textContent).toContain('OpenTelemetry SDK 1.27');
+    expect(el.textContent).not.toContain('{');
+    expect(el.textContent).not.toContain('"value"');
+    expect(el.textContent).not.toContain('sourceQuote');
+  });
+
   it('renders a plain-string single-choice answer via answerSummary', () => {
     render(
       <SummaryPanel

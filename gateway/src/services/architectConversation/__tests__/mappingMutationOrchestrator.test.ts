@@ -352,7 +352,7 @@ describe('answerQuestion -- mutation failure does not roll back the captured dec
         userResponse: 'Postgres 18',
         capturedDecisionsContext: '',
         inlineCascadeSeedMap: '',
-        llmClient: singleAnswerLlmClient('Postgres 18'),
+        llmClient: singleAnswerLlmClient('Postgres'),
         roundIndex: 1,
       },
       coordDeps,

@@ -79,13 +79,13 @@ describe('integration: Java-21 walk hides FastAPI and captures ONE resolved chip
       },
       NO_LLM_DEPS,
     );
-    expect(filtered.offered).not.toContain('FastAPI 0.115');
-    expect(filtered.offered).toContain('Spring Boot 3.4');
+    expect(filtered.offered).not.toContain('FastAPI');
+    expect(filtered.offered).toContain('Spring Boot');
     // The escape hatch is present (the set was narrowed).
     expect(filtered.offered).toContain(OTHER_ADVANCED_CHOICE);
 
     // 2. The architect picks a surviving framework + a concrete version (TG5).
-    const picked = 'Spring Boot 3.4';
+    const picked = 'Spring Boot';
     expect(filtered.offered).toContain(picked);
     const env = buildFrameworkVersionEnvelope({
       value: { framework: picked, version: '3.4.1' },
@@ -94,11 +94,11 @@ describe('integration: Java-21 walk hides FastAPI and captures ONE resolved chip
     // The capture rides the EXISTING envelope; answerSummary is exactly ONE chip
     // (never a framework x version cartesian product).
     expect(JSON.parse(env.answerValue)).toEqual({
-      value: { framework: 'Spring Boot 3.4', version: '3.4.1' },
+      value: { framework: 'Spring Boot', version: '3.4.1' },
       sourceQuote: null,
       sourceFile: null,
     });
-    expect(env.answerSummary).toBe('Spring Boot 3.4 3.4.1');
+    expect(env.answerSummary).toBe('Spring Boot 3.4.1');
   });
 });
 
@@ -167,7 +167,7 @@ describe('integration: a cascades seed filtered out by the REAL filtered set fal
     // The substitute is a real member of the filtered set, never the sentinel.
     expect(filtered.offered).toContain(reconciled.value);
     expect(reconciled.value).not.toBe(OTHER_ADVANCED_CHOICE);
-    expect(['Spring Boot 3.4', 'Quarkus 3', 'Micronaut 4']).toContain(
+    expect(['Spring Boot', 'Quarkus', 'Micronaut']).toContain(
       reconciled.value,
     );
   });
@@ -280,7 +280,7 @@ describe('integration: FR9 L supersedes H/G only while like_for_like is active',
       NO_LLM_DEPS,
     );
     expect(filtered.offered).toContain('proto3');
-    expect(filtered.offered).not.toContain('OpenAPI 3.1');
+    expect(filtered.offered).not.toContain('OpenAPI');
     expect(filtered.filtered).toBe(true);
   });
 

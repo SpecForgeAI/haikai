@@ -90,16 +90,16 @@ describe('filterChoices — hide-incompatible (hard-dependent)', () => {
     );
 
     // FastAPI (and the other non-JVM frameworks) are removed from the offered set.
-    expect(result.offered).not.toContain('FastAPI 0.115');
-    expect(result.offered).not.toContain('NestJS 10');
-    expect(result.offered).not.toContain('Gin 1.10');
-    expect(result.offered).not.toContain('ASP.NET 8');
+    expect(result.offered).not.toContain('FastAPI');
+    expect(result.offered).not.toContain('NestJS');
+    expect(result.offered).not.toContain('Gin');
+    expect(result.offered).not.toContain('ASP.NET');
     expect(result.hidden).toEqual(
-      expect.arrayContaining(['FastAPI 0.115', 'NestJS 10', 'Gin 1.10', 'ASP.NET 8']),
+      expect.arrayContaining(['FastAPI', 'NestJS', 'Gin', 'ASP.NET']),
     );
     // The JVM frameworks survive.
     expect(result.offered).toEqual(
-      expect.arrayContaining(['Spring Boot 3.4', 'Quarkus 3', 'Micronaut 4']),
+      expect.arrayContaining(['Spring Boot', 'Quarkus', 'Micronaut']),
     );
     expect(result.filtered).toBe(true);
     expect(result.llmInvoked).toBe(false);
@@ -109,7 +109,7 @@ describe('filterChoices — hide-incompatible (hard-dependent)', () => {
       'choice-filter: hid incompatible choice',
       expect.objectContaining({
         questionCode: 'service.framework',
-        value: 'FastAPI 0.115',
+        value: 'FastAPI',
       }),
     );
   });
@@ -125,7 +125,7 @@ describe('filterChoices — hide-incompatible (hard-dependent)', () => {
     expect(result.filtered).toBe(false);
     expect(result.hidden).toEqual([]);
     expect(result.offered).not.toContain(OTHER_ADVANCED_CHOICE);
-    expect(result.offered).toContain('FastAPI 0.115');
+    expect(result.offered).toContain('FastAPI');
   });
 
   it('independent questions are never filtered and get no escape hatch', async () => {
@@ -159,7 +159,7 @@ describe('filterChoices — "Other (advanced)" escape hatch', () => {
     expect(result.filtered).toBe(true);
     expect(result.offered[result.offered.length - 1]).toBe(OTHER_ADVANCED_CHOICE);
     expect(isOtherAdvanced(result.offered[result.offered.length - 1])).toBe(true);
-    expect(result.offered).toContain('NestJS 10');
+    expect(result.offered).toContain('NestJS');
   });
 });
 

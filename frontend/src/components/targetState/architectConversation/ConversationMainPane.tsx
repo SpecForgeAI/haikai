@@ -545,9 +545,14 @@ export function ConversationMainPane({
             </button>
           )}
 
-          {/* Opt-out -- ALWAYS available. A consistent escape so the architect
-              can mark ANY technology option not applicable to this migration,
-              not just the capability-omission questions. */}
+          </>
+          )}
+
+          {/* Opt-out -- ALWAYS available, for BOTH versioned and non-versioned
+              questions. Rendered OUTSIDE the isVersioned ternary so versioned
+              questions (VersionedAnswerControl, which has no opt-out of its own)
+              also offer it. A consistent escape so the architect can mark ANY
+              technology option not applicable to this migration. */}
           <button
             type="button"
             className={styles.secondaryButton}
@@ -557,8 +562,6 @@ export function ConversationMainPane({
           >
             Not applicable to this migration
           </button>
-          </>
-          )}
 
           {/* Advanced -- per-element exception (rarely needed). */}
           {onOpenExceptionDialog && (
