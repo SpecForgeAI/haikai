@@ -58,10 +58,42 @@ function readinessBadgeClass(r: MigrationBookOfWorkReadiness): string {
   }
 }
 
-function gapCount(item: MigrationBookOfWorkItem): number {
-  return (
-    (item.missingInputs?.length ?? 0) + (item.readinessReasons?.length ?? 0)
-  );
+/**
+ * A single item's own gap count: the number of MISSING INPUTS on that item.
+ * Readiness reasons are deliberately NOT counted (they are explanations, shown
+ * in the detail panel, not unresolved gaps). The badge a parent shows is the
+ * ROLL-UP of these over its descendant stories -- see `buildGapRollup`.
+ */
+function ownGapCount(item: MigrationBookOfWorkItem): number {
+  return item.missingInputs?.length ?? 0;
+}
+
+/**
+ * Post-order roll-up of gap counts. A node's badge = the total MISSING INPUTS
+ * across the STORIES in its subtree (a story counts its own; a feature/epic/
+ * initiative shows the sum of its descendant stories). Stories are the
+ * implementable leaves, so a parent's gap total is the sum of the work its
+ * children carry. Computed once in O(n) and memoised by item id.
+ */
+function buildGapRollup(
+  roots: MigrationBookOfWorkItem[],
+  childrenOf: Map<string, MigrationBookOfWorkItem[]>,
+): Map<string, number> {
+  const byId = new Map<string, number>();
+  const visit = (item: MigrationBookOfWorkItem): number => {
+    const cached = byId.get(item.id);
+    if (cached !== undefined) return cached;
+    // Only stories contribute their own missing inputs; container nodes
+    // (initiative/epic/feature) contribute purely via their descendants.
+    let total = item.type === 'story' ? ownGapCount(item) : 0;
+    for (const child of childrenOf.get(item.id) ?? []) {
+      total += visit(child);
+    }
+    byId.set(item.id, total);
+    return total;
+  };
+  for (const r of roots) visit(r);
+  return byId;
 }
 
 function saveStateBadge(
@@ -253,6 +285,14 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
     return agg;
   }, [roots, childrenOf, saveStateById]);
 
+  // Per-node gap roll-up: each node's badge sums the missing inputs of the
+  // stories in its subtree (a feature shows its child stories' total, not just
+  // its own). See `buildGapRollup`.
+  const gapRollupById = useMemo(
+    () => buildGapRollup(roots, childrenOf),
+    [roots, childrenOf],
+  );
+
   const toggle = useCallback((id: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -292,7 +332,7 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
       (expansionState === 'not_expanded' ||
         expansionState === 'failed' ||
         isStaleExpanding);
-    const gaps = gapCount(item);
+    const gaps = gapRollupById.get(item.id) ?? 0;
     const isSelected = selectedItemId === item.id;
     const agg = selectionAggById.get(item.id) ?? { selectable: 0, selected: 0 };
     const checkboxChecked = agg.selectable > 0 && agg.selected === agg.selectable;
@@ -398,7 +438,7 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
               <span
                 className={styles.badge}
                 data-testid={`badge-gap-${item.id}`}
-                title="missingInputs + readinessReasons"
+                title="Missing inputs across this item's stories (rolled up)"
               >
                 {gaps} gap{gaps === 1 ? '' : 's'}
               </span>

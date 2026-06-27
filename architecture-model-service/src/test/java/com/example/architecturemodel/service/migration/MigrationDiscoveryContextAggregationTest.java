@@ -79,6 +79,7 @@ class MigrationDiscoveryContextAggregationTest {
     private static final UUID PROJECT_ID = UUID.randomUUID();
     private static final UUID CURRENT_ARCH_ID = UUID.randomUUID();
     private static final UUID ACTIVE_TARGET_ARCH_ID = UUID.randomUUID();
+    private static final UUID PLAN_TARGET_ARCH_ID = UUID.randomUUID();
 
     @Mock private ProjectRepository projectRepository;
     @Mock private ArchitectureRepository architectureRepository;
@@ -210,6 +211,50 @@ class MigrationDiscoveryContextAggregationTest {
         assertThat(block.scopedOverrides().get(0).standardsLookupRef()).isEqualTo("standards.runtime.v1");
         assertThat(block.totalDecisionCount()).isEqualTo(3);
         assertThat(block.lastDecisionAt()).isEqualTo(t3);
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 2b: decisions are sourced from the PLAN's target (request target),
+    // NOT the project's active target (bug fix 2026-06-27).
+    // -----------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Test 2b: when request carries a targetArchitectureId, decisions come from THAT target, not the active target")
+    void decisionsSourcedFromRequestTargetNotActiveTarget() {
+        // The plan is generated for PLAN_TARGET (a most-recent-SAVED draft) that is
+        // NOT the project's active target. The user's conversation answers live on
+        // the plan target; the active target only carries (say) a manifest answer.
+        // The request's target architecture must validate (it is fetched for the
+        // mappings block); stub it in the project.
+        when(architectureRepository.findById(PLAN_TARGET_ARCH_ID))
+            .thenReturn(Optional.of(architecture(PLAN_TARGET_ARCH_ID, "Plan Target")));
+
+        Instant t1 = Instant.parse("2026-06-27T10:00:00Z");
+        Instant t2 = Instant.parse("2026-06-27T11:00:00Z");
+        TargetStateCapturedDecisionEntity ciPipeline = decision(
+            "ci.pipeline", "architecture", null, "GitHub Actions", null, t1);
+        TargetStateCapturedDecisionEntity deployTarget = decision(
+            "deployment.target", "architecture", null, "Kubernetes 1.30", null, t2);
+        when(targetStateCapturedDecisionService
+            .listLatestDecisions(PROJECT_ID, PLAN_TARGET_ARCH_ID))
+            .thenReturn(List.of(ciPipeline, deployTarget));
+
+        MigrationDiscoveryContextDto result =
+            service.build(PROJECT_ID, newRequest(CURRENT_ARCH_ID, PLAN_TARGET_ARCH_ID, null));
+
+        TargetStateDecisionsSummaryDto block = result.targetStateDecisionsSummary();
+        assertThat(block.architectureWideDecisions())
+            .extracting("decisionCode")
+            .containsExactly("ci.pipeline", "deployment.target");
+        assertThat(block.totalDecisionCount()).isEqualTo(2);
+
+        // The active-target lookup must NOT be consulted when the request supplies
+        // a target -- decisions bind to the plan's target.
+        verify(architectureRepository, never())
+            .findFirstByProjectIdAndKindAndDraftStateAndArchivedFalseOrderByCreatedAtDesc(
+                PROJECT_ID, "target", "active");
+        verify(targetStateCapturedDecisionService, never())
+            .listLatestDecisions(PROJECT_ID, ACTIVE_TARGET_ARCH_ID);
     }
 
     // -----------------------------------------------------------------------

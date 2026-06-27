@@ -417,15 +417,16 @@ public class MigrationDiscoveryContextService {
             unresolvedDecisionTasks, baselineSummary, mappingsSummary, readiness);
 
         // ------------------------------------------------------------------
-        // Target-state captured decisions block (Spec 2026-05-24 Task Group 4).
+        // Target-state captured decisions block (Spec 2026-05-24 Task Group 4;
+        // target binding corrected 2026-06-27).
         //
-        // Resolved from the project's *active* target architecture (kind='target',
-        // draftState='active', archived=false) -- the same selection logic the
-        // ActiveTargetArchitectureController exposes for the gateway resolver.
-        // We intentionally do NOT use request.targetArchitectureId() here: that
-        // field is the caller's mapping scope (current->target for the
-        // architectureMappingsSummary block), which may legitimately point at a
-        // draft target. Captured decisions only live on the *active* target.
+        // Resolved from request.targetArchitectureId() -- the target the plan is
+        // generated FOR. Spec 2026-06-26 (save/resume) decoupled plan generation
+        // to the most-recent-SAVED target, which may be a draft that is NOT the
+        // project's "active" target. The decisions the user captured in that
+        // target's conversation must be visible to the plan, so binding to the
+        // active target (the prior behaviour) hid them. Falls back to the active
+        // target only when the request omits the field (legacy callers).
         //
         // Empty default semantics:
         //   * includeTargetStateDecisions == false  -> empty()
@@ -520,15 +521,26 @@ public class MigrationDiscoveryContextService {
         if (targetStateCapturedDecisionService == null) {
             return TargetStateDecisionsSummaryDto.empty();
         }
-        Optional<ArchitectureEntity> activeTarget = architectureRepository
-            .findFirstByProjectIdAndKindAndDraftStateAndArchivedFalseOrderByCreatedAtDesc(
-                projectId, "target", "active");
-        if (activeTarget.isEmpty()) {
-            return TargetStateDecisionsSummaryDto.empty();
+        // Source decisions from the target the caller is generating the plan FOR
+        // (request.targetArchitectureId). Spec 2026-06-26 (save/resume) generates
+        // the migration plan against the most-recent-SAVED target, which can be a
+        // draft that is NOT the project's "active" target. Decisions live on
+        // whatever target the user answered the conversation in -- i.e. the plan's
+        // target -- so reading from "active" hid those answers (e.g. ci.pipeline /
+        // deployment.target showed as unset despite being captured). Fall back to
+        // the active target only for legacy callers that omit the field.
+        UUID decisionsTargetId = request.targetArchitectureId();
+        if (decisionsTargetId == null) {
+            Optional<ArchitectureEntity> activeTarget = architectureRepository
+                .findFirstByProjectIdAndKindAndDraftStateAndArchivedFalseOrderByCreatedAtDesc(
+                    projectId, "target", "active");
+            if (activeTarget.isEmpty()) {
+                return TargetStateDecisionsSummaryDto.empty();
+            }
+            decisionsTargetId = activeTarget.get().getId();
         }
-        UUID activeTargetId = activeTarget.get().getId();
         List<TargetStateCapturedDecisionEntity> rows =
-            targetStateCapturedDecisionService.listLatestDecisions(projectId, activeTargetId);
+            targetStateCapturedDecisionService.listLatestDecisions(projectId, decisionsTargetId);
         if (rows == null || rows.isEmpty()) {
             return TargetStateDecisionsSummaryDto.empty();
         }
