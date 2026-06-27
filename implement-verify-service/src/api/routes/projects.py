@@ -119,7 +119,9 @@ async def init_project(
     from .. import _safe_project_dir
 
     try:
-        git_config = load_git_config()
+        # The per-request git_provider (when supplied) overrides GIT_PROVIDER;
+        # the provider's auth token is still sourced from the environment.
+        git_config = load_git_config(provider_override=request.git_provider)
     except GitConfigError as e:
         raise HTTPException(status_code=400, detail=f"Git configuration error: {e}")
 

@@ -79,7 +79,7 @@ class GitConfig:
         raise GitConfigError(f"Unsupported provider: {self.provider}")
 
 
-def load_git_config() -> GitConfig:
+def load_git_config(provider_override: Optional[str] = None) -> GitConfig:
     """Load git configuration from environment variables.
 
     Raises GitConfigError if required variables are missing.
@@ -89,8 +89,15 @@ def load_git_config() -> GitConfig:
     `github_token`-as-gitlab-token hack is fixed); the value is also
     mirrored into `github_token` so old call sites that pass it
     through to `GitManager(github_token=...)` keep working.
+
+    ``provider_override`` lets a caller (e.g. the per-request
+    ``POST /projects/init`` body) select the provider instead of the
+    ``GIT_PROVIDER`` environment variable. When provided it takes
+    precedence; the env var remains the fallback so existing
+    single-provider deployments are unchanged. The provider-specific
+    auth token is still sourced from the environment either way.
     """
-    provider = os.getenv("GIT_PROVIDER", "").strip().lower()
+    provider = (provider_override or os.getenv("GIT_PROVIDER", "")).strip().lower()
     if not provider:
         raise GitConfigError("GIT_PROVIDER is required (set to 'github', 'bitbucket', or 'gitlab')")
     if provider not in ("github", "bitbucket", "gitlab"):

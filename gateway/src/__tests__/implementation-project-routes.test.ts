@@ -108,6 +108,7 @@ describe('Implementation-Service init + repo CRUD routes (Spec 2026-06-12)', () 
       company: 'acme',
       project: 'billing-system',
       project_id: PROJECT_ID,
+      git_provider: 'github',
       repos: {
         backend: 'https://github.com/acme/backend.git',
         frontend: 'https://github.com/acme/frontend.git',
@@ -146,6 +147,7 @@ describe('Implementation-Service init + repo CRUD routes (Spec 2026-06-12)', () 
         company: 'acme',
         project: 'billing-system',
         repos: validInit.repos,
+        git_provider: 'github',
       });
 
       // AMS persistence: init-success=true + overall mode + project_dir
@@ -214,6 +216,24 @@ describe('Implementation-Service init + repo CRUD routes (Spec 2026-06-12)', () 
         });
       expect(dupUrl.status).toBe(400);
       expect(dupUrl.body.detail).toContain('Duplicate repo URL');
+
+      expect(mockUpstreamRequest).not.toHaveBeenCalled();
+      expect(mockUpdateInit).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing or invalid git_provider gateway-side without calling upstream', async () => {
+      const { git_provider: _omit, ...withoutProvider } = validInit;
+      const missing = await request(app)
+        .post('/api/implementation/projects/init')
+        .send(withoutProvider);
+      expect(missing.status).toBe(400);
+      expect(missing.body.detail).toContain('git_provider');
+
+      const invalid = await request(app)
+        .post('/api/implementation/projects/init')
+        .send({ ...validInit, git_provider: 'sourcehut' });
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.detail).toContain('git_provider');
 
       expect(mockUpstreamRequest).not.toHaveBeenCalled();
       expect(mockUpdateInit).not.toHaveBeenCalled();

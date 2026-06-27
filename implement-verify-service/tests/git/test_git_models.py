@@ -37,6 +37,49 @@ def test_repos_multi_entry_accepted():
     assert req.repos == repos
 
 
+# ── git_provider (per-request provider override) ─────────────────────────────
+
+
+def test_git_provider_optional_defaults_to_none():
+    req = ProjectInitRequest(
+        company="acme",
+        project="petclinic",
+        repos={"app": "https://github.com/acme/app.git"},
+    )
+    assert req.git_provider is None
+
+
+@pytest.mark.parametrize("provider", ["github", "gitlab", "bitbucket"])
+def test_git_provider_accepts_the_three_providers(provider):
+    req = ProjectInitRequest(
+        company="acme",
+        project="petclinic",
+        repos={"app": "https://github.com/acme/app.git"},
+        git_provider=provider,
+    )
+    assert req.git_provider == provider
+
+
+def test_git_provider_normalises_case_and_whitespace():
+    req = ProjectInitRequest(
+        company="acme",
+        project="petclinic",
+        repos={"app": "https://github.com/acme/app.git"},
+        git_provider="  GitLab ",
+    )
+    assert req.git_provider == "gitlab"
+
+
+def test_git_provider_rejects_unknown_value():
+    with pytest.raises(ValidationError, match="git_provider must be"):
+        ProjectInitRequest(
+            company="acme",
+            project="petclinic",
+            repos={"app": "https://github.com/acme/app.git"},
+            git_provider="sourcehut",
+        )
+
+
 # ── legacy repo_url promotion (T1.2 / T1.6) ──────────────────────────────────
 
 

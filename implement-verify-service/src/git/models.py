@@ -81,6 +81,30 @@ class ProjectInitRequest(BaseModel):
         ),
     )
 
+    # Workspace-wide git provider. When supplied it overrides the
+    # ``GIT_PROVIDER`` environment variable for THIS init (the provider's
+    # auth token is still read from the environment). Optional so existing
+    # env-configured single-provider deployments keep working unchanged.
+    git_provider: Optional[str] = Field(
+        default=None,
+        description=(
+            "Git provider for the workspace: 'github', 'gitlab', or "
+            "'bitbucket'. Overrides the GIT_PROVIDER env var when set."
+        ),
+    )
+
+    @field_validator("git_provider")
+    @classmethod
+    def _validate_git_provider(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        normalized = v.strip().lower()
+        if normalized not in ("github", "gitlab", "bitbucket"):
+            raise ValueError(
+                f"git_provider must be 'github', 'gitlab', or 'bitbucket', got {v!r}"
+            )
+        return normalized
+
     @field_validator("repos")
     @classmethod
     def _validate_repos(cls, v: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:

@@ -62,6 +62,13 @@ import {
   deriveSingleRepoFolder,
 } from './repoMapValidation';
 import { RepoMapEditor } from './RepoMapEditor';
+import {
+  GitProvider,
+  GIT_PROVIDERS,
+  GIT_PROVIDER_LABELS,
+  DEFAULT_GIT_PROVIDER,
+  deriveGitProvider,
+} from './gitProvider';
 
 /** Repo selection mode (Spec 2026-06-12). */
 export type RepoSelectionMode = 'single' | 'poly';
@@ -117,6 +124,13 @@ export function CreateProjectModal({
   // Spec 2026-06-12: Single/Poly repo selection + workspace init state
   const [repoMode, setRepoMode] = useState<RepoSelectionMode>('single');
   const [polyRows, setPolyRows] = useState<RepoRow[]>(EMPTY_POLY_ROWS);
+  /**
+   * Workspace-wide git provider sent to init. Auto-derived from the repo URL
+   * (so the common case needs no interaction) until the user picks one
+   * explicitly, after which `providerTouched` pins their choice.
+   */
+  const [gitProvider, setGitProvider] = useState<GitProvider>(DEFAULT_GIT_PROVIDER);
+  const [providerTouched, setProviderTouched] = useState(false);
   /** 'creating' while the Haikai project is created; 'initialising' during init. */
   const [submitStage, setSubmitStage] = useState<'idle' | 'creating' | 'initialising'>('idle');
   /** Upstream init failure detail, surfaced inline (project still created). */
@@ -170,6 +184,11 @@ export function CreateProjectModal({
       setIsSubmitting(false);
       setRepoMode('single');
       setPolyRows(EMPTY_POLY_ROWS);
+      // Seed the provider from any prefilled repo URL (edit mode); leave it
+      // un-touched so it keeps auto-tracking the URL until the user overrides.
+      const prefillUrl = isEdit && project ? project.repoUrl ?? '' : '';
+      setGitProvider(deriveGitProvider(prefillUrl) ?? DEFAULT_GIT_PROVIDER);
+      setProviderTouched(false);
       setSubmitStage('idle');
       setInitError(null);
       setCreatedProject(null);
@@ -230,6 +249,21 @@ export function CreateProjectModal({
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  /**
+   * Auto-track the git provider from the repo URL until the user overrides it.
+   * Uses the single-mode URL, or the first non-empty poly row URL. A URL that
+   * matches no known provider leaves the current selection intact.
+   */
+  useEffect(() => {
+    if (providerTouched) return;
+    const url =
+      repoMode === 'single'
+        ? repoUrl
+        : polyRows.find((r) => r.url.trim().length > 0)?.url ?? '';
+    const derived = deriveGitProvider(url);
+    if (derived) setGitProvider(derived);
+  }, [repoMode, repoUrl, polyRows, providerTouched]);
 
   // Don't render if not open
   if (!isOpen) {
@@ -300,6 +334,7 @@ export function CreateProjectModal({
         project: normalizeIdentifier(targetProject.name),
         projectId: targetProject.id,
         repos: buildReposMap(targetProject.name),
+        gitProvider,
       });
       if (result.success) {
         // Pick up the persisted init-status fields on the active project so
@@ -749,6 +784,39 @@ export function CreateProjectModal({
               >
                 + Add repo
               </button>
+            </div>
+          )}
+
+          {/* Git Provider selector. The IV service /projects/init endpoint
+              needs the workspace's provider to pick the right auth strategy.
+              Auto-derived from the repo URL (see the effect above); the user
+              can override. Shown for both Single and Poly, pre-init only. */}
+          {!postInit && (
+            <div className={styles.inputGroup}>
+              <label className={styles.inputLabel} htmlFor="git-provider-select">
+                Git Provider
+              </label>
+              <select
+                id="git-provider-select"
+                className={styles.input}
+                value={gitProvider}
+                onChange={(e) => {
+                  setGitProvider(e.target.value as GitProvider);
+                  setProviderTouched(true);
+                }}
+                disabled={isSubmitting}
+                data-testid="git-provider-select"
+              >
+                {GIT_PROVIDERS.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {GIT_PROVIDER_LABELS[provider]}
+                  </option>
+                ))}
+              </select>
+              <span className={styles.inputHint}>
+                Auto-selected from the repo URL where possible; change it if the
+                detected provider is wrong.
+              </span>
             </div>
           )}
 

@@ -284,6 +284,7 @@ describe('CreateProjectModal - Single/Poly repo modes (Spec 2026-06-12)', () => 
       project: 'my-product',
       projectId: 'new-project-id',
       repos: { 'my-product': 'https://github.com/acme/single.git' },
+      gitProvider: 'github',
     });
   });
 
@@ -326,6 +327,7 @@ describe('CreateProjectModal - Single/Poly repo modes (Spec 2026-06-12)', () => 
         backend: 'https://github.com/acme/backend.git',
         frontend: 'https://github.com/acme/frontend.git',
       },
+      gitProvider: 'github',
     });
   });
 
@@ -406,6 +408,7 @@ describe('CreateProjectModal - Single/Poly repo modes (Spec 2026-06-12)', () => 
       project: 'legacy-product',
       projectId: 'proj-9',
       repos: { 'legacy-product': 'https://github.com/acme/legacy.git' },
+      gitProvider: 'github',
     });
   });
 

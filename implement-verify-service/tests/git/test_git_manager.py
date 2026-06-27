@@ -308,3 +308,32 @@ class TestGitConfig:
 
         with pytest.raises(GitConfigError, match="BITBUCKET_USERNAME is required"):
             load_git_config()
+
+    def test_provider_override_takes_precedence_over_env(self, monkeypatch):
+        """provider_override wins over GIT_PROVIDER; token still from env."""
+        monkeypatch.setenv("GIT_PROVIDER", "github")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_token_123")
+        monkeypatch.setenv("GITLAB_TOKEN", "glpat_token_456")
+
+        config = load_git_config(provider_override="gitlab")
+
+        assert config.provider == "gitlab"
+        assert config.gitlab_token == "glpat_token_456"
+
+    def test_provider_override_satisfies_missing_env_provider(self, monkeypatch):
+        """An unset GIT_PROVIDER is fine when the override supplies it."""
+        monkeypatch.delenv("GIT_PROVIDER", raising=False)
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_token_123")
+
+        config = load_git_config(provider_override="github")
+
+        assert config.provider == "github"
+
+    def test_blank_provider_override_falls_back_to_env(self, monkeypatch):
+        """A blank/None override does not clobber the env provider."""
+        monkeypatch.setenv("GIT_PROVIDER", "github")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_token_123")
+
+        config = load_git_config(provider_override=None)
+
+        assert config.provider == "github"

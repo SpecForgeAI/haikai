@@ -147,9 +147,11 @@ async function throwGatewayError(res: Response, fallback: string): Promise<never
  * via the gateway init proxy, which also persists the outcome into AMS.
  *
  * POST /api/implementation/projects/init
- * Body: `{ company, project, project_id, repos }` — `repos` is ALWAYS the
- * map form (folder -> URL), for BOTH single and poly modes (single mode
- * sends a one-entry map keyed by the normalised product name).
+ * Body: `{ company, project, project_id, repos, git_provider }` — `repos` is
+ * ALWAYS the map form (folder -> URL), for BOTH single and poly modes (single
+ * mode sends a one-entry map keyed by the normalised product name).
+ * `git_provider` is the workspace-wide provider ('github' | 'gitlab' |
+ * 'bitbucket').
  *
  * Resolution semantics: resolves `{ success: true, ... }` on upstream
  * success, and `{ success: false, detail }` for ANY non-ok gateway response
@@ -164,6 +166,12 @@ export async function initProjectWorkspace(args: {
   projectId: string;
   /** Folder -> git remote URL map. */
   repos: Record<string, string>;
+  /**
+   * Git provider backing the workspace -- one of 'github' | 'gitlab' |
+   * 'bitbucket'. Forwarded to the IV service so it selects the matching auth
+   * strategy/token; required by the upstream `/projects/init` endpoint.
+   */
+  gitProvider: string;
 }): Promise<InitProjectWorkspaceResult> {
   const response = await fetch(`${IMPLEMENTATION_BASE}/projects/init`, {
     method: 'POST',
@@ -173,6 +181,7 @@ export async function initProjectWorkspace(args: {
       project: args.project,
       project_id: args.projectId,
       repos: args.repos,
+      git_provider: args.gitProvider,
     }),
   });
 

@@ -97,7 +97,15 @@ export interface InitProjectRequest {
   project_id: string;
   /** Folder -> git remote URL map. Folders AND URLs must be unique. */
   repos: Record<string, string>;
+  /**
+   * Workspace-wide git provider, forwarded upstream so the IV service picks
+   * the matching auth strategy/token. One of the GIT_PROVIDERS values.
+   */
+  git_provider: string;
 }
+
+/** The three providers the upstream IV service `/projects/init` accepts. */
+export const GIT_PROVIDERS = ['github', 'gitlab', 'bitbucket'] as const;
 
 /** Per-repo outcome of init (upstream RepoInitResult). */
 export interface RepoInitResult {
@@ -185,6 +193,13 @@ function validateInitRequest(body: unknown): string | null {
   }
   if (!req.project_id || typeof req.project_id !== 'string' || req.project_id.trim() === '') {
     return 'project_id is required';
+  }
+  if (
+    !req.git_provider ||
+    typeof req.git_provider !== 'string' ||
+    !GIT_PROVIDERS.includes(req.git_provider.trim().toLowerCase() as (typeof GIT_PROVIDERS)[number])
+  ) {
+    return `git_provider is required and must be one of: ${GIT_PROVIDERS.join(', ')}`;
   }
   return validateReposMap(req.repos);
 }
@@ -453,6 +468,7 @@ implementationProjectsRouter.post(
           company: body.company,
           project: body.project,
           repos: body.repos,
+          git_provider: body.git_provider.trim().toLowerCase(),
         },
         timeoutMs: INIT_TIMEOUT_MS,
       });

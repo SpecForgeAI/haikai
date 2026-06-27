@@ -326,6 +326,44 @@ interface MigrationBookOfWorkDraftDto {
   error_message: string | null;
 }
 
+/**
+ * Wire shape of the AMS save-to-backlog response. AMS speaks snake_case (see
+ * CLAUDE.md "AMS wire format"); the `SaveGeneratedMigrationBookOfWorkResponse`
+ * record binds explicit snake_case @JsonProperty names and nests the counts
+ * under a single `counts` map. The camelCase `SaveToBacklogResponse` is the
+ * frontend-facing shape -- the two MUST be bridged by `mapSaveResponseDto`, or
+ * `bookOfWork` reads back `undefined` and the post-save view wipes the draft's
+ * items ("No items in this book of work").
+ */
+interface SaveToBacklogResponseDto {
+  draft_id: string;
+  draft_status: MigrationBookOfWorkStatus;
+  counts: {
+    saved?: number;
+    failed?: number;
+    skipped_already_saved?: number;
+    skipped_not_admitted?: number;
+    admitted?: number;
+    [k: string]: unknown;
+  } | null;
+  book_of_work_json: MigrationBookOfWorkBlob | null;
+  failed_items: Array<Record<string, unknown>> | null;
+}
+
+function mapSaveResponseDto(
+  dto: SaveToBacklogResponseDto,
+): SaveToBacklogResponse {
+  const counts = dto.counts ?? {};
+  return {
+    draftId: dto.draft_id,
+    status: dto.draft_status,
+    savedCount: counts.saved ?? 0,
+    failedCount: counts.failed ?? 0,
+    skippedCount: counts.skipped_already_saved ?? 0,
+    bookOfWork: dto.book_of_work_json ?? { items: [] },
+  };
+}
+
 function mapDraftDto(dto: MigrationBookOfWorkDraftDto): MigrationBookOfWorkDraft {
   return {
     id: dto.id,
@@ -464,5 +502,5 @@ export async function saveMigrationBookOfWorkToBacklog(
   if (!res.ok) {
     throw new MigrationBookOfWorkApiError(res.status, await parseErrorBody(res));
   }
-  return (await res.json()) as SaveToBacklogResponse;
+  return mapSaveResponseDto((await res.json()) as SaveToBacklogResponseDto);
 }
