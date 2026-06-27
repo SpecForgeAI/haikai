@@ -246,13 +246,65 @@ class GitManager:
             check=False,
         )
         if check.returncode == 0:
-            self._run_git(["git", "checkout", branch_name], check=True)
+            co = self._run_git(["git", "checkout", branch_name], check=False)
+            if co.returncode != 0:
+                # The checkout was blocked by untracked working-tree files that
+                # the branch already tracks — a re-run that regenerated files
+                # already committed on the branch. The regenerated files are the
+                # authoritative new work: move only the conflicting untracked
+                # files aside, switch, then restore them so the new versions win.
+                # Branch history is preserved (batch accumulation stays intact).
+                self._checkout_existing_keeping_untracked(branch_name)
             logger.info("Switched to existing feature branch: %s", branch_name)
         else:
             self._run_git(["git", "checkout", self.default_branch], check=True)
             self._run_git(["git", "checkout", "-b", branch_name], check=True)
             logger.info("Created feature branch: %s", branch_name)
         return branch_name
+
+    def _checkout_existing_keeping_untracked(self, branch_name: str) -> None:
+        """Switch to an existing branch when untracked files would be overwritten.
+
+        Only the untracked files that the target branch *also tracks* conflict;
+        those are the regenerated versions we want to keep. Back exactly those
+        up, delete them so the checkout is unobstructed, switch, then restore
+        them over the branch's versions. Non-conflicting untracked files and the
+        branch's own history are left untouched.
+        """
+        import os
+        import shutil
+        import tempfile
+
+        untracked = [
+            f for f in self._run_git(
+                ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                check=True,
+            ).stdout.split("\0") if f
+        ]
+        tracked_on_branch = {
+            f for f in self._run_git(
+                ["git", "ls-tree", "-r", "--name-only", "-z", branch_name],
+                check=True,
+            ).stdout.split("\0") if f
+        }
+        backups: dict[str, str] = {}
+        for rel in (f for f in untracked if f in tracked_on_branch):
+            src = self.project_dir / rel
+            if not src.is_file():
+                continue
+            fd, tmp = tempfile.mkstemp()
+            os.close(fd)
+            shutil.copy2(src, tmp)
+            backups[rel] = tmp
+            src.unlink()
+        try:
+            self._run_git(["git", "checkout", branch_name], check=True)
+        finally:
+            for rel, tmp in backups.items():
+                dst = self.project_dir / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(tmp, dst)
+                os.unlink(tmp)
 
     # ------------------------------------------------------------------
     # Commit Preparation
