@@ -168,8 +168,38 @@ def _batch_branch(batch_name: str, folder) -> str:
     return f"feature/{batch_name}--{folder}" if folder is not None else f"feature/{batch_name}"
 
 
+def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha) -> None:
+    """Link a pushed commit SHA -> (orchestration run, spec/batch, repo) so a LATE
+    GitLab CI verdict for that SHA can be correlated back to THIS work and routed
+    into verification/self-repair, instead of being dropped as an unknown SHA.
+
+    This is the connective tissue between the orchestrate path and the async
+    verification path: the orchestrate code commits a SHA and (today) walks away;
+    without this record the inbound gateway 409s the late CI result. Per-repo, so
+    polyrepo runs link each repo's own pushed commit.
+
+    Opt-in (`ORCHESTRATE_CI_BIND=true`) and GitLab-only. Best-effort: a binding
+    failure must NEVER fail the orchestration — the work is already committed."""
+    if os.getenv("ORCHESTRATE_CI_BIND", "false").strip().lower() != "true":
+        return
+    if git_config.provider != "gitlab" or not head_sha or not orchestrate_id:
+        return
+    try:
+        from ..verification import store
+        conn = store.connect()
+        try:
+            store.record_binding(conn, head_sha, "gitlab", str(orchestrate_id),
+                                 str(task_group_id), repo or "", "ci-trigger")
+        finally:
+            conn.close()
+        logger.info("CI binding: sha %s -> run=%s spec=%s repo=%s",
+                    str(head_sha)[:8], orchestrate_id, task_group_id, repo)
+    except Exception:  # never fail the run on a bookkeeping write
+        logger.warning("CI binding failed for sha %s (non-fatal)", head_sha, exc_info=True)
+
+
 def _git_one_spec(git_config, targets, results: list, spec_name: str,
-                  batch_name: "str | None" = None) -> None:
+                  batch_name: "str | None" = None, orchestrate_id=None) -> None:
     """Commit ONE spec across all repo targets, appending a per-(spec, repo) record
     to ``results`` (C1/L3: never collapse to one scalar).
 
@@ -245,10 +275,15 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str,
             "commit_sha": one.commit_sha, "pr_url": one.pr_url,
             "error": one.errors[0] if one.errors else None,
         })
+        # Legacy per-spec: this spec has its OWN branch+push+pipeline, so link its
+        # pushed commit to the run keyed by the spec. (Batch defers push -> the
+        # binding for batch is recorded in _finalize_batch_git, per repo HEAD.)
+        if not batch and one.commit_sha and not one.errors:
+            _record_ci_binding(git_config, orchestrate_id, spec_name, folder, one.commit_sha)
 
 
 def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
-                        spec_names: "list[str]") -> None:
+                        spec_names: "list[str]", orchestrate_id=None) -> None:
     """After all specs in a batch have committed onto the shared branch, push it
     and open exactly ONE PR per repo target. Appends a per-(batch, repo) record.
 
@@ -297,6 +332,13 @@ def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
             "commit_sha": None, "pr_url": one.pr_url,
             "error": one.errors[0] if one.errors else None,
         })
+        # Link the pushed batch-branch HEAD for THIS repo to the run (per-repo, so
+        # polyrepo links each repo's own pipeline). The HEAD = the last per-spec
+        # commit on this folder; CI runs one pipeline for the accumulated branch.
+        if not one.errors:
+            head_sha = next((r.get("commit_sha") for r in reversed(results)
+                             if r.get("repo") == folder and r.get("commit_sha")), None)
+            _record_ci_binding(git_config, orchestrate_id, batch_name, folder, head_sha)
 
 
 def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
@@ -519,7 +561,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
                         return True  # stop the batch: no commit for this spec, no MR
             before = len(git_results)
             _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
-                          batch_name=batch_name)
+                          batch_name=batch_name, orchestrate_id=job_id)
             new = git_results[before:]
             # DETAIL: per-spec git result (branch/commit/PR/error) — concentrated
             # where the multi-spec branch/PR plumbing fails.
@@ -556,6 +598,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 _finalize_batch_git(
                     git_setup[0], git_setup[1], git_results, batch_name,
                     [si.spec_name for si in request.spec_intents],
+                    orchestrate_id=job_id,
                 )
 
         # Fold the interleaved per-spec git results into the response.
