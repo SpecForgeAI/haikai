@@ -218,8 +218,14 @@ class GitLabStrategy:
         # URLs through unchanged.
         if not repo_url.startswith(("https://", "http://")):
             return repo_url
-        host, path = _parse_host_path(repo_url)
-        return f"https://oauth2:{self.token}@{host}{path}.git"
+        parsed = urlparse(repo_url)
+        path = parsed.path[:-4] if parsed.path.endswith(".git") else parsed.path
+        # Preserve the ORIGINAL scheme + host:port. gitlab.com is https:443, but a
+        # self-hosted GitLab may be on http and/or a non-default port — hardcoding
+        # https and dropping the port (the old `https://{host}...`) broke those.
+        host = parsed.hostname or ""
+        netloc = f"{host}:{parsed.port}" if parsed.port else host
+        return f"{parsed.scheme}://oauth2:{self.token}@{netloc}{path}.git"
 
     def create_pull_request(
         self,
@@ -233,9 +239,14 @@ class GitLabStrategy:
             raise GitProviderStrategyError(
                 "GitLab merge-request creation needs a token (set GITLAB_TOKEN)."
             )
-        host, path = _parse_host_path(repo_url)
+        parsed = urlparse(repo_url)
+        path = parsed.path[:-4] if parsed.path.endswith(".git") else parsed.path
         project = quote(path.strip("/"), safe="")  # URL-encoded group/name path
-        url = f"https://{host}/api/v4/projects/{project}/merge_requests"
+        # Same scheme+port preservation as build_authenticated_url — hit the API on
+        # the host the repo actually lives on (self-hosted http/non-443 included).
+        host = parsed.hostname or ""
+        netloc = f"{host}:{parsed.port}" if parsed.port else host
+        url = f"{parsed.scheme}://{netloc}/api/v4/projects/{project}/merge_requests"
         headers = {"PRIVATE-TOKEN": self.token}
         payload = {
             "source_branch": branch,
