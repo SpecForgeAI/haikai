@@ -181,12 +181,53 @@ class OAuthChatExecutor:
             )
             logger.info("Created Anthropic client with API key")
     
+    @staticmethod
+    def _has_block(msg: Dict[str, Any], block_type: str) -> bool:
+        content = msg.get("content")
+        return isinstance(content, list) and any(
+            isinstance(b, dict) and b.get("type") == block_type for b in content
+        )
+
+    @classmethod
+    def _sanitize_conversation(cls, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Return the longest prefix where every `tool_use` is answered.
+
+        A run cancelled mid-tool-call leaves a trailing assistant `tool_use` with
+        no following `tool_result`; reloading that history makes the API reject
+        the next call (400: "tool_use ids found without tool_result blocks").
+        Truncate at the first unanswered tool_use so the next run starts clean.
+        """
+        valid_len = 0
+        i = 0
+        n = len(history)
+        while i < n:
+            msg = history[i]
+            if msg.get("role") == "assistant" and cls._has_block(msg, "tool_use"):
+                nxt = history[i + 1] if i + 1 < n else None
+                if nxt and nxt.get("role") == "user" and cls._has_block(nxt, "tool_result"):
+                    i += 2
+                    valid_len = i
+                else:
+                    break  # dangling tool_use -> drop it and everything after
+            else:
+                i += 1
+                valid_len = i
+        return history[:valid_len]
+
     def _load_conversation(self) -> List[Dict[str, Any]]:
         """Load conversation history from file."""
         if self.conversation_file.exists():
             try:
                 with open(self.conversation_file, 'r') as f:
-                    return json.load(f)
+                    history = json.load(f)
+                sanitized = self._sanitize_conversation(history)
+                if len(sanitized) != len(history):
+                    logger.warning(
+                        "Dropped %d trailing message(s) with an unanswered "
+                        "tool_use from conversation history (likely a cancelled run)",
+                        len(history) - len(sanitized),
+                    )
+                return sanitized
             except Exception as e:
                 logger.warning(f"Failed to load conversation history: {e}")
         return []
