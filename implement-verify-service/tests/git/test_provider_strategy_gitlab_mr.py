@@ -7,6 +7,20 @@ import pytest
 from src.git.provider_strategy import GitLabStrategy, GitProviderStrategyError
 
 
+def test_build_authenticated_url_preserves_scheme_and_port_self_hosted():
+    # Self-hosted GitLab on http + a non-default port must keep BOTH (the old
+    # code forced https and dropped the port -> broke local/self-hosted).
+    strat = GitLabStrategy(token="glpat-xxx")
+    out = strat.build_authenticated_url("http://gl.corp.internal:8929/group/proj.git")
+    assert out == "http://oauth2:glpat-xxx@gl.corp.internal:8929/group/proj.git"
+
+
+def test_build_authenticated_url_gitlab_com_unchanged():
+    strat = GitLabStrategy(token="glpat-xxx")
+    out = strat.build_authenticated_url("https://gitlab.com/group/proj.git")
+    assert out == "https://oauth2:glpat-xxx@gitlab.com/group/proj.git"
+
+
 def test_create_pull_request_without_token_raises():
     strat = GitLabStrategy(token=None)
     with pytest.raises(GitProviderStrategyError):
