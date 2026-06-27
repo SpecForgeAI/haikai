@@ -65,8 +65,24 @@ def _build_claude_chat_executor(
     # Root detection — Claude CLI cannot run as root
     _running_as_root = os.getuid() == 0 if hasattr(os, 'getuid') else False
 
-    # OAuth tokens MUST use Claude CLI - they don't work with Anthropic SDK
     if "sk-ant-oat" in anthropic_api_key:
+        # Opt-in: drive the OAuth/Max token via the Anthropic SDK directly
+        # (OAuthChatExecutor) instead of spawning the Claude CLI. The CLI competes
+        # with any OUTER Claude Code session for the subscription's concurrency
+        # slot (429s the nested orchestration); the SDK path (Bearer + claude-code
+        # beta headers) does not. See oauth_chat_executor.py.
+        if os.getenv("OAUTH_SDK_EXECUTOR", "false").strip().lower() == "true":
+            llm_model = os.getenv("LLM_MODEL", "claude-opus-4-5").strip() or "claude-opus-4-5"
+            logger.info(f"Using OAuthChatExecutor (OAUTH_SDK_EXECUTOR=true, model={llm_model}) — OAuth token via SDK, no CLI")
+            return OAuthChatExecutor(
+                company=company,
+                project=project,
+                workspace_dir=workspace_dir,
+                anthropic_api_key=anthropic_api_key,
+                model=llm_model,
+                session_uuid=session_uuid,
+            )
+        # Default: OAuth tokens via the Claude CLI (ClaudeChatExecutor).
         if _running_as_root:
             logger.warning("OAuth token detected but running as root — Claude CLI blocked. Falling back to OpenAI.")
             openai_key = os.getenv('OPENAI_API_KEY')
