@@ -26,26 +26,42 @@
  * the active architecture) rather than restructuring `ProjectLayout`.
  */
 
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { SpecGenerationWorkspace } from './SpecGenerationWorkspace';
 
 export function SpecGenerationWorkspaceRoute() {
-  const { projectId, bookId } = useParams<{
+  const { projectId, architectureId, bookId } = useParams<{
     projectId: string;
+    architectureId: string;
     bookId: string;
   }>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const workItemId = searchParams.get('workItemId');
 
   if (!projectId || !bookId) {
     return null;
   }
 
+  // architectureId is present on this architecture-scoped route; guard anyway
+  // so the back-to-review affordance only renders when we can build the URL.
+  const archScopedPrefix = architectureId
+    ? `/projects/${projectId}/architectures/${architectureId}`
+    : null;
+
   return (
     <SpecGenerationWorkspace
       projectId={projectId}
       bookOfWorkId={bookId}
       initialDrawerWorkItemId={workItemId ?? null}
+      onBackToReview={
+        archScopedPrefix
+          ? () =>
+              navigate(
+                `${archScopedPrefix}/migration-books-of-work/${bookId}/review`,
+              )
+          : undefined
+      }
     />
   );
 }

@@ -220,6 +220,10 @@ describe('Open-phase turn shape + phase signal (Spec 2026-06-06, Task Group 1)',
         case 'user-pick':
         case 'free-form-discussion':
           return 'open-phase';
+        // Spec 2026-06-27 pending-version-confirmations (added to the closed
+        // union); handled here purely to keep this exhaustive switch honest.
+        case 'pending-version-confirmations':
+          return 'preset';
         default:
           // `turn` is narrowed to `never` here once every kind is handled —
           // passing it straight through is the exhaustiveness idiom.
@@ -248,7 +252,7 @@ describe('Open-phase turn shape + phase signal (Spec 2026-06-06, Task Group 1)',
   // ==========================================================================
   // 5 — the closed union now lists all five new kinds (20 total)
   // ==========================================================================
-  it('the closed ConversationTurnKind union contains the five open-phase kinds (20 total)', () => {
+  it('the closed ConversationTurnKind union contains the five open-phase kinds (21 total incl. pending-version-confirmations)', () => {
     const allKinds: ConversationTurnKind[] = [
       'question',
       'answer',
@@ -270,8 +274,9 @@ describe('Open-phase turn shape + phase signal (Spec 2026-06-06, Task Group 1)',
       'option-proposal',
       'user-pick',
       'free-form-discussion',
+      'pending-version-confirmations',
     ];
-    expect(allKinds).toHaveLength(20);
+    expect(allKinds).toHaveLength(21);
     for (const k of [
       'open-phase-prompt',
       'user-raised-topic',

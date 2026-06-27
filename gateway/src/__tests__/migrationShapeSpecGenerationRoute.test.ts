@@ -103,6 +103,9 @@ describe('POST .../spec-generations/generate-batch', () => {
         maxFindings: 10,
         maxEvidenceItems: 20,
         maxBaselineItems: 5,
+        // Selective generation: the workspace's "Generate specs for selected"
+        // sends an explicit whitelist that the route MUST forward.
+        targetWorkItemIds: ['wi-7', 'wi-9'],
       });
     expect(res.status).toBe(200);
     expect(res.body.persistedCount).toBe(2);
@@ -118,6 +121,7 @@ describe('POST .../spec-generations/generate-batch', () => {
         maxFindings: 10,
         maxEvidenceItems: 20,
         maxBaselineItems: 5,
+        targetWorkItemIds: ['wi-7', 'wi-9'],
       }),
       expect.objectContaining({
         fetchProjectConfig: expect.any(Function),

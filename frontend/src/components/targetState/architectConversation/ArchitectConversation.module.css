@@ -16,6 +16,14 @@
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
+  /*
+   * 2026-06-27 Right-panel UX (Spec A, Task Group 3): bound the single grid row
+   * to the container so the layout fills (and never exceeds) its flex height.
+   * `minmax(0, 1fr)` lets the row shrink below content, which is what lets the
+   * `.mainPane` / `.transcript` chain below resolve to a scrollable transcript
+   * instead of pushing the whole conversation body to grow.
+   */
+  grid-template-rows: minmax(0, 1fr);
   gap: 1rem;
   flex: 1;
   min-height: 0;
@@ -464,4 +472,40 @@
   display: flex;
   justify-content: flex-end;
   margin-bottom: 0.5rem;
+}
+
+/*
+ * 2026-06-27 Right-panel UX (Spec A, Task Group 2): the inner right column is
+ * now drag-adjustable. `.layout` keeps `display: grid`; its
+ * `grid-template-columns` is driven inline by `ResizableRightColumn` (chat pane
+ * stays `minmax(0, 1fr)`, the right track holds the persisted px width). The
+ * `.rightColumn` wrapper gives the absolutely-positioned splitter a positioning
+ * context. The handle styling mirrors `UnifiedChatPanel.module.css .resizeHandle`
+ * (the look the conversation overlay already uses), straddling the grid gap on
+ * the LEFT edge of the right column.
+ */
+.rightColumn {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.rightColumnResizeHandle {
+  position: absolute;
+  left: -8px;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.2s;
+  z-index: 1;
+}
+
+.rightColumnResizeHandle:hover {
+  background: rgba(25, 118, 210, 0.1);
+}
+
+.rightColumnResizeHandle:active {
+  background: rgba(25, 118, 210, 0.2);
 }

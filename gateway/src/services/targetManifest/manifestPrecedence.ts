@@ -257,6 +257,28 @@ function readFrameworkVersionFromRow(
 }
 
 /**
+ * The set of architecture-scope decision codes whose CURRENT winning captured
+ * row carries a CONCRETE (non-sentinel) `{ framework, version }`. Used by the
+ * pending-version-confirmation diversion (Spec 2026-06-27) to enforce re-upload
+ * rules 5b/5c: a coordinate already captured with a concrete version (whether
+ * manifest-derived OR manual) is NEVER retracted by, nor re-queued as pending
+ * for, a later `version-unknown` upload. Pure; derived from the latest captured
+ * decisions the precedence step already reads.
+ */
+export function codesWithConcreteCapturedVersion(
+  latest: readonly TargetStateCapturedDecision[],
+): Set<string> {
+  const out = new Set<string>();
+  for (const [code, row] of indexWinningArchitectureDecisions(latest).entries()) {
+    const fv = readFrameworkVersionFromRow(row);
+    if (fv && !isVersionSentinel(fv.version)) {
+      out.add(code);
+    }
+  }
+  return out;
+}
+
+/**
  * Map a candidate's INTERNAL provenance (`deterministic` / `inferred` / `llm`,
  * absent === `deterministic`) to the WIRE provenance stamped on a
  * manifest-derived {@link ResolvedTargetVersion}. Spec 2026-06-26 Task Group 8:

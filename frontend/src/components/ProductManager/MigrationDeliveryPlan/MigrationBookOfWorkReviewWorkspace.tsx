@@ -90,6 +90,13 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
   onOpenBacklog?: () => void;
   /** Optional "back to the Migration Delivery Plans list" navigation callback. */
   onBackToPlans?: () => void;
+  /**
+   * Optional "open the spec-generation workspace for this book" navigation
+   * callback. Surfaced as a header button so that, after saving stories to the
+   * backlog, the user can jump straight to generating their implementation-
+   * ready specs (where they can pick a subset to generate).
+   */
+  onOpenSpecGeneration?: () => void;
 }
 
 /**
@@ -254,7 +261,7 @@ const RIGHT_PANEL_DEFAULT_WIDTH = 420;
 
 export const MigrationBookOfWorkReviewWorkspace: React.FC<
   MigrationBookOfWorkReviewWorkspaceProps
-> = ({ projectId, bookId, initialDraft, onOpenBacklog, onBackToPlans }) => {
+> = ({ projectId, bookId, initialDraft, onOpenBacklog, onBackToPlans, onOpenSpecGeneration }) => {
   const { showToast } = useToast();
   const [draft, setDraft] = useState<MigrationBookOfWorkDraft | null>(
     initialDraft ?? null,
@@ -840,11 +847,21 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     }
     // Apply the current frontend saveStateById onto the items blob and
     // PUT the whole `book_of_work_json` back so the deltas are persisted.
-    setSaveDraftState('saving');
     const updatedItems: MigrationBookOfWorkItem[] = items.map((i) => ({
       ...i,
       saveState: saveStateById[i.id] ?? 'draft',
     }));
+    // Guard against the "blank Save-Draft wipe": never PUT an empty-items blob.
+    // Save-draft only flushes per-item saveState deltas, so with zero items
+    // there is nothing legitimate to persist -- and writing `{items: []}` over
+    // a populated book would destroy every saveState/workItemId stamp (which
+    // previously left spec-generation with no saved stories). The AMS PATCH has
+    // a matching server-side backstop; this avoids the round-trip entirely.
+    if (updatedItems.length === 0) {
+      showToast('Nothing to save: this plan has no items loaded.', 'info');
+      return;
+    }
+    setSaveDraftState('saving');
     const nextBlob = {
       ...(draft.bookOfWork ?? { items: [] }),
       items: updatedItems,
@@ -999,6 +1016,17 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           >
             {saveDraftState === 'saving' ? 'Saving\u2026' : 'Save draft'}
           </button>
+          {onOpenSpecGeneration && (
+            <button
+              type="button"
+              className={styles.selectButton}
+              onClick={onOpenSpecGeneration}
+              title="Open the spec-generation workspace to generate implementation-ready specs for the saved stories (you can pick a subset there)"
+              data-testid="open-spec-generation-button"
+            >
+              Generate specs {'\u2192'}
+            </button>
+          )}
         </div>
       </div>
 

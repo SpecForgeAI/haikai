@@ -244,7 +244,11 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
     ).toBe('Spring Boot 3.4.5');
   });
 
-  it('(d) renders a version-unknown decision as a first-class affordance and accepts a manual exact version', async () => {
+  it('(d) renders a version-unknown decision READ-ONLY as a pending version confirmation (Spec 2026-06-27)', async () => {
+    // Spec 2026-06-27-target-manifest-version-unknown-pending-questions: a
+    // version-unknown coordinate is NO LONGER editable here. It renders a
+    // READ-ONLY "Pending version confirmation -- confirm in the conversation"
+    // affordance (no inline edit entry point, no manual capture write).
     const response = makeResponse({
       autoAnswer: {
         writtenCodes: ['service.framework'],
@@ -283,35 +287,21 @@ describe('ManifestUploadPanel (Spec 3, TG5)', () => {
     pickOrdersService();
     fireEvent.click(screen.getByTestId('manifest-upload-submit'));
 
-    // The unknown answer renders the explicit "(version unknown)" chip + affordance.
+    // The unknown answer still shows the explicit "(version unknown)" chip, but
+    // now as a READ-ONLY pending affordance -- not an editable field.
     const decision = await screen.findByTestId('manifest-decision-service.framework');
     expect(decision.getAttribute('data-version-unknown')).toBe('true');
     expect(within(decision).getByTestId('manifest-decision-chip').textContent).toBe(
       'Spring Boot (version unknown)',
     );
-    expect(within(decision).getByTestId('manifest-version-unknown-note')).toBeTruthy();
+    expect(
+      within(decision).getByTestId('manifest-version-pending-note').textContent,
+    ).toMatch(/Pending version confirmation/);
 
-    // Supply an exact version manually.
-    fireEvent.click(within(decision).getByTestId('manifest-decision-edit'));
-    const editInput = within(decision).getByTestId(
-      'manifest-decision-edit-input',
-    ) as HTMLInputElement;
-    expect(editInput.value).toBe(''); // unknown seeds an EMPTY field
-    fireEvent.change(editInput, { target: { value: '3.4.1' } });
-    fireEvent.click(within(decision).getByTestId('manifest-decision-edit-save'));
-
-    await waitFor(() => expect(captureSpy).toHaveBeenCalledTimes(1));
-    const parsedValue = JSON.parse(captureSpy.mock.calls[0][2].value);
-    expect(parsedValue.value).toEqual({ framework: 'Spring Boot', version: '3.4.1' });
-
-    // The chip is now the concrete version + provenance is manual.
-    await waitFor(() =>
-      expect(
-        within(screen.getByTestId('manifest-decision-service.framework')).getByTestId(
-          'manifest-decision-chip',
-        ).textContent,
-      ).toBe('Spring Boot 3.4.1'),
-    );
+    // No inline edit entry point + no manual capture for version-unknown rows.
+    expect(within(decision).queryByTestId('manifest-decision-edit')).toBeNull();
+    expect(within(decision).queryByTestId('manifest-decision-edit-input')).toBeNull();
+    expect(captureSpy).not.toHaveBeenCalled();
   });
 });
 

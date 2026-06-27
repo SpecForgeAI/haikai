@@ -5,6 +5,8 @@ import com.example.architecturemodel.model.entity.GeneratedMigrationBookOfWorkEn
 import com.example.architecturemodel.model.entity.GeneratedMigrationBookOfWorkStatus;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -154,11 +156,41 @@ public final class GeneratedMigrationBookOfWorkMapper {
         if (dto.status() != null) {
             entity.setStatus(dto.status());
         }
-        if (dto.bookOfWorkJson() != null) {
+        if (dto.bookOfWorkJson() != null
+                && !wouldEmptyPopulatedBook(entity.getBookOfWorkJson(), dto.bookOfWorkJson())) {
             entity.setBookOfWorkJson(dto.bookOfWorkJson());
         }
         if (dto.errorMessage() != null) {
             entity.setErrorMessage(dto.errorMessage());
         }
+    }
+
+    /**
+     * Data-integrity guard against the "blank Save-Draft wipe" (root-caused
+     * 2026-06-27): a PATCH whose {@code book_of_work_json} carries zero items
+     * must NOT overwrite a book that currently HAS items. Without this guard a
+     * client that momentarily holds a blanked draft in memory (e.g. after a
+     * mis-mapped save-to-backlog response left {@code bookOfWork} undefined) and
+     * then PUTs it would destroy every {@code saveState}/{@code workItemId} stamp
+     * in the stored blob, leaving spec-generation with zero saved stories and no
+     * way to generate. A legitimately empty book (pre-expansion skeleton, brand-
+     * new draft) is never PATCHed populated -> empty in the canonical flow, so
+     * this never blocks a real edit.
+     *
+     * @return true when applying {@code incoming} would empty an already-
+     *     populated book (and the write must therefore be skipped).
+     */
+    private static boolean wouldEmptyPopulatedBook(
+            Map<String, Object> existing, Map<String, Object> incoming) {
+        return itemCount(incoming) == 0 && itemCount(existing) > 0;
+    }
+
+    /** Count of {@code book_of_work_json.items[]} (0 when absent/malformed). */
+    private static int itemCount(Map<String, Object> bookOfWorkJson) {
+        if (bookOfWorkJson == null) {
+            return 0;
+        }
+        Object items = bookOfWorkJson.get("items");
+        return (items instanceof List<?> list) ? list.size() : 0;
     }
 }

@@ -59,6 +59,11 @@ export function MigrationBookOfWorkReviewRoute() {
       onBackToPlans={() =>
         navigate(`${archScopedPrefix}/migration-delivery-plan`)
       }
+      onOpenSpecGeneration={() =>
+        navigate(
+          `${archScopedPrefix}/migration-books-of-work/${bookId}/spec-generation`,
+        )
+      }
     />
   );
 }

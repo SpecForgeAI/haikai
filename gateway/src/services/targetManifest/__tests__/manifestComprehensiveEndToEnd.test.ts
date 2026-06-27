@@ -211,7 +211,12 @@ test('a comprehensive pom surfaces deterministic + inferred + LLM + Tier-2 in ON
     `MCP SDK ${EM_DASH} io.modelcontextprotocol:mcp-sdk`,
   ]);
 
-  // All four lanes were written immediately through the existing /capture path.
+  // The CONCRETE-version + single-choice lanes are written immediately through
+  // the existing /capture path. NOTE (Spec 2026-06-27 version-unknown -> pending
+  // questions, design A): the INFERRED family-only lanes (db.engine,
+  // service.runtime) resolve version-unknown, so they are now DIVERTED to pending
+  // version-confirmation questions instead of being written -- they must NOT
+  // appear in writtenCodes.
   expect(aa.aborted).toBe(false);
   expect(aa.writtenCodes).toEqual(
     expect.arrayContaining([
@@ -219,9 +224,18 @@ test('a comprehensive pom surfaces deterministic + inferred + LLM + Tier-2 in ON
       'db.driver',
       'service.language',
       'build.tool',
-      'db.engine',
-      'service.runtime',
       'validation.framework',
     ]),
+  );
+  expect(aa.writtenCodes).not.toContain('db.engine');
+  expect(aa.writtenCodes).not.toContain('service.runtime');
+
+  // The two version-unknown inferred lanes are surfaced as pending version
+  // confirmations (framework pre-chosen, version still to confirm) -- design A.
+  const pendingCodes = (aa.pendingVersionConfirmations ?? []).map(
+    (p) => p.decisionCode,
+  );
+  expect(pendingCodes).toEqual(
+    expect.arrayContaining(['db.engine', 'service.runtime']),
   );
 });

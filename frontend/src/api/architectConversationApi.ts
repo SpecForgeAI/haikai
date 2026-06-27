@@ -788,6 +788,14 @@ export interface PendingQuestion {
   defaultsWhenUnchanged: string;
   /** True when the target may opt out of this capability entirely ("Not needed"). */
   optional: boolean;
+  /**
+   * Spec 2026-06-27-target-manifest-version-unknown-pending-questions: for a
+   * PENDING versioned question (a version-unknown manifest coordinate asked
+   * first) this is the pre-chosen framework stem so only the version needs
+   * filling; null/absent for a normal question. Absent-tolerant for older
+   * gateway responses.
+   */
+  prechosenFramework?: string | null;
 }
 
 /**

@@ -50,9 +50,15 @@ interface PostCall {
 function makeRecordingDeps(opts: { postFailureOnCode?: string } = {}): {
   deps: ManifestAutoAnswererDeps;
   postCalls: PostCall[];
+  writePending: jest.Mock;
 } {
   const postCalls: PostCall[] = [];
+  // Stub the pending-version-confirmation thread write (Spec 2026-06-27) so the
+  // run never touches the real disk/AMS-backed thread store; assert calls on it.
+  const writePending = jest.fn(async () => undefined);
   const deps: ManifestAutoAnswererDeps = {
+    writePendingVersionConfirmations:
+      writePending as ManifestAutoAnswererDeps['writePendingVersionConfirmations'],
     postCapturedDecision: (async (
       projectId: string,
       targetArchitectureId: string,
@@ -79,7 +85,7 @@ function makeRecordingDeps(opts: { postFailureOnCode?: string } = {}): {
       };
     }) as ManifestAutoAnswererDeps['postCapturedDecision'],
   };
-  return { deps, postCalls };
+  return { deps, postCalls, writePending };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,10 +142,11 @@ test('(a)+(b) writes captured-decision rows with the prefill envelope, new task 
   const byCode = Object.fromEntries(postCalls.map((c) => [c.body.decisionCode, c.body]));
 
   // service.framework (Spring Boot, parent-resolved 3.4.1), db.driver (pgjdbc
-  // 42.7.4), and build.tool (Maven from the ecosystem) are all written.
+  // 42.7.4), and build.tool (Maven from the ecosystem) are written. The inferred
+  // db.engine resolves family-only (version-unknown) so — per Spec 2026-06-27 —
+  // it is DIVERTED to the pending set instead of writing a captured row.
   expect(Object.keys(byCode).sort()).toEqual(
-    // Spec 2: db.engine is now ALSO written, INFERRED from the Postgres driver.
-    ['build.tool', 'db.driver', 'db.engine', 'service.framework'].sort(),
+    ['build.tool', 'db.driver', 'service.framework'].sort(),
   );
 
   // Contract on the framework row.
@@ -170,24 +177,29 @@ test('(a)+(b) writes captured-decision rows with the prefill envelope, new task 
   expect(drvParsed.sourceQuote).toBe('org.postgresql:postgresql 42.7.4');
 
   // db.engine is INFERRED from the Postgres driver — FAMILY ONLY, so the engine
-  // version is unknown (a driver never reveals the server version).
-  const engine = byCode['db.engine'];
-  const engineParsed = JSON.parse(engine.answerValue);
-  expect(engineParsed.value).toEqual({
-    framework: 'Postgres',
-    version: 'version-unknown',
-  });
+  // version is unknown (a driver never reveals the server version). Per Spec
+  // 2026-06-27 a version-unknown VERSIONED coordinate writes NO captured row and
+  // is instead diverted to the pending-version-confirmation set.
+  expect(postCalls.find((c) => c.body.decisionCode === 'db.engine')).toBeUndefined();
+  const pendingCodes = outcome.pendingVersionConfirmations.map((e) => e.decisionCode);
+  expect(pendingCodes).toContain('db.engine');
+  const enginePending = outcome.pendingVersionConfirmations.find(
+    (e) => e.decisionCode === 'db.engine',
+  )!;
+  expect(enginePending.framework).toBe('Postgres');
+  expect(enginePending.sourceFile).toBe('services/orders/pom.xml');
 
   expect(outcome.aborted).toBe(false);
-  expect(outcome.rowsWritten).toBe(4);
+  // Three concrete rows written; db.engine (version-unknown) is pending, not written.
+  expect(outcome.rowsWritten).toBe(3);
 });
 
 // ---------------------------------------------------------------------------
 // (c) a version-unknown resolved entry STILL writes an editable answer
 // ---------------------------------------------------------------------------
 
-test('(c) a version-unknown resolved entry writes an editable answer (not skipped, not fabricated)', async () => {
-  const { deps, postCalls } = makeRecordingDeps();
+test('(c) a version-unknown versioned entry is DIVERTED to pending (no captured row written)', async () => {
+  const { deps, postCalls, writePending } = makeRecordingDeps();
 
   // package.json with React on an OPEN range and NO lockfile => version-unknown.
   const pkg = JSON.stringify({ name: 'web', dependencies: { react: '^18.2.0' } });
@@ -204,15 +216,23 @@ test('(c) a version-unknown resolved entry writes an editable answer (not skippe
   };
   const resolved = resolveManifestVersions(parsed);
 
-  await runManifestAutoAnswer({ ...ARGS, resolvedManifests: [resolved] }, deps);
+  const outcome = await runManifestAutoAnswer({ ...ARGS, resolvedManifests: [resolved] }, deps);
 
-  const ui = postCalls.find((c) => c.body.decisionCode === 'ui.framework');
+  // Spec 2026-06-27: ui.framework (React, version-unknown) writes NO captured row.
+  expect(postCalls.find((c) => c.body.decisionCode === 'ui.framework')).toBeUndefined();
+  // It is instead collected into the pending set with the framework pre-chosen.
+  const ui = outcome.pendingVersionConfirmations.find((e) => e.decisionCode === 'ui.framework');
   expect(ui).toBeDefined();
-  const uiParsed = JSON.parse(ui!.body.answerValue);
-  // Captured WITH an explicit unknown version — NOT fabricated.
-  expect(uiParsed.value).toEqual({ framework: 'React', version: 'version-unknown' });
-  // Chip is honest about the unresolved version, and is editable downstream.
-  expect(ui!.body.answerSummary).toBe('React (version unknown)');
+  expect(ui!.framework).toBe('React');
+  expect(ui!.sourceFile).toBe('apps/web/package.json');
+  expect(ui!.tag).toBe('web-ui');
+  // The FULL recomputed pending set is persisted exactly once (replace semantics).
+  expect(writePending).toHaveBeenCalledTimes(1);
+  expect(writePending).toHaveBeenCalledWith(
+    ARGS.projectId,
+    ARGS.targetArchitectureId,
+    outcome.pendingVersionConfirmations,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -238,9 +258,18 @@ test('(d) first POST failure aborts remaining writes and surfaces a partial outc
   expect(postCalls[0].body.decisionCode).toBe(firstCode);
   expect(outcome.aborted).toBe(true);
   expect(outcome.rowsWritten).toBe(0);
-  // The failed code + every remaining candidate code are surfaced as partial.
+  // The failed code + every remaining CONCRETE candidate code are surfaced as
+  // partial. Version-unknown candidates (the inferred db.engine) were DIVERTED to
+  // pending BEFORE the abort check, so they NEVER count toward partial-failure.
   expect(outcome.partialFailureCodes).toContain(firstCode);
-  expect(outcome.partialFailureCodes.length).toBe(candidates.length);
+  const pendingCodes = new Set(outcome.pendingVersionConfirmations.map((e) => e.decisionCode));
+  const concreteCandidateCount = candidates.filter(
+    (c) => !pendingCodes.has(c.decisionCode),
+  ).length;
+  expect(outcome.partialFailureCodes.length).toBe(concreteCandidateCount);
+  for (const code of pendingCodes) {
+    expect(outcome.partialFailureCodes).not.toContain(code);
+  }
   expect(outcome.failureReason).toContain(firstCode);
 });
 

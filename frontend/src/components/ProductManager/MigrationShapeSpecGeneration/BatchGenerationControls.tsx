@@ -59,6 +59,18 @@ export interface BatchGenerationControlsProps {
   }) => void;
   /** Invoked when the user clicks "Stop after current batch". */
   onStopAfterCurrentBatch: () => void;
+  /**
+   * Selective generation: number of stories the user has ticked in the
+   * results table. Drives the "Generate specs for selected (N)" button label +
+   * enablement. When 0 (or the callback is absent) the selected-action button
+   * is hidden.
+   */
+  selectedCount?: number;
+  /** Invoked when the user clicks "Generate specs for selected". */
+  onGenerateSelected?: (opts: {
+    regenerateAll: boolean;
+    skipBlockedStories: boolean;
+  }) => void;
 }
 
 export function BatchGenerationControls({
@@ -70,6 +82,8 @@ export function BatchGenerationControls({
   onGenerateNextBatch,
   onGenerateAll,
   onStopAfterCurrentBatch,
+  selectedCount = 0,
+  onGenerateSelected,
 }: BatchGenerationControlsProps) {
   const [regenerateAll, setRegenerateAll] = useState(false);
   const [skipBlockedStories, setSkipBlockedStories] = useState(false);
@@ -117,6 +131,21 @@ export function BatchGenerationControls({
         >
           Generate next {nextSize}
         </button>
+
+        {onGenerateSelected && (
+          <button
+            type="button"
+            className={`${styles.button} ${styles.buttonPrimary}`}
+            onClick={() =>
+              onGenerateSelected({ regenerateAll, skipBlockedStories })
+            }
+            disabled={batchInProgress || selectedCount === 0}
+            data-testid="msg-action-generate-selected"
+            title="Generate specs for only the stories ticked in the table below"
+          >
+            Generate specs for selected ({selectedCount})
+          </button>
+        )}
 
         <button
           type="button"

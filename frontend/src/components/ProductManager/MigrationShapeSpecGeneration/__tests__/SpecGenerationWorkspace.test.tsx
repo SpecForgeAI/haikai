@@ -23,7 +23,7 @@
 
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 // Mock the CSS module so class-name access does not blow up under jsdom.
 vi.mock('../MigrationShapeSpecGeneration.module.css', () => ({
@@ -273,6 +273,74 @@ describe('SpecGenerationWorkspace — auto-open drawer from initialDrawerWorkIte
     });
     expect(screen.getByTestId('msg-story-drawer-title')).toHaveTextContent(
       /drill-back target story/i,
+    );
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Test 5 — selective generation: generate specs for ONLY the ticked stories
+// ----------------------------------------------------------------------------
+
+describe('SpecGenerationWorkspace — generate specs for selected', () => {
+  it('passes only the ticked workItemIds (and batchSize = selection size) to startBatchGeneration', async () => {
+    mockFetchRows.mockResolvedValue([
+      makeRow({ id: 'r-a', workItemId: 'wi-A', status: 'not_attempted', storyTitle: 'Story A' }),
+      makeRow({ id: 'r-b', workItemId: 'wi-B', status: 'not_attempted', storyTitle: 'Story B' }),
+      makeRow({ id: 'r-c', workItemId: 'wi-C', status: 'not_attempted', storyTitle: 'Story C' }),
+    ]);
+    mockStartBatch.mockResolvedValue({
+      perStoryResults: [],
+      persistedCount: 0,
+      nextBatchStart: null,
+      summary: SUMMARY_FIXTURE,
+    });
+
+    render(<SpecGenerationWorkspace projectId={PROJECT_ID} bookOfWorkId={BOOK_ID} />);
+
+    // Rows arrive.
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-results-row-wi-A-select')).toBeInTheDocument();
+    });
+
+    // The selected-action button is present but disabled until something is ticked.
+    const generateSelected = screen.getByTestId('msg-action-generate-selected');
+    expect(generateSelected).toBeDisabled();
+
+    // Tick A and C, leave B unticked.
+    fireEvent.click(screen.getByTestId('msg-results-row-wi-A-select'));
+    fireEvent.click(screen.getByTestId('msg-results-row-wi-C-select'));
+    expect(generateSelected).toHaveTextContent('Generate specs for selected (2)');
+    expect(generateSelected).not.toBeDisabled();
+
+    fireEvent.click(generateSelected);
+
+    await waitFor(() => expect(mockStartBatch).toHaveBeenCalledTimes(1));
+    const arg = mockStartBatch.mock.calls[0][0];
+    expect(arg.targetWorkItemIds).toEqual(expect.arrayContaining(['wi-A', 'wi-C']));
+    expect(arg.targetWorkItemIds).not.toContain('wi-B');
+    expect(arg.targetWorkItemIds).toHaveLength(2);
+    expect(arg.batchSize).toBe(2);
+  });
+
+  it('select-all toggles every selectable visible row', async () => {
+    mockFetchRows.mockResolvedValue([
+      makeRow({ id: 'r-a', workItemId: 'wi-A', status: 'not_attempted', storyTitle: 'Story A' }),
+      makeRow({ id: 'r-b', workItemId: 'wi-B', status: 'not_attempted', storyTitle: 'Story B' }),
+    ]);
+
+    render(<SpecGenerationWorkspace projectId={PROJECT_ID} bookOfWorkId={BOOK_ID} />);
+    await waitFor(() => {
+      expect(screen.getByTestId('msg-results-select-all')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId('msg-results-select-all'));
+    expect(screen.getByTestId('msg-action-generate-selected')).toHaveTextContent(
+      'Generate specs for selected (2)',
+    );
+
+    fireEvent.click(screen.getByTestId('msg-results-select-all'));
+    expect(screen.getByTestId('msg-action-generate-selected')).toHaveTextContent(
+      'Generate specs for selected (0)',
     );
   });
 });

@@ -134,10 +134,30 @@ export interface PendingQuestionDto {
   defaultsWhenUnchanged: string;
   /** True when the target may opt out of this capability entirely ("Not needed"). */
   optional: boolean;
+  /**
+   * Pre-chosen framework/library stem for a pending-version-confirmation
+   * question (Spec 2026-06-27-target-manifest-version-unknown-pending-questions,
+   * Task Group 3). When non-null, the manifest detected this library but could
+   * NOT resolve a concrete version, so the framework axis is FIXED and the
+   * architect only needs to supply the version. `null` for every ordinary
+   * group A..J walk question (framework still freely chosen).
+   */
+  prechosenFramework: string | null;
 }
 
-/** Projects a library entry into the pending-question wire DTO. */
-export function toPendingQuestionDto(entry: QuestionLibraryEntry): PendingQuestionDto {
+/**
+ * Projects a library entry into the pending-question wire DTO.
+ *
+ * `prechosenFramework` (Spec 2026-06-27, Task Group 3) is the pre-chosen
+ * framework/library stem for a pending-version-confirmation question surfaced
+ * ahead of the group A..J walk: the manifest detected the library but could not
+ * resolve a concrete version, so the framework is FIXED and only the version is
+ * asked. Defaults to `null` for every ordinary walk question.
+ */
+export function toPendingQuestionDto(
+  entry: QuestionLibraryEntry,
+  prechosenFramework: string | null = null,
+): PendingQuestionDto {
   return {
     decisionCode: entry.code,
     group: entry.group,
@@ -150,5 +170,6 @@ export function toPendingQuestionDto(entry: QuestionLibraryEntry): PendingQuesti
     choices: entry.choices ? [...entry.choices] : null,
     defaultsWhenUnchanged: entry.defaultsWhenUnchanged,
     optional: OPTIONAL_DECISION_CODES.has(entry.code),
+    prechosenFramework,
   };
 }

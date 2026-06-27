@@ -120,7 +120,7 @@ export const SummaryPanel = forwardRef<HTMLDivElement, SummaryPanelProps>(
         data-testid="architect-conversation-summary-panel"
         tabIndex={-1}
       >
-        <h3 style={{ margin: 0 }}>Decisions captured</h3>
+        <h3 style={{ margin: 0 }}>Decisions Captured</h3>
 
         <div className={styles.summaryGroup}>
           <div className={styles.summaryGroupHeader}>Architecture-wide</div>

@@ -51,6 +51,16 @@ export interface Config {
   // Spec 2026-04-04: Legacy Discovery Capability Skeleton
   discoveryServiceBaseUrl: string;
 
+  // OSV Reduction Bridge Kill-Switch
+  // Spec 2026-06-27: Live vuln-reduction recompute + OSV gateway->discovery bridge.
+  // When true (default) the gateway reduction path wires a `DiscoveryOsvBridgeSource`
+  // that POSTs raw OSV queries to
+  // `{discoveryServiceBaseUrl}/discovery/vulnerabilities/osv-query-batch` so the
+  // "Newly introduced" bucket can populate. When false the resolver supplies `null`
+  // and the scan degrades quietly to `no_source` (never blocks). Read from
+  // OSV_REDUCTION_BRIDGE_ENABLED.
+  osvReductionBridgeEnabled: boolean;
+
   // API Migration Validation Service Configuration
   // Spec 2026-05-15: API Behaviour Baseline Capture Service -- Task Group 6
   // Base URL for the new api-migration-validation-service (port 8092). The
@@ -258,6 +268,9 @@ export function loadConfig(): Config {
     // Discovery Service Configuration
     // Spec 2026-04-04: Legacy Discovery Capability Skeleton
     discoveryServiceBaseUrl: process.env.DISCOVERY_SERVICE_URL || 'http://localhost:8091',
+
+    // OSV Reduction Bridge Kill-Switch (Spec 2026-06-27). Default true.
+    osvReductionBridgeEnabled: parseBoolEnv(process.env.OSV_REDUCTION_BRIDGE_ENABLED, true),
 
     // API Migration Validation Service Configuration
     // Spec 2026-05-15: API Behaviour Baseline Capture Service -- Task Group 6

@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "threadId": "f276db51-9267-4414-a2e6-b367f5012018",
+  "turns": [
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        },
+        {
+          "decisionCode": "service.runtime",
+          "framework": "Eclipse Temurin",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Eclipse Temurin (inferred from Java java.version 21)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "services/orders"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": []
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        },
+        {
+          "decisionCode": "service.runtime",
+          "framework": "Eclipse Temurin",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Eclipse Temurin (inferred from Java java.version 21)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": []
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": []
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "services/orders"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        },
+        {
+          "decisionCode": "service.runtime",
+          "framework": "Eclipse Temurin",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Eclipse Temurin (inferred from Java java.version 21)",
+          "tag": "orders-service"
+        }
+      ]
+    },
+    {
+      "kind": "pending-version-confirmations",
+      "entries": [
+        {
+          "decisionCode": "db.engine",
+          "framework": "Postgres",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Postgres (inferred from driver org.postgresql:postgresql)",
+          "tag": "orders-service"
+        },
+        {
+          "decisionCode": "service.runtime",
+          "framework": "Eclipse Temurin",
+          "sourceFile": "services/orders/pom.xml",
+          "sourceQuote": "Eclipse Temurin (inferred from Java java.version 21)",
+          "tag": "orders-service"
+        }
+      ]
+    }
+  ]
+}

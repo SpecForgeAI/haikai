@@ -54,6 +54,9 @@ import {
   selectNextQuestion,
   toPendingQuestionDto,
 } from '../services/architectConversation/questionSequencer';
+import {
+  readLatestPendingVersionConfirmations,
+} from '../services/architectConversation/pendingVersionConfirmations';
 import { buildTargetStateDecisionsPromptText } from '../services/contextResolvers';
 import {
   answerQuestion as coordinatorAnswerQuestion,
@@ -576,6 +579,61 @@ architectConversationRouter.get(
           return [] as TargetStateCapturedDecision[];
         });
       const answeredCodes = new Set(decisions.map((d) => d.decisionCode));
+
+      // -----------------------------------------------------------------
+      // Spec 2026-06-27-target-manifest-version-unknown-pending-questions
+      // (Task Group 3): surface persisted pending-version-confirmations FIRST,
+      // ahead of the deterministic group A..J walk. A manifest upload may have
+      // detected libraries it could NOT resolve a concrete version for; design
+      // A writes NO captured-decision row for those, instead persisting them as
+      // a `pending-version-confirmations` turn on the thread. We read the LATEST
+      // such set and ask those coordinates first, framework PRE-CHOSEN, so the
+      // architect only supplies the version.
+      //
+      // Reconciliation against captured rows (latest-wins): a pending coordinate
+      // whose code now has a captured-decision row (confirmed via the normal
+      // /answer path, marked Not-applicable, or re-uploaded as concrete) is in
+      // `answeredCodes` and therefore DROPS OUT of the pending list — no row
+      // rewrite required, row presence wins. Pending entries are NEVER added to
+      // `answeredCodes`, so they stay excluded from the prompt-ready output and
+      // the close gate (both row-presence driven).
+      //
+      // Fail-soft: a thread-load failure simply yields no pending set, so the
+      // walk degrades to the ordinary group A..J behaviour.
+      const thread = await deps
+        .loadConversation(projectId, targetArchitectureId)
+        .catch((err) => {
+          logger.warn(
+            'architect-conversation next-question: thread load failed; treating pending set as empty',
+            {
+              projectId,
+              targetArchitectureId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+          return { schemaVersion: 1 as const, threadId: '', turns: [] as unknown[] };
+        });
+      const pendingEntry = readLatestPendingVersionConfirmations(thread).find(
+        (entry) =>
+          !answeredCodes.has(entry.decisionCode) &&
+          findEntry(entry.decisionCode) !== undefined,
+      );
+      if (pendingEntry) {
+        // A still-pending coordinate exists: ask it FIRST with the framework
+        // pre-chosen. The walk is not yet exhausted, so the phase stays
+        // `preset-walk` (the open phase opens only once BOTH the pending set
+        // AND the preset walk are exhausted).
+        const pendingLibraryEntry = findEntry(pendingEntry.decisionCode)!;
+        res.status(200).json({
+          question: toPendingQuestionDto(
+            pendingLibraryEntry,
+            pendingEntry.framework,
+          ),
+          phase: 'preset-walk' as ConversationPhase,
+        });
+        return;
+      }
+
       const next = selectNextQuestion({
         answeredCodes,
         relevanceContext: {

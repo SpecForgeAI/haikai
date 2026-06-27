@@ -41,6 +41,7 @@ import { VERSION_UNKNOWN } from '../../config/architect-conversation/frameworkVe
 import {
   ManifestPrecedenceDeps,
   ResolvedTargetVersion,
+  codesWithConcreteCapturedVersion,
   defaultManifestPrecedenceDeps,
   filterCandidatesByPrecedence,
   recomputeResolvedTargetVersions,
@@ -249,6 +250,14 @@ export async function processManifestUpload(
   //    robustness). The POST drives AMS append-only supersession of older
   //    manifest-derived rows (re-upload supersede); manual rows were already
   //    filtered out in step 3 (preserve).
+  // Codes already captured with a CONCRETE version (manifest-derived OR manual):
+  // a later `version-unknown` candidate for such a code is neither retracted nor
+  // re-queued as pending (re-upload rules 5b/5c). Derived from the SAME latest
+  // captured decisions the precedence step just read — no extra fetch.
+  const existingConcreteVersionCodes = codesWithConcreteCapturedVersion(
+    precedence.latestDecisions,
+  );
+
   const writeOutcome = await runManifestAutoAnswer(
     {
       projectId: args.projectId,
@@ -256,6 +265,7 @@ export async function processManifestUpload(
       conversationThreadId: args.conversationThreadId ?? null,
       resolvedManifests,
       candidates: precedence.survivingCandidates,
+      existingConcreteVersionCodes,
     },
     deps,
   );

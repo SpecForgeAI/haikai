@@ -70,6 +70,7 @@ import {
   TierFlags,
 } from '../../../api/architectConversationApi';
 import { ConversationMainPane, type OpenPhasePaneState } from './ConversationMainPane';
+import { ResizableRightColumn } from './ResizableRightColumn';
 import { SummaryPanel } from './SummaryPanel';
 import { VulnerabilityReductionPanel } from '../../Architecture/VulnerabilityReductionPanel';
 import { TechStackPrefillBanner } from './TechStackPrefillBanner';
@@ -85,6 +86,14 @@ import {
   useVulnerabilityReduction,
   type TargetResolvedDependency,
 } from './useVulnerabilityReduction';
+// Spec C (2026-06-27-live-vuln-reduction-recompute-osv-bridge-logging, Task
+// Group 5): source TARGET versions ALSO from the conversation's captured
+// versioned answers (resolved through the frontend mirror of the gateway inverse
+// coordinate map) and MERGE them with the manifest-derived deps (manifest wins).
+import {
+  deriveConversationalTargetDeps,
+  mergeTargetDeps,
+} from './conversationalTargetDeps';
 import {
   getProceedCriticalOverride,
   recommendedVersionForCoordinate,
@@ -363,17 +372,56 @@ export function ArchitectConversationTab({
   >([]);
   const [proceedCriticalOverride, setProceedCriticalOverride] =
     useState<ProceedCriticalOverrideDto | null>(null);
+  // Spec C: a host-bumped token that forces a per-answer (CHEAP, skipOsv) recompute
+  // after EVERY captured decision — belt-and-braces alongside the deps-signature
+  // change the merged target set produces.
+  const [reductionRecomputeToken, setReductionRecomputeToken] = useState(0);
+
+  // Spec C: derive TARGET deps from the conversation's captured versioned answers,
+  // resolved through the frontend mirror of the gateway inverse coordinate map.
+  // Unmapped captured codes are silently skipped (count surfaced via console.debug
+  // in dev only — NEVER guessed, NEVER sent to OSV).
+  const conversationalTargetDeps = useMemo(() => {
+    const { deps, skippedUnmappedCount } = deriveConversationalTargetDeps(
+      envelope?.capturedDecisions,
+    );
+    if (skippedUnmappedCount > 0 && import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug(
+        `[VulnReduction] skipped ${skippedUnmappedCount} unmapped captured versioned answer(s)`,
+      );
+    }
+    return deps;
+  }, [envelope?.capturedDecisions]);
+
+  // Spec C: MERGE conversational + manifest target deps — the MANIFEST concrete
+  // resolved version WINS on coordinate overlap (the manifest is more specific).
+  const mergedTargetDeps = useMemo(
+    () => mergeTargetDeps(conversationalTargetDeps, targetResolvedDeps),
+    [conversationalTargetDeps, targetResolvedDeps],
+  );
 
   const {
     reduction: vulnReduction,
     useThisVersionFor,
     recompute: recomputeReduction,
+    recomputeFull: recomputeReductionFull,
+    scheduleFullRecompute: scheduleReductionOsvRecompute,
   } = useVulnerabilityReduction({
     projectId,
     currentArchitectureId: activeArchitectureId,
     targetArchitectureId: selectedTargetArchitectureId,
-    targetResolvedDependencies: targetResolvedDeps,
+    targetResolvedDependencies: mergedTargetDeps,
+    recomputeToken: reductionRecomputeToken,
   });
+
+  // Spec C: the per-answer live-recompute trigger. Bumps the token (CHEAP delta,
+  // skipOsv:true) immediately and schedules ONE debounced FULL OSV scan (~3s) so
+  // rapid answers coalesce. Called from EVERY captured-decision path.
+  const triggerReductionRecompute = useCallback(() => {
+    setReductionRecomputeToken((t) => t + 1);
+    scheduleReductionOsvRecompute();
+  }, [scheduleReductionOsvRecompute]);
   const vulnDelta = vulnReduction?.delta ?? null;
 
   // Capture the resolved TARGET dependencies (by coordinate) from a manifest
@@ -649,6 +697,8 @@ export function ArchitectConversationTab({
       if (result.errorTurn) appendTurnLocal(result.errorTurn);
       // Advance the walk to the next pending question now this decision is captured.
       void refreshNextQuestion();
+      // Spec C: live-recompute the reduction (CHEAP per-answer + debounced OSV).
+      triggerReductionRecompute();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to capture answer';
       setAnswerError(msg);
@@ -676,6 +726,7 @@ export function ArchitectConversationTab({
       appendTurnLocal(result.cascadeAcceptedTurn);
       setPendingCascade(null);
       void refreshNextQuestion();
+      triggerReductionRecompute();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to accept cascades';
       setCascadeError(msg);
@@ -735,6 +786,7 @@ export function ArchitectConversationTab({
           : { turn: reducedTurn, parentDecisionId: pendingCascade.parentDecisionId },
       );
       void refreshNextQuestion();
+      triggerReductionRecompute();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to override cascade';
       setCascadeError(msg);
@@ -837,6 +889,8 @@ export function ArchitectConversationTab({
           // Mirror the first-class user-raised decision into the snapshot so the
           // SummaryPanel surfaces it immediately (it lands under Architecture-wide).
           appendDecisionRow(decisionRowFromCapturedTurn(result.decisionCapturedTurn));
+          // Spec C: a captured open-phase pick also feeds the reduction estimate.
+          triggerReductionRecompute();
         }
       } catch (err) {
         setOpenPhaseError(
@@ -847,7 +901,7 @@ export function ArchitectConversationTab({
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     },
-    [projectId, selectedTargetArchitectureId, envelope?.threadId],
+    [projectId, selectedTargetArchitectureId, envelope?.threadId, triggerReductionRecompute],
   );
 
   const handleDiscuss = useCallback(
@@ -906,6 +960,9 @@ export function ArchitectConversationTab({
             }
           : prev,
       );
+      // Spec C: conversation close is a THROTTLED full-OSV trigger (the critical
+      // hard-gate evaluation reads the freshest newly_introduced bucket).
+      recomputeReductionFull();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to close conversation';
       setLoadError(msg);
@@ -1024,6 +1081,8 @@ export function ArchitectConversationTab({
     appendTurnLocal(result.decisionCapturedTurn);
     appendTurnLocal(result.exceptionPinnedTurn);
     setExceptionDialog(null);
+    // Spec C: a pinned exception captures a decision -> live recompute.
+    triggerReductionRecompute();
   };
 
   // -------------------------------------------------------------------------
@@ -1048,6 +1107,8 @@ export function ArchitectConversationTab({
     appendDecisionRow(decisionRowFromCapturedTurn(result.decisionCapturedTurn));
     appendTurnLocal(result.editSupersededTurn);
     setReviseDialog(null);
+    // Spec C: a revised answer changes the target set -> live recompute.
+    triggerReductionRecompute();
     setDownstreamBanner(result.editSupersededTurn.affectedDownstreamCodes);
   };
 
@@ -1338,8 +1399,9 @@ export function ArchitectConversationTab({
           </button>
         </div>
       )}
-      <div className={styles.layout}>
-        <ConversationMainPane
+      <ResizableRightColumn
+        left={
+          <ConversationMainPane
           turns={envelope.turns}
           pendingQuestion={pendingQuestion}
           pendingCascadeSummary={pendingCascade}
@@ -1386,40 +1448,35 @@ export function ArchitectConversationTab({
                       : chosenVersion,
                     conversationThreadId: envelope.threadId ?? null,
                   });
-                  // Recompute-on-change + advance, NON-BLOCKING.
+                  // Recompute-on-change + advance, NON-BLOCKING. The cheap
+                  // recompute lands immediately; a debounced full OSV scan follows
+                  // (Spec C throttle).
                   recomputeReduction();
+                  scheduleReductionOsvRecompute();
                   void refreshEnvelope();
                   void refreshNextQuestion();
                 }}
               />
             );
           }}
-        />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <SummaryPanel
-            ref={summaryPanelRef}
-            decisions={envelope.capturedDecisions}
-            onReviseDecision={setReviseDialog}
-            onPreviewPromptOutput={() => void handlePreviewPromptOutput()}
           />
-          {/* Spec 4 (Task Group 7.3): the PERSISTENT, revisitable estimated-
-              reduction panel. Reads the ONE shared delta (`vulnDelta`); RECOMPUTES
-              on a manifest re-upload / manual answer edit because the reduction
-              hook re-runs when the captured target deps change (the Spec 3 iterate
-              loop) -- it never holds a stale snapshot. Hidden entirely until a
-              target snapshot exists (null delta). Labelled an ESTIMATE by the
-              panel itself. */}
-          <VulnerabilityReductionPanel
-            delta={vulnDelta}
-            osvNote={vulnReduction?.osv && !vulnReduction.osv.available ? vulnReduction.osv.note ?? null : null}
-            heading="Estimated vulnerability reduction"
-            testIdSuffix="conversation"
-          />
-          {/* Spec 2026-06-24-target-dependency-manifest-auto-answer (Spec 3,
-              Task Group 5): the target dependency-manifest upload surface. On a
-              successful upload the conversation envelope is refreshed so the
-              auto-answered captured-decision rows show in the SummaryPanel, and
-              the question walk advances past the now-answered codes. */}
+        }
+        right={
+          /* Spec 2026-06-27 (Task Group 3): the right column scrolls
+             INDEPENDENTLY of the transcript. It fills the bounded grid row
+             (`height: 100%` + `minHeight: 0`) and scrolls its own overflow;
+             the resize handle is a sibling in `.rightColumn`, so it is never
+             clipped by this scroll container. */
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem',
+              height: '100%',
+              minHeight: 0,
+              overflowY: 'auto',
+            }}
+          >
           {/* Spec 2026-06-26-target-state-decisions-file-import (Spec 3): the
               "Manually Answer Target State" decisions-file upload, JUST ABOVE the
               manifest upload. The two bulk inputs are mutually exclusive — staging
@@ -1440,6 +1497,11 @@ export function ArchitectConversationTab({
               void refreshNextQuestion();
             }}
           />
+          {/* Spec 2026-06-24-target-dependency-manifest-auto-answer (Spec 3,
+              Task Group 5): the target dependency-manifest upload surface. On a
+              successful upload the conversation envelope is refreshed so the
+              auto-answered captured-decision rows show in the SummaryPanel, and
+              the question walk advances past the now-answered codes. */}
           <ManifestUploadPanel
             projectId={projectId}
             targetArchitectureId={selectedTargetArchitectureId}
@@ -1456,16 +1518,38 @@ export function ArchitectConversationTab({
               // Spec 4: capture the resolved target deps so the reduction can
               // recompute against the (re-)uploaded manifest (the iterate loop).
               captureTargetDepsFromUpload(response);
-              recomputeReduction();
+              // Spec C: a manifest upload is a THROTTLED full-OSV trigger.
+              recomputeReductionFull();
               void refreshEnvelope();
               void refreshNextQuestion();
             }}
             onManualEdit={() => {
-              // A manual answer edit also recomputes the reduction.
+              // A manual answer edit recomputes the reduction (cheap) and schedules
+              // a debounced full OSV scan (Spec C throttle).
               recomputeReduction();
+              scheduleReductionOsvRecompute();
               void refreshEnvelope();
               void refreshNextQuestion();
             }}
+          />
+          <SummaryPanel
+            ref={summaryPanelRef}
+            decisions={envelope.capturedDecisions}
+            onReviseDecision={setReviseDialog}
+            onPreviewPromptOutput={() => void handlePreviewPromptOutput()}
+          />
+          {/* Spec 4 (Task Group 7.3): the PERSISTENT, revisitable estimated-
+              reduction panel. Reads the ONE shared delta (`vulnDelta`); RECOMPUTES
+              on a manifest re-upload / manual answer edit because the reduction
+              hook re-runs when the captured target deps change (the Spec 3 iterate
+              loop) -- it never holds a stale snapshot. Hidden entirely until a
+              target snapshot exists (null delta). Labelled an ESTIMATE by the
+              panel itself. */}
+          <VulnerabilityReductionPanel
+            delta={vulnDelta}
+            osvNote={vulnReduction?.osv && !vulnReduction.osv.available ? vulnReduction.osv.note ?? null : null}
+            heading="Estimated Vulnerability Reduction"
+            testIdSuffix="conversation"
           />
           <CloseConversationFlow
             decisions={envelope.capturedDecisions}
@@ -1490,8 +1574,9 @@ export function ArchitectConversationTab({
             proceedCriticalOverride={proceedCriticalOverride}
             onProceedCriticalOverridePersisted={setProceedCriticalOverride}
           />
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       {exceptionDialog && (
         <ExceptionSubDialog

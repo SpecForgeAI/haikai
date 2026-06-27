@@ -63,6 +63,7 @@ import {
   defaultManifestUploadOrchestratorDeps,
   processManifestUpload,
 } from '../services/targetManifest/manifestUploadOrchestrator';
+import type { PendingVersionConfirmationEntry } from '../services/architectConversation/turnShape';
 import {
   ConfirmedManifestArtifact,
   buildConfirmedManifestArtifacts,
@@ -273,6 +274,16 @@ export interface TargetManifestAutoAnswerSlice {
    * Also PERSISTED on the `target_manifest_artifacts` store (Task Group 7).
    */
   freeFacts: string[];
+  /**
+   * Version-unknown manifest coordinates DIVERTED out of the captured-decision
+   * write path into the persisted pending-version-confirmation set (Spec
+   * 2026-06-27, design A). These wrote NO captured row and are NOT represented in
+   * `resolvedTargetVersions` as auto-answered captures for the UI — they are
+   * surfaced separately as an informational "Pending version confirmation (N)"
+   * affordance and asked FIRST in the conversation (framework pre-chosen). The
+   * normal `/answer` path captures the row once the user confirms the version.
+   */
+  pendingVersionConfirmations: PendingVersionConfirmationEntry[];
 }
 
 export interface TargetManifestUploadResponse {
@@ -694,6 +705,8 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
       resolvedTargetVersions: orchestrated.resolvedTargetVersions,
       confirmedManifests,
       freeFacts: orchestrated.freeFacts,
+      pendingVersionConfirmations:
+        orchestrated.writeOutcome.pendingVersionConfirmations,
     },
   };
 }

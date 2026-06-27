@@ -74,6 +74,13 @@ export interface RightHandPanelShellProps {
   defaultOpen?: boolean;
   /** Fired when the user fully closes the panel via the header close (✕). */
   onClose: () => void;
+  /**
+   * Overflow behaviour for the content wrapper hosting `children`. Defaults to
+   * 'auto' (the wrapper scrolls, the long-standing behaviour Discovery relies
+   * on). The Architect Conversation passes 'hidden' so its inner height chain
+   * resolves and ONLY its transcript scrolls (Spec 2026-06-27, Task Group 3).
+   */
+  contentOverflow?: 'auto' | 'hidden';
   children: ReactNode;
 }
 
@@ -84,6 +91,7 @@ export function RightHandPanelShell({
   collapsedLabel = 'Chat',
   defaultOpen = true,
   onClose,
+  contentOverflow = 'auto',
   children,
 }: RightHandPanelShellProps) {
   // Versioned (-2) so the new 50%-of-viewport default supersedes any width a
@@ -236,8 +244,16 @@ export function RightHandPanelShell({
         </div>
       </div>
 
-      {/* Content -- the hosted structured conversation manages its own layout */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>{children}</div>
+      {/* Content -- the hosted structured conversation manages its own layout.
+          The overflow is caller-controlled: Discovery keeps the default 'auto'
+          (this wrapper scrolls); the Architect Conversation passes 'hidden' so
+          its bounded inner height chain makes ONLY its transcript scroll. */}
+      <div
+        style={{ flex: 1, minHeight: 0, overflow: contentOverflow }}
+        data-testid="rhs-panel-content"
+      >
+        {children}
+      </div>
     </div>
   );
 }

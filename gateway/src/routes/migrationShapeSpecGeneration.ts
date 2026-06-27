@@ -126,6 +126,11 @@ migrationShapeSpecGenerationRouter.post(
         maxBaselineItems: body.maxBaselineItems,
         autoRunPass2: body.autoRunPass2,
         workstreamId: body.workstreamId,
+        // Selective generation: when the workspace sends an explicit work-item
+        // whitelist (the "Generate specs for selected" action), forward it so
+        // the handler's selectEligibleStories restricts the batch to exactly
+        // those stories. Omitted/empty == "all eligible" (unchanged behaviour).
+        targetWorkItemIds: body.targetWorkItemIds,
         // In-Product Spec Editor + Confirm-Overwrite (2026-05-20, Task Group 5):
         // pass through the overwrite flag + allow-list so the handler's
         // pre-flight + filter step (applyManuallyEditedPreFlight) can split

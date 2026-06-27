@@ -18,6 +18,8 @@ import { startCleanupInterval, logger } from './services';
 import { initializeRegistries } from './services/registryLoader';
 import { runMigrationBootRecovery } from './services/migrationBootRecovery';
 import { buildResultsCallbackUrl } from './routes/migrationExecution';
+import { setTargetOsvSourceResolver } from './routes/vulnerabilityReduction';
+import { DiscoveryOsvBridgeSource } from './services/vulnerabilityReduction/discoveryOsvBridgeSource';
 
 // Initialize Express application
 const app = express();
@@ -159,6 +161,19 @@ app.use('/api/v1', vulnerabilitiesRouter);
 // /api/v1/projects/:projectId/architectures/:architectureId/proceed-critical-override
 // to the Task Group 4 AMS proceed-critical override audit-trio endpoint.
 app.use('/api/v1', vulnerabilityReductionRouter);
+// OSV gateway->discovery bridge wiring (Spec 2026-06-27 Live vuln-reduction
+// recompute + OSV bridge, Task Group 2). Wire the production OSV source resolver
+// ONCE here (not lazily in the route): behind the OSV_REDUCTION_BRIDGE_ENABLED
+// kill-switch (default true), supply a DiscoveryOsvBridgeSource that POSTs raw
+// queries to the discovery raw-query endpoint so the reduction path's
+// "Newly introduced" bucket can populate. When the flag is false the resolver
+// returns null and the scan degrades quietly to `no_source`
+// (resolveTargetOsvSource already catches a resolver throw and degrades).
+setTargetOsvSourceResolver(() =>
+  getConfig().osvReductionBridgeEnabled
+    ? new DiscoveryOsvBridgeSource(getConfig().discoveryServiceBaseUrl)
+    : null,
+);
 // Migration Shape-Spec Batch Generation routes (Spec 2026-05-19 -- follow-up
 // wiring). Mounted at /api/v1 so the router's internal paths resolve to
 // /api/v1/projects/:projectId/migration-books-of-work/:bookId/spec-generations/

@@ -75,7 +75,19 @@ export type ConversationTurnKind =
   | 'user-pick'
   // (5) A single free-form-discussion message in sub-phase (b) — `speaker`
   //     discriminates the user vs the assistant role within the one kind.
-  | 'free-form-discussion';
+  | 'free-form-discussion'
+  // ---------------------------------------------------------------------------
+  // Spec 2026-06-27 Version-unknown manifest entries become pending questions
+  // (Spec B, design A). A single durable turn carrying the FULL pending-version-
+  // confirmation set recomputed on each manifest upload: coordinates detected in
+  // the manifest whose version degraded to the `version-unknown` sentinel and are
+  // therefore NOT written as captured-decision rows. Surfaced FIRST in the
+  // next-question walk (framework pre-chosen) and only captured via the normal
+  // `/answer` path once the user confirms the version. Recomputed/REPLACED on
+  // every upload; read latest-wins so a single authoritative pending turn
+  // governs. Follows the `tier-confirmation` typed-payload precedent. See
+  // PendingVersionConfirmationsTurn.
+  | 'pending-version-confirmations';
 
 // ---------------------------------------------------------------------------
 // Shared payload bits
@@ -480,6 +492,49 @@ export interface FreeFormDiscussionTurn {
 }
 
 // ---------------------------------------------------------------------------
+// Pending-version-confirmation turn payload (Spec
+// 2026-06-27-target-manifest-version-unknown-pending-questions, Task Group 1).
+// A single durable turn that carries the FULL pending set, recomputed and
+// REPLACED on every manifest upload (read latest-wins -> one authoritative
+// pending turn). Follows the `tier-confirmation` interactive-turn precedent:
+// a typed payload appended verbatim via `targetStateConversationStore`.
+// ---------------------------------------------------------------------------
+
+/**
+ * One pending-version-confirmation entry: a manifest coordinate whose version
+ * degraded to the `version-unknown` sentinel, so NO captured-decision row was
+ * written. All fields are carried straight from the driving
+ * `ManifestAnswerCandidate` so the next-question walk can surface it FIRST with
+ * the framework pre-chosen, the user only supplying the version.
+ */
+export interface PendingVersionConfirmationEntry {
+  /** The versioned decision code this pending coordinate maps to. */
+  decisionCode: string;
+  /** Pre-chosen framework/library stem (the bare stem; version still unknown). */
+  framework: string;
+  /** `sourceFile` provenance -- the tagged manifest path the coordinate came from. */
+  sourceFile: string;
+  /** `sourceQuote` provenance -- the resolved coordinate/version evidence. */
+  sourceQuote: string;
+  /** Target module/service tag (carried for logging/recompute context). */
+  tag: string;
+}
+
+/**
+ * Pending-version-confirmations turn -- carries the FULL pending set from the
+ * latest manifest upload. The set is recomputed and REPLACED on every upload;
+ * readers take the LATEST such turn (latest-wins) so exactly one authoritative
+ * pending set governs. An empty `entries` array is meaningful: it CLEARS the
+ * pending set (e.g. every previously-pending coordinate has since been confirmed
+ * or re-uploaded as concrete).
+ */
+export interface PendingVersionConfirmationsTurn {
+  kind: 'pending-version-confirmations';
+  /** The full pending set as of the latest manifest upload (may be empty). */
+  entries: PendingVersionConfirmationEntry[];
+}
+
+// ---------------------------------------------------------------------------
 // Union
 // ---------------------------------------------------------------------------
 
@@ -503,11 +558,12 @@ export type ConversationTurn =
   | UserRaisedTopicTurn
   | OptionProposalTurn
   | UserPickTurn
-  | FreeFormDiscussionTurn;
+  | FreeFormDiscussionTurn
+  | PendingVersionConfirmationsTurn;
 
 /**
  * Exhaustiveness helper for switch statements walking the turn union — keeps
- * the closed 20-kind union honest at type-check time. Any consumer `switch`
+ * the closed 21-kind union honest at type-check time. Any consumer `switch`
  * that ends in `default: assertExhaustiveTurnKind(turn.kind)` fails to compile
  * the moment a new union member is added but not handled (the argument is no
  * longer narrowed to `never`).

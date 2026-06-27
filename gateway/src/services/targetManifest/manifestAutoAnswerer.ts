@@ -52,6 +52,8 @@ import {
   CreateCapturedDecisionRequestBody,
 } from '../architectConversation/targetStateCapturedDecisionsWriter';
 import type { ArchitectLlmClient } from '../architectConversation/architectLlmClient';
+import { writePendingVersionConfirmations as defaultWritePendingVersionConfirmations } from '../architectConversation/pendingVersionConfirmations';
+import type { PendingVersionConfirmationEntry } from '../architectConversation/turnShape';
 import {
   BUILD_TOOL_CODE,
   buildToolAnswerForEcosystem,
@@ -83,10 +85,18 @@ export interface ManifestAutoAnswererDeps {
    * fail-open).
    */
   llmClient?: ArchitectLlmClient;
+  /**
+   * Persistence seam for the recomputed pending-version-confirmation set (Spec
+   * 2026-06-27-target-manifest-version-unknown-pending-questions). Injected for
+   * the test seam; OPTIONAL so existing inline-constructed deps keep compiling —
+   * the run falls back to the real thread-store writer when absent.
+   */
+  writePendingVersionConfirmations?: typeof defaultWritePendingVersionConfirmations;
 }
 
 export const defaultManifestAutoAnswererDeps: ManifestAutoAnswererDeps = {
   postCapturedDecision: defaultPostCapturedDecision,
+  writePendingVersionConfirmations: defaultWritePendingVersionConfirmations,
 };
 
 // ---------------------------------------------------------------------------
@@ -153,6 +163,14 @@ export interface ManifestAutoAnswerOutcome {
   failureReason: string | null;
   /** The de-duplicated candidate set that was attempted (provenance/inspection). */
   candidates: ManifestAnswerCandidate[];
+  /**
+   * Version-unknown VERSIONED coordinates DIVERTED out of the write path into the
+   * persisted pending-version-confirmation set (Spec 2026-06-27). These wrote NO
+   * captured-decision row and do NOT count toward `rowsWritten` / partial-failure
+   * handling. This is the FULL recomputed pending set persisted (replace,
+   * latest-wins) at the end of the run via `writePendingVersionConfirmations`.
+   */
+  pendingVersionConfirmations: PendingVersionConfirmationEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +414,15 @@ export interface RunManifestAutoAnswerArgs {
    * When omitted, candidates are derived from `resolvedManifests`.
    */
   candidates?: readonly ManifestAnswerCandidate[];
+  /**
+   * Decision codes that ALREADY have a captured row carrying a CONCRETE (non-
+   * sentinel) version (manifest-derived OR manual). A `version-unknown` candidate
+   * for such a code is NEITHER written NOR added to the recomputed pending set
+   * (re-upload rules 5b/5c: a degraded result never retracts a concrete capture).
+   * Defaults to empty. The orchestrator supplies this from the latest captured
+   * decisions it already reads for manual-wins precedence.
+   */
+  existingConcreteVersionCodes?: ReadonlySet<string>;
 }
 
 /**
@@ -415,12 +442,58 @@ export async function runManifestAutoAnswer(
     : deriveManifestAnswerCandidates(args.resolvedManifests);
 
   const conversationThreadId = args.conversationThreadId ?? null;
+  const existingConcreteVersionCodes =
+    args.existingConcreteVersionCodes ?? new Set<string>();
+  const writePending =
+    deps.writePendingVersionConfirmations ?? defaultWritePendingVersionConfirmations;
 
   const writtenCodes: string[] = [];
   const partialFailureCodes: string[] = [];
+  const pendingEntries: PendingVersionConfirmationEntry[] = [];
   let firstFailure: { code: string; error: unknown } | null = null;
 
   for (const candidate of candidates) {
+    // DIVERT (Spec 2026-06-27): a VERSIONED candidate whose version degraded to
+    // the `version-unknown` sentinel is NOT a fully-captured decision. It writes
+    // NO captured-decision row; instead it is collected into the recomputed
+    // pending set (surfaced FIRST in the next-question walk, framework pre-chosen).
+    // The diversion runs BEFORE the abort check so the pending set stays COMPLETE
+    // even if an earlier concrete write failed, and a pending entry NEVER counts
+    // toward `rowsWritten` or `partialFailureCodes`. Single-choice (non-versioned)
+    // candidates carry `version === ''` and never match — they are unchanged.
+    if (candidate.answerKind !== 'single-choice' && candidate.version === VERSION_UNKNOWN) {
+      // Re-upload rules 5b/5c: a coordinate already captured with a CONCRETE
+      // version (manifest-derived OR manual) is neither retracted nor re-queued as
+      // pending. (Manual rows are also dropped upstream by precedence filtering;
+      // this is the belt-and-braces check the orchestrator feeds.)
+      if (existingConcreteVersionCodes.has(candidate.decisionCode)) {
+        logger.debug(
+          'target-manifest auto-answer: version-unknown skipped; concrete capture preserved (no write, no pending)',
+          {
+            projectId: args.projectId,
+            targetArchitectureId: args.targetArchitectureId,
+            decisionCode: candidate.decisionCode,
+          },
+        );
+        continue;
+      }
+      pendingEntries.push({
+        decisionCode: candidate.decisionCode,
+        framework: candidate.framework,
+        sourceFile: candidate.sourceFile,
+        sourceQuote: candidate.sourceQuote,
+        tag: candidate.tag,
+      });
+      logger.debug(
+        'target-manifest auto-answer: version-unknown diverted to pending (no captured row)',
+        {
+          projectId: args.projectId,
+          targetArchitectureId: args.targetArchitectureId,
+          decisionCode: candidate.decisionCode,
+        },
+      );
+      continue;
+    }
     if (firstFailure) {
       // Abort remaining writes — surface the rest as partial failures.
       partialFailureCodes.push(candidate.decisionCode);
@@ -459,6 +532,25 @@ export async function runManifestAutoAnswer(
       }).`
     : null;
 
+  // Persist the FULL recomputed pending set (replace; readers take latest-wins so
+  // a single authoritative pending turn governs). An EMPTY set is meaningful — it
+  // CLEARS any prior pending turn (an upload that resolved everything). Fail-soft:
+  // a persistence hiccup is logged and degraded to a no-op so a thread-store error
+  // never throws through the auto-answer flow (mirrors the never-throw write loop).
+  try {
+    await writePending(args.projectId, args.targetArchitectureId, pendingEntries);
+  } catch (err) {
+    logger.warn(
+      'target-manifest auto-answer: failed to persist pending-version-confirmations (degraded to no-op)',
+      {
+        projectId: args.projectId,
+        targetArchitectureId: args.targetArchitectureId,
+        pendingCount: pendingEntries.length,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+  }
+
   return {
     writtenCodes,
     rowsWritten: writtenCodes.length,
@@ -466,5 +558,6 @@ export async function runManifestAutoAnswer(
     aborted: firstFailure !== null,
     failureReason,
     candidates,
+    pendingVersionConfirmations: pendingEntries,
   };
 }

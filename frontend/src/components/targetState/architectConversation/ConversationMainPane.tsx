@@ -26,7 +26,7 @@
  *     "Done / Close" transition controls (driven by the parent via `openPhase`).
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   OPT_OUT_ANSWER_VALUE,
   type CascadeSummaryEntry,
@@ -262,6 +262,20 @@ export function ConversationMainPane({
     onScrolledToDecision?.();
   }, [scrollToDecisionId, turns, onScrolledToDecision]);
 
+  // Spec 2026-06-27 (Task Group 3): auto-scroll the transcript to the newest
+  // turn. ON by default -- when a turn is appended (or the pending question
+  // changes) we pin the transcript to the bottom so the latest question /
+  // answer is visible without manual scrolling. We bail out while a deliberate
+  // "view in conversation" scroll is in flight (`scrollToDecisionId`) so we
+  // never yank the user away from a decision they navigated to.
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollToDecisionId) return;
+    const el = transcriptRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [turns.length, pendingDecisionCode, scrollToDecisionId]);
+
   const capture = (value: string | string[], answerText?: string) => {
     if (!pendingQuestion) return;
     void onCaptureAnswer(pendingQuestion.decisionCode, value, answerText);
@@ -357,6 +371,7 @@ export function ConversationMainPane({
         </label>
       </div>
       <div
+        ref={transcriptRef}
         className={styles.transcript}
         data-testid="architect-conversation-transcript"
       >
@@ -408,6 +423,11 @@ export function ConversationMainPane({
             <VersionedAnswerControl
               decisionCode={pendingQuestion.decisionCode}
               frameworkChoices={choices}
+              /* Spec 2026-06-27: a PENDING versioned question (version-unknown
+                 manifest coordinate asked first) arrives with the framework stem
+                 PRE-CHOSEN; the control then fixes the framework and only the
+                 version is filled. Null/undefined => unchanged behaviour. */
+              prechosenFramework={pendingQuestion.prechosenFramework ?? null}
               autoSelect={autoSelectVersion}
               busy={answerBusy}
               onSubmit={handleVersionedSubmit}

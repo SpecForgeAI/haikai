@@ -36,6 +36,7 @@ import {
   shortenManifestPath,
   uploadTargetManifests,
   type ManifestServiceOption,
+  type PendingVersionConfirmationEntry,
   type ResolvedTargetVersion,
   type SelectedManifest,
   type TargetManifestUploadResponse,
@@ -277,6 +278,15 @@ export function ManifestUploadPanel({
     return base.map((d) => manualOverrides[d.decisionCode] ?? d);
   }, [response, manualOverrides]);
 
+  // Spec 2026-06-27: version-unknown coordinates arrive as a SEPARATE pending
+  // set (NOT captured decisions). They are surfaced informationally as
+  // "Pending version confirmation (N)" -- confirmed in the conversation
+  // (framework pre-chosen), never edited/captured here.
+  const pendingVersionConfirmations: PendingVersionConfirmationEntry[] = useMemo(
+    () => response?.autoAnswer?.pendingVersionConfirmations ?? [],
+    [response],
+  );
+
   // Tier-2 free-fact edit/remove (local-only; informational list -- never a
   // question or a captured-decision write).
   const removeFreeFact = useCallback((index: number) => {
@@ -292,13 +302,7 @@ export function ManifestUploadPanel({
       data-testid="manifest-upload-panel"
       aria-label="Target dependency manifests"
     >
-      <h3 className={styles.heading}>Target dependency manifests</h3>
-      <p className={styles.subheading}>
-        Upload the target <code>pom.xml</code> / <code>package.json</code> for a
-        module to auto-answer its framework, library, build-tool and driver
-        decisions. Pick the target service for each manifest. An optional{' '}
-        <code>package-lock.json</code> pins exact npm versions.
-      </p>
+      <h3 className={styles.heading}>Target Dependency Manifests</h3>
 
       {/* --- file picker --- */}
       <div className={styles.dropRow}>
@@ -452,6 +456,50 @@ export function ManifestUploadPanel({
             ))}
           </ul>
         </>
+      )}
+
+      {/* --- Pending version confirmations (Spec 2026-06-27): INFORMATIONAL,
+          NOT captured decisions. Version-unknown coordinates the conversation
+          asks FIRST (framework pre-chosen); listed here so a detected library is
+          never silently lost, kept SEPARATE from "Decisions Captured". --- */}
+      {pendingVersionConfirmations.length > 0 && (
+        <section
+          className={styles.freeFactsSection}
+          data-testid="manifest-pending-version-section"
+          aria-label="Pending version confirmations"
+        >
+          <p
+            className={styles.sectionLabel}
+            data-testid="manifest-pending-version-heading"
+          >
+            Pending version confirmation ({pendingVersionConfirmations.length})
+          </p>
+          <p className={styles.freeFactsHint}>
+            Detected without a resolvable version &mdash; confirm each in the
+            conversation. These are NOT captured decisions yet.
+          </p>
+          <ul
+            className={styles.freeFactsList}
+            data-testid="manifest-pending-version-list"
+          >
+            {pendingVersionConfirmations.map((entry, index) => (
+              <li
+                key={`${entry.decisionCode}-${index}`}
+                className={styles.freeFactItem}
+                data-testid="manifest-pending-version-item"
+              >
+                <span className={styles.freeFactLabel}>{entry.framework}</span>
+                <span className={styles.kindBadge}>{entry.decisionCode}</span>
+                {entry.sourceFile && (
+                  <code className={styles.sourceQuote}>
+                    {shortenManifestPath(entry.sourceFile)}
+                  </code>
+                )}
+                {entry.tag && <span className={styles.kindBadge}>{entry.tag}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* --- Tier-2 free facts (Spec 2026-06-26 TG9): informational, NOT
@@ -697,7 +745,7 @@ function AutoAnsweredDecision({
         >
           {provenanceBadgeText(decision)}
         </span>
-        {!editing && (
+        {!editing && !isUnknown && (
           <button
             type="button"
             className={styles.linkButton}
@@ -719,11 +767,16 @@ function AutoAnsweredDecision({
         </div>
       )}
 
-      {/* version-unknown first-class affordance. */}
-      {isUnknown && !editing && (
-        <div className={styles.versionUnknownNote} data-testid="manifest-version-unknown-note">
-          Version could not be resolved from the manifest. Edit to supply the
-          exact version.
+      {/* Spec 2026-06-27: a version-unknown coordinate is READ-ONLY here. The
+          version is NOT captured in this panel -- it is confirmed in the
+          conversation (framework pre-chosen). No inline edit, no competing
+          manual capture for unknown rows. */}
+      {isUnknown && (
+        <div
+          className={styles.versionUnknownNote}
+          data-testid="manifest-version-pending-note"
+        >
+          Pending version confirmation &mdash; confirm in the conversation.
         </div>
       )}
 

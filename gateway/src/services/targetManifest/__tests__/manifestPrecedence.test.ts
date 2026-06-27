@@ -159,6 +159,13 @@ function makeOrchestratorDeps(latest: TargetStateCapturedDecision[]): {
         supersededById: null,
       };
     }) as ManifestUploadOrchestratorDeps['postCapturedDecision'],
+    // Stub the pending-version-confirmation thread write (Spec 2026-06-27): a
+    // version-unknown candidate (e.g. the inferred db.engine) now diverts to a
+    // persisted pending set instead of a captured row. Stubbed here so the
+    // orchestrator never touches the real disk/AMS-backed thread store in this
+    // unit test.
+    writePendingVersionConfirmations: (async () =>
+      undefined) as ManifestUploadOrchestratorDeps['writePendingVersionConfirmations'],
   };
   return { deps, postCalls };
 }

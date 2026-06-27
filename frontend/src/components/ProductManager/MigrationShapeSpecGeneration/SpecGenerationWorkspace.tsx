@@ -88,6 +88,12 @@ export interface SpecGenerationWorkspaceProps {
    * Optional href builder for the "Open Implement tab" link in the drawer.
    */
   buildImplementTabHref?: (workItemId: string) => string;
+  /**
+   * Optional "back to the book-of-work review screen" navigation callback.
+   * Rendered as a header button so the user can move between selecting/saving
+   * stories (review) and generating their specs (here).
+   */
+  onBackToReview?: () => void;
 }
 
 // ============================================================================
@@ -101,6 +107,7 @@ export function SpecGenerationWorkspace({
   initialDrawerWorkItemId,
   buildWorkItemHref,
   buildImplementTabHref,
+  onBackToReview,
 }: SpecGenerationWorkspaceProps) {
   // ----- Summary + rows state ------------------------------------------------
   const [summary, setSummary] = useState<SpecGenerationSummaryDto | null>(null);
@@ -134,6 +141,14 @@ export function SpecGenerationWorkspace({
   // ----- Drawer state (Group 11 + Group 12) ---------------------------------
   const [drawerRow, setDrawerRow] = useState<SpecGenerationRow | null>(null);
   const [initialDrawerOpened, setInitialDrawerOpened] = useState(false);
+
+  // ----- Selective generation: chosen WorkItem ids --------------------------
+  // The user ticks a subset of saved stories and clicks "Generate specs for
+  // selected" so ONLY those stories generate. Keyed on workItemId (the same id
+  // the gateway's targetWorkItemIds whitelist + the Implement tab read).
+  const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   // --------------------------------------------------------------------------
   // Fetchers
@@ -203,12 +218,20 @@ export function SpecGenerationWorkspace({
    * start the gateway reported, or null if the call failed.
    */
   const runSingleBatch = useCallback(
-    async (opts: { regenerateAll: boolean; skipBlockedStories: boolean }) => {
+    async (opts: {
+      regenerateAll: boolean;
+      skipBlockedStories: boolean;
+      /** When set, restrict the batch to exactly these WorkItem ids. */
+      targetWorkItemIds?: string[];
+      /** Optional batch-size override (used so all selected ids fit one batch). */
+      batchSize?: number;
+    }) => {
       setActionError(null);
       // Approximate the batch size from the latest summary; the gateway is
       // authoritative on the final size but the banner just needs a sensible
-      // upper bound.
-      const expectedSize = summary?.nextBatchSize ?? 25;
+      // upper bound. A targeted run shows the selection count instead.
+      const expectedSize =
+        opts.batchSize ?? opts.targetWorkItemIds?.length ?? summary?.nextBatchSize ?? 25;
       setCurrentBatchSize(expectedSize);
       setCurrentStoryIndexInBatch(0);
       setBatchInProgress(true);
@@ -218,6 +241,8 @@ export function SpecGenerationWorkspace({
           bookOfWorkId,
           regenerateAll: opts.regenerateAll,
           skipBlockedStories: opts.skipBlockedStories,
+          targetWorkItemIds: opts.targetWorkItemIds,
+          batchSize: opts.batchSize,
         });
         // Append the per-story results to the local row list. We dedupe on
         // workItemId so a re-attempt of a row replaces the prior entry.
@@ -390,6 +415,55 @@ export function SpecGenerationWorkspace({
   );
 
   // --------------------------------------------------------------------------
+  // Selective generation handlers
+  // --------------------------------------------------------------------------
+
+  const handleToggleSelect = useCallback((workItemId: string) => {
+    setSelectedWorkItemIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(workItemId)) next.delete(workItemId);
+      else next.add(workItemId);
+      return next;
+    });
+  }, []);
+
+  // Toggle every selectable (workItemId-bearing) row currently VISIBLE under
+  // the active filters: if all are already selected, clear them; else add them.
+  const handleToggleSelectAll = useCallback(() => {
+    const visibleIds = filteredRows
+      .map((r) => r.workItemId)
+      .filter((id): id is string => !!id);
+    setSelectedWorkItemIds((prev) => {
+      const allSelected =
+        visibleIds.length > 0 && visibleIds.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  }, [filteredRows]);
+
+  // Generate specs for ONLY the ticked stories. The gateway restricts the
+  // batch to these workItemIds; batchSize is set to the selection size so they
+  // all process in a single batch. The generated spec lands on each story's
+  // WorkItem (same id the Implement tab reads), ready for the IV service.
+  const handleGenerateSelected = useCallback(
+    (opts: { regenerateAll: boolean; skipBlockedStories: boolean }) => {
+      const targetWorkItemIds = Array.from(selectedWorkItemIds);
+      if (targetWorkItemIds.length === 0) return;
+      void runSingleBatch({
+        ...opts,
+        targetWorkItemIds,
+        batchSize: targetWorkItemIds.length,
+      });
+    },
+    [selectedWorkItemIds, runSingleBatch],
+  );
+
+  // --------------------------------------------------------------------------
   // Render
   // --------------------------------------------------------------------------
 
@@ -398,12 +472,22 @@ export function SpecGenerationWorkspace({
       className={styles.workspaceRoot}
       data-testid="msg-workspace-shell"
     >
-      {bookTitle && (
+      {(bookTitle || onBackToReview) && (
         <header
           className={styles.workspaceHeader}
           data-testid="msg-workspace-book-title"
         >
-          <h1 className={styles.workspaceTitle}>{bookTitle}</h1>
+          {onBackToReview && (
+            <button
+              type="button"
+              className={`${styles.button} ${styles.buttonSecondary}`}
+              onClick={onBackToReview}
+              data-testid="msg-workspace-back-to-review"
+            >
+              {'←'} Back to plan review
+            </button>
+          )}
+          {bookTitle && <h1 className={styles.workspaceTitle}>{bookTitle}</h1>}
         </header>
       )}
 
@@ -430,6 +514,8 @@ export function SpecGenerationWorkspace({
         onGenerateNextBatch={handleGenerateNextBatch}
         onGenerateAll={handleGenerateAll}
         onStopAfterCurrentBatch={handleStopAfterCurrentBatch}
+        selectedCount={selectedWorkItemIds.size}
+        onGenerateSelected={handleGenerateSelected}
       />
 
       <SpecGenerationFilters
@@ -443,6 +529,9 @@ export function SpecGenerationWorkspace({
         batchInProgress={batchInProgress}
         onRetryStory={handleRetryStory}
         onOpenStory={handleOpenStory}
+        selectedWorkItemIds={selectedWorkItemIds}
+        onToggleSelect={handleToggleSelect}
+        onToggleSelectAll={handleToggleSelectAll}
       />
 
       {drawerRow && (

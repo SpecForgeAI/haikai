@@ -133,6 +133,24 @@ export interface ConfirmedManifestArtifact {
   }>;
 }
 
+/**
+ * One detected coordinate whose version could NOT be resolved from the manifest
+ * (Spec 2026-06-27-target-manifest-version-unknown-pending-questions). It is NOT
+ * a captured decision -- it is carried as a PENDING version confirmation the
+ * conversation asks first (framework pre-chosen), only written to a captured row
+ * once the user confirms the exact version. Mirrors the gateway pending-turn
+ * entry shape. Absent-tolerant for older gateway responses.
+ */
+export interface PendingVersionConfirmationEntry {
+  decisionCode: string;
+  /** The pre-chosen framework stem (e.g. `Spring Boot`) the user will version. */
+  framework: string;
+  sourceFile: string | null;
+  sourceQuote: string | null;
+  /** The service/module tag the coordinate was detected under (may be null). */
+  tag: string | null;
+}
+
 /** The auto-answer + hand-off slice (Groups 3/4/6). Null when nothing parsed. */
 export interface TargetManifestAutoAnswerSlice {
   writtenCodes: string[];
@@ -151,6 +169,14 @@ export interface TargetManifestAutoAnswerSlice {
    * Spec 2026-06-26 Task Group 7.
    */
   freeFacts?: string[];
+  /**
+   * Version-unknown coordinates carried as PENDING version confirmations (Spec
+   * 2026-06-27-target-manifest-version-unknown-pending-questions). Detected
+   * libraries with NO resolvable version: NOT captured decisions, surfaced
+   * informationally + asked FIRST in the conversation (framework pre-chosen).
+   * Optional / absent-tolerant for older gateway responses.
+   */
+  pendingVersionConfirmations?: PendingVersionConfirmationEntry[];
 }
 
 /** The full upload response. */

@@ -153,6 +153,16 @@ export interface BatchResultsTableProps {
    * drawer.
    */
   onOpenStory?: (row: SpecGenerationRow) => void;
+  /**
+   * Selective generation: when provided, a leading checkbox column lets the
+   * user pick a subset of saved stories (by `workItemId`) to generate. Only
+   * rows that carry a `workItemId` are selectable. Omit both props to render
+   * the table without any selection affordance (unchanged behaviour).
+   */
+  selectedWorkItemIds?: ReadonlySet<string>;
+  onToggleSelect?: (workItemId: string) => void;
+  /** Toggles selection of every selectable row currently shown. */
+  onToggleSelectAll?: () => void;
 }
 
 export function BatchResultsTable({
@@ -160,7 +170,15 @@ export function BatchResultsTable({
   batchInProgress,
   onRetryStory,
   onOpenStory,
+  selectedWorkItemIds,
+  onToggleSelect,
+  onToggleSelectAll,
 }: BatchResultsTableProps) {
+  const selectable = !!onToggleSelect;
+  const selectableRows = rows.filter((r) => !!r.workItemId);
+  const allSelected =
+    selectableRows.length > 0 &&
+    selectableRows.every((r) => selectedWorkItemIds?.has(r.workItemId as string));
   return (
     <div
       className={styles.tableShell}
@@ -183,6 +201,18 @@ export function BatchResultsTable({
         <table className={styles.table}>
           <thead>
             <tr>
+              {selectable && (
+                <th data-testid="msg-results-col-select">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={() => onToggleSelectAll?.()}
+                    disabled={batchInProgress || selectableRows.length === 0}
+                    aria-label="Select all stories shown"
+                    data-testid="msg-results-select-all"
+                  />
+                </th>
+              )}
               <th>Story</th>
               <th>Parent feature / epic</th>
               <th data-testid="msg-results-col-predicted">Predicted readiness</th>
@@ -230,6 +260,27 @@ export function BatchResultsTable({
                       : undefined
                   }
                 >
+                  {selectable && (
+                    <td
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid={`msg-results-row-${rowKey}-select-cell`}
+                    >
+                      {row.workItemId ? (
+                        <input
+                          type="checkbox"
+                          checked={
+                            selectedWorkItemIds?.has(row.workItemId) ?? false
+                          }
+                          onChange={() => onToggleSelect?.(row.workItemId as string)}
+                          disabled={batchInProgress}
+                          aria-label={`Select ${row.storyTitle ?? 'story'} for generation`}
+                          data-testid={`msg-results-row-${rowKey}-select`}
+                        />
+                      ) : (
+                        <span className={styles.subtle}>-</span>
+                      )}
+                    </td>
+                  )}
                   <td>{row.storyTitle ?? row.workItemId ?? '-'}</td>
                   <td>{row.parentTitle ?? '-'}</td>
                   <td>

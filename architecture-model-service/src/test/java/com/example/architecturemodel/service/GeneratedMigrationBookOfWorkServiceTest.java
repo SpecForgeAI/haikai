@@ -217,6 +217,55 @@ class GeneratedMigrationBookOfWorkServiceTest {
     }
 
     @Test
+    @DisplayName("updateDraft refuses to overwrite a populated book_of_work_json with an empty-items blob (blank Save-Draft wipe guard)")
+    void updateDraftRejectsEmptyItemsWipeOfPopulatedBook() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto created = service.createDraft(
+            projectId, buildCreateRequest(UUID.randomUUID(), UUID.randomUUID()));
+        // Sanity: the created book is populated.
+        assertThat((List<?>) created.bookOfWorkJson().get("items")).isNotEmpty();
+
+        // A blanked client (post mis-mapped save-to-backlog response) PUTs an
+        // empty-items blob. This MUST be ignored so the saved-story stamps and
+        // the whole hierarchy survive -- otherwise spec-generation sees zero
+        // saved stories and the user cannot generate.
+        Map<String, Object> emptyBlob = new LinkedHashMap<>();
+        emptyBlob.put("items", List.of());
+        GeneratedMigrationBookOfWorkDto patch = new GeneratedMigrationBookOfWorkDto(
+            null, null, null, null, null, null, null,
+            null, null, null,
+            emptyBlob,
+            null, null, null, null, null);
+
+        GeneratedMigrationBookOfWorkDto updated = service.updateDraft(projectId, created.id(), patch);
+
+        // The populated book survived the empty-items PATCH.
+        assertThat((List<?>) updated.bookOfWorkJson().get("items")).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("updateDraft still applies a NON-empty book_of_work_json edit (guard does not block real edits)")
+    void updateDraftAppliesNonEmptyBookEdit() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto created = service.createDraft(
+            projectId, buildCreateRequest(UUID.randomUUID(), UUID.randomUUID()));
+
+        Map<String, Object> newBlob = new LinkedHashMap<>();
+        newBlob.put("items", List.of(
+            Map.of("id", "s-1", "type", "story", "saveState", "saved", "workItemId", "wi-1"),
+            Map.of("id", "s-2", "type", "story", "saveState", "saved", "workItemId", "wi-2"),
+            Map.of("id", "s-3", "type", "story", "saveState", "saved", "workItemId", "wi-3")));
+        GeneratedMigrationBookOfWorkDto patch = new GeneratedMigrationBookOfWorkDto(
+            null, null, null, null, null, null, null,
+            null, null, null,
+            newBlob,
+            null, null, null, null, null);
+
+        GeneratedMigrationBookOfWorkDto updated = service.updateDraft(projectId, created.id(), patch);
+        assertThat((List<?>) updated.bookOfWorkJson().get("items")).hasSize(3);
+    }
+
+    @Test
     @DisplayName("updateDraft status transitions draft -> reviewed -> saved are accepted")
     void updateDraftStatusTransitionsAccepted() {
         UUID projectId = UUID.randomUUID();

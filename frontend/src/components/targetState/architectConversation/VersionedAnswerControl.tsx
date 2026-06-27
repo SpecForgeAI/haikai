@@ -72,6 +72,14 @@ export interface VersionedAnswerControlProps {
    */
   frameworkChoices: readonly string[];
   /**
+   * Spec 2026-06-27-target-manifest-version-unknown-pending-questions: when set,
+   * this is a PENDING versioned question whose framework stem is PRE-CHOSEN from
+   * the manifest. The control fixes the framework (chips locked, the pre-chosen
+   * stem selected) and reveals the version editor so the user supplies ONLY the
+   * version. Null/undefined => unchanged behaviour (framework starts unselected).
+   */
+  prechosenFramework?: string | null;
+  /**
    * Auto-select toggle state (FR3), threaded from the conversation header.
    * ON (default): chip click immediately commits stem + curated default. OFF:
    * chip click reveals the editable version field + "Save version".
@@ -104,6 +112,7 @@ export interface VersionedAnswerControlProps {
 export function VersionedAnswerControl({
   decisionCode,
   frameworkChoices,
+  prechosenFramework = null,
   autoSelect = true,
   busy = false,
   onSubmit,
@@ -117,16 +126,32 @@ export function VersionedAnswerControl({
     [frameworkChoices],
   );
 
-  const [framework, setFramework] = useState<string | null>(null);
+  const [framework, setFramework] = useState<string | null>(prechosenFramework ?? null);
   const [version, setVersion] = useState<string>('');
   // Whether the editable version field is revealed (the OFF default view, or the
   // ON view after "Edit version"). Committed-but-not-editing shows the confirmed
   // chip + "Edit version" instead.
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(
+    prechosenFramework != null && !isVersionLessStem(prechosenFramework),
+  );
   // Enrichment state — NEVER blocks submission. `unavailable` drives the quiet
   // affordance; `suggestions` augment the typeahead datalist.
   const [enrichmentSuggestions, setEnrichmentSuggestions] = useState<string[]>([]);
   const [enrichmentUnavailable, setEnrichmentUnavailable] = useState(false);
+
+  // Spec 2026-06-27: a PENDING versioned question arrives with the framework stem
+  // PRE-CHOSEN (only the version needs filling). Seed the framework + reveal the
+  // version editor when `prechosenFramework` is present; re-seed when the pending
+  // coordinate (decisionCode) or the pre-chosen stem changes. When null the
+  // control behaves exactly as before (framework starts unselected).
+  useEffect(() => {
+    if (!prechosenFramework) return;
+    setFramework(prechosenFramework);
+    setVersion('');
+    setEnrichmentSuggestions([]);
+    setEnrichmentUnavailable(false);
+    setEditing(!isVersionLessStem(prechosenFramework));
+  }, [decisionCode, prechosenFramework]);
 
   // Selecting a framework chip. Behaviour forks on the auto-select toggle and on
   // whether the stem is version-less.
@@ -258,7 +283,7 @@ export function VersionedAnswerControl({
                     : styles.choiceButton
                 }
                 onClick={() => handlePickFramework(choice)}
-                disabled={busy}
+                disabled={busy || prechosenFramework != null}
                 data-testid={`versioned-framework-${choice.stem}`}
               >
                 {selected ? '✓ ' : ''}

@@ -1017,6 +1017,10 @@ export const TargetArchitectureWorkspace: React.FC = () => {
           roomName="Architecture Room"
           collapsedLabel="Architect"
           onClose={() => setConversationOpen(false)}
+          /* Spec 2026-06-27 (Task Group 3): bound the shell content wrapper so
+             the conversation's inner height chain resolves and ONLY its
+             transcript scrolls (Discovery keeps the default 'auto'). */
+          contentOverflow="hidden"
         >
           <ArchitectConversationTab
             projectId={projectId}

@@ -110,11 +110,6 @@ export function DecisionsFileUploadPanel({
       aria-label="Manually answer target state"
     >
       <h3 className={styles.heading}>Manually Answer Target State</h3>
-      <p className={styles.subheading}>
-        Already have your target-state decisions written down? Upload a text file
-        (the same format as <em>Preview prompt-ready output</em>) to complete the
-        conversation in one step. Unanswered questions continue as normal.
-      </p>
 
       <div className={styles.dropRow}>
         <input
