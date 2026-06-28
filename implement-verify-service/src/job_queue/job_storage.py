@@ -61,6 +61,17 @@ class JobStorage:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON jobs(created_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_company_project ON jobs(company, project)")
 
+            # Liveness heartbeats for running jobs. Kept in a SEPARATE table so
+            # save_job's INSERT OR REPLACE on `jobs` can't clobber a fresh beat.
+            # Recovery uses it to tell a job a live worker is actively running from
+            # one a dead process orphaned (don't mark the former failed).
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS job_heartbeats (
+                    job_id TEXT PRIMARY KEY,
+                    last_heartbeat TEXT NOT NULL
+                )
+            """)
+
             # Migration: add resume_from_step column for job recovery.
             # Check for the column instead of swallowing OperationalError, which
             # would also hide unrelated failures (locked DB, disk full, etc.).
@@ -94,6 +105,31 @@ class JobStorage:
                 job.resume_from_step
             ))
             conn.commit()
+
+    def beat(self, job_id: str) -> None:
+        """Stamp a liveness heartbeat for a running job."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO job_heartbeats (job_id, last_heartbeat) VALUES (?, ?)",
+                (job_id, datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+
+    def heartbeat_age_seconds(self, job_id: str) -> Optional[float]:
+        """Seconds since the last heartbeat for `job_id`, or None if never beat."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT last_heartbeat FROM job_heartbeats WHERE job_id = ?", (job_id,))
+            row = cur.fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            ts = datetime.fromisoformat(row[0])
+        except ValueError:
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - ts).total_seconds()
 
     def get_job(self, job_id: str) -> Optional[Job]:
         """Get job by ID."""
