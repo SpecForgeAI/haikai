@@ -199,7 +199,8 @@ def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha
 
 
 def _git_one_spec(git_config, targets, results: list, spec_name: str,
-                  batch_name: "str | None" = None, orchestrate_id=None) -> None:
+                  batch_name: "str | None" = None, orchestrate_id=None,
+                  repair_of: "dict | None" = None) -> None:
     """Commit ONE spec across all repo targets, appending a per-(spec, repo) record
     to ``results`` (C1/L3: never collapse to one scalar).
 
@@ -279,7 +280,17 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str,
         # pushed commit to the run keyed by the spec. (Batch defers push -> the
         # binding for batch is recorded in _finalize_batch_git, per repo HEAD.)
         if not batch and one.commit_sha and not one.errors:
-            _record_ci_binding(git_config, orchestrate_id, spec_name, folder, one.commit_sha)
+            # Self-repair (D10): a repair orchestration runs under its OWN job id +
+            # repair spec, but its commit must bind to the ORIGINAL failed cell
+            # (orchestrate_id, task_group_id, repo) so the late CI verdict re-enters
+            # the SAME verify gate — not a disconnected new one. Override the binding
+            # keys when this run is a repair.
+            if repair_of:
+                _record_ci_binding(
+                    git_config, repair_of["orchestrate_id"], repair_of["task_group_id"],
+                    repair_of.get("repo") or folder, one.commit_sha)
+            else:
+                _record_ci_binding(git_config, orchestrate_id, spec_name, folder, one.commit_sha)
 
 
 def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
@@ -534,6 +545,10 @@ def run_orchestration(job_id: str, storage: JobStorage):
         git_results: list = []  # C1/L3: one record per (spec, repo), never collapsed
 
         batch_name = request.batch_name  # set => N specs accumulate onto one branch
+        # D10 self-repair: a repair orchestration carries the ORIGINAL failed cell
+        # {orchestrate_id, task_group_id, repo} so its commit's CI binding re-enters
+        # that gate (see _git_one_spec). Read from the raw payload — no model change.
+        repair_of = (job.request_payload or {}).get("repair_of")
         # Option C: in batch mode, gate each spec on its own tests passing (repair
         # via /haikai:debug+/haikai:fix) BEFORE committing it, so a red spec never
         # reaches the single MR. Opt-out via BATCH_VERIFY_GATE=false.
@@ -561,7 +576,8 @@ def run_orchestration(job_id: str, storage: JobStorage):
                         return True  # stop the batch: no commit for this spec, no MR
             before = len(git_results)
             _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
-                          batch_name=batch_name, orchestrate_id=job_id)
+                          batch_name=batch_name, orchestrate_id=job_id,
+                          repair_of=repair_of)
             new = git_results[before:]
             # DETAIL: per-spec git result (branch/commit/PR/error) — concentrated
             # where the multi-spec branch/PR plumbing fails.

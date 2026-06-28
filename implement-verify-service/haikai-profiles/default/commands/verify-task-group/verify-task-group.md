@@ -33,4 +33,22 @@ python -m src.verification.recorder <tool> --json '<payload-object>' --db <verif
 
 Pass the `verification_db` value given to this command as `--db`. Exit 0 = recorded; 1 = REFUSED (a guard fired — reason on stdout; you cannot narrate past it); 2 = bad input. Each tool's required payload keys are declared in `src/verification/recorder.py` (`TOOLS`) — e.g. `record_verdict` needs `orchestrate_id, task_group_id, repo, verifier, verdict`; `advance`/`open_repair` need the group keys (+ `repo, verifier, attempt` for repair).
 
+## On a `real` failure — dispatch the fix as a single-repo `/orchestrate` (closes the loop)
+
+`open_repair` only RECORDS the repair (and enforces the cap); it does not fix anything. To actually repair a `real`-classified cell you must dispatch a scoped re-implementation, exactly as the verification-loop spec says (`verification-loop.md:76-78`: "feed its fix-task mini-spec back into `/orchestrate` as a single-repo task group"). Do this — **do NOT** route a repair through `/haikai:fix`/bug-investigation (that path deploys to haibox + a callback and never re-runs CI, so the gate can never re-fold):
+
+1. **Anchor the attempt to the verdict ordinal.** Read the failing cell's latest `attempt` from `verdicts` (the atomic `MAX(attempt)` ordinal — it increments on each new CI verdict). Call `open_repair` with that `attempt`. If `open_repair` REFUSES (exit 1, "escalate to a human" — the cap, default 3, is hit), STOP: the gate stays red, the group + dependents park for a human. Do not dispatch.
+
+2. **Materialize the scoped fix as a fresh single-repo spec.** Pick `spec_name = <orig-spec>-repair-<repo>-attempt<N>` and write, under the failing repo's product root:
+   - `haikai/specs/<spec_name>/planning/initialization.md` — the raw fix idea (the failure in one line).
+   - `haikai/specs/<spec_name>/planning/requirements.md` — the SCOPED fix (`touched_repos: [<repo>]`), and a **Verification** section that names the EXACT failing verifier command for this cell (the pinned `inline_commands` / the CI step that went red, e.g. `pip-audit -r requirements.txt`) as the success criterion — so the implementer fixes the thing the gate actually checks, not the default test suite.
+
+3. **Dispatch via the enqueue CLI** (the verify-loop agent has no enqueue tool; this is the one sanctioned way — it only writes an ORCHESTRATION job to the jobs db the worker polls). You MUST include `repair_of` = THIS failing cell, so the repair commit's CI verdict binds back to THIS gate (not a disconnected new run) and re-enters you:
+   ```
+   python -m src.job_queue.enqueue_cli orchestration --json '{"company":"<company>","project":"<project>","spec_intents":[{"spec_name":"<spec_name>"}],"repair_of":{"orchestrate_id":"<orchestrate_id>","task_group_id":"<task_group_id>","repo":"<repo>"}}'
+   ```
+   Exit 0 prints `{"ok": true, "job_id": "..."}`.
+
+4. **Return.** You do NOT wait. The worker runs `/orchestrate` for the fix → the implementer re-implements in the repo → commits (D1 trailers) → CI fires at commit time (D9) → the inbound-gateway correlates the new SHA to this cell and re-invokes you with a fresh verdict. On that re-entry, reconcile against `jobs.db` and re-fold the gate (idempotent — D10.2). The loop is bounded by the `open_repair` cap in step 1.
+
 <!-- NOTE: This is the async cross-repo verification GATE — per-`(group, repo)` cells folded by the D5 AND gate. It is NOT the single-spec box-check at workflows/implementation/verification/verify-tasks.md (which confirms tasks.md checkboxes for /implement-tasks). Different concerns; don't conflate. -->
