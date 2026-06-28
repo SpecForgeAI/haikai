@@ -84,6 +84,43 @@ def test_orchestrate_commit_binds_sha_then_late_ci_fail_routes(env, tmp_path):
     assert rok
 
 
+def test_verify_job_runs_in_orchestrate_workspace(env, tmp_path):
+    # The re-invoked verify job must carry the ORCHESTRATE's company/project (so
+    # the verify-loop runs where the repo+spec live and a repair can re-implement)
+    # — not the old hardcoded company="verification" placeholder (empty workspace).
+    import src.api.routes.inbound as inbound
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.job_queue.job_models import Job, JobStatus, JobType
+    from src.job_queue.job_queue import JobQueue
+    from src.safe_paths import jobs_db_path
+    from src.verification import store
+
+    q = JobQueue(jobs_db_path())
+    q.storage.save_job(Job(job_id="orch-acme", type=JobType.ORCHESTRATION,
+                           status=JobStatus.COMPLETED, company="acme", project="shop",
+                           request_payload={}))
+    sha = "a" * 40
+    conn = store.connect()
+    store.record_binding(conn, sha, "gitlab", "orch-acme", "tg1", "app", "ci-trigger")
+    conn.close()
+
+    app = FastAPI()
+    app.include_router(inbound.router)
+    client = TestClient(app)
+    resp = client.post(
+        f"/api/v2/inbound/gitlab/{INGRESS}",
+        content=json.dumps({"object_attributes": {"sha": sha, "status": "failed"}}).encode(),
+        headers={"X-Gitlab-Token": SECRET, "X-Gitlab-Event-UUID": "u-acme",
+                 "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 202, resp.text
+    vjob = q.get_job_status(resp.json()["reinvoke_job"])
+    assert vjob is not None
+    assert vjob.company == "acme"   # was "verification" (empty workspace) before the fix
+    assert vjob.project == "shop"
+
+
 def test_binding_off_by_default(tmp_path, monkeypatch):
     # Without ORCHESTRATE_CI_BIND, no binding is recorded (opt-in, no behaviour change).
     set_git_env(monkeypatch, provider="gitlab", auto_push=True, auto_pr=False)

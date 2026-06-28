@@ -98,24 +98,35 @@ def _enqueue_reinvoke(binding: dict) -> str | None:
         from src.job_queue.job_models import Job, JobStatus, JobType
         from src.job_queue.job_queue import JobQueue
 
+        # The WORKER polls the jobs db — enqueue THERE, not the verification db
+        # (store.db_path() prefers VERIFICATION_DB_PATH; when the two differ the
+        # job would sit invisible forever — live-run finding). jobs_db_path() is
+        # the one resolver shared with the worker and the app queue (predict R2).
+        from src.safe_paths import jobs_db_path
+        queue = JobQueue(jobs_db_path())
+
+        # The verify-loop must run in the ORCHESTRATE's workspace (where the repo
+        # and spec live) so a repair can actually re-implement — not a placeholder
+        # `company="verification"` dir that's empty (live-run finding). The
+        # binding's orchestrate_id IS the orchestrate job id; recover its
+        # company/project from it, falling back only if the job is gone.
+        orch = queue.get_job_status(binding["orchestrate_id"])
+        company = orch.company if orch else "verification"
+        project = orch.project if orch else binding["repo"]
+
         job = Job(
             job_id=f"verify-{binding['orchestrate_id']}-{binding['task_group_id']}-{os.urandom(4).hex()}",
             type=JobType.VERIFY_TASK_GROUP,
             status=JobStatus.QUEUED,
-            company="verification",
-            project=binding["repo"],
+            company=company,
+            project=project,
             request_payload={
                 "orchestrate_id": binding["orchestrate_id"],
                 "task_group_id": binding["task_group_id"],
                 "repo": binding["repo"],
             },
         )
-        # The WORKER polls the jobs db — enqueue THERE, not the verification db
-        # (store.db_path() prefers VERIFICATION_DB_PATH; when the two differ the
-        # job would sit invisible forever — live-run finding). jobs_db_path() is
-        # the one resolver shared with the worker and the app queue (predict R2).
-        from src.safe_paths import jobs_db_path
-        return JobQueue(jobs_db_path()).enqueue_job(job)
+        return queue.enqueue_job(job)
     except Exception as exc:  # pragma: no cover — queue optional in tests
         logger.warning("re-invoke enqueue failed (poll fallback will re-drive): %s", exc)
         return None
