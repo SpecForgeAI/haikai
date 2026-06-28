@@ -26,6 +26,15 @@ def test_budget_default_env_and_invalid(monkeypatch):
     assert rl.budget_seconds() == 600.0
 
 
+def test_has_rate_limit_headers():
+    assert rl.has_rate_limit_headers({"retry-after": "5"}) is True
+    assert rl.has_rate_limit_headers({"anthropic-ratelimit-tokens-remaining": "0"}) is True
+    assert rl.has_rate_limit_headers({"Retry-After": "5"}) is True   # case-insensitive
+    assert rl.has_rate_limit_headers({}) is False                    # phantom 429
+    assert rl.has_rate_limit_headers({"content-type": "application/json"}) is False
+    assert rl.has_rate_limit_headers(None) is False
+
+
 def test_classify_by_status_and_name():
     assert rl.classify(type("E", (Exception,), {"status_code": 429})()) == 429
     assert rl.classify(type("E", (Exception,), {"status_code": 529})()) == 529

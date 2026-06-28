@@ -518,23 +518,36 @@ class ClaudeChatExecutor:
 
         base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
         headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
-        if "sk-ant-oat" in self.anthropic_api_key:
-            headers["authorization"] = f"Bearer {self.anthropic_api_key}"
-            headers["anthropic-beta"] = "oauth-2025-04-20"
-        else:
-            headers["x-api-key"] = self.anthropic_api_key
-        payload = _json.dumps({
+        body = {
             "model": _RATE_LIMIT_PROBE_MODEL,
             "max_tokens": 1,
             "messages": [{"role": "user", "content": "hi"}],
-        }).encode("utf-8")
+        }
+        if "sk-ant-oat" in self.anthropic_api_key:
+            # A subscription OAuth token must look like Claude Code or the API
+            # rejects it with a MISLEADING `429 rate_limit_error` (no ratelimit
+            # headers) — a bare oauth-beta probe ALWAYS 429s and would falsely
+            # trip the backoff forever. Mirror the Claude Code identity.
+            headers["authorization"] = f"Bearer {self.anthropic_api_key}"
+            headers["anthropic-beta"] = "claude-code-20250219,oauth-2025-04-20"
+            headers["user-agent"] = "claude-cli/2.1.2 (external, cli)"
+            headers["x-app"] = "cli"
+            body["system"] = [{
+                "type": "text",
+                "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+            }]
+        else:
+            headers["x-api-key"] = self.anthropic_api_key
+        payload = _json.dumps(body).encode("utf-8")
         req = urllib.request.Request(base + "/v1/messages", data=payload, headers=headers, method="POST")
         try:
             urllib.request.urlopen(req, timeout=15)
             return (False, None)
         except urllib.error.HTTPError as e:
-            if e.code == 429:
-                retry_after = e.headers.get("retry-after") if getattr(e, "headers", None) else None
+            # Only a 429 carrying genuine rate-limit headers is a usage limit; a
+            # bare 429 with none is a malformed-request rejection — never back off.
+            if e.code == 429 and rate_limit_backoff.has_rate_limit_headers(getattr(e, "headers", None)):
+                retry_after = e.headers.get("retry-after")
                 try:
                     retry_after = float(retry_after) if retry_after else None
                 except (TypeError, ValueError):

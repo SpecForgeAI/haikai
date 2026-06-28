@@ -61,6 +61,25 @@ def next_wait(attempt: int, retry_after: float | None = None,
     return ceiling * random.random(), False
 
 
+def has_rate_limit_headers(headers) -> bool:
+    """True only if response headers carry a GENUINE rate-limit signal
+    (``retry-after`` or ``anthropic-ratelimit-*``). A 429 WITHOUT any of these is
+    not a usage limit — e.g. a subscription OAuth token used without the Claude
+    Code identity gets a MISLEADING ``429 rate_limit_error`` with no such headers.
+    Gate backoff on this so a malformed-request 429 doesn't trip a phantom retry."""
+    if not headers:
+        return False
+    try:
+        keys = list(headers.keys())
+    except AttributeError:
+        return False
+    for k in keys:
+        kl = str(k).lower()
+        if kl == "retry-after" or kl.startswith("anthropic-ratelimit"):
+            return True
+    return False
+
+
 def classify(exc: BaseException) -> int | None:
     """Return 429 (rate) or 529 (overloaded) if `exc` is a retryable rate/overload
     error, else None. Works off the Anthropic SDK's `status_code` with a class-name

@@ -55,11 +55,20 @@ class TestProbeRateLimited:
             limited, retry_after = executor._probe_rate_limited()
         assert limited is True and retry_after == 7.0
 
-    def test_429_without_retry_after(self, executor):
+    def test_429_without_ratelimit_headers_is_not_a_limit(self, executor):
+        # A bare 429 (no retry-after / anthropic-ratelimit-*) is a malformed-request
+        # rejection — e.g. a subscription OAuth token used without the Claude Code
+        # identity — NOT a usage limit. Must NOT trip the backoff.
         err = urllib.error.HTTPError(url="x", code=429, msg="429", hdrs={}, fp=None)
         with patch("urllib.request.urlopen", side_effect=err):
-            limited, retry_after = executor._probe_rate_limited()
-        assert limited is True and retry_after is None
+            assert executor._probe_rate_limited() == (False, None)
+
+    def test_429_with_anthropic_ratelimit_header_is_a_limit(self, executor):
+        err = urllib.error.HTTPError(
+            url="x", code=429, msg="429",
+            hdrs={"anthropic-ratelimit-requests-remaining": "0"}, fp=None)
+        with patch("urllib.request.urlopen", side_effect=err):
+            assert executor._probe_rate_limited() == (True, None)
 
     def test_200_reports_not_limited(self, executor):
         with patch("urllib.request.urlopen", return_value=MagicMock()):
