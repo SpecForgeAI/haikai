@@ -2,6 +2,15 @@
 # Language-agnostic — covers common frameworks without being project-specific.
 # These are appended to .gitignore if missing, never removed.
 
+haikai_internal:
+  # ivs's own per-repo working files — must never be committed into the user's
+  # repo. .haikai/config.json in particular was getting swept in by `git add -A`
+  # then lost from the working tree on the next branch switch, breaking every
+  # subsequent orchestrate / repair with "Project config not found".
+  - .haikai/
+  - .conversation_history.json
+  - chat_logs/
+
 dependencies:
   - node_modules/
   - vendor/
