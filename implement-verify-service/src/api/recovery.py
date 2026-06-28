@@ -31,6 +31,12 @@ from .factories import create_chat_executor
 
 logger = logging.getLogger(__name__)
 
+# A RUNNING job whose last heartbeat is younger than this is owned by a LIVE
+# worker — recovery must leave it alone (else it races the worker and wrongly
+# marks an in-flight job failed). Must be comfortably > the worker's
+# HEARTBEAT_INTERVAL_SECONDS (30s).
+RECOVERY_STALE_SECONDS = 120
+
 
 def _determine_last_completed_step(job: Job) -> Optional[int]:
     """Check orchestration log dir for completed step files.
@@ -103,6 +109,14 @@ def _recover_interrupted_jobs():
     anthropic_api_key = config.get("anthropic_api_key")
 
     for job in interrupted:
+        # Skip jobs a live worker is actively running (fresh heartbeat). Only
+        # genuinely-orphaned jobs (no/stale heartbeat) are recovered.
+        age = storage.heartbeat_age_seconds(job.job_id)
+        if age is not None and age < RECOVERY_STALE_SECONDS:
+            logger.info(
+                "Recovery: skipping job %s — live worker (heartbeat %.0fs ago)",
+                job.job_id, age)
+            continue
         try:
             completed_step = _determine_last_completed_step(job)
 

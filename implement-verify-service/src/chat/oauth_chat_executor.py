@@ -20,6 +20,7 @@ The key requirements for OAuth tokens to work with the Anthropic API:
 import json
 import logging
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any, Generator, List
@@ -27,6 +28,7 @@ from datetime import datetime
 
 from anthropic import Anthropic
 
+from . import rate_limit_backoff
 from .profiles_path import HAIKAI_PROFILES_ROOT
 from .tool_executor import ToolExecutor
 
@@ -366,38 +368,69 @@ class OAuthChatExecutor:
                 # Refresh the client so each call uses the live OAuth token
                 # (no-op unless CLAUDE_OAUTH_CREDENTIALS_FILE is set).
                 self._create_client()
-                # Create streaming message with tools
-                with self.client.messages.stream(
-                    model=self.model,
-                    max_tokens=8192,
-                    system=system_blocks,
-                    messages=self.conversation_history,
-                    tools=self.tool_executor.get_tool_schemas(),
-                ) as stream:
-                    # Stream text content
-                    for text in stream.text_stream:
-                        full_response += text
-                        
-                        # Check for /ask-questions invocation in response
-                        if "/ask-questions" in text or "ask-questions" in text:
-                            is_collecting_questions = True
-                            logger.info("Detected /ask-questions in response")
-                        
-                        # Detect folder from haikai/specs/ references
-                        if not folder_buffer and "haikai/specs/" in text:
-                            match = re.search(r'haikai/specs/([^/\s`]+)', text)
-                            if match:
-                                folder_buffer = match.group(1)
-                                logger.info(f"Detected spec folder: {folder_buffer}")
-                        
-                        # If collecting questions, buffer content
-                        if is_collecting_questions:
-                            ask_questions_content.append(text)
-                        
-                        yield {"type": "content", "delta": text}
-                    
-                    # Get final message to check for tool calls
-                    final_message = stream.get_final_message()
+                # 429/529-aware retry around the streaming call. We retry ONLY at
+                # the request boundary (before any token streamed) so output is
+                # never duplicated mid-stream. Patient: time-budgeted exponential
+                # backoff (honors Retry-After), with a visible signal each attempt.
+                _rl_start = time.monotonic()
+                _rl_budget = rate_limit_backoff.budget_seconds()
+                _rl_attempt = 0
+                final_message = None
+                while True:
+                    _rl_attempt += 1
+                    _streamed_any = False
+                    try:
+                        with self.client.messages.stream(
+                            model=self.model,
+                            max_tokens=8192,
+                            system=system_blocks,
+                            messages=self.conversation_history,
+                            tools=self.tool_executor.get_tool_schemas(),
+                        ) as stream:
+                            # Stream text content
+                            for text in stream.text_stream:
+                                _streamed_any = True
+                                full_response += text
+
+                                # Check for /ask-questions invocation in response
+                                if "/ask-questions" in text or "ask-questions" in text:
+                                    is_collecting_questions = True
+                                    logger.info("Detected /ask-questions in response")
+
+                                # Detect folder from haikai/specs/ references
+                                if not folder_buffer and "haikai/specs/" in text:
+                                    match = re.search(r'haikai/specs/([^/\s`]+)', text)
+                                    if match:
+                                        folder_buffer = match.group(1)
+                                        logger.info(f"Detected spec folder: {folder_buffer}")
+
+                                # If collecting questions, buffer content
+                                if is_collecting_questions:
+                                    ask_questions_content.append(text)
+
+                                yield {"type": "content", "delta": text}
+
+                            # Get final message to check for tool calls
+                            final_message = stream.get_final_message()
+                        break  # streamed successfully
+                    except Exception as _e:
+                        _status = rate_limit_backoff.classify(_e)
+                        if _status is None or _streamed_any:
+                            raise  # not a 429/529, or it hit mid-stream — don't duplicate
+                        _elapsed = time.monotonic() - _rl_start
+                        _wait, _honored = rate_limit_backoff.next_wait(
+                            _rl_attempt, rate_limit_backoff.retry_after_of(_e))
+                        if (_rl_attempt >= rate_limit_backoff.ATTEMPT_BACKSTOP
+                                or _elapsed + _wait >= _rl_budget):
+                            yield rate_limit_backoff.rate_limit_signal(
+                                _rl_attempt, _wait, _elapsed, _rl_budget, _honored,
+                                retrying=False, status=_status)
+                            raise
+                        yield rate_limit_backoff.rate_limit_signal(
+                            _rl_attempt, _wait, _elapsed, _rl_budget, _honored,
+                            retrying=True, status=_status)
+                        time.sleep(_wait)
+                        self._create_client()  # refresh the live token before retrying
                 
                 # Build assistant content from final message
                 assistant_content = []

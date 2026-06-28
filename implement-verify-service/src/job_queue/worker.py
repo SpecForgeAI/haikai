@@ -11,6 +11,7 @@ import signal
 import sys
 import importlib
 import logging
+import threading
 from .job_storage import JobStorage
 from .job_models import JobType
 from . import tasks as _tasks_module
@@ -22,9 +23,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# How often a running job stamps its liveness heartbeat. Recovery treats a job
+# as orphaned only if its last beat is older than RECOVERY_STALE_SECONDS
+# (in src.api.recovery), which must be comfortably larger than this.
+HEARTBEAT_INTERVAL_SECONDS = 30
+
 
 class Worker:
     """Background worker for processing queued jobs."""
+
+    def _heartbeat_loop(self, job_id: str, stop: "threading.Event") -> None:
+        """Beat the job's liveness every interval until `stop` is set."""
+        while not stop.wait(HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                self.storage.beat(job_id)
+            except Exception:
+                logger.debug("heartbeat failed for %s", job_id, exc_info=True)
     
     def __init__(self, db_path: str = "jobs.db"):
         self.storage = JobStorage(db_path)
@@ -93,6 +107,13 @@ class Worker:
                         f"(type: {job.type}, company: {job.company}, project: {job.project})"
                     )
                     
+                    # Heartbeat the job while it runs so recovery can tell a live
+                    # worker's job from an orphaned one (and not mark it failed).
+                    hb_stop = threading.Event()
+                    self.storage.beat(job.job_id)  # first beat before any work
+                    hb = threading.Thread(
+                        target=self._heartbeat_loop, args=(job.job_id, hb_stop), daemon=True)
+                    hb.start()
                     try:
                         # Execute job based on type
                         if job.type == JobType.ORCHESTRATION:
@@ -127,7 +148,9 @@ class Worker:
                             f"Worker {self.worker_id}: Job {job.job_id} failed: {str(e)}",
                             exc_info=True
                         )
-                
+                    finally:
+                        hb_stop.set()
+
                 else:
                     # No jobs, sleep briefly
                     time.sleep(1)

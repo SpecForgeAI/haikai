@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Generator, List, Tuple
 from datetime import datetime
 
+from . import rate_limit_backoff
 from .cli_limits import MAX_CLI_ARG_LENGTH
 from .profiles_path import HAIKAI_PROFILES_ROOT
 from .tool_executor import ToolExecutor
@@ -68,10 +69,9 @@ def _uses_question_flow(command_name: str) -> bool:
 # swallows 429s inside its own internal HTTP retries and emits NOTHING to stdout/stderr —
 # so the executor can't see them; the call just hangs until killed (exit 143). Instead we
 # probe the Anthropic Messages API directly (a 429 returns in <1s) and back off
-# exponentially before spawning. See debug 260615 (a raw probe returned 429 in 0.48s).
-_RATE_LIMIT_MAX_ATTEMPTS = 5
-_RATE_LIMIT_BASE_SECONDS = 2.0
-_RATE_LIMIT_CAP_SECONDS = 60.0
+# before spawning. See debug 260615 (a raw probe returned 429 in 0.48s). The
+# backoff schedule/budget/signal now lives in `rate_limit_backoff` (shared with
+# the SDK lane); only the probe model is local.
 _RATE_LIMIT_PROBE_MODEL = "claude-sonnet-4-5"
 
 
@@ -518,23 +518,36 @@ class ClaudeChatExecutor:
 
         base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
         headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
-        if "sk-ant-oat" in self.anthropic_api_key:
-            headers["authorization"] = f"Bearer {self.anthropic_api_key}"
-            headers["anthropic-beta"] = "oauth-2025-04-20"
-        else:
-            headers["x-api-key"] = self.anthropic_api_key
-        payload = _json.dumps({
+        body = {
             "model": _RATE_LIMIT_PROBE_MODEL,
             "max_tokens": 1,
             "messages": [{"role": "user", "content": "hi"}],
-        }).encode("utf-8")
+        }
+        if "sk-ant-oat" in self.anthropic_api_key:
+            # A subscription OAuth token must look like Claude Code or the API
+            # rejects it with a MISLEADING `429 rate_limit_error` (no ratelimit
+            # headers) — a bare oauth-beta probe ALWAYS 429s and would falsely
+            # trip the backoff forever. Mirror the Claude Code identity.
+            headers["authorization"] = f"Bearer {self.anthropic_api_key}"
+            headers["anthropic-beta"] = "claude-code-20250219,oauth-2025-04-20"
+            headers["user-agent"] = "claude-cli/2.1.2 (external, cli)"
+            headers["x-app"] = "cli"
+            body["system"] = [{
+                "type": "text",
+                "text": "You are Claude Code, Anthropic's official CLI for Claude.",
+            }]
+        else:
+            headers["x-api-key"] = self.anthropic_api_key
+        payload = _json.dumps(body).encode("utf-8")
         req = urllib.request.Request(base + "/v1/messages", data=payload, headers=headers, method="POST")
         try:
             urllib.request.urlopen(req, timeout=15)
             return (False, None)
         except urllib.error.HTTPError as e:
-            if e.code == 429:
-                retry_after = e.headers.get("retry-after") if getattr(e, "headers", None) else None
+            # Only a 429 carrying genuine rate-limit headers is a usage limit; a
+            # bare 429 with none is a malformed-request rejection — never back off.
+            if e.code == 429 and rate_limit_backoff.has_rate_limit_headers(getattr(e, "headers", None)):
+                retry_after = e.headers.get("retry-after")
                 try:
                     retry_after = float(retry_after) if retry_after else None
                 except (TypeError, ValueError):
@@ -548,37 +561,40 @@ class ClaudeChatExecutor:
         """Preflight gate: if rate-limited, back off exponentially until it clears.
 
         Probes deterministically (`_probe_rate_limited`); if clear, returns ``True``
-        immediately (no events). If rate-limited, yields ``rate_limited`` progress events
-        and sleeps with exponential backoff (full-ish jitter, honoring ``Retry-After``),
-        re-probing between sleeps. Returns ``True`` once the limit clears (safe to spawn)
-        or ``False`` after `_RATE_LIMIT_MAX_ATTEMPTS` (a terminal ``error`` event with
-        ``message="rate_limited"`` has been yielded). Callers `yield from` this and skip
-        the CLI spawn when it returns ``False``.
+        immediately (no events). If rate-limited, backs off with the shared
+        time-budgeted exponential schedule (`rate_limit_backoff`: full jitter,
+        honoring ``Retry-After``), re-probing between sleeps and emitting a visible
+        ``rate_limited`` signal each attempt. Returns ``True`` once the limit clears
+        (safe to spawn) or ``False`` after the budget is spent (a terminal ``error``
+        event with ``message="rate_limited"`` has been yielded). Callers `yield from`
+        this and skip the CLI spawn when it returns ``False``.
         """
         import time
-        import random
 
         limited, retry_after = self._probe_rate_limited()
         if not limited:
             return True
-        for attempt in range(1, _RATE_LIMIT_MAX_ATTEMPTS + 1):
-            ceiling = retry_after if retry_after else min(
-                _RATE_LIMIT_CAP_SECONDS, _RATE_LIMIT_BASE_SECONDS * (2 ** (attempt - 1)))
-            wait = ceiling * (0.5 + random.random() * 0.5)  # jitter on the upper half
-            logger.warning(
-                f"Rate limited (429) — backoff {attempt}/{_RATE_LIMIT_MAX_ATTEMPTS}, waiting {wait:.1f}s")
-            yield {"type": "rate_limited", "attempt": attempt,
-                   "max_attempts": _RATE_LIMIT_MAX_ATTEMPTS, "wait": round(wait, 2)}
+        start = time.monotonic()
+        budget = rate_limit_backoff.budget_seconds()
+        attempt = 0
+        while True:
+            attempt += 1
+            elapsed = time.monotonic() - start
+            wait, honored = rate_limit_backoff.next_wait(attempt, retry_after)
+            if attempt >= rate_limit_backoff.ATTEMPT_BACKSTOP or elapsed + wait >= budget:
+                yield rate_limit_backoff.rate_limit_signal(
+                    attempt, wait, elapsed, budget, honored, retrying=False)
+                yield {"type": "error", "message": "rate_limited",
+                       "detail": (f"Anthropic rate limit (429) did not clear within "
+                                  f"the {budget:.0f}s budget ({attempt} attempts)")}
+                return False
+            yield rate_limit_backoff.rate_limit_signal(
+                attempt, wait, elapsed, budget, honored, retrying=True)
             time.sleep(wait)
             limited, retry_after = self._probe_rate_limited()
             if not limited:
                 logger.info(f"Rate limit cleared after {attempt} backoff attempt(s)")
                 return True
-        logger.error("Rate limit (429) did not clear after exponential backoff")
-        yield {"type": "error", "message": "rate_limited",
-               "detail": (f"Anthropic rate limit (429) did not clear after "
-                          f"{_RATE_LIMIT_MAX_ATTEMPTS} backoff attempts")}
-        return False
 
     # ─────────────────────────────────────────────────────────────────────
     # Stream-line dispatch helpers (Phase B.3a)
