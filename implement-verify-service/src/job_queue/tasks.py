@@ -759,6 +759,17 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
         db_path = os.getenv("VERIFICATION_DB_PATH") or os.getenv("JOBS_DB_PATH", "jobs.db")
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
 
+        # The verification-loop agent records through the guarded recorder via its
+        # Bash idiom (`python -m src.verification.recorder <tool> --json ... --db ...`,
+        # recorder.py docstring). Its cwd is the workspace project, where `src` isn't
+        # importable, so put THIS repo (implement-verify-service, the parent of `src`)
+        # on PYTHONPATH for the launched session. Without this the agent can't reach
+        # the recorder and mis-concludes it "needs an MCP server" (seen live in #11).
+        ivs_repo_root = str(Path(__file__).resolve().parents[2])
+        _pp = os.environ.get("PYTHONPATH", "")
+        if ivs_repo_root not in _pp.split(os.pathsep):
+            os.environ["PYTHONPATH"] = ivs_repo_root + (os.pathsep + _pp if _pp else "")
+
         # The loop reconstructs everything from the db (always-fresh, D10.2);
         # the command line carries only the correlation keys + db location.
         command = (

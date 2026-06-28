@@ -23,4 +23,14 @@ Instruct it to execute its own **Steps 1–8** — its agent definition is the s
 Without subagents, YOU act as the verification-loop for this group. Read its definition (`haikai-profiles/default/agents/verification-loop.md`) and execute its **Steps 1–8** directly — the procedure is identical, only the fan-out collapses: run the inline build/test commands and score the per-group rubric yourself (Read/Bash) instead of dispatching `inline-runner` / `rubric-verifier`, and classify a failed cell yourself (D4 classes flaky/real/infra/out-of-scope) instead of dispatching `repair-engine`. The D5 gate fold, the guarded `advance` / `open_repair` writes, the dependent-dispatch per `orchestration.yml`, and the inbound-gateway re-entry semantics are unchanged.
 {{ENDUNLESS use_claude_code_subagents}}
 
+## Recording — the guarded recorder tools are a Bash CLI, not MCP
+
+The five recorder tools named in the verification-loop definition (`record_verdict`, `record_hook`, `advance`, `open_repair`, `update_checklist`) are **guarded writes invoked from Bash** (the D10/D12 idiom), NOT native or MCP tools — there is no recorder MCP server, so do not look for one:
+
+```
+python -m src.verification.recorder <tool> --json '<payload-object>' --db <verification_db>
+```
+
+Pass the `verification_db` value given to this command as `--db`. Exit 0 = recorded; 1 = REFUSED (a guard fired — reason on stdout; you cannot narrate past it); 2 = bad input. Each tool's required payload keys are declared in `src/verification/recorder.py` (`TOOLS`) — e.g. `record_verdict` needs `orchestrate_id, task_group_id, repo, verifier, verdict`; `advance`/`open_repair` need the group keys (+ `repo, verifier, attempt` for repair).
+
 <!-- NOTE: This is the async cross-repo verification GATE — per-`(group, repo)` cells folded by the D5 AND gate. It is NOT the single-spec box-check at workflows/implementation/verification/verify-tasks.md (which confirms tasks.md checkboxes for /implement-tasks). Different concerns; don't conflate. -->
