@@ -6,6 +6,7 @@ Haikai commands programmatically without user interaction.
 """
 
 import os
+import shutil
 import subprocess
 import json
 import logging
@@ -72,14 +73,22 @@ class ClaudeCLIExecutor:
         else:
             self.claude_cli_path = project_root / "node_modules" / ".bin" / "claude"
         
-        # Verify project-local Claude CLI exists
-        if not self.claude_cli_path.exists():
-            raise ValueError(
-                f"Project-local Claude CLI not found at {self.claude_cli_path}. "
-                f"Please run 'npm install' in the project root to install dependencies."
-            )
-        
-        logger.info(f"Using project-local Claude CLI: {self.claude_cli_path}")
+        # Prefer the project-local CLI; otherwise fall back to a global `claude`
+        # on PATH (the same fallback ClaudeChatExecutor uses). Without this the
+        # worker's verify-task-group / repair path dies unless the project has a
+        # local `npm install`, even when a global Claude CLI is available.
+        if self.claude_cli_path.exists():
+            logger.info(f"Using project-local Claude CLI: {self.claude_cli_path}")
+        else:
+            global_cli = shutil.which("claude")
+            if not global_cli:
+                raise ValueError(
+                    f"Claude CLI not found: no project-local install at "
+                    f"{self.claude_cli_path} and no 'claude' on PATH. Run "
+                    f"'npm install' in the project root or install the Claude CLI globally."
+                )
+            self.claude_cli_path = Path(global_cli)
+            logger.info(f"Using global Claude CLI: {self.claude_cli_path}")
         
         # Setup Haikai commands
         self._setup_claude_commands(project_root)
