@@ -33,9 +33,18 @@ python -m src.verification.recorder <tool> --json '<payload-object>' --db <verif
 
 Pass the `verification_db` value given to this command as `--db`. Exit 0 = recorded; 1 = REFUSED (a guard fired — reason on stdout; you cannot narrate past it); 2 = bad input. Each tool's required payload keys are declared in `src/verification/recorder.py` (`TOOLS`) — e.g. `record_verdict` needs `orchestrate_id, task_group_id, repo, verifier, verdict`; `advance`/`open_repair` need the group keys (+ `repo, verifier, attempt` for repair).
 
-## On a `real` failure — dispatch the fix as a single-repo `/orchestrate` (closes the loop)
+## On a failure — CLASSIFY FIRST, then branch (only `real` opens a repair)
 
-`open_repair` only RECORDS the repair (and enforces the cap); it does not fix anything. To actually repair a `real`-classified cell you must dispatch a scoped re-implementation, exactly as the verification-loop spec says (`verification-loop.md:76-78`: "feed its fix-task mini-spec back into `/orchestrate` as a single-repo task group"). Do this — **do NOT** route a repair through `/haikai:fix`/bug-investigation (that path deploys to haibox + a callback and never re-runs CI, so the gate can never re-fold):
+When a cell's latest verdict is `fail`, classify it (D4) **before** you touch `open_repair`. The classification picks the branch, and `open_repair` belongs to exactly ONE of them — opening a repair you then don't dispatch leaves a dangling, un-acted ticket (the out-of-scope bug seen live: it `open_repair`'d, then declined the fix, and left the ticket hanging with no escalate). So decide the class FIRST:
+
+- **`flaky`** — transient/non-deterministic. Re-run the verifier or wait for the next delivery. Do **NOT** `open_repair`.
+- **`infra`** — environment/runner/dependency problem outside the diff (missing CI service, runner outage, timeout). NOT an in-scope code fix. Do **NOT** `open_repair`. Surface for a human (disable/ungate the cell via D7 repo config, or provision the infra); the gate stays red and the group parks.
+- **`out-of-scope`** — the failure is real but its fix lies outside this `(group, repo)` cell (a dependency-repo defect, a pre-existing unrelated failure, or a CI/spec conflict — e.g. CI demands a function this spec never specified). Do **NOT** `open_repair` and do **NOT** fix it. **Escalate to a human** and leave the gate red; the group + dependents park.
+- **`real`** — an in-scope, fixable defect in THIS cell's own diff. ONLY now take the repair-dispatch branch below. `open_repair` is the first step of THIS branch and no other.
+
+### `real` → dispatch the fix as a single-repo `/orchestrate` (closes the loop)
+
+`open_repair` only RECORDS the repair (and enforces the cap); it does not fix anything. To actually repair the cell you must dispatch a scoped re-implementation, exactly as the verification-loop spec says (`verification-loop.md:76-78`: "feed its fix-task mini-spec back into `/orchestrate` as a single-repo task group"). Do this — **do NOT** route a repair through `/haikai:fix`/bug-investigation (that path deploys to haibox + a callback and never re-runs CI, so the gate can never re-fold):
 
 1. **Anchor the attempt to the verdict ordinal.** Read the failing cell's latest `attempt` from `verdicts` (the atomic `MAX(attempt)` ordinal — it increments on each new CI verdict). Call `open_repair` with that `attempt`. If `open_repair` REFUSES (exit 1, "escalate to a human" — the cap, default 3, is hit), STOP: the gate stays red, the group + dependents park for a human. Do not dispatch.
 
