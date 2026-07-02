@@ -211,8 +211,11 @@ async function amsJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// POST /generate + POST /regenerate — the ONLY paths that (re)generate.
-// Staleness never auto-triggers either (hard spec constraint).
+// POST /generate + POST /regenerate — the explicit HTTP (re)generation paths.
+// GET-time staleness NEVER auto-triggers regeneration (2026-06-11 constraint,
+// still honoured). Since Spec 2026-07-02-a, Create Migration Plan ALSO
+// generates/refreshes via the same handler (`dbMigrationPackEnsure.ts`) as
+// part of the user's explicit Generate action.
 // ---------------------------------------------------------------------------
 
 async function handleGenerate(
@@ -221,7 +224,11 @@ async function handleGenerate(
   routeName: 'generate' | 'regenerate'
 ): Promise<void> {
   const { projectId } = req.params;
-  const body = (req.body ?? {}) as { architecture_id?: string; seed_margin?: number };
+  const body = (req.body ?? {}) as {
+    architecture_id?: string;
+    target_architecture_id?: string;
+    seed_margin?: number;
+  };
   if (!body.architecture_id || typeof body.architecture_id !== 'string') {
     res.status(400).json({
       error: { code: 400, message: 'architecture_id is required.' },
@@ -233,6 +240,12 @@ async function handleGenerate(
     const result = await generateDbMigrationPack({
       projectId,
       architectureId: body.architecture_id,
+      // Optional decision-binding target (Spec 2026-07-02-a): absent →
+      // legacy active-target fallback inside defaultFetchDbDecisions.
+      targetArchitectureId:
+        typeof body.target_architecture_id === 'string' && body.target_architecture_id.length > 0
+          ? body.target_architecture_id
+          : null,
       seedMargin: typeof body.seed_margin === 'number' ? body.seed_margin : undefined,
     });
     console.log(
@@ -292,9 +305,19 @@ dbMigrationPackRouter.get(`${BASE}/:packId`, async (req: Request, res: Response)
         `/db-migration-packs/${encodeURIComponent(packId)}`,
       { headers: { Accept: 'application/json' } }
     );
+    // Recompute against the SAME decision-binding target the pack was
+    // generated for (persisted in manifest_json.target_architecture_id;
+    // null on legacy packs → active-target fallback).
+    const manifest = (pack.manifest_json ?? {}) as Record<string, unknown>;
+    const boundTargetId =
+      typeof manifest.target_architecture_id === 'string' &&
+      manifest.target_architecture_id.length > 0
+        ? manifest.target_architecture_id
+        : null;
     const staleness = await evaluatePackStaleness({
       projectId,
       architectureId: String(pack.architecture_id ?? ''),
+      targetArchitectureId: boundTargetId,
       storedHash: (pack.input_snapshot_hash as string | null) ?? null,
       storedStatus: (pack.status as string | null) ?? null,
       storedStaleReason: (pack.stale_reason as string | null) ?? null,

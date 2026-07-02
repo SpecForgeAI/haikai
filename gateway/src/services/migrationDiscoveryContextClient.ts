@@ -128,6 +128,21 @@ export interface MigrationDatabaseDiscoverySummary {
   databaseRunCount?: number;
   sampleDataHintCount?: number;
   hasDatabaseDiscovery?: boolean;
+  /**
+   * Source engines detected on db_discovery_pack findings (`engineKey` in
+   * detail_json), e.g. ["sybase"]. Spec 2026-07-02-a.
+   */
+  sourceEngines?: string[];
+  /**
+   * DB migration pack roll-up for the (project, current architecture) pair —
+   * null when no pack has been generated. Spec 2026-07-02-a.
+   */
+  dbMigrationPack?: {
+    packId?: string | null;
+    status?: string | null;
+    openDecisionCount?: number | null;
+    unapprovedTranslationCount?: number | null;
+  } | null;
 }
 
 export interface MigrationBaselineHighlight {

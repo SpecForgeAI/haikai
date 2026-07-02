@@ -42,4 +42,12 @@ public interface DbMigrationPackTranslationRepository
 
     /** Removal of ALL rows for a pack (empty-manifest regeneration). */
     void deleteByPackId(UUID packId);
+
+    /**
+     * Count translation rows whose review status is in the given set (e.g.
+     * {@code unreviewed} / {@code needs_rework} = not yet approved) -- backs
+     * the migration-discovery-context pack readiness roll-up
+     * (Spec 2026-07-02-a, Persistence-Tier Oracle Program).
+     */
+    long countByPackIdAndReviewStatusIn(UUID packId, Collection<String> reviewStatuses);
 }

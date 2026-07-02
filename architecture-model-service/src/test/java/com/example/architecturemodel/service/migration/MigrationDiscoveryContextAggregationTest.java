@@ -117,7 +117,10 @@ class MigrationDiscoveryContextAggregationTest {
             null, // EndpointDataEffectRepository     (coverage B REST bar)
             null, // InterfaceLogicalEntityRepository (coverage B SOAP bar)
             null /* MetaModelSummaryService -- not exercised here */,
-            targetStateCapturedDecisionService
+            targetStateCapturedDecisionService,
+            null, // DbMigrationPackRepository            (Spec 2026-07-02-a)
+            null, // DbMigrationPackDecisionRepository    (Spec 2026-07-02-a)
+            null  // DbMigrationPackTranslationRepository (Spec 2026-07-02-a)
         );
 
         // Shared stubs used across all four tests. Lenient because Test 4

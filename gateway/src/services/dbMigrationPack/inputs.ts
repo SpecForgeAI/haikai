@@ -133,7 +133,18 @@ export interface GenerationInputs {
 export interface InputFetchDeps {
   fetchModel: (projectId: string, architectureId: string) => Promise<CommittedPhysicalModel>;
   fetchFindings: (projectId: string, architectureId: string) => Promise<RawDiscoveryFinding[]>;
-  fetchDbDecisions: (projectId: string) => Promise<IrDbDecision[]>;
+  /**
+   * `targetArchitectureId` binds the `db.*` decision read to the target the
+   * pack is generated FOR (Spec 2026-07-02-a). The migration plan can target a
+   * saved DRAFT that is not the project's "active" target — decisions live on
+   * whatever target the user answered the conversation in, so reading from
+   * "active" hid them (same bug class as the 2026-06-27 context fix). Absent
+   * (legacy callers) → fall back to the active target.
+   */
+  fetchDbDecisions: (
+    projectId: string,
+    targetArchitectureId?: string | null
+  ) => Promise<IrDbDecision[]>;
   fetchResolvedPackDecisions: (
     projectId: string,
     architectureId: string
@@ -143,12 +154,13 @@ export interface InputFetchDeps {
 export async function fetchGenerationInputs(
   projectId: string,
   architectureId: string,
-  deps: InputFetchDeps
+  deps: InputFetchDeps,
+  targetArchitectureId?: string | null
 ): Promise<GenerationInputs> {
   const [model, findings, dbDecisions, resolvedPackDecisions] = await Promise.all([
     deps.fetchModel(projectId, architectureId),
     deps.fetchFindings(projectId, architectureId),
-    deps.fetchDbDecisions(projectId),
+    deps.fetchDbDecisions(projectId, targetArchitectureId),
     deps.fetchResolvedPackDecisions(projectId, architectureId),
   ]);
   return { model, findings, dbDecisions, resolvedPackDecisions };
@@ -620,12 +632,23 @@ export const defaultFetchFindings: InputFetchDeps['fetchFindings'] = async (
   return all;
 };
 
-export const defaultFetchDbDecisions: InputFetchDeps['fetchDbDecisions'] = async (projectId) => {
-  const active = await fetchActiveTargetArchitectureId(projectId);
-  if (!active.activeTargetArchitectureId) return [];
+export const defaultFetchDbDecisions: InputFetchDeps['fetchDbDecisions'] = async (
+  projectId,
+  targetArchitectureId
+) => {
+  // Bind to the EXPLICIT target when the caller supplied one (the target the
+  // pack/plan is generated FOR); fall back to the active target only for
+  // legacy callers that omit it — mirrors the 2026-06-27 migration-discovery-
+  // context binding fix.
+  let boundTargetId = targetArchitectureId ?? null;
+  if (!boundTargetId) {
+    const active = await fetchActiveTargetArchitectureId(projectId);
+    boundTargetId = active.activeTargetArchitectureId ?? null;
+  }
+  if (!boundTargetId) return [];
   const decisions: TargetStateCapturedDecision[] = await fetchLatestCapturedDecisions(
     projectId,
-    active.activeTargetArchitectureId
+    boundTargetId
   );
   return decisions
     .filter((d) => d.decisionCode.startsWith('db.'))

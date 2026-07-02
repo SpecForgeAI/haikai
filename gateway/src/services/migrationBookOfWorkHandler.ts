@@ -59,6 +59,17 @@ import {
 } from './generatedMigrationBookOfWorkSchema';
 import { logger } from './logger';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
+import { EnsurePackFn, EnsurePackOutcome, ensureFreshDbMigrationPack } from './dbMigrationPackEnsure';
+
+/**
+ * The delivery streams whose generation consumes the DB migration pack
+ * (Spec 2026-07-02-a): their selection triggers the pack ensure-fresh step
+ * before plan generation.
+ */
+export const DB_PACK_DELIVERY_STREAMS: readonly string[] = [
+  'target_database_schema_implementation',
+  'data_migration',
+];
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -720,6 +731,13 @@ export interface MigrationBookOfWorkHandlerDeps {
    * configured limit. Phase-2 expansion calls share the SAME instance.
    */
   llmPool?: LlmConcurrencyPool;
+  /**
+   * DB-migration-pack ensure-fresh step (Spec 2026-07-02-a). Runs BEFORE the
+   * context fetch when a DB delivery stream is selected, so the readiness
+   * assessment and the plan's DB streams see a pack bound to THIS plan's
+   * target. Fail-soft by contract (never throws). Injected in tests.
+   */
+  ensurePack?: EnsurePackFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -875,7 +893,30 @@ export async function generateMigrationBookOfWork(
   const createDraft = deps.createDraft ?? defaultCreateDraft;
   const fetchAcceptedFindings =
     deps.fetchAcceptedFindings ?? defaultFetchAcceptedFindings;
+  const ensurePack = deps.ensurePack ?? ensureFreshDbMigrationPack;
   const systemPrompt = deps.systemPromptOverride ?? readDefaultSystemPrompt();
+
+  // ----- Stage 0: DB migration pack ensure-fresh (Spec 2026-07-02-a) -----
+  //
+  // When a DB delivery stream is selected, generate/refresh the deterministic
+  // pack BEFORE the context fetch so the readiness assessment reads the pack
+  // state this plan will actually be generated from. Fail-soft: 'skipped'
+  // (engine gate — e.g. no db.engine decision yet) and 'failed' surface as
+  // plan warnings; generation always proceeds.
+  const dbStreamSelected = (wizardAnswers?.deliveryStreams ?? []).some((s) =>
+    DB_PACK_DELIVERY_STREAMS.includes(s)
+  );
+  let packOutcome: EnsurePackOutcome | null = null;
+  if (dbStreamSelected) {
+    console.log(
+      `[diag-gateway] pm_migration_delivery_plan stage=ensuring_db_pack projectId=${projectId}`
+    );
+    packOutcome = await ensurePack({
+      projectId,
+      currentArchitectureId,
+      targetArchitectureId,
+    });
+  }
 
   // ----- Stage 1: load context (Q-12) -----
   console.log(
@@ -892,6 +933,18 @@ export async function generateMigrationBookOfWork(
   // ----- Stage 2: token-budget cascade (Q-4) -----
   const cascade = applyTokenBudgetCascade(rawContext);
   const warnings: string[] = [...cascade.warnings];
+
+  if (packOutcome?.status === 'skipped') {
+    warnings.push(
+      `DB migration pack not generated (${packOutcome.reason ?? 'engine gate'}); ` +
+        `the DB delivery streams will carry prerequisite stories instead of pack-driven work.`
+    );
+  } else if (packOutcome?.status === 'failed') {
+    warnings.push(
+      `DB migration pack generation failed (${packOutcome.reason ?? 'unknown error'}); ` +
+        `the DB delivery streams will carry prerequisite stories instead of pack-driven work.`
+    );
+  }
 
   // ----- Accepted-findings coverage snapshot (Spec 2026-06-11) -----
   //
@@ -1125,6 +1178,24 @@ export async function generateMigrationBookOfWork(
     // hierarchy rule requires story leaves (stories merely must parent to
     // features WHEN present), so no validator relaxation was needed.
     validated = { ...validated, items: seedEpicExpansionStates(validated.items) };
+  }
+
+  // Record the pack-ensure outcome in the draft's generation inputs so the
+  // review workspace (and Spec B's expansion) can trace which pack state the
+  // plan was generated against. Omitted entirely when no DB stream selected.
+  if (packOutcome !== null) {
+    validated = {
+      ...validated,
+      generationInputs: {
+        ...(validated.generationInputs ?? {}),
+        dbMigrationPack: {
+          status: packOutcome.status,
+          packId: packOutcome.packId,
+          inputSnapshotHash: packOutcome.inputSnapshotHash,
+          reason: packOutcome.reason,
+        },
+      },
+    };
   }
 
   // ----- Stage 5: POST to AMS (Q-3) -----

@@ -103,7 +103,10 @@ class MigrationDiscoveryContextScenarioSeedsTest {
             endpointDataEffectRepository,
             null, // InterfaceLogicalEntityRepository
             null, // MetaModelSummaryService
-            null  // TargetStateCapturedDecisionService
+            null, // TargetStateCapturedDecisionService
+            null, // DbMigrationPackRepository            (Spec 2026-07-02-a)
+            null, // DbMigrationPackDecisionRepository    (Spec 2026-07-02-a)
+            null  // DbMigrationPackTranslationRepository (Spec 2026-07-02-a)
         );
     }
 

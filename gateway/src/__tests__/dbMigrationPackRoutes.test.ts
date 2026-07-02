@@ -173,6 +173,9 @@ describe('POST generate / regenerate (explicit only)', () => {
     expect(mockGenerate).toHaveBeenCalledWith({
       projectId: 'p-1',
       architectureId: 'arch-1',
+      // No target_architecture_id in the request body → legacy null binding
+      // (defaultFetchDbDecisions falls back to the active target).
+      targetArchitectureId: null,
       seedMargin: 500,
     });
 

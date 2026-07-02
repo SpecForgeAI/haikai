@@ -720,7 +720,7 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     allowedExceptionScopes: ['interface', 'endpoint'],
   },
 
-  // ===== Group C — Data persistence (6) =====
+  // ===== Group C — Data persistence (10) =====
 
   {
     code: 'db.engine',
@@ -877,6 +877,105 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     foundationalInputs: ['db.engine', 'service.language'],
     versioned: true,
     allowedExceptionScopes: ['service'],
+  },
+
+  // ---- Persistence-tier migration policy questions (Spec A,
+  // 2026-07-02-a-target-inputs-and-pack-wiring). All four are independent /
+  // non-versioned so they need no branch-list coverage and no frontend
+  // versioned-code registration; mappingMutationRules covers them via the
+  // notes-only fallback automatically. ----
+
+  {
+    code: 'db.schemaMapping',
+    group: 'C',
+    orderInGroup: 7,
+    prompt: 'How should source database schemas map to target schemas?',
+    staticContextLeadIn:
+      'How source schema names carry over in a cross-engine migration. Common modern picks: map the default source schema (e.g. dbo) to public, keep source schema names, or consolidate to a single schema.',
+    expectedAnswerShape: 'single-choice',
+    choices: [
+      'map-default-schema-to-public',
+      'keep-source-schema-names',
+      'consolidate-to-single-schema',
+    ],
+    defaultsWhenUnchanged: 'map-default-schema-to-public',
+    cascades: [],
+    relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    allowedExceptionScopes: ['physical_data_entity'],
+  },
+
+  {
+    code: 'db.extensions',
+    group: 'C',
+    orderInGroup: 8,
+    prompt: 'Which database extensions are permitted on the target?',
+    staticContextLeadIn:
+      'The extension policy constrains schema-migration options (e.g. citext enables case-insensitive columns; pg_cron enables in-database scheduled jobs). Common modern picks: citext, pg_cron, uuid-ossp, pgcrypto — or a restricted no-extensions policy.',
+    expectedAnswerShape: 'multi-choice',
+    choices: [
+      'citext',
+      'pg_cron',
+      'uuid-ossp',
+      'pgcrypto',
+      'none-restricted-policy',
+    ],
+    defaultsWhenUnchanged: 'citext, pg_cron',
+    cascades: [],
+    relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    allowedExceptionScopes: ['physical_data_entity'],
+  },
+
+  {
+    code: 'db.jobsRehoming',
+    group: 'C',
+    orderInGroup: 9,
+    prompt: 'Where should database-resident scheduled jobs run on the target?',
+    staticContextLeadIn:
+      'Source engines often host scheduled jobs inside the database (e.g. Sybase Job Scheduler). Common modern picks: pg_cron in-database, an external scheduler, application-level scheduling, or decommission.',
+    expectedAnswerShape: 'single-choice',
+    choices: [
+      'pg_cron',
+      'external-scheduler',
+      'application-scheduled',
+      'decommission-jobs',
+    ],
+    defaultsWhenUnchanged: 'pg_cron',
+    cascades: [],
+    relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    allowedExceptionScopes: ['physical_data_entity'],
+  },
+
+  {
+    code: 'db.migrationWindow',
+    group: 'C',
+    orderInGroup: 10,
+    prompt:
+      'What migration window / downtime tolerance applies to the data migration?',
+    staticContextLeadIn:
+      'Drives the bulk-vs-incremental shape of the data migration. Common modern picks: a weekend bulk load with daily incremental sync until swap-over, an extended-outage big bang, or near-zero downtime via CDC.',
+    expectedAnswerShape: 'single-choice',
+    choices: [
+      'weekend-bulk-plus-daily-incremental-sync',
+      'extended-outage-big-bang',
+      'near-zero-downtime-cdc',
+      'flexible-no-constraint',
+    ],
+    defaultsWhenUnchanged: 'weekend-bulk-plus-daily-incremental-sync',
+    cascades: [],
+    relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    allowedExceptionScopes: ['physical_data_entity'],
   },
 
   // ===== Group D — Domain / DTO style (4) =====

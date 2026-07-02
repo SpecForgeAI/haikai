@@ -34,6 +34,12 @@ import com.example.architecturemodel.repository.discovery.DiscoveryFindingLinkRe
 import com.example.architecturemodel.repository.discovery.DiscoveryFindingRepository;
 import com.example.architecturemodel.repository.discovery.EndpointDataEffectRepository;
 import com.example.architecturemodel.repository.entity.ArchitectureElementMappingRepository;
+import com.example.architecturemodel.model.entity.DbMigrationPackDecisionEntity;
+import com.example.architecturemodel.model.entity.DbMigrationPackEntity;
+import com.example.architecturemodel.model.entity.DbMigrationPackTranslationEntity;
+import com.example.architecturemodel.repository.entity.DbMigrationPackDecisionRepository;
+import com.example.architecturemodel.repository.entity.DbMigrationPackRepository;
+import com.example.architecturemodel.repository.entity.DbMigrationPackTranslationRepository;
 import com.example.architecturemodel.repository.entity.DiscoveryCandidateRepository;
 import com.example.architecturemodel.repository.entity.DiscoveryDecisionTaskRepository;
 import com.example.architecturemodel.repository.entity.DiscoveryEvidenceRepository;
@@ -178,6 +184,16 @@ public class MigrationDiscoveryContextService {
         "runtime_usage", "runtime_log", "log"
     );
 
+    /**
+     * Translation review statuses counted as "not yet approved" for the pack
+     * readiness roll-up (Spec 2026-07-02-a). {@code rejected} is a terminal
+     * human disposition, not outstanding review work, so it is excluded.
+     */
+    public static final Set<String> UNAPPROVED_TRANSLATION_REVIEW_STATUSES = Set.of(
+        DbMigrationPackTranslationEntity.REVIEW_UNREVIEWED,
+        DbMigrationPackTranslationEntity.REVIEW_NEEDS_REWORK
+    );
+
     private final ProjectRepository projectRepository;
     private final ArchitectureRepository architectureRepository;
     private final DiscoveryRunRepository discoveryRunRepository;
@@ -222,6 +238,17 @@ public class MigrationDiscoveryContextService {
      */
     private final TargetStateCapturedDecisionService targetStateCapturedDecisionService;
 
+    /**
+     * DB-migration-pack collaborators (Spec 2026-07-02-a, Persistence-Tier
+     * Oracle Program) backing the {@code databaseDiscoverySummary.dbMigrationPack}
+     * roll-up + the pack readiness gap codes. All three NULLABLE per the
+     * established test-isolation pattern -- absent, the roll-up is {@code null}
+     * and the pack gap codes are simply not computed.
+     */
+    private final DbMigrationPackRepository dbMigrationPackRepository;
+    private final DbMigrationPackDecisionRepository dbMigrationPackDecisionRepository;
+    private final DbMigrationPackTranslationRepository dbMigrationPackTranslationRepository;
+
     /** Production constructor (all collaborators are required at runtime). */
     @Autowired
     public MigrationDiscoveryContextService(
@@ -244,7 +271,10 @@ public class MigrationDiscoveryContextService {
             EndpointDataEffectRepository endpointDataEffectRepository,
             InterfaceLogicalEntityRepository interfaceLogicalEntityRepository,
             MetaModelSummaryService metaModelSummaryService,
-            TargetStateCapturedDecisionService targetStateCapturedDecisionService) {
+            TargetStateCapturedDecisionService targetStateCapturedDecisionService,
+            DbMigrationPackRepository dbMigrationPackRepository,
+            DbMigrationPackDecisionRepository dbMigrationPackDecisionRepository,
+            DbMigrationPackTranslationRepository dbMigrationPackTranslationRepository) {
         this.projectRepository = projectRepository;
         this.architectureRepository = architectureRepository;
         this.discoveryRunRepository = discoveryRunRepository;
@@ -265,6 +295,9 @@ public class MigrationDiscoveryContextService {
         this.interfaceLogicalEntityRepository = interfaceLogicalEntityRepository;
         this.metaModelSummaryService = metaModelSummaryService;
         this.targetStateCapturedDecisionService = targetStateCapturedDecisionService;
+        this.dbMigrationPackRepository = dbMigrationPackRepository;
+        this.dbMigrationPackDecisionRepository = dbMigrationPackDecisionRepository;
+        this.dbMigrationPackTranslationRepository = dbMigrationPackTranslationRepository;
     }
 
     // -----------------------------------------------------------------------
@@ -371,7 +404,8 @@ public class MigrationDiscoveryContextService {
 
         MigrationDiscoveryContextDto.DatabaseDiscoverySummary databaseDiscoverySummary =
             includeDbFindings
-                ? buildDatabaseDiscoverySummary(runs, allFindings)
+                ? buildDatabaseDiscoverySummary(
+                    projectId, currentArchitecture.getId(), runs, allFindings)
                 : null;
 
         MigrationDiscoveryContextDto.ApiBehaviourBaselineSummary baselineSummary =
@@ -992,6 +1026,7 @@ public class MigrationDiscoveryContextService {
     // -----------------------------------------------------------------------
 
     private MigrationDiscoveryContextDto.DatabaseDiscoverySummary buildDatabaseDiscoverySummary(
+            UUID projectId, UUID currentArchitectureId,
             List<DiscoveryRunEntity> runs, List<DiscoveryFindingEntity> findings) {
         int dbFindings = (int) findings.stream()
             .filter(f -> f.getSource() != null && f.getSource().startsWith(DB_SOURCE_PREFIX))
@@ -1009,9 +1044,56 @@ public class MigrationDiscoveryContextService {
         int sampleHints = (int) findings.stream()
             .filter(f -> "sample_data_hint".equalsIgnoreCase(f.getFindingType()))
             .count();
+
+        // Source engines from db-pack finding detail_json.engineKey
+        // (Spec 2026-07-02-a): makes "the source is Sybase ASE" a first-class
+        // context fact instead of something buried in finding prose.
+        Set<String> engines = new LinkedHashSet<>();
+        for (DiscoveryFindingEntity f : findings) {
+            if (f.getSource() == null || !f.getSource().startsWith(DB_SOURCE_PREFIX)) {
+                continue;
+            }
+            Map<String, Object> detail = f.getDetailJson();
+            Object engineKey = detail == null ? null : detail.get("engineKey");
+            if (engineKey instanceof String s && !s.isBlank()) {
+                engines.add(s.toLowerCase());
+            }
+        }
+
         return new MigrationDiscoveryContextDto.DatabaseDiscoverySummary(
             dbFindings, dbRuns, sampleHints,
-            dbFindings > 0 || dbRuns > 0 || sampleHints > 0);
+            dbFindings > 0 || dbRuns > 0 || sampleHints > 0,
+            new ArrayList<>(engines),
+            buildDbMigrationPackSummary(projectId, currentArchitectureId));
+    }
+
+    /**
+     * Bounded DB-migration-pack roll-up for the (project, current architecture)
+     * pair (Spec 2026-07-02-a). {@code null} when no pack exists or the pack
+     * collaborators were not wired (test isolation) -- consumers treat null as
+     * "no pack".
+     */
+    private MigrationDiscoveryContextDto.DbMigrationPackSummary buildDbMigrationPackSummary(
+            UUID projectId, UUID currentArchitectureId) {
+        if (dbMigrationPackRepository == null) {
+            return null;
+        }
+        Optional<DbMigrationPackEntity> pack = dbMigrationPackRepository
+            .findByProjectIdAndArchitectureId(projectId, currentArchitectureId);
+        if (pack.isEmpty()) {
+            return null;
+        }
+        UUID packId = pack.get().getId();
+        Integer openDecisions = dbMigrationPackDecisionRepository == null
+            ? null
+            : (int) dbMigrationPackDecisionRepository.countByPackIdAndStatus(
+                packId, DbMigrationPackDecisionEntity.STATUS_OPEN);
+        Integer unapprovedTranslations = dbMigrationPackTranslationRepository == null
+            ? null
+            : (int) dbMigrationPackTranslationRepository.countByPackIdAndReviewStatusIn(
+                packId, UNAPPROVED_TRANSLATION_REVIEW_STATUSES);
+        return new MigrationDiscoveryContextDto.DbMigrationPackSummary(
+            packId, pack.get().getStatus(), openDecisions, unapprovedTranslations);
     }
 
     // -----------------------------------------------------------------------
@@ -1503,6 +1585,40 @@ public class MigrationDiscoveryContextService {
         }
         if (!hasSampleDataHints) {
             gaps.add(MigrationGapCodes.NO_SAMPLE_DATA_HINTS);
+        }
+
+        // ------ Persistence-tier pack gaps (Spec 2026-07-02-a) ------
+        //
+        // NO_PHYSICAL_SCHEMA_PROMOTED names the highest-risk silent state:
+        // DB discovery ran but nothing was promoted into the Data domain (the
+        // old NO_DATABASE_DISCOVERY_FINDINGS code fires on that branch too but
+        // points the user at the WRONG fix). The pack codes are ADVISORY
+        // (downgrade dataReadiness to partial, never below) and only computed
+        // when db discovery exists at all.
+        boolean hasDbDiscovery = hasDataEntities || hasDbFindings;
+        if (hasDbFindings && !hasDataEntities) {
+            gaps.add(MigrationGapCodes.NO_PHYSICAL_SCHEMA_PROMOTED);
+        }
+        MigrationDiscoveryContextDto.DbMigrationPackSummary packSummary =
+            ctx.databaseDiscoverySummary == null
+                ? null
+                : ctx.databaseDiscoverySummary.dbMigrationPack();
+        if (hasDbDiscovery) {
+            if (packSummary == null) {
+                gaps.add(MigrationGapCodes.DB_MIGRATION_PACK_MISSING);
+                dataReadiness = downgradeToPartial(dataReadiness);
+            } else {
+                if (packSummary.openDecisionCount() != null
+                        && packSummary.openDecisionCount() > 0) {
+                    gaps.add(MigrationGapCodes.UNRESOLVED_DB_PACK_DECISIONS);
+                    dataReadiness = downgradeToPartial(dataReadiness);
+                }
+                if (packSummary.unapprovedTranslationCount() != null
+                        && packSummary.unapprovedTranslationCount() > 0) {
+                    gaps.add(MigrationGapCodes.UNAPPROVED_DB_TRANSLATIONS);
+                    dataReadiness = downgradeToPartial(dataReadiness);
+                }
+            }
         }
 
         // ------ Infrastructure readiness (Part 6 lists no specific gaps; surface model presence) ------

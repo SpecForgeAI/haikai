@@ -31,6 +31,14 @@ export const STALE_REASON_INPUTS_CHANGED = 'inputs changed since generation';
 export interface PackStalenessInput {
   projectId: string;
   architectureId: string;
+  /**
+   * The target architecture the pack's `db.*` decisions were bound to at
+   * generation (persisted as `manifest_json.target_architecture_id`,
+   * Spec 2026-07-02-a). The recompute MUST read decisions from the SAME
+   * target or the hash comparison is meaningless. null/absent = legacy pack
+   * (active-target fallback).
+   */
+  targetArchitectureId?: string | null;
   /** The pack's stored `input_snapshot_hash` (null = legacy/no hash). */
   storedHash: string | null;
   /** The pack's stored `status` (`generated` | `stale`). */
@@ -72,7 +80,8 @@ export async function evaluatePackStaleness(
     const inputs = await fetchGenerationInputs(
       input.projectId,
       input.architectureId,
-      fetchDeps
+      fetchDeps,
+      input.targetArchitectureId ?? null
     );
     currentHash = computeInputSnapshotHash(inputs);
   } catch (error) {
