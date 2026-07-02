@@ -100,6 +100,12 @@
 
 import { getConfig } from '../config';
 import {
+  FetchPackFilesFn,
+  defaultFetchPackFiles,
+  isDbPackCarriageStory,
+  runDbPackSpecCarriage,
+} from './migrationDbPackSpecCarriage';
+import {
   fetchMigrationSpecContext as defaultFetchMigrationSpecContext,
   FetchMigrationSpecContextInput,
   MigrationSpecContextDto,
@@ -332,6 +338,16 @@ export interface LoadedBookOfWorkItem {
    * `ALLOWED_KINDS`), so the verbatim-manifest carriage recognises it by tag.
    */
   tags?: string[] | null;
+  /**
+   * Spec 2026-07-02-c (Persistence-Tier Oracle Program): DB-pack verbatim
+   * carriage markers stamped on the blob item by the deterministic DB
+   * expansion (Spec -b). A story tagged `seed_db_pack_files` with a `packId`
+   * and file selectors runs the FULLY DETERMINISTIC carriage path — its spec
+   * text IS the pack's files, byte-for-byte; no context resolver, no LLM.
+   */
+  packId?: string | null;
+  packFilePaths?: string[] | null;
+  packFilePathPrefixes?: string[] | null;
 }
 
 export interface LoadedBookOfWork {
@@ -665,6 +681,12 @@ export interface ShapeSpecGenerationDeps {
   fetchSpecContext?: SpecContextFetcher;
   callLlm?: LlmCaller;
   persistBatchResults?: PersistBatchFn;
+  /**
+   * Pack-files reader for the deterministic DB-pack verbatim carriage
+   * (Spec 2026-07-02-c). Injected in tests; production reads
+   * GET /db-migration-packs/{packId}/files.
+   */
+  fetchPackFiles?: FetchPackFilesFn;
   /** Override the system prompt (defaults to reading the markdown file). */
   systemPromptOverride?: string;
   /** Cross-story context injection (2026-05-20). */
@@ -863,6 +885,22 @@ const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfWorkId) 
       tags: Array.isArray(obj.tags)
         ? (obj.tags as unknown[]).map((t) => String(t))
         : null,
+      // Spec 2026-07-02-c: DB-pack carriage markers (stamped by Spec -b's
+      // deterministic DB expansion). Tolerate snake_case + camelCase.
+      packId:
+        (obj.pack_id as string | null | undefined) ??
+        (obj.packId as string | null | undefined) ??
+        null,
+      packFilePaths: Array.isArray(obj.packFilePaths)
+        ? (obj.packFilePaths as unknown[]).map((p) => String(p))
+        : Array.isArray(obj.pack_file_paths)
+          ? (obj.pack_file_paths as unknown[]).map((p) => String(p))
+          : null,
+      packFilePathPrefixes: Array.isArray(obj.packFilePathPrefixes)
+        ? (obj.packFilePathPrefixes as unknown[]).map((p) => String(p))
+        : Array.isArray(obj.pack_file_path_prefixes)
+          ? (obj.pack_file_path_prefixes as unknown[]).map((p) => String(p))
+          : null,
     });
   }
   return {
@@ -2136,6 +2174,23 @@ async function runSinglePassBatch(
         status: 'skipped_blocked',
         errorMessage: 'Story skipped per Skip Blocked Stories toggle (R-6).',
       };
+      perStoryResults.push(row);
+      logStoryResult(row);
+      continue;
+    }
+
+    // Spec 2026-07-02-c: DB-pack VERBATIM CARRIAGE — fully deterministic.
+    // The story's spec IS the pack's files byte-for-byte; there is nothing
+    // for an LLM to write, so the context resolver, the prompt, the response
+    // validators and the confidence downgrade are all bypassed. Missing
+    // files -> insufficient_context (the pack changed; regenerate the plan).
+    if (isDbPackCarriageStory(story)) {
+      const row = await runDbPackSpecCarriage({
+        projectId,
+        story,
+        baseRow,
+        fetchPackFiles: deps.fetchPackFiles ?? defaultFetchPackFiles,
+      });
       perStoryResults.push(row);
       logStoryResult(row);
       continue;
