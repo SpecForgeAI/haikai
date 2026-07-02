@@ -26,8 +26,8 @@ const CTX: GapWayfindingContext = {
 
 const BASE = '/projects/proj-1/architectures/arch-1';
 
-const ALL_13_CODES = [
-  // The 11 MigrationGapCodes.
+const ALL_17_CODES = [
+  // The 11 original MigrationGapCodes.
   'no_api_behaviour_baseline',
   'unresolved_discovery_decisions',
   'missing_current_to_target_mappings',
@@ -39,6 +39,11 @@ const ALL_13_CODES = [
   'incomplete_capture_coverage',
   'under_specified_endpoints',
   'discovery_harness_inventory_mismatch',
+  // The 4 persistence-tier pack codes (Spec 2026-07-02-a/-b).
+  'no_physical_schema_promoted',
+  'db_migration_pack_missing',
+  'unresolved_db_pack_decisions',
+  'unapproved_db_translations',
   // The 2 context warnings.
   'no_discovery_runs_selected',
   'no_findings_in_run',
@@ -46,7 +51,7 @@ const ALL_13_CODES = [
 
 describe('gapWayfindingRegistry (Spec 2026-06-11, Task Group 2)', () => {
   it('has a complete entry (title, explanation, actionLabel, destination) for every gap / context-warning code, with the spec-table routes', () => {
-    for (const code of ALL_13_CODES) {
+    for (const code of ALL_17_CODES) {
       const entry = GAP_WAYFINDING[code];
       expect(entry, `missing registry entry for ${code}`).toBeDefined();
       expect(entry.title.length).toBeGreaterThan(0);
@@ -54,9 +59,9 @@ describe('gapWayfindingRegistry (Spec 2026-06-11, Task Group 2)', () => {
       expect(entry.actionLabel.length).toBeGreaterThan(0);
       expect(typeof entry.buildDestination).toBe('function');
     }
-    // The synthetic per-finding entry completes the 14.
+    // The synthetic per-finding entry completes the 18.
     expect(GAP_WAYFINDING.unaddressed_finding).toBeDefined();
-    expect(Object.keys(GAP_WAYFINDING)).toHaveLength(14);
+    expect(Object.keys(GAP_WAYFINDING)).toHaveLength(18);
 
     // Spot-check run-scoped destinations.
     expect(

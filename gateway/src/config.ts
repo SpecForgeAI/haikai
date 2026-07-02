@@ -132,6 +132,14 @@ export interface Config {
    * Read from MIGRATION_PLAN_EXPANSION_BATCH_SIZE. Default: 12.
    */
   migrationPlanExpansionBatchSize: number;
+  /**
+   * Max tables per mechanical schema-cluster story in the deterministic DB
+   * plan generation (Spec 2026-07-02-b, Persistence-Tier Oracle Program) —
+   * the anti-story-explosion knob: 250 tables become ~10 cluster stories,
+   * not 250 per-table stories. Read from MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES.
+   * Default: 25.
+   */
+  migrationPlanDbClusterMaxTables: number;
 
   // Migration Execution Driver Configuration
   // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)
@@ -341,6 +349,12 @@ export function loadConfig(): Config {
     // .env.example alongside the other gateway env vars.
     migrationPlanLlmConcurrency: parseIntEnv(process.env.MIGRATION_PLAN_LLM_CONCURRENCY, 4),
     migrationPlanExpansionBatchSize: parseIntEnv(process.env.MIGRATION_PLAN_EXPANSION_BATCH_SIZE, 12),
+    // MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES: max tables per mechanical schema-
+    // cluster story in the deterministic DB plan path (Spec 2026-07-02-b).
+    migrationPlanDbClusterMaxTables: parseIntEnv(
+      process.env.MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES,
+      25
+    ),
 
     // Migration Execution Driver Configuration
     // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)

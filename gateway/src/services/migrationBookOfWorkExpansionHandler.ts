@@ -90,8 +90,19 @@ import {
   validateJudgeResponse,
   validateNonInventoryExpansionResponse,
 } from './migrationBookOfWorkExpansionValidators';
-import { LlmCallerFn } from './migrationBookOfWorkHandler';
+import { DB_PACK_DELIVERY_STREAMS, LlmCallerFn } from './migrationBookOfWorkHandler';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
+import {
+  EnsurePackFn,
+  EnsurePackOutcome,
+  ensureFreshDbMigrationPack,
+} from './dbMigrationPackEnsure';
+import {
+  FetchPackViewFn,
+  PackView,
+  buildDbEpicStories,
+  defaultFetchPackView,
+} from './migrationDbPackPlanner';
 import { getElementsInventory } from './architectureModelClient';
 import {
   TargetManifestArtifactWire,
@@ -215,6 +226,16 @@ export interface MigrationBookOfWorkExpansionDeps {
     projectId: string,
     targetArchitectureId: string
   ) => Promise<ScaffoldServiceElement[]>;
+  /**
+   * DB-pack collaborators for the deterministic DB-epic expansion
+   * (Spec 2026-07-02-b). The ensure step re-runs at expansion time (the user
+   * may expand days after plan creation) and the pack view feeds the
+   * deterministic story builder. Both injected in tests.
+   */
+  ensurePack?: EnsurePackFn;
+  fetchPackView?: FetchPackViewFn;
+  /** Cluster-cap override for tests (defaults to config knob, then 25). */
+  dbClusterCapOverride?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -967,11 +988,65 @@ async function runEpicPipeline(args: {
   stream: string;
   deps: Required<
     Pick<MigrationBookOfWorkExpansionDeps, 'callLlm' | 'llmPool' | 'fetchEpicInventory'>
-  > & { systemPrompt: string; batchSize: number };
+  > & {
+    systemPrompt: string;
+    batchSize: number;
+    ensurePack: EnsurePackFn;
+    fetchPackView: FetchPackViewFn;
+    dbClusterCap: number;
+  };
 }): Promise<MigrationBookOfWorkItem[]> {
   const { projectId, book, epic, features, stream, deps } = args;
   const featureIds = new Set(features.map((f) => f.id));
   const maxSequence = book.items.reduce((m, i) => Math.max(m, i.sequenceOrder ?? 0), 0);
+
+  // ----- Deterministic DB-epic expansion (Spec 2026-07-02-b) -----
+  //
+  // DB epics NEVER take the LLM paths below — neither the inventory batching
+  // nor the freeform non-inventory single call (the old silent-hallucination
+  // path, Gap #5). The ensure step re-runs so a stale/missing pack is
+  // regenerated (or the epic degrades to explicit prerequisite stories), and
+  // the story builder enforces its own coverage guarantee (throw → epic
+  // `failed`, retryable).
+  if (DB_PACK_DELIVERY_STREAMS.includes(stream)) {
+    console.log(
+      `[diag-gateway] pm_migration_delivery_plan stage=expansion_db_deterministic ` +
+        `projectId=${projectId} epicId=${epic.id} stream=${stream}`
+    );
+    let ensureOutcome: EnsurePackOutcome | null = null;
+    if (book.targetArchitectureId) {
+      ensureOutcome = await deps.ensurePack({
+        projectId,
+        currentArchitectureId: book.currentArchitectureId ?? '',
+        targetArchitectureId: book.targetArchitectureId,
+      });
+    }
+    let packView: PackView | null = null;
+    if (ensureOutcome === null || ensureOutcome.packId) {
+      try {
+        packView = await deps.fetchPackView(
+          projectId,
+          book.currentArchitectureId ?? ''
+        );
+      } catch (error) {
+        logger.warn('Pack view read failed at expansion; DB epic degrades to prerequisites', {
+          projectId,
+          epicId: epic.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        packView = null;
+      }
+    }
+    return buildDbEpicStories({
+      epic,
+      features,
+      stream,
+      packView,
+      ensureOutcome,
+      clusterCap: deps.dbClusterCap,
+      maxSequence,
+    });
+  }
 
   const inventory = await deps.fetchEpicInventory({
     projectId,
@@ -1637,12 +1712,22 @@ export async function expandMigrationBookOfWorkEpic(
   const callLlm = deps.callLlm ?? defaultCallLlm;
   const llmPool = deps.llmPool ?? getMigrationPlanLlmPool();
   const systemPrompt = deps.systemPromptOverride ?? readDefaultSystemPrompt();
+  const ensurePack = deps.ensurePack ?? ensureFreshDbMigrationPack;
+  const fetchPackView = deps.fetchPackView ?? defaultFetchPackView;
   let batchSize = deps.batchSizeOverride;
   if (batchSize === undefined) {
     try {
       batchSize = getConfig().migrationPlanExpansionBatchSize;
     } catch {
       batchSize = 12; // config unavailable in some unit-test contexts
+    }
+  }
+  let dbClusterCap = deps.dbClusterCapOverride;
+  if (dbClusterCap === undefined) {
+    try {
+      dbClusterCap = getConfig().migrationPlanDbClusterMaxTables;
+    } catch {
+      dbClusterCap = 25; // config unavailable in some unit-test contexts
     }
   }
 
@@ -1694,7 +1779,16 @@ export async function expandMigrationBookOfWorkEpic(
         epic,
         features,
         stream,
-        deps: { callLlm, llmPool, fetchEpicInventory, systemPrompt, batchSize },
+        deps: {
+          callLlm,
+          llmPool,
+          fetchEpicInventory,
+          systemPrompt,
+          batchSize,
+          ensurePack,
+          fetchPackView,
+          dbClusterCap,
+        },
       });
 
       // Scaffold injection (Spec 2026-06-26 FR2/FR3/FR5): when a confirmed
@@ -1702,15 +1796,20 @@ export async function expandMigrationBookOfWorkEpic(
       // ONE code-owned feature + story, riding the SAME validate + atomic
       // append path below so they are hierarchy-legal by construction. [] when
       // no confirmed manifest or this epic is not the host (expand normally).
-      const scaffoldItems = await buildScaffoldInjectionForEpic({
-        projectId,
-        book,
-        epic,
-        features,
-        stream,
-        fetchTargetManifestArtifacts,
-        fetchScaffoldServices,
-      });
+      // DB epics skip the gate outright (Spec 2026-07-02-b): the scaffold
+      // maps only maven/npm ecosystems, so a DB epic can never host —
+      // skipping avoids a pointless AMS read per DB epic.
+      const scaffoldItems = DB_PACK_DELIVERY_STREAMS.includes(stream)
+        ? []
+        : await buildScaffoldInjectionForEpic({
+            projectId,
+            book,
+            epic,
+            features,
+            stream,
+            fetchTargetManifestArtifacts,
+            fetchScaffoldServices,
+          });
 
       // Validate every story against the item schema, then the FULL merged
       // hierarchy (no orphans/cycles/level-jumps/duplicate ids against the

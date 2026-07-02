@@ -633,7 +633,12 @@ describe('Two-phase end-to-end flows (Spec 2026-06-11, Task Group 6)', () => {
     // The persisted phase-1 skeleton IS the simulated AMS document phase 2
     // reads — the cross-phase contract this test exists to pin.
     const [, postedBody] = createDraft.mock.calls[0];
-    const ams = makeInMemoryAms(postedBody.bookOfWork as MigrationBookOfWorkItem[]);
+    // AMS wire shape is snake_case `book_of_work_json: { items }` (the
+    // 2026-06-23 fix); the old camelCase `bookOfWork` read was a stale
+    // pre-existing failure repaired by Spec 2026-07-02-b.
+    const ams = makeInMemoryAms(
+      (postedBody.book_of_work_json as { items: MigrationBookOfWorkItem[] }).items
+    );
     const cutoverEpicId = 'cutover_rollback_decommission:E1';
     const reconEpicId = 'reconciliation_reporting:E1';
     const seededStates = ams.store.items

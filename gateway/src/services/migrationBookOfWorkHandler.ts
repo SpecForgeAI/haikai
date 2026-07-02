@@ -60,6 +60,12 @@ import {
 import { logger } from './logger';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
 import { EnsurePackFn, EnsurePackOutcome, ensureFreshDbMigrationPack } from './dbMigrationPackEnsure';
+import {
+  FetchPackViewFn,
+  PackView,
+  buildDbStreamSkeleton,
+  defaultFetchPackView,
+} from './migrationDbPackPlanner';
 
 /**
  * The delivery streams whose generation consumes the DB migration pack
@@ -738,6 +744,12 @@ export interface MigrationBookOfWorkHandlerDeps {
    * target. Fail-soft by contract (never throws). Injected in tests.
    */
   ensurePack?: EnsurePackFn;
+  /**
+   * Pack-view reader for the deterministic DB skeletons (Spec 2026-07-02-b).
+   * Injected in tests; a read failure degrades the DB streams to the
+   * prerequisite skeleton (never freeform LLM).
+   */
+  fetchPackView?: FetchPackViewFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -946,6 +958,44 @@ export async function generateMigrationBookOfWork(
     );
   }
 
+  // ----- Pack view for the deterministic DB skeletons (Spec 2026-07-02-b) -----
+  //
+  // Fetched ONCE and shared by both DB streams. A read failure (or a
+  // skipped/failed ensure) degrades to the PREREQUISITE skeleton — the DB
+  // streams are NEVER LLM-generated and never silently freeform.
+  const fetchPackView = deps.fetchPackView ?? defaultFetchPackView;
+  let dbPackView: PackView | null = null;
+  if (dbStreamSelected && packOutcome?.packId) {
+    try {
+      dbPackView = await fetchPackView(projectId, currentArchitectureId);
+      if (dbPackView === null) {
+        // Inconsistent state: ensure reported a pack but the read-back found
+        // none. Degrade honestly rather than guessing.
+        warnings.push(
+          `DB migration pack reported '${packOutcome.status}' but could not be read back; ` +
+            `the DB delivery streams will carry prerequisite stories instead of pack-driven work.`
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Pack view read failed; DB streams degrade to prerequisite skeleton', {
+        projectId,
+        error: message,
+      });
+      warnings.push(
+        `DB migration pack read failed (${message}); the DB delivery streams will carry ` +
+          `prerequisite stories instead of pack-driven work.`
+      );
+      dbPackView = null;
+    }
+  }
+  let dbClusterCap = 25;
+  try {
+    dbClusterCap = getConfig().migrationPlanDbClusterMaxTables;
+  } catch {
+    // config unavailable in some unit-test contexts — keep the default
+  }
+
   // ----- Accepted-findings coverage snapshot (Spec 2026-06-11) -----
   //
   // Fetched via the DEDICATED paged AMS read (status=approved, two
@@ -1085,6 +1135,24 @@ export async function generateMigrationBookOfWork(
         `streams=${selectedStreams.length}`
     );
     const generateStream = async (stream: string): Promise<PerStreamBook> => {
+      // Deterministic DB path (Spec 2026-07-02-b, Persistence-Tier Oracle
+      // Program): the two DB streams are generated FROM the pack in code —
+      // no LLM call, no token spend, and no freeform fallback (pack
+      // unavailable → prerequisite skeleton).
+      if (DB_PACK_DELIVERY_STREAMS.includes(stream)) {
+        console.log(
+          `[diag-gateway] pm_migration_delivery_plan stage=deterministic_db_skeleton ` +
+            `projectId=${projectId} stream=${stream} pack=${dbPackView?.packId ?? 'none'}`
+        );
+        const book = buildDbStreamSkeleton({
+          stream: stream as 'target_database_schema_implementation' | 'data_migration',
+          packView: dbPackView,
+          ensureOutcome: packOutcome,
+          clusterCap: dbClusterCap,
+        });
+        return { stream, book };
+      }
+
       // Phase-1 SKELETON scope (Spec 2026-06-11 Two-Phase generation): the
       // per-stream call requests ONLY the initiative -> epic -> feature
       // skeleton — titles + one-line descriptions, no stories, no acceptance
