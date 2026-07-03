@@ -195,7 +195,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
       ['run-1', 'run-2']
     );
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary.findingsCoverage).toEqual({
+    expect(postedBody.generation_summary_json.findingsCoverage).toEqual({
       findings: [
         { id: 'fnd-aa', title: 'Trigger side effect', severity: 'critical', runId: 'run-1' },
         { id: 'fnd-mm', title: 'Implicit conversion risk', severity: 'high', runId: 'run-2' },
@@ -203,7 +203,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
       ],
     });
     // Deterministic counts still present alongside the snapshot.
-    expect(postedBody.generationSummary.totalItems).toBe(4);
+    expect(postedBody.generation_summary_json.totalItems).toBe(4);
   });
 
   // Test 2: legacy combined mode — snapshot merged + LLM keys deleted.
@@ -233,15 +233,15 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
     );
 
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary).not.toHaveProperty('findingsAddressed');
-    expect(postedBody.generationSummary).not.toHaveProperty('findingsNotAddressed');
-    expect(postedBody.generationSummary.findingsCoverage.findings.map((f: { id: string }) => f.id)).toEqual([
+    expect(postedBody.generation_summary_json).not.toHaveProperty('findingsAddressed');
+    expect(postedBody.generation_summary_json).not.toHaveProperty('findingsNotAddressed');
+    expect(postedBody.generation_summary_json.findingsCoverage.findings.map((f: { id: string }) => f.id)).toEqual([
       'fnd-aa',
       'fnd-mm',
       'fnd-zz',
     ]);
     // The rest of the LLM generationSummary survives the strip.
-    expect(postedBody.generationSummary.totalItems).toBe(4);
+    expect(postedBody.generation_summary_json.totalItems).toBe(4);
   });
 
   // Test 3: default fetcher — two severity passes per run, paged walk, union by id.
@@ -316,7 +316,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
 
     expect(fetchAcceptedFindings).not.toHaveBeenCalled();
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary).not.toHaveProperty('findingsCoverage');
+    expect(postedBody.generation_summary_json).not.toHaveProperty('findingsCoverage');
   });
 
   // Test 5: runs selected but zero approved critical/high findings.
@@ -339,7 +339,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
     );
 
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary.findingsCoverage).toEqual({ findings: [] });
+    expect(postedBody.generation_summary_json.findingsCoverage).toEqual({ findings: [] });
   });
 
   // Test 6: fail-soft — fetch error warns, omits snapshot, generation succeeds.
@@ -367,7 +367,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
     // snapshot that would read as "0 accepted findings, full coverage").
     expect(result.draftId).toBe('d5');
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary).not.toHaveProperty('findingsCoverage');
+    expect(postedBody.generation_summary_json).not.toHaveProperty('findingsCoverage');
     expect(result.warnings?.join(' ')).toMatch(/Findings-coverage snapshot unavailable/);
   });
   // ==========================================================================
@@ -442,7 +442,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
     // Trust-chain agreement: the persisted wire shape IS the shared fixture
     // the frontend computeFindingsCoverage test parses.
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary.findingsCoverage).toEqual(
+    expect(postedBody.generation_summary_json.findingsCoverage).toEqual(
       trustChain.generationSummary.findingsCoverage
     );
   });
@@ -478,6 +478,6 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
     expect(result.draftId).toBe('d-e2e-fail');
     expect(result.warnings?.join(' ')).toMatch(/Findings-coverage snapshot unavailable/);
     const [, postedBody] = createDraft.mock.calls[0];
-    expect(postedBody.generationSummary).not.toHaveProperty('findingsCoverage');
+    expect(postedBody.generation_summary_json).not.toHaveProperty('findingsCoverage');
   });
 });

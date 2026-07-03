@@ -4755,3 +4755,28 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Side-by-Side Sync & Reconciliation Pack (Spec 2026-07-02-d, Persistence-
+  # Tier Oracle Program). Extends chk_dmpf_file_kind with three side-by-side
+  # operation kinds: sync_runner / reconciliation_script / cutover_runbook.
+  # Changesets 173/177 are immutable; the CHECK is dropped + re-created in
+  # this NEW changeset (mirrors 177's drop-and-recreate idiom).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 203). Registered
+  # AFTER 203 with the tableExists precondition idiom (mirrors 177).
+  # ============================================================================
+  - changeSet:
+      id: 204-db-migration-pack-file-kind-sync
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: db_migration_pack_files
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/204-db-migration-pack-file-kind-sync.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

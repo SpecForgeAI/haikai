@@ -115,7 +115,10 @@ class MigrationDiscoveryContextServiceTest {
             null, // EndpointDataEffectRepository     (coverage B REST bar)
             null, // InterfaceLogicalEntityRepository (coverage B SOAP bar)
             null,
-            null /* TargetStateCapturedDecisionService -- tested in MigrationDiscoveryContextAggregationTest */
+            null /* TargetStateCapturedDecisionService -- tested in MigrationDiscoveryContextAggregationTest */,
+            null, // DbMigrationPackRepository            (Spec 2026-07-02-a)
+            null, // DbMigrationPackDecisionRepository    (Spec 2026-07-02-a)
+            null  // DbMigrationPackTranslationRepository (Spec 2026-07-02-a)
         );
     }
 

@@ -470,7 +470,7 @@ describe('Migration Delivery Plan gateway orchestration handler (Spec 2026-05-17
 describe('Migration Delivery Plan — per-stream split generation', () => {
   const STREAMS = [
     'target_service_api_implementation',
-    'target_database_schema_implementation',
+    'target_infrastructure_environment_implementation',
     'cutover_rollback_decommission',
   ];
 
@@ -527,6 +527,11 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
 
   it('assembleBookOfWork orders streams by delivery dependency (schema before API, cutover last), renumbers sequenceOrder globally, and recomputes counts', () => {
     const book = JSON.parse(makeValidBookOfWorkJson()) as GeneratedMigrationBookOfWork;
+    // PURE assembly test — assembleBookOfWork never touches the LLM or the
+    // deterministic DB path, so the DB stream stays exercisable here even
+    // though generateMigrationBookOfWork now builds it deterministically
+    // (Spec 2026-07-02-b). Elsewhere in this file the per-stream LLM tests
+    // swapped the DB stream for infrastructure for the same reason.
     const assembled = assembleBookOfWork([
       // Deliberately out of dependency order.
       { stream: 'cutover_rollback_decommission', book },
@@ -569,7 +574,7 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
 
     // The db stream fails on BOTH attempts; the others succeed.
     const callLlm = jest.fn().mockImplementation(({ userPrompt }: { userPrompt: string }) => {
-      if (userPrompt.includes('Scope: target_database_schema_implementation')) {
+      if (userPrompt.includes('Scope: target_infrastructure_environment_implementation')) {
         return Promise.reject(new Error('HTTP 504 - Endpoint request timed out'));
       }
       return Promise.resolve({ content: makeValidBookOfWorkJson() });
@@ -586,12 +591,12 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
         { fetchContext, callLlm, createDraft, systemPromptOverride: 'SYS' }
       )
     ).rejects.toThrow(
-      'Delivery stream "target_database_schema_implementation" generation failed after retry'
+      'Delivery stream "target_infrastructure_environment_implementation" generation failed after retry'
     );
 
     // The failing stream was attempted exactly twice (one retry).
     const dbCalls = callLlm.mock.calls.filter((c) =>
-      (c[0].userPrompt as string).includes('Scope: target_database_schema_implementation')
+      (c[0].userPrompt as string).includes('Scope: target_infrastructure_environment_implementation')
     );
     expect(dbCalls).toHaveLength(2);
     // ATOMIC: no partial draft reaches AMS.
@@ -607,7 +612,7 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
 
     let dbAttempts = 0;
     const callLlm = jest.fn().mockImplementation(({ userPrompt }: { userPrompt: string }) => {
-      if (userPrompt.includes('Scope: target_database_schema_implementation')) {
+      if (userPrompt.includes('Scope: target_infrastructure_environment_implementation')) {
         dbAttempts += 1;
         if (dbAttempts === 1) {
           return Promise.reject(new Error('transient relay blip'));
@@ -645,7 +650,7 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
 describe('Migration Delivery Plan — phase-1 skeleton generation (Spec 2026-06-11, Task Group 3)', () => {
   const STREAMS = [
     'target_service_api_implementation',
-    'target_database_schema_implementation',
+    'target_infrastructure_environment_implementation',
     'cutover_rollback_decommission',
   ];
 

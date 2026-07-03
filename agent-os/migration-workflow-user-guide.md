@@ -474,7 +474,13 @@ target element. Per row:
 
 - Switch the centre panel to the **"Compare with current"** tab for a
   side-by-side current-vs-target review. (A third **"Architect Conversation"**
-  tab runs an LLM-assisted refinement chat over the draft.)
+  tab runs an LLM-assisted refinement chat over the draft.) For database
+  migrations the conversation's Data-persistence group now also captures four
+  migration-policy decisions (2026-07-02): **schema mapping** (default
+  `dbo → public`), **extensions policy** (default citext + pg_cron permitted),
+  **DB-job re-homing** (default pg_cron), and the **migration window**
+  (default weekend bulk + daily incremental sync) — the DB migration pack and
+  the plan's persistence streams honour these.
 - When the draft is ready, click **"Promote"** on the draft row.
   - A confirm modal runs a **dry-run first** and reports the impact — e.g. how
     many downstream **specs it will mark stale**.
@@ -578,14 +584,50 @@ Generation is **two-phase** so it stays fast no matter how large the system is:
 > own, and is cleared by capturing **and activating** a current-state API
 > baseline (see the API Test Harness section).
 
+### The DB streams are deterministic (Persistence-Tier Oracle, 2026-07-02)
+
+The two persistence streams — **Target database schema implementation** and
+**Data migration** — are no longer LLM-generated. When either is selected,
+Generate first **auto-generates/refreshes the DB migration pack** (bound to
+this plan's target architecture), then builds those streams' skeletons and
+stories **deterministically from the pack manifest**:
+
+- **Schema epic**: a foundations story, a handful of **cluster stories** for
+  mechanical tables (grouped by FK dependency layer, max 25 tables per story —
+  `MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES`), an individual story ONLY for each
+  flagged table (its open pack decisions ride as `needs_user_decision`), and a
+  constraints/indexes/sequence-seed story. A 250-table estate yields ~a dozen
+  schema stories, never 250.
+- **DB code objects epic**: per-kind review + apply stories for stored
+  procedures / triggers / views (only APPROVED translations are ever applied),
+  individual stories for rewrite-in-app objects, and a job re-homing story
+  (`db.jobsRehoming`).
+- **Data migration epic**: one bulk-load story, incremental stories grouped by
+  delta strategy, and a reconciliation story. **Persistence cutover epic**:
+  final delta, sequence seeding at swap-over, job enablement, post-swap
+  verification.
+- These stories carry the pack files **byte-for-byte** into their generated
+  specs (the `seed_db_pack_files` carriage) — the LLM invents nothing for DB
+  build work.
+- If the pack cannot be generated (e.g. `db.engine` not captured yet, or the
+  discovered schema was never promoted), the streams carry explicit
+  **prerequisite stories** instead — never LLM guesswork.
+- **Migrate** hard-blocks DB-pack stories until the pack is fresh, its
+  decision queue is empty, and every translation draft is approved.
+
 ### Also on the Migration Delivery Plan page — Schema migration & Interface contracts
 
 The Migration Delivery Plan page has section tabs next to **Delivery plan**:
 
 - **Schema migration** — the deterministic Sybase→PostgreSQL DB migration
   pack (Liquibase changesets, bulk + incremental data scripts, proc/trigger
-  translation drafts, decision queue, drift verification, zip download).
-  Attach the pack to your DB epic and hand it to the implementation team.
+  translation drafts, decision queue, drift verification, zip download —
+  plus, since 2026-07-02, the side-by-side operation set: a daily one-way
+  incremental **sync runner** with a high-water state table, per-run
+  **reconciliation** queries + drift-report builder that exits non-zero on
+  drift, and the **swap-over runbook**). You normally don't need to generate
+  it manually any more — Create Migration Plan does it — but the decision
+  queue and translation reviews live here.
 - **Interface contracts** — deterministic **OpenAPI 3.0 contracts** generated
   straight from the architecture model, one per interface. Pick the
   architecture (normally your **target state**), then **Generate** per

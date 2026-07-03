@@ -59,6 +59,23 @@ import {
 } from './generatedMigrationBookOfWorkSchema';
 import { logger } from './logger';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
+import { EnsurePackFn, EnsurePackOutcome, ensureFreshDbMigrationPack } from './dbMigrationPackEnsure';
+import {
+  FetchPackViewFn,
+  PackView,
+  buildDbStreamSkeleton,
+  defaultFetchPackView,
+} from './migrationDbPackPlanner';
+
+/**
+ * The delivery streams whose generation consumes the DB migration pack
+ * (Spec 2026-07-02-a): their selection triggers the pack ensure-fresh step
+ * before plan generation.
+ */
+export const DB_PACK_DELIVERY_STREAMS: readonly string[] = [
+  'target_database_schema_implementation',
+  'data_migration',
+];
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -720,6 +737,19 @@ export interface MigrationBookOfWorkHandlerDeps {
    * configured limit. Phase-2 expansion calls share the SAME instance.
    */
   llmPool?: LlmConcurrencyPool;
+  /**
+   * DB-migration-pack ensure-fresh step (Spec 2026-07-02-a). Runs BEFORE the
+   * context fetch when a DB delivery stream is selected, so the readiness
+   * assessment and the plan's DB streams see a pack bound to THIS plan's
+   * target. Fail-soft by contract (never throws). Injected in tests.
+   */
+  ensurePack?: EnsurePackFn;
+  /**
+   * Pack-view reader for the deterministic DB skeletons (Spec 2026-07-02-b).
+   * Injected in tests; a read failure degrades the DB streams to the
+   * prerequisite skeleton (never freeform LLM).
+   */
+  fetchPackView?: FetchPackViewFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -875,7 +905,30 @@ export async function generateMigrationBookOfWork(
   const createDraft = deps.createDraft ?? defaultCreateDraft;
   const fetchAcceptedFindings =
     deps.fetchAcceptedFindings ?? defaultFetchAcceptedFindings;
+  const ensurePack = deps.ensurePack ?? ensureFreshDbMigrationPack;
   const systemPrompt = deps.systemPromptOverride ?? readDefaultSystemPrompt();
+
+  // ----- Stage 0: DB migration pack ensure-fresh (Spec 2026-07-02-a) -----
+  //
+  // When a DB delivery stream is selected, generate/refresh the deterministic
+  // pack BEFORE the context fetch so the readiness assessment reads the pack
+  // state this plan will actually be generated from. Fail-soft: 'skipped'
+  // (engine gate — e.g. no db.engine decision yet) and 'failed' surface as
+  // plan warnings; generation always proceeds.
+  const dbStreamSelected = (wizardAnswers?.deliveryStreams ?? []).some((s) =>
+    DB_PACK_DELIVERY_STREAMS.includes(s)
+  );
+  let packOutcome: EnsurePackOutcome | null = null;
+  if (dbStreamSelected) {
+    console.log(
+      `[diag-gateway] pm_migration_delivery_plan stage=ensuring_db_pack projectId=${projectId}`
+    );
+    packOutcome = await ensurePack({
+      projectId,
+      currentArchitectureId,
+      targetArchitectureId,
+    });
+  }
 
   // ----- Stage 1: load context (Q-12) -----
   console.log(
@@ -892,6 +945,56 @@ export async function generateMigrationBookOfWork(
   // ----- Stage 2: token-budget cascade (Q-4) -----
   const cascade = applyTokenBudgetCascade(rawContext);
   const warnings: string[] = [...cascade.warnings];
+
+  if (packOutcome?.status === 'skipped') {
+    warnings.push(
+      `DB migration pack not generated (${packOutcome.reason ?? 'engine gate'}); ` +
+        `the DB delivery streams will carry prerequisite stories instead of pack-driven work.`
+    );
+  } else if (packOutcome?.status === 'failed') {
+    warnings.push(
+      `DB migration pack generation failed (${packOutcome.reason ?? 'unknown error'}); ` +
+        `the DB delivery streams will carry prerequisite stories instead of pack-driven work.`
+    );
+  }
+
+  // ----- Pack view for the deterministic DB skeletons (Spec 2026-07-02-b) -----
+  //
+  // Fetched ONCE and shared by both DB streams. A read failure (or a
+  // skipped/failed ensure) degrades to the PREREQUISITE skeleton — the DB
+  // streams are NEVER LLM-generated and never silently freeform.
+  const fetchPackView = deps.fetchPackView ?? defaultFetchPackView;
+  let dbPackView: PackView | null = null;
+  if (dbStreamSelected && packOutcome?.packId) {
+    try {
+      dbPackView = await fetchPackView(projectId, currentArchitectureId);
+      if (dbPackView === null) {
+        // Inconsistent state: ensure reported a pack but the read-back found
+        // none. Degrade honestly rather than guessing.
+        warnings.push(
+          `DB migration pack reported '${packOutcome.status}' but could not be read back; ` +
+            `the DB delivery streams will carry prerequisite stories instead of pack-driven work.`
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Pack view read failed; DB streams degrade to prerequisite skeleton', {
+        projectId,
+        error: message,
+      });
+      warnings.push(
+        `DB migration pack read failed (${message}); the DB delivery streams will carry ` +
+          `prerequisite stories instead of pack-driven work.`
+      );
+      dbPackView = null;
+    }
+  }
+  let dbClusterCap = 25;
+  try {
+    dbClusterCap = getConfig().migrationPlanDbClusterMaxTables;
+  } catch {
+    // config unavailable in some unit-test contexts — keep the default
+  }
 
   // ----- Accepted-findings coverage snapshot (Spec 2026-06-11) -----
   //
@@ -1032,6 +1135,24 @@ export async function generateMigrationBookOfWork(
         `streams=${selectedStreams.length}`
     );
     const generateStream = async (stream: string): Promise<PerStreamBook> => {
+      // Deterministic DB path (Spec 2026-07-02-b, Persistence-Tier Oracle
+      // Program): the two DB streams are generated FROM the pack in code —
+      // no LLM call, no token spend, and no freeform fallback (pack
+      // unavailable → prerequisite skeleton).
+      if (DB_PACK_DELIVERY_STREAMS.includes(stream)) {
+        console.log(
+          `[diag-gateway] pm_migration_delivery_plan stage=deterministic_db_skeleton ` +
+            `projectId=${projectId} stream=${stream} pack=${dbPackView?.packId ?? 'none'}`
+        );
+        const book = buildDbStreamSkeleton({
+          stream: stream as 'target_database_schema_implementation' | 'data_migration',
+          packView: dbPackView,
+          ensureOutcome: packOutcome,
+          clusterCap: dbClusterCap,
+        });
+        return { stream, book };
+      }
+
       // Phase-1 SKELETON scope (Spec 2026-06-11 Two-Phase generation): the
       // per-stream call requests ONLY the initiative -> epic -> feature
       // skeleton — titles + one-line descriptions, no stories, no acceptance
@@ -1125,6 +1246,24 @@ export async function generateMigrationBookOfWork(
     // hierarchy rule requires story leaves (stories merely must parent to
     // features WHEN present), so no validator relaxation was needed.
     validated = { ...validated, items: seedEpicExpansionStates(validated.items) };
+  }
+
+  // Record the pack-ensure outcome in the draft's generation inputs so the
+  // review workspace (and Spec B's expansion) can trace which pack state the
+  // plan was generated against. Omitted entirely when no DB stream selected.
+  if (packOutcome !== null) {
+    validated = {
+      ...validated,
+      generationInputs: {
+        ...(validated.generationInputs ?? {}),
+        dbMigrationPack: {
+          status: packOutcome.status,
+          packId: packOutcome.packId,
+          inputSnapshotHash: packOutcome.inputSnapshotHash,
+          reason: packOutcome.reason,
+        },
+      },
+    };
   }
 
   // ----- Stage 5: POST to AMS (Q-3) -----

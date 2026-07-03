@@ -66,6 +66,37 @@ public final class MigrationGapCodes {
     public static final String DISCOVERY_HARNESS_INVENTORY_MISMATCH =
         "discovery_harness_inventory_mismatch";
 
+    // -----------------------------------------------------------------------
+    // Persistence-tier pack gap codes (Spec 2026-07-02-a — Target Inputs &
+    // Pack Wiring, Persistence-Tier Oracle Program). Advisory except
+    // NO_PHYSICAL_SCHEMA_PROMOTED (which rides the existing insufficient
+    // dataReadiness branch). snake_case String VALUES like the codes above.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Database discovery ran (db-pack findings exist) but NO physical schema
+     * was promoted into the Data domain. Without promoted tables the DB plan
+     * streams have no committed inventory and the migration pack has no
+     * source schema — the highest-risk silent state (Gap #5 of the program).
+     */
+    public static final String NO_PHYSICAL_SCHEMA_PROMOTED = "no_physical_schema_promoted";
+
+    /**
+     * DB discovery exists but no DB migration pack has been generated for the
+     * (project, current architecture) pair. The pack is the deterministic
+     * schema-migration source the plan's DB streams are generated from.
+     */
+    public static final String DB_MIGRATION_PACK_MISSING = "db_migration_pack_missing";
+
+    /** The generated pack has open (unresolved) needs_decision entries. */
+    public static final String UNRESOLVED_DB_PACK_DECISIONS = "unresolved_db_pack_decisions";
+
+    /**
+     * The generated pack has DB-object translation drafts not yet approved
+     * (review_status unreviewed / needs_rework).
+     */
+    public static final String UNAPPROVED_DB_TRANSLATIONS = "unapproved_db_translations";
+
     /** Per-stream status string: stream is fully ready. */
     public static final String STATUS_SUFFICIENT = "sufficient";
 

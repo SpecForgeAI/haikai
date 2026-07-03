@@ -96,6 +96,11 @@ import {
   defaultCarryOverCoverageReadsDeps,
   gatherCarryOverCoverageInputs,
 } from './migrationCarryOverCoverageReads';
+import {
+  DbPackGateReads,
+  dbStoriesInScope,
+  evaluateDbPackReadiness,
+} from './migrationDbExecutionGate';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -175,6 +180,12 @@ export interface MigrationDriverDeps {
    * sites that predate batch mode keep compiling.
    */
   submitOrchestrationBatch?: typeof submitOrchestrationBatch;
+  /**
+   * DB-pack readiness gate reads (Spec 2026-07-02-e). Optional + defaulted
+   * inside {@link evaluateDbPackReadiness} so pre-existing deps mocks keep
+   * compiling; injected in tests.
+   */
+  dbPackGateReads?: DbPackGateReads;
   recordWorkItemImplementationError: typeof recordWorkItemImplementationError;
   /** The headless shape-spec auto-answerer (Group 4); mocked in tests. */
   autoAnswerer: ShapeSpecAutoAnswerer;
@@ -603,14 +614,39 @@ export async function startMigration(
     hasActiveCurrentBaseline: !!baseline,
     carryOverCoverage,
   });
-  if (!gate.ok) {
+
+  // 4b. DB-pack readiness gate (Spec 2026-07-02-e): when the dispatch scope
+  //     contains DB-pack stories, Migrate additionally requires the pack to
+  //     exist, be fresh + correctly target-bound, with zero open decisions and
+  //     all translate-disposition translations approved. FAIL-CLOSED on
+  //     unreadable pack state. Reasons STACK with the gate above so the user
+  //     sees every blocker at once.
+  let dbGateReasons: HardBlockResult['reasons'] = [];
+  if (dbStoriesInScope({ items, deferredWorkItemIds, selectedWorkItemIds: selectedSet })) {
+    const dbGate = await evaluateDbPackReadiness({
+      projectId,
+      currentArchitectureId: book.current_architecture_id ?? null,
+      targetArchitectureId: book.target_architecture_id ?? null,
+      reads: deps.dbPackGateReads,
+    });
+    dbGateReasons = dbGate.reasons;
+    logger.info('[diag-gateway] migration_execution_driver db_pack_gate', {
+      projectId,
+      bookId,
+      ok: dbGate.ok,
+      reasons: dbGate.reasons.map((r) => r.code),
+    });
+  }
+
+  const allBlockReasons = [...gate.reasons, ...dbGateReasons];
+  if (allBlockReasons.length > 0) {
     logger.warn('[diag-gateway] migration_execution_driver start_blocked', {
       projectId,
       bookId,
-      reasonCount: gate.reasons.length,
-      reasons: gate.reasons.map((r) => r.code),
+      reasonCount: allBlockReasons.length,
+      reasons: allBlockReasons.map((r) => r.code),
     });
-    return { status: 'blocked', reasons: gate.reasons };
+    return { status: 'blocked', reasons: allBlockReasons };
   }
 
   // 4. Build the ordered dispatch set (excludes deferred, includes TEST).

@@ -62,10 +62,12 @@ export const TECH_STACK_PREFILL_TASK_NAME = 'tech-stack-md-prefill';
 
 /**
  * Static denominator displayed on the banner (per Q12 of the requirements).
- * The library is a frozen 51-entry constant; we hardcode rather than dynamically
+ * The library is a frozen constant; we hardcode rather than dynamically
  * counting so the banner stays stable even if a later spec edits the library.
+ * 55 = 51 original + the 4 persistence-migration policy questions
+ * (Spec 2026-07-02-a-target-inputs-and-pack-wiring).
  */
-export const TECH_STACK_PREFILL_BANNER_DENOMINATOR = 51;
+export const TECH_STACK_PREFILL_BANNER_DENOMINATOR = 55;
 
 // ---------------------------------------------------------------------------
 // Injectable dependencies (test seam)

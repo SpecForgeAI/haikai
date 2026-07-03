@@ -44,19 +44,21 @@ import type { RelevanceContext } from '../questionLibrary';
 // ---------------------------------------------------------------------------
 
 describe('QUESTION_LIBRARY structure', () => {
-  it('contains exactly 51 entries spread across groups A-J with the expected counts', () => {
-    expect(QUESTION_LIBRARY).toHaveLength(51);
+  it('contains exactly 55 entries spread across groups A-J with the expected counts', () => {
+    expect(QUESTION_LIBRARY).toHaveLength(55);
 
     const countsByGroup: Record<string, number> = {};
     for (const entry of QUESTION_LIBRARY) {
       countsByGroup[entry.group] = (countsByGroup[entry.group] || 0) + 1;
     }
 
-    // A=6, B=6, C=6, D=4, E=5, F=5, G=5, H=5, I=5, J=4 per spec Appendix A
+    // A=6, B=6, C=6, D=4, E=5, F=5, G=5, H=5, I=5, J=4 per spec Appendix A;
+    // C grew 6 -> 10 with the persistence-migration policy questions
+    // (Spec 2026-07-02-a-target-inputs-and-pack-wiring).
     expect(countsByGroup).toEqual({
       A: 6,
       B: 6,
-      C: 6,
+      C: 10,
       D: 4,
       E: 5,
       F: 5,
@@ -323,7 +325,7 @@ describe('loadAndValidateArchitectConversationConfigs', () => {
     const { library, rules } = loadAndValidateArchitectConversationConfigs();
     expect(library).toBe(QUESTION_LIBRARY);
     expect(rules).toBe(MAPPING_MUTATION_RULES);
-    expect(library).toHaveLength(51);
+    expect(library).toHaveLength(55);
   });
 
   it('no duplicate codes in the real library (sanity)', () => {
@@ -332,7 +334,7 @@ describe('loadAndValidateArchitectConversationConfigs', () => {
       expect(seen.has(entry.code)).toBe(false);
       seen.add(entry.code);
     }
-    expect(seen.size).toBe(51);
+    expect(seen.size).toBe(55);
   });
 });
 
@@ -533,7 +535,7 @@ describe('dependency matrix metadata (Spec 6 FR1)', () => {
     }
   });
 
-  it('the dependencyClass tally is exactly 15 hard-dependent / 9 grey / 27 independent', () => {
+  it('the dependencyClass tally is exactly 15 hard-dependent / 9 grey / 31 independent', () => {
     const tally: Record<string, number> = {
       'hard-dependent': 0,
       grey: 0,
@@ -542,10 +544,13 @@ describe('dependency matrix metadata (Spec 6 FR1)', () => {
     for (const entry of QUESTION_LIBRARY) {
       tally[entry.dependencyClass] += 1;
     }
+    // independent grew 27 -> 31 with the four persistence-migration policy
+    // questions (db.schemaMapping / db.extensions / db.jobsRehoming /
+    // db.migrationWindow), all deliberately independent + non-versioned.
     expect(tally).toEqual({
       'hard-dependent': 15,
       grey: 9,
-      independent: 27,
+      independent: 31,
     });
   });
 

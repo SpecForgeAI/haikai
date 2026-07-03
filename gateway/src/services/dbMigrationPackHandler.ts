@@ -88,6 +88,19 @@ import {
   resolveDeltaStrategy,
 } from './dbMigrationPack/dataScripts';
 import {
+  RECONCILIATION_REPORT_PATH,
+  RECONCILIATION_SQL_PATH,
+  SWAP_OVER_RUNBOOK_PATH,
+  SYNC_RUNNER_PATH,
+  SYNC_STATE_PATH,
+  buildSyncManifestSection,
+  emitReconciliationReportBuilder,
+  emitReconciliationSql,
+  emitSwapOverRunbook,
+  emitSyncRunner,
+  emitSyncStateDdl,
+} from './dbMigrationPack/syncPack';
+import {
   RequiresTranslationEntry,
   syncPackTranslations,
   TranslationSyncSummary,
@@ -739,6 +752,34 @@ export function buildDbMigrationPackArtifacts(
     }
   }
 
+  // --- side-by-side sync + reconciliation + swap-over (Spec 2026-07-02-d) --
+  //
+  // The daily one-way sync is an OPERABLE capability (rerunnable runner +
+  // high-water state + per-run reconciliation report), and sequence seeding
+  // moves to SWAP-OVER via the runbook — the source keeps advancing during
+  // side-by-side running.
+  push(SYNC_STATE_PATH, 'sync_runner', emitSyncStateDdl());
+  push(SYNC_RUNNER_PATH, 'sync_runner', emitSyncRunner({ strategies: deltaStrategies }));
+  push(
+    RECONCILIATION_SQL_PATH,
+    'reconciliation_script',
+    emitReconciliationSql({ tableOrder, strategies: deltaStrategies })
+  );
+  push(RECONCILIATION_REPORT_PATH, 'reconciliation_script', emitReconciliationReportBuilder());
+  push(
+    SWAP_OVER_RUNBOOK_PATH,
+    'cutover_runbook',
+    emitSwapOverRunbook({
+      sourceEngine: ir.sourceEngine,
+      targetEngine: ir.targetEngine,
+      sequences: ir.sequences,
+      scheduledJobs: manualRecreation.map((m) => m.object_ref),
+      pendingDecisionTables: deltaStrategies
+        .filter((s) => s.strategy === 'needs_decision')
+        .map((s) => s.table),
+    })
+  );
+
   // --- expected schema (the Group 5 diff baseline) -------------------------
   const expectedSchema = buildExpectedSchema(
     orderedTables,
@@ -784,6 +825,7 @@ export function buildDbMigrationPackArtifacts(
       cast_notes: castNotes,
     },
     expected_schema: expectedSchema,
+    sync: buildSyncManifestSection(deltaStrategies),
   };
 
   push('manifest.json', 'manifest', JSON.stringify(manifest, null, 2) + '\n');
@@ -1040,6 +1082,13 @@ const defaultPersistPack: PersistPackFn = async (projectId, body) => {
 export interface GenerateDbMigrationPackRequest {
   projectId: string;
   architectureId: string;
+  /**
+   * The target architecture to bind `db.*` captured decisions to
+   * (Spec 2026-07-02-a). The migration plan can target a saved DRAFT that is
+   * not the project's active target; the pack must read the SAME target's
+   * decisions as the plan. Absent → legacy active-target fallback.
+   */
+  targetArchitectureId?: string | null;
   /** Pack-level sequence-seed margin; default {@link DEFAULT_SEED_MARGIN}. */
   seedMargin?: number;
 }
@@ -1110,7 +1159,12 @@ export async function generateDbMigrationPack(
 
   // Stage 1 — snapshot.
   logger.info(`[diag-gateway] db_migration_pack stage=snapshot projectId=${projectId}`);
-  const inputs = await fetchGenerationInputs(projectId, architectureId, fetchDeps);
+  const inputs = await fetchGenerationInputs(
+    projectId,
+    architectureId,
+    fetchDeps,
+    request.targetArchitectureId ?? null
+  );
   const inputSnapshotHash = computeInputSnapshotHash(inputs);
 
   // Stage 2 — IR (merges findings; rejects unsupported engine pairs).
@@ -1141,7 +1195,14 @@ export async function generateDbMigrationPack(
     skipped_count: artifacts.counts.skipped,
     flagged_count: artifacts.counts.flagged,
     seed_margin: request.seedMargin ?? DEFAULT_SEED_MARGIN,
-    manifest_json: artifacts.manifest as unknown as Record<string, unknown>,
+    // The persisted manifest carries the decision-binding target so the
+    // staleness recompute (and any later regenerate) reads decisions from the
+    // SAME target the pack was generated for. Persistence metadata only — the
+    // zip's manifest.json file documents the transform, not the binding.
+    manifest_json: {
+      ...(artifacts.manifest as unknown as Record<string, unknown>),
+      target_architecture_id: request.targetArchitectureId ?? null,
+    },
     files: artifacts.files.map((f) => ({
       file_path: f.filePath,
       file_kind: f.fileKind,

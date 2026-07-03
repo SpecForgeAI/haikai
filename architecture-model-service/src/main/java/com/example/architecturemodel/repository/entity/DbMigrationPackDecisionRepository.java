@@ -30,4 +30,11 @@ public interface DbMigrationPackDecisionRepository
     /** The upsert/re-link lookup by stable decision key. */
     Optional<DbMigrationPackDecisionEntity> findByPackIdAndDecisionKey(
         UUID packId, String decisionKey);
+
+    /**
+     * Count decisions in a given status ({@code open} / {@code resolved}) --
+     * backs the migration-discovery-context pack readiness roll-up
+     * (Spec 2026-07-02-a, Persistence-Tier Oracle Program).
+     */
+    long countByPackIdAndStatus(UUID packId, String status);
 }

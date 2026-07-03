@@ -190,7 +190,7 @@ test('both files absent appends a no-standards-found banner and writes zero rows
   expect(turn.kind).toBe('tech-stack-prefill-summary');
   expect(turn.bannerVariant).toBe('no-standards-found');
   expect(turn.matchedCount).toBe(0);
-  expect(turn.denominator).toBe(51);
+  expect(turn.denominator).toBe(55);
   expect(result.rowsWritten).toBe(0);
 });
 

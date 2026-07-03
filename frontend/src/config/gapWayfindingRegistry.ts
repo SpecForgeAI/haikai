@@ -173,6 +173,39 @@ export const GAP_WAYFINDING: Record<string, GapWayfindingEntry> = {
       'Re-run the capture wizard and resolve its inventory reconciliation step (include or exclude-with-reason each unmatched endpoint)',
     buildDestination: (ctx) => `${architectureBase(ctx)}/api-behaviour`,
   },
+  // -- Persistence-tier pack gaps (Spec 2026-07-02-a/-b) ---------------------
+  no_physical_schema_promoted: {
+    title: 'Discovered schema not promoted',
+    explanation:
+      'Database discovery ran but no tables were promoted into the Data domain. The DB migration pack — and the plan’s DB streams — build from the COMMITTED physical model; unpromoted discovery is invisible to them.',
+    actionLabel:
+      'Open the database discovery run and promote the schema candidates (tables, columns, relationships)',
+    buildDestination: (ctx) => runScopedDestination(ctx, ''),
+  },
+  db_migration_pack_missing: {
+    title: 'DB migration pack missing',
+    explanation:
+      'No deterministic DB migration pack exists for this architecture. The pack is the schema-migration source of truth the plan’s DB streams are generated from; Create Migration Plan generates it automatically once db.engine is captured.',
+    actionLabel:
+      'Open the Migration Delivery Plan page — the Schema migration tab generates the pack (or re-run Create Migration Plan)',
+    buildDestination: (ctx) => `${architectureBase(ctx)}/migration-delivery-plan`,
+  },
+  unresolved_db_pack_decisions: {
+    title: 'Unresolved DB pack decisions',
+    explanation:
+      'The DB migration pack raised needs-decision entries (unmappable types, collation hazards, computed columns, delta keys) that are still open. Flagged objects stay individually gated in the plan until each decision is resolved.',
+    actionLabel:
+      'Open the Schema migration tab and resolve the pack decision queue, then regenerate',
+    buildDestination: (ctx) => `${architectureBase(ctx)}/migration-delivery-plan`,
+  },
+  unapproved_db_translations: {
+    title: 'Unapproved DB translations',
+    explanation:
+      'DB code-object translation drafts (procs / triggers / views) are awaiting review. Only APPROVED translations are ever applied to the target; unreviewed drafts block the apply stories.',
+    actionLabel:
+      'Open the Schema migration tab → Translations and review the outstanding drafts',
+    buildDestination: (ctx) => `${architectureBase(ctx)}/migration-delivery-plan`,
+  },
   // -- Context warnings ------------------------------------------------------
   no_discovery_runs_selected: {
     title: 'No discovery runs selected',

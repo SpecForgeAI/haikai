@@ -246,7 +246,27 @@ public record MigrationDiscoveryContextDto(
         @JsonProperty("databaseFindingCount") Integer databaseFindingCount,
         @JsonProperty("databaseRunCount") Integer databaseRunCount,
         @JsonProperty("sampleDataHintCount") Integer sampleDataHintCount,
-        @JsonProperty("hasDatabaseDiscovery") Boolean hasDatabaseDiscovery
+        @JsonProperty("hasDatabaseDiscovery") Boolean hasDatabaseDiscovery,
+        /**
+         * Source engines detected on db-pack findings ({@code engineKey} in
+         * {@code detail_json}), e.g. ["sybase"]. Empty when none declared.
+         * Spec 2026-07-02-a (Persistence-Tier Oracle Program).
+         */
+        @JsonProperty("sourceEngines") List<String> sourceEngines,
+        /**
+         * DB migration pack roll-up for the (project, current architecture)
+         * pair; {@code null} when no pack exists (key omitted on the wire per
+         * the NON_NULL contract). Spec 2026-07-02-a.
+         */
+        @JsonProperty("dbMigrationPack") DbMigrationPackSummary dbMigrationPack
+    ) {}
+
+    /** Bounded DB-migration-pack roll-up (Spec 2026-07-02-a). All counts boxed. */
+    public record DbMigrationPackSummary(
+        @JsonProperty("packId") UUID packId,
+        @JsonProperty("status") String status,
+        @JsonProperty("openDecisionCount") Integer openDecisionCount,
+        @JsonProperty("unapprovedTranslationCount") Integer unapprovedTranslationCount
     ) {}
 
     /** Bounded summary of API Behaviour Baselines for the project. */
