@@ -1,8 +1,15 @@
 # Parallel Runs via Git Worktrees — worktree-per-job for orchestrate + repair
 
-**Status: SHAPED from research (agent-os/planning/
-2026-07-03-git-worktrees-parallel-dev-research.md, scope decisions §6).
-NOT yet grilled against code.**
+**Status: GRILLED against code 2026-07-03 (transcript
+`.haikai/grill/260703-2218-parallel-worktrees/`). Four corrections: verify
+jobs get detached worktrees at the bound SHA (D11 — also fixes a
+PRE-EXISTING wrong-tree verdict bug); D8's "branch under repair" premise was
+wrong (repair orchestrations are just runs; BUG_INVESTIGATION excluded +
+gains the project lock); session transplant needs re-homing code
+(restore_session_from_spec is hardwired — D7 revised, copy-as-is);
+worktree mode is default ON with `WORKTREE_RUNS=off` escape (D12).
+Research: agent-os/planning/2026-07-03-git-worktrees-parallel-dev-research.md
+(scope decisions §6). Ready to shape.**
 
 ## Product definition
 
@@ -50,9 +57,12 @@ dissolve the race instead of queueing behind it.
 
 ## Non-goals (v1)
 
-- **Verify-task-group worktrees.** Verify reconstructs from the
-  verification DB and CI verdicts; it keeps the live checkout in v1. (Its
-  tree-state assumptions are a grill item, G1 below.)
+- **BUG_INVESTIGATION worktrees.** `run_bug_investigation` fixes the live
+  tree in place, uncommitted (tasks.py:1419-1468) — an ephemeral worktree
+  would destroy its output at reclaim. It stays on the live checkout but
+  GAINS the project git lock (grill Q2: today it holds NO lock and races
+  concurrent orchestrations — a pre-existing hazard this spec closes).
+  Its in-place/no-commit/haibox-callback semantics are untouched.
 - **Our own dev-workflow conventions** (Claude Code worktrees on this
   monorepo) — separate concern, harness support already exists.
 - **Long-lived per-feature worktrees** — v1 worktrees are ephemeral per
@@ -95,7 +105,13 @@ extending the tested L1 invariant from `consolidate_and_deploy`:
 
 1. **Allocate**: under the project git lock (narrowed, D5):
    `git worktree add <run_root>/<folder> -b <branch> <base>` per repo
-   target; `git worktree lock --reason "run <job_id> active"`.
+   target; `git worktree lock --reason "run <job_id> active"`. Allocation
+   also SEEDS the untracked live-checkout state a fresh worktree lacks
+   (grill-verified): `.haikai/config.json` (gitignored via
+   gitignore_patterns.yml:5-10; without it `GitManager.load_config`
+   raises "Project config not found", git_manager.py:218-223), the
+   product-root `coordination.yaml` copy (polyrepo), and the
+   active-session pointer + transcript (D7).
 2. **Work**: everything the job does — CLI session, file generation,
    `_git_one_spec` commits, push — happens inside `<run_root>`.
 3. **Reclaim** (in `finally`): kill any child processes with cwd inside the
@@ -149,6 +165,26 @@ index; objects are content-addressed; concurrent pushes of different
 branches are safe). Lock files stay at `<workspace>/.locks/` outside any
 repo.
 
+Grill corrections (the lock's true extent today — tasks.py:745 is its ONLY
+call site):
+
+- **`consolidate_and_deploy` joins the narrowed lock** for its own
+  `worktree add`/`remove` (tasks.py:1223, 1246): it runs deliberately
+  OUTSIDE the current lock ("Deploy runs after, on an isolated worktree",
+  tasks.py:743-744), which was safe when nothing else touched
+  `.git/worktrees/` — under parallel runs its registry mutations must
+  serialize with allocation/reclaim. (Its unlocked merge base — default
+  branch at `worktree add` time — is a PRE-EXISTING race, unchanged by
+  this spec; noted, not fixed.)
+- **`run_bug_investigation` acquires the lock too** (see Non-goals): today
+  it mutates the live tree with no lock at all.
+- **Linked-worktree `.git`-file fix**: `prepare_for_commit`'s stale-lock
+  removal hardcodes `project_dir/.git/index.lock`
+  (git_manager.py:346-350) — in a linked worktree `.git` is a FILE and the
+  real index lock lives at `<main>/.git/worktrees/<name>/index.lock`, so
+  the cleanup silently no-ops. Resolve via
+  `git rev-parse --git-path index.lock` instead of path concatenation.
+
 ### D6 — Parallel-N prerequisites: jobs.db + worker claim
 
 Before two jobs can run at once, harden the queue (the graph/verification
@@ -168,7 +204,7 @@ store is already concurrency-tolerant; jobs.db is not):
   INSIDE `run_orchestration`/`run_bug_investigation`, so every execution
   path gets a worktree automatically.
 
-### D7 — Session identity and state coupling
+### D7 — Session identity and state coupling (REVISED per grill Q3)
 
 - The CLI executor's `project_dir` (and cwd, claude_cli_executor.py:294)
   points at the run root — which automatically forks the Claude CLI
@@ -176,28 +212,49 @@ store is already concurrency-tolerant; jobs.db is not):
   claude_chat_executor.py:1416) and `.claude/active_session.json`
   (session_store.py:21-26). The "one active session per project"
   singleton becomes one per RUN with no session-store rewrite.
-- **Session transplant**: orchestrate requires the shape-spec session
-  (tasks.py:543-551), which was created against the SHARED checkout's
-  project_dir. At allocation, the run root gets the active-session pointer
-  copied in, and the session jsonl is restored into the worktree's encoded
-  project dir via the existing `restore_session_from_spec` mechanism
-  (claude_chat_executor.py:1419-1468) — the transplant primitive already
-  exists.
+- **Session transplant needs NEW re-homing code** (grill-verified: the
+  original "the transplant primitive already exists" claim was FALSE).
+  `restore_session_from_spec` (claude_chat_executor.py:1451-1492) is
+  hardwired to `self.project_dir = workspace_dir/company/project`
+  (line 168) on BOTH ends — no target parameter exists. Required changes:
+  the executor gains an explicit `project_dir` override (the worktree run
+  root), and the restore/copy targets the WORKTREE's encoded session dir
+  (`get_session_file` encoding, lines 1404-1414). Transplant = copy the
+  transcript jsonl + active-session pointer into the run root's encoded
+  dir and `.claude/`, then `--resume <session_uuid>` with cwd = run root.
+- **Copy AS-IS (grill Q3 decision)**: the transcript's historical records
+  keep the shared checkout's absolute `cwd`/paths — accepted; new tool
+  calls resolve against the new cwd, the transcript stays a faithful
+  record (the spec-folder backup keeps the original), and a field-level
+  rewriter is a later hardening option only if stale-path references
+  actually bite.
 - **The job record persists `worktree_root`** (like `logs_path`,
-  tasks.py:638). Recovery (`recovery.py:174-178` reads
-  `haikai/specs/<spec>/active_session.json`), cancel, and the sweeper
-  resolve the run's tree from the job record — never from convention.
+  tasks.py:638; migration precedent `resume_from_step`,
+  job_storage.py:75-81 — NB `save_job`'s positional 15-placeholder
+  `INSERT` must be bumped in lockstep). Recovery (`recovery.py:174-178`
+  reads `haikai/specs/<spec>/active_session.json`), cancel, and the
+  sweeper resolve the run's tree from the job record — never from
+  convention.
 
-### D8 — Repair jobs: worktree on the branch under repair
+### D8 — Repair orchestrations are runs; no "branch under repair"
+(REWRITTEN per grill — the original premise was wrong)
 
-`run_bug_investigation` (tasks.py:1375) allocates a worktree checked out
-on the branch its `repair_of` target was built from (resolved from the
-validated repair target / CI binding — never guessed, I16 parity). The
-`/haikai:debug` + `/haikai:fix` session runs there; the fix commits+pushes
-to that same branch; CI re-runs; the verdict re-folds the original cell —
-the self-repair loop unchanged, minus the live-tree contention. If the
-branch is still checked out by a live run's worktree, allocation fails
-fast (D4) — repairing a branch mid-run is refused, not interleaved.
+The sanctioned repair path is a fresh repair ORCHESTRATION dispatched by
+`enqueue_cli` with a validated `repair_of` (verify-task-group.md:50
+explicitly forbids routing `real` repairs through `/haikai:fix`/
+bug-investigation — that path never re-runs CI, so the gate can never
+re-fold). A repair orchestration creates a NEW `feature/<spec>-repair-…`
+branch via `_git_one_spec` (tasks.py:423-426, `source="repair"` CI
+binding); it never checks out the failing run's branch. Therefore:
+
+- **Repair jobs need no special worktree logic**: a repair orchestration
+  is `run_orchestration` in repair mode and gets a run worktree under D1/D2
+  exactly like any other run. The "branch under repair" concept is
+  dissolved, and with it the branch-resolution gap (no table stores a
+  branch; `ci_bindings` has `head_sha` only, store.py:49-58 — irrelevant
+  now for repair, still used by D11 verify pinning).
+- **BUG_INVESTIGATION jobs are excluded** from worktree mode and gain the
+  project git lock (see Non-goals; grill Q2).
 
 ### D9 — Run Flow Graph tie-in
 
@@ -215,8 +272,47 @@ After v1, orchestrate/repair jobs never mutate
 as clone anchor (`.git` host), shape-spec session home, and fetch target.
 `checkout_back_to_default` between specs and the untracked-file rescue in
 `create_feature_branch` (git_manager.py:265-307) become worktree-scoped
-concerns. Anything else that assumed "the live tree holds the run branch
-after orchestration" must be found and adjusted (grill item G1).
+concerns. The one consumer that DID depend on the live tree's incidental
+state is inline verify — resolved by D11.
+
+### D11 — Verify jobs get a detached worktree at the bound SHA
+(ADDED per grill Q1 — also fixes a PRE-EXISTING bug)
+
+Grill evidence: inline verifiers execute pinned repo commands against
+whatever the tree at `cwd` currently holds (`inline_runner.py:81-135`
+never inspects or sets branch/commit; the inline session path
+verify-task-group.md:23 shells out in the repo tree), and
+`run_verify_task_group` never positions the tree (tasks.py:922-955 — the
+command line carries correlation keys only). Today the live tree is left
+on `feature/<batch>` after batch runs but reset to DEFAULT after
+single-spec runs (tasks.py:406, git_workflow.py:118) — **single-spec
+inline verdicts already score the wrong tree**. Under W1 every inline
+verdict would score default.
+
+v1 therefore pins verify:
+
+- `run_verify_task_group` resolves the cell's bound SHA
+  (`ci_bindings.head_sha` via `get_binding_for_cell`, store.py:422-425)
+  and allocates a READ-ONLY detached worktree:
+  `git worktree add --detach <verify_root> <head_sha>` (the
+  `consolidate_and_deploy` pattern), reclaimed after the session — same
+  W3 ladder, same lock (D5) for add/remove.
+- The verify CLI session's cwd = that verify worktree; inline verifier
+  commands now deterministically score the commit whose CI verdict opened
+  the gate.
+- No binding / SHA unknown → run on the live checkout as today and record
+  the fact as evidence (explicitly visible, not silent) — a cell that
+  never had CI bound has no pinned commit to score.
+- ADR 0001 records the verdict-semantics change.
+
+### D12 — Rollout: default ON, explicit off-switch (grill Q4)
+
+Worktree mode is the standard path for orchestrate/repair/verify jobs.
+`WORKTREE_RUNS=off` is an explicit per-deployment escape (brownfield
+projects) that restores today's serialized live-tree behavior including
+the full-phase `_project_git_lock`. Under worktree mode, unsupported
+repos (submodules) FAIL FAST with a clear error — never a silent fallback
+to the live tree (W5; matches the no-fallback CHAT_EXECUTOR philosophy).
 
 ---
 
@@ -242,45 +338,67 @@ after orchestration" must be found and adjusted (grill item G1).
   child processes before removal, prune after any forced cleanup.
 - **W9.** Parallel-N is gated on jobs.db `busy_timeout` + atomic
   per-worker claim landing first.
-- **W10.** A repair worktree checks out exactly the validated branch under
-  repair; mid-run branches are refused, not interleaved.
+- **W10.** Inline verify verdicts are pinned: the verify session scores a
+  detached worktree at the cell's bound `head_sha`, never incidental live
+  tree state (D11; unpinnable cells run live and say so in evidence).
+- **W11.** Worktree mode is default ON; `WORKTREE_RUNS=off` is the only
+  escape, and unsupported repos fail fast under worktree mode (D12).
 
-## Grill items (open questions to stress against code)
+## Grill resolutions (2026-07-03, transcript
+`.haikai/grill/260703-2218-parallel-worktrees/`)
 
-- **G1**: What does `run_verify_task_group` (and any inline verifier)
-  actually assume about the live tree's checked-out state? Today the tree
-  may hold the run branch post-orchestration; under W1 it never will.
-- **G2**: Exact mechanics of the shape-spec session transplant — does
-  `restore_session_from_spec` fully cover re-homing to a new encoded
-  project dir, or does `--resume` need the session file pre-seeded?
-- **G3**: Default-on vs opt-in env knob for worktree mode (brownfield
-  caveat: target repos may not be worktree-friendly).
-- **G4**: `_record_ci_binding`, MR URLs, and `.haikai/config.json`
-  (git_manager.py:535-548) — any absolute paths or per-checkout state that
-  leak the worktree path into durable records?
-- **G5**: Does `consolidate_and_deploy`'s branch-merge integration need
-  awareness of branches created in worktrees (it shouldn't — shared refs)?
+- **G1 → D11/W10.** Verified: inline verify scores incidental tree state;
+  single-spec runs already verify the WRONG tree (default) today.
+  Decision: detached verify worktree at `ci_bindings.head_sha` (ADR 0001).
+- **G2 → D7 revised.** Verified FALSE: `restore_session_from_spec` cannot
+  re-home (hardwired project_dir both ends, claude_chat_executor.py:168,
+  1451-1492). Decision: parameterize + copy transcript AS-IS into the
+  worktree's encoded dir; stale historical paths accepted.
+- **G3 → D12.** Default ON + `WORKTREE_RUNS=off`; fail-fast, no fallback.
+- **G4 → D2 allocation seeding.** Verified: `.haikai/config.json`,
+  `coordination.yaml`, `.claude/active_session.json` are ALL untracked
+  live-checkout state a fresh worktree lacks (config.json absence makes
+  `GitManager.load_config` raise). Allocation seeds them. No durable
+  records leak worktree paths (ci_bindings/verdicts/repairs store keys +
+  SHA only); `worktree_root` on the job record is deliberate.
+- **G5 → D5 corrections.** Verified: shared refs mean deploy FINDS
+  worktree-created branches (no fetch needed), but its own
+  `worktree add/remove` runs outside any lock today → joins the narrowed
+  lock. Its merge-base race is pre-existing and out of scope.
+- **Bonus findings folded in:** repair premise rewrite (D8);
+  BUG_INVESTIGATION excluded + locked (Non-goals); linked-worktree
+  `.git`-file `index.lock` fix (D5); `save_job` positional-INSERT footgun
+  (D7).
 
-## Implementation sequence
+## Implementation sequence (revised post-grill)
 
 1. **Queue hardening** — jobs.db `busy_timeout`, worker
    `claim_next_queued_job(worker_id)`; regression tests for concurrent
    heartbeat/progress writers.
 2. **Worktree allocator module** (`src/git/worktree_runs.py`) —
-   allocate/reclaim/sweep, narrowed lock, Windows removal ladder,
-   L1-parity tests (zero leftover registrations, reclaim-on-failure).
-3. **Orchestration integration** — `run_orchestration` allocates, points
-   orchestrator/GitManager/executor at the run root, persists
-   `worktree_root`, session transplant; reclaim in finally.
-4. **Batch + polyrepo parity** — `_git_one_spec`/`_finalize_batch_git`
-   inside the run root; coordination.yaml copy; product-root→repo-subdir
-   sync unchanged; branch-collision fail-fast.
-5. **Repair integration** — `run_bug_investigation` worktree on the
-   validated branch under repair.
-6. **Recovery/cancel/sweeper** — resolve trees from `worktree_root`;
+   allocate/reclaim/sweep, untracked-state seeding (config.json /
+   coordination.yaml / session pointer), narrowed lock, Windows removal
+   ladder, linked-worktree `index.lock` fix
+   (`git rev-parse --git-path`), L1-parity tests (zero leftover
+   registrations, reclaim-on-failure). `consolidate_and_deploy`'s
+   worktree ops join the lock; `run_bug_investigation` acquires it.
+3. **Session re-homing** — executor `project_dir` override + transplant
+   copy into the worktree's encoded session dir (copy as-is);
+   `worktree_root` on the job record (model + PRAGMA migration +
+   positional INSERT bump + `_row_to_job`).
+4. **Orchestration integration** — `run_orchestration` allocates (normal
+   AND repair mode — D8), points orchestrator/GitManager/executor at the
+   run root, persists `worktree_root`, transplants the session; reclaim
+   in finally; `WORKTREE_RUNS` knob.
+5. **Batch + polyrepo parity** — `_git_one_spec`/`_finalize_batch_git`
+   inside the run root; product-root→repo-subdir sync unchanged;
+   branch-collision fail-fast.
+6. **Verify pinning (D11)** — `run_verify_task_group` detached worktree
+   at `ci_bindings.head_sha`; unpinnable-cell evidence; ADR 0001.
+7. **Recovery/cancel/sweeper** — resolve trees from `worktree_root`;
    cancel triggers reclaim; startup + periodic sweep.
-7. **Parallel evidence** — N workers up; two same-project runs
+8. **Parallel evidence** — N workers up; two same-project runs
    concurrently → two MRs, live tree untouched, `git worktree list` clean
    after; both runs live on the Run Flow Graph.
-8. **Graph evidence emission** — worktree allocated/reclaimed evidence on
+9. **Graph evidence emission** — worktree allocated/reclaimed evidence on
    run root / repair attempt.
