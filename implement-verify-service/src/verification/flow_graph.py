@@ -296,3 +296,237 @@ def snapshot(conn: sqlite3.Connection, run_id: str, at_seq: int | None = None) -
     if at_seq is not None:
         events = [e for e in events if e["seq"] <= at_seq]
     return fold_events(run_id, events)
+
+
+def list_runs(conn: sqlite3.Connection) -> list[dict]:
+    """Runs with graph events, newest first — the client's run picker."""
+    ensure_schema(conn)
+    rows = conn.execute(
+        "SELECT run_id, MAX(seq) AS last_seq, MAX(created_at) AS last_at,"
+        " COUNT(*) AS events FROM graph_events GROUP BY run_id ORDER BY last_seq DESC"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── node-ID scheme (spec §Node ID scheme, v1) ────────────────────────────────
+
+
+def run_root_id(run_id: str) -> str:
+    return f"run/{run_id}"
+
+
+def command_node_id(run_id: str, step: int, command: str) -> str:
+    return f"run/{run_id}/command/{step}-{command.strip('/')}"
+
+
+def group_node_id(run_id: str, spec_name: str) -> str:
+    return f"run/{run_id}/group/{spec_name}"
+
+
+def ci_node_id(run_id: str, spec_name: str, repo: str, sha: str) -> str:
+    return f"{group_node_id(run_id, spec_name)}/ci/{repo}/{str(sha)[:7]}"
+
+
+def cell_node_id(run_id: str, spec_name: str, repo: str, verifier: str) -> str:
+    return f"{group_node_id(run_id, spec_name)}/cell/{repo}/{verifier}"
+
+
+def gate_node_id(run_id: str, spec_name: str) -> str:
+    return f"{group_node_id(run_id, spec_name)}/gate"
+
+
+def attempt_node_id(run_id: str, spec_name: str, repo: str, verifier: str, n: int) -> str:
+    return f"{cell_node_id(run_id, spec_name, repo, verifier)}/repair/attempt/{n}"
+
+
+# ── runtime emitters (D4) — domain-aware helpers over the primitives ─────────
+# EVERY graph write in the codebase goes through these (I9). Call sites wrap
+# them in try/except-log: the graph is a projection — a failed emission must
+# never sink the domain write it mirrors. A missed frame self-heals: structure
+# is lazily re-declared (idempotent) and lifecycle is latest-wins.
+
+_VERDICT_TO_STATE = {"pass": "pass", "fail": "fail", "pending": "running",
+                     "timeout": "timeout", "skipped": "skipped"}
+
+
+def emit_run_skeleton(conn: sqlite3.Connection, run_id: str,
+                      commands: list[dict], meta: dict | None = None) -> None:
+    """Normal-mode run_orchestration start (D4): root + the REAL command
+    chain + sequence edges; command 1 running, the rest pending."""
+    root = run_root_id(run_id)
+    run_meta = {"runtime_model": "current_runtime.v1", **(meta or {})}
+    ensure_node(conn, run_id, root, None, "run", f"Run {run_id}", run_meta)
+    prev = None
+    for c in commands:
+        nid = command_node_id(run_id, c["step"], c["command"])
+        ensure_node(conn, run_id, nid, root, "command", c["command"],
+                    {"step": c["step"], "description": c.get("description", "")})
+        if prev:
+            ensure_edge(conn, run_id, f"edge/{run_id}/seq-{c['step']}",
+                        prev, nid, "sequence")
+        set_state(conn, run_id, nid, "running" if c["step"] == 1 else "pending")
+        prev = nid
+    set_state(conn, run_id, root, "running")
+
+
+def emit_command_progress(conn: sqlite3.Connection, run_id: str,
+                          commands: list[dict], completed_step: int) -> None:
+    for c in commands:
+        nid = command_node_id(run_id, c["step"], c["command"])
+        if c["step"] == completed_step:
+            set_state(conn, run_id, nid, "pass")
+        elif c["step"] == completed_step + 1:
+            set_state(conn, run_id, nid, "running")
+
+
+def emit_run_completed(conn: sqlite3.Connection, run_id: str, success: bool,
+                       detail: dict | None = None) -> None:
+    set_state(conn, run_id, run_root_id(run_id), "pass" if success else "fail",
+              detail)
+
+
+def ensure_group(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                 meta: dict | None = None) -> str:
+    """Lazy group declaration (D2a: spec_as_group). Also lazily roots the run
+    (an async re-entry may reach the graph before/without the skeleton)."""
+    root = run_root_id(run_id)
+    ensure_node(conn, run_id, root, None, "run", f"Run {run_id}",
+                {"runtime_model": "current_runtime.v1"})
+    gid = group_node_id(run_id, spec_name)
+    ensure_node(conn, run_id, gid, root, "group", spec_name,
+                {"group_model": "spec_as_group", "spec_name": spec_name,
+                 "task_group_id": spec_name, **(meta or {})})
+    return gid
+
+
+def emit_ci_bound(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                  repo: str, head_sha: str, source: str = "orchestrate") -> str:
+    """_record_ci_binding emission (D4): ci node under the group + binds edge
+    + binding evidence. `source="repair"` marks a repair commit's pipeline;
+    for repairs run_id/spec are the PARENT's (D2c)."""
+    gid = ensure_group(conn, run_id, spec_name)
+    cid = ci_node_id(run_id, spec_name, repo, head_sha)
+    ensure_node(conn, run_id, cid, gid, "ci", f"{repo} CI {str(head_sha)[:7]}",
+                {"repo": repo, "sha": str(head_sha), "source": source})
+    ensure_edge(conn, run_id, f"edge/{run_id}/{spec_name}-to-{cid.split('/ci/')[1]}",
+                gid, cid, "binds")
+    set_state(conn, run_id, cid, "running")
+    attach_evidence(conn, run_id, cid, "pipeline", f"sha://{head_sha}",
+                    "CI binding recorded", {"source": source})
+    return cid
+
+
+def emit_ci_state(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                  repo: str, head_sha: str, state: str,
+                  detail: dict | None = None) -> None:
+    """Inbound CI correlation (D4): the pipeline's terminal state. Declares
+    the ci node lazily — a verdict can arrive for a binding recorded before
+    graph emission existed."""
+    emit_ci_bound(conn, run_id, spec_name, repo, head_sha,
+                  (detail or {}).get("source", "orchestrate"))
+    set_state(conn, run_id, ci_node_id(run_id, spec_name, repo, head_sha),
+              state, detail)
+
+
+def emit_cell_verdict(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                      repo: str, verifier: str, verdict: str, attempt: int,
+                      detail: dict | None = None,
+                      linked_repair_attempt: int | None = None) -> None:
+    """Recorder verdict shim (D4): cell (lazy) + cell─binds→gate + cell state;
+    a red verdict also reddens the gate (a green gate is only ever set by
+    `advance`, the guarded fold). `linked_repair_attempt` (verdict attempt
+    R+1 re-folding open repair attempt R) also advances that attempt node."""
+    gid = ensure_group(conn, run_id, spec_name)
+    cell = cell_node_id(run_id, spec_name, repo, verifier)
+    ensure_node(conn, run_id, cell, gid, "cell", f"{repo} / {verifier}",
+                {"repo": repo, "verifier": verifier})
+    gate = gate_node_id(run_id, spec_name)
+    ensure_node(conn, run_id, gate, gid, "gate", f"gate {spec_name}")
+    ensure_edge(conn, run_id, f"edge/{run_id}/{spec_name}-{repo}-{verifier}-gate",
+                cell, gate, "binds")
+    state = _VERDICT_TO_STATE.get(verdict, "running")
+    set_state(conn, run_id, cell, state, {"attempt": attempt, **(detail or {})})
+    if state in ("fail", "timeout"):
+        set_state(conn, run_id, gate, "fail", {"cell": f"{repo}/{verifier}"})
+    if linked_repair_attempt is not None and state in ("pass", "fail", "timeout"):
+        att = attempt_node_id(run_id, spec_name, repo, verifier, linked_repair_attempt)
+        ensure_node(conn, run_id, att,
+                    f"{cell}/repair", "attempt", f"attempt {linked_repair_attempt}")
+        set_state(conn, run_id, att, state, {"refolded_by_verdict_attempt": attempt})
+
+
+def emit_gate_advanced(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                       cells: list) -> None:
+    """`advance` shim: the guarded green fold — gate AND group go pass."""
+    ensure_group(conn, run_id, spec_name)
+    gate = gate_node_id(run_id, spec_name)
+    ensure_node(conn, run_id, gate, group_node_id(run_id, spec_name),
+                "gate", f"gate {spec_name}")
+    set_state(conn, run_id, gate, "pass", {"cells": cells})
+    set_state(conn, run_id, group_node_id(run_id, spec_name), "pass")
+
+
+def emit_repair_opened(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                       repo: str, verifier: str, attempt: int) -> None:
+    """open_repair shim (D4/D6): the AUTHORITATIVE repair-intent declaration —
+    it alone has the full cell key. repair node + repair_of edge + attempt
+    node (pending, until dispatch marks it running)."""
+    gid = ensure_group(conn, run_id, spec_name)
+    cell = cell_node_id(run_id, spec_name, repo, verifier)
+    ensure_node(conn, run_id, cell, gid, "cell", f"{repo} / {verifier}",
+                {"repo": repo, "verifier": verifier})
+    repair = f"{cell}/repair"
+    ensure_node(conn, run_id, repair, cell, "repair", "repair")
+    ensure_edge(conn, run_id, f"edge/{run_id}/{spec_name}-{repo}-{verifier}-repairof",
+                repair, cell, "repair_of")
+    att = attempt_node_id(run_id, spec_name, repo, verifier, attempt)
+    ensure_node(conn, run_id, att, repair, "attempt", f"attempt {attempt}")
+    set_state(conn, run_id, att, "pending")
+
+
+def emit_repair_dispatched(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                           repo: str, verifier: str, attempt: int,
+                           job_id: str) -> None:
+    """Validated enqueue_cli dispatch (D4): attempt running + job evidence."""
+    att = attempt_node_id(run_id, spec_name, repo, verifier, attempt)
+    set_state(conn, run_id, att, "running",
+              {"repair_job_id": job_id, "mode": "repair_orchestration"})
+    attach_evidence(conn, run_id, att, "artifact", f"job://{job_id}",
+                    "Repair orchestration job", {"job_id": job_id})
+
+
+def emit_repair_step_evidence(conn: sqlite3.Connection, run_id: str,
+                              spec_name: str, repo: str, verifier: str,
+                              attempt: int, command: str, state: str) -> None:
+    """Repair-mode command progress is EVIDENCE, not command nodes (D10a)."""
+    att = attempt_node_id(run_id, spec_name, repo, verifier, attempt)
+    attach_evidence(conn, run_id, att, "trace",
+                    f"job-step://{command.strip('/')}",
+                    f"{command} {state}", {"command": command, "state": state})
+
+
+def validate_repair_target(conn: sqlite3.Connection,
+                           repair_of: dict) -> tuple[bool, str, int | None]:
+    """I16/D2b: a repair_of payload may drive cell-scoped emission ONLY if it
+    resolves against the authoritative open_repair record. NEVER guess:
+    missing keys, no matching repair, or ambiguity (several open attempts,
+    none named) all reject. Returns (ok, reason, resolved_attempt)."""
+    required = ("orchestrate_id", "task_group_id", "repo", "verifier")
+    missing = [k for k in required if not repair_of.get(k)]
+    if missing:
+        return False, f"repair_of missing keys: {missing}", None
+    params = [repair_of["orchestrate_id"], repair_of["task_group_id"],
+              repair_of["repo"], repair_of["verifier"]]
+    q = ("SELECT attempt FROM repairs WHERE orchestrate_id=? AND task_group_id=?"
+         " AND repo=? AND verifier=?")
+    if repair_of.get("attempt") is not None:
+        q += " AND attempt=?"
+        params.append(int(repair_of["attempt"]))
+    rows = conn.execute(q + " ORDER BY attempt", params).fetchall()
+    if not rows:
+        return False, ("no open repair record matches this repair_of target"
+                       " — refusing to attach to a guessed cell"), None
+    if len(rows) > 1:
+        return False, ("ambiguous repair target: several open attempts and"
+                       " none named — pass repair_of.attempt"), None
+    return True, "validated", rows[0]["attempt"]

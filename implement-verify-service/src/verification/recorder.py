@@ -21,17 +21,47 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sqlite3
 import sys
 from datetime import datetime, timezone
 
+from src.verification import flow_graph
 from src.verification.store import VERDICTS, append_event, connect, latest_verdicts
 
 ATTEMPT_CAP = 3
 
+logger = logging.getLogger(__name__)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _emit_graph(fn, *args, **kwargs) -> None:
+    """Run-flow-graph shim (spec 2026-07-02, D4): every guarded write also
+    projects onto the run graph. BEST-EFFORT — a graph emission failure must
+    never sink the guarded write it mirrors; structure self-heals via lazy
+    idempotent declaration and lifecycle is latest-wins."""
+    try:
+        fn(*args, **kwargs)
+    except Exception:
+        logger.warning("graph emission failed (non-fatal)", exc_info=True)
+
+
+def _linked_repair_attempt(conn: sqlite3.Connection, orchestrate_id: str,
+                           task_group_id: str, repo: str, verifier: str,
+                           verdict_attempt: int) -> int | None:
+    """A verdict at attempt R+1 re-folds open repair attempt R (the repair
+    convention: fail(1) -> open_repair(attempt=1) -> repair CI verdict lands
+    as attempt 2)."""
+    row = conn.execute(
+        "SELECT MAX(attempt) FROM repairs WHERE orchestrate_id=? AND"
+        " task_group_id=? AND repo=? AND verifier=?",
+        (orchestrate_id, task_group_id, repo, verifier),
+    ).fetchone()
+    latest = row[0] if row else None
+    return latest if latest and verdict_attempt == latest + 1 else None
 
 
 def record_verdict(conn: sqlite3.Connection, orchestrate_id: str, task_group_id: str,
@@ -83,6 +113,10 @@ def record_verdict(conn: sqlite3.Connection, orchestrate_id: str, task_group_id:
         return _ret(False, f"refused: duplicate verdict for cell ({repo}, {verifier}) attempt {attempt}")
     append_event(conn, orchestrate_id, task_group_id, "verdict_recorded",
                  {"repo": repo, "verifier": verifier, "verdict": verdict, "attempt": attempt}, repo)
+    _emit_graph(flow_graph.emit_cell_verdict, conn, orchestrate_id, task_group_id,
+                repo, verifier, verdict, attempt, detail,
+                _linked_repair_attempt(conn, orchestrate_id, task_group_id,
+                                       repo, verifier, attempt))
     return _ret(True, "recorded", attempt)
 
 
@@ -130,6 +164,10 @@ def record_verdict_with_delivery(conn: sqlite3.Connection, orchestrate_id: str, 
         return "duplicate", "duplicate delivery — already processed"
     append_event(conn, orchestrate_id, task_group_id, "verdict_recorded",
                  {"repo": repo, "verifier": verifier, "verdict": verdict, "attempt": attempt}, repo)
+    _emit_graph(flow_graph.emit_cell_verdict, conn, orchestrate_id, task_group_id,
+                repo, verifier, verdict, attempt, detail,
+                _linked_repair_attempt(conn, orchestrate_id, task_group_id,
+                                       repo, verifier, attempt))
     return "recorded", "recorded"
 
 
@@ -183,6 +221,13 @@ def supersede_pending(conn: sqlite3.Connection, orchestrate_id: str, task_group_
     if recorded:
         append_event(conn, orchestrate_id, task_group_id, "verdict_recorded",
                      {"repo": repo, "verifier": verifier, "verdict": verdict, "superseded_pending": True}, repo)
+        sup_attempt = conn.execute(
+            f"SELECT MAX(attempt) FROM verdicts WHERE {cell_where}", p
+        ).fetchone()[0] or 1
+        _emit_graph(flow_graph.emit_cell_verdict, conn, orchestrate_id, task_group_id,
+                    repo, verifier, verdict, sup_attempt, detail,
+                    _linked_repair_attempt(conn, orchestrate_id, task_group_id,
+                                           repo, verifier, sup_attempt))
     else:
         # C8: don't drop the no-op silently — leave a breadcrumb on the event store.
         append_event(conn, orchestrate_id, task_group_id, "verdict_superseded",
@@ -230,6 +275,8 @@ def advance(conn: sqlite3.Connection, orchestrate_id: str, task_group_id: str,
     except sqlite3.IntegrityError:
         return False, "refused: double advance — group already advanced (D10.6)"
     append_event(conn, orchestrate_id, task_group_id, "advanced", {"cells": [list(c) for c in cells]})
+    _emit_graph(flow_graph.emit_gate_advanced, conn, orchestrate_id, task_group_id,
+                [list(c) for c in cells])
     return True, "advanced"
 
 
@@ -248,6 +295,8 @@ def open_repair(conn: sqlite3.Connection, orchestrate_id: str, task_group_id: st
         return False, f"refused: repair attempt {attempt} already open for cell ({repo}, {verifier})"
     append_event(conn, orchestrate_id, task_group_id, "repair_opened",
                  {"repo": repo, "verifier": verifier, "attempt": attempt}, repo)
+    _emit_graph(flow_graph.emit_repair_opened, conn, orchestrate_id, task_group_id,
+                repo, verifier, attempt)
     return True, "opened"
 
 

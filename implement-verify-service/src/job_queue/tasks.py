@@ -168,7 +168,8 @@ def _batch_branch(batch_name: str, folder) -> str:
     return f"feature/{batch_name}--{folder}" if folder is not None else f"feature/{batch_name}"
 
 
-def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha) -> None:
+def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha,
+                       source: str = "orchestrate") -> None:
     """Link a pushed commit SHA -> (orchestration run, spec/batch, repo) so a LATE
     GitLab CI verdict for that SHA can be correlated back to THIS work and routed
     into verification/self-repair, instead of being dropped as an unknown SHA.
@@ -185,17 +186,110 @@ def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha
     if git_config.provider != "gitlab" or not head_sha or not orchestrate_id:
         return
     try:
-        from ..verification import store
+        from ..verification import flow_graph, store
         conn = store.connect()
         try:
             store.record_binding(conn, head_sha, "gitlab", str(orchestrate_id),
                                  str(task_group_id), repo or "", "ci-trigger")
+            # Run-flow-graph (D4): group node + ci node + binds edge. For a
+            # repair, orchestrate_id/task_group_id are the PARENT's (D2c) and
+            # the ci node is marked source=repair.
+            try:
+                flow_graph.emit_ci_bound(conn, str(orchestrate_id), str(task_group_id),
+                                         repo or "", str(head_sha), source=source)
+            except Exception:
+                logger.warning("run-graph: ci emission failed (non-fatal)", exc_info=True)
         finally:
             conn.close()
         logger.info("CI binding: sha %s -> run=%s spec=%s repo=%s",
                     str(head_sha)[:8], orchestrate_id, task_group_id, repo)
     except Exception:  # never fail the run on a bookkeeping write
         logger.warning("CI binding failed for sha %s (non-fatal)", head_sha, exc_info=True)
+
+
+def _init_run_graph(job_id: str, job, request) -> "dict | None":
+    """Run-flow-graph emission context (spec 2026-07-02, D2c/D4): normal mode
+    declares the run skeleton; repair mode VALIDATES repair_of and attaches to
+    the parent run's attempt — NO new root, and on validation failure NO
+    attachment to a guessed cell (I16). Best-effort: never sinks the job."""
+    try:
+        from ..haikai_orchestrator import HaikaiOrchestrator
+        from ..verification import flow_graph
+        commands = HaikaiOrchestrator.COMMANDS
+        repair_of = (job.request_payload or {}).get("repair_of") or None
+        conn = flow_graph.connect()
+        try:
+            if repair_of:
+                ok, reason, attempt = flow_graph.validate_repair_target(conn, repair_of)
+                if not ok:
+                    logger.warning("run-graph: repair_of rejected (%s) — no graph attach", reason)
+                    return None
+                ctx = {"mode": "repair", "run_id": str(repair_of["orchestrate_id"]),
+                       "spec": str(repair_of["task_group_id"]),
+                       "repo": str(repair_of["repo"]),
+                       "verifier": str(repair_of["verifier"]),
+                       "attempt": attempt, "commands": commands}
+                flow_graph.emit_repair_dispatched(
+                    conn, ctx["run_id"], ctx["spec"], ctx["repo"],
+                    ctx["verifier"], attempt, job_id)
+                return ctx
+            flow_graph.emit_run_skeleton(
+                conn, job_id, commands,
+                {"company": request.company, "project": request.project,
+                 "spec_names": [si.spec_name for si in request.spec_intents]})
+            return {"mode": "normal", "run_id": job_id, "commands": commands}
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("run-graph: init emission failed (non-fatal)", exc_info=True)
+        return None
+
+
+def _graph_step(ctx: "dict | None", step_num: int, description: str) -> None:
+    """Per-command graph progress: command node states in normal mode;
+    attempt EVIDENCE in repair mode (D10a — never command nodes)."""
+    if not ctx:
+        return
+    try:
+        from ..verification import flow_graph
+        conn = flow_graph.connect()
+        try:
+            if ctx["mode"] == "normal":
+                flow_graph.emit_command_progress(conn, ctx["run_id"], ctx["commands"], step_num)
+            else:
+                cmd = next((c["command"] for c in ctx["commands"]
+                            if c["step"] == step_num), f"step-{step_num}")
+                flow_graph.emit_repair_step_evidence(
+                    conn, ctx["run_id"], ctx["spec"], ctx["repo"],
+                    ctx["verifier"], ctx["attempt"], cmd, "pass")
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("run-graph: step emission failed (non-fatal)", exc_info=True)
+
+
+def _graph_completed(ctx: "dict | None", success: bool, detail: "dict | None" = None) -> None:
+    """Terminal emission. Repair mode: only a FAILED job marks the attempt
+    (implementation crashed); a successful repair job leaves the attempt
+    `running` — the CI re-fold decides pass/fail (D2c)."""
+    if not ctx:
+        return
+    try:
+        from ..verification import flow_graph
+        conn = flow_graph.connect()
+        try:
+            if ctx["mode"] == "normal":
+                flow_graph.emit_run_completed(conn, ctx["run_id"], success, detail)
+            elif not success:
+                flow_graph.set_state(
+                    conn, ctx["run_id"],
+                    flow_graph.attempt_node_id(ctx["run_id"], ctx["spec"], ctx["repo"],
+                                               ctx["verifier"], ctx["attempt"]),
+                    "fail", {"reason": "repair job failed", **(detail or {})})
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("run-graph: completion emission failed (non-fatal)", exc_info=True)
 
 
 def _git_one_spec(git_config, targets, results: list, spec_name: str,
@@ -288,7 +382,7 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str,
             if repair_of:
                 _record_ci_binding(
                     git_config, repair_of["orchestrate_id"], repair_of["task_group_id"],
-                    repair_of.get("repo") or folder, one.commit_sha)
+                    repair_of.get("repo") or folder, one.commit_sha, source="repair")
             else:
                 _record_ci_binding(git_config, orchestrate_id, spec_name, folder, one.commit_sha)
 
@@ -469,6 +563,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
         logger.info(f"Job {job_id} was cancelled before execution started — aborting")
         return
 
+    graph_ctx = None  # run-flow-graph context; set after the request resolves
     try:
         # Mark RUNNING — no-op for the worker path that already claimed
         # atomically, but records started_at/worker_id for the
@@ -483,6 +578,10 @@ def run_orchestration(job_id: str, storage: JobStorage):
         request, anthropic_api_key, workspace_dir, session_id = (
             _resolve_request_context(job)
         )
+
+        # Run-flow-graph (spec 2026-07-02): skeleton (normal) or parent-run
+        # repair-attempt attach (repair mode, D2c). Best-effort throughout.
+        graph_ctx = _init_run_graph(job_id, job, request)
 
         # SUMMARY: orchestration started — N specs. impl-verify knows
         # company/project + job_id; project is the workflow-spanning grouping key,
@@ -532,6 +631,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
                     f"Job {job_id}: progress checkpoint after step {step_num} "
                     f"failed (non-fatal): {e}"
                 )
+            _graph_step(graph_ctx, step_num, step_description)
 
         logger.info(
             f"Running orchestration workflow for job {job_id} "
@@ -669,6 +769,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
             box_id=build_results.get("box_id"))
 
         _finalize_job(job, storage, response, job_id, extra=build_results)
+        _graph_completed(graph_ctx, bool(response.success))
         logger.info(f"Orchestration job {job_id} completed successfully")
 
     except Exception as e:
@@ -684,6 +785,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
         job.completed_at = datetime.now(timezone.utc)
         job.error = str(e)
         storage.save_job(job)
+        _graph_completed(graph_ctx, False, {"error": str(e)})
         raise
 
 
