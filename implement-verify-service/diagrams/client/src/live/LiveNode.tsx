@@ -1,10 +1,12 @@
 /**
  * LiveNode — the Live Run view's own React Flow node (Orchid Blueprint).
  * Deliberately separate from DiagramNode so the nine static diagrams keep
- * their original look; the live theme is owned entirely by live/theme.ts.
+ * their original look; colors come from the ACTIVE theme via context
+ * (light default, dark toggle).
  */
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { CHROME, kindColor, stateColor, STATE_GLYPH, tint } from "./theme";
+import { useLiveTheme } from "./LiveThemeContext";
+import { kindColor, stateColor, STATE_GLYPH, tint } from "./theme";
 
 export interface LiveNodeData {
   label: string;
@@ -16,21 +18,23 @@ export interface LiveNodeData {
 }
 
 export function LiveNode({ data, selected }: NodeProps & { data: LiveNodeData }) {
-  const hue = kindColor(data.kind);
-  const sc = stateColor(data.state);
+  const t = useLiveTheme();
+  const hue = kindColor(t, data.kind);
+  const sc = stateColor(t, data.state);
   const glyph = STATE_GLYPH[data.state] ?? "○";
+  const tintStrength = t.name === "light" ? 0.07 : 0.14;
   return (
     <div
       style={{
         minWidth: 170,
         maxWidth: 230,
         borderRadius: 8,
-        border: `1px solid ${selected ? CHROME.accentHi : tint(hue, 0.55)}`,
+        border: `1px solid ${selected ? t.chrome.accentHi : tint(hue, t.name === "light" ? 0.45 : 0.55)}`,
         borderLeft: `4px solid ${hue}`,
-        background: `linear-gradient(135deg, ${tint(hue, 0.14)}, ${CHROME.panel})`,
+        background: `linear-gradient(135deg, ${tint(hue, tintStrength)}, ${t.chrome.nodeBg})`,
         boxShadow: selected
-          ? `0 0 0 1px ${CHROME.accentHi}, 0 4px 18px ${tint(hue, 0.35)}`
-          : `0 2px 10px ${tint("#000000", 0.45)}`,
+          ? `0 0 0 1px ${t.chrome.accentHi}, 0 4px 18px ${tint(hue, 0.3)}`
+          : `0 2px 10px ${t.chrome.shadow}`,
         padding: "7px 10px",
         fontFamily: "Space Grotesk, sans-serif",
       }}
@@ -42,12 +46,12 @@ export function LiveNode({ data, selected }: NodeProps & { data: LiveNodeData })
                        animation: data.state === "running" ? "livepulse 1.4s ease-in-out infinite" : undefined }}>
           {glyph}
         </span>
-        <span style={{ color: CHROME.text, fontSize: 12, fontWeight: 600 }}>
+        <span style={{ color: t.chrome.text, fontSize: 12, fontWeight: 600 }}>
           {data.label}
         </span>
         {data.badge && (
           <span style={{
-            marginLeft: "auto", fontSize: 10, color: CHROME.bg, background: hue,
+            marginLeft: "auto", fontSize: 10, color: t.chrome.badgeText, background: hue,
             borderRadius: 999, padding: "1px 7px",
             fontFamily: "JetBrains Mono, monospace", fontWeight: 700,
           }}>
@@ -64,7 +68,7 @@ export function LiveNode({ data, selected }: NodeProps & { data: LiveNodeData })
         </div>
       )}
       <div style={{
-        marginTop: 3, fontSize: 8.5, color: CHROME.textMuted,
+        marginTop: 3, fontSize: 8.5, color: t.chrome.textMuted,
         fontFamily: "JetBrains Mono, monospace", letterSpacing: 0.4,
         textTransform: "uppercase",
       }}>

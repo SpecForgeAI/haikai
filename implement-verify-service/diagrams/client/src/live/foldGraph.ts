@@ -8,7 +8,7 @@
  */
 import type { Edge, Node } from "@xyflow/react";
 import type { LiveNodeData } from "./LiveNode";
-import { EDGE } from "./theme";
+import type { LiveTheme } from "./theme";
 
 export interface GraphEvent {
   seq: number;
@@ -80,7 +80,7 @@ const repairOf = (attemptId: string) => attemptId.replace(/\/attempt\/\d+$/, "")
  * chain. One band per group below: [group | ci+cells | gate+repair | attempts]. */
 export function toFlow(
   m: GraphModel,
-  opts: { expandedRepairs: Set<string> },
+  opts: { expandedRepairs: Set<string>; theme: LiveTheme },
 ): { nodes: Node<LiveNodeData>[]; edges: Edge[] } {
   const all = Array.from(m.nodes.values()).sort((a, b) => a.declared_seq - b.declared_seq);
   const stateOf = (id: string) => m.states.get(id)?.state ?? "pending";
@@ -163,14 +163,15 @@ export function toFlow(
       (isAttempt(e.target) && !opts.expandedRepairs.has(repairOf(e.target)));
     if (hidden) continue;
     if (!pos.has(e.source) || !pos.has(e.target)) continue;
-    const style = EDGE[e.edge_kind] ?? EDGE.sequence;
+    const style = opts.theme.edge[e.edge_kind] ?? opts.theme.edge.sequence;
     edges.push({
       id: e.edge_id, source: e.source, target: e.target,
       label: e.edge_kind === "sequence" ? undefined : e.edge_kind,
       animated: stateOf(e.target) === "running",
       style: { stroke: style.stroke, strokeDasharray: style.dash },
-      labelStyle: { fill: "#8b7fb8", fontSize: 10, fontFamily: "JetBrains Mono, monospace" },
-      labelBgStyle: { fill: "#171030", fillOpacity: 0.9 },
+      labelStyle: { fill: opts.theme.chrome.textMuted, fontSize: 10,
+                    fontFamily: "JetBrains Mono, monospace" },
+      labelBgStyle: { fill: opts.theme.chrome.panel, fillOpacity: 0.9 },
     });
   }
   return { nodes: out, edges };

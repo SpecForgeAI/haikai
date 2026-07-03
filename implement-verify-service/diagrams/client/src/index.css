@@ -114,6 +114,7 @@
 
 /* ============================================================
    ReactFlow canvas overrides — dark IDE theme
+   (the STATIC diagram pages; the Live Run view re-scopes below)
    ============================================================ */
 .react-flow__renderer {
   background: transparent;
@@ -121,6 +122,33 @@
 
 .react-flow__background {
   background-color: #0f1117;
+}
+
+/* ============================================================
+   Live Run (Orchid Blueprint) — neutralize the dark IDE
+   overrides above; every color comes from live/theme.ts via the
+   --lr-* variables the page sets inline (light AND dark modes).
+   ============================================================ */
+.live-run .react-flow__background {
+  background-color: transparent;
+}
+.live-run .react-flow__controls {
+  background: var(--lr-panel);
+  border: 1px solid var(--lr-border);
+  box-shadow: 0 4px 20px var(--lr-shadow);
+}
+.live-run .react-flow__controls-button {
+  background: var(--lr-panel);
+  border-bottom: 1px solid var(--lr-border);
+  color: var(--lr-muted);
+}
+.live-run .react-flow__controls-button:hover {
+  background: var(--lr-border);
+  color: var(--lr-text);
+}
+.live-run .react-flow__minimap {
+  background: var(--lr-panel);
+  border: 1px solid var(--lr-border);
 }
 
 .react-flow__edge-path {
