@@ -347,3 +347,84 @@ def test_lazy_then_skeleton_and_resume_no_regress(conn):
     snap = fg.snapshot(conn, RUN)
     assert snap["states"][fg.command_node_id(RUN, 1, "/write-spec")]["state"] == "pass"
     assert snap["states"][fg.command_node_id(RUN, 2, "/create-tasks")]["state"] == "pass"
+
+
+# ── coverage closures (user: every process step emits) ──────────────────────
+
+
+def test_verify_job_start_sets_group_running_never_regresses_pass(conn):
+    fg.emit_verify_started(conn, RUN, SPEC)
+    assert fg.snapshot(conn, RUN)["states"][fg.group_node_id(RUN, SPEC)]["state"] == "running"
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "pass")
+    recorder.advance(conn, RUN, SPEC)  # group -> pass
+    fg.emit_verify_started(conn, RUN, SPEC)  # drift re-entry must NOT regress
+    assert fg.snapshot(conn, RUN)["states"][fg.group_node_id(RUN, SPEC)]["state"] == "pass"
+
+
+def test_escalate_tool_stamps_park_and_graph(conn):
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
+    ok, reason = recorder.escalate(conn, RUN, SPEC, "app", "ci-trigger",
+                                   "CI demands a deliverable outside the spec")
+    assert ok, reason
+    assert store.group_state(conn, RUN, SPEC) == "escalated"  # the stamped state
+    snap = fg.snapshot(conn, RUN)
+    cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
+    assert snap["states"][cell]["state"] == "escalated"
+    assert snap["states"][fg.group_node_id(RUN, SPEC)]["state"] == "escalated"
+    events = [e for e in store.events_since(conn, RUN) if e["kind"] == "escalated"]
+    assert len(events) == 1
+
+
+def test_escalate_refused_on_advanced_group_and_advance_after_escalate(conn):
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "pass")
+    recorder.advance(conn, RUN, SPEC)
+    ok, reason = recorder.escalate(conn, RUN, SPEC)
+    assert not ok and "advanced" in reason  # park cannot contradict terminal pass
+    # mirror: an escalated group CAN advance after the human fixes the cause
+    recorder.record_verdict(conn, RUN, "spec-b", "app", "ci-trigger", "fail")
+    recorder.escalate(conn, RUN, "spec-b", "app", "ci-trigger", "infra outage")
+    recorder.record_verdict(conn, RUN, "spec-b", "app", "ci-trigger", "pass")
+    ok, reason = recorder.advance(conn, RUN, "spec-b")
+    assert ok, reason
+    assert store.group_state(conn, RUN, "spec-b") == "advanced"
+    # ... and a DOUBLE advance is still refused (the guard survives the upsert)
+    ok, reason = recorder.advance(conn, RUN, "spec-b")
+    assert not ok and "double advance" in reason
+
+
+def test_open_repair_cap_refusal_emits_escalated(conn):
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
+    recorder.open_repair(conn, RUN, SPEC, "app", "ci-trigger", 1)
+    ok, _ = recorder.open_repair(conn, RUN, SPEC, "app", "ci-trigger",
+                                 recorder.ATTEMPT_CAP + 1)
+    assert not ok
+    snap = fg.snapshot(conn, RUN)
+    cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
+    assert snap["states"][cell]["state"] == "escalated"
+    assert snap["states"][f"{cell}/repair"]["state"] == "escalated"
+
+
+def test_job_cancelled_normal_root_and_repair_attempt(conn):
+    from src.job_queue.tasks import _init_run_graph
+    _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    fg.emit_job_cancelled(conn, RUN, {})
+    assert fg.snapshot(conn, RUN)["states"][f"run/{RUN}"]["state"] == "cancelled"
+    # repair job cancel -> attempt cancelled on the PARENT graph
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
+    recorder.open_repair(conn, RUN, SPEC, "app", "ci-trigger", 1)
+    fg.emit_job_cancelled(conn, "repair-job-7", {"repair_of": {
+        "orchestrate_id": RUN, "task_group_id": SPEC, "repo": "app",
+        "verifier": "ci-trigger", "attempt": 1}})
+    att = fg.attempt_node_id(RUN, SPEC, "app", "ci-trigger", 1)
+    assert fg.snapshot(conn, RUN)["states"][att]["state"] == "cancelled"
+    # a job that never declared structure: no-op, no error
+    fg.emit_job_cancelled(conn, "ghost-job", {})
+
+
+def test_normal_step_attaches_log_evidence(conn):
+    from src.job_queue.tasks import _graph_step, _init_run_graph
+    ctx = _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    _graph_step(ctx, 1, "Write specification")
+    nid = fg.command_node_id(RUN, 1, "/write-spec")
+    summary = fg.snapshot(conn, RUN)["evidence_summary"][nid]
+    assert summary["latest_by_kind"]["log"]["ref"] == f"orchlog://{RUN}/step-1"

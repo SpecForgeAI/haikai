@@ -215,6 +215,21 @@ async def cancel_job(
 
     logger.info(f"Cancelled job {job_id}")
 
+    # Run-flow-graph (D13 `cancelled`): a cancel is a visible terminal step —
+    # a normal run's root, or a repair job's attempt on the PARENT graph.
+    # Best-effort projection; the cancel itself is already durable.
+    try:
+        from src.verification import flow_graph
+        job = job_queue.get_job_status(job_id)
+        if job is not None and str(getattr(job, "type", "")).lower().endswith("orchestration"):
+            conn = flow_graph.connect()
+            try:
+                flow_graph.emit_job_cancelled(conn, job_id, job.request_payload)
+            finally:
+                conn.close()
+    except Exception:
+        logger.warning("run-graph: cancel emission failed (non-fatal)", exc_info=True)
+
     return {"message": "Job cancelled", "job_id": job_id}
 
 

@@ -234,6 +234,9 @@ repair) and populates the verification subtree under
 | `VERIFY_TASK_GROUP` job start | any | verification-subtree `running` state |
 | recorder guarded writes | any | cell states, gate states, evidence refs |
 | `open_repair` guarded recorder write | any | **authoritative**: repair node, attempt node, `repair_of` edge, initial repair state (it alone has the full cell key `repo+verifier+attempt`) |
+| `open_repair` cap refusal | any | `escalated` on cell + repair + group — cap exhaustion IS the escalation moment |
+| recorder `escalate` (guarded verb, added post-grill) | any | stamped `task_group_state='escalated'` + `escalated` graph states; refuses on an advanced group; `advance` can still land after a human resolves the cause |
+| `DELETE /api/v1/jobs/{job_id}` | orchestration jobs | `cancelled` on the run root (normal) or the repair attempt on the PARENT graph (repair jobs) |
 | `enqueue_cli` | validated `repair_of` | repair job evidence, attempt `running` state, `spawns`/`binds` edge to the repair orchestration job |
 | `enqueue_cli` | invalid `repair_of` | NO cell-scoped structure — group-level error evidence, or fail fast |
 | TTL sweeper | any | `timeout` states |
@@ -435,6 +438,12 @@ execution lag is itself meaningful and visible.
 ```
 
 Never `infra_fail`/`real_fail`/`flaky_fail` states.
+
+Every D13 state has a runtime emitter (closure pass, 2026-07-03): `escalated`
+via the cap-refusal shim and the new guarded `escalate` recorder verb (which
+also closes the old "no formal escalated stamp" gap — the park is a recorded
+`task_group_state`, not just a red-gate effect); `cancelled` via the job
+cancel route (run root, or the repair attempt on the parent graph).
 
 ### D14 — Snapshot evidence is summarised
 

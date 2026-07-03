@@ -530,6 +530,61 @@ def emit_repair_step_evidence(conn: sqlite3.Connection, run_id: str,
                     f"{command} {state}", {"command": command, "state": state})
 
 
+def emit_verify_started(conn: sqlite3.Connection, run_id: str,
+                        spec_name: str) -> None:
+    """VERIFY_TASK_GROUP job start (D4): the verification subtree is being
+    (re-)evaluated — a visible step, not an invisible wait. Never regresses
+    an advanced (pass) group; a drift re-entry reddens via cell states."""
+    gid = ensure_group(conn, run_id, spec_name)
+    row = conn.execute(
+        "SELECT payload_json FROM graph_events WHERE run_id = ? AND kind = ?"
+        " AND node_id = ? ORDER BY seq DESC LIMIT 1",
+        (run_id, _KIND_STATE, gid),
+    ).fetchone()
+    current = json.loads(row["payload_json"])["state"] if row else None
+    if current != "pass":
+        set_state(conn, run_id, gid, "running", {"phase": "verify"})
+
+
+def emit_escalated(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                   repo: str = "", verifier: str = "",
+                   detail: dict | None = None) -> None:
+    """D13 `escalated` — parked for a human (repair-cap exhaustion, or the
+    loop's infra / out-of-scope classification via the recorder `escalate`
+    verb). Cell-scoped when the cell is known; the group parks either way."""
+    gid = ensure_group(conn, run_id, spec_name)
+    d = detail or {}
+    if repo and verifier:
+        cell = cell_node_id(run_id, spec_name, repo, verifier)
+        ensure_node(conn, run_id, cell, gid, "cell", f"{repo} / {verifier}",
+                    {"repo": repo, "verifier": verifier})
+        set_state(conn, run_id, cell, "escalated", d)
+        repair = f"{cell}/repair"
+        if _declared(conn, run_id, _KIND_NODE, "node_id", repair):
+            set_state(conn, run_id, repair, "escalated", d)
+    set_state(conn, run_id, gid, "escalated", d)
+
+
+def emit_job_cancelled(conn: sqlite3.Connection, job_id: str,
+                       request_payload: dict | None) -> None:
+    """DELETE /jobs/{id} (D13 `cancelled`). A repair job cancels its attempt
+    on the PARENT graph (D2c: it has no root of its own); a normal run
+    cancels its root. No-op for jobs that never declared graph structure."""
+    payload = request_payload or {}
+    repair_of = payload.get("repair_of") or {}
+    if repair_of.get("verifier") and repair_of.get("attempt") is not None:
+        parent = str(repair_of["orchestrate_id"])
+        att = attempt_node_id(parent, str(repair_of["task_group_id"]),
+                              str(repair_of["repo"]), str(repair_of["verifier"]),
+                              int(repair_of["attempt"]))
+        if _declared(conn, parent, _KIND_NODE, "node_id", att):
+            set_state(conn, parent, att, "cancelled", {"job_id": job_id})
+        return
+    root = run_root_id(job_id)
+    if _declared(conn, job_id, _KIND_NODE, "node_id", root):
+        set_state(conn, job_id, root, "cancelled", {})
+
+
 def validate_repair_target(conn: sqlite3.Connection,
                            repair_of: dict) -> tuple[bool, str, int | None]:
     """I16/D2b: a repair_of payload may drive cell-scoped emission ONLY if it

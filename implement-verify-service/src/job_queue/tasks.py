@@ -256,6 +256,16 @@ def _graph_step(ctx: "dict | None", step_num: int, description: str) -> None:
         try:
             if ctx["mode"] == "normal":
                 flow_graph.emit_command_progress(conn, ctx["run_id"], ctx["commands"], step_num)
+                # D10: sub-step output is EVIDENCE — the step log ref lands on
+                # the command node for drill-in.
+                cmd = next((c["command"] for c in ctx["commands"]
+                            if c["step"] == step_num), None)
+                if cmd:
+                    flow_graph.attach_evidence(
+                        conn, ctx["run_id"],
+                        flow_graph.command_node_id(ctx["run_id"], step_num, cmd),
+                        "log", f"orchlog://{ctx['run_id']}/step-{step_num}",
+                        f"{cmd} step log")
             else:
                 cmd = next((c["command"] for c in ctx["commands"]
                             if c["step"] == step_num), f"step-{step_num}")
@@ -280,6 +290,11 @@ def _graph_completed(ctx: "dict | None", success: bool, detail: "dict | None" = 
         try:
             if ctx["mode"] == "normal":
                 flow_graph.emit_run_completed(conn, ctx["run_id"], success, detail)
+                deploy = (detail or {}).get("deploy") or {}
+                if deploy.get("base_url"):
+                    flow_graph.attach_evidence(
+                        conn, ctx["run_id"], flow_graph.run_root_id(ctx["run_id"]),
+                        "artifact", deploy["base_url"], "deployed run", deploy)
             elif not success:
                 flow_graph.set_state(
                     conn, ctx["run_id"],
@@ -769,7 +784,9 @@ def run_orchestration(job_id: str, storage: JobStorage):
             box_id=build_results.get("box_id"))
 
         _finalize_job(job, storage, response, job_id, extra=build_results)
-        _graph_completed(graph_ctx, bool(response.success))
+        _graph_completed(graph_ctx, bool(response.success),
+                         {"deploy": {"base_url": deploy.get("base_url"),
+                                     "box_id": deploy.get("box_id")}} if deploy else None)
         logger.info(f"Orchestration job {job_id} completed successfully")
 
     except Exception as e:
@@ -858,6 +875,18 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
         job.error = "payload requires orchestrate_id and task_group_id"
         storage.save_job(job)
         return
+
+    # Run-flow-graph (D4): the verify job itself is a visible step — the
+    # subtree shows "running" from dispatch, not from the first verdict.
+    try:
+        from ..verification import flow_graph
+        vconn = flow_graph.connect()
+        try:
+            flow_graph.emit_verify_started(vconn, str(orchestrate_id), str(task_group_id))
+        finally:
+            vconn.close()
+    except Exception:
+        logger.warning("run-graph: verify-start emission failed (non-fatal)", exc_info=True)
 
     try:
         from src.backend_registry import _build_cli_executor

@@ -25,7 +25,7 @@ Without subagents, YOU act as the verification-loop for this group. Read its def
 
 ## Recording — the guarded recorder tools are a Bash CLI, not MCP
 
-The five recorder tools named in the verification-loop definition (`record_verdict`, `record_hook`, `advance`, `open_repair`, `update_checklist`) are **guarded writes invoked from Bash** (the D10/D12 idiom), NOT native or MCP tools — there is no recorder MCP server, so do not look for one:
+The recorder tools named in the verification-loop definition (`record_verdict`, `record_hook`, `advance`, `open_repair`, `escalate`, `update_checklist`) are **guarded writes invoked from Bash** (the D10/D12 idiom), NOT native or MCP tools — there is no recorder MCP server, so do not look for one:
 
 ```
 python -m src.verification.recorder <tool> --json '<payload-object>' --db <verification_db>
@@ -38,8 +38,11 @@ Pass the `verification_db` value given to this command as `--db`. Exit 0 = recor
 When a cell's latest verdict is `fail`, classify it (D4) **before** you touch `open_repair`. The classification picks the branch, and `open_repair` belongs to exactly ONE of them — opening a repair you then don't dispatch leaves a dangling, un-acted ticket (the out-of-scope bug seen live: it `open_repair`'d, then declined the fix, and left the ticket hanging with no escalate). So decide the class FIRST:
 
 - **`flaky`** — transient/non-deterministic. Re-run the verifier or wait for the next delivery. Do **NOT** `open_repair`.
-- **`infra`** — environment/runner/dependency problem outside the diff (missing CI service, runner outage, timeout). NOT an in-scope code fix. Do **NOT** `open_repair`. Surface for a human (disable/ungate the cell via D7 repo config, or provision the infra); the gate stays red and the group parks.
-- **`out-of-scope`** — the failure is real but its fix lies outside this `(group, repo)` cell (a dependency-repo defect, a pre-existing unrelated failure, or CI demanding a **deliverable** this spec never specified — e.g. a function/feature outside the spec). Do **NOT** `open_repair` and do **NOT** fix it. **Escalate to a human** and leave the gate red; the group + dependents park.
+- **`infra`** — environment/runner/dependency problem outside the diff (missing CI service, runner outage, timeout). NOT an in-scope code fix. Do **NOT** `open_repair`. Surface for a human (disable/ungate the cell via D7 repo config, or provision the infra); the gate stays red and the group parks. **RECORD the park** — it must be a stamped state, not just an effect:
+  ```
+  python -m src.verification.recorder escalate --json '{"orchestrate_id":"<orchestrate_id>","task_group_id":"<task_group_id>","repo":"<repo>","verifier":"<verifier>","reason":"<one-line infra diagnosis>"}' --db <verification_db>
+  ```
+- **`out-of-scope`** — the failure is real but its fix lies outside this `(group, repo)` cell (a dependency-repo defect, a pre-existing unrelated failure, or CI demanding a **deliverable** this spec never specified — e.g. a function/feature outside the spec). Do **NOT** `open_repair` and do **NOT** fix it. **Escalate to a human** and leave the gate red; the group + dependents park. **RECORD the park** with the same `escalate` recorder call as above (`reason` = the scope diagnosis). `escalate` refuses on an already-advanced group; a later green re-fold can still `advance` an escalated group after the human resolves the cause.
 - **`real`** — an in-scope, fixable defect in THIS cell's own diff. This includes an **environment constraint your own diff violates**: a compile/import/lint error in the code YOU wrote when it runs on the repo's pinned CI environment (older Python image, OS, runtime). The repo's CI environment is a **given, not a conflict** — code that cannot even import on this repo's CI is defective FOR THIS REPO, and the fix (make YOUR code compatible) is squarely in-scope (`repair-engine.md`: "a compile/lint error in the touched code" = real). Do NOT reclassify this as a CI/spec conflict or propose changing the CI image — fix the code. ONLY for `real` take the repair-dispatch branch below. `open_repair` is the first step of THIS branch and no other.
 
 ### `real` → dispatch the fix as a single-repo `/orchestrate` (closes the loop)
