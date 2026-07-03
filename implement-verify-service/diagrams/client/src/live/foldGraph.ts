@@ -7,7 +7,8 @@
  * frames. Mirrors the server's pure fold (flow_graph.fold_events).
  */
 import type { Edge, Node } from "@xyflow/react";
-import type { DiagramNodeData } from "@/components/DiagramNode";
+import type { LiveNodeData } from "./LiveNode";
+import { EDGE } from "./theme";
 
 export interface GraphEvent {
   seq: number;
@@ -70,26 +71,7 @@ export function applyEvent(m: GraphModel, ev: GraphEvent): GraphModel {
   return m;
 }
 
-// ── presentation mapping ─────────────────────────────────────────────────────
-
-const KIND_CATEGORY: Record<string, DiagramNodeData["category"] & string> = {
-  run: "phase", command: "agent", group: "core", ci: "cicd",
-  cell: "standards", gate: "gateway", repair: "external", attempt: "artifact",
-};
-
-const STATE_GLYPH: Record<string, string> = {
-  pending: "○", ready: "◍", running: "◐", pass: "✓", fail: "✗",
-  skipped: "⤼", timeout: "⏱", cancelled: "⊘", escalated: "⚠",
-};
-
-const EDGE_STYLE: Record<string, { stroke: string; dash?: string; animated?: boolean }> = {
-  sequence: { stroke: "#64748b" },
-  depends_on: { stroke: "#f59e0b" },
-  spawns: { stroke: "#a78bfa", dash: "6 3" },
-  repair_of: { stroke: "#ef4444", dash: "4 3" },
-  binds: { stroke: "#38bdf8", dash: "2 3" },
-  contains: { stroke: "#334155", dash: "1 4" },
-};
+// ── presentation mapping (palette lives in live/theme.ts) ────────────────────
 
 const isAttempt = (id: string) => /\/repair\/attempt\/\d+$/.test(id);
 const repairOf = (attemptId: string) => attemptId.replace(/\/attempt\/\d+$/, "");
@@ -99,10 +81,9 @@ const repairOf = (attemptId: string) => attemptId.replace(/\/attempt\/\d+$/, "")
 export function toFlow(
   m: GraphModel,
   opts: { expandedRepairs: Set<string> },
-): { nodes: Node<DiagramNodeData>[]; edges: Edge[] } {
+): { nodes: Node<LiveNodeData>[]; edges: Edge[] } {
   const all = Array.from(m.nodes.values()).sort((a, b) => a.declared_seq - b.declared_seq);
   const stateOf = (id: string) => m.states.get(id)?.state ?? "pending";
-  const glyph = (id: string) => STATE_GLYPH[stateOf(id)] ?? "○";
 
   // Repair badge: attempts collapse behind their repair node by default (D6).
   const attemptsByRepair = new Map<string, any[]>();
@@ -113,7 +94,7 @@ export function toFlow(
     }
   }
 
-  const out: Node<DiagramNodeData>[] = [];
+  const out: Node<LiveNodeData>[] = [];
   const pos = new Map<string, { x: number; y: number }>();
   const groups = all.filter((n) => n.node_kind === "group");
   const bandY = (gi: number) => 240 + gi * 420;
@@ -149,17 +130,19 @@ export function toFlow(
 
     if (n.node_kind === "attempt" && !opts.expandedRepairs.has(repairOf(id))) continue;
 
-    let label = `${glyph(id)} ${n.label}`;
-    let sublabel = stateOf(id);
+    let label = n.label;
+    let state = stateOf(id);
+    let sublabel = state;
+    let badge: string | undefined;
     if (n.node_kind === "repair") {
       const atts = attemptsByRepair.get(id) ?? [];
       const latest = atts.length
         ? Math.max(...atts.map((a) => Number(a.node_id.split("/").pop())))
         : 0;
-      label = `${glyph(id)} repair ⟳ ${latest}/3`;
-      const latestState = atts.length
-        ? stateOf(`${id}/attempt/${latest}`)
-        : stateOf(id);
+      label = "repair";
+      badge = `⟳ ${latest}/3`;
+      const latestState = atts.length ? stateOf(`${id}/attempt/${latest}`) : state;
+      state = latestState;
       sublabel = `attempt ${latest || "-"}: ${latestState} (click to expand)`;
     }
     const ev = m.evidence.get(id);
@@ -168,8 +151,8 @@ export function toFlow(
       sublabel += ` · 📎${total}`;
     }
     out.push({
-      id, type: "diagramNode", position: pos.get(id)!,
-      data: { label, sublabel, category: (KIND_CATEGORY[n.node_kind] ?? "core") as any },
+      id, type: "liveNode", position: pos.get(id)!,
+      data: { label, sublabel, kind: n.node_kind, state, badge },
     });
   }
 
@@ -180,13 +163,14 @@ export function toFlow(
       (isAttempt(e.target) && !opts.expandedRepairs.has(repairOf(e.target)));
     if (hidden) continue;
     if (!pos.has(e.source) || !pos.has(e.target)) continue;
-    const style = EDGE_STYLE[e.edge_kind] ?? EDGE_STYLE.sequence;
+    const style = EDGE[e.edge_kind] ?? EDGE.sequence;
     edges.push({
       id: e.edge_id, source: e.source, target: e.target,
       label: e.edge_kind === "sequence" ? undefined : e.edge_kind,
       animated: stateOf(e.target) === "running",
       style: { stroke: style.stroke, strokeDasharray: style.dash },
-      labelStyle: { fill: "#94a3b8", fontSize: 10, fontFamily: "JetBrains Mono, monospace" },
+      labelStyle: { fill: "#8b7fb8", fontSize: 10, fontFamily: "JetBrains Mono, monospace" },
+      labelBgStyle: { fill: "#171030", fillOpacity: 0.9 },
     });
   }
   return { nodes: out, edges };
