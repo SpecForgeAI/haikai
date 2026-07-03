@@ -38,6 +38,38 @@ logger = logging.getLogger(__name__)
 RECOVERY_STALE_SECONDS = 120
 
 
+def _graph_mark_failed(job, reason: str) -> None:
+    """Run-flow-graph (reason run F1, unanimous): recovery's FAIL branches
+    are the only orchestration status transitions with no graph mirror —
+    the crash that killed the worker also killed run_orchestration's own
+    completion emission, so the run root would spin `running` forever.
+    Best-effort; a repair job (repair_of payload) marks its attempt on
+    the PARENT graph instead (its own root was never declared, D2c)."""
+    try:
+        from src.verification import flow_graph
+        conn = flow_graph.connect()
+        try:
+            repair_of = (job.request_payload or {}).get("repair_of") or {}
+            if repair_of.get("verifier") and repair_of.get("attempt") is not None:
+                flow_graph.set_state(
+                    conn, str(repair_of["orchestrate_id"]),
+                    flow_graph.attempt_node_id(
+                        str(repair_of["orchestrate_id"]),
+                        str(repair_of["task_group_id"]),
+                        str(repair_of["repo"]), str(repair_of["verifier"]),
+                        int(repair_of["attempt"])),
+                    "fail", {"reason": reason, "recovered": True})
+            else:
+                flow_graph.emit_run_completed(
+                    conn, job.job_id, False,
+                    {"reason": reason, "recovered": True})
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("Recovery: graph fail emission failed (non-fatal)",
+                       exc_info=True)
+
+
 def _determine_last_completed_step(job: Job) -> Optional[int]:
     """Check orchestration log dir for completed step files.
 
@@ -128,6 +160,7 @@ def _recover_interrupted_jobs():
                     "any orchestration step completed"
                 )
                 storage.save_job(job)
+                _graph_mark_failed(job, "recovered: no orchestration step completed")
                 logger.info(
                     f"Recovery: job {job.job_id} marked failed "
                     f"(no completed steps)"
@@ -162,6 +195,7 @@ def _recover_interrupted_jobs():
                     f"no session found in spec folder to resume"
                 )
                 storage.save_job(job)
+                _graph_mark_failed(job, "recovered: no session found to resume")
                 logger.info(
                     f"Recovery: job {job.job_id} marked failed "
                     f"(no session ID in spec folder)"
@@ -224,3 +258,4 @@ def _recover_interrupted_jobs():
             job.completed_at = datetime.now(timezone.utc)
             job.error = f"Recovery failed: {e}"
             storage.save_job(job)
+            _graph_mark_failed(job, f"recovery failed: {e}")

@@ -18,6 +18,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+# the Python build-dir rule above must not swallow the diagrams client's
+# source folder (it silently dropped client/src/lib/utils.ts — every ui/*
+# component imports it, so a fresh clone couldn't boot the viewer)
+!diagrams/client/src/lib/
 lib64/
 parts/
 sdist/

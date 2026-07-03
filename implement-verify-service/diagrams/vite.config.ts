@@ -237,5 +237,13 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    // Run Flow Graph live mode (spec 2026-07-02, D9): proxy the ivs API so
+    // the client fetches same-origin (no CORS); SSE passes through untouched.
+    proxy: {
+      "/api": {
+        target: process.env.IVS_API_URL || "http://localhost:8088",
+        changeOrigin: true,
+      },
+    },
   },
 });

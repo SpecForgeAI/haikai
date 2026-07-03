@@ -69,6 +69,15 @@ def trigger_and_bind(
         bound = store.record_binding(
             conn, head_sha, PROVIDER, orchestrate_id, task_group_id, repo, verifier
         )
+        # Run-flow-graph parity with tasks._record_ci_binding (reason run F5:
+        # the helper-exists-sibling-missed rule) — best-effort; the durable
+        # binding above is the artifact, the graph is a projection.
+        try:
+            from src.verification import flow_graph
+            flow_graph.emit_ci_bound(conn, str(orchestrate_id), str(task_group_id),
+                                     repo or "", str(head_sha))
+        except Exception:
+            pass  # projection only; never lose the binding over it
     finally:
         if own_conn:
             conn.close()
