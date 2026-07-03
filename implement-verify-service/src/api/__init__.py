@@ -563,6 +563,11 @@ app.include_router(inbound_router)
 from .routes.bugs import router as bugs_router
 app.include_router(bugs_router)
 
+# Run Flow Graph (spec 2026-07-02-run-flow-graph, D8) — snapshot + SSE of the
+# server-owned execution graph. Bearer-auth.
+from .routes.runs import router as runs_router
+app.include_router(runs_router)
+
 from .routes.haikai import router as haikai_router
 app.include_router(haikai_router)
 
