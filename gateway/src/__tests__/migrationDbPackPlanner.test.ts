@@ -527,12 +527,21 @@ describe('buildDbEpicStories — data migration + cutover epics', () => {
     expect(needsDecision.readiness).toBe('needs_user_decision');
     expect(needsDecision.missingInputs).toEqual(['delta_key--dbo.audit_log']);
 
+    // Spec 2026-07-02-d: keyed groups carry the shared sync runner + state DDL
+    // alongside their per-table delta scripts.
     const insertOnly = stories.find((s) => s.id.endsWith('-s-incr-insert_only'))!;
     expect(
       (insertOnly as MigrationBookOfWorkItem & { packFilePaths?: string[] }).packFilePaths
-    ).toEqual(['data/incremental/dbo.orders.sql']);
+    ).toEqual([
+      'sync/000-sync-state.sql',
+      'sync/run-incremental-sync.sh',
+      'data/incremental/dbo.orders.sql',
+    ]);
 
-    expect(stories.find((s) => s.id.endsWith('-s-reconciliation'))).toBeDefined();
+    const reconciliation = stories.find((s) => s.id.endsWith('-s-reconciliation'))!;
+    expect(
+      (reconciliation as MigrationBookOfWorkItem & { packFilePaths?: string[] }).packFilePaths
+    ).toEqual(['reconcile/reconciliation.sql', 'reconcile/build-report.sh']);
   });
 
   it('cutover epic: final delta, sequence seeding at swap-over, job enablement, verification', () => {

@@ -52,7 +52,18 @@ public class DbMigrationPackFileEntity {
      */
     public static final String KIND_TRANSLATION = "translation";
 
-    /** All allowed file kinds, mirroring chk_dmpf_file_kind (changesets 173 + 177). */
+    /**
+     * Side-by-side operation kinds (Spec 2026-07-02-d, Persistence-Tier
+     * Oracle Program; chk_dmpf_file_kind extended by changeset 204): the
+     * rerunnable daily incremental sync runner + high-water state DDL, the
+     * per-run source/target reconciliation queries + report builder, and the
+     * swap-over runbook.
+     */
+    public static final String KIND_SYNC_RUNNER = "sync_runner";
+    public static final String KIND_RECONCILIATION_SCRIPT = "reconciliation_script";
+    public static final String KIND_CUTOVER_RUNBOOK = "cutover_runbook";
+
+    /** All allowed file kinds, mirroring chk_dmpf_file_kind (changesets 173 + 177 + 204). */
     public static final Set<String> ALL_KINDS = Set.of(
         KIND_LIQUIBASE_MASTER,
         KIND_LIQUIBASE_CHANGESET,
@@ -60,7 +71,10 @@ public class DbMigrationPackFileEntity {
         KIND_INCREMENTAL_SCRIPT,
         KIND_MANIFEST,
         KIND_README,
-        KIND_TRANSLATION
+        KIND_TRANSLATION,
+        KIND_SYNC_RUNNER,
+        KIND_RECONCILIATION_SCRIPT,
+        KIND_CUTOVER_RUNBOOK
     );
 
     @Id

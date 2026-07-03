@@ -88,6 +88,19 @@ import {
   resolveDeltaStrategy,
 } from './dbMigrationPack/dataScripts';
 import {
+  RECONCILIATION_REPORT_PATH,
+  RECONCILIATION_SQL_PATH,
+  SWAP_OVER_RUNBOOK_PATH,
+  SYNC_RUNNER_PATH,
+  SYNC_STATE_PATH,
+  buildSyncManifestSection,
+  emitReconciliationReportBuilder,
+  emitReconciliationSql,
+  emitSwapOverRunbook,
+  emitSyncRunner,
+  emitSyncStateDdl,
+} from './dbMigrationPack/syncPack';
+import {
   RequiresTranslationEntry,
   syncPackTranslations,
   TranslationSyncSummary,
@@ -739,6 +752,34 @@ export function buildDbMigrationPackArtifacts(
     }
   }
 
+  // --- side-by-side sync + reconciliation + swap-over (Spec 2026-07-02-d) --
+  //
+  // The daily one-way sync is an OPERABLE capability (rerunnable runner +
+  // high-water state + per-run reconciliation report), and sequence seeding
+  // moves to SWAP-OVER via the runbook — the source keeps advancing during
+  // side-by-side running.
+  push(SYNC_STATE_PATH, 'sync_runner', emitSyncStateDdl());
+  push(SYNC_RUNNER_PATH, 'sync_runner', emitSyncRunner({ strategies: deltaStrategies }));
+  push(
+    RECONCILIATION_SQL_PATH,
+    'reconciliation_script',
+    emitReconciliationSql({ tableOrder, strategies: deltaStrategies })
+  );
+  push(RECONCILIATION_REPORT_PATH, 'reconciliation_script', emitReconciliationReportBuilder());
+  push(
+    SWAP_OVER_RUNBOOK_PATH,
+    'cutover_runbook',
+    emitSwapOverRunbook({
+      sourceEngine: ir.sourceEngine,
+      targetEngine: ir.targetEngine,
+      sequences: ir.sequences,
+      scheduledJobs: manualRecreation.map((m) => m.object_ref),
+      pendingDecisionTables: deltaStrategies
+        .filter((s) => s.strategy === 'needs_decision')
+        .map((s) => s.table),
+    })
+  );
+
   // --- expected schema (the Group 5 diff baseline) -------------------------
   const expectedSchema = buildExpectedSchema(
     orderedTables,
@@ -784,6 +825,7 @@ export function buildDbMigrationPackArtifacts(
       cast_notes: castNotes,
     },
     expected_schema: expectedSchema,
+    sync: buildSyncManifestSection(deltaStrategies),
   };
 
   push('manifest.json', 'manifest', JSON.stringify(manifest, null, 2) + '\n');

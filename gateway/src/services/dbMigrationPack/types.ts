@@ -174,7 +174,16 @@ export type PackFileKind =
   | 'manifest'
   | 'readme'
   /** Emitted APPROVED-translation file rows ONLY (Spec 2026-06-11, Group 4). */
-  | 'translation';
+  | 'translation'
+  /**
+   * Side-by-side operation kinds (Spec 2026-07-02-d): the rerunnable daily
+   * sync runner + state DDL, the per-run reconciliation queries + report
+   * builder, and the swap-over runbook. AMS chk_dmpf_file_kind extended by
+   * changeset 204.
+   */
+  | 'sync_runner'
+  | 'reconciliation_script'
+  | 'cutover_runbook';
 
 export interface PackFile {
   filePath: string;
@@ -270,6 +279,24 @@ export interface PackManifest {
   };
   /** The Group 5 diff baseline — emitted at generation time (spec 2.5). */
   expected_schema: ExpectedSchema;
+  /**
+   * Side-by-side operation section (Spec 2026-07-02-d): daily one-way sync
+   * runner + state table, reconciliation artefacts, swap-over runbook, and
+   * the per-table sync posture. Absent on packs generated before the spec.
+   */
+  sync?: {
+    cadence_default: 'daily';
+    state_table: string;
+    runner_path: string;
+    state_ddl_path: string;
+    reconciliation_paths: string[];
+    runbook_path: string;
+    tables: Array<{
+      table: string;
+      strategy: DeltaStrategy['strategy'];
+      delta_key: string | null;
+    }>;
+  };
   /**
    * Approved-only translation emission provenance (Spec 2026-06-11 DB Object
    * Translation Drafts, Task 4.2/4.3). Written by the emission pass — absent

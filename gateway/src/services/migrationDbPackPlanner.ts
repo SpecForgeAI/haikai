@@ -56,6 +56,13 @@ import {
   SEQUENCES_SEED_CHANGESET_PATH,
   tableChangesetPath,
 } from './dbMigrationPack/liquibase';
+import {
+  RECONCILIATION_REPORT_PATH,
+  RECONCILIATION_SQL_PATH,
+  SWAP_OVER_RUNBOOK_PATH,
+  SYNC_RUNNER_PATH,
+  SYNC_STATE_PATH,
+} from './dbMigrationPack/syncPack';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1278,7 +1285,14 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
             packId: packView.packId,
             ...(group.key !== 'needs_decision'
               ? {
-                  packFilePaths: memberTables.map((t) => `data/incremental/${t}.sql`),
+                  // Spec 2026-07-02-d: the daily sync is an OPERABLE capability —
+                  // every keyed/full-reload group carries the shared runner +
+                  // high-water state DDL alongside its per-table delta scripts.
+                  packFilePaths: [
+                    SYNC_STATE_PATH,
+                    SYNC_RUNNER_PATH,
+                    ...memberTables.map((t) => `data/incremental/${t}.sql`),
+                  ],
                 }
               : {}),
             dbDeltaTables: memberTables,
@@ -1297,15 +1311,19 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
         parentId: reconciliation.id,
         title: 'Build the per-run reconciliation report',
         description:
-          'After every bulk/incremental run, compare per-table row counts (and checksums where types allow) between source and target and produce a drift report.',
+          'After every bulk/incremental run, compare per-table row counts (and max delta keys where a key exists) between source and target and produce a drift report; a drift exit gates the swap.',
         workstream: ws,
         sequenceOrder: next(),
         acceptanceCriteria: [
           'Every sync run emits a per-table reconciliation report.',
-          'A non-zero drift is visible without opening logs.',
+          'A non-zero drift is visible without opening logs and exits non-zero (gateable).',
         ],
-        tags: packTags,
-        traceabilitySummary: `Reconciliation over pack ${packView.packId} table inventory.`,
+        tags: [...packTags, SEED_DB_PACK_FILES_TAG],
+        traceabilitySummary: `Carries pack ${packView.packId} reconciliation artefacts verbatim.`,
+        extras: {
+          packId: packView.packId,
+          packFilePaths: [RECONCILIATION_SQL_PATH, RECONCILIATION_REPORT_PATH],
+        },
       })
     );
   }
@@ -1322,12 +1340,16 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
         parentId: finalDelta.id,
         title: 'Run the final delta inside the swap-over window',
         description:
-          'Freeze source writes, run the last incremental sync, and verify a clean reconciliation before the swap.',
+          'Freeze source writes, run the last incremental sync, and verify a clean reconciliation before the swap — per the pack swap-over runbook.',
         workstream: ws,
         sequenceOrder: next(),
         acceptanceCriteria: ['Final reconciliation shows zero drift before swap-over.'],
-        tags: packTags,
-        traceabilitySummary: `Final delta over pack ${packView.packId} incremental scripts.`,
+        tags: [...packTags, SEED_DB_PACK_FILES_TAG],
+        traceabilitySummary: `Carries pack ${packView.packId} swap-over runbook verbatim.`,
+        extras: {
+          packId: packView.packId,
+          packFilePaths: [SWAP_OVER_RUNBOOK_PATH, SYNC_RUNNER_PATH],
+        },
       })
     );
   }
