@@ -82,6 +82,33 @@ never silent. This extends the recorded "oracle standard" (see pre-merge memory
 - Pack auto-generation fail-soft: pack generation failure (no db.engine, unsupported pair) →
   plan proceeds with warnings + prerequisite stories; never a hard plan failure.
 
-## Per-spec design log
+## Per-spec design log (final, end of overnight build)
 
-(Appended as each spec is designed/built — see per-spec `spec.md` for full detail.)
+| Spec | Outcome | Commit unit |
+|---|---|---|
+| A | ✅ built + verified (55-question library; pack target-binding fix; ensure-fresh in plan creation; engine facts + 4 gap codes) | commit 2 |
+| B | ✅ built + verified (deterministic DB skeletons + clustered stories; anti-explosion + coverage pins; preflight gates; wayfinding entries) | commit 3 |
+| C | ✅ built + verified (verbatim pack-file spec carriage; zero LLM for DB build stories) | commit 4 |
+| D | ✅ built + verified (sync runner + reconciliation + swap-over runbook; AMS changeset 204; planner carriage) | commit 5 |
+| E | ✅ built + verified (Migrate DB-pack hard gate, fail-closed; verify loop = existing credentialed /verify + runbook step 7 by constraint) | commit 6 |
+| F | ⛔ DROPPED per the user-approved fallback ("drop F first to protect quality"). Needed but absent: an AMS REST read for `endpoint_data_effects` (entity + repo exist, no controller), a deterministic T-SQL-affinity classifier over code findings, and planner mapping into `migration_test_pack` / service-stream stories. A rushed heuristic version would be the thin work this program exists to kill. | — |
+
+Cross-cutting decisions taken during the build (beyond the pre-approved defaults):
+- `db.migrationWindow` is single-choice, not free-text (zero free-text uses exist in the
+  library; avoided an unshaken frontend path overnight).
+- Pack target-binding persisted in `manifest_json.target_architecture_id` (no AMS column).
+- DB streams fully deterministic in phase 1 (not LLM-with-facts); two per-stream initiatives
+  (assembly namespaces per stream — a shared initiative would break the assembly contract).
+- Skeleton↔manifest drift fails the epic with "regenerate the migration plan" (honest, never
+  silent re-shaping); same posture in the Spec C carriage (missing file → insufficient_context).
+- Execution gate FAILS CLOSED on unreadable pack state (contrast advisory carry-over fail-soft).
+- Driver cannot auto-run post-deploy schema verification: DB credentials are per-invocation and
+  never persisted (hard pack-spec constraint) → runbook step 7 is the human verification step.
+
+Baseline repairs shipped alongside (all verified pre-existing by stash/worktree runs against
+HEAD/base): 7 stale camelCase reads in `migrationBookOfWorkFindingsCoverage.test.ts`, 1 in
+`migrationBookOfWorkExpansion.test.ts`. Remaining KNOWN baseline reds (NOT touched, NOT mine):
+gateway `manifestCodeMapping.test.ts` (1 test) + `llmClient.test.ts` (suite fails to load);
+AMS `ApiContractSmokeTest` (8 errors) + `ArchitectureIdAutoDeriveTriggerTest` (1) +
+`DiscoveryFindingStatusTransitionTest` (2) + 1 further failure — base commit shows the
+identical 4F+8E totals.
