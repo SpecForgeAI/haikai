@@ -349,13 +349,24 @@ _VERDICT_TO_STATE = {"pass": "pass", "fail": "fail", "pending": "running",
                      "timeout": "timeout", "skipped": "skipped"}
 
 
+def _has_state(conn: sqlite3.Connection, run_id: str, node_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM graph_events WHERE run_id = ? AND kind = ? AND node_id = ?"
+        " LIMIT 1", (run_id, _KIND_STATE, node_id),
+    ).fetchone() is not None
+
+
 def emit_run_skeleton(conn: sqlite3.Connection, run_id: str,
                       commands: list[dict], meta: dict | None = None) -> None:
     """Normal-mode run_orchestration start (D4): root + the REAL command
-    chain + sequence edges; command 1 running, the rest pending."""
+    chain + sequence edges; command 1 running, the rest pending.
+    Declare-if-absent on the root (a lazy emitter may have rooted the run
+    first — the mirror of the ensure_group case) and initial states only for
+    nodes with NO state yet (a job resume must not regress progress)."""
     root = run_root_id(run_id)
-    run_meta = {"runtime_model": "current_runtime.v1", **(meta or {})}
-    ensure_node(conn, run_id, root, None, "run", f"Run {run_id}", run_meta)
+    if _declared(conn, run_id, _KIND_NODE, "node_id", root) is None:
+        ensure_node(conn, run_id, root, None, "run", f"Run {run_id}",
+                    {"runtime_model": "current_runtime.v1", **(meta or {})})
     prev = None
     for c in commands:
         nid = command_node_id(run_id, c["step"], c["command"])
@@ -364,9 +375,11 @@ def emit_run_skeleton(conn: sqlite3.Connection, run_id: str,
         if prev:
             ensure_edge(conn, run_id, f"edge/{run_id}/seq-{c['step']}",
                         prev, nid, "sequence")
-        set_state(conn, run_id, nid, "running" if c["step"] == 1 else "pending")
+        if not _has_state(conn, run_id, nid):
+            set_state(conn, run_id, nid, "running" if c["step"] == 1 else "pending")
         prev = nid
-    set_state(conn, run_id, root, "running")
+    if not _has_state(conn, run_id, root):
+        set_state(conn, run_id, root, "running")
 
 
 def emit_command_progress(conn: sqlite3.Connection, run_id: str,
@@ -388,14 +401,21 @@ def emit_run_completed(conn: sqlite3.Connection, run_id: str, success: bool,
 def ensure_group(conn: sqlite3.Connection, run_id: str, spec_name: str,
                  meta: dict | None = None) -> str:
     """Lazy group declaration (D2a: spec_as_group). Also lazily roots the run
-    (an async re-entry may reach the graph before/without the skeleton)."""
+    (an async re-entry may reach the graph before/without the skeleton).
+    DECLARE-IF-ABSENT, not re-declare: a lazy declaration is a MINIMAL claim
+    about a node the skeleton may have declared with richer meta — treating
+    it as a redeclaration would trip I5 on every interleaved emitter (found
+    live: the first post-skeleton recorder emission conflicted on the run
+    root and degraded every downstream lazy emission)."""
     root = run_root_id(run_id)
-    ensure_node(conn, run_id, root, None, "run", f"Run {run_id}",
-                {"runtime_model": "current_runtime.v1"})
+    if _declared(conn, run_id, _KIND_NODE, "node_id", root) is None:
+        ensure_node(conn, run_id, root, None, "run", f"Run {run_id}",
+                    {"runtime_model": "current_runtime.v1"})
     gid = group_node_id(run_id, spec_name)
-    ensure_node(conn, run_id, gid, root, "group", spec_name,
-                {"group_model": "spec_as_group", "spec_name": spec_name,
-                 "task_group_id": spec_name, **(meta or {})})
+    if _declared(conn, run_id, _KIND_NODE, "node_id", gid) is None:
+        ensure_node(conn, run_id, gid, root, "group", spec_name,
+                    {"group_model": "spec_as_group", "spec_name": spec_name,
+                     "task_group_id": spec_name, **(meta or {})})
     return gid
 
 

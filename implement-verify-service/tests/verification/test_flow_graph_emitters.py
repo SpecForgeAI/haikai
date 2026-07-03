@@ -314,3 +314,36 @@ def test_inbound_webhook_emits_ci_node_state(tmp_path, monkeypatch):
     cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
     assert snap["states"][cell]["state"] == "fail"        # via the recorder shim
     conn.close()
+
+
+# ── regression (found LIVE): skeleton + lazy emitters must interleave ────────
+
+
+def test_skeleton_then_lazy_emitters_no_conflict(conn):
+    """The full-run sequence that broke live: rich-meta skeleton first, then
+    lazy ensure_group via recorder/binding emitters — the lazy MINIMAL claim
+    must be declare-if-absent, not an I5 conflict."""
+    from src.job_queue.tasks import _init_run_graph
+    _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    ok, _ = recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
+    assert ok
+    snap = fg.snapshot(conn, RUN)
+    cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
+    assert snap["states"][cell]["state"] == "fail"          # emission NOT degraded
+    assert snap["run"]["meta"]["spec_names"] == [SPEC]       # rich meta preserved
+
+
+def test_lazy_then_skeleton_and_resume_no_regress(conn):
+    """Mirror order (async re-entry roots the run before the skeleton) plus a
+    resume: the skeleton must not conflict on the root NOR regress states."""
+    from src.job_queue.tasks import _graph_step, _init_run_graph
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "pass")  # lazy root
+    ctx = _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    assert ctx is not None                                   # no I5 conflict
+    _graph_step(ctx, 1, "Write specification")
+    _graph_step(ctx, 2, "Create task list")
+    # a re-init (job resume) must keep step 1-2 pass, not reset to pending
+    _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    snap = fg.snapshot(conn, RUN)
+    assert snap["states"][fg.command_node_id(RUN, 1, "/write-spec")]["state"] == "pass"
+    assert snap["states"][fg.command_node_id(RUN, 2, "/create-tasks")]["state"] == "pass"
