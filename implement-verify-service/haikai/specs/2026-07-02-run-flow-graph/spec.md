@@ -237,6 +237,19 @@ repair) and populates the verification subtree under
 | `open_repair` cap refusal | any | `escalated` on cell + repair + group — cap exhaustion IS the escalation moment |
 | recorder `escalate` (guarded verb, added post-grill) | any | stamped `task_group_state='escalated'` + `escalated` graph states; refuses on an advanced group; `advance` can still land after a human resolves the cause |
 | `DELETE /api/v1/jobs/{job_id}` | orchestration jobs | `cancelled` on the run root (normal) or the repair attempt on the PARENT graph (repair jobs) |
+| `DELETE /api/v1/jobs/{job_id}` | verify/haibox jobs (reason run F4) | group EVIDENCE + `running → pending` revert only — cancel is JOB-scoped; a group terminal would poison re-entry (`cancelled` is the sole terminal state) |
+| recovery fail branches (`src/api/recovery.py`, reason run F1) | orphaned RUNNING jobs marked FAILED | run root `fail` (`recovered: true`); repair jobs → attempt `fail` on the parent |
+| reconciliation intake, fully-keyed finding (reason run F2) | all four cell keys AND cell already declared | cell EVIDENCE with server-minted `finding://{row_id}` ref (kind mapped: reconciliation_diff→diff, bug→log) — never lazy-declares from external input |
+| `trigger_and_bind` (gitlab verification bridge, reason run F5) | any | `group` + `ci` node + binds edge (parity with `_record_ci_binding`; sibling-rule closure) |
+| batch Option-C gate (`_repair_spec`, reason run F3) | batch mode | RUN-ROOT EVIDENCE only (`batch-gate://{spec}`: passed/attempts/fail-stop) — see the scoping note below |
+
+**Batch Option-C gate scoping (reason run F3):** the pre-commit per-spec
+`/haikai:debug`+`/haikai:fix` gate loop is **evidence-only sub-step telemetry
+in v1** (I14/D10a). It has no home in the node vocabulary — at gate time no
+cell, verifier, or CI pipeline exists — and D7a forbids inventing structure
+for it. Its outcome (including a fail-stop that suppresses the MR) is
+attached as run-root evidence so the graph explains the missing group.
+(Not to be confused with the post-CI verdict-fold `gate` node.)
 | `enqueue_cli` | validated `repair_of` | repair job evidence, attempt `running` state, `spawns`/`binds` edge to the repair orchestration job |
 | `enqueue_cli` | invalid `repair_of` | NO cell-scoped structure — group-level error evidence, or fail fast |
 | TTL sweeper | any | `timeout` states |

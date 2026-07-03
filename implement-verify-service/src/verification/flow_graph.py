@@ -565,6 +565,51 @@ def emit_escalated(conn: sqlite3.Connection, run_id: str, spec_name: str,
     set_state(conn, run_id, gid, "escalated", d)
 
 
+def emit_verify_cancelled(conn: sqlite3.Connection, run_id: str,
+                          spec_name: str, job_id: str) -> None:
+    """A VERIFY_TASK_GROUP / HAIBOX_VERIFY job was cancelled (reason run F4,
+    fused verdict). Cancel is JOB-scoped, not group-scoped: the group is a
+    durable correlation node later webhooks may still advance, and `cancelled`
+    is the sole terminal state — stamping it would poison every re-entry.
+    Instead: evidence of the cancel + revert `running → pending` ("no active
+    evaluation, awaiting re-entry") ONLY if the group is currently running."""
+    gid = group_node_id(run_id, spec_name)
+    if _declared(conn, run_id, _KIND_NODE, "node_id", gid) is None:
+        return  # group never reached the graph — nothing to say
+    attach_evidence(conn, run_id, gid, "log", f"job://{job_id}",
+                    "verify job cancelled", {"job_id": job_id})
+    row = conn.execute(
+        "SELECT payload_json FROM graph_events WHERE run_id = ? AND kind = ?"
+        " AND node_id = ? ORDER BY seq DESC LIMIT 1",
+        (run_id, _KIND_STATE, gid),
+    ).fetchone()
+    current = json.loads(row["payload_json"])["state"] if row else None
+    if current == "running":
+        set_state(conn, run_id, gid, "pending",
+                  {"reason": "verify job cancelled", "job_id": job_id})
+
+
+_FINDING_KIND_MAP = {"reconciliation_diff": "diff", "bug": "log"}
+
+
+def emit_finding_evidence(conn: sqlite3.Connection, run_id: str, spec_name: str,
+                          repo: str, verifier: str, finding_id,
+                          finding_kind: str, title: str) -> bool:
+    """Reconciliation finding → cell evidence (reason run F2, fused verdict).
+    GUARDED per the critic's line: the cell must be ALREADY DECLARED — never
+    mint graph nodes from external input (I16's never-guess) — and the ref is
+    SERVER-MINTED (`finding://{row_id}`), so untrusted text never becomes a
+    ref; the label is truncated. Returns True if attached."""
+    cell = cell_node_id(run_id, spec_name, repo, verifier)
+    if _declared(conn, run_id, _KIND_NODE, "node_id", cell) is None:
+        return False
+    attach_evidence(conn, run_id, cell,
+                    _FINDING_KIND_MAP.get(finding_kind, "log"),
+                    f"finding://{finding_id}", str(title)[:120],
+                    {"finding_kind": finding_kind})
+    return True
+
+
 def emit_job_cancelled(conn: sqlite3.Connection, job_id: str,
                        request_payload: dict | None) -> None:
     """DELETE /jobs/{id} (D13 `cancelled`). A repair job cancels its attempt

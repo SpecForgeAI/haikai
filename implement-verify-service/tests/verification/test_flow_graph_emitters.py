@@ -428,3 +428,122 @@ def test_normal_step_attaches_log_evidence(conn):
     nid = fg.command_node_id(RUN, 1, "/write-spec")
     summary = fg.snapshot(conn, RUN)["evidence_summary"][nid]
     assert summary["latest_by_kind"]["log"]["ref"] == f"orchlog://{RUN}/step-1"
+
+
+# ── reason-run closures F1-F5 (2026-07-03) ───────────────────────────────────
+
+
+def test_f1_recovery_marks_ghost_root_failed(conn):
+    from src.api.recovery import _graph_mark_failed
+    from src.job_queue.tasks import _init_run_graph
+    _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    assert fg.snapshot(conn, RUN)["states"][f"run/{RUN}"]["state"] == "running"
+    _graph_mark_failed(SimpleNamespace(job_id=RUN, request_payload={}),
+                       "recovered: no session found to resume")
+    st = fg.snapshot(conn, RUN)["states"][f"run/{RUN}"]
+    assert st["state"] == "fail" and st["detail"]["recovered"] is True
+
+
+def test_f1_recovery_repair_job_marks_attempt_not_root(conn):
+    from src.api.recovery import _graph_mark_failed
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
+    recorder.open_repair(conn, RUN, SPEC, "app", "ci-trigger", 1)
+    job = SimpleNamespace(job_id="repair-job-x", request_payload={"repair_of": {
+        "orchestrate_id": RUN, "task_group_id": SPEC, "repo": "app",
+        "verifier": "ci-trigger", "attempt": 1}})
+    _graph_mark_failed(job, "recovery failed: boom")
+    att = fg.attempt_node_id(RUN, SPEC, "app", "ci-trigger", 1)
+    assert fg.snapshot(conn, RUN)["states"][att]["state"] == "fail"
+    assert fg.snapshot(conn, "repair-job-x")["nodes"] == []  # no ghost root
+
+
+def test_f1_recovery_pre_skeleton_job_is_noop(conn):
+    from src.api.recovery import _graph_mark_failed
+    _graph_mark_failed(SimpleNamespace(job_id="never-started", request_payload={}),
+                       "recovered: no orchestration step completed")
+    assert fg.snapshot(conn, "never-started")["nodes"] == []  # nothing invented
+
+
+def test_f4_verify_cancel_reverts_running_to_pending_with_evidence(conn):
+    fg.emit_verify_started(conn, RUN, SPEC)
+    fg.emit_verify_cancelled(conn, RUN, SPEC, "vjob-1")
+    gid = fg.group_node_id(RUN, SPEC)
+    snap = fg.snapshot(conn, RUN)
+    assert snap["states"][gid]["state"] == "pending"  # honest: awaiting re-entry
+    assert snap["evidence_summary"][gid]["latest_by_kind"]["log"]["ref"] == "job://vjob-1"
+    # NEVER a terminal: a later re-entry must still work
+    fg.emit_verify_started(conn, RUN, SPEC)
+    assert fg.snapshot(conn, RUN)["states"][gid]["state"] == "running"
+
+
+def test_f4_verify_cancel_never_stomps_terminalish_states(conn):
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "pass")
+    recorder.advance(conn, RUN, SPEC)  # group pass
+    fg.emit_verify_cancelled(conn, RUN, SPEC, "vjob-2")
+    assert fg.snapshot(conn, RUN)["states"][fg.group_node_id(RUN, SPEC)]["state"] == "pass"
+    fg.emit_verify_cancelled(conn, RUN, "ghost-spec", "vjob-3")  # undeclared: no-op
+    assert fg.group_node_id(RUN, "ghost-spec") not in \
+        {n["node_id"] for n in fg.snapshot(conn, RUN)["nodes"]}
+
+
+def test_f2_finding_evidence_only_on_declared_cell(conn):
+    # undeclared cell -> refuse (never mint nodes from external input)
+    assert fg.emit_finding_evidence(conn, RUN, SPEC, "app", "ci-trigger",
+                                    7, "bug", "t") is False
+    recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
+    assert fg.emit_finding_evidence(conn, RUN, SPEC, "app", "ci-trigger",
+                                    7, "reconciliation_diff", "drift in /orders") is True
+    cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
+    ev = fg.snapshot(conn, RUN)["evidence_summary"][cell]
+    assert ev["latest_by_kind"]["diff"]["ref"] == "finding://7"  # server-minted
+
+
+def test_f2_reconciliation_intake_attaches_evidence(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))
+    monkeypatch.setenv("STANDARDS_API_KEY", "k")
+    import src.api.routes.inbound as inbound
+    app = FastAPI()
+    app.include_router(inbound.router)
+    client = TestClient(app)
+    c = fg.connect()
+    recorder.record_verdict(c, RUN, SPEC, "app", "ci-trigger", "fail")
+    r = client.post("/api/v2/reconciliation",
+                    json={"source": "haikai-frontend", "findings": [{
+                        "kind": "bug", "title": "orders endpoint drops auth header",
+                        "orchestrate_id": RUN, "task_group_id": SPEC,
+                        "repo": "app", "verifier": "ci-trigger"}]},
+                    headers={"Authorization": "Bearer k"})
+    assert r.status_code in (200, 202), r.text
+    cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
+    ev = fg.snapshot(c, RUN)["evidence_summary"][cell]
+    assert any(v["ref"].startswith("finding://") for v in ev["latest_by_kind"].values())
+    c.close()
+
+
+def test_f5_bridge_binding_emits_ci_node(conn):
+    from src.connectors.gitlab.verification_bridge import trigger_and_bind
+    fake_gl = SimpleNamespace(projects=SimpleNamespace(get=lambda p: SimpleNamespace(
+        commits=SimpleNamespace(get=lambda r: SimpleNamespace(id="feedbeef123")))))
+    out = trigger_and_bind("grp/app", "main", orchestrate_id=RUN,
+                           task_group_id=SPEC, repo="app", gl=fake_gl,
+                           conn=conn, fire=False)
+    assert out["bound"] is True
+    ci = fg.ci_node_id(RUN, SPEC, "app", "feedbeef123")
+    snap = fg.snapshot(conn, RUN)
+    assert snap["states"][ci]["state"] == "running"  # parity with tasks path
+    assert any(e["edge_kind"] == "binds" and e["target"] == ci for e in snap["edges"])
+
+
+def test_f3_batch_gate_outcome_is_run_root_evidence(conn):
+    from src.job_queue.tasks import _graph_gate_evidence, _init_run_graph
+    ctx = _init_run_graph(RUN, SimpleNamespace(request_payload={}), _fake_request())
+    _graph_gate_evidence(ctx, SPEC, "app", False, 10)
+    ev = fg.snapshot(conn, RUN)["evidence_summary"][f"run/{RUN}"]
+    latest = ev["latest_by_kind"]["trace"]
+    assert latest["ref"] == f"batch-gate://{SPEC}/app"
+    assert "FAIL-STOP" in latest["label"]
+    # evidence only — no invented structure (D7a)
+    kinds = {n["node_kind"] for n in fg.snapshot(conn, RUN)["nodes"]}
+    assert kinds == {"run", "command"}

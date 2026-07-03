@@ -278,6 +278,32 @@ def _graph_step(ctx: "dict | None", step_num: int, description: str) -> None:
         logger.warning("run-graph: step emission failed (non-fatal)", exc_info=True)
 
 
+def _graph_gate_evidence(ctx: "dict | None", spec_name: str, folder,
+                         passed: bool, attempts: int) -> None:
+    """Batch Option-C gate outcome as RUN-ROOT EVIDENCE (reason run F3: the
+    pre-commit gate has no home in the v1 node vocabulary — no cell/verifier/
+    CI exists yet — so it is sub-step telemetry per I14/D10a, never invented
+    structure). Closes the real hole: a fail-stopped MR with zero graph-side
+    explanation."""
+    if not ctx or ctx.get("mode") != "normal":
+        return
+    try:
+        from ..verification import flow_graph
+        conn = flow_graph.connect()
+        try:
+            flow_graph.attach_evidence(
+                conn, ctx["run_id"], flow_graph.run_root_id(ctx["run_id"]),
+                "trace", f"batch-gate://{spec_name}" + (f"/{folder}" if folder else ""),
+                f"batch gate {'passed' if passed else 'FAIL-STOP (no MR)'}: "
+                f"{spec_name} after {attempts} attempt(s)",
+                {"spec": spec_name, "repo": str(folder or ""),
+                 "passed": passed, "attempts": attempts})
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("run-graph: gate evidence emission failed (non-fatal)", exc_info=True)
+
+
 def _graph_completed(ctx: "dict | None", success: bool, detail: "dict | None" = None) -> None:
     """Terminal emission. Repair mode: only a FAILED job marks the attempt
     (implementation crashed); a successful repair job leaves the attempt
@@ -684,6 +710,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
                     _trace.detail("orchestration.gate",
                                   {"spec": spec_name, "repo": _folder,
                                    "passed": passed, "attempts": attempts}, _corr)
+                    _graph_gate_evidence(graph_ctx, spec_name, _folder, passed, attempts)
                     if not passed:
                         batch_repair_failed.append(spec_name)
                         logger.error("Batch gate fail-stop: spec %s did not pass "

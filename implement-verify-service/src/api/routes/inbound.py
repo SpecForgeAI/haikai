@@ -295,6 +295,20 @@ async def reconciliation_intake(request: Request,
                     {"id": row_id, "source": source, "kind": f.get("kind", "bug"), "title": str(f.get("title", ""))[:200]},
                     f.get("repo", ""),
                 )
+                # Run-flow-graph (reason run F2, narrow shape): a FULLY-keyed
+                # finding becomes cell evidence — only onto an ALREADY-declared
+                # cell (never mint nodes from external input), server-minted
+                # ref. Best-effort.
+                if all(f.get(k) for k in ("orchestrate_id", "task_group_id", "repo", "verifier")):
+                    try:
+                        from ...verification import flow_graph
+                        flow_graph.emit_finding_evidence(
+                            conn, str(f["orchestrate_id"]), str(f["task_group_id"]),
+                            str(f["repo"]), str(f["verifier"]), row_id,
+                            str(f.get("kind", "bug")), str(f.get("title", "")))
+                    except Exception:
+                        logger.warning("run-graph: finding evidence emission failed (non-fatal)",
+                                       exc_info=True)
             else:
                 duplicates += 1
             # The pending->final round-trip: when a finding carries a `verdict`
