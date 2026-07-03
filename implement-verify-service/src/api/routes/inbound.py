@@ -189,6 +189,20 @@ async def inbound(provider: str, ingress_token: str, request: Request) -> Respon
         if rec_status != "recorded":
             return JSONResponse({"error": reason}, status_code=409)
 
+        # Run-flow-graph (D4, step 7): the external pipeline's own lifecycle —
+        # the recorder shim above already projected the CELL; this projects the
+        # CI NODE the sha belongs to. Best-effort, never blocks the receipt.
+        try:
+            from ...verification import flow_graph
+            flow_graph.emit_ci_state(
+                conn, binding["orchestrate_id"], binding["task_group_id"],
+                binding["repo"], head_sha,
+                {"pass": "pass", "fail": "fail", "timeout": "timeout",
+                 "skipped": "skipped"}.get(verdict, "running"),
+                {"provider": provider, "status": status_str})
+        except Exception:
+            logger.warning("run-graph: ci emission failed (non-fatal)", exc_info=True)
+
         # 7. re-invoke (fresh run, D10.2). A failed enqueue is NOT silently
         # swallowed: record a distinct reinvoke_failed event so the dropped
         # re-invoke is observable (predict R4) — the verdict above is durable.

@@ -403,16 +403,21 @@ def emit_ci_bound(conn: sqlite3.Connection, run_id: str, spec_name: str,
                   repo: str, head_sha: str, source: str = "orchestrate") -> str:
     """_record_ci_binding emission (D4): ci node under the group + binds edge
     + binding evidence. `source="repair"` marks a repair commit's pipeline;
-    for repairs run_id/spec are the PARENT's (D2c)."""
+    for repairs run_id/spec are the PARENT's (D2c). Declare-if-absent: a
+    later caller (e.g. the inbound webhook lazily rooting the ci node) must
+    neither conflict with the original meta nor flip a terminal state back
+    to running."""
     gid = ensure_group(conn, run_id, spec_name)
     cid = ci_node_id(run_id, spec_name, repo, head_sha)
-    ensure_node(conn, run_id, cid, gid, "ci", f"{repo} CI {str(head_sha)[:7]}",
-                {"repo": repo, "sha": str(head_sha), "source": source})
-    ensure_edge(conn, run_id, f"edge/{run_id}/{spec_name}-to-{cid.split('/ci/')[1]}",
-                gid, cid, "binds")
-    set_state(conn, run_id, cid, "running")
-    attach_evidence(conn, run_id, cid, "pipeline", f"sha://{head_sha}",
-                    "CI binding recorded", {"source": source})
+    if _declared(conn, run_id, _KIND_NODE, "node_id", cid) is None:
+        ensure_node(conn, run_id, cid, gid, "ci", f"{repo} CI {str(head_sha)[:7]}",
+                    {"repo": repo, "sha": str(head_sha), "source": source})
+        ensure_edge(conn, run_id,
+                    f"edge/{run_id}/{spec_name}-to-{cid.split('/ci/')[1]}",
+                    gid, cid, "binds")
+        set_state(conn, run_id, cid, "running")
+        attach_evidence(conn, run_id, cid, "pipeline", f"sha://{head_sha}",
+                        "CI binding recorded", {"source": source})
     return cid
 
 

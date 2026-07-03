@@ -52,11 +52,11 @@ When a cell's latest verdict is `fail`, classify it (D4) **before** you touch `o
    - `haikai/specs/<spec_name>/planning/initialization.md` — the raw fix idea (the failure in one line).
    - `haikai/specs/<spec_name>/planning/requirements.md` — the SCOPED fix (`touched_repos: [<repo>]`), and a **Verification** section that names the EXACT failing verifier command for this cell (the pinned `inline_commands` / the CI step that went red, e.g. `pip-audit -r requirements.txt`) as the success criterion — so the implementer fixes the thing the gate actually checks, not the default test suite.
 
-3. **Dispatch via the enqueue CLI** (the verify-loop agent has no enqueue tool; this is the one sanctioned way — it only writes an ORCHESTRATION job to the jobs db the worker polls). You MUST include `repair_of` = THIS failing cell, so the repair commit's CI verdict binds back to THIS gate (not a disconnected new run) and re-enters you:
+3. **Dispatch via the enqueue CLI** (the verify-loop agent has no enqueue tool; this is the one sanctioned way — it only writes an ORCHESTRATION job to the jobs db the worker polls). You MUST include `repair_of` = THIS failing cell **with its COMPLETE identity including `verifier`** (D2b/I16 — a repair that doesn't name the failed verifier is under-specified and is REFUSED), and pass the same `--db <verification_db>` this command gave you (the CLI validates `repair_of` against the open repair record you just created — no match or ambiguity is refused; never guess):
    ```
-   python -m src.job_queue.enqueue_cli orchestration --json '{"company":"<company>","project":"<project>","spec_intents":[{"spec_name":"<spec_name>"}],"repair_of":{"orchestrate_id":"<orchestrate_id>","task_group_id":"<task_group_id>","repo":"<repo>"}}'
+   python -m src.job_queue.enqueue_cli orchestration --db <verification_db> --json '{"company":"<company>","project":"<project>","spec_intents":[{"spec_name":"<spec_name>"}],"repair_of":{"orchestrate_id":"<orchestrate_id>","task_group_id":"<task_group_id>","repo":"<repo>","verifier":"<verifier>","attempt":<N>}}'
    ```
-   Exit 0 prints `{"ok": true, "job_id": "..."}`.
+   Exit 0 prints `{"ok": true, "job_id": "..."}`. Exit 2 = missing `verifier`; exit 1 = the repair target didn't validate (check your `open_repair` keys).
 
 4. **Return.** You do NOT wait. The worker runs `/orchestrate` for the fix → the implementer re-implements in the repo → commits (D1 trailers) → CI fires at commit time (D9) → the inbound-gateway correlates the new SHA to this cell and re-invokes you with a fresh verdict. On that re-entry, reconcile against `jobs.db` and re-fold the gate (idempotent — D10.2). The loop is bounded by the `open_repair` cap in step 1.
 

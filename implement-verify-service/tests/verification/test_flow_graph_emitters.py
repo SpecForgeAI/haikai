@@ -215,3 +215,102 @@ def test_guard_zero_graph_event_writers_outside_flow_graph():
         if "INSERT INTO graph_events" in text or "graph_events (" in text:
             offenders.append(str(py))
     assert offenders == []  # count==0, never >=N (CLAUDE.md guard rule)
+
+
+# ── step 6: enqueue_cli contract (D2b/I16) ───────────────────────────────────
+
+
+@pytest.fixture
+def cli_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))
+    monkeypatch.setenv("JOBS_DB_PATH", str(tmp_path / "jobs.db"))
+    c = fg.connect()
+    yield c
+    c.close()
+
+
+def _dispatch_payload(verifier="ci-trigger", **extra):
+    repair_of = {"orchestrate_id": RUN, "task_group_id": SPEC, "repo": "app"}
+    if verifier is not None:
+        repair_of["verifier"] = verifier
+    repair_of.update(extra)
+    import json as _json
+    return _json.dumps({"company": "acme", "project": "demo",
+                        "spec_intents": [{"spec_name": f"{SPEC}-repair"}],
+                        "repair_of": repair_of})
+
+
+def _jobs_count():
+    import os
+    import sqlite3
+    con = sqlite3.connect(os.environ["JOBS_DB_PATH"])
+    try:
+        return con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    except sqlite3.OperationalError:
+        return 0
+    finally:
+        con.close()
+
+
+def test_enqueue_cli_validated_repair_dispatch(cli_env, capsys):
+    from src.job_queue.enqueue_cli import main
+    recorder.record_verdict(cli_env, RUN, SPEC, "app", "ci-trigger", "fail")
+    recorder.open_repair(cli_env, RUN, SPEC, "app", "ci-trigger", 1)
+    rc = main(["orchestration", "--json", _dispatch_payload()])
+    out = capsys.readouterr().out
+    assert rc == 0 and '"ok": true' in out
+    assert _jobs_count() == 1
+    import json as _json
+    job_id = _json.loads(out.strip().splitlines()[-1])["job_id"]
+    snap = fg.snapshot(cli_env, RUN)
+    att = fg.attempt_node_id(RUN, SPEC, "app", "ci-trigger", 1)
+    assert snap["states"][att]["state"] == "running"
+    assert snap["evidence_summary"][att]["latest_by_kind"]["artifact"]["ref"] == \
+        f"job://{job_id}"
+
+
+def test_enqueue_cli_missing_verifier_exit2_nothing_enqueued(cli_env, capsys):
+    from src.job_queue.enqueue_cli import main
+    rc = main(["orchestration", "--json", _dispatch_payload(verifier=None)])
+    assert rc == 2 and "verifier" in capsys.readouterr().out
+    assert _jobs_count() == 0
+
+
+def test_enqueue_cli_unvalidated_target_exit1_nothing_enqueued(cli_env, capsys):
+    from src.job_queue.enqueue_cli import main
+    recorder.record_verdict(cli_env, RUN, SPEC, "app", "ci-trigger", "fail")
+    recorder.open_repair(cli_env, RUN, SPEC, "app", "ci-trigger", 1)
+    rc = main(["orchestration", "--json", _dispatch_payload(verifier="rubric")])
+    assert rc == 1 and "rejected" in capsys.readouterr().out
+    assert _jobs_count() == 0  # fail fast: no job, no graph attach
+
+
+# ── step 7: inbound CI-correlation emission (real router) ────────────────────
+
+
+def test_inbound_webhook_emits_ci_node_state(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))
+    monkeypatch.setenv("JOBS_DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setenv("SX_INGRESS_TOKEN_GITLAB", "tok-1")
+    monkeypatch.setenv("SX_WEBHOOK_SECRET_GITLAB", "sec-1")
+    import src.api.routes.inbound as inbound
+    app = FastAPI()
+    app.include_router(inbound.router)
+    client = TestClient(app)
+
+    conn = fg.connect()
+    store.record_binding(conn, "cafe1234beef", "gitlab", RUN, SPEC, "app", "ci-trigger")
+    r = client.post("/api/v2/inbound/gitlab/tok-1",
+                    json={"object_attributes": {"sha": "cafe1234beef",
+                                                "status": "failed"}},
+                    headers={"X-Gitlab-Token": "sec-1",
+                             "X-Gitlab-Event-UUID": "evt-1"})
+    assert r.status_code == 202, r.text
+    snap = fg.snapshot(conn, RUN)
+    ci = fg.ci_node_id(RUN, SPEC, "app", "cafe1234beef")
+    assert snap["states"][ci]["state"] == "fail"          # the pipeline node
+    cell = fg.cell_node_id(RUN, SPEC, "app", "ci-trigger")
+    assert snap["states"][cell]["state"] == "fail"        # via the recorder shim
+    conn.close()
