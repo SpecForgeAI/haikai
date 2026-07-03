@@ -4,8 +4,8 @@
 
 .PARAMETER Action
   install | run | all   (default: all)
-    install -> mvn -DskipTests clean package  (maven)  /  npm ci  (npm)  /  docker compose build (docker)
-    run     -> mvn spring-boot:run            (maven)  /  npm run dev (npm)  /  docker compose up   (docker)
+    install -> mvn -DskipTests clean package  (maven)  /  npm ci  (npm)  /  venv + pip install -r requirements.txt (python)
+    run     -> mvn spring-boot:run            (maven)  /  npm run dev (npm)  /  .\run-local.ps1                     (python)
     all     -> install then run
 
 .PARAMETER Exclude
@@ -50,7 +50,12 @@ $services = @(
   [pscustomobject]@{ Name='api-migration-validation-service';  Type='npm'   },
   [pscustomobject]@{ Name='mcp-server';                        Type='npm'   },
   [pscustomobject]@{ Name='frontend';                          Type='npm'   },
-  [pscustomobject]@{ Name='implement-verify-service';          Type='docker'; Compose='docker-compose.dev.yml' }
+  # implement-verify-service runs LOCALLY via the usual python commands (NOT
+  # docker): install = non-interactive equivalent of its setup-local-env.ps1
+  # (.venv-local + pip install -r requirements.txt + Claude CLI); run = its
+  # own run-local.ps1 (loads .env.local, starts the worker window + uvicorn
+  # on port 8000 with hot reload).
+  [pscustomobject]@{ Name='implement-verify-service';          Type='python' }
 )
 
 $knownNames = $services | ForEach-Object { $_.Name }
@@ -98,9 +103,14 @@ function Require-Command([string]$Name) {
 $needMaven  = ($selected | Where-Object { $_.Type -eq 'maven'  }).Count -gt 0
 $needNpm    = ($selected | Where-Object { $_.Type -eq 'npm'    }).Count -gt 0
 $needDocker = ($selected | Where-Object { $_.Type -eq 'docker' }).Count -gt 0
+$needPython = ($selected | Where-Object { $_.Type -eq 'python' }).Count -gt 0
 if ($needMaven)  { Require-Command 'java'; Require-Command 'mvn' }
 if ($needNpm)    { Require-Command 'npm' }
 if ($needDocker) { Require-Command 'docker' }
+# python services also need npm: the IVS worker shells out to the locally
+# installed Claude Code CLI (node_modules/.bin), installed during the
+# install phase when absent.
+if ($needPython) { Require-Command 'python'; Require-Command 'npm' }
 
 if ($doInstall) {
   Write-Host "=== INSTALL phase ===" -ForegroundColor Cyan
@@ -117,6 +127,36 @@ if ($doInstall) {
       } elseif ($svc.Type -eq 'docker') {
         # Build the dev image (source is volume-mounted at run time for hot reload).
         & docker compose -f $svc.Compose build
+      } elseif ($svc.Type -eq 'python') {
+        # Non-interactive equivalent of the service's setup-local-env.ps1
+        # (that script Read-Host-prompts when the venv / node_modules already
+        # exist, so it cannot run unattended). Idempotent: existing venv /
+        # node_modules / .env.local are reused, dependencies are re-synced.
+        if (-not (Test-Path '.venv-local')) {
+          & python -m venv .venv-local
+          if ($LASTEXITCODE -ne 0) { throw "venv creation failed for $($svc.Name) (exit code $LASTEXITCODE)." }
+        }
+        $venvPython = Join-Path (Get-Location) '.venv-local\Scripts\python.exe'
+        & $venvPython -m pip install --upgrade pip --quiet
+        if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed for $($svc.Name) (exit code $LASTEXITCODE)." }
+        & $venvPython -m pip install -r requirements.txt
+        if ($LASTEXITCODE -ne 0) { throw "pip install failed for $($svc.Name) (exit code $LASTEXITCODE)." }
+        if (-not (Test-Path 'node_modules')) {
+          # The IVS worker shells out to the locally installed Claude Code CLI.
+          & npm install @anthropic-ai/claude-code
+          if ($LASTEXITCODE -ne 0) { throw "Claude CLI install failed for $($svc.Name) (exit code $LASTEXITCODE)." }
+        }
+        foreach ($dir in @('api_workspace', 'workspace', 'logs\orchestration', 'output')) {
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+        }
+        if (-not (Test-Path '.env.local')) {
+          if (Test-Path '.env.example') {
+            Copy-Item '.env.example' '.env.local'
+            Write-Host "Created .env.local from .env.example - EDIT IT and add your API keys before running." -ForegroundColor Red
+          } else {
+            Write-Host "WARNING: no .env.local and no .env.example to copy - run-local.ps1 will refuse to start." -ForegroundColor Red
+          }
+        }
       } else {
         & npm ci
       }
@@ -152,6 +192,12 @@ if ($doRun) {
     $runCmd =
       if     ($svc.Type -eq 'maven')  { 'mvn spring-boot:run' }
       elseif ($svc.Type -eq 'docker') { "docker compose -f $($svc.Compose) up" }
+      elseif ($svc.Type -eq 'python') {
+        # The service's own local runner: activates .venv-local, loads
+        # .env.local, spawns the background worker window, then runs
+        # uvicorn on port 8000 with hot reload.
+        '.\run-local.ps1'
+      }
       else                            { 'npm run dev' }
 
     if (-not $first) { $wtArgs.Add(';') }
