@@ -60,9 +60,17 @@ def project_git_lock(workspace_dir: str, company: str, project: str):
     return exclusive_lock(lock_path)
 
 
+def run_key(job_id: str) -> str:
+    """Collision-proof short key for a job's run root. 16 hex chars of the
+    uuid (dashes stripped) — a bare [:8] prefix collides for real (two jobs
+    sharing 8 chars corrupted each other's trees in the S9 evidence run);
+    16 chars keeps the W8 path budget with negligible birthday risk."""
+    return job_id.replace("-", "")[:16]
+
+
 def run_root(workspace_dir: str, job_id: str, spec: Optional[str] = None) -> Path:
-    """Short root (W8 path budget): <workspace>/wt/<job_id8>[/<spec>]."""
-    root = Path(workspace_dir) / "wt" / job_id[:8]
+    """Short root (W8 path budget): <workspace>/wt/<run_key>[/<spec>]."""
+    root = Path(workspace_dir) / "wt" / run_key(job_id)
     return root / spec if spec else root
 
 
@@ -376,7 +384,7 @@ def allocate_verify_root(workspace_dir: str, company: str, project: str,
     The product root is a coordination/meta root — NEVER `worktree add`ed.
     """
     live_product = Path(workspace_dir) / company / project
-    root = Path(workspace_dir) / "wt" / f"v{job_id[:7]}"
+    root = Path(workspace_dir) / "wt" / f"v{run_key(job_id)[:15]}"
     context = root / "context"
     repos_dir = root / "repos"
     evidence = root / "evidence"

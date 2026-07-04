@@ -1,4 +1,4 @@
-"""Parallel-worktrees S4/S5 — run_orchestration in worktree mode.
+﻿"""Parallel-worktrees S4/S5 â€” run_orchestration in worktree mode.
 
 Real git repos + real allocator; only the LLM step and session plumbing are
 stubbed (same harness pattern as the batch gate e2e). Covers: W1 (live tree
@@ -14,6 +14,7 @@ from pathlib import Path
 
 import src.haikai_orchestrator as orch_mod
 import src.job_queue.tasks as tasks
+from src.git.worktree_runs import run_key as wr_run_key
 from src.chat.session_store import create_active_session
 from src.haikai_models import (OrchestrationOptions, OrchestrationRequest,
                                StepResult)
@@ -25,8 +26,8 @@ from tests._realgit import local_repo_with_base, run_git, set_git_env
 
 def _harness(tmp_path, monkeypatch, specs, fail_specs=()):
     """Workspace + single-repo product + stubbed LLM steps. The step stub
-    writes into self.project_dir — exactly where the real CLI session (cwd)
-    writes — so worktree mode is exercised for real."""
+    writes into self.project_dir â€” exactly where the real CLI session (cwd)
+    writes â€” so worktree mode is exercised for real."""
     set_git_env(monkeypatch, auto_push=False, auto_pr=False)
     ws = (tmp_path / "ws").resolve()
     (ws / "acme").mkdir(parents=True)
@@ -89,7 +90,7 @@ def test_single_spec_run_isolated_and_reclaimed(tmp_path, monkeypatch):
                     cwd=product).split()
     assert "spec-a.txt" in files
 
-    # W3/L1: the run worktree is fully reclaimed — no dir, no registration.
+    # W3/L1: the run worktree is fully reclaimed â€” no dir, no registration.
     assert got.worktree_root and got.worktree_root.startswith(str(ws))
     assert not Path(got.worktree_root).exists()
     assert len(_worktree_registrations(product)) == 1  # live checkout only
@@ -152,7 +153,7 @@ def test_per_spec_parallel_mode_three_specs_three_branches(tmp_path, monkeypatch
     # Live tree untouched; all spec worktrees reclaimed.
     assert run_git(["branch", "--show-current"], cwd=product).strip() == "main"
     assert len(_worktree_registrations(product)) == 1
-    assert not (ws / "wt" / job.job_id[:8]).exists()
+    assert not (ws / "wt" / wr_run_key(job.job_id)).exists()
 
 
 def test_per_spec_failure_is_independent(tmp_path, monkeypatch):
@@ -172,3 +173,4 @@ def test_per_spec_failure_is_independent(tmp_path, monkeypatch):
         assert f"{s}.txt" in run_git(
             ["ls-tree", "-r", "--name-only", f"feature/{s}"], cwd=product).split()
     assert len(_worktree_registrations(product)) == 1  # everything reclaimed
+

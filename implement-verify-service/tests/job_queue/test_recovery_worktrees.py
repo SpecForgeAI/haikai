@@ -1,4 +1,4 @@
-"""Parallel-worktrees S8 — recovery/sweeper coherence (D14).
+﻿"""Parallel-worktrees S8 â€” recovery/sweeper coherence (D14).
 
 Storage- and allocator-level coverage of the pieces recovery relies on:
 resume claims, reuse-if-alive (never re-seed), session copy-back at
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.git.worktree_runs import run_key as wr_run_key
 from src.haikai_models import OrchestrationRequest
 from src.job_queue import tasks
 from src.job_queue.job_models import Job, JobStatus, JobType
@@ -24,7 +25,7 @@ def test_claim_job_accepts_queued_for_resume(tmp_path):
     storage = JobStorage(str(tmp_path / "jobs.db"))
     job = _job(status=JobStatus.QUEUED_FOR_RESUME, resume_from_step=3)
     storage.save_job(job)
-    # The recovered-job dispatch path claims by id — must win on
+    # The recovered-job dispatch path claims by id â€” must win on
     # QUEUED_FOR_RESUME exactly like on QUEUED.
     assert storage.claim_job(job.job_id, "api-background") is True
     got = storage.get_job(job.job_id)
@@ -79,7 +80,7 @@ def test_session_copy_back_at_reclaim(tmp_path, monkeypatch):
     job = _job(status=JobStatus.COMPLETED, request_payload=req.model_dump())
     storage.save_job(job)
 
-    run_ws = tmp_path / "ws" / "wt" / job.job_id[:8]
+    run_ws = tmp_path / "ws" / "wt" / wr_run_key(job.job_id)
     wt_spec = run_ws / "acme" / "shop" / "haikai" / "specs" / "spec-a"
     wt_spec.mkdir(parents=True)
     (wt_spec / "abc-session.jsonl").write_text('{"fresh": "per-step persist"}')
@@ -102,7 +103,7 @@ def test_reclaim_skips_recovery_owned_tree(tmp_path, monkeypatch):
     job = _job(status=JobStatus.QUEUED_FOR_RESUME, resume_from_step=2,
                request_payload=req.model_dump())
     storage.save_job(job)
-    run_ws = tmp_path / "ws" / "wt" / job.job_id[:8]
+    run_ws = tmp_path / "ws" / "wt" / wr_run_key(job.job_id)
     (run_ws / "acme" / "shop").mkdir(parents=True)
     tasks._reclaim_run_worktrees(job.job_id, storage, str(ws), req,
                                  allocated=[], run_workspace=str(run_ws))
@@ -112,7 +113,7 @@ def test_reclaim_skips_recovery_owned_tree(tmp_path, monkeypatch):
 def test_sweep_resolver_maps_both_layouts(tmp_path, monkeypatch):
     ws, product = _workspace(tmp_path, monkeypatch)
     job = _job()
-    root = ws / "wt" / job.job_id[:8]
+    root = ws / "wt" / wr_run_key(job.job_id)
     # single/batch layout
     (root / "acme" / "shop").mkdir(parents=True)
     # per-spec layout
@@ -126,3 +127,4 @@ def test_sweep_resolver_maps_both_layouts(tmp_path, monkeypatch):
     assert str(root / "acme" / "shop") in worktrees
     assert str(root / "spec-b" / "acme" / "shop") in worktrees
     assert all(str(p[0]) == str(product) for p in pairs)  # live repo mapped
+

@@ -1,4 +1,4 @@
-"""Parallel-worktrees S3 — allocator module (D2/D4/D14, W3/W5/W8).
+﻿"""Parallel-worktrees S3 â€” allocator module (D2/D4/D14, W3/W5/W8).
 
 REAL git repos in tmp dirs; zero-leftover L1 parity asserted via
 `git worktree list`.
@@ -147,7 +147,7 @@ def test_reclaim_allowed_predicate(tmp_path):
                request_payload={}, status=JobStatus.COMPLETED)
     storage.save_job(done)
     assert wr.reclaim_allowed(done, storage)[0]
-    # terminal but heartbeat FRESH (live cancelled process) → protected
+    # terminal but heartbeat FRESH (live cancelled process) â†’ protected
     storage.beat(done.job_id)
     ok, why = wr.reclaim_allowed(done, storage)
     assert not ok and "heartbeat fresh" in why
@@ -170,7 +170,7 @@ def test_sweep_respects_predicate_and_ttl(live_repo, tmp_path):
     wr.add_worktree(live_repo, done_root / "repo", "feature/done", "main")
     done = done.model_copy(update={"worktree_root": str(done_root)})
     storage.save_job(done)
-    # orphan dir with no job record (young → kept)
+    # orphan dir with no job record (young â†’ kept)
     orphan = ws / "wt" / "orphan01"
     orphan.mkdir(parents=True)
 
@@ -181,7 +181,7 @@ def test_sweep_respects_predicate_and_ttl(live_repo, tmp_path):
     assert Path(done_root).exists() is False
     assert Path(prot_root).exists() is True          # protected survived
     assert orphan.exists() is True                   # young orphan kept
-    assert done.job_id[:8] in reclaimed and prot.job_id[:8] not in reclaimed
+    assert wr.run_key(done.job_id) in reclaimed and wr.run_key(prot.job_id) not in reclaimed
     assert len(_worktree_names(live_repo)) == 2      # live + protected only
 
 
@@ -192,3 +192,4 @@ def test_repo_index_lock_path_linked_worktree(live_repo, tmp_path):
     # NOT the naive <wt>/.git/index.lock (.git is a FILE in a linked worktree)
     assert ".git" in str(p)
     assert "worktrees" in str(p)
+
