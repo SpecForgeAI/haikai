@@ -113,12 +113,16 @@ class Worker:
                         f"(type: {job.type}, company: {job.company}, project: {job.project})"
                     )
                     
-                    # Heartbeat the job while it runs so recovery can tell a live
-                    # worker's job from an orphaned one (and not mark it failed).
+                    # Liveness loop: heartbeats + the CANCELLING watchdog that
+                    # kills THIS worker's tracked process tree (D13: only the
+                    # job-owning process kills).
+                    from .process_tracking import job_liveness_loop
                     hb_stop = threading.Event()
                     self.storage.beat(job.job_id)  # first beat before any work
                     hb = threading.Thread(
-                        target=self._heartbeat_loop, args=(job.job_id, hb_stop), daemon=True)
+                        target=job_liveness_loop,
+                        args=(self.storage, job.job_id, hb_stop, self.worker_id),
+                        daemon=True)
                     hb.start()
                     try:
                         # Execute job based on type

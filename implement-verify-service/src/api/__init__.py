@@ -624,6 +624,23 @@ def _run_job_in_background(job_id: str):
         )
         return
 
+    # The API-background path must heartbeat like the worker does (spec v2
+    # D14): recovery's discriminator is heartbeat-based, and without beats a
+    # live API-path job looks orphaned. Same loop also hosts the CANCELLING
+    # watchdog for trees this process owns.
+    import threading as _threading
+    from ..job_queue.process_tracking import job_liveness_loop
+    _hb_stop = _threading.Event()
+    try:
+        storage.beat(job_id)
+    except Exception:
+        logger.debug("initial beat failed for %s", job_id, exc_info=True)
+    _threading.Thread(
+        target=job_liveness_loop,
+        args=(storage, job_id, _hb_stop, "api-background"),
+        daemon=True,
+    ).start()
+
     try:
         if job.type == JobType.ORCHESTRATION:
             run_orchestration(job_id, storage)
@@ -642,6 +659,8 @@ def _run_job_in_background(job_id: str):
             job.completed_at = datetime.now(timezone.utc)
             job.error = str(e)
             storage.save_job(job)
+    finally:
+        _hb_stop.set()
 
 
 # ============================================================================

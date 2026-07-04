@@ -15,12 +15,37 @@ def _utc_now() -> datetime:
 
 
 class JobStatus(str, Enum):
-    """Job execution status."""
+    """Job execution status.
+
+    Parallel-worktrees (spec v2 D13/D14) two-phase cancel + recovery states:
+    cancel requests termination (CANCELLING); CANCELLED only after the
+    owning process confirms death. Recovery owns resumable jobs
+    (RECOVERING/QUEUED_FOR_RESUME); the sweeper treats their worktrees as
+    protected.
+    """
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    CANCELLING = "cancelling"
+    RECOVERING = "recovering"
+    QUEUED_FOR_RESUME = "queued_for_resume"
+    RESUMABLE_FAILED = "resumable_failed"
+    FAILED_NON_RESUMABLE = "failed_non_resumable"
+    ABANDONED = "abandoned"
+
+
+# D14: worktree lifecycle derives from these sets, never raw status checks.
+TERMINAL_STATUSES = frozenset({
+    JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED,
+    JobStatus.FAILED_NON_RESUMABLE, JobStatus.ABANDONED,
+})
+# Sweep-protected: a worktree in these states is never reclaimable.
+PROTECTED_STATUSES = frozenset({
+    JobStatus.RUNNING, JobStatus.CANCELLING, JobStatus.RECOVERING,
+    JobStatus.QUEUED_FOR_RESUME, JobStatus.RESUMABLE_FAILED,
+})
 
 
 class JobType(str, Enum):
@@ -69,8 +94,15 @@ class Job(BaseModel):
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
     
-    # Recovery
+    # Recovery / resume bookkeeping (spec v2 D14: per-spec (spec_idx, step))
     resume_from_step: Optional[int] = None
+    spec_idx: Optional[int] = None
+    last_committed_spec_idx: Optional[int] = None
+    run_branch: Optional[str] = None
+
+    # Worktree ownership (spec v2 W7: the job record is the sole source of
+    # truth for the run's tree — recovery/cancel/sweep resolve from here)
+    worktree_root: Optional[str] = None
 
     # Metadata
     worker_id: Optional[str] = None
