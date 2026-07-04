@@ -28,6 +28,10 @@ class JobStorage:
         """
         conn = sqlite3.connect(self.db_path, isolation_level=isolation_level) \
             if isolation_level is not None else sqlite3.connect(self.db_path)
+        # Parallel-N hardening: without a busy_timeout a concurrent writer gets
+        # an instant "database is locked" (the verification store already sets
+        # this — store.py; jobs.db was the gap). 5s matches the store.
+        conn.execute("PRAGMA busy_timeout=5000")
         if row_factory is not None:
             conn.row_factory = row_factory
         try:
@@ -187,6 +191,32 @@ class JobStorage:
     # claim-as-default-worker behavior. Deprecated; prefer claim_next_queued_job.
     def get_next_queued_job(self) -> Optional[Job]:
         return self.claim_next_queued_job()
+
+    def claim_job(self, job_id: str, worker_id: str) -> bool:
+        """Atomically claim a SPECIFIC queued job (CAS QUEUED → RUNNING).
+
+        Used by the API-background execution path so it cannot double-execute
+        a job a polling worker already claimed (and vice versa). Returns True
+        iff this caller won the claim.
+        """
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE jobs
+                SET status = ?, started_at = ?, worker_id = ?
+                WHERE job_id = ? AND status = ?
+                """,
+                (
+                    JobStatus.RUNNING.value,
+                    datetime.now(timezone.utc).isoformat(),
+                    worker_id,
+                    job_id,
+                    JobStatus.QUEUED.value,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
     
     def list_jobs(
         self,

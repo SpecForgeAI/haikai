@@ -614,6 +614,16 @@ def _run_job_in_background(job_id: str):
         logger.error(f"Background job runner: job {job_id} not found")
         return
 
+    # CAS claim: a polling worker may have (or may be about to) claim this
+    # job. Whoever wins the QUEUED→RUNNING flip executes; the loser walks
+    # away. Without this, both paths execute the same job and stomp each
+    # other's whole-row save_job writes.
+    if not storage.claim_job(job_id, "api-background"):
+        logger.info(
+            f"Background job runner: job {job_id} already claimed elsewhere; skipping"
+        )
+        return
+
     try:
         if job.type == JobType.ORCHESTRATION:
             run_orchestration(job_id, storage)

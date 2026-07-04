@@ -6,6 +6,7 @@ and executes jobs asynchronously.
 """
 
 import os
+import socket
 import time
 import signal
 import sys
@@ -43,7 +44,10 @@ class Worker:
     def __init__(self, db_path: str = "jobs.db"):
         self.storage = JobStorage(db_path)
         self.running = True
-        self.worker_id = os.getenv("WORKER_ID", "worker-1")
+        # Per-replica identity: WORKER_ID if set, else hostname-derived so
+        # `docker compose --scale` replicas claim under DISTINCT identities
+        # (a hardcoded shared id would defeat claim attribution).
+        self.worker_id = os.getenv("WORKER_ID") or f"worker-{socket.gethostname()}"
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._shutdown)
@@ -95,8 +99,10 @@ class Worker:
         
         while self.running:
             try:
-                # Get next queued job
-                job = self.storage.get_next_queued_job()
+                # Get next queued job — claim under THIS worker's identity so
+                # parallel workers are attributable (the deprecated shim claimed
+                # everything as the default worker id).
+                job = self.storage.claim_next_queued_job(self.worker_id)
                 
                 if job:
                     # Reload modules to pick up code changes (hot-reload)

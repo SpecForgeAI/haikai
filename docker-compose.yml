@@ -290,11 +290,14 @@ services:
 
   # Implement-Verify job worker — runs queued jobs (verify-task-group,
   # bug-investigation, ...). Shares the same image, env, and workspace volume.
+  # No container_name and no fixed WORKER_ID: `docker compose up --scale
+  # standards-extractor-worker=N` needs unnamed replicas, and each replica
+  # derives its worker identity from its container hostname so claims are
+  # attributable per replica.
   standards-extractor-worker:
     build:
       context: ./implement-verify-service
       dockerfile: Dockerfile
-    container_name: standards-extractor-worker
     restart: unless-stopped
     env_file:
       - ./implement-verify-service/.env
@@ -302,7 +305,6 @@ services:
       API_WORKSPACE_DIR: /app/workspace
       JOBS_DB_PATH: /app/workspace/jobs.db
       VERIFICATION_DB_PATH: /app/workspace/verify.db
-      WORKER_ID: worker-1
       # The worker runs the implement/orchestration session and builds the chat
       # executor for every job, so it needs CHAT_EXECUTOR too (503/job failure
       # otherwise). Mirror of the API service value.
