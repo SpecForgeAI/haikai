@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 # (in src.api.recovery), which must be comfortably larger than this.
 HEARTBEAT_INTERVAL_SECONDS = 30
 
+# Idle-cadence D14 filesystem sweep (parallel-worktrees).
+SWEEP_INTERVAL_SECONDS = 600
+
 
 class Worker:
     """Background worker for processing queued jobs."""
@@ -48,6 +51,7 @@ class Worker:
         # `docker compose --scale` replicas claim under DISTINCT identities
         # (a hardcoded shared id would defeat claim attribution).
         self.worker_id = os.getenv("WORKER_ID") or f"worker-{socket.gethostname()}"
+        self._last_sweep = 0.0
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._shutdown)
@@ -162,7 +166,21 @@ class Worker:
                         hb_stop.set()
 
                 else:
-                    # No jobs, sleep briefly
+                    # No jobs, sleep briefly. Idle time also hosts the D14
+                    # filesystem sweeper (protected states are never touched;
+                    # liveness gates every reclaim).
+                    now = time.monotonic()
+                    if now - self._last_sweep > SWEEP_INTERVAL_SECONDS:
+                        self._last_sweep = now
+                        try:
+                            reclaimed = _tasks_module.sweep_workspace_worktrees(
+                                self.storage)
+                            if reclaimed:
+                                logger.info("Worker %s: swept worktrees %s",
+                                            self.worker_id, reclaimed)
+                        except Exception:
+                            logger.warning("worktree sweep errored",
+                                           exc_info=True)
                     time.sleep(1)
             
             except Exception as e:

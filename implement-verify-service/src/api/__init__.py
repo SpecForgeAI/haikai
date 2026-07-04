@@ -412,6 +412,26 @@ def _safe_project_dir(company: str, project: str) -> Path:
 # to be past their definition points before triggering the call.
 _recover_interrupted_jobs()
 
+
+# Parallel-worktrees D14: recovery is the sole STATUS authority and is
+# promoted from startup-only to a PERIODIC pass — stuck-RUNNING jobs with
+# stale heartbeats get orphan treatment on a timer, not only after a
+# restart. Off via RECOVERY_PERIODIC=off.
+def _periodic_recovery_loop():
+    import time as _time
+    interval = int(os.getenv("RECOVERY_PERIODIC_SECONDS", "600"))
+    while True:
+        _time.sleep(interval)
+        try:
+            _recover_interrupted_jobs()
+        except Exception:
+            logger.warning("periodic recovery pass failed", exc_info=True)
+
+
+if os.getenv("RECOVERY_PERIODIC", "on").strip().lower() not in ("off", "false", "0"):
+    import threading as _threading_rec
+    _threading_rec.Thread(target=_periodic_recovery_loop, daemon=True).start()
+
 # Start the async-verification liveness backstops (D10.5 TTL sweeper + D9.1
 # poll-fallback). Both existed but nothing drove them; this runs them on a timer
 # in a daemon thread. Off via VERIFY_MAINTENANCE=off.

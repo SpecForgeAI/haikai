@@ -7,6 +7,7 @@ executes the work, and updates the job status.
 """
 
 import os
+import subprocess
 from pathlib import Path
 import logging
 from datetime import datetime, timezone
@@ -228,6 +229,26 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
 
     run_ws = wr.run_root(workspace_dir, job.job_id, spec=spec_scope)
     run_product = run_ws / request.company / request.project
+
+    # D14 reuse-if-alive: a resumed job whose tree survived (protected from
+    # the sweeper by QUEUED_FOR_RESUME) REUSES it — that tree holds the
+    # uncommitted mid-spec state a re-create from the branch cannot recover.
+    # Never re-seed on reuse: it would overwrite mid-run edits.
+    if job.resume_from_step and run_product.is_dir():
+        reused = []
+        for folder, live_repo in targets:
+            wt = run_product if folder is None else run_product / folder
+            if wt.is_dir() and subprocess.run(
+                    ["git", "-C", str(wt), "rev-parse", "--is-inside-work-tree"],
+                    capture_output=True).returncode == 0:
+                reused.append((live_repo, wt))
+        if len(reused) == len(targets):
+            logger.info("Job %s: reusing surviving worktree set at %s (resume)",
+                        job.job_id, run_ws)
+            return str(run_ws), reused, None
+        logger.info("Job %s: surviving tree at %s incomplete — re-creating "
+                    "from the run branch (mid-spec state unrecoverable)",
+                    job.job_id, run_ws)
     scoped_specs = [spec_scope] if spec_scope else specs
     branch = None
     try:
@@ -321,7 +342,69 @@ def _reclaim_run_worktrees(job_id: str, storage, workspace_dir: str, request,
         wr.copy_observability_out(run_product, latest.logs_path if latest else None)
     except Exception:
         logger.warning("observability copy-out failed for %s", job_id, exc_info=True)
+    # D14 session freshness: the per-step session persist landed in the
+    # WORKTREE's spec folders (project_dir override). Copy the backups to the
+    # durable live spec folders before deletion so recovery and human
+    # hand-offs restore a CURRENT transcript, not shape-time state.
+    try:
+        import shutil as _sh
+        live_product = Path(workspace_dir) / request.company / request.project
+        wt_specs = run_product / "haikai" / "specs"
+        if wt_specs.is_dir():
+            for spec_dir in wt_specs.iterdir():
+                for f in spec_dir.glob("*.jsonl"):
+                    dst = live_product / "haikai" / "specs" / spec_dir.name / f.name
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    _sh.copy2(f, dst)
+                asf = spec_dir / "active_session.json"
+                if asf.exists():
+                    _sh.copy2(asf, live_product / "haikai" / "specs"
+                              / spec_dir.name / "active_session.json")
+    except Exception:
+        logger.warning("session copy-back failed for %s", job_id, exc_info=True)
     _reclaim_worktree_set(workspace_dir, request, allocated, Path(run_workspace))
+
+
+def _sweep_resolver(job):
+    """Map a job → [(live_repo, worktree_path)] for the D14 sweeper. Handles
+    both layouts: single/batch (root/<co>/<proj>[/folder]) and per-spec
+    (root/<spec>/<co>/<proj>[/folder])."""
+    try:
+        request = OrchestrationRequest(**(job.request_payload or {}))
+    except Exception:
+        return []
+    ws = os.getenv("API_WORKSPACE_DIR", ".")
+    live_product = Path(ws) / job.company / job.project
+    targets = _resolve_repo_targets(live_product)
+    root = Path(job.worktree_root) if job.worktree_root else None
+    if not root or not root.is_dir() or not targets:
+        return []
+    candidates = {root / job.company / job.project}
+    for child in root.iterdir():
+        if child.is_dir():
+            candidates.add(child / job.company / job.project)
+    pairs = []
+    for folder, live_repo in targets:
+        for prod in candidates:
+            wt = prod if folder is None else prod / folder
+            if wt.is_dir():
+                pairs.append((live_repo, wt))
+    return pairs
+
+
+def sweep_workspace_worktrees(storage) -> list:
+    """Periodic D14 filesystem sweep (worker-idle cadence): reclaims
+    worktrees whose six-condition predicate passes + TTL debris."""
+    from src.git import worktree_runs as wr
+
+    ws = os.getenv("API_WORKSPACE_DIR")
+    if not ws:
+        return []
+    try:
+        return wr.sweep(storage, ws, _sweep_resolver)
+    except Exception:
+        logger.warning("worktree sweep failed", exc_info=True)
+        return []
 
 
 def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha,

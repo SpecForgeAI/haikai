@@ -260,7 +260,7 @@ class JobStorage:
                 """
                 UPDATE jobs
                 SET status = ?, started_at = ?, worker_id = ?
-                WHERE job_id = ? AND status = ?
+                WHERE job_id = ? AND status IN (?, ?)
                 """,
                 (
                     JobStatus.RUNNING.value,
@@ -268,6 +268,7 @@ class JobStorage:
                     worker_id,
                     job_id,
                     JobStatus.QUEUED.value,
+                    JobStatus.QUEUED_FOR_RESUME.value,
                 ),
             )
             conn.commit()
