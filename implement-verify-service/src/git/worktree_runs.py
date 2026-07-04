@@ -237,9 +237,9 @@ def reclaim_allowed(job, storage,
         return False, f"status {status.value} is not terminal"
     if status in PROTECTED_STATUSES:                          # cond 2
         return False, f"status {status.value} is protected"
-    if (status not in TERMINAL_STATUSES or                    # cond 3
-            (job.resume_from_step is not None and status == JobStatus.QUEUED_FOR_RESUME)):
-        return False, "protected resume state"
+    # cond 3 (protected resume_from_step + worktree_root state) is subsumed:
+    # resume-protected statuses (QUEUED_FOR_RESUME, RECOVERING, RESUMABLE_FAILED)
+    # are all non-terminal, so condition 1 already refuses them.
     pid = storage.tracked_pid(job.job_id) if storage else None  # cond 4
     if pid is not None:
         from src.job_queue.process_tracking import pid_alive

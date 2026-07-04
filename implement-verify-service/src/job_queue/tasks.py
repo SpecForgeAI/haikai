@@ -1190,7 +1190,7 @@ def _git_changed_files(project_dir: Path) -> tuple[bool, list[str]]:
 
 
 def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branch="main",
-                           client=None):
+                           client=None, git_lock=None):
     """F2 (consolidate-at-deploy): merge the run's spec branches into one integrated
     tree and deploy the whole via haibox — so the target serves ALL N specs.
 
@@ -1212,6 +1212,7 @@ def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branc
     import shutil
     import subprocess as _sp
     import tempfile
+    from contextlib import nullcontext
 
     from src.haibox.client import HaiboxClient
     from src.haibox.integration import provision_for_job
@@ -1219,8 +1220,15 @@ def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branc
     def _git(*a, cwd=None):
         return _sp.run(["git", "-C", str(cwd or repo_dir), *a], capture_output=True, text=True)
 
+    def _lock():
+        # D5 (parallel-worktrees): worktree add/remove mutate the SHARED
+        # .git/worktrees registry — serialize with run allocation/reclaim.
+        # Held only around the registry mutations, never the merge/deploy.
+        return git_lock() if git_lock else nullcontext()
+
     wt = Path(tempfile.mkdtemp(prefix="haibox-deploy-")) / "wt"
-    add = _git("worktree", "add", "--detach", str(wt), default_branch)
+    with _lock():
+        add = _git("worktree", "add", "--detach", str(wt), default_branch)
     if add.returncode != 0:
         shutil.rmtree(wt.parent, ignore_errors=True)
         raise RuntimeError(f"cannot create deploy worktree from {default_branch}: {add.stderr[:300]}")
@@ -1243,7 +1251,8 @@ def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branc
     finally:
         # L1: the box has its own copy now — always reclaim the worktree + temp dir
         # + the .git/worktrees registration (success OR failure). No leak.
-        _git("worktree", "remove", "--force", str(wt))
+        with _lock():
+            _git("worktree", "remove", "--force", str(wt))
         shutil.rmtree(wt.parent, ignore_errors=True)
 
 
@@ -1284,8 +1293,12 @@ def _deploy_completed_run(request: OrchestrationRequest, workspace_dir: str, res
     else:
         branches = [f"feature/{si.spec_name}" for si in request.spec_intents]
     try:
-        return consolidate_and_deploy(repo_dir, branches, request.target,
-                                      default_branch=load_git_config().default_branch)
+        return consolidate_and_deploy(
+            repo_dir, branches, request.target,
+            default_branch=load_git_config().default_branch,
+            git_lock=lambda: _project_git_lock(
+                str(workspace_dir), request.company, request.project),
+        )
     except Exception as exc:  # merge conflict or haibox failure — report `failed`
         logger.warning("deploy_on_complete failed: %s", exc)
         response.errors.append(f"deploy failed: {exc}")
@@ -1427,6 +1440,7 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
         return
 
     summary, session_ok = "", False
+    changed, changed_files = False, []
     try:
         from src.backend_registry import _build_cli_executor
 
@@ -1453,10 +1467,18 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
             "or VERDICT=NOFIX if a fix was warranted but none was kept."
         )
         logger.info(f"Job {job_id}: launching haikai bug investigation for {bug_id} in {project_dir}")
-        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
-        result = executor.execute(command, timeout=int((job.request_payload or {}).get("timeout_seconds", 1800)))
-        session_ok = bool(result.get("success"))
-        summary = (result.get("stdout") or "")[-2000:]
+        # D5 (parallel-worktrees): bug investigation mutates the LIVE tree
+        # in place — the one remaining live-tree writer. It now serializes
+        # under the project git lock (it held NO lock before: a pre-existing
+        # race with anything else touching the live checkout). The lock also
+        # covers the change-detection read so a second investigation can't
+        # mutate between session end and `git status`.
+        with _project_git_lock(str(workspace_dir), str(bug.get("company")), str(bug.get("project"))):
+            executor = _build_cli_executor(str(project_dir), anthropic_api_key)
+            result = executor.execute(command, timeout=int((job.request_payload or {}).get("timeout_seconds", 1800)))
+            session_ok = bool(result.get("success"))
+            summary = (result.get("stdout") or "")[-2000:]
+            changed, changed_files = _git_changed_files(project_dir)
     except Exception as exc:
         summary = f"investigation session error: {exc}"
 
@@ -1465,7 +1487,6 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
     # without a change is a no-op; a change without the verdict failed its tests.
     verdict_fixed = "VERDICT=FIXED" in summary
     not_a_bug = "VERDICT=NOTABUG" in summary
-    changed, changed_files = _git_changed_files(project_dir)
     fixed = bool(session_ok and verdict_fixed and changed)
     haikai_verdict = "FIXED" if verdict_fixed else ("NOTABUG" if not_a_bug else "NOFIX")
     detail = {
