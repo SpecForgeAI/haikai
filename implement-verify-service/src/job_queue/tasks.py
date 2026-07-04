@@ -291,6 +291,11 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
 
     # worktree_root is always the JOB-level root (wt/<id8>) — per-spec mode
     # nests spec roots under it, and the sweeper resolves by this one path.
+    # Claude CLI treats a fresh worktree as untrusted → seed trust for the
+    # session cwd (the product root inside the worktree) so settings.json
+    # permissions are honored and non-interactive sessions run.
+    wr.trust_worktree_path(run_product)
+
     job.worktree_root = str(wr.run_root(workspace_dir, job.job_id))
     job.run_branch = (f"feature/{spec_scope}" if spec_scope
                       else _run_branch_for(request, None))
@@ -828,6 +833,21 @@ def _step_progress_percentage(step_num: int, total_steps: int) -> int:
     return min(100, max(0, int(step_num / total_steps * 100)))
 
 
+def _resolve_spec_session(run_ws: str, request, spec: str) -> "str | None":
+    """The session id the shape-spec step persisted to this spec's folder
+    (seeded into the worktree). None if absent."""
+    import json as _json
+
+    asf = (Path(run_ws) / request.company / request.project / "haikai"
+           / "specs" / spec / "active_session.json")
+    if asf.exists():
+        try:
+            return _json.loads(asf.read_text(encoding="utf-8")).get("session_id")
+        except Exception:
+            return None
+    return None
+
+
 def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
                                 request: OrchestrationRequest,
                                 workspace_dir: str, anthropic_api_key: str,
@@ -872,8 +892,26 @@ def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
         if err:
             return {"spec": spec_name, "success": False, "error": err}
         try:
+            # Each spec resumes ITS OWN shaped session (the batch shape-spec
+            # persisted one per spec folder), not the run-level active session.
+            # Restore its transcript into the worktree's CLI session dir so
+            # --resume resolves there.
+            spec_session = _resolve_spec_session(run_ws, sub_request, spec_name)
+            run_session = spec_session or intent.session_id or session_id
+            if spec_session:
+                try:
+                    from ..api import create_chat_executor
+                    _rx = create_chat_executor(
+                        company=sub_request.company, project=sub_request.project,
+                        workspace_dir=Path(run_ws),
+                        anthropic_api_key=anthropic_api_key or "",
+                        session_uuid=spec_session)
+                    _rx.restore_session_from_spec()
+                except Exception:
+                    logger.warning("per-spec session restore failed (%s)",
+                                   spec_name, exc_info=True)
             orchestrator = _setup_orchestrator_context(
-                sub_request, run_ws, intent.session_id or session_id,
+                sub_request, run_ws, run_session,
                 anthropic_api_key, logs_workspace=workspace_dir)
             orchestrator.on_spawn = lambda pid: storage.track_process(
                 job_id, pid, f"{job.worker_id or ''}:{spec_name}")
@@ -1392,6 +1430,8 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
                     verify_root_info["repos"],
                     verify_root_info["evidence_dir"] / "setup")
                 session_dir = verify_root_info["root"]
+                from src.git import worktree_runs as _wr_trust
+                _wr_trust.trust_worktree_path(verify_root_info["root"])
                 job.worktree_root = str(verify_root_info["root"])
                 storage.save_job(job)
                 extra_cmd = (

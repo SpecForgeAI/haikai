@@ -183,6 +183,40 @@ def seed_run_root(product_root: Path, dest_root: Path,
     return seeded
 
 
+def trust_worktree_path(project_dir: Path, claude_json: Optional[Path] = None) -> None:
+    """Mark a worktree path trusted for the Claude Code CLI.
+
+    A fresh worktree is a directory the CLI has never seen, so it treats it as
+    UNTRUSTED and ignores the workspace's `.claude/settings.json` permissions
+    ("this workspace has not been trusted"), which fails every non-interactive
+    session. The live checkout only works because it was trusted once. We seed
+    the trust flag the CLI would set after its interactive dialog:
+    `projects["<abs path>"].hasTrustDialogAccepted = true` in ~/.claude.json.
+    Best-effort — never fail allocation over it.
+    """
+    import json
+
+    resolved = str(Path(project_dir).resolve())
+    # The CLI keys ~/.claude.json by the FORWARD-SLASH path (its own
+    # cwd-normalised form), e.g. "C:/ivs-ws/.../taskflow" — a Windows
+    # backslash key silently never matches. Seed both forms to be safe.
+    keys = {resolved, resolved.replace("\\", "/")}
+    cj = claude_json or (Path.home() / ".claude.json")
+    try:
+        data = json.loads(cj.read_text(encoding="utf-8")) if cj.exists() else {}
+    except Exception:
+        data = {}
+    projects = data.setdefault("projects", {})
+    for path in keys:
+        entry = projects.setdefault(path, {})
+        entry["hasTrustDialogAccepted"] = True
+        entry.setdefault("hasCompletedProjectOnboarding", True)
+    try:
+        cj.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        logger.warning("could not seed CLI trust for %s", path, exc_info=True)
+
+
 def seed_repo_config(live_repo: Path, worktree: Path) -> bool:
     """.haikai/config.json is gitignored — without it GitManager.load_config
     raises in a fresh worktree (G4)."""
