@@ -654,4 +654,18 @@ def validate_repair_target(conn: sqlite3.Connection,
     if len(rows) > 1:
         return False, ("ambiguous repair target: several open attempts and"
                        " none named — pass repair_of.attempt"), None
+    # Parallel-worktrees D11/M3 ("no binding → no code verification"): a
+    # repair needs a trustworthy target — repo + bound SHA + branch lineage.
+    # A cell with no ci_binding is UNPINNABLE; dispatching a repair against
+    # it would guess. The refusal lives HERE (the dispatch gate) rather than
+    # in open_repair, preserving the recorder's pure guarded-write contract
+    # (D10.1) — open_repair still records cap bookkeeping for escalation.
+    bound = conn.execute(
+        "SELECT 1 FROM ci_bindings WHERE orchestrate_id=? AND task_group_id=?"
+        " AND repo=? LIMIT 1",
+        (repair_of["orchestrate_id"], repair_of["task_group_id"],
+         repair_of["repo"])).fetchone()
+    if not bound:
+        return False, ("Cannot dispatch repair: verification cell has no "
+                       "bound repo SHA"), None
     return True, "validated", rows[0]["attempt"]

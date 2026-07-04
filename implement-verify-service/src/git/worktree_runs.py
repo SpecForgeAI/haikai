@@ -348,6 +348,126 @@ def sweep(storage, workspace_dir: str, live_repo_resolver,
     return reclaimed
 
 
+# ── D11 composite verify run-root ────────────────────────────────────────────
+
+def _sha_present(repo: Path, sha: str) -> bool:
+    return _git(repo, "cat-file", "-e", f"{sha}^{{commit}}").returncode == 0
+
+
+def allocate_verify_root(workspace_dir: str, company: str, project: str,
+                         job_id: str, bindings: dict,
+                         specs: Iterable[str]) -> dict:
+    """Build the composite verify run-root (spec v2 D11, user ruling):
+
+        verify-root/<id8>/
+          context/    coordination.yaml, coordination.lock.yaml,
+                      haikai/specs/<spec>/ (planning, rubrics, ...)
+          repos/<r>/  detached worktree at r's bound head_sha
+          evidence/   setup/ command-results/ verdicts/
+
+    `bindings` maps repo-label -> {live_repo: Path, head_sha: str|None}.
+    Repos with head_sha=None are UNPINNABLE — no worktree is created; they
+    are returned in `unpinned` (no binding → no code verification; never a
+    live-checkout fallback). Fetch-on-miss before the detached add (a
+    CI-reported SHA may not exist locally yet).
+
+    Returns {root, context_dir, repos_dir, evidence_dir, repos: {label:
+    path}, unpinned: [labels], allocated: [(live_repo, wt_path)]}.
+    The product root is a coordination/meta root — NEVER `worktree add`ed.
+    """
+    live_product = Path(workspace_dir) / company / project
+    root = Path(workspace_dir) / "wt" / f"v{job_id[:7]}"
+    context = root / "context"
+    repos_dir = root / "repos"
+    evidence = root / "evidence"
+    for d in (context, repos_dir, evidence / "setup",
+              evidence / "command-results", evidence / "verdicts"):
+        d.mkdir(parents=True, exist_ok=True)
+
+    for name in ("coordination.yaml", "coordination.lock.yaml"):
+        src = live_product / name
+        if src.exists():
+            _copytree(src, context / name)
+    for spec in specs:
+        src = live_product / "haikai" / "specs" / spec
+        if src.is_dir():
+            _copytree(src, context / "haikai" / "specs" / spec)
+
+    repos, unpinned, allocated = {}, [], []
+    with project_git_lock(workspace_dir, company, project):
+        for label, b in bindings.items():
+            live_repo, sha = Path(b["live_repo"]), b.get("head_sha")
+            if not sha:
+                unpinned.append(label)
+                continue
+            if not _sha_present(live_repo, sha):
+                _git(live_repo, "fetch", "--all", "--quiet")  # fetch-on-miss
+            if not _sha_present(live_repo, sha):
+                unpinned.append(label)  # still absent → unpinnable, not a guess
+                continue
+            dest = repos_dir / label
+            _require(_git(live_repo, "worktree", "add", "--detach",
+                          str(dest), sha),
+                     f"cannot create verify worktree at {sha[:12]}")
+            _git(live_repo, "worktree", "lock",
+                 "--reason", f"verify job {job_id} active", str(dest))
+            repos[label] = dest
+            allocated.append((live_repo, dest))
+    return {"root": root, "context_dir": context, "repos_dir": repos_dir,
+            "evidence_dir": evidence, "repos": repos, "unpinned": unpinned,
+            "allocated": allocated}
+
+
+def run_setup_commands(coordination_lock: Path, repos: dict,
+                       evidence_setup_dir: Path) -> list[str]:
+    """F6: per-repo pinned setup_commands from coordination.lock.yaml, run
+    once at allocation, output under evidence/setup/. A repo whose setup
+    fails is returned in the infra list — its cells classify `infra`,
+    never `real`. Missing lockfile / no setup_commands → no-op."""
+    infra: list[str] = []
+    if not coordination_lock.is_file():
+        return infra
+    try:
+        import yaml
+        data = yaml.safe_load(coordination_lock.read_text()) or {}
+    except Exception:
+        return infra
+    repo_specs = data.get("repos") or {}
+    for label, wt in repos.items():
+        entry = repo_specs.get(label) or {}
+        cmds = entry.get("setup_commands") or []
+        log = Path(evidence_setup_dir) / f"{label}.log"
+        lines = []
+        failed = False
+        for cmd in cmds:
+            cp = subprocess.run(cmd, shell=True, cwd=str(wt),
+                                capture_output=True, text=True)
+            lines.append(f"$ {cmd}\n(exit {cp.returncode})\n"
+                         f"{cp.stdout[-2000:]}\n{cp.stderr[-2000:]}\n")
+            if cp.returncode != 0:
+                failed = True
+                break
+        if lines:
+            log.write_text("".join(lines), encoding="utf-8")
+        if failed:
+            infra.append(label)
+    return infra
+
+
+def reclaim_verify_root(workspace_dir: str, company: str, project: str,
+                        allocated, root: Path) -> None:
+    """Tear down a verify root: worktrees under the lock, then the dir.
+    Evidence worth keeping must be copied out by the caller first."""
+    with project_git_lock(workspace_dir, company, project):
+        for live_repo, wt in allocated:
+            try:
+                remove_worktree(live_repo, wt)
+            except Exception:
+                logger.warning("remove verify worktree %s failed", wt,
+                               exc_info=True)
+    shutil.rmtree(root, ignore_errors=True)
+
+
 def repo_index_lock_path(repo_or_worktree: Path) -> Path:
     """Linked-worktree-safe index.lock resolution (D5: `.git` is a FILE in a
     linked worktree — `<dir>/.git/index.lock` silently misses)."""

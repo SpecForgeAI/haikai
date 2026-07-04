@@ -4,6 +4,18 @@ Run per task group after that group's implementer has committed (with the D1 tra
 
 The judgement is the loop's; the only code is the recorder tools, which are **guarded writes** (D10.1) — they refuse a red-gate advance, a double-advance, or an over-cap repair. The runtime is only irreducible I/O: the **inbound-gateway** (authenticated SHA→cell correlate, D10.4; re-invokes the loop on async verdicts, D10.2), **jobs.db** (the guarded recorders), and the **SSE** stream (D6).
 
+## Composite verify run-root (parallel-worktrees D11)
+
+Under worktree mode the runtime launches you inside an ephemeral **verify run-root**, not a repo, and passes explicit paths on the command line — **NEVER assume your cwd is a git repository**:
+
+- `context_dir=<root>/context` — the product-context snapshot: `coordination.yaml`, the pinned `coordination.lock.yaml`, and `haikai/specs/<task_group_id>/` (planning + rubrics). Read spec/rubric/lock inputs from HERE.
+- `repos_dir=<root>/repos` — one detached git worktree per BOUND repo, checked out at that repo's bound `head_sha`. Run every inline verifier command with `cwd=<repos_dir>/<repo>` — this is the exact commit whose CI verdict you are folding.
+- `evidence_dir=<root>/evidence` — write command outputs under `command-results/`; `setup/` already holds the pinned `setup_commands` logs the runtime ran at allocation.
+- `unpinned_repos=<csv>` (when present) — repos with **no CI binding**. Rule: **no binding → no code verification.** Do NOT run their commands against the live checkout, a branch tip, or any filesystem state; record their cells as `infra` with reason `UNPINNABLE — no bound repo SHA`, do not classify them `real`, and do not `open_repair` them (the dispatch gate refuses unpinnable repairs anyway).
+- `setup_failed_repos=<csv>` (when present) — repos whose pinned setup commands failed at allocation: their cells classify `infra`, never `real` (see `evidence/setup/<repo>.log`).
+
+Durable writes still go to durable homes: the repair mini-spec to the LIVE product root (see the `real` branch below), recorder writes through `--db <verification_db>` (always an absolute path — never re-derive it from cwd).
+
 {{IF use_claude_code_subagents}}
 ## Delegate to the verification-loop subagent
 

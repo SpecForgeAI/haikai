@@ -122,7 +122,10 @@ def test_verify_job_runs_in_orchestrate_workspace(env, tmp_path):
 
 
 def test_binding_off_by_default(tmp_path, monkeypatch):
-    # Without ORCHESTRATE_CI_BIND, no binding is recorded (opt-in, no behaviour change).
+    # Parallel-worktrees D11/M3: bindings DEFAULT-ON under worktree mode
+    # (they make verify cells pinnable). The opt-in default survives only
+    # under the WORKTREE_RUNS=off escape — which this test now pins.
+    monkeypatch.setenv("WORKTREE_RUNS", "off")
     set_git_env(monkeypatch, provider="gitlab", auto_push=True, auto_pr=False)
     monkeypatch.setenv("GITLAB_TOKEN", "dummy-local-no-auth")
     monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))

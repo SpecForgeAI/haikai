@@ -43,10 +43,12 @@ def _seed_open_repair(tmp_path):
     vdb = str(tmp_path / "verify.db")
     os.environ["VERIFICATION_DB_PATH"] = vdb
     from src.verification import flow_graph as fg
-    from src.verification import recorder
+    from src.verification import recorder, store
     conn = fg.connect(vdb)
     recorder.record_verdict(conn, "orch-1", "billing", "app", "pip-audit", "fail")
     recorder.open_repair(conn, "orch-1", "billing", "app", "pip-audit", 1)
+    # D11/M3: repair dispatch is refused for unpinnable cells — bind a SHA.
+    store.record_binding(conn, "a" * 40, "gitlab", "orch-1", "billing", "app")
     conn.close()
     return vdb
 

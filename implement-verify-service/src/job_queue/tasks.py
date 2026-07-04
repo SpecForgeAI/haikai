@@ -335,9 +335,13 @@ def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha
     without this record the inbound gateway 409s the late CI result. Per-repo, so
     polyrepo runs link each repo's own pushed commit.
 
-    Opt-in (`ORCHESTRATE_CI_BIND=true`) and GitLab-only. Best-effort: a binding
-    failure must NEVER fail the orchestration — the work is already committed."""
-    if os.getenv("ORCHESTRATE_CI_BIND", "false").strip().lower() != "true":
+    GitLab-only. DEFAULT-ON under worktree mode (spec v2 D11/M3: bindings are
+    what make verify cells pinnable — without them every cell is UNPINNABLE
+    and pinned verification is dead code); opt-in when WORKTREE_RUNS=off.
+    Best-effort: a binding failure must NEVER fail the orchestration — the
+    work is already committed."""
+    _bind_default = "true" if _worktree_runs_enabled() else "false"
+    if os.getenv("ORCHESTRATE_CI_BIND", _bind_default).strip().lower() != "true":
         return
     if git_config.provider != "gitlab" or not head_sha or not orchestrate_id:
         return
@@ -1250,11 +1254,11 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
     except Exception:
         logger.warning("run-graph: verify-start emission failed (non-fatal)", exc_info=True)
 
+    verify_root_info = None  # set under worktree mode; used by the finally
+    workspace_dir = Path(os.getenv("API_WORKSPACE_DIR", "."))
     try:
         from src.backend_registry import _build_cli_executor
         from src.safe_paths import UnsafePathError, safe_project_dir
-
-        workspace_dir = Path(os.getenv("API_WORKSPACE_DIR", "."))
         try:
             project_dir = safe_project_dir(workspace_dir, job.company, job.project)  # C2: no traversal
         except UnsafePathError as exc:
@@ -1265,8 +1269,57 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             return
         project_dir.mkdir(parents=True, exist_ok=True)
 
+        # F8 (parallel-worktrees): the composed command MUST never carry a
+        # relative --db. Under D11 the session cwd is an ephemeral verify
+        # root — a relative default would CREATE a fresh empty store there
+        # and silently swallow guarded verdicts/repair dispatches.
         db_path = os.getenv("VERIFICATION_DB_PATH") or os.getenv("JOBS_DB_PATH", "jobs.db")
+        db_path = str(Path(db_path).expanduser().resolve())
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+        # D11: composite verify run-root — context snapshot + one detached
+        # repo worktree per BOUND repo at its bound head_sha. Repos with no
+        # binding are UNPINNABLE (no binding → no code verification; never
+        # the live checkout). Falls back to the live product root only when
+        # worktree mode is off or nothing is git-shaped.
+        verify_root_info = None
+        session_dir = project_dir
+        extra_cmd = ""
+        if _worktree_runs_enabled():
+            from src.git import worktree_runs as wr
+            targets = _resolve_repo_targets(project_dir)
+            if targets:
+                from ..verification import store as vstore
+                bconn = vstore.connect(db_path)
+                try:
+                    bindings = {}
+                    for folder, live_repo in targets:
+                        label = folder if folder is not None else (repo or "repo")
+                        b = vstore.binding_for_cell(
+                            bconn, str(orchestrate_id), str(task_group_id), label)
+                        bindings[label] = {"live_repo": live_repo,
+                                           "head_sha": (b or {}).get("head_sha")}
+                finally:
+                    bconn.close()
+                verify_root_info = wr.allocate_verify_root(
+                    str(workspace_dir), job.company, job.project, job_id,
+                    bindings, specs=[str(task_group_id)])
+                infra_repos = wr.run_setup_commands(
+                    verify_root_info["context_dir"] / "coordination.lock.yaml",
+                    verify_root_info["repos"],
+                    verify_root_info["evidence_dir"] / "setup")
+                session_dir = verify_root_info["root"]
+                job.worktree_root = str(verify_root_info["root"])
+                storage.save_job(job)
+                extra_cmd = (
+                    f" context_dir={verify_root_info['context_dir']}"
+                    f" repos_dir={verify_root_info['repos_dir']}"
+                    f" evidence_dir={verify_root_info['evidence_dir']}"
+                )
+                if verify_root_info["unpinned"]:
+                    extra_cmd += f" unpinned_repos={','.join(verify_root_info['unpinned'])}"
+                if infra_repos:
+                    extra_cmd += f" setup_failed_repos={','.join(infra_repos)}"
 
         # The verification-loop agent records through the guarded recorder via its
         # Bash idiom (`python -m src.verification.recorder <tool> --json ... --db ...`,
@@ -1280,19 +1333,24 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             os.environ["PYTHONPATH"] = ivs_repo_root + (os.pathsep + _pp if _pp else "")
 
         # The loop reconstructs everything from the db (always-fresh, D10.2);
-        # the command line carries only the correlation keys + db location.
+        # the command line carries the correlation keys + db location, plus
+        # (D11) the explicit verify-root paths — commands MUST NOT assume the
+        # session cwd is a git repository.
         command = (
             f"/verify-task-group orchestrate_id={orchestrate_id} "
             f"task_group_id={task_group_id} repo={repo} "
-            f"verification_db={db_path}"
+            f"verification_db={db_path}{extra_cmd}"
         )
         logger.info(f"Job {job_id}: launching verification-loop session: {command}")
-        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
+        executor = _build_cli_executor(str(session_dir), anthropic_api_key)
+        executor.on_spawn = lambda pid: storage.track_process(
+            job_id, pid, job.worker_id or "")
         result = executor.execute(command, timeout=payload.get("timeout_seconds", 1800))
 
         latest = storage.get_job(job_id)
-        if latest and latest.status == JobStatus.CANCELLED.value:
-            logger.info(f"Job {job_id} cancelled during execution; preserving CANCELLED")
+        if latest and latest.status in (JobStatus.CANCELLED.value,
+                                        JobStatus.CANCELLING.value):
+            logger.info(f"Job {job_id} cancelled during execution; preserving cancel status")
             return
         job.status = JobStatus.COMPLETED if result.get("success") else JobStatus.FAILED
         job.completed_at = datetime.now(timezone.utc)
@@ -1302,6 +1360,9 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             "execution_time": result.get("execution_time"),
             "stdout_tail": (result.get("stdout") or "")[-2000:],
         }
+        if verify_root_info is not None:
+            job.result["verify_root"] = str(verify_root_info["root"])
+            job.result["unpinned_repos"] = verify_root_info["unpinned"]
         if not result.get("success"):
             job.error = (result.get("stderr") or "")[-1000:] or "verification-loop session failed"
         storage.save_job(job)
@@ -1312,6 +1373,29 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
         job.error = str(exc)[:1000]
         storage.save_job(job)
         raise
+    finally:
+        # D11/D14: verify roots are ephemeral — evidence is copied into the
+        # job's durable logs dir, then the root + registrations reclaimed.
+        if verify_root_info is not None:
+            try:
+                from src.git import worktree_runs as wr
+                from src.job_queue.process_tracking import kill_tree, pid_alive
+                for pid in storage.tracked_pids(job_id):
+                    if pid_alive(pid):
+                        kill_tree(pid)
+                storage.clear_process(job_id)
+                if job.logs_path:
+                    import shutil as _sh
+                    _sh.copytree(verify_root_info["evidence_dir"],
+                                 Path(job.logs_path) / "verify-evidence",
+                                 dirs_exist_ok=True)
+                wr.reclaim_verify_root(str(workspace_dir), job.company,
+                                       job.project,
+                                       verify_root_info["allocated"],
+                                       verify_root_info["root"])
+            except Exception:
+                logger.warning("verify-root reclamation failed for %s",
+                               job_id, exc_info=True)
 
 
 def run_haibox_verify(job_id: str, storage: JobStorage):
