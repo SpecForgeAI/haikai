@@ -220,6 +220,21 @@ def sha256_tree(root: Path, rel_files: Iterable[str]) -> str:
     return h.hexdigest()
 
 
+def spec_planning_checksum(product_root: Path, spec: str) -> Optional[str]:
+    """sha256 over a spec's planning files (the repair mini-spec hand-off,
+    D8): the SAME function runs at dispatch (enqueue_cli, live product root)
+    and at allocation (seeded copy) — mismatch = tampered/partial hand-off,
+    fail fast (W5). None if the planning dir doesn't exist."""
+    planning = Path(product_root) / "haikai" / "specs" / spec / "planning"
+    if not planning.is_dir():
+        return None
+    rels = sorted(
+        str(p.relative_to(product_root)).replace("\\", "/")
+        for p in planning.rglob("*") if p.is_file()
+    )
+    return sha256_tree(product_root, rels)
+
+
 # ── D14 reclaim ──────────────────────────────────────────────────────────────
 
 def reclaim_allowed(job, storage,

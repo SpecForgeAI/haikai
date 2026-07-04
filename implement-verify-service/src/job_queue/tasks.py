@@ -246,6 +246,20 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                 allocated.append((live_repo, dest))
         run_product.mkdir(parents=True, exist_ok=True)  # polyrepo meta root
         wr.seed_run_root(live_product, run_product, scoped_specs)
+        # D8: a repair dispatch stamped sha256s over the mini-spec's planning
+        # files (enqueue_cli). Re-hash the SEEDED copies — mismatch means the
+        # hand-off was tampered with or partially written: fail fast (W5).
+        checksums = (job.request_payload or {}).get("spec_checksums") or {}
+        for spec in scoped_specs:
+            expected = checksums.get(spec)
+            if expected:
+                actual = wr.spec_planning_checksum(run_product, spec)
+                if actual != expected:
+                    raise wr.WorktreeAllocationError(
+                        f"mini-spec checksum mismatch for {spec}: the seeded "
+                        f"planning files do not match what the verify session "
+                        f"dispatched (expected {expected[:12]}…, got "
+                        f"{(actual or 'missing')[:12]}…) — refusing the repair")
         wr.transplant_session_dir(str(live_product), str(run_product))
     except wr.WorktreeAllocationError as exc:
         # W5 fail-fast — unwind anything half-allocated before reporting.

@@ -51,9 +51,11 @@ When a cell's latest verdict is `fail`, classify it (D4) **before** you touch `o
 
 1. **Anchor the attempt to the verdict ordinal.** Read the failing cell's latest `attempt` from `verdicts` (the atomic `MAX(attempt)` ordinal — it increments on each new CI verdict). Call `open_repair` with that `attempt`. If `open_repair` REFUSES (exit 1, "escalate to a human" — the cap, default 3, is hit), STOP: the gate stays red, the group + dependents park for a human. Do not dispatch.
 
-2. **Materialize the scoped fix as a fresh single-repo spec.** Pick `spec_name = <orig-spec>-repair-<repo>-attempt<N>` and write, under the failing repo's product root:
+2. **Materialize the scoped fix as a fresh single-repo spec.** Pick `spec_name = <orig-spec>-repair-<repo>-attempt<N>` and write it to the **LIVE product root** — `$API_WORKSPACE_DIR/<company>/<project>/haikai/specs/<spec_name>/planning/` — NEVER to your session's working directory if that is an ephemeral verify worktree (parallel-worktrees D8/W1: the live `haikai/` metadata tree is the durable hand-off home; an ephemeral tree is reclaimed and the repair run would find nothing). Files:
    - `haikai/specs/<spec_name>/planning/initialization.md` — the raw fix idea (the failure in one line).
    - `haikai/specs/<spec_name>/planning/requirements.md` — the SCOPED fix (`touched_repos: [<repo>]`), and a **Verification** section that names the EXACT failing verifier command for this cell (the pinned `inline_commands` / the CI step that went red, e.g. `pip-audit -r requirements.txt`) as the success criterion — so the implementer fixes the thing the gate actually checks, not the default test suite.
+
+   The enqueue CLI (step 3) stamps a sha256 over these planning files into the job payload; the repair run re-hashes its seeded copy and REFUSES the job on mismatch — so write the files completely BEFORE dispatching, and do not edit them after.
 
 3. **Dispatch via the enqueue CLI** (the verify-loop agent has no enqueue tool; this is the one sanctioned way — it only writes an ORCHESTRATION job to the jobs db the worker polls). You MUST include `repair_of` = THIS failing cell **with its COMPLETE identity including `verifier`** (D2b/I16 — a repair that doesn't name the failed verifier is under-specified and is REFUSED), and pass the same `--db <verification_db>` this command gave you (the CLI validates `repair_of` against the open repair record you just created — no match or ambiguity is refused; never guess):
    ```

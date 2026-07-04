@@ -224,6 +224,15 @@ def test_guard_zero_graph_event_writers_outside_flow_graph():
 def cli_env(tmp_path, monkeypatch):
     monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))
     monkeypatch.setenv("JOBS_DB_PATH", str(tmp_path / "jobs.db"))
+    # Parallel-worktrees D8: a repair dispatch checksums the mini-spec's
+    # planning files at the LIVE product root — materialize them like the
+    # verify session does before dispatching.
+    monkeypatch.setenv("API_WORKSPACE_DIR", str(tmp_path / "ws"))
+    planning = (tmp_path / "ws" / "acme" / "demo" / "haikai" / "specs"
+                / f"{SPEC}-repair" / "planning")
+    planning.mkdir(parents=True)
+    (planning / "initialization.md").write_text("fix idea\n")
+    (planning / "requirements.md").write_text("scoped fix\n")
     c = fg.connect()
     yield c
     c.close()
