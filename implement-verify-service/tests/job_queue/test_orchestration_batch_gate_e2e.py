@@ -42,10 +42,13 @@ def _drive(tmp_path, monkeypatch, repair_results: dict):
         (planning / "initialization.md").write_text("# init\n")
     create_active_session(ws, "acme", "shop")
 
-    # LLM steps: each step "succeeds"; implement-tasks writes the spec's file into the repo.
+    # LLM steps: each step "succeeds"; implement-tasks writes the spec's file into
+    # the ORCHESTRATOR'S working tree (self.project_dir) — under worktree mode
+    # (WORKTREE_RUNS=on default) that is the run worktree, not the live checkout,
+    # exactly like the real CLI session whose cwd is project_dir.
     def _step(self, chat_executor, step, command, spec_name):
         if step == 3:
-            (product / f"{spec_name}.txt").write_text(f"impl for {spec_name}\n")
+            (Path(self.project_dir) / f"{spec_name}.txt").write_text(f"impl for {spec_name}\n")
         return StepResult(step=step, command=command, status="success",
                           output_paths=[], execution_time_seconds=0.0, log_file="stub.log")
     monkeypatch.setattr(HaikaiOrchestrator, "_execute_step_with_session", _step)
@@ -58,7 +61,7 @@ def _drive(tmp_path, monkeypatch, repair_results: dict):
     # the push/PR boundary — spy: did the MR path get taken at all?
     finalize_calls: list = []
     monkeypatch.setattr(tasks, "_finalize_batch_git",
-                        lambda gc, targets, results, batch_name, names: finalize_calls.append(batch_name))
+                        lambda gc, targets, results, batch_name, names, **kw: finalize_calls.append(batch_name))
     monkeypatch.setattr(tasks, "_restore_session", lambda *a, **k: None)
 
     storage = JobStorage(str(tmp_path / "jobs.db"))

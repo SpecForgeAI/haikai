@@ -222,6 +222,12 @@ class HaikaiOrchestrator:
                 anthropic_api_key=self.anthropic_api_key,
                 session_uuid=self.session_id,
             )
+            # Parallel-worktrees D13: forward the job runner's pid-tracking
+            # callback so the CLI subprocess tree is a killable, job-owned
+            # handle (cancel watchdog). Optional attribute — absent outside
+            # the job queue.
+            if getattr(self, "on_spawn", None):
+                chat_executor.on_spawn = self.on_spawn
 
             # Process each spec intent
             for spec_idx, spec_intent in enumerate(self.request.spec_intents):
@@ -689,6 +695,12 @@ class HaikaiOrchestrator:
                 anthropic_api_key=self.anthropic_api_key,
                 session_uuid=self.session_id,
             )
+            # Parallel-worktrees D13: forward the job runner's pid-tracking
+            # callback so the CLI subprocess tree is a killable, job-owned
+            # handle (cancel watchdog). Optional attribute — absent outside
+            # the job queue.
+            if getattr(self, "on_spawn", None):
+                chat_executor.on_spawn = self.on_spawn
 
             for spec_idx, spec_intent in enumerate(self.request.spec_intents):
                 spec_name = spec_intent.spec_name

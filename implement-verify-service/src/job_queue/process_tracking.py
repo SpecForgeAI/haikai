@@ -95,17 +95,16 @@ def job_liveness_loop(storage, job_id: str, stop: "threading.Event",
             status = getattr(job, "status", None)
             status = status.value if hasattr(status, "value") else status
             if job and status == JobStatus.CANCELLING.value:
-                pid = storage.tracked_pid(job_id)
-                if pid is not None:
+                pids = storage.tracked_pids(job_id)
+                for pid in pids:
                     logger.info("job %s CANCELLING (%s): killing tracked tree pid=%s",
                                 job_id, owner, pid)
                     kill_tree(pid)
                     wait_dead(pid)
-                    storage.clear_process(job_id)
-                # Confirm only after the tree is dead (or none was tracked —
-                # interim lazy-cancel path: cooperative stop at boundaries).
-                if pid is not None or storage.tracked_pid(job_id) is None:
-                    storage.mark_cancelled(job_id)
+                storage.clear_process(job_id)
+                # Confirm only after every tracked tree is dead (or none was
+                # tracked — interim lazy-cancel: cooperative stop at boundaries).
+                storage.mark_cancelled(job_id)
                 return
         except Exception:
             logger.warning("cancel watchdog error for %s", job_id, exc_info=True)

@@ -102,12 +102,33 @@ class JobStorage:
             # liveness is heartbeat-based, never PID.
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS job_processes (
-                    job_id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL,
                     pid INTEGER NOT NULL,
                     owner TEXT,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, pid)
                 )
             """)
+            # Migration: the first cut had job_id as sole PK — one tracked pid
+            # per job. Per-spec parallel mode (D1) runs N concurrent sessions
+            # per job, so the key is composite. Rebuild if the old shape exists.
+            cursor.execute("PRAGMA table_info(job_processes)")
+            pk_cols = [r[1] for r in cursor.fetchall() if r[5] > 0]
+            if pk_cols == ["job_id"]:
+                cursor.execute("ALTER TABLE job_processes RENAME TO job_processes_old")
+                cursor.execute("""
+                    CREATE TABLE job_processes (
+                        job_id TEXT NOT NULL,
+                        pid INTEGER NOT NULL,
+                        owner TEXT,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (job_id, pid)
+                    )
+                """)
+                cursor.execute(
+                    "INSERT OR IGNORE INTO job_processes "
+                    "SELECT job_id, pid, owner, updated_at FROM job_processes_old")
+                cursor.execute("DROP TABLE job_processes_old")
             conn.commit()
     
     def save_job(self, job: Job):
@@ -341,15 +362,29 @@ class JobStorage:
             conn.commit()
 
     def tracked_pid(self, job_id: str) -> Optional[int]:
+        """Most recently tracked pid (single-session jobs). Per-spec parallel
+        jobs have several — use tracked_pids for kill loops."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT pid FROM job_processes WHERE job_id = ?", (job_id,)
+                "SELECT pid FROM job_processes WHERE job_id = ? "
+                "ORDER BY updated_at DESC LIMIT 1", (job_id,)
             ).fetchone()
         return row[0] if row else None
 
-    def clear_process(self, job_id: str) -> None:
+    def tracked_pids(self, job_id: str) -> List[int]:
         with self._connect() as conn:
-            conn.execute("DELETE FROM job_processes WHERE job_id = ?", (job_id,))
+            rows = conn.execute(
+                "SELECT pid FROM job_processes WHERE job_id = ?", (job_id,)
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def clear_process(self, job_id: str, pid: Optional[int] = None) -> None:
+        with self._connect() as conn:
+            if pid is None:
+                conn.execute("DELETE FROM job_processes WHERE job_id = ?", (job_id,))
+            else:
+                conn.execute("DELETE FROM job_processes WHERE job_id = ? AND pid = ?",
+                             (job_id, pid))
             conn.commit()
 
     def cleanup_old_jobs(self, days: int = 7):
