@@ -814,9 +814,21 @@ def _finalize_job(job, storage: JobStorage, response, job_id: str, extra: dict |
             f"Job {job_id} was cancelled during execution; preserving cancel status"
         )
         return
-    job.status = JobStatus.COMPLETED
+    # Map the orchestration outcome onto the job STATUS — the only signal the
+    # UI (and any /api/v2/jobs poller) reads. A failed run must report FAILED,
+    # not COMPLETED-with-success:false-buried-in-result: the frontend gates its
+    # "Part N implementation completed" + increment badge purely on job.status
+    # (ImplementationAssistantPanel startJobPolling), so an unconditional
+    # COMPLETED here masked failures as success in the UI. Mirrors the
+    # success-gated status the verify + per-spec paths already use.
+    run_ok = getattr(response, "success", True) is not False
+    job.status = JobStatus.COMPLETED if run_ok else JobStatus.FAILED
     job.completed_at = datetime.now(timezone.utc)
     job.result = {**response.dict(), **extra} if extra else response.dict()
+    if not run_ok and not job.error:
+        errs = list(getattr(response, "errors", None) or [])
+        job.error = ("; ".join(str(e) for e in errs)[:1000]
+                     or "orchestration did not complete successfully")
     storage.save_job(job)
 
 
