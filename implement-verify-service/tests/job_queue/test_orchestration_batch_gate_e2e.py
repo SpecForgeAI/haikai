@@ -46,7 +46,7 @@ def _drive(tmp_path, monkeypatch, repair_results: dict):
     # the ORCHESTRATOR'S working tree (self.project_dir) — under worktree mode
     # (WORKTREE_RUNS=on default) that is the run worktree, not the live checkout,
     # exactly like the real CLI session whose cwd is project_dir.
-    def _step(self, chat_executor, step, command, spec_name):
+    def _step(self, chat_executor, step, command, spec_name, is_new_session=False):
         if step == 3:
             (Path(self.project_dir) / f"{spec_name}.txt").write_text(f"impl for {spec_name}\n")
         return StepResult(step=step, command=command, status="success",

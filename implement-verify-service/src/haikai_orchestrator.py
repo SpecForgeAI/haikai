@@ -176,6 +176,7 @@ class HaikaiOrchestrator:
         start_from_step: int = 1,
         on_step_complete: Optional[Callable[[int, str], None]] = None,
         on_spec_complete: Optional[Callable[[str, int], bool]] = None,
+        fresh_session_start: bool = False,
     ) -> OrchestrationResponse:
         """
         Execute the complete Haikai workflow for all spec intents.
@@ -321,12 +322,21 @@ class HaikaiOrchestrator:
 
                     logger.info(f"Spec '{spec_name}' - Step {step}: {description} - Executing {command}")
 
-                    # Execute command using the shape-spec session
+                    # Worktree runs start step 1 FRESH (a new session in the
+                    # worktree) rather than resuming the shape-spec session:
+                    # a resumed session's conversation context is anchored to
+                    # the live-tree cwd, so /write-spec writes spec.md outside
+                    # the worktree. requirements.md is already seeded into the
+                    # worktree — all write-spec needs. Steps 2-3 resume this
+                    # fresh session (created in-worktree by step 1).
+                    is_new_session = fresh_session_start and step == start_from_step
+
                     step_result = self._execute_step_with_session(
                         chat_executor=chat_executor,
                         step=step,
                         command=command,
-                        spec_name=spec_name
+                        spec_name=spec_name,
+                        is_new_session=is_new_session,
                     )
 
                     all_results.append(step_result)
@@ -426,7 +436,8 @@ class HaikaiOrchestrator:
         chat_executor,  # ClaudeChatExecutor or KiroChatExecutor (CHAT_EXECUTOR-selected)
         step: int,
         command: str,
-        spec_name: str
+        spec_name: str,
+        is_new_session: bool = False,
     ) -> StepResult:
         """
         Execute a single workflow step by resuming the shape-spec Claude CLI session.
@@ -456,6 +467,7 @@ class HaikaiOrchestrator:
         try:
             for event in chat_executor.stream_message(
                 prompt,
+                is_new_session=is_new_session,
                 command_name=command_name
             ):
                 event_type = event.get("type")

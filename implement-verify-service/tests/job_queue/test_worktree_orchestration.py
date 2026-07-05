@@ -44,7 +44,15 @@ def _harness(tmp_path, monkeypatch, specs, fail_specs=()):
         (planning / "initialization.md").write_text("# init\n")
     create_active_session(ws, "acme", "shop")
 
-    def _step(self, chat_executor, step, command, spec_name):
+    def _step(self, chat_executor, step, command, spec_name, is_new_session=False):
+        # Worktree runs must start step 1 FRESH in the worktree (a resumed
+        # shape-spec session is anchored to the live tree). Legacy live-tree
+        # runs (no "/wt/" in the workspace) keep resuming, so gate the check on
+        # actually being in a worktree.
+        if step == 1 and "/wt/" in str(self.workspace_dir).replace("\\", "/"):
+            assert is_new_session, (
+                "worktree run did not start /write-spec fresh "
+                "(is_new_session=False) — it would resume the live-tree session")
         if spec_name in fail_specs and step == 3:
             raise RuntimeError(f"injected failure for {spec_name}")
         if step == 3:

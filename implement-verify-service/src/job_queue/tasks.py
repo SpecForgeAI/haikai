@@ -893,24 +893,16 @@ def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
         if err:
             return {"spec": spec_name, "success": False, "error": err}
         try:
-            # Each spec resumes ITS OWN shaped session (the batch shape-spec
-            # persisted one per spec folder), not the run-level active session.
-            # Restore its transcript into the worktree's CLI session dir so
-            # --resume resolves there.
-            spec_session = _resolve_spec_session(run_ws, sub_request, spec_name)
-            run_session = spec_session or intent.session_id or session_id
-            if spec_session:
-                try:
-                    from ..api import create_chat_executor
-                    _rx = create_chat_executor(
-                        company=sub_request.company, project=sub_request.project,
-                        workspace_dir=Path(run_ws),
-                        anthropic_api_key=anthropic_api_key or "",
-                        session_uuid=spec_session)
-                    _rx.restore_session_from_spec()
-                except Exception:
-                    logger.warning("per-spec session restore failed (%s)",
-                                   spec_name, exc_info=True)
+            # Each spec executes step 1 (/write-spec) FRESH in its own worktree
+            # rather than resuming its shaped session. A resumed session is
+            # anchored to the live-tree cwd (its transcript records live-tree
+            # paths), so /write-spec follows that context and writes spec.md
+            # OUTSIDE the worktree. requirements.md is already SEEDED into the
+            # worktree by seed_run_root — all write-spec needs. A fresh session
+            # id isolates this spec's transcript in its worktree; steps 2-3
+            # resume it.
+            import uuid as _uuid
+            run_session = str(_uuid.uuid4())
             orchestrator = _setup_orchestrator_context(
                 sub_request, run_ws, run_session,
                 anthropic_api_key, logs_workspace=workspace_dir)
@@ -929,7 +921,8 @@ def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
                 return any(r.get("error") for r in git_results[before:])
 
             response = orchestrator.run_workflow(
-                start_from_step=1, on_spec_complete=on_spec_complete)
+                start_from_step=1, on_spec_complete=on_spec_complete,
+                fresh_session_start=True)
             errors = list(response.errors or [])
             if git_err:
                 errors.append(git_err)
@@ -1063,6 +1056,27 @@ def run_orchestration(job_id: str, storage: JobStorage):
             if wt_err:
                 raise ValueError(f"worktree allocation failed: {wt_err}")
         ws_for_run = run_workspace or workspace_dir
+        start_step = job.resume_from_step or 1
+
+        # Worktree runs execute step 1 (/write-spec) FRESH in the worktree
+        # rather than resuming the shape-spec session. A resumed session's
+        # conversation history is anchored to the LIVE-TREE cwd, so /write-spec
+        # follows that context and writes spec.md OUTSIDE the worktree — the
+        # worktree output-check then fails (confirmed live driving the UI:
+        # 56/67 transcript messages recorded the live-tree cwd, and Claude
+        # wrote spec.md there even with the process cwd set to the worktree and
+        # the transcript re-homed). requirements.md is already SEEDED into the
+        # worktree by seed_run_root — all write-spec needs. A fresh session id
+        # keeps this run's transcript isolated in the worktree; steps 2-3 then
+        # resume it. Legacy live-tree runs (no worktree) keep resuming the
+        # shaped session; resumes (start_step > 1) reuse the surviving worktree
+        # session and are handled by _restore_session below.
+        import uuid as _uuid
+        run_session_id = session_id
+        fresh_session_start = False
+        if run_workspace and start_step <= 1:
+            run_session_id = str(_uuid.uuid4())
+            fresh_session_start = True
 
         # SUMMARY: orchestration started — N specs. impl-verify knows
         # company/project + job_id; project is the workflow-spanning grouping key,
@@ -1073,7 +1087,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
         )
 
         orchestrator = _setup_orchestrator_context(
-            request, ws_for_run, session_id, anthropic_api_key,
+            request, ws_for_run, run_session_id, anthropic_api_key,
             logs_workspace=workspace_dir,
         )
         # D13: every CLI spawn registers its pid against the job so the
@@ -1083,10 +1097,9 @@ def run_orchestration(job_id: str, storage: JobStorage):
         job.logs_path = str(orchestrator.orchestration_log_dir)
         storage.save_job(job)
 
-        start_step = job.resume_from_step or 1
         _restore_session(
             job_id, start_step, request, ws_for_run,
-            session_id, anthropic_api_key,
+            run_session_id, anthropic_api_key,
         )
 
         def on_step_complete(step_num: int, step_description: str):
@@ -1194,6 +1207,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 start_from_step=start_step,
                 on_step_complete=on_step_complete,
                 on_spec_complete=on_spec_complete,
+                fresh_session_start=fresh_session_start,
             )
             # Batch mode: all specs have committed onto the one shared branch; now
             # push it + open exactly ONE PR per repo target. Inside the lock (R8) so
@@ -1870,11 +1884,21 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
     # DEPLOYED wins on a base_url; if any spec was committed the run IMPLEMENTED
     # (errors attached as warnings); ERROR is reserved for nothing-built.
     committed = bool(spec_git) and any(r.get("commit_sha") for r in spec_git)
+    # A failed run must NEVER report IMPLEMENTED just because no per-spec git
+    # error was recorded: a workflow step failure (e.g. /write-spec producing no
+    # spec.md) lives on `response.success`, not on `response.errors`. The old
+    # else-branch masked that as IMPLEMENTED — the callback then told the UI the
+    # feature was built when nothing was. Surfaced by the single-spec worktree
+    # write-spec landing in the live tree. Fold a reason in so `error` isn't blank.
+    run_ok = getattr(response, "success", True) is not False
+    if not run_ok and not response.errors:
+        response.errors = ["orchestration did not complete successfully "
+                           "(a workflow step failed — see orchestration logs)"]
     if deploy and deploy.get("base_url"):
         outcome = outcomes.DEPLOYED
     elif committed:
         outcome = outcomes.IMPLEMENTED
-    elif response.errors:
+    elif response.errors or not run_ok:
         outcome = outcomes.ERROR
     else:
         outcome = outcomes.IMPLEMENTED
