@@ -281,7 +281,6 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                         f"planning files do not match what the verify session "
                         f"dispatched (expected {expected[:12]}…, got "
                         f"{(actual or 'missing')[:12]}…) — refusing the repair")
-        wr.transplant_session_dir(str(live_product), str(run_product))
     except wr.WorktreeAllocationError as exc:
         # W5 fail-fast — unwind anything half-allocated before reporting.
         with suppress(Exception):
@@ -289,13 +288,15 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                                   locals().get("allocated", []), run_ws)
         return None, [], str(exc)
 
+    # Executor-agnostic worktree prep (D7): trust + session re-homing per
+    # the active backend (claude seeds ~/.claude.json + transplants its
+    # encoded session dir; kiro no-ops — it trusts via --trust-all-tools and
+    # keys sessions by cwd). NEVER hardcode one CLI here.
+    from src.chat.worktree_prep import prepare_worktree
+    prepare_worktree(run_product, live_product=live_product)
+
     # worktree_root is always the JOB-level root (wt/<id8>) — per-spec mode
     # nests spec roots under it, and the sweeper resolves by this one path.
-    # Claude CLI treats a fresh worktree as untrusted → seed trust for the
-    # session cwd (the product root inside the worktree) so settings.json
-    # permissions are honored and non-interactive sessions run.
-    wr.trust_worktree_path(run_product)
-
     job.worktree_root = str(wr.run_root(workspace_dir, job.job_id))
     job.run_branch = (f"feature/{spec_scope}" if spec_scope
                       else _run_branch_for(request, None))
@@ -1430,8 +1431,10 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
                     verify_root_info["repos"],
                     verify_root_info["evidence_dir"] / "setup")
                 session_dir = verify_root_info["root"]
-                from src.git import worktree_runs as _wr_trust
-                _wr_trust.trust_worktree_path(verify_root_info["root"])
+                # Verify runs a FRESH session (D10.2, no --resume of a shape
+                # session) → prep for trust/skills only, no session re-home.
+                from src.chat.worktree_prep import prepare_worktree
+                prepare_worktree(verify_root_info["root"], live_product=None)
                 job.worktree_root = str(verify_root_info["root"])
                 storage.save_job(job)
                 extra_cmd = (
