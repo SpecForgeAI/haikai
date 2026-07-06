@@ -46,6 +46,13 @@ export interface BookOfWorkItem {
    * mechanism (no change to how it is written).
    */
   discoveryFindingReferences?: string[] | null;
+  /**
+   * Item tags from the plan (Spec 2026-07-06-g): the driver reads these to
+   * skip MANUAL-GATE items (`execution:manual-gate`) — human/wizard work
+   * (baseline capture, parity sign-off) that is never dispatched to the
+   * implement-verify service and never required to be spec-ready.
+   */
+  tags?: string[] | null;
 }
 
 /** The generated Book of Work draft (AMS `generated_migration_books_of_work`). */

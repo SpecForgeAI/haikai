@@ -146,6 +146,10 @@ export const DELIVERY_STREAM_OPTIONS: ReadonlyArray<{ key: string; label: string
     key: 'api_soap_integration_compatibility',
     label: 'API / SOAP integration compatibility',
   },
+  {
+    key: 'internal_processing_implementation',
+    label: 'Internal processing (jobs / listeners / batch)',
+  },
   { key: 'migration_test_pack', label: 'Migration Test Pack' },
   { key: 'reconciliation_reporting', label: 'Reconciliation / reporting' },
   {
@@ -340,6 +344,10 @@ export function deriveDefaultDeliveryStreams(
   if (readiness?.apiReadiness) {
     out.add('target_service_api_implementation');
     out.add('api_soap_integration_compatibility');
+    // Internal (non-HTTP) processing rides the same readiness signal — the
+    // committed code surface is what both partitions derive from
+    // (Spec 2026-07-06-g).
+    out.add('internal_processing_implementation');
   }
   if (readiness?.dataReadiness) {
     out.add('target_database_schema_implementation');

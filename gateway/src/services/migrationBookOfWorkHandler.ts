@@ -66,6 +66,13 @@ import {
   buildDbStreamSkeleton,
   defaultFetchPackView,
 } from './migrationDbPackPlanner';
+import {
+  CODE_DELIVERY_STREAMS,
+  CodeModelView,
+  FetchCodeModelViewFn,
+  buildCodeStreamSkeleton,
+  defaultFetchCodeModelView,
+} from './migrationCodeStreamPlanner';
 
 /**
  * The delivery streams whose generation consumes the DB migration pack
@@ -462,6 +469,9 @@ const STREAM_SEQUENCE_RANK: Record<string, number> = {
   target_frontend_implementation: 4,
   api_soap_integration_compatibility: 5,
   data_migration: 6,
+  // Internal processing shares rank 6 (after the API streams, alongside data
+  // migration) — Spec 2026-07-06-g; stable sort keeps wizard order for ties.
+  internal_processing_implementation: 6,
   migration_test_pack: 8,
   reconciliation_reporting: 9,
   cutover_rollback_decommission: 10,
@@ -750,6 +760,12 @@ export interface MigrationBookOfWorkHandlerDeps {
    * prerequisite skeleton (never freeform LLM).
    */
   fetchPackView?: FetchPackViewFn;
+  /**
+   * Committed-model reader for the deterministic CODE skeletons
+   * (Spec 2026-07-06-g). Injected in tests; a read failure degrades the code
+   * streams to the prerequisite skeleton (never freeform LLM).
+   */
+  fetchCodeModelView?: FetchCodeModelViewFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -996,6 +1012,32 @@ export async function generateMigrationBookOfWork(
     // config unavailable in some unit-test contexts — keep the default
   }
 
+  // ----- Model view for the deterministic CODE skeletons (Spec 2026-07-06-g) -----
+  //
+  // Fetched ONCE and shared by the three code streams (REST / SOAP /
+  // internal). A read failure degrades to the PREREQUISITE skeleton — the
+  // code streams are NEVER LLM-generated and never silently freeform.
+  const fetchCodeModelView = deps.fetchCodeModelView ?? defaultFetchCodeModelView;
+  const codeStreamSelected = (wizardAnswers?.deliveryStreams ?? []).some((s) =>
+    CODE_DELIVERY_STREAMS.includes(s)
+  );
+  let codeModelView: CodeModelView | null = null;
+  if (codeStreamSelected) {
+    codeModelView = await fetchCodeModelView(projectId, currentArchitectureId);
+    if (codeModelView === null) {
+      warnings.push(
+        'Committed architecture model could not be read; the code delivery streams will ' +
+          'carry prerequisite stories instead of model-driven work.'
+      );
+    }
+  }
+  let apiClusterCap = 15;
+  try {
+    apiClusterCap = getConfig().migrationPlanApiClusterMaxEndpoints;
+  } catch {
+    // config unavailable in some unit-test contexts — keep the default
+  }
+
   // ----- Accepted-findings coverage snapshot (Spec 2026-06-11) -----
   //
   // Fetched via the DEDICATED paged AMS read (status=approved, two
@@ -1149,6 +1191,23 @@ export async function generateMigrationBookOfWork(
           packView: dbPackView,
           ensureOutcome: packOutcome,
           clusterCap: dbClusterCap,
+        });
+        return { stream, book };
+      }
+
+      // Deterministic CODE path (Spec 2026-07-06-g, Code-Tier Oracle
+      // Program): the three code streams are generated FROM the committed
+      // model in code — no LLM call, interface-clustered stories, model
+      // unavailable → prerequisite skeleton.
+      if (CODE_DELIVERY_STREAMS.includes(stream)) {
+        console.log(
+          `[diag-gateway] pm_migration_delivery_plan stage=deterministic_code_skeleton ` +
+            `projectId=${projectId} stream=${stream} endpoints=${codeModelView?.endpoints.length ?? 'none'}`
+        );
+        const book = buildCodeStreamSkeleton({
+          stream,
+          view: codeModelView,
+          clusterCap: apiClusterCap,
         });
         return { stream, book };
       }

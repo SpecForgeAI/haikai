@@ -48,7 +48,8 @@ export type MigrationBookOfWorkItemType =
   (typeof MIGRATION_BOOK_OF_WORK_ITEM_TYPES)[number];
 
 /**
- * The 14 workstream values per Q-7 — 13 domain values plus the `unknown`
+ * The 15 workstream values — 14 domain values (13 per Q-7 plus
+ * `internal_processing_implementation`, Spec 2026-07-06-g) and the `unknown`
  * sentinel. The sentinel is used ONLY when no other workstream applies; the
  * prompt restricts its use and the review-workspace filter surfaces items
  * tagged `unknown` so reviewers can reclassify them.
@@ -60,6 +61,10 @@ export const MIGRATION_BOOK_OF_WORK_WORKSTREAMS = [
   'target_infrastructure_environment_implementation',
   'data_migration',
   'api_soap_integration_compatibility',
+  // Internal (non-HTTP) functionality stream — scheduled jobs, message
+  // listeners, batch entrypoints (Spec 2026-07-06-g, Code-Tier Oracle
+  // Program). Planned deterministically like the API streams.
+  'internal_processing_implementation',
   'migration_test_pack',
   'reconciliation_reporting',
   'cutover_rollback_decommission',

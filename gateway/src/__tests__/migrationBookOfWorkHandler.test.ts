@@ -468,8 +468,12 @@ describe('Migration Delivery Plan gateway orchestration handler (Spec 2026-05-17
 // ---------------------------------------------------------------------------
 
 describe('Migration Delivery Plan — per-stream split generation', () => {
+  // NOTE (Spec 2026-07-06-g): these suites pin the GENERIC per-stream LLM
+  // machinery, so they select streams that still take the LLM path — the API
+  // streams are deterministically planned now (see
+  // migrationCodeStreamPlanner.test.ts / migrationBookOfWorkCodeExpansion.test.ts).
   const STREAMS = [
-    'target_service_api_implementation',
+    'target_frontend_implementation',
     'target_infrastructure_environment_implementation',
     'cutover_rollback_decommission',
   ];
@@ -520,7 +524,7 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
     // Namespaced ids: the per-stream hierarchies stay intact and never collide.
     const ids = postedBody.book_of_work_json.items.map((i: { id: string }) => i.id);
     expect(new Set(ids).size).toBe(12);
-    expect(ids).toContain('target_service_api_implementation:I1');
+    expect(ids).toContain('target_frontend_implementation:I1');
     expect(ids).toContain('cutover_rollback_decommission:S1');
     expect(result.draftId).toBe('draft-split');
   });
@@ -648,8 +652,12 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
 // ---------------------------------------------------------------------------
 
 describe('Migration Delivery Plan — phase-1 skeleton generation (Spec 2026-06-11, Task Group 3)', () => {
+  // NOTE (Spec 2026-07-06-g): these suites pin the GENERIC per-stream LLM
+  // machinery, so they select streams that still take the LLM path — the API
+  // streams are deterministically planned now (see
+  // migrationCodeStreamPlanner.test.ts / migrationBookOfWorkCodeExpansion.test.ts).
   const STREAMS = [
-    'target_service_api_implementation',
+    'target_frontend_implementation',
     'target_infrastructure_environment_implementation',
     'cutover_rollback_decommission',
   ];

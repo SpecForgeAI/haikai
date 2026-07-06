@@ -121,7 +121,7 @@ function makeDeps(
   const createDraftCalls: Array<Record<string, unknown>> = [];
   const callLlm = jest
     .fn()
-    .mockResolvedValue({ content: llmSkeletonJson('target_service_api_implementation') });
+    .mockResolvedValue({ content: llmSkeletonJson('target_frontend_implementation') });
   const fetchPackView = jest.fn().mockResolvedValue(packView);
   const deps: MigrationBookOfWorkHandlerDeps = {
     fetchContext: jest.fn().mockResolvedValue(CONTEXT),
@@ -244,7 +244,7 @@ describe('Create Migration Plan × DB pack wiring (Specs 2026-07-02-a/-b)', () =
       {
         ...INPUT,
         wizardAnswers: {
-          deliveryStreams: ['data_migration', 'target_service_api_implementation'],
+          deliveryStreams: ['data_migration', 'target_frontend_implementation'],
         },
       },
       deps
@@ -253,7 +253,7 @@ describe('Create Migration Plan × DB pack wiring (Specs 2026-07-02-a/-b)', () =
     expect(callLlm).toHaveBeenCalledTimes(1);
     const items = postedItems(createDraftCalls[0]);
     expect(items.some((i) => i.id.startsWith('data_migration:'))).toBe(true);
-    expect(items.some((i) => i.id.startsWith('target_service_api_implementation:'))).toBe(true);
+    expect(items.some((i) => i.id.startsWith('target_frontend_implementation:'))).toBe(true);
   });
 
   it('never invokes ensurePack/fetchPackView when no DB stream is selected and omits the generationInputs key', async () => {
@@ -265,7 +265,7 @@ describe('Create Migration Plan × DB pack wiring (Specs 2026-07-02-a/-b)', () =
     await generateMigrationBookOfWork(
       {
         ...INPUT,
-        wizardAnswers: { deliveryStreams: ['target_service_api_implementation'] },
+        wizardAnswers: { deliveryStreams: ['target_frontend_implementation'] },
       },
       deps
     );

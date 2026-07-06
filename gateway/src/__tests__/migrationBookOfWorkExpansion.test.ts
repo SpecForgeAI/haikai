@@ -92,7 +92,12 @@ import { generateMigrationBookOfWork } from '../services/migrationBookOfWorkHand
 import { migrationBookOfWorkRouter } from '../routes/migrationBookOfWork';
 import { LlmConcurrencyPool } from '../services/llmConcurrencyPool';
 
-const STREAM = 'target_service_api_implementation';
+// NOTE (Spec 2026-07-06-g): the API streams expand DETERMINISTICALLY now
+// (migrationCodeStreamPlanner) — these suites pin the GENERIC LLM
+// batching/judge/bespoke machinery, so they run on a stream that still takes
+// the LLM path. The injected `fetchEpicInventory` keeps the api_endpoint-kind
+// fixtures meaningful regardless of the stream name.
+const STREAM = 'target_frontend_implementation';
 const EPIC_ID = `${STREAM}:E1`;
 const FEATURE_ID = `${STREAM}:F1`;
 

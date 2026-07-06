@@ -98,6 +98,13 @@ import {
   ensureFreshDbMigrationPack,
 } from './dbMigrationPackEnsure';
 import {
+  CODE_DELIVERY_STREAMS,
+  CodeModelView,
+  FetchCodeModelViewFn,
+  buildCodeEpicStories,
+  defaultFetchCodeModelView,
+} from './migrationCodeStreamPlanner';
+import {
   FetchPackViewFn,
   PackView,
   buildDbEpicStories,
@@ -236,6 +243,14 @@ export interface MigrationBookOfWorkExpansionDeps {
   fetchPackView?: FetchPackViewFn;
   /** Cluster-cap override for tests (defaults to config knob, then 25). */
   dbClusterCapOverride?: number;
+  /**
+   * Committed-model reader for the deterministic CODE-epic expansion
+   * (Spec 2026-07-06-g). Injected in tests; a read failure THROWS (epic
+   * `failed`, retryable) — expansion never proceeds on a guessed model.
+   */
+  fetchCodeModelView?: FetchCodeModelViewFn;
+  /** API cluster-cap override for tests (defaults to config knob, then 15). */
+  apiClusterCapOverride?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -643,6 +658,10 @@ const INVENTORY_STREAM_SOURCES: Record<
   string,
   { domain: string; types: string[]; kind: InventoryWorkItemKind }
 > = {
+  // NOTE (Spec 2026-07-06-g): the two API entries below are UNREACHABLE in
+  // production — the deterministic code-epic branch intercepts those streams
+  // before fetchEpicInventory runs (same situation as the DB entries after
+  // Spec 2026-07-02-b). Kept for the legacy tests + as cleanup candidates.
   target_service_api_implementation: {
     domain: 'Applications',
     types: ['Endpoints'],
@@ -994,6 +1013,8 @@ async function runEpicPipeline(args: {
     ensurePack: EnsurePackFn;
     fetchPackView: FetchPackViewFn;
     dbClusterCap: number;
+    fetchCodeModelView: FetchCodeModelViewFn;
+    apiClusterCap: number;
   };
 }): Promise<MigrationBookOfWorkItem[]> {
   const { projectId, book, epic, features, stream, deps } = args;
@@ -1044,6 +1065,31 @@ async function runEpicPipeline(args: {
       packView,
       ensureOutcome,
       clusterCap: deps.dbClusterCap,
+      maxSequence,
+    });
+  }
+
+  // ----- Deterministic CODE-epic expansion (Spec 2026-07-06-g) -----
+  //
+  // Code epics NEVER take the LLM paths below. Stories are stamped from the
+  // feature extras the skeleton planner wrote; the fresh model read feeds the
+  // DRIFT check only (model changed since skeleton → throw "regenerate").
+  // A model read failure THROWS (epic `failed`, retryable) — never a guess.
+  if (CODE_DELIVERY_STREAMS.includes(stream)) {
+    console.log(
+      `[diag-gateway] pm_migration_delivery_plan stage=expansion_code_deterministic ` +
+        `projectId=${projectId} epicId=${epic.id} stream=${stream}`
+    );
+    const view: CodeModelView | null = await deps.fetchCodeModelView(
+      projectId,
+      book.currentArchitectureId ?? ''
+    );
+    return buildCodeEpicStories({
+      epic,
+      features,
+      stream,
+      view,
+      clusterCap: deps.apiClusterCap,
       maxSequence,
     });
   }
@@ -1730,6 +1776,15 @@ export async function expandMigrationBookOfWorkEpic(
       dbClusterCap = 25; // config unavailable in some unit-test contexts
     }
   }
+  const fetchCodeModelView = deps.fetchCodeModelView ?? defaultFetchCodeModelView;
+  let apiClusterCap = deps.apiClusterCapOverride;
+  if (apiClusterCap === undefined) {
+    try {
+      apiClusterCap = getConfig().migrationPlanApiClusterMaxEndpoints;
+    } catch {
+      apiClusterCap = 15; // config unavailable in some unit-test contexts
+    }
+  }
 
   console.log(
     `[diag-gateway] pm_migration_delivery_plan stage=expanding_epic projectId=${projectId} ` +
@@ -1788,6 +1843,8 @@ export async function expandMigrationBookOfWorkEpic(
           ensurePack,
           fetchPackView,
           dbClusterCap,
+          fetchCodeModelView,
+          apiClusterCap,
         },
       });
 
@@ -1798,7 +1855,11 @@ export async function expandMigrationBookOfWorkEpic(
       // no confirmed manifest or this epic is not the host (expand normally).
       // DB epics skip the gate outright (Spec 2026-07-02-b): the scaffold
       // maps only maven/npm ecosystems, so a DB epic can never host —
-      // skipping avoids a pointless AMS read per DB epic.
+      // skipping avoids a pointless AMS read per DB epic. CODE epics do NOT
+      // skip it (Spec 2026-07-06-g): a confirmed MAVEN manifest homes into
+      // the API workstream, whose epics are deterministic now — the scaffold
+      // feature+story inject onto the stream's lowest-sequence epic
+      // (foundations) and ride the same validate + atomic append.
       const scaffoldItems = DB_PACK_DELIVERY_STREAMS.includes(stream)
         ? []
         : await buildScaffoldInjectionForEpic({

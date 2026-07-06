@@ -62,6 +62,7 @@ export type MigrationBookOfWorkWorkstream =
   | 'target_infrastructure_environment_implementation'
   | 'data_migration'
   | 'api_soap_integration_compatibility'
+  | 'internal_processing_implementation'
   | 'migration_test_pack'
   | 'reconciliation_reporting'
   | 'cutover_rollback_decommission'
@@ -78,6 +79,7 @@ export const ALL_WORKSTREAMS: MigrationBookOfWorkWorkstream[] = [
   'target_infrastructure_environment_implementation',
   'data_migration',
   'api_soap_integration_compatibility',
+  'internal_processing_implementation',
   'migration_test_pack',
   'reconciliation_reporting',
   'cutover_rollback_decommission',
