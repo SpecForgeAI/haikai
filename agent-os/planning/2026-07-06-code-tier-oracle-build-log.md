@@ -87,3 +87,53 @@ G → H → L → M → J → K → N → I → F.
   confirm the drift throw surfaces as a retryable failed epic.
 - G-3: Migrate run over a plan with capture stories: confirm they are never dispatched
   and don't block the hard gate.
+
+---
+
+## Spec H — Verbatim Code-Spec Carriage (2026-07-06)
+
+**Status: BUILT + VERIFIED.**
+
+What landed: NEW `gateway/src/services/migrationCodeSpecCarriage.ts` (markers mapping,
+recognition, canonical-JSON serialization, one-full-model-read facts fetch + baseline
+items matched by method/path-template, canonical example selection per distinct status,
+deterministic spec-text assembly with unbreakable fences, trim ladder + omission
+manifest, manual-gate procedure text, honesty statuses) + shape-spec handler wiring
+(LoadedBookOfWorkItem markers via exported pure mapper; interception after the DB-pack
+carriage branch; `fetchCodeSpecFacts` DI seam). The LLM is never called on any carriage
+path.
+
+Verification: 13 new pins in `migrationCodeSpecCarriage.test.ts` (verbatim round-trip
+deep-equality incl. backtick-run fence safety; canonical example selection; state-delta
+not-captured marker; trim ladder keeps contracts+SQL and manifests every drop; honesty
+statuses incl. flagged-missing-baseline pass-through and model-drift naming; manual-gate
+procedure text with zero fact fetches; markers mapping both wire cases). Regression:
+shape-spec + carriage family 17 suites / 115 tests green; migration family 84 suites /
+552 tests green.
+
+Design decisions locked at build start (recon verified):
+
+1. **No new AMS reads for contracts/behaviour:** the full-model read already carries
+   `EndpointDto.{request_contract,response_contract,protocol_metadata_json}` and
+   `BusinessLogicDto.behavior` — the carriage fetches the full model and filters.
+2. **ZERO new AMS surface in H** (upgraded from the earlier plan): verified that the
+   full-model response ALSO carries `metaModel.relationships.endpoint_data_effects`
+   (`ModelService:1114` maps `findByModelFileId`), so endpoints+contracts, business
+   logics+behavior, AND data effects all come from ONE existing read. The dedicated
+   `EndpointDataEffectController` (scoped by-endpoint + REVERSE queries + index) is
+   wholly Spec F's, where it is actually required.
+3. **Baseline examples read exists:** `GET /api/projects/{p}/api-behaviour/baseline-items?baselineId=...`;
+   items matched to endpoints by method+path template.
+4. **Canonical-set approximation:** until Spec K persists rubric scores, "one example
+   per achieved rubric dimension" is approximated as one canonical example per DISTINCT
+   captured response status (happy-first ordering). Documented in-module; K upgrades it.
+5. **Flagged-story hybrid dropped:** Spec G made flagged stories deterministic, so H
+   carries them identically to cluster stories (no LLM anywhere on the carriage paths).
+6. **Manual-gate stories (capture/closure)** get deterministic PROCEDURE spec text
+   (facts from extras; no LLM) so their rows exist honestly even though never dispatched.
+7. Business-logic selection: behaviour blocks whose `behavior.method_id` matches a hop
+   `method_id` on the story endpoints' data-effect paths.
+8. Module: `gateway/src/services/migrationCodeSpecCarriage.ts` + loader extras mapping
+   via exported pure `codeCarriageMarkersFromBlob` (unit-tested); interception in the
+   shape-spec handler AFTER the DB-pack carriage branch; `fenceFor`/`languageFor`
+   re-exported from the DB carriage module.

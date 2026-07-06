@@ -139,14 +139,14 @@ export function selectCarriageFiles(
 // Spec text (pure, deterministic)
 // ---------------------------------------------------------------------------
 
-function fenceFor(content: string): string {
+export function fenceFor(content: string): string {
   // A fence one backtick longer than the longest run inside the content
   // (minimum 4) can never be terminated early by the content itself.
   const longest = content.match(/`+/g)?.reduce((m, r) => Math.max(m, r.length), 0) ?? 0;
   return '`'.repeat(Math.max(4, longest + 1));
 }
 
-function languageFor(path: string): string {
+export function languageFor(path: string): string {
   if (path.endsWith('.sql')) return 'sql';
   if (path.endsWith('.xml')) return 'xml';
   if (path.endsWith('.json')) return 'json';

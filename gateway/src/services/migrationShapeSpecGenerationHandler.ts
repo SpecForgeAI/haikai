@@ -106,6 +106,13 @@ import {
   runDbPackSpecCarriage,
 } from './migrationDbPackSpecCarriage';
 import {
+  FetchCodeSpecFactsFn,
+  codeCarriageMarkersFromBlob,
+  defaultFetchCodeSpecFacts,
+  isCodeCarriageStory,
+  runCodeSpecCarriage,
+} from './migrationCodeSpecCarriage';
+import {
   fetchMigrationSpecContext as defaultFetchMigrationSpecContext,
   FetchMigrationSpecContextInput,
   MigrationSpecContextDto,
@@ -348,6 +355,22 @@ export interface LoadedBookOfWorkItem {
   packId?: string | null;
   packFilePaths?: string[] | null;
   packFilePathPrefixes?: string[] | null;
+  /**
+   * Spec 2026-07-06-h: code-carriage markers stamped on the blob item by the
+   * deterministic code planner (Spec -g). A `provenance:plan-deterministic`
+   * story with `apiEndpointIds` runs the FULLY DETERMINISTIC code carriage —
+   * its spec text embeds the committed contracts, data-effect SQL, behaviour
+   * blocks, and captured baseline examples; no context resolver, no LLM.
+   * Manual-gate stories (`execution:manual-gate`) get deterministic
+   * procedure text.
+   */
+  codeStoryKind?: string | null;
+  apiInterfaceId?: string | null;
+  apiEndpointIds?: string[] | null;
+  baselineByEndpointId?: Record<string, string | null> | null;
+  flagReason?: string | null;
+  findingIds?: string[] | null;
+  protocol?: string | null;
 }
 
 export interface LoadedBookOfWork {
@@ -687,6 +710,12 @@ export interface ShapeSpecGenerationDeps {
    * GET /db-migration-packs/{packId}/files.
    */
   fetchPackFiles?: FetchPackFilesFn;
+  /**
+   * Facts reader for the deterministic code-story verbatim carriage
+   * (Spec 2026-07-06-h). Injected in tests; production reads the committed
+   * model + endpoint-data-effects + baseline-items.
+   */
+  fetchCodeSpecFacts?: FetchCodeSpecFactsFn;
   /** Override the system prompt (defaults to reading the markdown file). */
   systemPromptOverride?: string;
   /** Cross-story context injection (2026-05-20). */
@@ -901,6 +930,10 @@ const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfWorkId) 
         : Array.isArray(obj.pack_file_path_prefixes)
           ? (obj.pack_file_path_prefixes as unknown[]).map((p) => String(p))
           : null,
+      // Spec 2026-07-06-h: code-carriage markers (stamped by Spec -g's
+      // deterministic code planner). Pure mapping, unit-tested in the
+      // carriage module.
+      ...codeCarriageMarkersFromBlob(obj),
     });
   }
   return {
@@ -2190,6 +2223,27 @@ async function runSinglePassBatch(
         story,
         baseRow,
         fetchPackFiles: deps.fetchPackFiles ?? defaultFetchPackFiles,
+      });
+      perStoryResults.push(row);
+      logStoryResult(row);
+      continue;
+    }
+
+    // Spec 2026-07-06-h: code-story VERBATIM CARRIAGE — fully deterministic.
+    // The spec text embeds the committed contracts + data-effect SQL +
+    // behaviour blocks + captured baseline examples; manual-gate stories get
+    // deterministic procedure text. Context resolver, prompt, response
+    // validators and confidence downgrade are all bypassed; the LLM is never
+    // called. Missing facts -> insufficient_context (nothing silent).
+    if (isCodeCarriageStory(story)) {
+      const row = await runCodeSpecCarriage({
+        projectId,
+        currentArchitectureId: bow.currentArchitectureId,
+        story,
+        baseRow,
+        deps: {
+          fetchCodeSpecFacts: deps.fetchCodeSpecFacts ?? defaultFetchCodeSpecFacts,
+        },
       });
       perStoryResults.push(row);
       logStoryResult(row);
