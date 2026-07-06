@@ -25,18 +25,22 @@ export interface WebXmlServletMapping {
   urlPatterns: string[];
 }
 
-/** Strip an optional XML namespace prefix from a tag local-name regex. */
-const NS = '(?:[A-Za-z][A-Za-z0-9_-]*:)?';
+/**
+ * Strip an optional XML namespace prefix from a tag local-name regex.
+ * Exported (with the two tag readers) for the web-xml RESPONSE-facts parser
+ * (Spec 2026-07-06-l) so both descriptors share ONE regex idiom.
+ */
+export const NS = '(?:[A-Za-z][A-Za-z0-9_-]*:)?';
 
 /** Read the text content of a `<tag>…</tag>` inside `block`, trimmed, or null. */
-function readTagText(block: string, localName: string): string | null {
+export function readTagText(block: string, localName: string): string | null {
   const re = new RegExp(`<\\s*${NS}${localName}\\s*>([\\s\\S]*?)<\\s*/\\s*${NS}${localName}\\s*>`, 'i');
   const m = re.exec(block);
   return m ? m[1].trim() : null;
 }
 
 /** Read ALL occurrences of `<tag>…</tag>` text inside `block`. */
-function readAllTagText(block: string, localName: string): string[] {
+export function readAllTagText(block: string, localName: string): string[] {
   const re = new RegExp(`<\\s*${NS}${localName}\\s*>([\\s\\S]*?)<\\s*/\\s*${NS}${localName}\\s*>`, 'gi');
   const out: string[] = [];
   let m: RegExpExecArray | null;

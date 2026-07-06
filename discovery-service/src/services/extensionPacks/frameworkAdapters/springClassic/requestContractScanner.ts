@@ -108,6 +108,11 @@ const REQUEST_BODY_ANNOTATION = 'RequestBody';
 const REQUEST_PARAM_ANNOTATION = 'RequestParam';
 const PATH_VARIABLE_ANNOTATION = 'PathVariable';
 const REQUEST_HEADER_ANNOTATION = 'RequestHeader';
+// Spec 2026-07-06-l: the three bindings the contract never captured —
+// cookies, matrix variables, and multipart parts.
+const COOKIE_VALUE_ANNOTATION = 'CookieValue';
+const MATRIX_VARIABLE_ANNOTATION = 'MatrixVariable';
+const REQUEST_PART_ANNOTATION = 'RequestPart';
 
 // Request date-format annotations. `@JsonFormat(pattern=)` is the Jackson
 // (de)serialisation format; `@DateTimeFormat(pattern= | iso=)` is the Spring
@@ -612,12 +617,32 @@ function locationForParam(p: ParameterIR): string {
   if (hasAnnotation(p.annotations, REQUEST_PARAM_ANNOTATION)) return 'query';
   if (hasAnnotation(p.annotations, REQUEST_HEADER_ANNOTATION)) return 'header';
   if (hasAnnotation(p.annotations, REQUEST_BODY_ANNOTATION)) return 'body';
+  // Spec 2026-07-06-l additions.
+  if (hasAnnotation(p.annotations, COOKIE_VALUE_ANNOTATION)) return 'cookie';
+  if (hasAnnotation(p.annotations, MATRIX_VARIABLE_ANNOTATION)) return 'matrix';
+  if (hasAnnotation(p.annotations, REQUEST_PART_ANNOTATION)) return 'multipart';
   return 'query';
+}
+
+/** Spec 2026-07-06-l: cookie / matrix / multipart bindings (always emitted). */
+function isExtendedBinding(p: ParameterIR): boolean {
+  return (
+    hasAnnotation(p.annotations, COOKIE_VALUE_ANNOTATION) ||
+    hasAnnotation(p.annotations, MATRIX_VARIABLE_ANNOTATION) ||
+    hasAnnotation(p.annotations, REQUEST_PART_ANNOTATION)
+  );
 }
 
 /** The bound name of a path/query/header param (annotation name= overrides). */
 function boundParamName(p: ParameterIR): string {
-  for (const ann of [PATH_VARIABLE_ANNOTATION, REQUEST_PARAM_ANNOTATION, REQUEST_HEADER_ANNOTATION]) {
+  for (const ann of [
+    PATH_VARIABLE_ANNOTATION,
+    REQUEST_PARAM_ANNOTATION,
+    REQUEST_HEADER_ANNOTATION,
+    COOKIE_VALUE_ANNOTATION,
+    MATRIX_VARIABLE_ANNOTATION,
+    REQUEST_PART_ANNOTATION,
+  ]) {
     const a = findAnnotation(p.annotations, ann);
     if (a) return annotationArg(a, 'name') || annotationArg(a, 'value') || p.name;
   }
@@ -653,16 +678,22 @@ function readParamFormats(
         source: direct.source,
         javaType: simpleName(stripGenerics(p.type)),
       });
-    } else if (!isBody && javaTypeCategory(p.type, enums) !== null) {
+    } else if (
+      !isBody &&
+      (javaTypeCategory(p.type, enums) !== null || isExtendedBinding(p))
+    ) {
       // Type-only path: no format annotation, but the param Java type maps to
       // a category -> emit a type-only entry carrying the resolved type. NEVER
-      // populate format/pattern from a type.
+      // populate format/pattern from a type. Spec 2026-07-06-l: cookie /
+      // matrix / multipart BINDINGS are emitted regardless of type category —
+      // the binding itself is the contract fact (a plain String cookie still
+      // shapes the request).
       out.push({
         name: boundParamName(p),
         location: locationForParam(p),
         format: null,
         pattern: null,
-        source: 'java-type',
+        source: isExtendedBinding(p) ? 'binding' : 'java-type',
         javaType: wireJavaType(p.type, enums),
       });
     }

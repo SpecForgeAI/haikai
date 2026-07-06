@@ -126,6 +126,20 @@ Surface candidates the pack does not see. Typical gaps:
 > LONGER your target — do NOT re-emit them. The genuine remaining gaps are
 > below.
 
+> NOTE (Spec 2026-07-06-l, Response Fidelity): the adapter now ALSO covers —
+> do NOT re-emit any of these:
+> full `web.xml` response facts (filter chains + order, error-pages,
+> encoding-filter charset, session-config); XML-defined MVC handler mappings
+> (`SimpleUrlHandlerMapping` / `BeanNameUrlHandlerMapping` → `endpoints` with
+> `endpoint_subtype: 'xml-mvc'`); `mvc:interceptors` mapped onto endpoints;
+> `security:http` `intercept-url` rules (literal roles resolved, everything
+> else attached `source: 'unresolved'`); `tx:advice` / `aop:config`
+> transactional pointcuts (flipped onto the data-effect edges); code-set
+> response headers / status / redirects / cookies from handler bodies;
+> `@CookieValue` / `@MatrixVariable` / `@RequestPart` bindings; and the
+> `response_kind` view-vs-API classification (`view-html` endpoints are
+> marked out of parity scope).
+
 - **XML bean configuration.** Classes referenced only from
   `applicationContext.xml`, `*-context.xml`, `beans.xml`, or Spring
   namespace XML (`<bean id="..." class="..."/>`, `<context:component-scan/>`)

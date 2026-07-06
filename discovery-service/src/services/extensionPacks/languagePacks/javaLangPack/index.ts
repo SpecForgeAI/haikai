@@ -151,6 +151,12 @@ export const javaLangPack: LanguagePack = {
           classes: [],
           functions: [],
           springXmlBeans: parsed,
+          // Spec 2026-07-06-l: verbatim source so the spring-classic XML-MVC
+          // scanner can read the namespaces `springXmlBeans` does not model
+          // (mvc:interceptors, SimpleUrlHandlerMapping props, security
+          // intercept-url, tx:advice / aop:config). Mirrors the web.xml /
+          // WADL / WSDL rawContent admission precedent.
+          rawContent: src,
         });
         springXmlFilesParsed++;
         springXmlBeansTotal += parsed.beans.length;

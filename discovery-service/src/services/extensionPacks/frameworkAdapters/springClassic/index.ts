@@ -52,6 +52,20 @@ import { buildEndpointDataEffectCandidates } from './endpointDataEffectCandidate
 // edge). NEVER mints `*_points`; NEVER an invented external entity.
 import { buildOutboundIntegrationCandidates } from './outboundIntegrationCandidates';
 import {
+  attachWebXmlResponseFacts,
+  scanWebXmlResponseFacts,
+} from './webXmlResponseFacts';
+import {
+  applyXmlTransactionalMatchers,
+  attachXmlMvcFacts,
+  buildXmlMvcEndpointCandidates,
+  scanXmlMvc,
+} from './xmlMvcScanner';
+import {
+  attachCodeResponseFacts,
+  scanCodeResponseFacts,
+} from './codeResponseFactsScanner';
+import {
   scanResponseContracts,
   attachResponseContractsToCandidates,
 } from './responseContractScanner';
@@ -2566,6 +2580,76 @@ export function runSpringClassicAdapter(files: SourceFileIR[], runId: string): D
   } catch (err) {
     console.warn(
       `[spring-classic] request-contract scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // Spec 2026-07-06-l (Response Fidelity, Code-Tier Oracle Program): three
+  // deterministic passes over the SAME files, each additive onto the
+  // endpoint candidates' `response_contract` and each soft-failing alone.
+
+  // (l-1) Full web.xml response facts: ordered filter chain (matched by
+  // servlet url-pattern), app-global error-pages merged into
+  // `error_responses[]`, encoding-filter charset. Listeners/session-config/
+  // context-params ride the parse result (Spec -m consumes listeners).
+  try {
+    const webXmlFacts = scanWebXmlResponseFacts(files);
+    const webXmlTouched = attachWebXmlResponseFacts(out.candidates, webXmlFacts);
+    if (webXmlTouched > 0) {
+      console.log(
+        `[spring-classic] web-xml response facts: ${webXmlFacts.filters.length} filter(s), ` +
+          `${webXmlFacts.errorPages.length} error-page(s), charset=${webXmlFacts.charset ?? 'n/a'} ` +
+          `attached onto ${webXmlTouched} endpoint(s).`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] web-xml response-facts scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (l-2) XML-defined MVC: SimpleUrl/BeanName handler mappings -> `endpoints`
+  // candidates (subtype xml-mvc, default-GET marked); mvc:interceptors +
+  // security intercept-url attached onto matching endpoints; tx:advice/aop
+  // pointcuts flip `transactional` on the ALREADY-EMITTED data-effect edges
+  // (the resolver reads annotations only). Unresolved pointcuts/rules surface
+  // as Findings via springClassicFindingScanner (run-it-twice pattern).
+  try {
+    const xmlMvc = scanXmlMvc(files);
+    const minted = buildXmlMvcEndpointCandidates(xmlMvc, runId);
+    out.candidates.push(...minted);
+    const xmlTouched = attachXmlMvcFacts(out.candidates, xmlMvc);
+    const flipped = applyXmlTransactionalMatchers(out.candidates, xmlMvc.txMatchers);
+    if (minted.length > 0 || xmlTouched > 0 || flipped > 0) {
+      console.log(
+        `[spring-classic] xml-mvc: ${minted.length} mapped endpoint(s) minted, ` +
+          `${xmlTouched} endpoint(s) enriched (interceptors/security), ` +
+          `${flipped} data-effect edge(s) flipped transactional by XML pointcuts.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] xml-mvc scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (l-3) Code-set response facts: headers/status/redirects/cookies set IN
+  // CODE (from the per-method call IR) + the view-kind classification
+  // (`response_kind` / `parity_scope` — parity is API-only by user decision;
+  // view endpoints are MARKED out of scope, never silently included).
+  try {
+    const codeFacts = scanCodeResponseFacts(files);
+    const codeTouched = attachCodeResponseFacts(out.candidates, codeFacts);
+    if (codeTouched > 0) {
+      console.log(
+        `[spring-classic] code response facts: attached onto ${codeTouched} endpoint(s).`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] code response-facts scan failed; continuing:`,
       err instanceof Error ? err.message : String(err),
     );
   }

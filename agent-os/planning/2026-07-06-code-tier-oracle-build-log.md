@@ -137,3 +137,63 @@ Design decisions locked at build start (recon verified):
    via exported pure `codeCarriageMarkersFromBlob` (unit-tested); interception in the
    shape-spec handler AFTER the DB-pack carriage branch; `fenceFor`/`languageFor`
    re-exported from the DB carriage module.
+
+---
+
+## Spec L — Spring Classic Response Fidelity (2026-07-06)
+
+**Status: BUILT + VERIFIED.**
+
+What landed (all discovery-service, three new springClassic scanner modules + wiring):
+
+- `webXmlResponseFacts.ts` — full web.xml parse (ordered filter chain w/ url-patterns,
+  dispatchers, init-params; error-pages; listeners; session-config; context-params;
+  mime-mappings; encoding-filter charset) + servlet-spec url-pattern matcher + attach
+  pass (filters ordered per endpoint; app-global error-pages merged into
+  `response_contract.error_responses[]` w/ `source: web-xml-error-page`; charset into
+  `serialization.charset`). XML helpers exported from `webXmlServletParser` (one idiom).
+- `xmlMvcScanner.ts` — SimpleUrlHandlerMapping (props/urlMap/value-lines) +
+  BeanNameUrlHandlerMapping endpoints minted as `endpoints` candidates
+  (`endpoint_subtype: 'xml-mvc'`, DEFAULT-GET with `verb_inference` marked, never
+  guessed silently); `mvc:interceptors` in DOCUMENT order (registration order) attached
+  Ant-matched onto endpoints; `security:http intercept-url` (literal
+  hasRole/hasAuthority/ROLE_ resolved; everything else attached
+  `auth.source='unresolved'` verbatim); `tx:advice`/`aop:config` pointcuts
+  (execution/within subset) -> transactional MATCHERS applied as a POST-PASS over the
+  emitted `endpoint_data_effects` candidates (zero resolver surgery); unresolved
+  pointcuts/rules -> Findings.
+- `codeResponseFactsScanner.ts` — code-set headers/status/redirects/cookies from the
+  per-method call IR + the `response_kind` view-vs-API classification (`view-html`
+  endpoints get `parity_scope: 'out_of_scope_view'` + an info Finding — API-only parity
+  per the user decision).
+- `requestContractScanner` — `@CookieValue`/`@MatrixVariable`/`@RequestPart` bindings
+  emitted as `param_formats` locations `cookie`/`matrix`/`multipart` (source `binding`,
+  emitted regardless of type category).
+- Wiring: three soft-fail adapter blocks (after the contract scans, so blobs exist to
+  merge into); `scanResponseFidelityFindings` peer pass in springClassicFindingScanner
+  (run-it-twice pattern, capped); javaLangPack spring-xml IR entries now carry
+  `rawContent` (additive; mirrors the web.xml/WADL admission precedent);
+  spring-classic.md prompt updated (do-NOT-re-emit list).
+
+Build-time discoveries + honest residuals:
+
+1. **Extractor unquoting constraint:** the Java extractor retains string-literal args
+   UNQUOTED (pinned by `javaExtractorCallArgs.test.ts`), so literal-vs-expression
+   detection keys on expression markers (`(`, `+`, `.class`); a bare variable reference
+   is indistinguishable from its literal value and is carried verbatim as resolved —
+   only clear expressions raise `response_header_unresolved`. Documented in-module.
+2. **View NAME not extractable** (IR carries no return literals) — the KIND is
+   classified; the template name is not. Residual.
+3. **Content-negotiation manager / custom HttpMessageConverter capture NOT implemented**
+   (spec §6 partial): serialization facts remain annotation-driven; converter classes
+   are already flagged by the custom-serializer detect-or-flag pass. Residual for a
+   follow-on if shakedown shows drift.
+4. Security-XML resolution is the literal subset by design; `permitAll`-style
+   expressions surface as unresolved (noisy-but-honest; K/J waivers can absorb).
+
+Verification: 13 new pins in `springClassicResponseFidelity.test.ts` (web-xml parse +
+attach + pattern semantics; xml-mvc scan/mint/attach; TX flip pin on an annotation-free
+edge; header literal/expression pins; view classification + parity-scope attach;
+findings; cookie/matrix/multipart bindings). Regression: springClassic/webXml/
+requestContract/hbm/springConfig family 30 suites / 277 tests green; finding-scanner
+integration suites green.

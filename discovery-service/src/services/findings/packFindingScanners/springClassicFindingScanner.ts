@@ -112,6 +112,16 @@ import {
   scanResponseContracts,
   buildResponseContractFindings,
 } from '../../extensionPacks/frameworkAdapters/springClassic/responseContractScanner';
+// Spec 2026-07-06-l: response-fidelity findings (run-it-twice peers of the
+// adapter's web-xml / xml-mvc / code-facts attach passes).
+import {
+  buildCodeResponseFactsFindings,
+  scanCodeResponseFacts,
+} from '../../extensionPacks/frameworkAdapters/springClassic/codeResponseFactsScanner';
+import {
+  buildXmlMvcFindings,
+  scanXmlMvc,
+} from '../../extensionPacks/frameworkAdapters/springClassic/xmlMvcScanner';
 // Detect-or-flag custom (de)serializers (Spec 2026-06-22 code-evidence format
 // extraction, Task Group 3 / follow-up wiring): the pure detector finds
 // @JsonSerialize / @JsonDeserialize(using=Class) DTO fields whose wire format
@@ -1189,6 +1199,39 @@ function scanEndpointDataEffects(
  * itself is attached to the `endpoints` candidate by the adapter; this pass
  * only surfaces the un-modellable cases as Findings (no candidate emission).
  */
+/**
+ * Spec 2026-07-06-l: response-fidelity Findings — the run-it-twice peer of
+ * the adapter's web-xml / xml-mvc / code-facts attach passes. Emits
+ * `response_header_unresolved`, `view_endpoint_out_of_parity_scope`,
+ * `tx_pointcut_unresolved`, and unresolved security-XML
+ * `endpoint_auth_unresolved` Findings. Capped + soft-failing like its peers.
+ */
+function scanResponseFidelityFindings(
+  irFiles: Map<string, SourceFileIR>,
+  counts: Map<string, number>,
+): FindingEmitInput[] {
+  const out: FindingEmitInput[] = [];
+  try {
+    const files = Array.from(irFiles.values());
+    for (const f of buildCodeResponseFactsFindings(scanCodeResponseFacts(files))) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+    for (const f of buildXmlMvcFindings(scanXmlMvc(files))) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+  } catch (err) {
+    console.warn(
+      `[springClassicFindingScanner] response-fidelity pass failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  return out;
+}
+
 function scanResponseContractFindings(
   irFiles: Map<string, SourceFileIR>,
   counts: Map<string, number>,
@@ -1322,6 +1365,11 @@ export function runSpringClassicFindingScanner(
   // across the whole IR set (cross-file controller / advice / security-config
   // resolution), AFTER the per-file passes.
   collected.push(...scanResponseContractFindings(input.irFiles, counts));
+  // Spec 2026-07-06-l (Response Fidelity): unresolved code-set headers +
+  // view-endpoint out-of-parity-scope markers, and unresolved XML tx
+  // pointcuts / security accesses. Run ONCE across the whole IR set — the
+  // SAME run-it-twice pattern as the response-contract pass above.
+  collected.push(...scanResponseFidelityFindings(input.irFiles, counts));
   // External-dependency Findings for purely-external outbound targets
   // (Outbound Integration Graph, Spec #5, Task Group 3). Run ONCE across the
   // whole IR set (cross-file controller->service attribution), AFTER the
