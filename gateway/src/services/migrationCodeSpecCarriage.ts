@@ -165,6 +165,8 @@ export interface CarriageDataEffect {
   endpointId: string;
   accessMode: string | null;
   pathMetadata: unknown | null;
+  /** `dep_log_*` / `dep_phy_*` target ref — the internal-job recipe's effect scope. */
+  dataEntityPointId: string | null;
 }
 
 export interface CarriageBehaviourBlock {
@@ -265,6 +267,7 @@ export const defaultFetchCodeSpecFacts: FetchCodeSpecFactsFn = async ({
           endpoint_id?: string;
           access_mode?: string;
           path_metadata_json?: unknown;
+          data_entity_point_id?: string;
         }>;
       };
     };
@@ -303,6 +306,7 @@ export const defaultFetchCodeSpecFacts: FetchCodeSpecFactsFn = async ({
       endpointId: r.endpoint_id as string,
       accessMode: r.access_mode ?? null,
       pathMetadata: r.path_metadata_json ?? null,
+      dataEntityPointId: r.data_entity_point_id ?? null,
     }));
 
   // 3) Behaviour blocks on the effect paths.
@@ -556,6 +560,103 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
 }
 
 // ---------------------------------------------------------------------------
+// Internal-process spec text (Spec 2026-07-06-m — the DB-delta recipe)
+// ---------------------------------------------------------------------------
+
+export function buildInternalProcessSpecText(args: {
+  story: CarriedStory;
+  facts: CodeSpecFacts;
+}): string {
+  const { story, facts } = args;
+  const lines: string[] = [];
+  lines.push(`${SPEC_TEXT_REQUIRED_PREFIX} ${story.title}`);
+  lines.push('');
+  lines.push('## Context');
+  lines.push('');
+  lines.push(
+    'This spec covers INTERNAL (non-HTTP) functionality — scheduled jobs, ' +
+      'message listeners, batch processing. It was assembled DETERMINISTICALLY ' +
+      'from the committed model. The like-for-like goal: the recreated process, ' +
+      'run with the same inputs, produces the SAME database delta and the same ' +
+      'emitted outputs as the current system.'
+  );
+  if (story.description) {
+    lines.push('');
+    lines.push(story.description);
+  }
+
+  const effectRefs = new Set<string>();
+  for (const endpoint of facts.endpoints) {
+    lines.push('');
+    lines.push(`## Internal process: ${endpoint.name}`);
+    lines.push('');
+    lines.push(`Type: ${endpoint.endpointType || 'n/a'} · protocol: ${endpoint.protocol || 'n/a'}`);
+    if (endpoint.protocolMetadata != null) {
+      lines.push('');
+      lines.push('### Trigger / schedule metadata (committed, verbatim)');
+      lines.push('');
+      fencedJson(lines, endpoint.protocolMetadata);
+    }
+    const effects = facts.dataEffects.filter((e) => e.endpointId === endpoint.id);
+    lines.push('');
+    lines.push(`### Data effects (${effects.length})`);
+    if (effects.length === 0) {
+      lines.push('');
+      lines.push(
+        '_No committed data-effect edges — the effect scope below is EMPTY; ' +
+          'capture the effects (re-scan + commit) before relying on the recipe._'
+      );
+    }
+    for (const effect of effects) {
+      if (effect.dataEntityPointId) effectRefs.add(effect.dataEntityPointId);
+      lines.push('');
+      lines.push(
+        `- access mode: \`${effect.accessMode ?? 'unknown'}\`` +
+          (effect.dataEntityPointId ? ` · target: \`${effect.dataEntityPointId}\`` : '')
+      );
+      if (effect.pathMetadata != null) fencedJson(lines, effect.pathMetadata);
+    }
+  }
+
+  if (facts.behaviours.length > 0) {
+    lines.push('');
+    lines.push(`## Behaviour blocks on the process paths (${facts.behaviours.length})`);
+    for (const block of facts.behaviours) {
+      lines.push('');
+      lines.push(`### \`${block.name}\``);
+      lines.push('');
+      fencedJson(lines, block.behavior);
+    }
+  }
+
+  lines.push('');
+  lines.push('## Verification recipe (DB-delta oracle — Spec 2026-07-06-m)');
+  lines.push('');
+  lines.push(
+    '1. **Pin the inputs.** Suppress the schedule on BOTH systems; trigger the ' +
+      'process manually with pinned inputs (job parameters / a captured ' +
+      'representative message for listeners).'
+  );
+  lines.push(
+    `2. **Effect scope.** The comparison scope is the process's effect targets: ` +
+      (effectRefs.size > 0 ? [...effectRefs].map((r) => `\`${r}\``).join(', ') : '(none committed — see above)') +
+      '.'
+  );
+  lines.push(
+    '3. **Compare DB deltas.** Snapshot the scoped tables before/after on current ' +
+      'AND target; the deltas must match (row counts + reconciliation checksums — ' +
+      'reuse the DB migration pack reconciliation machinery).'
+  );
+  lines.push(
+    '4. **Compare outputs.** Emitted files byte-compare; emitted messages payload-' +
+      'compare; self-API calls are covered by the endpoint parity evidence.'
+  );
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Manual-gate procedure text
 // ---------------------------------------------------------------------------
 
@@ -662,6 +763,42 @@ export async function runCodeSpecCarriage(args: {
       ...baseRow,
       status: 'failed',
       errorMessage: `Code spec facts read failed: ${message}`,
+    };
+  }
+
+  // INTERNAL-process stories (Spec 2026-07-06-m): no HTTP contracts, no
+  // baseline examples — the verification oracle is the DB-delta recipe. The
+  // spec embeds the verbatim process metadata + data effects + the four-step
+  // recipe (user decision: same DB delta + same emitted outputs = parity).
+  if ((story.protocol ?? '') === 'internal') {
+    const foundInternal = new Set(facts.endpoints.map((e) => e.id));
+    const missingInternal = endpointIds.filter((id) => !foundInternal.has(id));
+    if (missingInternal.length > 0) {
+      return {
+        ...baseRow,
+        status: 'insufficient_context',
+        missingInputsJson: missingInternal.map((id) => ({
+          input: `committed internal entry point ${id}`,
+          reason:
+            'Listed on the story but absent from the committed model — regenerate the migration plan.',
+        })),
+        errorMessage: null,
+      };
+    }
+    const specText = buildInternalProcessSpecText({ story, facts });
+    return {
+      ...baseRow,
+      status: 'generated',
+      confidence: 'high',
+      generatedSpecText: specText,
+      warningsJson: null,
+      missingInputsJson: null,
+      focusedContextRefsJson: {
+        source: 'committed_model_internal_carriage',
+        endpointIds,
+      },
+      generatedAt: new Date().toISOString(),
+      errorMessage: null,
     };
   }
 

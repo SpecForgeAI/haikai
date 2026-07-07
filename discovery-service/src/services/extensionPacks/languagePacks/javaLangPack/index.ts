@@ -176,6 +176,43 @@ export const javaLangPack: LanguagePack = {
     }
 
     // -----------------------------------------------------------------------
+    // Spec 2026-07-06-m: MyBatis/iBatis mapper XML + persistence.xml admission.
+    //
+    // Classic estates keep the bulk of their SQL in `<mapper namespace=...>`
+    // documents, and named queries in persistence.xml — neither is beans-
+    // rooted, so both were silently dropped here. Admit them with verbatim
+    // `rawContent` (the web.xml / WADL precedent); the spring-classic
+    // adapter's mapper/JPA scanners consume them deterministically.
+    // -----------------------------------------------------------------------
+    let mapperXmlAdmitted = 0;
+    for (const [filePath, src] of sourceFiles) {
+      if (!filePath.endsWith('.xml')) continue;
+      if (irFiles.has(filePath)) continue; // already admitted (hbm / spring-xml)
+      if (isTestFile(filePath)) continue;
+      const head = src.slice(0, 2000);
+      const isMapper = /<\s*mapper\b[^>]*\bnamespace\s*=/.test(head);
+      const isPersistence =
+        /(^|[\\/])persistence\.xml$/i.test(filePath) || /<\s*persistence\b/.test(head);
+      if (!isMapper && !isPersistence) continue;
+      irFiles.set(filePath, {
+        filePath,
+        language: isMapper ? 'mybatis-xml' : 'persistence-xml',
+        packageOrNamespace: null,
+        imports: [],
+        classes: [],
+        functions: [],
+        rawContent: src,
+      });
+      mapperXmlAdmitted++;
+    }
+    if (mapperXmlAdmitted > 0) {
+      console.log(
+        `[java-lang] Admitted ${mapperXmlAdmitted} MyBatis-mapper / persistence XML file(s) ` +
+          `with rawContent for deterministic capture (Spec 2026-07-06-m).`,
+      );
+    }
+
+    // -----------------------------------------------------------------------
     // Bug-fix 2026-05-22: Contract-file admission (WADL / WSDL / XSD).
     //
     // The scanPlanBuilder (`SOURCE_EXTENSIONS`) admits these three contract

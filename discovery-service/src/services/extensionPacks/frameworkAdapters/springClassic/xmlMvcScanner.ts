@@ -93,8 +93,11 @@ export interface XmlMvcScanResult {
 const NS = '(?:[A-Za-z][A-Za-z0-9_-]*:)?';
 
 function blocks(xml: string, localName: string): string[] {
+  // Self-closing branch FIRST (see internalProcessXmlScanner.blocks): a
+  // self-closing element must never match the paired form, whose lazy body
+  // would swallow sibling elements up to the next closing tag.
   const re = new RegExp(
-    `<\\s*${NS}${localName}\\b[^>]*>([\\s\\S]*?)<\\s*/\\s*${NS}${localName}\\s*>`,
+    `<\\s*${NS}${localName}\\b[^>]*/>|<\\s*${NS}${localName}\\b[^>]*>([\\s\\S]*?)<\\s*/\\s*${NS}${localName}\\s*>`,
     'gi'
   );
   const out: string[] = [];

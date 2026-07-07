@@ -100,6 +100,7 @@ import { runRestWadlPass } from './restWadl';
 import { parseWebXmlServletMappings } from './webXmlServletParser';
 import {
   resolveEndpointDataEffects,
+  resolveInternalProcessDataEffects,
   type UnresolvedDataEffect,
 } from '../../extensionPacks/frameworkAdapters/springClassic/endpointDataEffectResolver';
 // Outbound Integration Graph (Spec #5, Task Group 3): the external-dependency
@@ -122,6 +123,16 @@ import {
   buildXmlMvcFindings,
   scanXmlMvc,
 } from '../../extensionPacks/frameworkAdapters/springClassic/xmlMvcScanner';
+// Spec 2026-07-06-m: internal-functionality findings (unresolved internal
+// persistence chains + JPA lifecycle callbacks / named queries).
+import {
+  scanInternalProcessXml,
+  xmlEntryTargets,
+} from '../../extensionPacks/frameworkAdapters/springClassic/internalProcessXmlScanner';
+import {
+  buildJpaInternalsFindings,
+  scanJpaInternals,
+} from '../../extensionPacks/frameworkAdapters/springClassic/jpaInternalsScanner';
 // Detect-or-flag custom (de)serializers (Spec 2026-06-22 code-evidence format
 // extraction, Task Group 3 / follow-up wiring): the pure detector finds
 // @JsonSerialize / @JsonDeserialize(using=Class) DTO fields whose wire format
@@ -1166,7 +1177,15 @@ function scanEndpointDataEffects(
   try {
     const files = Array.from(irFiles.values());
     const { unresolved } = resolveEndpointDataEffects(files);
-    for (const u of unresolved) {
+    // Spec 2026-07-06-m: INTERNAL entry points (scheduled / listeners /
+    // Quartz / XML-wired) ride the SAME unresolved-edge finding path — an
+    // internal process whose persistence chain cannot be statically resolved
+    // is exactly as parity-relevant as an endpoint's.
+    const internalUnresolved = resolveInternalProcessDataEffects(
+      files,
+      xmlEntryTargets(scanInternalProcessXml(files)),
+    ).unresolved;
+    for (const u of [...unresolved, ...internalUnresolved]) {
       if (!underCap(counts, 'endpoint_data_effect_unresolved')) break;
       out.push(buildEndpointDataEffectUnresolvedFinding(u));
       bumpCap(counts, 'endpoint_data_effect_unresolved');
@@ -1219,6 +1238,13 @@ function scanResponseFidelityFindings(
       bumpCap(counts, f.findingType);
     }
     for (const f of buildXmlMvcFindings(scanXmlMvc(files))) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+    // Spec 2026-07-06-m: JPA lifecycle callbacks + persistence.xml named
+    // queries (hidden-logic parity concerns).
+    for (const f of buildJpaInternalsFindings(scanJpaInternals(files))) {
       if (!underCap(counts, f.findingType)) continue;
       out.push(f);
       bumpCap(counts, f.findingType);

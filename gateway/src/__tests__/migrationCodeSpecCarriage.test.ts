@@ -136,7 +136,9 @@ function facts(overrides: Partial<CodeSpecFacts> = {}): CodeSpecFacts {
         protocolMetadata: null,
       },
     ],
-    dataEffects: [{ endpointId: 'e-1', accessMode: 'read', pathMetadata: PATH_METADATA }],
+    dataEffects: [
+      { endpointId: 'e-1', accessMode: 'read', pathMetadata: PATH_METADATA, dataEntityPointId: 'dep_phy_owners' },
+    ],
     behaviours: [{ name: 'find', behavior: BEHAVIOUR }],
     examples: [
       ex('happy', 200),
@@ -374,6 +376,54 @@ describe('MANUAL-GATE pin', () => {
     expect(row.status).toBe('generated');
     expect(row.generatedSpecText).toContain('Manual-gate work item');
     expect(row.generatedSpecText).toContain('Coverage floor');
+  });
+});
+
+describe('INTERNAL RECIPE PIN (Spec 2026-07-06-m)', () => {
+  it('internal-stream stories skip contract/baseline requirements and embed the DB-delta recipe', async () => {
+    const internalFacts: CodeSpecFacts = {
+      endpoints: [
+        {
+          id: 'e-1',
+          name: 'SCHEDULED 0 0 * * * *',
+          verb: null,
+          path: null,
+          endpointType: 'SCHEDULED',
+          protocol: 'internal',
+          interfaceName: 'OrderSyncJob',
+          requestContract: null,
+          responseContract: null,
+          protocolMetadata: { cron: '0 0 * * * *', source: 'task-xml' },
+        },
+      ],
+      dataEffects: [
+        {
+          endpointId: 'e-1',
+          accessMode: 'read-write',
+          pathMetadata: { query_text: 'UPDATE orders SET synced = 1' },
+          dataEntityPointId: 'dep_phy_orders',
+        },
+      ],
+      behaviours: [],
+      examples: [],
+    };
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story({
+        protocol: 'internal',
+        title: 'Implement OrderSyncJob',
+        baselineByEndpointId: null,
+      }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(internalFacts) },
+    });
+    expect(row.status).toBe('generated'); // no contracts, no baselines — and that is FINE here
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('## Verification recipe (DB-delta oracle');
+    expect(text).toContain('dep_phy_orders');
+    expect(text).toContain('Trigger / schedule metadata (committed, verbatim)');
+    expect(text).toContain('UPDATE orders SET synced = 1');
   });
 });
 

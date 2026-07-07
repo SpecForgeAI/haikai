@@ -95,7 +95,14 @@ import {
   runResponseContractEnrichment,
   type ResponseContractEnrichOutput,
 } from './responseContractEnrichmentStep';
-import { resolveEndpointDataEffects } from './extensionPacks/frameworkAdapters/springClassic/endpointDataEffectResolver';
+import {
+  resolveEndpointDataEffects,
+  resolveInternalProcessDataEffects,
+} from './extensionPacks/frameworkAdapters/springClassic/endpointDataEffectResolver';
+import {
+  scanInternalProcessXml,
+  xmlEntryTargets,
+} from './extensionPacks/frameworkAdapters/springClassic/internalProcessXmlScanner';
 import { filterNonExternalInterfaces } from './packPostProcess';
 // Spec 0 (Unique, Aggregate Discovery Candidates): the universal, identity-keyed
 // cross-source MERGE replaces the parent-inclusive dedup-DROP. `mergeCandidates`
@@ -1392,6 +1399,28 @@ export async function runDiscoveryV3(
           for (const hop of edge.path) {
             if (hop.methodId) endpointReachableMethodIds.add(hop.methodId);
           }
+        }
+        // Spec 2026-07-06-m (criterion B): INTERNAL entry points (scheduled /
+        // listeners / Quartz / XML-wired) extend the reachable set the SAME
+        // way, so batch/listener code gets behaviour blocks exactly like
+        // endpoint code. Soft-fails to the endpoint-only set.
+        try {
+          const allFiles = Array.from(irFiles.values());
+          const internalEffects = resolveInternalProcessDataEffects(
+            allFiles,
+            xmlEntryTargets(scanInternalProcessXml(allFiles)),
+          );
+          for (const edge of internalEffects.resolved) {
+            for (const hop of edge.path) {
+              if (hop.methodId) endpointReachableMethodIds.add(hop.methodId);
+            }
+          }
+        } catch (err) {
+          console.warn(
+            `[DiscoveryV3:Stage3b] internal-entry reachable-set fold failed; ` +
+              `continuing with endpoint-only selection:`,
+            err instanceof Error ? err.message : String(err),
+          );
         }
 
         const priorBlocksByMethodId = await buildPriorBehaviourBlocks(projectId, runId);

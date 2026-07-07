@@ -197,3 +197,75 @@ edge; header literal/expression pins; view classification + parity-scope attach;
 findings; cookie/matrix/multipart bindings). Regression: springClassic/webXml/
 requestContract/hbm/springConfig family 30 suites / 277 tests green; finding-scanner
 integration suites green.
+
+---
+
+## Spec M — Spring Classic Internal Functionality (2026-07-06/07)
+
+**Status: BUILT + VERIFIED.**
+
+What landed:
+
+- `internalProcessXmlScanner.ts` — Quartz XML (MethodInvokingJobDetail /
+  JobDetailFactoryBean + Cron/Simple triggers joined, cron VERBATIM), `task:` namespace
+  (scheduled targets + executor/scheduler pools), Spring Batch job XML (step graph
+  VERBATIM: next / tasklet refs / chunk reader-processor-writer / commit-interval),
+  `jms:` listeners + DefaultMessageListenerContainer beans. Minted as `endpoints`
+  candidates (subtype quartz-job / scheduled / batch-job / jms-listener) mirroring the
+  annotation-listener emission (`<SUBTYPE-UC> <identifier>` names, fullPath/httpMethod
+  shape). `xmlEntryTargets` feeds the resolver; `attachSelfApiCallLinks` implements the
+  v1 self-API-call linkage (`calls_own_endpoint`).
+- RESOLVER root extension (`endpointDataEffectResolver.ts`) — `detectInternalEntryPoints`
+  (six listener/scheduled annotations with the adapter's exact naming convention via
+  `internalListenerEndpointName`; Quartz `Job`/`QuartzJobBean` classes; XML-wired
+  targets, annotation-deduped) + `resolveInternalProcessDataEffects` mirroring the SOAP
+  variant's reuse contract (same walk, entry gate + name override only). Emission rides
+  the extracted `buildDataEffectCandidatesFromResolved` (one implementation, two gates).
+- PIPELINE Stage-3b fold (`discoveryV3Pipeline.ts`) — internal edges' hop method-ids
+  extend the behaviour-capture reachable set (soft-fail to endpoint-only), so
+  batch/listener code gets behaviour blocks exactly like endpoint code (criterion B).
+- `myBatisXmlMapper.ts` — mapper XML admitted (javaLangPack, `mybatis-xml` +
+  rawContent), statements indexed, POST-PASS enriches query-less edges
+  (`query_kind: 'mybatis_xml'`, dynamic tags flagged `dynamic_sql`, verbatim body,
+  annotation capture never overwritten).
+- `jpaInternalsScanner.ts` — entity lifecycle callbacks (`@PrePersist` family +
+  `@EntityListeners`) as `business_logics` candidates + `entity_lifecycle_callback`
+  Findings; persistence.xml admitted (`persistence-xml`) and named queries matched
+  against `createNamedQuery` call sites (unmatched flagged).
+- Finding scanner: internal unresolved chains ride the SAME
+  `endpoint_data_effect_unresolved` builder; JPA findings join the response-fidelity
+  run-it-twice pass.
+- GATEWAY carriage (Spec H integration): internal-stream stories (`protocol:
+  'internal'`) skip the contract/baseline requirements and embed the VERBATIM trigger
+  metadata + data effects + the four-step DB-DELTA verification recipe (user decision:
+  same DB delta + same emitted outputs = parity), effect scope listed from the edges'
+  `data_entity_point_id`s.
+
+Build-time discoveries + residuals:
+
+1. **Self-closing XML alternation bug** (found by the QUARTZ pin): a self-closing
+   `<bean/>` matched the paired-form branch and its lazy body swallowed sibling
+   elements. Fixed in BOTH new scanners (self-closing branch first) — the L-era
+   xmlMvcScanner had the same latent bug.
+2. **Hyphenated element names**: `\b` treats `-` as a boundary (`scheduled\b` matched
+   `<task:scheduled-tasks>`); name-end guard `(?![\w-])` added.
+3. Batch job graphs are captured but batch STEP beans' effects resolve only when steps
+   reference bean classes scanned as services — reader/writer bean-ref → class walk is
+   the mapper for a follow-on if shakedown needs it. `TimerTask`/raw threads remain
+   finding-only by design (`unmanaged-concurrency` deferred — not yet emitted).
+4. Endpoint `protocol_metadata_json` save-back for internal candidates (schedule
+   metadata surviving commit) inherits whatever the existing save-back does with
+   `internal_process` data — G-1 shakedown item extended to check it (M-1 below).
+
+Verification: 13 new pins in `springClassicInternalFunctionality.test.ts` (Quartz join +
+verbatim cron; task/jms/batch verbatim; minted-shape; ROOTS pins incl. XML-wired target,
+annotation dedupe, and HTTP-resolver no-regression; adapter-name-convention pin; MyBatis
+enrich/never-overwrite/dynamic; self-call; JPA callbacks + named-query matching) + the
+gateway INTERNAL RECIPE pin (14th in the carriage suite). Regression: discovery
+springClassic/pipeline/findings family 37 suites / 308 tests green; gateway carriage
+suite 14/14.
+
+Shakedown items: M-1 — commit an internal candidate and verify the schedule metadata
+lands somewhere readable (endpoint protocol_metadata_json or data blob) for the carriage;
+M-2 — run a scan over a Quartz-XML estate and confirm internal edges + behaviour blocks
+appear; M-3 — internal story spec text renders the recipe with real effect tables.

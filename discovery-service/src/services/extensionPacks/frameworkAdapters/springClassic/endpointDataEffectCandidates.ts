@@ -116,6 +116,19 @@ export function buildEndpointDataEffectCandidates(
   runId: string,
 ): DiscoveryCandidate[] {
   const { resolved } = resolveEndpointDataEffects(files);
+  return buildDataEffectCandidatesFromResolved(resolved, runId);
+}
+
+/**
+ * Turn ALREADY-RESOLVED edges into `endpoint_data_effects` candidates.
+ * Extracted (Spec 2026-07-06-m) so the INTERNAL-process resolver's edges ride
+ * the IDENTICAL candidate shape (same save-back keys, same path metadata,
+ * same confidence carriage) — one emission implementation, two entry gates.
+ */
+export function buildDataEffectCandidatesFromResolved(
+  resolved: ResolvedDataEffect[],
+  runId: string,
+): DiscoveryCandidate[] {
   const candidates: DiscoveryCandidate[] = [];
 
   // Dedupe defensively on (endpoint, entity) -- the resolver already collapses

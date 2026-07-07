@@ -1626,5 +1626,176 @@ export function resolveSoapOperationDataEffects(
   return { resolved, unresolved: dedupedUnresolved };
 }
 
+// ---------------------------------------------------------------------------
+// INTERNAL entry points (Spec 2026-07-06-m — Spring Classic Internal
+// Functionality, Code-Tier Oracle Program).
+//
+// Criterion B of the oracle: internal (non-HTTP) functionality must get the
+// SAME data-effect + behaviour treatment as HTTP endpoints. This mirrors the
+// SOAP variant above verbatim: a detector gates the entry points, the REUSED
+// `resolveEndpoint` walk does everything else, and the edge `endpointName` is
+// overridden to the internal endpoint candidate's name (the listener
+// `<SUBTYPE-UC> <identifier>` convention emitted by the adapter) so save-back
+// binds the right `endpoints` row.
+// ---------------------------------------------------------------------------
+
+/** Annotation -> endpoint_subtype map (mirrors the adapter's listener map). */
+const INTERNAL_LISTENER_ANNOTATIONS: Record<string, string> = {
+  JmsListener: 'jms-listener',
+  KafkaListener: 'kafka-listener',
+  RabbitListener: 'rabbit-listener',
+  SqsListener: 'sqs-listener',
+  EventListener: 'event-listener',
+  Scheduled: 'scheduled',
+};
+
+/**
+ * Replicates the adapter's listener-candidate naming EXACTLY
+ * (`processMessageAndScheduledMethods` in index.ts): `<SUBTYPE-UC>
+ * <identifier>` where the identifier is the destination / topics / queues /
+ * event types / cron (or fixedRate= / fixedDelay=), falling back to the
+ * method name. Pinned against the adapter output by the internal-functionality
+ * test suite so the two can never drift silently.
+ */
+export function internalListenerEndpointName(
+  annotationName: string,
+  ann: AnnotationIR,
+  methodName: string,
+): string | null {
+  const subtype = INTERNAL_LISTENER_ANNOTATIONS[annotationName];
+  if (!subtype) return null;
+  let identifier: string = methodName;
+  if (annotationName === 'JmsListener' || annotationName === 'RabbitListener') {
+    identifier =
+      annotationArg(ann, 'destination') ??
+      annotationArg(ann, 'queues') ??
+      annotationArg(ann, 'value') ??
+      identifier;
+  } else if (annotationName === 'KafkaListener') {
+    identifier = annotationArg(ann, 'topics') ?? annotationArg(ann, 'topicPattern') ?? identifier;
+  } else if (annotationName === 'SqsListener') {
+    identifier = annotationArg(ann, 'value') ?? identifier;
+  } else if (annotationName === 'EventListener') {
+    identifier = annotationArg(ann, 'classes') ?? annotationArg(ann, 'value') ?? identifier;
+  } else if (annotationName === 'Scheduled') {
+    const cron = annotationArg(ann, 'cron');
+    const fixedRate = annotationArg(ann, 'fixedRate');
+    const fixedDelay = annotationArg(ann, 'fixedDelay');
+    if (cron) identifier = cron;
+    else if (fixedRate) identifier = `fixedRate=${fixedRate}`;
+    else if (fixedDelay) identifier = `fixedDelay=${fixedDelay}`;
+  }
+  return `${subtype.toUpperCase()} ${identifier}`;
+}
+
+/** An XML-wired internal entry point (from the internal-process XML scanner). */
+export interface InternalXmlEntryTarget {
+  /** SIMPLE class name (resolved through the bean map by the XML scanner). */
+  className: string;
+  methodName: string;
+  /** The XML-minted endpoint candidate's exact name. */
+  entryName: string;
+}
+
+/**
+ * Detect INTERNAL entry points across the IR:
+ *   - listener/scheduled-ANNOTATED methods (six annotations, name convention
+ *     replicated via {@link internalListenerEndpointName})
+ *   - Quartz `Job` classes (`implements Job` / `extends QuartzJobBean`) ->
+ *     their `execute` / `executeInternal` method (`QUARTZ-JOB <ClassName>`)
+ *   - XML-wired targets passed in by the internal-process XML scanner
+ *     (task:scheduled refs, MethodInvokingJobDetail targets, jms:listeners).
+ */
+export function detectInternalEntryPoints(
+  files: SourceFileIR[],
+  xmlTargets: InternalXmlEntryTarget[] = [],
+): Array<{ entry: ClassEntry; method: FunctionIR; entryName: string }> {
+  const out: Array<{ entry: ClassEntry; method: FunctionIR; entryName: string }> = [];
+  const classEntriesBySimpleName = new Map<string, ClassEntry>();
+
+  for (const file of files) {
+    for (const cls of file.classes) {
+      const entry: ClassEntry = { cls, file, fqn: fqnOf(file, cls) };
+      if (!classEntriesBySimpleName.has(cls.name)) {
+        classEntriesBySimpleName.set(cls.name, entry);
+      }
+
+      // (a) Annotated listener / scheduled methods.
+      for (const method of cls.methods) {
+        for (const annotationName of Object.keys(INTERNAL_LISTENER_ANNOTATIONS)) {
+          const ann = findAnnotation(method.annotations, annotationName);
+          if (!ann) continue;
+          const entryName = internalListenerEndpointName(annotationName, ann, method.name);
+          if (entryName) out.push({ entry, method, entryName });
+        }
+      }
+
+      // (b) Quartz Job classes.
+      const isQuartzJob =
+        (cls.implements ?? []).some((i) => i === 'Job' || i.endsWith('.Job')) ||
+        cls.extends === 'QuartzJobBean';
+      if (isQuartzJob) {
+        const executeMethod = cls.methods.find(
+          (m) => m.name === 'execute' || m.name === 'executeInternal',
+        );
+        if (executeMethod) {
+          out.push({ entry, method: executeMethod, entryName: `QUARTZ-JOB ${cls.name}` });
+        }
+      }
+    }
+  }
+
+  // (c) XML-wired targets (bean refs resolved to simple class names upstream).
+  for (const target of xmlTargets) {
+    const entry = classEntriesBySimpleName.get(target.className);
+    if (!entry) continue;
+    const method = entry.cls.methods.find((m) => m.name === target.methodName);
+    if (!method) continue;
+    // Dedupe: an XML target pointing at an already-annotated method keeps the
+    // annotation-derived entry (first wins), matching the adapter's emission.
+    if (out.some((e) => e.entry.cls === entry.cls && e.method === method)) continue;
+    out.push({ entry, method, entryName: target.entryName });
+  }
+
+  return out;
+}
+
+/**
+ * Resolve INTERNAL-process -> DB data-effect edges by feeding each internal
+ * entry point into the REUSED downstream resolver — the exact contract of
+ * {@link resolveSoapOperationDataEffects}: nothing added to the walk, only the
+ * entry gate + the `endpointName` override. The pipeline folds these edges'
+ * hop method-ids into the behaviour-capture reachable set, so internal code
+ * gets behaviour blocks exactly like endpoint code (Spec -m, criterion B).
+ */
+export function resolveInternalProcessDataEffects(
+  files: SourceFileIR[],
+  xmlTargets: InternalXmlEntryTarget[] = [],
+): DataEffectResolverOutput {
+  const index = buildResolverIndex(files);
+  const resolved: ResolvedDataEffect[] = [];
+  const unresolved: UnresolvedDataEffect[] = [];
+
+  for (const { entry, method, entryName } of detectInternalEntryPoints(files, xmlTargets)) {
+    const out = resolveEndpoint(entry, method, index);
+    for (const r of out.resolved) {
+      resolved.push({ ...r, endpointName: entryName });
+    }
+    for (const u of out.unresolved) {
+      unresolved.push({ ...u, endpointName: entryName });
+    }
+  }
+
+  const seen = new Set<string>();
+  const dedupedUnresolved = unresolved.filter((u) => {
+    const key = `${u.endpointName}|${u.reason}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { resolved, unresolved: dedupedUnresolved };
+}
+
 // Re-export the call shape so consumers can introspect (unused import guard).
 export type { CallIR, AnnotationIR };
