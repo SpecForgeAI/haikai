@@ -328,3 +328,41 @@ Verification: 13 new pins (`parityExactness.test.ts`) + rewritten WSDL pins (par
 operations + unparseable-400). AMVS full suite: 464 passed / 2 failed — BOTH failures
 (`testConnectionAction`, `captureSessionActions`) verified PRE-EXISTING via stash-run at
 the branch point. AMS `ApiBehaviour*`: 96 tests green.
+
+---
+
+## Spec K — Scenario Coverage Floor (2026-07-07)
+
+**Status: BUILT + VERIFIED.**
+
+- AMVS: `GeneratedScenario` gains the floor taxonomy (`dimensionKind`:
+  happy / error_status / validation / enum / filter / pagination / content_type / seed +
+  `reportedOnly`); EVERY generator site stamped. THREE new dimension families in
+  `defaultScenarioSet`: PAGINATION (page/size/offset/limit param detection → first /
+  later / past-the-end scenarios, reported-only), CONTENT-TYPE (multi-media-type request
+  bodies → one scenario per extra type, capped 2, reported-only), VALIDATION
+  missing-required-field (from the operation's request schema `required` list, capped 3,
+  FLOOR-BEARING — the schema-derived approximation of committed request_validation
+  constraints). The scorer stamps `dimension_kind` + `reported_only` onto every persisted
+  `CoverageDimensionResult`, legacy-defaulting kind from expected_status so pre-K
+  sessions score identically.
+- GATEWAY: `apiBehaviourCoverageFloor.ts` — pure `evaluateCoverageFloor(summary,
+  waivedKeys, policy)` over the session's persisted `coverage_summary_json`
+  (floor-bearing kinds default happy/error_status/validation/seed; reported-only misses
+  enumerated but never blocking; waived (operation, dimension) keys pass WITH the waiver
+  enumerated; failed session auth fails the floor) + `aggregateFloorByInterface` (the
+  Spec G capture-story + Spec I gate consumer).
+- NO AMS change needed: the rubric summary was ALREADY persisted
+  (`coverage_summary_json` on capture sessions) — the spec's persistence requirement was
+  satisfied by existing storage; K adds the taxonomy + the evaluator.
+
+Deviations/residuals: `resource_lifecycle` dimension DEFERRED (cross-operation
+composition belongs with the sequence machinery; reported-only by design so its absence
+never blocks — recorded); floor ENFORCEMENT wiring (gate code
+`code_coverage_floor_unmet`) lands in Spec I per the program design.
+
+Verification: 3 AMVS pins (`coverageFloorDimensions.test.ts`: dimension families +
+reported-only flags + scorer stamping/legacy default) + 6 gateway pins
+(`apiBehaviourCoverageFloor.test.ts`: floor/reported/waiver/legacy/auth/aggregate).
+Coverage-family regression 6 suites / 43 tests green (one existing scoring-test fixture
+gained the two new required fields).

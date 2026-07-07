@@ -141,8 +141,8 @@ describe('assembleCoverageSummary -- overall folds the auth dimension as +1', ()
         path: '/a',
         score: 0.5,
         dimensions: [
-          { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c1', reason: null, observation: null },
-          { name: 'bad_request_x', type: 'bad_request', expected_status: 'client_error', achieved: false, canonical_capture_id: null, reason: 'missed', observation: null },
+          { name: 'happy_path', type: 'happy_path', expected_status: 'success', dimension_kind: 'happy', reported_only: false, achieved: true, canonical_capture_id: 'c1', reason: null, observation: null },
+          { name: 'bad_request_x', type: 'bad_request', expected_status: 'client_error', dimension_kind: 'validation', reported_only: false, achieved: false, canonical_capture_id: null, reason: 'missed', observation: null },
         ],
       },
     ];

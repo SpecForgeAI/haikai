@@ -551,12 +551,40 @@ export function seedsForOperation(
  */
 export type ScenarioExpectedStatus = 'success' | 'not_found' | 'client_error' | 'auth';
 
+/**
+ * Coverage-floor dimension taxonomy (Spec 2026-07-06-k): every generated
+ * scenario names the FLOOR dimension it exercises. `happy`, `error_status`,
+ * and `validation` are floor-bearing by default; `enum` / `filter` /
+ * `pagination` / `content_type` are REPORTED (tunable, below-floor default).
+ */
+export type ScenarioDimensionKind =
+  | 'happy'
+  | 'error_status'
+  | 'validation'
+  | 'enum'
+  | 'filter'
+  | 'pagination'
+  | 'content_type'
+  | 'seed';
+
 export interface GeneratedScenario {
   name: string;
   type: string;
   expectedStatus: ScenarioExpectedStatus;
   /** Plain-language variation the LLM must exercise (rendered into the prompt). */
   directive?: string;
+  /**
+   * The floor dimension this scenario exercises (Spec 2026-07-06-k).
+   * Absent on legacy call sites -> the scorer defaults it from
+   * `expectedStatus` (success->happy, not_found/client_error->error_status,
+   * auth->error_status) so pre-K sessions score identically.
+   */
+  dimensionKind?: ScenarioDimensionKind;
+  /**
+   * REPORTED-only dimensions never block the coverage floor (Spec K
+   * amendment). Absent = false.
+   */
+  reportedOnly?: boolean;
 }
 
 /**
@@ -649,6 +677,15 @@ export interface CoverageDimensionResult {
   name: string;
   type: string;
   expected_status: ScenarioExpectedStatus;
+  /**
+   * The floor dimension taxonomy (Spec 2026-07-06-k). Legacy sessions (no
+   * kind on the scenario) default from expected_status so the FLOOR evaluator
+   * reads every summary uniformly: success->happy, everything else ->
+   * error_status.
+   */
+  dimension_kind: ScenarioDimensionKind;
+  /** REPORTED-only dimensions never block the floor (Spec K amendment). */
+  reported_only: boolean;
   achieved: boolean;
   /** The canonical capture id when achieved; null on a MISS. */
   canonical_capture_id: string | null;
@@ -800,6 +837,8 @@ export function scoreEndpointCoverage(
         name: scenario.name,
         type: scenario.type,
         expected_status: scenario.expectedStatus,
+        dimension_kind: dimensionKindOf(scenario),
+        reported_only: scenario.reportedOnly === true,
         achieved: true,
         canonical_capture_id: canonical.captureId,
         reason: null,
@@ -816,6 +855,8 @@ export function scoreEndpointCoverage(
       name: scenario.name,
       type: scenario.type,
       expected_status: scenario.expectedStatus,
+      dimension_kind: dimensionKindOf(scenario),
+      reported_only: scenario.reportedOnly === true,
       achieved: false,
       canonical_capture_id: null,
       reason: coverageMissReason(scenario, captures),
@@ -834,6 +875,16 @@ export function scoreEndpointCoverage(
     score: total > 0 ? achieved / total : 0,
     dimensions,
   };
+}
+
+/**
+ * Legacy-default the floor taxonomy for scenarios generated before Spec
+ * 2026-07-06-k (no dimensionKind): success -> happy, everything else ->
+ * error_status. Pre-K sessions therefore score + floor-evaluate identically.
+ */
+function dimensionKindOf(scenario: GeneratedScenario): ScenarioDimensionKind {
+  if (scenario.dimensionKind) return scenario.dimensionKind;
+  return scenario.expectedStatus === 'success' ? 'happy' : 'error_status';
 }
 
 /**
@@ -1089,7 +1140,12 @@ export function defaultScenarioSet(
   const seedSet = seedsForOperation(discoveryContext, op.method, op.path);
   if (seedSet?.seeds) {
     for (const s of seedSet.seeds) {
-      add({ name: s.scenarioName, type: s.scenarioType, expectedStatus: classifyExpectedFromName(s.scenarioName) });
+      add({
+        name: s.scenarioName,
+        type: s.scenarioType,
+        expectedStatus: classifyExpectedFromName(s.scenarioName),
+        dimensionKind: 'seed',
+      });
     }
   }
 
@@ -1098,6 +1154,7 @@ export function defaultScenarioSet(
     name: 'happy_path',
     type: 'happy_path',
     expectedStatus: 'success',
+    dimensionKind: 'happy',
     directive:
       'Send a fully valid request using REAL values (DB-sourced ids, the contract date/enum ' +
       'formats); expect a 2xx success.',
@@ -1116,6 +1173,7 @@ export function defaultScenarioSet(
       name: `not_found_${p.name}`,
       type: 'not_found',
       expectedStatus: 'not_found',
+      dimensionKind: 'error_status',
       directive:
         `Send a well-formed but NON-EXISTENT ${p.name} (matches the format, absent from the data); ` +
         'expect a 404/not-found. This is an INTENDED negative case to capture, not a mistake.',
@@ -1129,6 +1187,8 @@ export function defaultScenarioSet(
         name: `enum_${p.name}_${String(value)}`,
         type: 'enum',
         expectedStatus: 'success',
+        dimensionKind: 'enum',
+        reportedOnly: true,
         directive:
           `Set ${p.name}=${String(value)} (a valid enum value) with all other inputs valid; expect a ` +
           '2xx. Each enum value likely drives a different code path, which we want to capture.',
@@ -1143,6 +1203,8 @@ export function defaultScenarioSet(
       name: `filter_combo_${names.join('_')}`,
       type: 'filter_combo',
       expectedStatus: 'success',
+      dimensionKind: 'filter',
+      reportedOnly: true,
       directive:
         `Combine the filters ${names.join(', ')} with valid values in a single request; expect a 2xx. ` +
         'Captures the filtered behaviour.',
@@ -1156,6 +1218,7 @@ export function defaultScenarioSet(
       name: `bad_request_${malformTarget.name}`,
       type: 'bad_request',
       expectedStatus: 'client_error',
+      dimensionKind: 'validation',
       directive:
         `Send a MALFORMED ${malformTarget.name} that violates its declared format/pattern (e.g. wrong ` +
         'date format, out-of-enum value); expect a 4xx validation error. INTENDED negative case to capture.',
@@ -1174,6 +1237,7 @@ export function defaultScenarioSet(
       name: 'bad_request_body',
       type: 'bad_request',
       expectedStatus: 'client_error',
+      dimensionKind: 'validation',
       directive:
         'Send a MALFORMED request body that violates the schema (wrong field types, a missing ' +
         'required field, or an invalid enum/format value); expect a 4xx validation error. INTENDED negative case.',
@@ -1188,6 +1252,7 @@ export function defaultScenarioSet(
       name: `bad_request_${idp.name}_type`,
       type: 'bad_request',
       expectedStatus: 'client_error',
+      dimensionKind: 'validation',
       directive:
         `Send ${idp.name} with the WRONG DATA TYPE (e.g. a non-numeric string where a numeric id is ` +
         'expected, or free text where a date/uuid is expected); expect a 4xx. Distinct from the ' +
@@ -1197,9 +1262,99 @@ export function defaultScenarioSet(
       name: `edge_${idp.name}`,
       type: 'not_found',
       expectedStatus: 'not_found',
+      dimensionKind: 'error_status',
       directive:
         `Send a well-formed but BOUNDARY/extreme ${idp.name} (e.g. a very large value) that is absent ` +
         'from the data; expect a 404. Captures boundary-id handling distinct from a random not-found.',
+    });
+  }
+
+  // 3g (Spec 2026-07-06-k). PAGINATION dimensions when the operation is
+  // list-shaped (page/size/offset/limit-style query params): first page,
+  // a later page, and past-the-end. REPORTED-only by default (below-floor).
+  const paginationParam = queryParams.find((p) =>
+    /^(page|pagenumber|page_number|offset|start)$/i.test(p.name),
+  );
+  const sizeParam = queryParams.find((p) =>
+    /^(size|pagesize|page_size|limit|count|per_page)$/i.test(p.name),
+  );
+  if (paginationParam || sizeParam) {
+    const pname = paginationParam?.name ?? sizeParam!.name;
+    add({
+      name: `pagination_first_${pname}`,
+      type: 'pagination',
+      expectedStatus: 'success',
+      dimensionKind: 'pagination',
+      reportedOnly: true,
+      directive:
+        `Request the FIRST page (e.g. ${pname}=0 or 1 per the API's convention) with a small page ` +
+        'size; expect a 2xx. Captures the pagination envelope shape.',
+    });
+    add({
+      name: `pagination_next_${pname}`,
+      type: 'pagination',
+      expectedStatus: 'success',
+      dimensionKind: 'pagination',
+      reportedOnly: true,
+      directive:
+        `Request a LATER page (e.g. ${pname}=2) with the same page size; expect a 2xx. Captures ` +
+        'page-boundary behaviour (offsets, next-page links).',
+    });
+    add({
+      name: `pagination_past_end_${pname}`,
+      type: 'pagination',
+      expectedStatus: 'success',
+      dimensionKind: 'pagination',
+      reportedOnly: true,
+      directive:
+        `Request a page FAR past the end of the data (e.g. ${pname}=99999); expect the API's ` +
+        'empty-page behaviour (2xx with an empty list, or its documented alternative). Captures it.',
+    });
+  }
+
+  // 3h (Spec 2026-07-06-k). CONTENT-TYPE dimensions when the request body
+  // declares MULTIPLE media types. REPORTED-only by default.
+  const requestBodyContent =
+    oasOperation && typeof oasOperation === 'object'
+      ? ((oasOperation as { requestBody?: { content?: Record<string, unknown> } }).requestBody
+          ?.content ?? null)
+      : null;
+  if (requestBodyContent) {
+    const mediaTypes = Object.keys(requestBodyContent);
+    for (const mediaType of mediaTypes.slice(1, 3)) {
+      add({
+        name: `content_type_${mediaType.replace(/[^a-z0-9]+/gi, '_')}`,
+        type: 'content_type',
+        expectedStatus: 'success',
+        dimensionKind: 'content_type',
+        reportedOnly: true,
+        directive:
+          `Send the SAME valid request using the '${mediaType}' media type (Content-Type header + ` +
+          'matching body encoding); expect a 2xx. Captures the alternate-media-type behaviour.',
+      });
+    }
+  }
+
+  // 3i (Spec 2026-07-06-k). MISSING-REQUIRED-FIELD validation dimensions from
+  // the request body schema (one per required field, capped at 3) — the
+  // schema-derived approximation of the committed request_validation
+  // constraints. Floor-bearing (validation).
+  const requestSchema = (op as { request_schema_json?: unknown }).request_schema_json as
+    | { required?: unknown }
+    | null
+    | undefined;
+  const requiredFields = Array.isArray(requestSchema?.required)
+    ? (requestSchema!.required as unknown[]).filter((f): f is string => typeof f === 'string')
+    : [];
+  for (const field of requiredFields.slice(0, 3)) {
+    add({
+      name: `validation_missing_${field}`,
+      type: 'bad_request',
+      expectedStatus: 'client_error',
+      dimensionKind: 'validation',
+      directive:
+        `Send an otherwise-valid request body OMITTING the required field '${field}'; expect a 4xx ` +
+        'validation error naming it. INTENDED negative case.',
     });
   }
 
