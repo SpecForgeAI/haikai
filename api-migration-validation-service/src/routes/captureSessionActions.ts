@@ -30,6 +30,8 @@ import { createSessionHttpExecutor } from '../services/httpExecutor';
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
 import { orchestrateCaptureSession } from '../services/captureSessionOrchestrator';
 import type { PostmanCapturedRequest } from '../services/postmanDeltaStage1';
+// Spec 2026-07-06-j: WSDL 1.1 -> inventory (replaces the SOAP 400 guard).
+import { parseWsdlToInventory } from '../services/wsdlToInventory';
 import { toCaptureSession } from '../services/archModelClient';
 import type { ApiAuthSecret, SecretsBundle } from '../types/secrets';
 import {
@@ -784,10 +786,48 @@ async function parseUploadedContract(
     })),
   );
 
-  // --- WSDL / SOAP guard (true SOAP only; an .xsd is NOT SOAP) -------------
+  // --- WSDL / SOAP (Spec 2026-07-06-j: FIRST-CLASS, replaces the 400) ------
+  // A WSDL 1.1 document parses into POST operation rows whose OAS stubs carry
+  // the `x-amvs-soap` block -- the SAME metadata shape the model-seeded SOAP
+  // prepop emits, so the capture loop, the deterministic envelope builder
+  // (`soapEnvelope.ts`), and the XML comparer read one shape regardless of
+  // origin. An unparseable WSDL still 400s (never a guess).
   if (classified.contractFormat === 'wsdl') {
-    fail(res, 400, SOAP_NOT_SUPPORTED_MESSAGE, { code: 'SOAP_NOT_SUPPORTED' });
-    return null;
+    const wsdlRows = parseWsdlToInventory(
+      classified.contractContent ?? '',
+      classified.contractName ?? 'uploaded.wsdl',
+    );
+    if (wsdlRows.length === 0) {
+      fail(
+        res,
+        400,
+        'The uploaded WSDL could not be parsed into operations. Confirm it is a ' +
+          'WSDL 1.1 document with a portType, binding, and service address. ' +
+          `(Previously: ${SOAP_NOT_SUPPORTED_MESSAGE})`,
+        { code: 'WSDL_PARSE_FAILED' },
+      );
+      return null;
+    }
+    return {
+      title: classified.contractName ?? 'WSDL upload',
+      version: null,
+      operations: wsdlRows.map((row) => ({
+        operationId: row.operationId,
+        method: row.method,
+        path: row.path,
+        summary: row.summary,
+        description: null,
+        requestSchema: null,
+        responseSchema: null,
+        oasOperation: {
+          summary: row.summary,
+          operationId: row.operationId,
+          responses: {},
+          'x-amvs-soap': row.soap,
+          'x-amvs-source': 'wsdl-upload',
+        } as never,
+      })),
+    };
   }
 
   // --- Lone-XSD guard (an XSD with no accompanying WADL) -------------------

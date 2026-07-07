@@ -2,6 +2,8 @@ import { AxiosError, AxiosResponse } from 'axios';
 import { ToolHandler, ToolRegistryEntry, ToolValidationError } from './toolTypes';
 import { extractIdentifierFacts } from './_idFacts';
 import { redactHeaders, redactJson, redactUrl } from '../redactor';
+import { rawBodyOf } from '../httpExecutor';
+import { persistableRawBody } from '../rawBodyPolicy';
 import { HttpMethod } from '../../types/oas';
 import { runManager } from '../runManager';
 import { LLM_HTTP_ATTEMPTS_PER_SCENARIO } from '../../config';
@@ -652,6 +654,12 @@ const handler: ToolHandler = async (args, ctx) => {
       ? (safeResponseHeaders as unknown as Record<string, string> | null)
       : null,
     response_body_json: normaliseBodyForAms(safeResponseBody),
+    // Spec 2026-07-06-j: the RAW wire body, persisted ONLY when redaction was
+    // a no-op on it (rawBodyPolicy) — strict byte verdicts where trustworthy,
+    // `raw unavailable` (null) everywhere else, secrets never in raw storage.
+    response_body_raw: response
+      ? persistableRawBody(rawBodyOf(response), response.data, safeResponseBody)
+      : null,
     duration_ms: durationMs,
     error_type: errorType,
     error_message: persistedErrorMessage,

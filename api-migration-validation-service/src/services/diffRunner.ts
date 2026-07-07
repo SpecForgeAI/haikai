@@ -15,6 +15,9 @@ import {
   type VolatilityContext,
   type VolatilityEnvelope,
 } from './jsonShapeComparator';
+// Spec 2026-07-06-j: the AMS comparison-waiver set (replaces the in-code
+// header allowlist when fetched; null => legacy fallback).
+import { fetchWaiverSet } from './comparisonWaivers';
 import {
   classifyDiffItem as defaultClassifyDiffItem,
   API_BEHAVIOUR_DRIFT_CATEGORY,
@@ -243,6 +246,11 @@ interface ClassificationCounts {
   // Header dimension (Spec 2026-06-17). Same local-only treatment -- counts a
   // diff_item whose header_classification is a real (untolerated) break.
   header_drift: number;
+  // Strict-profile byte dimension (Spec 2026-07-06-j). Local-only tallies --
+  // the verdicts ride each item's persisted diff_json (`byte_classification`);
+  // these feed the reconcile trace + the failure log line.
+  byte_drift: number;
+  raw_unavailable: number;
   source_only: number;
   target_only: number;
 }
@@ -255,6 +263,8 @@ function freshCounts(): ClassificationCounts {
     body_value_drift: 0,
     body_ordering_drift: 0,
     header_drift: 0,
+    byte_drift: 0,
+    raw_unavailable: 0,
     source_only: 0,
     target_only: 0,
   };
@@ -362,6 +372,16 @@ export async function runDiff(
     diff = await archModelClient.getDiff(projectId, diffId);
     architectureId = diff.architecture_id;
     traceCorr = { run: diffId, project: projectId, arch: architectureId };
+
+    // Spec 2026-07-06-j: the diff row's comparison profile (null reads
+    // 'standard' — today's semantics) + the project's effective waiver set
+    // from AMS. A waiver fetch failure yields null and the comparator falls
+    // back to the legacy in-code header allowlist (logged inside the fetch).
+    const comparisonProfile: 'standard' | 'strict' =
+      (diff as { comparison_profile?: string | null }).comparison_profile === 'strict'
+        ? 'strict'
+        : 'standard';
+    const waiverSet = await fetchWaiverSet(projectId);
     if (diff.status !== 'computing') {
       // Either already completed or failed. Don't double-run; surface a
       // diagnostic and return.
@@ -532,6 +552,16 @@ export async function runDiff(
           sourceItem.response_json,
           targetItem.response_json,
           volatilityCtx,
+          // Spec 2026-07-06-j: the diff's comparison profile + the AMS waiver
+          // set (replacing the in-code allowlist when fetched) + the raw wire
+          // bodies for the strict byte verdict. `waivers: null` (fetch
+          // failure) falls back to the legacy allowlist inside the comparator.
+          {
+            profile: comparisonProfile,
+            waivers: waiverSet,
+            sourceRaw: sourceItem.response_body_raw ?? null,
+            targetRaw: targetItem.response_body_raw ?? null,
+          },
         );
         bodyClassification = cmp.bodyClassification;
         // Header classification (null = dimension skipped: a side lacked the
@@ -557,6 +587,16 @@ export async function runDiff(
           }
           if (cmp.volatilitySourcesTouched.length > 0) {
             blob.volatility_sources = cmp.volatilitySourcesTouched as unknown[];
+          }
+          // Spec 2026-07-06-j: the strict-profile byte verdict rides the
+          // persisted diff item (additive key; absent on standard runs).
+          if (cmp.byteClassification) {
+            blob.byte_classification = cmp.byteClassification;
+            if (cmp.byteClassification === 'byte_drift') {
+              counts.byte_drift += 1;
+            } else if (cmp.byteClassification === 'raw_unavailable') {
+              counts.raw_unavailable += 1;
+            }
           }
           bodyDiffJson = Object.keys(blob).length > 0 ? blob : null;
         }

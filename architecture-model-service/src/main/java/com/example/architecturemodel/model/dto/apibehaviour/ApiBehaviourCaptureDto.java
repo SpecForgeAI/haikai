@@ -37,6 +37,11 @@ public record ApiBehaviourCaptureDto(
     Integer responseStatus,
     Map<String, Object> responseHeadersRedactedJson,
     Map<String, Object> responseBodyJson,
+    /**
+     * RAW response body (Spec 2026-07-06-j) — present only when redaction
+     * was a no-op on the body; null = raw unavailable (strict degrades).
+     */
+    String responseBodyRaw,
     Integer durationMs,
     String errorType,
     String errorMessage,

@@ -151,6 +151,7 @@ public final class ApiBehaviourMapper {
             entity.getResponseStatus(),
             entity.getResponseHeadersRedactedJson(),
             entity.getResponseBodyJson(),
+            entity.getResponseBodyRaw(),
             entity.getDurationMs(),
             entity.getErrorType(),
             entity.getErrorMessage(),
@@ -219,6 +220,7 @@ public final class ApiBehaviourMapper {
             entity.getResponseJson(),
             entity.getVolatilePathsJson(),
             entity.getSequenceJson(),
+            entity.getResponseBodyRaw(),
             entity.getBusinessNotes(),
             entity.getCreatedAt(),
             entity.getUpdatedAt()
@@ -241,6 +243,7 @@ public final class ApiBehaviourMapper {
             entity.getSourceBaselineId(),
             entity.getTargetBaselineId(),
             entity.getStatus(),
+            entity.getComparisonProfile(),
             entity.getMatchedCount(),
             entity.getStatusDriftCount(),
             entity.getBodyShapeDriftCount(),

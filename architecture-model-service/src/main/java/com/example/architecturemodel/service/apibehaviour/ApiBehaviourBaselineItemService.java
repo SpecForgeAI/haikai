@@ -8,6 +8,7 @@ import com.example.architecturemodel.model.dto.apibehaviour.CreateApiBehaviourBa
 import com.example.architecturemodel.model.dto.apibehaviour.UpdateApiBehaviourBaselineItemRequest;
 import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourBaselineItemEntity;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourBaselineItemRepository;
+import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourCaptureRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,6 +35,14 @@ import java.util.UUID;
 public class ApiBehaviourBaselineItemService {
 
     private final ApiBehaviourBaselineItemRepository repository;
+
+    /**
+     * Spec 2026-07-06-j: server-side raw fallback — when the caller did not
+     * pass {@code responseBodyRaw} (e.g. the frontend Save-as-baseline copy),
+     * the referenced capture row's raw is copied onto the frozen item so
+     * EVERY item creator inherits it without client changes.
+     */
+    private final ApiBehaviourCaptureRepository captureRepository;
 
     /**
      * Max baseline items accepted on a single best-effort batch-create call.
@@ -169,6 +178,7 @@ public class ApiBehaviourBaselineItemService {
             .responseJson(request.responseJson())
             .volatilePathsJson(request.volatilePathsJson())
             .sequenceJson(request.sequenceJson())
+            .responseBodyRaw(resolveResponseBodyRaw(request))
             .businessNotes(request.businessNotes())
             .build();
     }
@@ -215,5 +225,24 @@ public class ApiBehaviourBaselineItemService {
         return repository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException(
                 "API behaviour baseline item not found: " + id));
+    }
+
+    /**
+     * Spec 2026-07-06-j: the item's raw comes from the request when the
+     * caller passed it (target replay does), else it is COPIED from the
+     * referenced capture row (the frontend Save-as-baseline path). Best-effort
+     * — a missing capture row simply yields null ("raw unavailable"; strict
+     * verdicts degrade visibly, never a false exact).
+     */
+    private String resolveResponseBodyRaw(CreateApiBehaviourBaselineItemRequest request) {
+        if (request.responseBodyRaw() != null) {
+            return request.responseBodyRaw();
+        }
+        if (request.captureId() == null) {
+            return null;
+        }
+        return captureRepository.findById(request.captureId())
+            .map(capture -> capture.getResponseBodyRaw())
+            .orElse(null);
     }
 }

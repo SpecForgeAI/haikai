@@ -414,6 +414,12 @@ export interface CreateCaptureRequest {
   response_status?: number | null;
   response_headers_redacted_json?: Record<string, string> | null;
   response_body_json?: unknown;
+  /**
+   * Spec 2026-07-06-j: the RAW wire body — persisted only when redaction was
+   * a no-op on it (rawBodyPolicy); null = raw unavailable (strict byte
+   * verdicts degrade visibly).
+   */
+  response_body_raw?: string | null;
   duration_ms?: number | null;
   error_type?: string | null;
   error_message?: string | null;
@@ -612,6 +618,11 @@ export interface BaselineItemDto {
    * (column) + Task Group 2 (capture-side assembly + carry-through).
    */
   sequence_json?: Record<string, unknown> | null;
+  /**
+   * Spec 2026-07-06-j: the RAW wire body for strict byte verdicts. Null =
+   * raw unavailable (pre-raw baselines; redaction-touched bodies).
+   */
+  response_body_raw?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -627,6 +638,12 @@ export interface CreateBaselineItemRequest {
   request_json?: unknown;
   response_status?: number | null;
   response_json?: unknown;
+  /**
+   * Spec 2026-07-06-j: OPTIONAL raw wire body. When omitted, AMS copies the
+   * referenced capture row's raw server-side (Save-as-baseline inherits it
+   * without client changes).
+   */
+  response_body_raw?: string | null;
   business_notes?: string | null;
   /**
    * OPTIONAL volatility envelope `{ paths, volatility_source, k }` measured by

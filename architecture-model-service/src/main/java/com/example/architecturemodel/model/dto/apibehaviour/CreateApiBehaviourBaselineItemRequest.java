@@ -42,13 +42,39 @@ public record CreateApiBehaviourBaselineItemRequest(
     Map<String, Object> responseJson,
     Map<String, Object> volatilePathsJson,
     Map<String, Object> sequenceJson,
+    String responseBodyRaw,
     String businessNotes
 ) {
     /**
+     * Backward-compatible delegating constructor for pre-raw call sites
+     * (Spec 2026-07-06-j): delegates with {@code responseBodyRaw == null}
+     * ("raw unavailable"; strict verdicts degrade visibly).
+     */
+    public CreateApiBehaviourBaselineItemRequest(
+        UUID baselineId,
+        UUID captureId,
+        UUID operationId,
+        UUID scenarioId,
+        String method,
+        String path,
+        String scenarioName,
+        Map<String, Object> requestJson,
+        Integer responseStatus,
+        Map<String, Object> responseJson,
+        Map<String, Object> volatilePathsJson,
+        Map<String, Object> sequenceJson,
+        String businessNotes
+    ) {
+        this(
+            baselineId, captureId, operationId, scenarioId,
+            method, path, scenarioName, requestJson, responseStatus,
+            responseJson, volatilePathsJson, sequenceJson, null, businessNotes);
+    }
+
+    /**
      * Backward-compatible delegating constructor for pre-sequence call sites:
-     * delegates to the canonical constructor with {@code sequenceJson == null}
-     * (a single-shot item). New sequence-bearing call sites use the canonical
-     * constructor that carries {@code sequenceJson}.
+     * delegates with {@code sequenceJson == null} (a single-shot item) and
+     * {@code responseBodyRaw == null}.
      */
     public CreateApiBehaviourBaselineItemRequest(
         UUID baselineId,
@@ -67,6 +93,6 @@ public record CreateApiBehaviourBaselineItemRequest(
         this(
             baselineId, captureId, operationId, scenarioId,
             method, path, scenarioName, requestJson, responseStatus,
-            responseJson, volatilePathsJson, null, businessNotes);
+            responseJson, volatilePathsJson, null, null, businessNotes);
     }
 }

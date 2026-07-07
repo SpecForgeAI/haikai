@@ -111,6 +111,16 @@ public class ApiBehaviourCaptureEntity {
     @Column(name = "response_body_json", columnDefinition = "jsonb")
     private Map<String, Object> responseBodyJson;
 
+    /**
+     * RAW response body text exactly as received (Spec 2026-07-06-j,
+     * changeset 205). Persisted ONLY when redaction is a NO-OP on the body
+     * (the validation service's raw-body policy) — secrets never reach raw
+     * storage. {@code null} = raw unavailable; strict byte verdicts degrade
+     * visibly. Copied onto the baseline item at save-as-baseline time.
+     */
+    @Column(name = "response_body_raw", columnDefinition = "text")
+    private String responseBodyRaw;
+
     /** Boxed {@link Integer} so PATCH preserves {@code null}. */
     @Column(name = "duration_ms")
     private Integer durationMs;

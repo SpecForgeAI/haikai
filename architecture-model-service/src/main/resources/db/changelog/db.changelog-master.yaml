@@ -4780,3 +4780,42 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Parity Exactness & First-Class SOAP (Spec 2026-07-06-j, Code-Tier Oracle
+  # Program). 205: raw response text on baseline items (strict byte verdicts;
+  # nullable, no backfill, excluded from the content hash) + comparison_profile
+  # on diffs (null reads 'standard'). 206: durable comparison-waiver table with
+  # the legacy 16-name header allowlist seeded as visible global rows.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 204).
+  # ============================================================================
+  - changeSet:
+      id: 205-api-behaviour-exactness
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_baseline_items
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/205-api-behaviour-exactness.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 206-api-behaviour-comparison-waivers
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_baselines
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/206-api-behaviour-comparison-waivers.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

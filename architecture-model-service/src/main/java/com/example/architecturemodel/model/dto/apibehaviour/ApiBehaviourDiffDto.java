@@ -46,6 +46,11 @@ public record ApiBehaviourDiffDto(
     UUID sourceBaselineId,
     UUID targetBaselineId,
     String status,
+    /**
+     * 'standard' | 'strict' chosen at diff-creation time
+     * (Spec 2026-07-06-j); null reads as 'standard' (today's semantics).
+     */
+    String comparisonProfile,
     Integer matchedCount,
     Integer statusDriftCount,
     Integer bodyShapeDriftCount,
@@ -58,4 +63,37 @@ public record ApiBehaviourDiffDto(
     String errorMessage,
     Instant createdAt,
     Instant updatedAt
-) {}
+) {
+    /**
+     * Backward-compatible delegating constructor for pre-profile call sites
+     * (Spec 2026-07-06-j): delegates with {@code comparisonProfile == null}
+     * ('standard' semantics).
+     */
+    public ApiBehaviourDiffDto(
+        UUID id,
+        UUID projectId,
+        UUID architectureId,
+        UUID sourceBaselineId,
+        UUID targetBaselineId,
+        String status,
+        Integer matchedCount,
+        Integer statusDriftCount,
+        Integer bodyShapeDriftCount,
+        Integer bodyValueDriftCount,
+        Integer sourceOnlyCount,
+        Integer targetOnlyCount,
+        Instant sourceBaselineUpdatedAt,
+        Instant targetBaselineUpdatedAt,
+        Instant computedAt,
+        String errorMessage,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        this(
+            id, projectId, architectureId, sourceBaselineId, targetBaselineId,
+            status, null, matchedCount, statusDriftCount, bodyShapeDriftCount,
+            bodyValueDriftCount, sourceOnlyCount, targetOnlyCount,
+            sourceBaselineUpdatedAt, targetBaselineUpdatedAt, computedAt,
+            errorMessage, createdAt, updatedAt);
+    }
+}

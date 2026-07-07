@@ -43,15 +43,47 @@ public record ApiBehaviourBaselineItemDto(
     Map<String, Object> responseJson,
     Map<String, Object> volatilePathsJson,
     Map<String, Object> sequenceJson,
+    String responseBodyRaw,
     String businessNotes,
     Instant createdAt,
     Instant updatedAt
 ) {
     /**
+     * Backward-compatible delegating constructor for pre-raw call sites
+     * (Spec 2026-07-06-j): delegates to the canonical constructor with
+     * {@code responseBodyRaw == null} ("raw unavailable" — the state of every
+     * already-pinned baseline; strict verdicts degrade visibly, never a false
+     * exact).
+     */
+    public ApiBehaviourBaselineItemDto(
+        UUID id,
+        UUID baselineId,
+        UUID captureId,
+        UUID operationId,
+        UUID scenarioId,
+        String method,
+        String path,
+        String scenarioName,
+        Map<String, Object> requestJson,
+        Integer responseStatus,
+        Map<String, Object> responseJson,
+        Map<String, Object> volatilePathsJson,
+        Map<String, Object> sequenceJson,
+        String businessNotes,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        this(
+            id, baselineId, captureId, operationId, scenarioId,
+            method, path, scenarioName, requestJson, responseStatus,
+            responseJson, volatilePathsJson, sequenceJson, null, businessNotes,
+            createdAt, updatedAt);
+    }
+
+    /**
      * Backward-compatible delegating constructor for pre-sequence call sites:
-     * delegates to the canonical constructor with {@code sequenceJson == null}
-     * (a single-shot item). New sequence-bearing call sites use the canonical
-     * constructor that carries {@code sequenceJson}.
+     * delegates with {@code sequenceJson == null} (a single-shot item) and
+     * {@code responseBodyRaw == null}.
      */
     public ApiBehaviourBaselineItemDto(
         UUID id,
@@ -73,7 +105,7 @@ public record ApiBehaviourBaselineItemDto(
         this(
             id, baselineId, captureId, operationId, scenarioId,
             method, path, scenarioName, requestJson, responseStatus,
-            responseJson, volatilePathsJson, null, businessNotes,
+            responseJson, volatilePathsJson, null, null, businessNotes,
             createdAt, updatedAt);
     }
 }

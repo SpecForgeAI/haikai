@@ -329,19 +329,39 @@ test('(c) WADL whose grammar XSD was NOT uploaded returns a 400 naming the missi
 });
 
 // ---------------------------------------------------------------------------
-// (d) WSDL / SOAP content -> "not supported yet" 400
+// (d) WSDL / SOAP content -> FIRST-CLASS operations (Spec 2026-07-06-j —
+// replaces the old "SOAP not supported yet" 400). A parseable WSDL yields
+// POST operations whose oas_operation_json carries the x-amvs-soap block; an
+// unparseable one still 400s (WSDL_PARSE_FAILED).
 // ---------------------------------------------------------------------------
 const SOAP_WSDL = `<?xml version="1.0" encoding="UTF-8"?>
 <wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
                   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:tns="http://hifi.example.com/soap"
                   targetNamespace="http://hifi.example.com/soap">
+  <wsdl:message name="createOrderRequest">
+    <wsdl:part name="parameters" element="tns:createOrder"/>
+  </wsdl:message>
   <wsdl:portType name="OrdersPort">
-    <wsdl:operation name="createOrder"/>
+    <wsdl:operation name="createOrder">
+      <wsdl:input message="tns:createOrderRequest"/>
+    </wsdl:operation>
   </wsdl:portType>
+  <wsdl:binding name="OrdersBinding" type="tns:OrdersPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="createOrder">
+      <soap:operation soapAction="http://hifi.example.com/soap/createOrder"/>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="OrdersService">
+    <wsdl:port name="OrdersPortSoap" binding="tns:OrdersBinding">
+      <soap:address location="http://hifi.example.com/services/orders"/>
+    </wsdl:port>
+  </wsdl:service>
 </wsdl:definitions>
 `;
 
-test('(d) WSDL/SOAP upload returns the clear "SOAP not supported yet" 400', async () => {
+test('(d) WSDL upload parses into POST operations carrying x-amvs-soap (Spec 2026-07-06-j)', async () => {
   const { mock, operationsCreated } = buildArchModelClientMock();
   const app = buildApp({ archModelClient: mock as any });
 
@@ -349,10 +369,37 @@ test('(d) WSDL/SOAP upload returns the clear "SOAP not supported yet" 400', asyn
     .post(PARSE_URL)
     .attach('file', Buffer.from(SOAP_WSDL, 'utf8'), 'orders.wsdl');
 
+  expect(res.status).toBe(200);
+  expect(operationsCreated).toHaveLength(1);
+  const op = operationsCreated[0].body as {
+    method?: string;
+    operation_id?: string;
+    oas_operation_json?: Record<string, unknown>;
+  };
+  expect(op.method?.toLowerCase()).toBe('post');
+  expect(op.operation_id).toBe('createOrder');
+  const soapBlock = op.oas_operation_json?.['x-amvs-soap'] as Record<string, unknown>;
+  expect(soapBlock).toMatchObject({
+    soap_action: 'http://hifi.example.com/soap/createOrder',
+    request_root_element: 'createOrder',
+    request_namespace: 'http://hifi.example.com/soap',
+  });
+});
+
+test('(d2) an unparseable WSDL still 400s (WSDL_PARSE_FAILED — never a guess)', async () => {
+  const { mock, operationsCreated } = buildArchModelClientMock();
+  const app = buildApp({ archModelClient: mock as any });
+
+  // WSDL-namespaced but with NO portType -> zero operations -> parse failure.
+  const emptyWsdl = `<?xml version="1.0"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  targetNamespace="http://x.example.com"/>`;
+  const res = await request(app)
+    .post(PARSE_URL)
+    .attach('file', Buffer.from(emptyWsdl, 'utf8'), 'orders.wsdl');
+
   expect(res.status).toBe(400);
-  expect(res.body.error.code).toBe('SOAP_NOT_SUPPORTED');
-  expect(res.body.error.message).toContain("SOAP/WSDL services aren't supported");
-  expect(res.body.error.message).toContain('WADL+XSD');
+  expect(res.body.error.code).toBe('WSDL_PARSE_FAILED');
   expect(operationsCreated).toHaveLength(0);
 });
 

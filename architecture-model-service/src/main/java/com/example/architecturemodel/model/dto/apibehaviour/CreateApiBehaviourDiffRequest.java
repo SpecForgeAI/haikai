@@ -24,5 +24,19 @@ import java.util.UUID;
 public record CreateApiBehaviourDiffRequest(
     UUID architectureId,
     UUID sourceBaselineId,
-    UUID targetBaselineId
-) {}
+    UUID targetBaselineId,
+    /**
+     * 'standard' | 'strict' (Spec 2026-07-06-j). Optional; null = 'standard'
+     * (today's semantics). Validated at the service layer.
+     */
+    String comparisonProfile
+) {
+    /** Backward-compatible delegating constructor (profile defaults null). */
+    public CreateApiBehaviourDiffRequest(
+        UUID architectureId,
+        UUID sourceBaselineId,
+        UUID targetBaselineId
+    ) {
+        this(architectureId, sourceBaselineId, targetBaselineId, null);
+    }
+}

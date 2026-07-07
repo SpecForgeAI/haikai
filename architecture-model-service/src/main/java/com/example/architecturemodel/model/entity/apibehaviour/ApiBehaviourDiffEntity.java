@@ -115,6 +115,15 @@ public class ApiBehaviourDiffEntity {
     private String status = "computing";
 
     /**
+     * Comparison profile chosen at diff-creation time
+     * (Spec 2026-07-06-j, changeset 205): {@code 'standard'} | {@code 'strict'}.
+     * Nullable — {@code null} reads as {@code 'standard'} (today's semantics,
+     * zero regression). Validated at the service layer.
+     */
+    @Column(name = "comparison_profile")
+    private String comparisonProfile;
+
+    /**
      * Count of paired items classified as status_match + body_match.
      *
      * <p>Boxed {@link Integer} required for PATCH safety -- primitive

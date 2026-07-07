@@ -269,3 +269,62 @@ Shakedown items: M-1 — commit an internal candidate and verify the schedule me
 lands somewhere readable (endpoint protocol_metadata_json or data blob) for the carriage;
 M-2 — run a scan over a Quartz-XML estate and confirm internal edges + behaviour blocks
 appear; M-3 — internal story spec text renders the recipe with real effect tables.
+
+---
+
+## Spec J — Parity Exactness & First-Class SOAP (2026-07-07)
+
+**Status: BUILT + VERIFIED.**
+
+AMS (changesets 205 + 206, entities/DTOs/services, 96 api-behaviour tests green):
+
+- 205: `response_body_raw` on baseline items AND captures (nullable, no backfill,
+  excluded from the content hash) + `comparison_profile` on diffs (null = 'standard').
+- 206: `api_behaviour_comparison_waivers` (scope global/project × dimension header /
+  body_path / xml_xpath / ordering_path / break_fingerprint × target × REQUIRED reason)
+  with the legacy 16-name header allowlist (`VOLATILE_HEADER_NAMES`, verbatim) seeded as
+  visible, deletable global rows. New entity/repo/service/controller
+  (`GET/POST/DELETE /api/projects/{p}/api-behaviour/comparison-waivers`).
+- Server-side raw fallback: baseline-item create copies the referenced capture row's raw
+  when the caller passed none — the frontend Save-as-baseline inherits raw with NO
+  client change. Target replay passes raw directly. Back-compat delegating constructors
+  on all touched records.
+
+AMVS:
+
+- Executor raw preservation: identity `transformResponse` + interceptor re-parse —
+  `data` contract byte-identical for every consumer, `rawBody` carries the exact wire
+  text (size-capped). Pinned by a REAL express round-trip test.
+- **Raw-body policy (design decision):** raw persists ONLY when redaction was a NO-OP on
+  the body (`rawBodyPolicy.ts`) — secrets never reach raw storage; redaction-touched
+  bodies degrade to `raw_unavailable` VISIBLY. Target side persists unredacted bodies so
+  raw rides verbatim there.
+- Comparator: optional 4th `options` param (profile / waivers / raws) — omitted =
+  byte-identical legacy behaviour. A passed waiver set REPLACES the in-code header
+  allowlist (deleting a seed makes that header strict); body-path waivers tolerate
+  value+ordering drift tagged `waived` (shape ALWAYS breaks); strict profile adds
+  `byteClassification`: direct raw byte equality, or masked-canonical compare when
+  probed/waived paths are in play, `raw_unavailable` when either raw is missing.
+- `xmlComparator.ts` (fast-xml-parser, C14N-LITE documented canonical form:
+  prefix→URI resolution, attribute sort, whitespace policy) — structural diff with
+  XPath-ish paths + `compareXmlBytes` with XPath masks; XML raws route automatically
+  inside the strict byte verdict.
+- SOAP first-class: WSDL upload 400 REPLACED — `wsdlToInventory.ts` parses WSDL 1.1
+  (portType/binding/service essentials) into POST operations carrying the SAME
+  `x-amvs-soap` block the model-seeded prepop emits; unparseable WSDL still 400s
+  (`WSDL_PARSE_FAILED`). `soapEnvelope.ts` builds byte-stable escaped envelopes
+  (values-only filling; replay resends captured request bodies verbatim by design).
+- diffRunner threads the diff row's profile + the fetched AMS waiver set (fetch failure
+  → legacy-allowlist fallback, logged) + both sides' raws; `byte_classification` rides
+  each item's persisted diff_json (additive) with local byte_drift / raw_unavailable
+  tallies.
+
+Deviations/residuals: SOAP volatility probing stays GET-only (`not_probed` — Spec N's
+schema-derived volatility is the successor); finding-emission rules NOT extended for
+byte_drift (Spec I's verdict layer consumes byte_classification directly — recorded);
+C14N-lite not W3C C14N (documented; same form both sides).
+
+Verification: 13 new pins (`parityExactness.test.ts`) + rewritten WSDL pins (parse-into-
+operations + unparseable-400). AMVS full suite: 464 passed / 2 failed — BOTH failures
+(`testConnectionAction`, `captureSessionActions`) verified PRE-EXISTING via stash-run at
+the branch point. AMS `ApiBehaviour*`: 96 tests green.

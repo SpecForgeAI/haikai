@@ -176,7 +176,10 @@ export type VolatilitySource =
   | 'heuristic'
   | 'declared'
   | 'non_json'
-  | 'not_probed';
+  | 'not_probed'
+  // Spec 2026-07-06-j: tolerated by a durable AMS comparison waiver (the
+  // waiver id enumeration lives on the diff run; the entry stays VISIBLE).
+  | 'waived';
 
 export interface BodyDiffEntry {
   /**
@@ -273,6 +276,12 @@ export interface VolatilityEnvelope {
 export interface CompareJsonShapesResult {
   bodyClassification: BodyClassification;
   bodyDiffJson: BodyDiffEntry[];
+  /**
+   * Strict-profile byte verdict (Spec 2026-07-06-j): 'byte_match' |
+   * 'byte_drift' | 'raw_unavailable'. ALWAYS null on the standard profile
+   * (legacy callers unchanged).
+   */
+  byteClassification?: 'byte_match' | 'byte_drift' | 'raw_unavailable' | null;
   /**
    * Response-header classification, or `null` when the header dimension was
    * SKIPPED (either side lacked the `{ headers, body }` wrapper). When set,
@@ -872,6 +881,10 @@ function arraysStrictlyEqual(a: unknown[], b: unknown[]): boolean {
 function walkHeaders(
   sourceHeaders: Record<string, unknown>,
   targetHeaders: Record<string, unknown>,
+  // Spec 2026-07-06-j: waiver-driven allowlist predicate. Defaults to the
+  // legacy in-code VOLATILE_HEADER_NAMES so every existing caller is
+  // byte-identical; the diff runner passes the AMS waiver set instead.
+  isAllowlisted: (name: string) => boolean = isVolatileHeaderName,
 ): HeaderDiffEntry[] {
   const entries: HeaderDiffEntry[] = [];
 
@@ -929,7 +942,7 @@ function walkHeaders(
     }
     // Present on both -- compare values.
     if (canonicalKey(s!.value) !== canonicalKey(t!.value)) {
-      const tolerated = isVolatileHeaderName(name);
+      const tolerated = isAllowlisted(name);
       entries.push({
         path: headerPointer,
         kind: 'value',
@@ -1018,6 +1031,39 @@ function distinctSourcesTouched(
 // Public entry
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Comparison options (Spec 2026-07-06-j — Parity Exactness & First-Class SOAP)
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line import/no-cycle -- xmlComparator has no imports back
+import { compareXmlBytes } from './xmlComparator';
+
+export type ComparisonProfile = 'standard' | 'strict';
+
+/** The AMS waiver rows folded into fast lookup sets (comparisonWaivers.ts). */
+export interface WaiverSet {
+  headerNames: Set<string>;
+  bodyPaths: Set<string>;
+  xmlXPaths: Set<string>;
+  orderingPaths: Set<string>;
+}
+
+export interface CompareOptions {
+  /** Defaults to 'standard' — today's semantics, byte-identical. */
+  profile?: ComparisonProfile;
+  /**
+   * When present, REPLACES the legacy in-code header allowlist and supplies
+   * the body/XML/ordering waivers. Absent => legacy allowlist (back-compat).
+   */
+  waivers?: WaiverSet | null;
+  /** RAW wire bodies for the strict byte verdict; null = raw unavailable. */
+  sourceRaw?: string | null;
+  targetRaw?: string | null;
+}
+
+/** Strict-profile byte verdict (null on the standard profile). */
+export type ByteClassification = 'byte_match' | 'byte_drift' | 'raw_unavailable' | null;
+
 /**
  * Compare two JSON bodies. See file header for the normalisation rule and
  * the classification semantics.
@@ -1030,11 +1076,16 @@ function distinctSourcesTouched(
  *   they are pure functions of the wrapper shape, and they degrade gracefully
  *   (header dimension skipped when a side lacks the wrapper) so inputs that
  *   exercised only body/status are unaffected.
+ * @param options OPTIONAL Spec 2026-07-06-j extension: comparison profile,
+ *   the AMS waiver set (replacing the in-code header allowlist), and the raw
+ *   wire bodies for the strict byte verdict. Omitted => byte-identical
+ *   legacy behaviour with `byteClassification: null`.
  */
 export function compareJsonShapes(
   source: unknown,
   target: unknown,
   ctx?: VolatilityContext,
+  options?: CompareOptions,
 ): CompareJsonShapesResult {
   // Header dimension (Spec 2026-06-17). Read the PRE-unwrap `headers` key from
   // BOTH sides. GRACEFUL DEGRADE: when EITHER side lacks the `{ headers, body }`
@@ -1043,10 +1094,15 @@ export function compareJsonShapes(
   // emitted (no false break, no backfill). Spec R5.
   const sHeaders = extractHeaders(source);
   const tHeaders = extractHeaders(target);
+  // Spec 2026-07-06-j: a passed waiver set REPLACES the legacy in-code
+  // header allowlist; absent => legacy behaviour, byte-identical.
+  const isAllowlisted = options?.waivers
+    ? (name: string) => options.waivers!.headerNames.has(name.toLowerCase())
+    : isVolatileHeaderName;
   let headerClassification: HeaderClassification | null = null;
   let headerDiffJson: HeaderDiffEntry[] = [];
   if (sHeaders !== undefined && tHeaders !== undefined) {
-    headerDiffJson = walkHeaders(sHeaders, tHeaders);
+    headerDiffJson = walkHeaders(sHeaders, tHeaders, isAllowlisted);
     headerClassification = classifyHeaders(headerDiffJson);
   }
 
@@ -1059,12 +1115,121 @@ export function compareJsonShapes(
   const diffs: BodyDiffEntry[] = [];
   walk(sUnwrapped, tUnwrapped, '', diffs, ctx);
 
-  // Step 3 -- aggregate.
+  // Step 2b (Spec 2026-07-06-j) -- body-path waivers tolerate VALUE and
+  // ORDERING drift at the waived path exactly like probed volatility (shape
+  // still breaks; a waiver is a tolerance, never a blindfold on structure).
+  if (options?.waivers && options.waivers.bodyPaths.size > 0) {
+    for (const d of diffs) {
+      if (d.volatilitySource !== undefined) continue;
+      if (
+        (d.kind === 'value_changed' || d.kind === 'ordering') &&
+        options.waivers.bodyPaths.has(d.path)
+      ) {
+        d.volatilitySource = 'waived';
+      }
+    }
+  }
+
+  // Step 3 -- aggregate (+ the strict-profile byte verdict).
   return {
     bodyClassification: classify(diffs),
     bodyDiffJson: diffs,
     headerClassification,
     headerDiffJson,
     volatilitySourcesTouched: distinctSourcesTouched(diffs, headerDiffJson),
+    byteClassification:
+      options?.profile === 'strict'
+        ? computeByteClassification(options, ctx, diffs)
+        : null,
   };
+}
+
+/**
+ * Strict-profile byte verdict (Spec 2026-07-06-j).
+ *
+ *   - Either raw missing            -> 'raw_unavailable' (VISIBLE degrade;
+ *     never a false exact — pre-raw baselines and redaction-touched bodies).
+ *   - No tolerated paths in play    -> direct RAW BYTE equality.
+ *   - Tolerated paths (probed volatility + body-path waivers) -> both raws
+ *     are parsed, the tolerated paths are MASKED, and the masked trees are
+ *     compared via stable canonical serialisation (a masked compare cannot
+ *     be byte-faithful by definition; the mask set is enumerated in the
+ *     verdict's meaning). XML raws route through the namespace-aware
+ *     canonical XML comparer with XPath masks.
+ */
+function computeByteClassification(
+  options: CompareOptions,
+  ctx: VolatilityContext | undefined,
+  diffs: BodyDiffEntry[],
+): ByteClassification {
+  const sourceRaw = options.sourceRaw ?? null;
+  const targetRaw = options.targetRaw ?? null;
+  if (sourceRaw === null || targetRaw === null) return 'raw_unavailable';
+
+  const maskPaths = new Set<string>();
+  for (const d of diffs) {
+    if (d.volatilitySource !== undefined) maskPaths.add(d.path);
+  }
+  for (const waived of options.waivers?.bodyPaths ?? []) maskPaths.add(waived);
+
+  const looksXml = /^\s*</.test(sourceRaw) || /^\s*</.test(targetRaw);
+  if (looksXml) {
+    return compareXmlBytes(
+      sourceRaw,
+      targetRaw,
+      options.waivers?.xmlXPaths ?? new Set<string>(),
+    );
+  }
+
+  if (maskPaths.size === 0) {
+    return sourceRaw === targetRaw ? 'byte_match' : 'byte_drift';
+  }
+  try {
+    const maskedSource = maskJsonPaths(JSON.parse(sourceRaw), maskPaths);
+    const maskedTarget = maskJsonPaths(JSON.parse(targetRaw), maskPaths);
+    return canonicalStringify(maskedSource) === canonicalStringify(maskedTarget)
+      ? 'byte_match'
+      : 'byte_drift';
+  } catch {
+    // Unparseable raw with masks in play: fall back to direct byte equality
+    // (still honest — a match is a match; a mismatch may be volatile noise,
+    // which the body dimension already tolerated and the verdict reports).
+    return sourceRaw === targetRaw ? 'byte_match' : 'byte_drift';
+  }
+}
+
+/** Replace the node at each JSON-pointer-ish diff path with a mask marker. */
+function maskJsonPaths(value: unknown, paths: Set<string>): unknown {
+  const MASK = '«masked»';
+  const apply = (node: unknown, currentPath: string): unknown => {
+    if (paths.has(currentPath)) return MASK;
+    if (Array.isArray(node)) {
+      return node.map((child, i) => apply(child, `${currentPath}/${i}`));
+    }
+    if (node && typeof node === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+        out[k] = apply(v, `${currentPath}/${k}`);
+      }
+      return out;
+    }
+    return node;
+  };
+  return apply(value, '');
+}
+
+/** Stable canonical serialisation (sorted keys) for masked comparisons. */
+function canonicalStringify(value: unknown): string {
+  const sort = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(sort);
+    if (v && typeof v === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(v as Record<string, unknown>).sort()) {
+        out[key] = sort((v as Record<string, unknown>)[key]);
+      }
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(sort(value));
 }

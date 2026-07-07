@@ -12,6 +12,7 @@ import { runManager as defaultRunManager, RunManager } from './runManager';
 import {
   createSessionHttpExecutor,
   type SessionHttpExecutor,
+  rawBodyOf,
 } from './httpExecutor';
 import { runDiff as defaultRunDiff, type DiffRunnerDeps } from './diffRunner';
 import { resolveNonDeterministicEndpointKeys as defaultResolveNdKeys } from './nonDeterministicEndpointKeys';
@@ -616,6 +617,10 @@ export async function runTargetReplay(
                 ) as Record<string, string>)
               : null,
           response_body_json: normaliseBodyForAms(response.data),
+          // Spec 2026-07-06-j: target-side bodies persist unredacted, so the
+          // raw wire text rides verbatim (strict byte verdicts need BOTH
+          // sides). Null when the executor could not retain it.
+          response_body_raw: rawBodyOf(response),
           duration_ms: now() - requestStartedAt,
           error_type: null,
           error_message: null,
@@ -647,6 +652,8 @@ export async function runTargetReplay(
             headers: capture.response_headers_redacted_json,
             body: capture.response_body_json,
           },
+          // Spec 2026-07-06-j: byte-verdict input for the strict profile.
+          response_body_raw: rawBodyOf(response),
           business_notes: null,
         });
 
