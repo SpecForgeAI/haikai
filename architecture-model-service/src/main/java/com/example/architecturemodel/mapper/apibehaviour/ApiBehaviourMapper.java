@@ -246,6 +246,7 @@ public final class ApiBehaviourMapper {
             entity.getTargetBaselineId(),
             entity.getStatus(),
             entity.getComparisonProfile(),
+            entity.getEndpointScopeJson(),
             entity.getMatchedCount(),
             entity.getStatusDriftCount(),
             entity.getBodyShapeDriftCount(),

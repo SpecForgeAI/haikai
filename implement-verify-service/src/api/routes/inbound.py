@@ -342,6 +342,171 @@ async def reconciliation_list(orchestrate_id: str, status: str | None = None,
         conn.close()
 
 
+# ── Parity-verdict inbound (Spec 2026-07-06-i — Code-Tier Oracle) ────────────
+
+PARITY_REPAIR_CAP_DEFAULT = 5
+
+
+def _parity_repair_cap() -> int:
+    """Max automatic repair attempts per (orchestrate, spec) parity cell.
+    Env-tunable; the CI attempt cap (recorder ATTEMPT_CAP=3) is a different
+    guard on a different table — this one bounds the parity fix→redeploy→
+    re-verdict loop specifically (spec default 5)."""
+    try:
+        return max(0, int(os.getenv("PARITY_REPAIR_CAP", str(PARITY_REPAIR_CAP_DEFAULT))))
+    except ValueError:
+        return PARITY_REPAIR_CAP_DEFAULT
+
+
+def _count_parity_repairs(conn, orchestrate_id: str, task_group_id: str) -> int:
+    """Prior repair attempts = the parity_repair_requested events for this cell.
+    Event-derived (no new table): the event append is atomic with the enqueue
+    decision below, and the event store is the loop's durable projection."""
+    return sum(
+        1 for e in store.events_since(conn, orchestrate_id)
+        if e.get("kind") == "parity_repair_requested"
+        and e.get("task_group_id") == task_group_id
+    )
+
+
+def _enqueue_parity_repair(orchestrate_id: str, task_group_id: str, repo: str,
+                           parity_report: dict) -> str | None:
+    """Enqueue a fresh verify-task-group run with the parity report as the
+    defect input (mirrors ``_enqueue_reinvoke`` — same worker, same queue,
+    fresh run per event, never a resumed session). Best-effort: the durable
+    record is the verdict + event rows; a queue hiccup must not 500 the
+    caller. Returns the job id, or None on failure."""
+    try:
+        from src.job_queue.job_models import Job, JobStatus, JobType
+        from src.job_queue.job_queue import JobQueue
+        from src.safe_paths import jobs_db_path
+        queue = JobQueue(jobs_db_path())
+
+        orch = queue.get_job_status(orchestrate_id)
+        company = orch.company if orch else "verification"
+        project = orch.project if orch else repo
+
+        job = Job(
+            job_id=f"parity-repair-{orchestrate_id}-{task_group_id}-{os.urandom(4).hex()}",
+            type=JobType.VERIFY_TASK_GROUP,
+            status=JobStatus.QUEUED,
+            company=company,
+            project=project,
+            request_payload={
+                "orchestrate_id": orchestrate_id,
+                "task_group_id": task_group_id,
+                "repo": repo,
+                # The structured defect input the verification loop reads:
+                # per-endpoint request summary + expected vs actual paths.
+                "parity_report": parity_report,
+            },
+        )
+        return queue.enqueue_job(job)
+    except Exception as exc:  # pragma: no cover — queue optional in tests
+        logger.warning("parity repair enqueue failed: %s", exc)
+        return None
+
+
+@router.post("/api/v2/parity-verdict")
+async def parity_verdict(request: Request,
+                         authenticated: bool = Depends(verify_api_key)) -> Response:
+    """Inbound PARITY verdict (Spec 2026-07-06-i §3 — the repair loop's
+    re-entry, mirroring the CI-verdict async pattern).
+
+    The gateway's parity verifier posts the scoped replay+diff verdict here
+    after a code story deploys. Contract (snake_case)::
+
+        { "orchestrate_id": "...",           # binding key half 1
+          "task_group_id": "<spec_name>",    # binding key half 2
+          "repo": "...",                     # optional cell repo ("" ok)
+          "verdict": "pass" | "fail",
+          "diff_id": "...",                  # the AMS diff the verdict reads
+          "breaks": [ { fingerprint, method, path, scenario_name, kind,
+                        source_status, target_status, detail } ],
+          "delivery_id": "..." }             # optional dedup
+
+    Behaviour:
+      - verdict recorded on the (repo, 'parity') cell (attempt derived
+        atomically by the recorder);
+      - ``fail`` with attempts < PARITY_REPAIR_CAP (env, default 5): a fresh
+        verify-task-group run is enqueued with the parity report as the
+        defect input + a ``parity_repair_requested`` event;
+      - ``fail`` at the cap: NO further re-invokes — a
+        ``parity_repair_exhausted`` event + a ``parity_failed`` finding with
+        the final diff attached (visible, never silently passed);
+      - ``pass``: recorded, nothing else to do.
+    """
+    body = await request.body()
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError:
+        return JSONResponse({"error": "body is not json"}, status_code=400)
+
+    orchestrate_id = payload.get("orchestrate_id")
+    task_group_id = payload.get("task_group_id")
+    verdict = payload.get("verdict")
+    if not orchestrate_id or not task_group_id:
+        return JSONResponse({"error": "orchestrate_id and task_group_id are required"},
+                            status_code=400)
+    if verdict not in ("pass", "fail"):
+        return JSONResponse({"error": "verdict must be 'pass' or 'fail'"}, status_code=400)
+    repo = payload.get("repo") or ""
+    diff_id = payload.get("diff_id")
+    breaks = payload.get("breaks") if isinstance(payload.get("breaks"), list) else []
+
+    conn = store.connect()
+    try:
+        delivery = payload.get("delivery_id")
+        if delivery and not store.record_delivery(conn, f"parity:{orchestrate_id}", delivery):
+            return JSONResponse({"status": "duplicate delivery — already processed"},
+                                status_code=200)
+
+        rec_ok, rec_reason = recorder.record_verdict(
+            conn, orchestrate_id, task_group_id, repo, "parity", verdict,
+            detail={"diff_id": diff_id, "break_count": len(breaks)},
+        )
+        if not rec_ok:
+            return JSONResponse({"error": rec_reason}, status_code=409)
+
+        if verdict == "pass":
+            return JSONResponse({"status": "accepted", "verdict": "pass",
+                                 "repair": "not_needed"}, status_code=202)
+
+        cap = _parity_repair_cap()
+        attempts = _count_parity_repairs(conn, orchestrate_id, task_group_id)
+        if attempts >= cap:
+            # Cap exhausted: parity-failed, final diff attached — VISIBLE,
+            # never a silent pass and never an unbounded loop.
+            store.append_event(conn, orchestrate_id, task_group_id,
+                               "parity_repair_exhausted",
+                               {"attempts": attempts, "cap": cap, "diff_id": diff_id}, repo)
+            store.record_finding(conn, "parity-verifier", {
+                "orchestrate_id": orchestrate_id,
+                "task_group_id": task_group_id,
+                "repo": repo,
+                "kind": "parity_failed",
+                "title": f"Parity repair cap exhausted for {task_group_id} "
+                         f"({attempts}/{cap} attempts)",
+                "detail": {"diff_id": diff_id, "breaks": breaks},
+            })
+            return JSONResponse({"status": "accepted", "verdict": "fail",
+                                 "repair": "exhausted", "attempts": attempts,
+                                 "cap": cap}, status_code=202)
+
+        parity_report = {"diff_id": diff_id, "breaks": breaks}
+        job_id = _enqueue_parity_repair(orchestrate_id, task_group_id, repo, parity_report)
+        kind = "parity_repair_requested" if job_id else "parity_repair_enqueue_failed"
+        store.append_event(conn, orchestrate_id, task_group_id, kind,
+                           {"job_id": job_id, "attempt": attempts + 1,
+                            "diff_id": diff_id, "break_count": len(breaks)}, repo)
+        return JSONResponse({"status": "accepted", "verdict": "fail",
+                             "repair": "queued" if job_id else "enqueue_failed",
+                             "attempt": attempts + 1, "cap": cap,
+                             "repair_job": job_id}, status_code=202)
+    finally:
+        conn.close()
+
+
 @router.get("/api/v2/verification/{orchestrate_id}/events")
 async def verification_events(orchestrate_id: str, after: int = 0, stream: bool = False,
                               authenticated: bool = Depends(verify_api_key)):

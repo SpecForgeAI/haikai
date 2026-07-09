@@ -245,7 +245,9 @@ test('POST /target-capture-sessions/:id/start dispatches to runTargetReplay only
   // -- give a tick for the .catch() chain to settle.
   await new Promise((r) => setTimeout(r, 5));
   expect(spawnRunner).toHaveBeenCalledTimes(1);
-  expect(spawnRunner).toHaveBeenCalledWith(SESSION_ID);
+  // Spec 2026-07-06-i: an UNSCOPED start passes undefined runner deps —
+  // the legacy full-replay contract, byte-identical to the pre-scope route.
+  expect(spawnRunner).toHaveBeenCalledWith(SESSION_ID, undefined);
   // runManager has a live entry for the session
   expect(runManager.has(SESSION_ID)).toBe(true);
 

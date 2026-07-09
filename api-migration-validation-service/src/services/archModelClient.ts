@@ -746,6 +746,17 @@ export interface ApiBehaviourDiffDto {
   source_baseline_id: string;
   target_baseline_id: string;
   status: ApiBehaviourDiffStatus;
+  /**
+   * Spec 2026-07-06-j: 'standard' | 'strict'; null/absent = 'standard'
+   * (today's semantics).
+   */
+  comparison_profile?: string | null;
+  /**
+   * Spec 2026-07-06-i: scoped-run audit blob `{ keys, purpose }` (changeset
+   * 208). Null/absent = FULL-surface diff. The diff runner reads `keys` to
+   * filter both sides' items; the gateway closure gate rejects scoped diffs.
+   */
+  endpoint_scope_json?: Record<string, unknown> | null;
   /** Boxed Integer in AMS -- nullable on the wire. */
   matched_count: number | null;
   status_drift_count: number | null;
@@ -793,6 +804,13 @@ export interface CreateApiBehaviourDiffRequest {
   target_baseline_id: string;
   /** Defaults to `'computing'` at the AMS service layer when absent. */
   status?: ApiBehaviourDiffStatus;
+  /** Spec 2026-07-06-j: 'standard' | 'strict'; omitted = 'standard'. */
+  comparison_profile?: string | null;
+  /**
+   * Spec 2026-07-06-i: scoped-run audit blob `{ keys, purpose }`. Omitted =
+   * full-surface diff (today's semantics). Write-once at create time.
+   */
+  endpoint_scope_json?: Record<string, unknown> | null;
 }
 
 export interface UpdateApiBehaviourDiffRequest {

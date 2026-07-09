@@ -21,6 +21,10 @@ import { fetchWaiverSet } from './comparisonWaivers';
 // Spec 2026-07-06-n: state parity for mutating scenarios — compares the
 // pre/post effect-table deltas frozen on both sides' baseline items.
 import { compareStateDeltas, type StateDeltaJson } from './stateDelta';
+// Spec 2026-07-06-i: scoped diffs — the diff row's endpoint_scope_json
+// filters BOTH sides' items before pairing (out-of-scope source items must
+// not spam source_only breaks on a scoped run).
+import { scopeKeysFromBlob, scopeMatches } from './endpointScope';
 import {
   classifyDiffItem as defaultClassifyDiffItem,
   API_BEHAVIOUR_DRIFT_CATEGORY,
@@ -463,14 +467,21 @@ export async function runDiff(
     // ------------------------------------------------------------------
     // 3) Load both sides' baseline items
     // ------------------------------------------------------------------
-    const sourceItems = await archModelClient.listBaselineItems(
-      projectId,
-      diff.source_baseline_id,
+    // Spec 2026-07-06-i: a SCOPED diff (endpoint_scope_json.keys non-null)
+    // pairs ONLY in-scope items on both sides — an out-of-scope source item
+    // must not surface as a source_only break on a per-story parity run.
+    // Null scope (every legacy row) = full surface, byte-identical.
+    const diffScopeKeys = scopeKeysFromBlob(
+      (diff as { endpoint_scope_json?: unknown }).endpoint_scope_json,
     );
-    const targetItems = await archModelClient.listBaselineItems(
-      projectId,
-      diff.target_baseline_id,
-    );
+    const inScope = (item: BaselineItemDto): boolean =>
+      scopeMatches(diffScopeKeys, item.method ?? 'GET', item.path ?? '/');
+    const sourceItems = (
+      await archModelClient.listBaselineItems(projectId, diff.source_baseline_id)
+    ).filter(inScope);
+    const targetItems = (
+      await archModelClient.listBaselineItems(projectId, diff.target_baseline_id)
+    ).filter(inScope);
 
     console.log(
       `[diffRunner] op=start diffId=${diffId.slice(0, 8)} ` +

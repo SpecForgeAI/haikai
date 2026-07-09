@@ -1,6 +1,7 @@
 package com.example.architecturemodel.model.dto.apibehaviour;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -51,6 +52,11 @@ public record ApiBehaviourDiffDto(
      * (Spec 2026-07-06-j); null reads as 'standard' (today's semantics).
      */
     String comparisonProfile,
+    /**
+     * Scoped-run audit blob (Spec 2026-07-06-i): { keys, purpose }.
+     * Null = full-surface diff (today's semantics).
+     */
+    Map<String, Object> endpointScopeJson,
     Integer matchedCount,
     Integer statusDriftCount,
     Integer bodyShapeDriftCount,
@@ -65,9 +71,43 @@ public record ApiBehaviourDiffDto(
     Instant updatedAt
 ) {
     /**
+     * Backward-compatible delegating constructor for pre-scope call sites
+     * (Spec 2026-07-06-i): delegates with {@code endpointScopeJson == null}
+     * (full-surface diff).
+     */
+    public ApiBehaviourDiffDto(
+        UUID id,
+        UUID projectId,
+        UUID architectureId,
+        UUID sourceBaselineId,
+        UUID targetBaselineId,
+        String status,
+        String comparisonProfile,
+        Integer matchedCount,
+        Integer statusDriftCount,
+        Integer bodyShapeDriftCount,
+        Integer bodyValueDriftCount,
+        Integer sourceOnlyCount,
+        Integer targetOnlyCount,
+        Instant sourceBaselineUpdatedAt,
+        Instant targetBaselineUpdatedAt,
+        Instant computedAt,
+        String errorMessage,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        this(
+            id, projectId, architectureId, sourceBaselineId, targetBaselineId,
+            status, comparisonProfile, null, matchedCount, statusDriftCount,
+            bodyShapeDriftCount, bodyValueDriftCount, sourceOnlyCount,
+            targetOnlyCount, sourceBaselineUpdatedAt, targetBaselineUpdatedAt,
+            computedAt, errorMessage, createdAt, updatedAt);
+    }
+
+    /**
      * Backward-compatible delegating constructor for pre-profile call sites
      * (Spec 2026-07-06-j): delegates with {@code comparisonProfile == null}
-     * ('standard' semantics).
+     * ('standard' semantics) and {@code endpointScopeJson == null}.
      */
     public ApiBehaviourDiffDto(
         UUID id,
@@ -91,7 +131,7 @@ public record ApiBehaviourDiffDto(
     ) {
         this(
             id, projectId, architectureId, sourceBaselineId, targetBaselineId,
-            status, null, matchedCount, statusDriftCount, bodyShapeDriftCount,
+            status, null, null, matchedCount, statusDriftCount, bodyShapeDriftCount,
             bodyValueDriftCount, sourceOnlyCount, targetOnlyCount,
             sourceBaselineUpdatedAt, targetBaselineUpdatedAt, computedAt,
             errorMessage, createdAt, updatedAt);

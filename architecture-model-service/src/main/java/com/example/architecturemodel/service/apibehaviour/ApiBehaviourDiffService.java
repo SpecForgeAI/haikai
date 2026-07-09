@@ -105,6 +105,10 @@ public class ApiBehaviourDiffService {
             .sourceBaselineId(request.sourceBaselineId())
             .targetBaselineId(request.targetBaselineId())
             .comparisonProfile(request.comparisonProfile())
+            // Spec 2026-07-06-i: scoped-run audit blob; null = full surface.
+            // Write-once at create time (no PATCH path) so a scoped-clean
+            // diff can never be re-labelled full-surface after the fact.
+            .endpointScopeJson(request.endpointScopeJson())
             .status("computing")
             .build();
 

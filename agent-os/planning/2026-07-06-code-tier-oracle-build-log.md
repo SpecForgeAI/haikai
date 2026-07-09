@@ -419,3 +419,74 @@ Verification: 12 new pins (`stateDelta.test.ts`: SCOPE ×2 / GUARD ×2 / DELTA /
 FAIL-CLOSED ×2 / WRITE ×2 / REPLAY / DIFF ×2). Touched-suite regression 13 suites /
 70 tests green (execute_http_request ×5, targetReplay ×3, diffRunner ×4,
 parityExactness). AMVS tsc clean. AMS compile + `ApiBehaviour*` tests green.
+
+---
+
+## Spec I — Parity Verify Loop & Execution Gates (2026-07-09)
+
+**Status: BUILT + VERIFIED.**
+
+Build note: the 2026-06-14 reconciliation program had ALREADY built the deploy→full-
+reconcile→break-record→human-gated-bug-send→scoped-re-reconcile+circuit-breaker loop
+(`migrationReconciliationDriver/ValidationClient`), so I lands as EXTENSIONS of that
+machinery rather than a parallel verifier: scoping, verdict evaluation, gates, drift
+checks, and the IVS parity re-entry.
+
+- **Scoped replay + diff** (SHARED with Spec F): AMS changeset 208 — nullable
+  `endpoint_scope_json` JSONB on `api_behaviour_diffs` (`{ keys, purpose }`; null = full
+  surface, no backfill; write-once at create — a scoped-clean diff can never be
+  re-labelled). AMVS `endpointScope.ts` (normalise/parse/template-tolerant match both
+  directions/blob build+read); `/start` route accepts RUN-TIME `endpointScope` +
+  `purpose` (never persisted on the session); `runTargetReplay` skips out-of-scope items
+  (counted) + stamps the blob on the auto-created diff; `runDiff` filters BOTH sides by
+  the diff's scope (no source_only spam on scoped runs).
+- **Break predicate hardened** (`isDiffItemABreak`): + `state_classification`
+  (`state_drift` AND `state_unverified` break — fail-closed state parity per the Spec N
+  amendment) + `byte_classification` (`byte_drift` breaks; `raw_unavailable` is visible
+  degradation, not a break). The June loop inherits both dimensions automatically.
+- **Gateway `migrationParityVerifier.ts`**: `runScopedParityVerify` /
+  `runBaselineDriftCheck` wrap the extended `runHeadlessReconcile` (scope + purpose
+  threaded to the start route); `evaluateParityVerdict` — FAIL-CLOSED (lifecycle
+  failure / zero-compared never clean), break fingerprints
+  `METHOD path::scenario::kind`, waivers consumed from the J-built
+  `api_behaviour_comparison_waivers` table (dimension `break_fingerprint` — J made it
+  forward-compatible, zero new AMS schema) → clean-with-waivers with waiver ids
+  recorded. Target auth per-invocation, in-memory, pushed only to the AMVS
+  secretsStore (Spec E pattern).
+- **Gateway `migrationCodeExecutionGate.ts`** (gate 4c, stacked in the driver after 4b
+  exactly like the DB gate): pre-dispatch `code_baseline_unpinned` /
+  `code_baseline_missing` (flagged `missing_baseline` stories exempt; coverage via the
+  existing `endpoint-baseline-coverage` AMS read) / `code_coverage_floor_unmet` (K's
+  evaluator over the pinned baseline's persisted summary; null summary = pre-K, not a
+  false block) / `code_gate_read_failed` (FAIL CLOSED). Completion evaluators:
+  `evaluateCodeStoryCompletion` (`code_parity_unverified` / `code_parity_broken` off the
+  latest covering diff, judged inside the story's endpoint keys, waiver-aware) +
+  `evaluateClosureReadiness` (REQUIRES an unscoped clean diff; scoped rejected — the
+  208 audit blob makes this checkable). Drift: `evaluateBaselineDrift` —
+  `baseline_drift_unchecked` (no/stale drift check, default max age 14 days) /
+  `baseline_behaviour_drift` (latest drift-check diff has breaks; blocking).
+- **IVS parity re-entry**: `POST /api/v2/parity-verdict` (bearer-auth, mirrors the
+  CI-verdict inbound) — records the verdict on the (repo, 'parity') cell; a fail under
+  `PARITY_REPAIR_CAP` (env, default 5) enqueues a fresh verify-task-group run with the
+  parity report as the defect input (+`parity_repair_requested` event, attempt
+  ordinal); at the cap NO further re-invokes — `parity_repair_exhausted` event + a
+  `parity_failed` finding with the FINAL diff attached. Delivery-id dedup.
+
+Deviations/residuals: (1) the driver's item-COMPLETION path is not auto-wired to the
+evaluators — in the current execution model stories deploy ONCE at run end (no live
+target mid-run), so enforcement = pre-dispatch gate 4c + the deploy-time full reconcile
++ the exported completion/closure/drift evaluators as the readiness-surface reads;
+auto-invoking the scoped verifier per story on the deployed callback (and auto-POSTing
+verdicts to the IVS route) is the logged follow-up wiring. (2) Floor evaluation is
+whole-summary, not story-endpoint-scoped (refinement recorded). (3) Drift-check
+scheduling is manual/wizard-invoked (`runBaselineDriftCheck` is callable; no cron).
+
+Verification: 13 gateway pins (`migrationParityGate.test.ts`: STATE / FAIL-CLOSED /
+WAIVER / LOOP-scope-threading / DRIFT-purpose / GATE ×4 / SCOPE-AUDIT ×2 / DRIFT
+codes) + 3 AMVS pins (`endpointScope.test.ts`: MATCH / REPLAY skip+blob / DIFF filter)
++ 6 IVS pins (`test_parity_verdict_inbound.py`: auth / record / repair-enqueue /
+CAP-exhaustion-with-final-diff / dedup). Regressions: gateway 14 suites / 153 tests
+green (driver + full reconciliation loop inherit the changes); AMVS 10 touched suites
+green (one /start pin updated to the widened `(sessionId, undefined)` arity — the
+legacy-unscoped contract, asserted explicitly); IVS verification dir 132 passed /
+2 skipped; AMS compile + `ApiBehaviour*` green (changeset 208 chain).

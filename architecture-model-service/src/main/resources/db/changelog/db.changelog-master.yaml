@@ -4843,3 +4843,28 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 208: API Behaviour diff endpoint scope (Spec 2026-07-06-i -- Parity Verify
+  # Loop & Execution Gates, Code-Tier Oracle Program). Scoped replay/diff runs
+  # (per-story parity verify, affected-consumer revalidation, drift checks)
+  # persist their scope on the diff row so a scoped-clean diff never
+  # masquerades as full-surface-clean. Nullable, no backfill; null = full
+  # surface (today's semantics).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 207).
+  # ============================================================================
+  - changeSet:
+      id: 208-api-behaviour-diff-endpoint-scope
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_diffs
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/208-api-behaviour-diff-endpoint-scope.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

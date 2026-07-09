@@ -22,6 +22,7 @@ import {
 } from './sequenceReplayRunner';
 import type { ApiAuthSecret } from '../types/secrets';
 import type { DbAdapter } from './db/DbAdapter';
+import { buildEndpointScopeBlob, scopeMatches } from './endpointScope';
 import {
   computeStateDelta,
   effectTablesFor,
@@ -205,6 +206,23 @@ export interface TargetReplayDeps {
    * adapter.
    */
   dbAdapter?: DbAdapter | null;
+  /**
+   * OPTIONAL endpoint scope (Spec 2026-07-06-i): normalised
+   * `"METHOD /path/template"` keys. When present, ONLY baseline items whose
+   * (method, path) fall inside the scope are replayed (out-of-scope items
+   * count as skipped) and the auto-created diff carries the scope as its
+   * `endpoint_scope_json` audit blob — a scoped-clean diff never
+   * masquerades as full-surface-clean. Null/absent = full replay (today's
+   * semantics, byte-identical).
+   */
+  endpointScope?: string[] | null;
+  /**
+   * OPTIONAL run purpose recorded on the diff's audit blob (Spec
+   * 2026-07-06-i): 'parity' (default) | 'drift_check' (the scoped-replay
+   * machinery pointed at the CURRENT system's own base URL to detect
+   * baseline behavioural rot). Absent + no scope = no blob (legacy).
+   */
+  scopePurpose?: string | null;
 }
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -546,6 +564,19 @@ export async function runTargetReplay(
 
       const req = extractItemRequest(item);
 
+      // Spec 2026-07-06-i: SCOPED replay — out-of-scope items are skipped
+      // (counted; the scope rides the diff's audit blob below, so the
+      // resulting diff is honest about what it covered). Null scope = full
+      // replay, byte-identical to today.
+      if (
+        deps.endpointScope &&
+        deps.endpointScope.length > 0 &&
+        !scopeMatches(deps.endpointScope, req.method, req.path)
+      ) {
+        itemsSkipped += 1;
+        continue;
+      }
+
       // ----------------------------------------------------------------
       // SEQUENCE DISPATCH (Spec D, Task Group 3). A baseline item whose
       // sequence_json is non-null is an ordered setup -> act -> cleanup
@@ -841,6 +872,12 @@ export async function runTargetReplay(
         source_baseline_id: session.source_baseline_id as string,
         target_baseline_id: targetBaseline.id,
         status: 'computing',
+        // Spec 2026-07-06-i: the scoped-run audit blob. Null (unscoped,
+        // no purpose) keeps the column null — today's semantics.
+        endpoint_scope_json: buildEndpointScopeBlob(
+          deps.endpointScope ?? null,
+          deps.scopePurpose ?? null,
+        ),
       });
       try {
         if (!runManager.has(diff.id)) {

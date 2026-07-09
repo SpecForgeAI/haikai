@@ -119,8 +119,19 @@ export interface ReconciliationValidationDeps {
   }): Promise<string>;
   /** POST the run's target creds into the validation-service secretsStore. */
   loadSecrets(args: { sessionId: string; projectId: string; api: TargetApiAuthSecret }): Promise<void>;
-  /** POST /start -- fire-and-forget the replay (auto-triggers the diff). */
-  startSession(args: { sessionId: string; projectId: string }): Promise<void>;
+  /**
+   * POST /start -- fire-and-forget the replay (auto-triggers the diff).
+   * `endpointScope` / `purpose` (Spec 2026-07-06-i) request a SCOPED replay:
+   * only baseline items matching the `"METHOD /path/template"` keys are
+   * replayed and the auto-created diff carries the scope as its
+   * `endpoint_scope_json` audit blob. Absent = full replay (legacy).
+   */
+  startSession(args: {
+    sessionId: string;
+    projectId: string;
+    endpointScope?: string[] | null;
+    purpose?: string | null;
+  }): Promise<void>;
   /** GET the validation-service session status (polling). */
   getSessionStatus(args: { sessionId: string; projectId: string }): Promise<ValidationSessionRow>;
   /** GET the AMS target baselines paired with the source baseline. */
@@ -216,10 +227,19 @@ export function defaultReconciliationValidationDeps(): ReconciliationValidationD
       const url =
         `${validationBase()}/api-migration-validation/api/target-capture-sessions/` +
         `${encodeURIComponent(args.sessionId)}/start?projectId=${encodeURIComponent(args.projectId)}`;
+      // Spec 2026-07-06-i: thread the optional scoped-replay args. An empty
+      // body is byte-identical to the legacy full replay.
+      const startBody: Record<string, unknown> = {};
+      if (args.endpointScope && args.endpointScope.length > 0) {
+        startBody.endpointScope = args.endpointScope;
+      }
+      if (args.purpose) {
+        startBody.purpose = args.purpose;
+      }
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify(startBody),
       });
       if (!response.ok) {
         throw new Error(`start session failed (status ${response.status})`);
@@ -299,6 +319,13 @@ export async function runHeadlessReconcile(
     sourceBaselineId: string;
     targetBaseUrl: string;
     api: TargetApiAuthSecret;
+    /**
+     * Spec 2026-07-06-i: OPTIONAL scoped replay — `"METHOD /path/template"`
+     * keys. Absent = full replay (legacy, byte-identical).
+     */
+    endpointScope?: string[] | null;
+    /** Spec 2026-07-06-i: run purpose ('parity' | 'drift_check') on the diff blob. */
+    purpose?: string | null;
   },
   deps: ReconciliationValidationDeps,
   options: ReconciliationPollOptions = {}
@@ -319,7 +346,12 @@ export async function runHeadlessReconcile(
     await deps.loadSecrets({ sessionId, projectId: args.projectId, api: args.api });
 
     // 2. Start the replay (fire-and-forget on the validation service; auto-diffs).
-    await deps.startSession({ sessionId, projectId: args.projectId });
+    await deps.startSession({
+      sessionId,
+      projectId: args.projectId,
+      endpointScope: args.endpointScope ?? null,
+      purpose: args.purpose ?? null,
+    });
 
     logger.info('[diag-gateway] migration_reconciliation replay_started', {
       projectId: args.projectId,
@@ -510,6 +542,17 @@ function pickFreshestForSession(
  * allowlisted-volatile; the volatile DOWN-RANK to `expected_volatile` happens
  * AFTER creation in the gateway auto-disposition pass
  * (create-then-auto-dispose, never silently suppressed).
+ *
+ * Spec 2026-07-06-i (amendment: state parity in the verdict) registers TWO
+ * further dimensions read off the persisted `body_diff_json` blob:
+ *   - `state_classification` (Spec N): `state_drift` AND `state_unverified`
+ *     both break — a write whose DB effect diverged, or could not be
+ *     verified, must surface visibly (FAIL CLOSED), never silently pass.
+ *     The blob key is only stamped for mutating scenarios where at least one
+ *     side measured a delta, so read-only items are untouched.
+ *   - `byte_classification` (Spec J, strict profile only): `byte_drift`
+ *     breaks. `raw_unavailable` does NOT break here — it is a visible
+ *     degradation the verdict layer reports, not a measured divergence.
  */
 export function isDiffItemABreak(item: ReconciliationDiffItem): boolean {
   const status = item.status_classification ?? '';
@@ -520,6 +563,13 @@ export function isDiffItemABreak(item: ReconciliationDiffItem): boolean {
   // classification other than `header_match` / null (skipped -- graceful
   // degrade) registers as a break.
   if (header !== null && header !== 'header_match') return true;
+
+  // State + byte dimensions (Spec 2026-07-06-i) ride the persisted diff blob.
+  const blob = (item.body_diff_json ?? {}) as Record<string, unknown>;
+  const state = typeof blob.state_classification === 'string' ? blob.state_classification : null;
+  if (state === 'state_drift' || state === 'state_unverified') return true;
+  const byte = typeof blob.byte_classification === 'string' ? blob.byte_classification : null;
+  if (byte === 'byte_drift') return true;
 
   // Status + body preserve EXACTLY the original predicate: a clean status/body
   // match is `status_match && body_match`; anything else (incl. the new
