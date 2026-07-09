@@ -10,6 +10,7 @@ import {
   type TargetReplayOutcome,
 } from '../services/targetReplayRunner';
 import type { ApiAuthSecret, SecretsBundle } from '../types/secrets';
+import { parseEndpointScopeKeys } from '../services/endpointScope';
 
 /**
  * Target-side capture-session action endpoints. Mounted under the same
@@ -360,9 +361,30 @@ export function buildTargetCaptureSessionActionsRouter(
             architectureId: session.architecture_id,
           });
         }
+        // Spec 2026-07-06-i: OPTIONAL scoped replay. `endpointScope` is a
+        // list of "METHOD /path/template" keys; `purpose` tags the run on
+        // the diff's audit blob ('parity' | 'drift_check'). Both are
+        // RUN-TIME args (never persisted on the session); the resulting
+        // diff row carries them via endpoint_scope_json so a scoped-clean
+        // diff never masquerades as full-surface-clean. Absent = full
+        // replay, byte-identical to today.
+        const startBody = (req.body || {}) as {
+          endpointScope?: unknown;
+          purpose?: unknown;
+        };
+        const endpointScope = parseEndpointScopeKeys(startBody.endpointScope);
+        const scopePurpose =
+          typeof startBody.purpose === 'string' && startBody.purpose.length > 0
+            ? startBody.purpose
+            : null;
+        const runnerDeps: TargetReplayDeps | undefined =
+          endpointScope || scopePurpose
+            ? { endpointScope, scopePurpose }
+            : undefined;
+
         // Fire-and-forget the runner. Per-run errors land as `failed`
         // session patches inside the runner itself.
-        spawnRunner(sessionId).catch((err) => {
+        spawnRunner(sessionId, runnerDeps).catch((err) => {
           console.error(
             `[targetCaptureSessionActions] runTargetReplay failed for ${sessionId}: ${
               err instanceof Error ? err.message : String(err)

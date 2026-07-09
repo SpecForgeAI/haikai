@@ -184,7 +184,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
         currentArchitectureId: fixture.currentArchitectureId,
         targetArchitectureId: fixture.targetArchitectureId ?? '',
         discoveryRunIds: ['run-1', 'run-2'],
-        wizardAnswers: { deliveryStreams: ['target_service_api_implementation'] },
+        wizardAnswers: { deliveryStreams: ['target_frontend_implementation'] },
       },
       { fetchContext, callLlm, createDraft, fetchAcceptedFindings, systemPromptOverride: 'SYS' }
     );
@@ -333,7 +333,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
         currentArchitectureId: fixture.currentArchitectureId,
         targetArchitectureId: fixture.targetArchitectureId ?? '',
         discoveryRunIds: ['run-1'],
-        wizardAnswers: { deliveryStreams: ['target_service_api_implementation'] },
+        wizardAnswers: { deliveryStreams: ['target_frontend_implementation'] },
       },
       { fetchContext, callLlm, createDraft, fetchAcceptedFindings, systemPromptOverride: 'SYS' }
     );
@@ -358,7 +358,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
         currentArchitectureId: fixture.currentArchitectureId,
         targetArchitectureId: fixture.targetArchitectureId ?? '',
         discoveryRunIds: ['run-1'],
-        wizardAnswers: { deliveryStreams: ['target_service_api_implementation'] },
+        wizardAnswers: { deliveryStreams: ['target_frontend_implementation'] },
       },
       { fetchContext, callLlm, createDraft, fetchAcceptedFindings, systemPromptOverride: 'SYS' }
     );
@@ -419,7 +419,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
         currentArchitectureId: fixture.currentArchitectureId,
         targetArchitectureId: fixture.targetArchitectureId ?? '',
         discoveryRunIds: trustChain.discoveryRunIds,
-        wizardAnswers: { deliveryStreams: ['target_service_api_implementation'] },
+        wizardAnswers: { deliveryStreams: ['target_frontend_implementation'] },
       },
       // NO fetchAcceptedFindings injected — the real default fetcher runs.
       { fetchContext, callLlm, createDraft, systemPromptOverride: 'SYS' }
@@ -469,7 +469,7 @@ describe('Migration book-of-work findings-coverage snapshot (Spec 2026-06-11, Ta
         currentArchitectureId: fixture.currentArchitectureId,
         targetArchitectureId: fixture.targetArchitectureId ?? '',
         discoveryRunIds: ['run-1'],
-        wizardAnswers: { deliveryStreams: ['target_service_api_implementation'] },
+        wizardAnswers: { deliveryStreams: ['target_frontend_implementation'] },
       },
       // NO fetchAcceptedFindings injected — the real default fetcher fails.
       { fetchContext, callLlm, createDraft, systemPromptOverride: 'SYS' }

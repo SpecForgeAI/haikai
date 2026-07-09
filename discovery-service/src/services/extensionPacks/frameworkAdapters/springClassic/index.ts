@@ -52,6 +52,30 @@ import { buildEndpointDataEffectCandidates } from './endpointDataEffectCandidate
 // edge). NEVER mints `*_points`; NEVER an invented external entity.
 import { buildOutboundIntegrationCandidates } from './outboundIntegrationCandidates';
 import {
+  attachWebXmlResponseFacts,
+  scanWebXmlResponseFacts,
+} from './webXmlResponseFacts';
+import {
+  applyXmlTransactionalMatchers,
+  attachXmlMvcFacts,
+  buildXmlMvcEndpointCandidates,
+  scanXmlMvc,
+} from './xmlMvcScanner';
+import {
+  attachCodeResponseFacts,
+  scanCodeResponseFacts,
+} from './codeResponseFactsScanner';
+import {
+  attachSelfApiCallLinks,
+  mintInternalProcessCandidates,
+  scanInternalProcessXml,
+  xmlEntryTargets,
+} from './internalProcessXmlScanner';
+import { applyMyBatisXmlQueries, scanMyBatisXmlMappers } from './myBatisXmlMapper';
+import { mintJpaCallbackCandidates, scanJpaInternals } from './jpaInternalsScanner';
+import { buildDataEffectCandidatesFromResolved } from './endpointDataEffectCandidates';
+import { resolveInternalProcessDataEffects } from './endpointDataEffectResolver';
+import {
   scanResponseContracts,
   attachResponseContractsToCandidates,
 } from './responseContractScanner';
@@ -2566,6 +2590,165 @@ export function runSpringClassicAdapter(files: SourceFileIR[], runId: string): D
   } catch (err) {
     console.warn(
       `[spring-classic] request-contract scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // Spec 2026-07-06-l (Response Fidelity, Code-Tier Oracle Program): three
+  // deterministic passes over the SAME files, each additive onto the
+  // endpoint candidates' `response_contract` and each soft-failing alone.
+
+  // (l-1) Full web.xml response facts: ordered filter chain (matched by
+  // servlet url-pattern), app-global error-pages merged into
+  // `error_responses[]`, encoding-filter charset. Listeners/session-config/
+  // context-params ride the parse result (Spec -m consumes listeners).
+  try {
+    const webXmlFacts = scanWebXmlResponseFacts(files);
+    const webXmlTouched = attachWebXmlResponseFacts(out.candidates, webXmlFacts);
+    if (webXmlTouched > 0) {
+      console.log(
+        `[spring-classic] web-xml response facts: ${webXmlFacts.filters.length} filter(s), ` +
+          `${webXmlFacts.errorPages.length} error-page(s), charset=${webXmlFacts.charset ?? 'n/a'} ` +
+          `attached onto ${webXmlTouched} endpoint(s).`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] web-xml response-facts scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (l-2) XML-defined MVC: SimpleUrl/BeanName handler mappings -> `endpoints`
+  // candidates (subtype xml-mvc, default-GET marked); mvc:interceptors +
+  // security intercept-url attached onto matching endpoints; tx:advice/aop
+  // pointcuts flip `transactional` on the ALREADY-EMITTED data-effect edges
+  // (the resolver reads annotations only). Unresolved pointcuts/rules surface
+  // as Findings via springClassicFindingScanner (run-it-twice pattern).
+  try {
+    const xmlMvc = scanXmlMvc(files);
+    const minted = buildXmlMvcEndpointCandidates(xmlMvc, runId);
+    out.candidates.push(...minted);
+    const xmlTouched = attachXmlMvcFacts(out.candidates, xmlMvc);
+    const flipped = applyXmlTransactionalMatchers(out.candidates, xmlMvc.txMatchers);
+    if (minted.length > 0 || xmlTouched > 0 || flipped > 0) {
+      console.log(
+        `[spring-classic] xml-mvc: ${minted.length} mapped endpoint(s) minted, ` +
+          `${xmlTouched} endpoint(s) enriched (interceptors/security), ` +
+          `${flipped} data-effect edge(s) flipped transactional by XML pointcuts.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] xml-mvc scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (l-3) Code-set response facts: headers/status/redirects/cookies set IN
+  // CODE (from the per-method call IR) + the view-kind classification
+  // (`response_kind` / `parity_scope` — parity is API-only by user decision;
+  // view endpoints are MARKED out of scope, never silently included).
+  try {
+    const codeFacts = scanCodeResponseFacts(files);
+    const codeTouched = attachCodeResponseFacts(out.candidates, codeFacts);
+    if (codeTouched > 0) {
+      console.log(
+        `[spring-classic] code response facts: attached onto ${codeTouched} endpoint(s).`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] code response-facts scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // Spec 2026-07-06-m (Internal Functionality, Code-Tier Oracle Program):
+  // criterion B — internal (non-HTTP) work gets the SAME first-class
+  // treatment as endpoints. Four additive, individually soft-failing passes.
+
+  // (m-1) XML-wired internal processes: Quartz / task: / Spring Batch / JMS
+  // XML minted as `endpoints` candidates with VERBATIM schedule/graph
+  // metadata, and their entry targets fed into the REUSED data-effect walk so
+  // XML-scheduled code gets edges (and thereby behaviour blocks) exactly like
+  // HTTP endpoints. Annotation-driven internal entry points (@Scheduled /
+  // listeners / Quartz Job classes) ride the same resolver call.
+  try {
+    const internalXml = scanInternalProcessXml(files);
+    const mintedInternal = mintInternalProcessCandidates(internalXml, runId);
+    out.candidates.push(...mintedInternal);
+    const internalEffects = resolveInternalProcessDataEffects(
+      files,
+      xmlEntryTargets(internalXml),
+    );
+    const internalEdges = buildDataEffectCandidatesFromResolved(
+      internalEffects.resolved,
+      runId,
+    );
+    out.candidates.push(...internalEdges);
+    if (mintedInternal.length > 0 || internalEdges.length > 0) {
+      console.log(
+        `[spring-classic] internal processes: ${mintedInternal.length} XML-wired process(es) ` +
+          `minted, ${internalEdges.length} internal data-effect edge(s) emitted.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] internal-process scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (m-2) MyBatis / iBatis mapper XML: verbatim SQL onto edges that carry no
+  // captured query yet (`query_kind: 'mybatis_xml'`; dynamic tags flagged,
+  // never composed).
+  try {
+    const myBatis = scanMyBatisXmlMappers(files);
+    const enriched = applyMyBatisXmlQueries(out.candidates, myBatis);
+    if (enriched > 0) {
+      console.log(
+        `[spring-classic] mybatis-xml: ${enriched} data-effect edge(s) enriched with verbatim mapper SQL.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] mybatis-xml scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (m-3) JPA lifecycle callbacks -> `business_logics` candidates (so
+  // behaviour capture can read them; the matching Findings ride the finding
+  // scanner's run-it-twice pass).
+  try {
+    const jpa = scanJpaInternals(files);
+    const callbacks = mintJpaCallbackCandidates(jpa, runId);
+    out.candidates.push(...callbacks);
+    if (callbacks.length > 0) {
+      console.log(
+        `[spring-classic] jpa internals: ${callbacks.length} entity lifecycle callback(s) surfaced.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] jpa-internals scan failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
+  // (m-4) Self-API-call linkage (v1): an internal process whose owning class
+  // also makes an outbound HTTP call targeting one of the app's OWN endpoints
+  // gets `calls_own_endpoint` stamped — endpoint parity evidence then
+  // partially covers the batch path (user estate fact, gap analysis §7.3).
+  try {
+    const stamped = attachSelfApiCallLinks(out.candidates);
+    if (stamped > 0) {
+      console.log(`[spring-classic] self-api-call linkage stamped on ${stamped} internal process(es).`);
+    }
+  } catch (err) {
+    console.warn(
+      `[spring-classic] self-api-call linkage failed; continuing:`,
       err instanceof Error ? err.message : String(err),
     );
   }

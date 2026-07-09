@@ -89,12 +89,26 @@ public class ApiBehaviourDiffService {
             projectId, request.architectureId(),
             request.sourceBaselineId(), request.targetBaselineId());
 
+        // Spec 2026-07-06-j: optional comparison profile; null = 'standard'.
+        if (request.comparisonProfile() != null
+                && !request.comparisonProfile().equals("standard")
+                && !request.comparisonProfile().equals("strict")) {
+            throw new IllegalArgumentException(
+                "comparisonProfile must be 'standard' or 'strict' (got: "
+                    + request.comparisonProfile() + ")");
+        }
+
         ApiBehaviourDiffEntity entity = ApiBehaviourDiffEntity.builder()
             .id(UUID.randomUUID())
             .projectId(projectId)
             .architectureId(request.architectureId())
             .sourceBaselineId(request.sourceBaselineId())
             .targetBaselineId(request.targetBaselineId())
+            .comparisonProfile(request.comparisonProfile())
+            // Spec 2026-07-06-i: scoped-run audit blob; null = full surface.
+            // Write-once at create time (no PATCH path) so a scoped-clean
+            // diff can never be re-labelled full-surface after the fact.
+            .endpointScopeJson(request.endpointScopeJson())
             .status("computing")
             .build();
 

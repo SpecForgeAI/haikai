@@ -893,7 +893,7 @@ export function buildCollationHazardFinding(args: {
  * `now()` / `current_timestamp` / `gen_random_uuid()` are intentionally NOT
  * listed -- those ARE portable and must not be flagged.
  */
-const NON_PORTABLE_DEFAULT_FUNCTIONS: ReadonlyArray<{
+export const NON_PORTABLE_DEFAULT_FUNCTIONS: ReadonlyArray<{
   token: string;
   note: string;
 }> = [

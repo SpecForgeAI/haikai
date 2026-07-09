@@ -414,6 +414,19 @@ export interface CreateCaptureRequest {
   response_status?: number | null;
   response_headers_redacted_json?: Record<string, string> | null;
   response_body_json?: unknown;
+  /**
+   * Spec 2026-07-06-j: the RAW wire body — persisted only when redaction was
+   * a no-op on it (rawBodyPolicy); null = raw unavailable (strict byte
+   * verdicts degrade visibly).
+   */
+  response_body_raw?: string | null;
+  /**
+   * Spec 2026-07-06-n: effect-table state delta measured around a MUTATING
+   * call (pre/post snapshots of the operation's committed write-scope
+   * tables, `stateDelta.ts`). Omitted / null = state not captured — the
+   * reconcile verdict degrades VISIBLY to `state_unverified`.
+   */
+  state_delta_json?: Record<string, unknown> | null;
   duration_ms?: number | null;
   error_type?: string | null;
   error_message?: string | null;
@@ -612,6 +625,17 @@ export interface BaselineItemDto {
    * (column) + Task Group 2 (capture-side assembly + carry-through).
    */
   sequence_json?: Record<string, unknown> | null;
+  /**
+   * Spec 2026-07-06-j: the RAW wire body for strict byte verdicts. Null =
+   * raw unavailable (pre-raw baselines; redaction-touched bodies).
+   */
+  response_body_raw?: string | null;
+  /**
+   * Spec 2026-07-06-n: effect-table state delta frozen with the item. Null =
+   * state not captured (pre-N baselines; non-mutating scenarios) — the diff
+   * verdict degrades VISIBLY to `state_unverified`, never a silent pass.
+   */
+  state_delta_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -627,6 +651,18 @@ export interface CreateBaselineItemRequest {
   request_json?: unknown;
   response_status?: number | null;
   response_json?: unknown;
+  /**
+   * Spec 2026-07-06-j: OPTIONAL raw wire body. When omitted, AMS copies the
+   * referenced capture row's raw server-side (Save-as-baseline inherits it
+   * without client changes).
+   */
+  response_body_raw?: string | null;
+  /**
+   * Spec 2026-07-06-n: OPTIONAL effect-table state delta. When omitted, AMS
+   * copies the referenced capture row's delta server-side (the raw-body
+   * precedent) so Save-as-baseline inherits it without client changes.
+   */
+  state_delta_json?: Record<string, unknown> | null;
   business_notes?: string | null;
   /**
    * OPTIONAL volatility envelope `{ paths, volatility_source, k }` measured by
@@ -710,6 +746,17 @@ export interface ApiBehaviourDiffDto {
   source_baseline_id: string;
   target_baseline_id: string;
   status: ApiBehaviourDiffStatus;
+  /**
+   * Spec 2026-07-06-j: 'standard' | 'strict'; null/absent = 'standard'
+   * (today's semantics).
+   */
+  comparison_profile?: string | null;
+  /**
+   * Spec 2026-07-06-i: scoped-run audit blob `{ keys, purpose }` (changeset
+   * 208). Null/absent = FULL-surface diff. The diff runner reads `keys` to
+   * filter both sides' items; the gateway closure gate rejects scoped diffs.
+   */
+  endpoint_scope_json?: Record<string, unknown> | null;
   /** Boxed Integer in AMS -- nullable on the wire. */
   matched_count: number | null;
   status_drift_count: number | null;
@@ -757,6 +804,13 @@ export interface CreateApiBehaviourDiffRequest {
   target_baseline_id: string;
   /** Defaults to `'computing'` at the AMS service layer when absent. */
   status?: ApiBehaviourDiffStatus;
+  /** Spec 2026-07-06-j: 'standard' | 'strict'; omitted = 'standard'. */
+  comparison_profile?: string | null;
+  /**
+   * Spec 2026-07-06-i: scoped-run audit blob `{ keys, purpose }`. Omitted =
+   * full-surface diff (today's semantics). Write-once at create time.
+   */
+  endpoint_scope_json?: Record<string, unknown> | null;
 }
 
 export interface UpdateApiBehaviourDiffRequest {

@@ -170,6 +170,29 @@ public class ApiBehaviourBaselineItemEntity {
     @Column(name = "sequence_json", columnDefinition = "jsonb")
     private Map<String, Object> sequenceJson;
 
+    /**
+     * The response body's RAW TEXT exactly as received on the wire
+     * (post-redaction) — the STRICT comparison profile's byte-verdict input
+     * (Spec 2026-07-06-j, changeset 205). Nullable, NO backfill: {@code null}
+     * means "raw unavailable" and strict verdicts degrade VISIBLY to the
+     * {@code raw_unavailable} marker (never a false "exact"). EXCLUDED from
+     * the baseline content hash (it is derivative of {@code response_json});
+     * every existing baseline hashes unchanged.
+     */
+    @Column(name = "response_body_raw", columnDefinition = "text")
+    private String responseBodyRaw;
+
+    /**
+     * Effect-table state delta frozen with the item (Spec 2026-07-06-n,
+     * changeset 207). {@code null} = state not captured (pre-N baselines;
+     * non-mutating scenarios) — reconcile degrades VISIBLY to
+     * {@code state_unverified}. Excluded from the content hash (derivative
+     * evidence; existing baselines hash unchanged).
+     */
+    @Type(JsonType.class)
+    @Column(name = "state_delta_json", columnDefinition = "jsonb")
+    private Map<String, Object> stateDeltaJson;
+
     @Column(name = "business_notes")
     private String businessNotes;
 

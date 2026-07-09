@@ -1,5 +1,6 @@
 package com.example.architecturemodel.model.entity.apibehaviour;
 
+import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -13,8 +14,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Type;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -113,6 +116,27 @@ public class ApiBehaviourDiffEntity {
     @Column(name = "status", nullable = false)
     @Builder.Default
     private String status = "computing";
+
+    /**
+     * Comparison profile chosen at diff-creation time
+     * (Spec 2026-07-06-j, changeset 205): {@code 'standard'} | {@code 'strict'}.
+     * Nullable — {@code null} reads as {@code 'standard'} (today's semantics,
+     * zero regression). Validated at the service layer.
+     */
+    @Column(name = "comparison_profile")
+    private String comparisonProfile;
+
+    /**
+     * Scope of a SCOPED replay/diff run (Spec 2026-07-06-i, changeset 208):
+     * {@code { keys: ["METHOD /path/template", ...] | null, purpose:
+     * 'parity' | 'drift_check' | ... }}. {@code null} (every pre-existing
+     * row; every wizard full diff) = FULL baseline surface. Auditable: a
+     * scoped-clean diff never masquerades as full-surface-clean — the
+     * closure gate reads this column and rejects scoped diffs.
+     */
+    @Type(JsonType.class)
+    @Column(name = "endpoint_scope_json", columnDefinition = "jsonb")
+    private Map<String, Object> endpointScopeJson;
 
     /**
      * Count of paired items classified as status_match + body_match.

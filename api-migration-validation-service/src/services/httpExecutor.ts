@@ -134,6 +134,24 @@ function maybeTruncateResponse(
   };
 }
 
+/**
+ * Response augmented with the RAW body text exactly as received on the wire
+ * (Spec 2026-07-06-j — strict byte verdicts). `rawBody` is attached by the
+ * executor's response interceptor BEFORE parsing/truncation; `null` when the
+ * body was not a string (streams) or exceeded the size cap. Read it via
+ * {@link rawBodyOf} — consumers of `data` are unchanged.
+ */
+export interface RawAwareResponse<T = unknown> extends AxiosResponse<T> {
+  rawBody?: string | null;
+}
+
+/** The raw wire body attached by the executor, or null when unavailable. */
+export function rawBodyOf(response: AxiosResponse | null | undefined): string | null {
+  if (!response) return null;
+  const raw = (response as RawAwareResponse).rawBody;
+  return typeof raw === 'string' ? raw : null;
+}
+
 export interface SessionHttpExecutor {
   request<T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse<T>>;
   /**
@@ -176,6 +194,11 @@ export function createSessionHttpExecutor(
     // Reject every status code except 2xx ourselves -- callers want the
     // raw 4xx / 5xx response shape captured rather than a thrown error.
     validateStatus: () => true,
+    // Spec 2026-07-06-j: identity transform preserves the RAW wire text --
+    // the response interceptor below re-parses JSON itself and attaches the
+    // raw string as `rawBody`, so every existing `data` consumer is
+    // unchanged while strict byte verdicts become possible.
+    transformResponse: [(data) => data],
   });
 
   client.interceptors.request.use((config: InternalAxiosRequestConfig) => {
@@ -203,7 +226,33 @@ export function createSessionHttpExecutor(
 
   client.interceptors.response.use(
     (response) => {
+      // Spec 2026-07-06-j: the identity transform above delivered the RAW
+      // wire text in `data`. Attach it as `rawBody` (size-capped), then
+      // restore the pre-existing `data` contract by parsing JSON bodies
+      // ourselves (parse failure leaves the string -- exactly what axios's
+      // default transform does).
+      if (typeof response.data === 'string') {
+        const rawText = response.data as string;
+        (response as RawAwareResponse).rawBody =
+          Buffer.byteLength(rawText, 'utf8') <= maxResponseBytes ? rawText : null;
+        const contentType = String(
+          (response.headers as Record<string, unknown> | undefined)?.['content-type'] ?? '',
+        );
+        const looksJson =
+          contentType.includes('json') ||
+          /^\s*[{[]/.test(rawText);
+        if (looksJson && rawText.trim().length > 0) {
+          try {
+            response.data = JSON.parse(rawText);
+          } catch {
+            // keep the string body (axios default behaviour on parse failure)
+          }
+        }
+      } else {
+        (response as RawAwareResponse).rawBody = null;
+      }
       const truncated = maybeTruncateResponse(response, maxResponseBytes);
+      (truncated as RawAwareResponse).rawBody = (response as RawAwareResponse).rawBody;
       const safeBody = redactJson(truncated.data);
       const safeHeaders = redactHeaders(
         truncated.headers as unknown as Record<string, string | string[] | undefined>,

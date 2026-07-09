@@ -32,6 +32,10 @@ public record CreateApiBehaviourCaptureRequest(
     Integer responseStatus,
     Map<String, Object> responseHeadersRedactedJson,
     Map<String, Object> responseBodyJson,
+    /** Spec 2026-07-06-j: raw body, redaction-clean only; null = unavailable. */
+    String responseBodyRaw,
+    /** Spec 2026-07-06-n: effect-table state delta; null = not captured. */
+    Map<String, Object> stateDeltaJson,
     Integer durationMs,
     String errorType,
     String errorMessage,
@@ -40,4 +44,71 @@ public record CreateApiBehaviourCaptureRequest(
     Instant acceptedAt,
     String reviewerNotes,
     Map<String, Object> volatilePathsJson
-) {}
+) {
+    /** Backward-compatible delegating constructor (raw + delta default null). */
+    public CreateApiBehaviourCaptureRequest(
+        UUID sessionId,
+        UUID scenarioId,
+        UUID operationId,
+        Integer attemptNumber,
+        String requestMethod,
+        String requestUrlRedacted,
+        String requestPath,
+        Map<String, Object> requestQueryJson,
+        Map<String, Object> requestHeadersRedactedJson,
+        Map<String, Object> requestBodyJson,
+        Integer responseStatus,
+        Map<String, Object> responseHeadersRedactedJson,
+        Map<String, Object> responseBodyJson,
+        String responseBodyRaw,
+        Integer durationMs,
+        String errorType,
+        String errorMessage,
+        Instant capturedAt,
+        Boolean accepted,
+        Instant acceptedAt,
+        String reviewerNotes,
+        Map<String, Object> volatilePathsJson
+    ) {
+        this(
+            sessionId, scenarioId, operationId, attemptNumber, requestMethod,
+            requestUrlRedacted, requestPath, requestQueryJson,
+            requestHeadersRedactedJson, requestBodyJson, responseStatus,
+            responseHeadersRedactedJson, responseBodyJson, responseBodyRaw,
+            null, durationMs, errorType, errorMessage, capturedAt, accepted,
+            acceptedAt, reviewerNotes, volatilePathsJson);
+    }
+
+    /** Backward-compatible delegating constructor (raw defaults null). */
+    public CreateApiBehaviourCaptureRequest(
+        UUID sessionId,
+        UUID scenarioId,
+        UUID operationId,
+        Integer attemptNumber,
+        String requestMethod,
+        String requestUrlRedacted,
+        String requestPath,
+        Map<String, Object> requestQueryJson,
+        Map<String, Object> requestHeadersRedactedJson,
+        Map<String, Object> requestBodyJson,
+        Integer responseStatus,
+        Map<String, Object> responseHeadersRedactedJson,
+        Map<String, Object> responseBodyJson,
+        Integer durationMs,
+        String errorType,
+        String errorMessage,
+        Instant capturedAt,
+        Boolean accepted,
+        Instant acceptedAt,
+        String reviewerNotes,
+        Map<String, Object> volatilePathsJson
+    ) {
+        this(
+            sessionId, scenarioId, operationId, attemptNumber, requestMethod,
+            requestUrlRedacted, requestPath, requestQueryJson,
+            requestHeadersRedactedJson, requestBodyJson, responseStatus,
+            responseHeadersRedactedJson, responseBodyJson, null, durationMs,
+            errorType, errorMessage, capturedAt, accepted, acceptedAt,
+            reviewerNotes, volatilePathsJson);
+    }
+}

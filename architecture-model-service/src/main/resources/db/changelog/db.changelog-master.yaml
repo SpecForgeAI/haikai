@@ -4780,3 +4780,113 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Parity Exactness & First-Class SOAP (Spec 2026-07-06-j, Code-Tier Oracle
+  # Program). 205: raw response text on baseline items (strict byte verdicts;
+  # nullable, no backfill, excluded from the content hash) + comparison_profile
+  # on diffs (null reads 'standard'). 206: durable comparison-waiver table with
+  # the legacy 16-name header allowlist seeded as visible global rows.
+  #
+  # NEW changesets only -- never edit applied changesets (<= 204).
+  # ============================================================================
+  - changeSet:
+      id: 205-api-behaviour-exactness
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_baseline_items
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/205-api-behaviour-exactness.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  - changeSet:
+      id: 206-api-behaviour-comparison-waivers
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_baselines
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/206-api-behaviour-comparison-waivers.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # Mutating-endpoint state deltas (Spec 2026-07-06-n, Code-Tier Oracle
+  # Program): state_delta_json on captures + baseline items — the WRITE
+  # endpoints' second oracle dimension (same DB delta, not just the same
+  # response). Nullable, no backfill; null degrades visibly to
+  # state_unverified.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 206).
+  # ============================================================================
+  - changeSet:
+      id: 207-api-behaviour-state-delta
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_captures
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/207-api-behaviour-state-delta.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 208: API Behaviour diff endpoint scope (Spec 2026-07-06-i -- Parity Verify
+  # Loop & Execution Gates, Code-Tier Oracle Program). Scoped replay/diff runs
+  # (per-story parity verify, affected-consumer revalidation, drift checks)
+  # persist their scope on the diff row so a scoped-clean diff never
+  # masquerades as full-surface-clean. Nullable, no backfill; null = full
+  # surface (today's semantics).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 207).
+  # ============================================================================
+  - changeSet:
+      id: 208-api-behaviour-diff-endpoint-scope
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_diffs
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/208-api-behaviour-diff-endpoint-scope.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 209: endpoint_data_effects reverse-query index (Spec 2026-07-06-f). The
+  # affected-consumer computation reads "which endpoints touch table X /
+  # proc Y" by data_entity_point_id -- previously unindexed on that side.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 208).
+  # ============================================================================
+  - changeSet:
+      id: 209-endpoint-data-effects-reverse-index
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: endpoint_data_effects
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/209-endpoint-data-effects-reverse-index.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

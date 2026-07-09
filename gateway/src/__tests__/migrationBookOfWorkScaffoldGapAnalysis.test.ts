@@ -50,7 +50,9 @@ import {
 import { TargetManifestArtifactWire } from '../services/targetManifestArtifactsClient';
 import { LlmConcurrencyPool } from '../services/llmConcurrencyPool';
 
-const STREAM = 'target_service_api_implementation';
+// NOTE (Spec 2026-07-06-g): the API streams are deterministically planned now,
+// so these LLM-expansion scaffold seams are pinned on the frontend/npm pairing.
+const STREAM = 'target_frontend_implementation';
 
 function makeItem(overrides: Partial<MigrationBookOfWorkItem>): MigrationBookOfWorkItem {
   return {
@@ -114,10 +116,10 @@ function manifest(overrides: Partial<TargetManifestArtifactWire> = {}): TargetMa
     project_id: 'p',
     target_architecture_id: 'arch-target',
     tag: 'orders-service',
-    kind: 'pom',
-    ecosystem: 'maven',
-    manifest_path: 'orders-service/pom.xml',
-    content: '<project/>',
+    kind: 'package_json',
+    ecosystem: 'npm',
+    manifest_path: 'orders-service/package.json',
+    content: '{}',
     package_lock_content: null,
     resolved_dependencies: [],
     target_service_element_id: 'svc-el-1',
@@ -284,9 +286,9 @@ describe('Scaffold homing + service-name integration seams (Spec 2026-06-26 Task
 
     const scaffoldStory = appended.find((i) => (i.tags ?? []).includes('seed_build_files'))!;
     expect(scaffoldStory).toBeDefined();
-    // FR5 path-3 label "service API" reaches the FR3 title through expansion.
+    // FR5 path-3 label "frontend" reaches the FR3 title through expansion.
     expect(scaffoldStory.title).toBe(
-      'Scaffold the service API app and reproduce pom.xml exactly as confirmed, dependency-for-dependency.'
+      'Scaffold the frontend app and reproduce package.json exactly as confirmed, dependency-for-dependency.'
     );
     // Unresolved service id -> no traceability ref carried.
     expect(scaffoldStory.architectureReferences ?? []).toEqual([]);

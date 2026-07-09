@@ -100,6 +100,7 @@ import { runRestWadlPass } from './restWadl';
 import { parseWebXmlServletMappings } from './webXmlServletParser';
 import {
   resolveEndpointDataEffects,
+  resolveInternalProcessDataEffects,
   type UnresolvedDataEffect,
 } from '../../extensionPacks/frameworkAdapters/springClassic/endpointDataEffectResolver';
 // Outbound Integration Graph (Spec #5, Task Group 3): the external-dependency
@@ -112,6 +113,26 @@ import {
   scanResponseContracts,
   buildResponseContractFindings,
 } from '../../extensionPacks/frameworkAdapters/springClassic/responseContractScanner';
+// Spec 2026-07-06-l: response-fidelity findings (run-it-twice peers of the
+// adapter's web-xml / xml-mvc / code-facts attach passes).
+import {
+  buildCodeResponseFactsFindings,
+  scanCodeResponseFacts,
+} from '../../extensionPacks/frameworkAdapters/springClassic/codeResponseFactsScanner';
+import {
+  buildXmlMvcFindings,
+  scanXmlMvc,
+} from '../../extensionPacks/frameworkAdapters/springClassic/xmlMvcScanner';
+// Spec 2026-07-06-m: internal-functionality findings (unresolved internal
+// persistence chains + JPA lifecycle callbacks / named queries).
+import {
+  scanInternalProcessXml,
+  xmlEntryTargets,
+} from '../../extensionPacks/frameworkAdapters/springClassic/internalProcessXmlScanner';
+import {
+  buildJpaInternalsFindings,
+  scanJpaInternals,
+} from '../../extensionPacks/frameworkAdapters/springClassic/jpaInternalsScanner';
 // Detect-or-flag custom (de)serializers (Spec 2026-06-22 code-evidence format
 // extraction, Task Group 3 / follow-up wiring): the pure detector finds
 // @JsonSerialize / @JsonDeserialize(using=Class) DTO fields whose wire format
@@ -120,6 +141,9 @@ import {
 // outbound-integration passes) -- the detector had no production caller before.
 import { detectCustomSerializerFields } from '../../extensionPacks/frameworkAdapters/springClassic/requestContractScanner';
 import { buildRequestFormatUnresolvedFinding } from '../emissionSources';
+// SQL dialect + proc-call linkage findings (Spec 2026-07-06-f): T-SQL
+// constructs in captured code SQL + proc names with no inventory match.
+import { buildSqlDialectFindings } from '../../extensionPacks/frameworkAdapters/springClassic/sqlDialectFindings';
 
 const FINDING_SOURCE = 'spring-classic-framework-pack';
 const CREATED_BY_STAGE = 'deterministic_spring_classic_analysis';
@@ -1156,7 +1180,15 @@ function scanEndpointDataEffects(
   try {
     const files = Array.from(irFiles.values());
     const { unresolved } = resolveEndpointDataEffects(files);
-    for (const u of unresolved) {
+    // Spec 2026-07-06-m: INTERNAL entry points (scheduled / listeners /
+    // Quartz / XML-wired) ride the SAME unresolved-edge finding path — an
+    // internal process whose persistence chain cannot be statically resolved
+    // is exactly as parity-relevant as an endpoint's.
+    const internalUnresolved = resolveInternalProcessDataEffects(
+      files,
+      xmlEntryTargets(scanInternalProcessXml(files)),
+    ).unresolved;
+    for (const u of [...unresolved, ...internalUnresolved]) {
       if (!underCap(counts, 'endpoint_data_effect_unresolved')) break;
       out.push(buildEndpointDataEffectUnresolvedFinding(u));
       bumpCap(counts, 'endpoint_data_effect_unresolved');
@@ -1189,6 +1221,46 @@ function scanEndpointDataEffects(
  * itself is attached to the `endpoints` candidate by the adapter; this pass
  * only surfaces the un-modellable cases as Findings (no candidate emission).
  */
+/**
+ * Spec 2026-07-06-l: response-fidelity Findings — the run-it-twice peer of
+ * the adapter's web-xml / xml-mvc / code-facts attach passes. Emits
+ * `response_header_unresolved`, `view_endpoint_out_of_parity_scope`,
+ * `tx_pointcut_unresolved`, and unresolved security-XML
+ * `endpoint_auth_unresolved` Findings. Capped + soft-failing like its peers.
+ */
+function scanResponseFidelityFindings(
+  irFiles: Map<string, SourceFileIR>,
+  counts: Map<string, number>,
+): FindingEmitInput[] {
+  const out: FindingEmitInput[] = [];
+  try {
+    const files = Array.from(irFiles.values());
+    for (const f of buildCodeResponseFactsFindings(scanCodeResponseFacts(files))) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+    for (const f of buildXmlMvcFindings(scanXmlMvc(files))) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+    // Spec 2026-07-06-m: JPA lifecycle callbacks + persistence.xml named
+    // queries (hidden-logic parity concerns).
+    for (const f of buildJpaInternalsFindings(scanJpaInternals(files))) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+  } catch (err) {
+    console.warn(
+      `[springClassicFindingScanner] response-fidelity pass failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+  return out;
+}
+
 function scanResponseContractFindings(
   irFiles: Map<string, SourceFileIR>,
   counts: Map<string, number>,
@@ -1292,6 +1364,60 @@ function scanCustomSerializerFindings(
   return out;
 }
 
+/**
+ * Cross-file pass (Spec 2026-07-06-f): T-SQL dialect classification over the
+ * resolved data-effect edges' captured SQL + proc-call linkage against this
+ * run's proc inventory. The inventory is read DEFENSIVELY off the run's pack
+ * candidates (sidecar-sourced proc entities carry `procedureName` /
+ * routine-kind markers); a code-only run has none and the unmatched-proc
+ * finding wording defers the match visibly. Capped per type; soft-fails as a
+ * whole so a malformed IR cannot poison the run.
+ */
+function scanSqlDialectFindings(
+  irFiles: Map<string, SourceFileIR>,
+  packCandidates: PackFindingScannerInput['packCandidates'],
+  counts: Map<string, number>,
+): FindingEmitInput[] {
+  const out: FindingEmitInput[] = [];
+  try {
+    const procInventory: string[] = [];
+    for (const candidate of packCandidates ?? []) {
+      const data = (candidate as { data?: Record<string, unknown> }).data ?? {};
+      const procName =
+        (data.procedureName as string | undefined) ??
+        (data.procedure_name as string | undefined);
+      if (typeof procName === 'string' && procName.length > 0) {
+        procInventory.push(procName);
+        continue;
+      }
+      const routineKind =
+        (data.routineKind as string | undefined) ?? (data.routine_kind as string | undefined);
+      const name = (candidate as { name?: string }).name;
+      if (
+        typeof routineKind === 'string' &&
+        (routineKind === 'procedure' || routineKind === 'function') &&
+        typeof name === 'string' &&
+        name.length > 0
+      ) {
+        procInventory.push(name);
+      }
+    }
+    const files = Array.from(irFiles.values());
+    for (const f of buildSqlDialectFindings({ files, procInventory })) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+  } catch (err) {
+    console.warn(
+      `[springClassicFindingScanner] sql-dialect pass failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    console.warn(`[diag-pack] scanner=spring_classic soft_fail=true category=sql_dialect_error`);
+  }
+  return out;
+}
+
 export function runSpringClassicFindingScanner(
   input: PackFindingScannerInput,
 ): FindingEmitInput[] {
@@ -1322,6 +1448,11 @@ export function runSpringClassicFindingScanner(
   // across the whole IR set (cross-file controller / advice / security-config
   // resolution), AFTER the per-file passes.
   collected.push(...scanResponseContractFindings(input.irFiles, counts));
+  // Spec 2026-07-06-l (Response Fidelity): unresolved code-set headers +
+  // view-endpoint out-of-parity-scope markers, and unresolved XML tx
+  // pointcuts / security accesses. Run ONCE across the whole IR set — the
+  // SAME run-it-twice pattern as the response-contract pass above.
+  collected.push(...scanResponseFidelityFindings(input.irFiles, counts));
   // External-dependency Findings for purely-external outbound targets
   // (Outbound Integration Graph, Spec #5, Task Group 3). Run ONCE across the
   // whole IR set (cross-file controller->service attribution), AFTER the
@@ -1333,6 +1464,12 @@ export function runSpringClassicFindingScanner(
   // whole IR set (cross-file controller -> @RequestBody DTO walk), AFTER the
   // per-file passes -- a peer of the cross-file passes above.
   collected.push(...scanCustomSerializerFindings(input.irFiles, counts));
+  // T-SQL dialect + proc-call linkage findings (Spec 2026-07-06-f). Run ONCE
+  // across the whole IR set over the SAME resolver output as the data-effect
+  // candidates (run-it-twice pattern). Proc inventory: proc-ish names read
+  // defensively off this run's pack candidates (a code-only run has none —
+  // the finding wording defers the match VISIBLY, never silently).
+  collected.push(...scanSqlDialectFindings(input.irFiles, input.packCandidates, counts));
 
   for (const [type, count] of counts) {
     if (count >= MAX_FINDINGS_PER_TYPE_PER_RUN) {

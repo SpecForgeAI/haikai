@@ -126,6 +126,33 @@ Surface candidates the pack does not see. Typical gaps:
 > LONGER your target — do NOT re-emit them. The genuine remaining gaps are
 > below.
 
+> NOTE (Spec 2026-07-06-l, Response Fidelity): the adapter now ALSO covers —
+> do NOT re-emit any of these:
+> full `web.xml` response facts (filter chains + order, error-pages,
+> encoding-filter charset, session-config); XML-defined MVC handler mappings
+> (`SimpleUrlHandlerMapping` / `BeanNameUrlHandlerMapping` → `endpoints` with
+> `endpoint_subtype: 'xml-mvc'`); `mvc:interceptors` mapped onto endpoints;
+> `security:http` `intercept-url` rules (literal roles resolved, everything
+> else attached `source: 'unresolved'`); `tx:advice` / `aop:config`
+> transactional pointcuts (flipped onto the data-effect edges); code-set
+> response headers / status / redirects / cookies from handler bodies;
+> `@CookieValue` / `@MatrixVariable` / `@RequestPart` bindings; and the
+> `response_kind` view-vs-API classification (`view-html` endpoints are
+> marked out of parity scope).
+
+> NOTE (Spec 2026-07-06-m, Internal Functionality): the adapter now ALSO
+> covers — do NOT re-emit any of these:
+> Quartz XML (job details + cron/simple triggers, VERBATIM expressions),
+> `task:scheduled-tasks` / `task:executor` / `task:scheduler`, Spring Batch
+> job XML (step graphs carried verbatim), `jms:listener-container` +
+> `DefaultMessageListenerContainer` beans, internal-process DATA-EFFECT
+> edges (scheduled/listener/Quartz entry points walk the same
+> controller→service→repository resolver as endpoints), MyBatis/iBatis
+> mapper XML SQL (verbatim, `query_kind: mybatis_xml`, dynamic tags
+> flagged), JPA entity lifecycle callbacks (`@PrePersist` etc. →
+> `business_logics`), persistence.xml named queries, and self-API-call
+> linkage (`calls_own_endpoint`).
+
 - **XML bean configuration.** Classes referenced only from
   `applicationContext.xml`, `*-context.xml`, `beans.xml`, or Spring
   namespace XML (`<bean id="..." class="..."/>`, `<context:component-scan/>`)

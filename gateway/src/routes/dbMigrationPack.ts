@@ -879,3 +879,82 @@ dbMigrationPackRouter.post(`${BASE}/:packId/verify`, async (req, res) => {
     mapError(error, res, 'verify', { projectId, packId });
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /projects/:projectId/db-migration-packs/:packId/revalidate-db-consumers
+// (Spec 2026-07-06-f §5 — scoped revalidation of the DB change's code-side
+// blast radius). Computes the AFFECTED endpoint set (translated procs / T-SQL
+// dialect SQL / altered tables) and runs ONE replay+diff SCOPED to exactly
+// those endpoints against the pinned current baseline. Target auth is
+// per-invocation, held in memory, pushed only to the validation service's
+// in-memory secretsStore — NEVER persisted (the Spec E credentials pattern).
+// ---------------------------------------------------------------------------
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/revalidate-db-consumers`,
+  async (req, res) => {
+    const { projectId, packId } = req.params as { projectId: string; packId: string };
+    const start = Date.now();
+    try {
+      const body = (req.body ?? {}) as {
+        current_architecture_id?: string;
+        source_baseline_id?: string;
+        target_base_url?: string;
+        api?: unknown;
+        altered_table_names?: string[];
+      };
+      if (!body.current_architecture_id || !body.source_baseline_id || !body.target_base_url) {
+        res.status(400).json({
+          error: {
+            code: 400,
+            message:
+              'current_architecture_id, source_baseline_id and target_base_url are required',
+          },
+        });
+        return;
+      }
+      if (!body.api || typeof body.api !== 'object') {
+        res.status(400).json({
+          error: { code: 400, message: 'api (per-invocation target auth) is required' },
+        });
+        return;
+      }
+
+      // The pack's translate-disposition rows define the proc/view object set.
+      const translations = await defaultFetchTranslations(projectId, packId);
+      const { packObjectSetFromTranslations, revalidateDbConsumers } = await import(
+        '../services/dbChangeConsumerResolver'
+      );
+      const packObjects = packObjectSetFromTranslations(
+        translations,
+        Array.isArray(body.altered_table_names) ? body.altered_table_names : []
+      );
+
+      const result = await revalidateDbConsumers({
+        projectId,
+        currentArchitectureId: body.current_architecture_id,
+        sourceBaselineId: body.source_baseline_id,
+        targetBaseUrl: body.target_base_url,
+        api: body.api as never,
+        packObjects,
+      });
+
+      console.log(
+        `[diag-gw] route=db-migration-pack-revalidate-consumers status=200 ` +
+          `affected=${result.affected.affectedEndpointIds.length} ` +
+          `clean=${result.verdict?.clean ?? 'n/a'} elapsed_ms=${Date.now() - start}`
+      );
+      res.status(200).json({
+        affected_endpoint_ids: result.affected.affectedEndpointIds,
+        affected_endpoint_keys: result.affected.affectedEndpointKeys,
+        reasons: Object.fromEntries(result.affected.reasonsByEndpointId),
+        verdict: result.verdict,
+      });
+    } catch (error) {
+      console.warn(
+        `[diag-gw] route=db-migration-pack-revalidate-consumers status=err ` +
+          `elapsed_ms=${Date.now() - start}`
+      );
+      mapError(error, res, 'revalidate-db-consumers', { projectId, packId });
+    }
+  }
+);

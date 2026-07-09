@@ -109,6 +109,12 @@ public class ApiBehaviourCaptureService {
             .responseStatus(request.responseStatus())
             .responseHeadersRedactedJson(request.responseHeadersRedactedJson())
             .responseBodyJson(request.responseBodyJson())
+            // Spec 2026-07-06-j: raw wire body (redaction-clean only, per the
+            // validation service's raw-body policy); null = raw unavailable.
+            .responseBodyRaw(request.responseBodyRaw())
+            // Spec 2026-07-06-n: effect-table state delta measured around a
+            // mutating call; null = state not captured (state_unverified).
+            .stateDeltaJson(request.stateDeltaJson())
             .durationMs(request.durationMs())
             .errorType(request.errorType())
             .errorMessage(request.errorMessage())

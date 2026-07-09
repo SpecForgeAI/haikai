@@ -15,6 +15,16 @@ import {
   type VolatilityContext,
   type VolatilityEnvelope,
 } from './jsonShapeComparator';
+// Spec 2026-07-06-j: the AMS comparison-waiver set (replaces the in-code
+// header allowlist when fetched; null => legacy fallback).
+import { fetchWaiverSet } from './comparisonWaivers';
+// Spec 2026-07-06-n: state parity for mutating scenarios — compares the
+// pre/post effect-table deltas frozen on both sides' baseline items.
+import { compareStateDeltas, type StateDeltaJson } from './stateDelta';
+// Spec 2026-07-06-i: scoped diffs — the diff row's endpoint_scope_json
+// filters BOTH sides' items before pairing (out-of-scope source items must
+// not spam source_only breaks on a scoped run).
+import { scopeKeysFromBlob, scopeMatches } from './endpointScope';
 import {
   classifyDiffItem as defaultClassifyDiffItem,
   API_BEHAVIOUR_DRIFT_CATEGORY,
@@ -243,6 +253,17 @@ interface ClassificationCounts {
   // Header dimension (Spec 2026-06-17). Same local-only treatment -- counts a
   // diff_item whose header_classification is a real (untolerated) break.
   header_drift: number;
+  // Strict-profile byte dimension (Spec 2026-07-06-j). Local-only tallies --
+  // the verdicts ride each item's persisted diff_json (`byte_classification`);
+  // these feed the reconcile trace + the failure log line.
+  byte_drift: number;
+  raw_unavailable: number;
+  // State-parity dimension (Spec 2026-07-06-n). Local-only tallies, same
+  // posture as the byte dimension -- the verdicts ride each item's persisted
+  // diff_json (`state_classification`) and the parity gate (Spec I) consumes
+  // them; the AMS count summary is unchanged.
+  state_drift: number;
+  state_unverified: number;
   source_only: number;
   target_only: number;
 }
@@ -255,6 +276,10 @@ function freshCounts(): ClassificationCounts {
     body_value_drift: 0,
     body_ordering_drift: 0,
     header_drift: 0,
+    byte_drift: 0,
+    raw_unavailable: 0,
+    state_drift: 0,
+    state_unverified: 0,
     source_only: 0,
     target_only: 0,
   };
@@ -362,6 +387,16 @@ export async function runDiff(
     diff = await archModelClient.getDiff(projectId, diffId);
     architectureId = diff.architecture_id;
     traceCorr = { run: diffId, project: projectId, arch: architectureId };
+
+    // Spec 2026-07-06-j: the diff row's comparison profile (null reads
+    // 'standard' — today's semantics) + the project's effective waiver set
+    // from AMS. A waiver fetch failure yields null and the comparator falls
+    // back to the legacy in-code header allowlist (logged inside the fetch).
+    const comparisonProfile: 'standard' | 'strict' =
+      (diff as { comparison_profile?: string | null }).comparison_profile === 'strict'
+        ? 'strict'
+        : 'standard';
+    const waiverSet = await fetchWaiverSet(projectId);
     if (diff.status !== 'computing') {
       // Either already completed or failed. Don't double-run; surface a
       // diagnostic and return.
@@ -432,14 +467,21 @@ export async function runDiff(
     // ------------------------------------------------------------------
     // 3) Load both sides' baseline items
     // ------------------------------------------------------------------
-    const sourceItems = await archModelClient.listBaselineItems(
-      projectId,
-      diff.source_baseline_id,
+    // Spec 2026-07-06-i: a SCOPED diff (endpoint_scope_json.keys non-null)
+    // pairs ONLY in-scope items on both sides — an out-of-scope source item
+    // must not surface as a source_only break on a per-story parity run.
+    // Null scope (every legacy row) = full surface, byte-identical.
+    const diffScopeKeys = scopeKeysFromBlob(
+      (diff as { endpoint_scope_json?: unknown }).endpoint_scope_json,
     );
-    const targetItems = await archModelClient.listBaselineItems(
-      projectId,
-      diff.target_baseline_id,
-    );
+    const inScope = (item: BaselineItemDto): boolean =>
+      scopeMatches(diffScopeKeys, item.method ?? 'GET', item.path ?? '/');
+    const sourceItems = (
+      await archModelClient.listBaselineItems(projectId, diff.source_baseline_id)
+    ).filter(inScope);
+    const targetItems = (
+      await archModelClient.listBaselineItems(projectId, diff.target_baseline_id)
+    ).filter(inScope);
 
     console.log(
       `[diffRunner] op=start diffId=${diffId.slice(0, 8)} ` +
@@ -532,6 +574,16 @@ export async function runDiff(
           sourceItem.response_json,
           targetItem.response_json,
           volatilityCtx,
+          // Spec 2026-07-06-j: the diff's comparison profile + the AMS waiver
+          // set (replacing the in-code allowlist when fetched) + the raw wire
+          // bodies for the strict byte verdict. `waivers: null` (fetch
+          // failure) falls back to the legacy allowlist inside the comparator.
+          {
+            profile: comparisonProfile,
+            waivers: waiverSet,
+            sourceRaw: sourceItem.response_body_raw ?? null,
+            targetRaw: targetItem.response_body_raw ?? null,
+          },
         );
         bodyClassification = cmp.bodyClassification;
         // Header classification (null = dimension skipped: a side lacked the
@@ -557,6 +609,41 @@ export async function runDiff(
           }
           if (cmp.volatilitySourcesTouched.length > 0) {
             blob.volatility_sources = cmp.volatilitySourcesTouched as unknown[];
+          }
+          // Spec 2026-07-06-j: the strict-profile byte verdict rides the
+          // persisted diff item (additive key; absent on standard runs).
+          if (cmp.byteClassification) {
+            blob.byte_classification = cmp.byteClassification;
+            if (cmp.byteClassification === 'byte_drift') {
+              counts.byte_drift += 1;
+            } else if (cmp.byteClassification === 'raw_unavailable') {
+              counts.raw_unavailable += 1;
+            }
+          }
+          // Spec 2026-07-06-n: state parity. Stamped ONLY when at least one
+          // side carries an effect-table delta (read-only items and pre-N
+          // baselines skip the dimension entirely — zero regression). Either
+          // side missing while the other measured => `state_unverified`
+          // (FAIL-CLOSED: a write whose state cannot be verified is surfaced
+          // VISIBLY, never silently passed). The parity gate (Spec I)
+          // consumes the verdict off the persisted diff_json.
+          {
+            const sourceDelta =
+              (sourceItem.state_delta_json as unknown as StateDeltaJson | null) ?? null;
+            const targetDelta =
+              (targetItem.state_delta_json as unknown as StateDeltaJson | null) ?? null;
+            if (sourceDelta || targetDelta) {
+              const stateCmp = compareStateDeltas(sourceDelta, targetDelta);
+              blob.state_classification = stateCmp.classification;
+              if (stateCmp.detail.length > 0) {
+                blob.state_detail = stateCmp.detail as unknown[];
+              }
+              if (stateCmp.classification === 'state_drift') {
+                counts.state_drift += 1;
+              } else if (stateCmp.classification === 'state_unverified') {
+                counts.state_unverified += 1;
+              }
+            }
           }
           bodyDiffJson = Object.keys(blob).length > 0 ? blob : null;
         }
@@ -677,7 +764,8 @@ export async function runDiff(
       `[diffRunner] op=complete diffId=${diffId.slice(0, 8)} ` +
         `matched=${counts.matched} status_drift=${counts.status_drift} ` +
         `body_shape_drift=${counts.body_shape_drift} body_value_drift=${counts.body_value_drift} ` +
-        `source_only=${counts.source_only} target_only=${counts.target_only}`,
+        `source_only=${counts.source_only} target_only=${counts.target_only} ` +
+        `state_drift=${counts.state_drift} state_unverified=${counts.state_unverified}`,
     );
 
     // SUMMARY: reconcile terminal -- "breaks" = every non-matched item

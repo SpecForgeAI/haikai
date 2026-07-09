@@ -101,6 +101,11 @@ import {
   dbStoriesInScope,
   evaluateDbPackReadiness,
 } from './migrationDbExecutionGate';
+import {
+  CodeGateReads,
+  codeStoriesInScope,
+  evaluateCodeReadiness,
+} from './migrationCodeExecutionGate';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -186,6 +191,12 @@ export interface MigrationDriverDeps {
    * compiling; injected in tests.
    */
   dbPackGateReads?: DbPackGateReads;
+  /**
+   * Code-tier readiness gate reads (Spec 2026-07-06-i). Optional + defaulted
+   * inside {@link evaluateCodeReadiness} so pre-existing deps mocks keep
+   * compiling; injected in tests.
+   */
+  codeGateReads?: CodeGateReads;
   recordWorkItemImplementationError: typeof recordWorkItemImplementationError;
   /** The headless shape-spec auto-answerer (Group 4); mocked in tests. */
   autoAnswerer: ShapeSpecAutoAnswerer;
@@ -343,6 +354,16 @@ function isDeferred(item: BookOfWorkItem, deferredWorkItemIds: Set<string>): boo
 }
 
 /**
+ * True when the item is MANUAL-GATE work (Spec 2026-07-06-g): human/wizard
+ * activity (baseline capture sessions, parity sign-off sweeps) that is NEVER
+ * dispatched to the implement-verify service and never required to be
+ * spec-ready. Completion is gated elsewhere (Spec I's gates), not by specs.
+ */
+function isManualGate(item: BookOfWorkItem): boolean {
+  return (item.tags ?? []).includes('execution:manual-gate');
+}
+
+/**
  * Resolve the latest spec-generation row carrying a non-empty
  * `generated_spec_text` for a book item. Only leaf stories / TEST items carry a
  * spec to dispatch; structural nodes (initiative / epic / feature) are
@@ -399,6 +420,7 @@ export function evaluateHardBlock(params: {
     const isStoryNode = !!item.workItemId;
     if (!isStoryNode) continue;
     if (isDeferred(item, params.deferredWorkItemIds)) continue; // deferred drops out
+    if (isManualGate(item)) continue; // manual-gate work carries no spec by design
     if (hasSelection && !params.selectedWorkItemIds!.has(item.workItemId as string)) {
       continue; // out of the selected subset
     }
@@ -471,6 +493,7 @@ export function buildOrderedDispatchSet(params: {
   const descriptors: DispatchDescriptor[] = [];
   for (const item of ordered) {
     if (isDeferred(item, params.deferredWorkItemIds)) continue;
+    if (isManualGate(item)) continue; // never dispatched to the implement service
     if (hasSelection && (!item.workItemId || !params.selectedWorkItemIds!.has(item.workItemId))) {
       continue; // out of the selected subset
     }
@@ -638,7 +661,33 @@ export async function startMigration(
     });
   }
 
-  const allBlockReasons = [...gate.reasons, ...dbGateReasons];
+  // 4c. Code-tier readiness gate (Spec 2026-07-06-i): when the dispatch scope
+  //     contains API-parity code stories, Migrate additionally requires an
+  //     active pinned baseline, per-endpoint baseline coverage for every
+  //     unflagged story, and the pinned baseline's persisted coverage summary
+  //     to meet Spec K's floor. FAIL-CLOSED on unreadable parity inputs.
+  //     Reasons STACK with the gates above so the user sees every blocker.
+  let codeGateReasons: HardBlockResult['reasons'] = [];
+  if (codeStoriesInScope({ items, deferredWorkItemIds, selectedWorkItemIds: selectedSet })) {
+    const codeGate = await evaluateCodeReadiness({
+      projectId,
+      currentArchitectureId: book.current_architecture_id ?? null,
+      items,
+      deferredWorkItemIds,
+      selectedWorkItemIds: selectedSet,
+      pinnedBaselineId: baseline?.id ?? null,
+      reads: deps.codeGateReads,
+    });
+    codeGateReasons = codeGate.reasons;
+    logger.info('[diag-gateway] migration_execution_driver code_gate', {
+      projectId,
+      bookId,
+      ok: codeGate.ok,
+      reasons: codeGate.reasons.map((r) => r.code),
+    });
+  }
+
+  const allBlockReasons = [...gate.reasons, ...dbGateReasons, ...codeGateReasons];
   if (allBlockReasons.length > 0) {
     logger.warn('[diag-gateway] migration_execution_driver start_blocked', {
       projectId,

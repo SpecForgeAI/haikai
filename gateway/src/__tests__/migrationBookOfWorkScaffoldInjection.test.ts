@@ -36,7 +36,10 @@ import {
 import { TargetManifestArtifactWire } from '../services/targetManifestArtifactsClient';
 import { LlmConcurrencyPool } from '../services/llmConcurrencyPool';
 
-const STREAM = 'target_service_api_implementation';
+// NOTE (Spec 2026-07-06-g): the API streams are deterministically planned now
+// and skip the scaffold gate, so the scaffold-host machinery is pinned on a
+// stream that still takes the LLM expansion path.
+const STREAM = 'target_frontend_implementation';
 const EPIC_ID = `${STREAM}:E1`;
 const FEATURE_ID = `${STREAM}:F1`;
 
@@ -122,10 +125,13 @@ function manifest(overrides: Partial<TargetManifestArtifactWire> = {}): TargetMa
     project_id: 'p',
     target_architecture_id: 'arch-target',
     tag: 'orders-service',
-    kind: 'pom',
-    ecosystem: 'maven',
-    manifest_path: 'orders-service/pom.xml',
-    content: '<project/>',
+    // Spec 2026-07-06-g: this suite pins the LLM-expansion scaffold seam on a
+    // frontend/npm pairing (the maven pairing now homes into the DETERMINISTIC
+    // API stream — pinned in migrationBookOfWorkCodeExpansion.test.ts).
+    kind: 'package_json',
+    ecosystem: 'npm',
+    manifest_path: 'orders-service/package.json',
+    content: '{}',
     package_lock_content: null,
     resolved_dependencies: [],
     target_service_element_id: 'svc-el-1',
@@ -230,7 +236,7 @@ describe('Expansion-time scaffold injection (Spec 2026-06-26 FR2/FR3/FR4)', () =
     expect(scaffoldStory.confidence).toBe('high');
     // FR3 seed sentence with the resolved service name + manifest filename.
     expect(scaffoldStory.title).toBe(
-      'Scaffold the Orders Service app and reproduce pom.xml exactly as confirmed, dependency-for-dependency.'
+      'Scaffold the Orders Service app and reproduce package.json exactly as confirmed, dependency-for-dependency.'
     );
     // FR5 traceability: the resolved service id rides the story.
     expect(scaffoldStory.architectureReferences).toEqual(['svc-el-1']);

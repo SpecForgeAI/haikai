@@ -2,6 +2,8 @@ import { AxiosError, AxiosResponse } from 'axios';
 import { ToolHandler, ToolRegistryEntry, ToolValidationError } from './toolTypes';
 import { extractIdentifierFacts } from './_idFacts';
 import { redactHeaders, redactJson, redactUrl } from '../redactor';
+import { rawBodyOf } from '../httpExecutor';
+import { persistableRawBody } from '../rawBodyPolicy';
 import { HttpMethod } from '../../types/oas';
 import { runManager } from '../runManager';
 import { LLM_HTTP_ATTEMPTS_PER_SCENARIO } from '../../config';
@@ -12,6 +14,15 @@ import {
 import { coerceAuthMode, resolveAuthOverride } from '../authOverride';
 import { createTracer } from '../../trace';
 import { normaliseBodyForAms } from '../amsBodyEnvelope';
+import {
+  EffectScopeIndex,
+  StateSnapshot,
+  computeStateDelta,
+  effectTablesFor,
+  fetchEffectScopeIndex,
+  keyHintFromResponse,
+  snapshotEffectTables,
+} from '../stateDelta';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. DETAIL events live on the capture
@@ -93,6 +104,41 @@ const CONTENT_TYPE_DEFAULTING_VERBS: ReadonlySet<string> = new Set([
   'post',
   'patch',
 ]);
+
+/**
+ * Verbs whose effect-table state is snapshotted around the call
+ * (Spec 2026-07-06-n). Mutating verbs only — a GET has no state to delta.
+ */
+const STATE_DELTA_VERBS: ReadonlySet<string> = new Set([
+  'post',
+  'put',
+  'patch',
+  'delete',
+]);
+
+/**
+ * Single-entry per-session effect-scope cache (Spec 2026-07-06-n). ONE
+ * committed-model read per capture session, re-fetched when the session id
+ * changes — session-scoped, honouring the "tools MUST NOT cache anything
+ * across sessions" contract while avoiding a full-model fetch per mutating
+ * call. `index: null` = the read failed (deltas stay null; the diff verdict
+ * degrades VISIBLY to `state_unverified`).
+ */
+let effectScopeCache: { sessionId: string; index: EffectScopeIndex | null } | null = null;
+
+async function effectScopeForSession(
+  ctx: Parameters<ToolHandler>[1],
+): Promise<EffectScopeIndex | null> {
+  if (effectScopeCache && effectScopeCache.sessionId === ctx.session.id) {
+    return effectScopeCache.index;
+  }
+  const index = await fetchEffectScopeIndex(
+    ctx.session.projectId,
+    ctx.session.architectureId,
+  );
+  effectScopeCache = { sessionId: ctx.session.id, index };
+  return index;
+}
 
 /**
  * Resolve the request media type the executor should default for one
@@ -423,6 +469,44 @@ const handler: ToolHandler = async (args, ctx) => {
     effectiveHeaders = { ...(effectiveHeaders ?? {}), 'Content-Type': mediaType };
   }
 
+  // ---- Spec 2026-07-06-n: PRE-call state snapshot for a MUTATING call.
+  //
+  // Response parity alone cannot prove a write endpoint — the target can
+  // return the right response and write the wrong rows. When (a) a DB
+  // adapter is bound to this session, (b) the verb is mutating AND the
+  // session confirmed mutating calls, and (c) the committed model names
+  // this operation's effect tables (endpoint_data_effects write edges),
+  // snapshot those tables BEFORE the call; the matching post-call snapshot
+  // below yields `state_delta_json` on the capture row. Every guard-miss
+  // and every failure leaves the delta null — the reconcile verdict then
+  // degrades VISIBLY to `state_unverified`, never a silent pass. An
+  // auth-override attempt (deliberate 401/403 negative) is not snapshotted,
+  // mirroring the volatility-probe posture.
+  let stateEffectTables: string[] = [];
+  let preStateSnapshot: StateSnapshot | null = null;
+  if (
+    ctx.dbAdapter &&
+    mutatingConfirmed &&
+    STATE_DELTA_VERBS.has(method) &&
+    !authOverride
+  ) {
+    try {
+      const scope = await effectScopeForSession(ctx);
+      stateEffectTables = scope ? effectTablesFor(scope, method, path) : [];
+      if (stateEffectTables.length > 0) {
+        preStateSnapshot = await snapshotEffectTables(ctx.dbAdapter, stateEffectTables);
+      }
+    } catch (snapErr) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `execute_http_request: pre-call state snapshot failed for session=${ctx.session.id} ` +
+          `op=${method.toUpperCase()} ${path} -- state delta left null (state_unverified)`,
+        snapErr instanceof Error ? snapErr.message : String(snapErr),
+      );
+      preStateSnapshot = null;
+    }
+  }
+
   const start = Date.now();
   let response: AxiosResponse<unknown> | null = null;
   let errorType: string | null = null;
@@ -609,6 +693,35 @@ const handler: ToolHandler = async (args, ctx) => {
     }
   }
 
+  // ---- Spec 2026-07-06-n: POST-call state snapshot + delta. Runs only when
+  // the pre-call snapshot succeeded (same tables, same adapter). The keyed
+  // ladder rung uses an id-ish value from the (redacted) response body when
+  // one is exposed — recorded on the delta's `strategy` so the coverage
+  // level is explicit. Failures leave the delta null (state_unverified).
+  let stateDeltaJson: Record<string, unknown> | null = null;
+  if (preStateSnapshot && ctx.dbAdapter) {
+    try {
+      const keyHint = response ? keyHintFromResponse(safeResponseBody) : null;
+      const postStateSnapshot = await snapshotEffectTables(
+        ctx.dbAdapter,
+        stateEffectTables,
+        keyHint,
+      );
+      stateDeltaJson = computeStateDelta(
+        preStateSnapshot,
+        postStateSnapshot,
+      ) as unknown as Record<string, unknown>;
+    } catch (snapErr) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `execute_http_request: post-call state snapshot failed for session=${ctx.session.id} ` +
+          `op=${method.toUpperCase()} ${path} -- state delta left null (state_unverified)`,
+        snapErr instanceof Error ? snapErr.message : String(snapErr),
+      );
+      stateDeltaJson = null;
+    }
+  }
+
   // ---- Persist the capture row. One row per attempt regardless of outcome.
   // `accepted` is intentionally omitted so AMS applies its default (null);
   // `false` is reserved for explicit reviewer rejection.
@@ -652,6 +765,15 @@ const handler: ToolHandler = async (args, ctx) => {
       ? (safeResponseHeaders as unknown as Record<string, string> | null)
       : null,
     response_body_json: normaliseBodyForAms(safeResponseBody),
+    // Spec 2026-07-06-j: the RAW wire body, persisted ONLY when redaction was
+    // a no-op on it (rawBodyPolicy) — strict byte verdicts where trustworthy,
+    // `raw unavailable` (null) everywhere else, secrets never in raw storage.
+    response_body_raw: response
+      ? persistableRawBody(rawBodyOf(response), response.data, safeResponseBody)
+      : null,
+    // Spec 2026-07-06-n: effect-table state delta measured around this
+    // mutating call; null = not captured (state_unverified at reconcile).
+    state_delta_json: stateDeltaJson,
     duration_ms: durationMs,
     error_type: errorType,
     error_message: persistedErrorMessage,

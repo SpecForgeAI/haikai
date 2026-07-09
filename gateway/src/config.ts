@@ -140,6 +140,14 @@ export interface Config {
    * Default: 25.
    */
   migrationPlanDbClusterMaxTables: number;
+  /**
+   * Max endpoints per interface-cluster story in the deterministic CODE plan
+   * generation (Spec 2026-07-06-g, Code-Tier Oracle Program) — the API-side
+   * anti-story-explosion knob: one story per interface, verb-group split
+   * above this cap. Read from MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS.
+   * Default: 15 (user-agreed).
+   */
+  migrationPlanApiClusterMaxEndpoints: number;
 
   // Migration Execution Driver Configuration
   // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)
@@ -354,6 +362,12 @@ export function loadConfig(): Config {
     migrationPlanDbClusterMaxTables: parseIntEnv(
       process.env.MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES,
       25
+    ),
+    // MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS: max endpoints per interface-
+    // cluster story in the deterministic code plan path (Spec 2026-07-06-g).
+    migrationPlanApiClusterMaxEndpoints: parseIntEnv(
+      process.env.MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS,
+      15
     ),
 
     // Migration Execution Driver Configuration
