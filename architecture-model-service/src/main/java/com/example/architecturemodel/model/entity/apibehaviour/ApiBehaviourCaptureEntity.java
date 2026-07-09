@@ -121,6 +121,18 @@ public class ApiBehaviourCaptureEntity {
     @Column(name = "response_body_raw", columnDefinition = "text")
     private String responseBodyRaw;
 
+    /**
+     * Effect-table state delta measured around a MUTATING call
+     * (Spec 2026-07-06-n, changeset 207): per-table row-count deltas +
+     * best-effort keyed rows, strategy-tagged. {@code null} = state not
+     * captured — the reconcile verdict degrades VISIBLY to
+     * {@code state_unverified}. Copied onto the baseline item at
+     * save-as-baseline (the raw-body precedent).
+     */
+    @Type(JsonType.class)
+    @Column(name = "state_delta_json", columnDefinition = "jsonb")
+    private Map<String, Object> stateDeltaJson;
+
     /** Boxed {@link Integer} so PATCH preserves {@code null}. */
     @Column(name = "duration_ms")
     private Integer durationMs;

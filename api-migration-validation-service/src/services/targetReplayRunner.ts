@@ -21,6 +21,15 @@ import {
   type SequenceReplayDeps,
 } from './sequenceReplayRunner';
 import type { ApiAuthSecret } from '../types/secrets';
+import type { DbAdapter } from './db/DbAdapter';
+import {
+  computeStateDelta,
+  effectTablesFor,
+  fetchEffectScopeIndex,
+  keyHintFromResponse,
+  snapshotEffectTables,
+  type StateSnapshot,
+} from './stateDelta';
 import {
   TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT as DEFAULT_TRANSPORT_FAILURE_THRESHOLD,
   LLM_TOOL_CALL_TIMEOUT_MS as DEFAULT_PER_ITEM_TIMEOUT_MS,
@@ -185,6 +194,17 @@ export interface TargetReplayDeps {
    * the discovery signal. Fail-soft: a rejection degrades to strict (G1).
    */
   resolveNonDeterministicEndpointKeys?: typeof defaultResolveNdKeys;
+  /**
+   * OPTIONAL TARGET-database adapter (Spec 2026-07-06-n). When present,
+   * mutating replays are wrapped in pre/post effect-table snapshots and the
+   * resulting `state_delta_json` rides on the target capture + baseline item
+   * so the diff can compare state parity against the source delta. When
+   * absent (today's production route wiring — threading target-DB secrets
+   * through the replay route is a logged residual), deltas stay null and the
+   * diff verdict degrades VISIBLY to `state_unverified`. Tests inject a fake
+   * adapter.
+   */
+  dbAdapter?: DbAdapter | null;
 }
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -433,6 +453,15 @@ export async function runTargetReplay(
       session.source_baseline_id,
     );
 
+    // Spec 2026-07-06-n: ONE committed-model effect-scope read for the whole
+    // replay when a target-DB adapter was provided. Null (no adapter / read
+    // failed) => no snapshots => the diff verdict degrades VISIBLY to
+    // `state_unverified` for mutating items — never a silent pass.
+    const dbAdapter = deps.dbAdapter ?? null;
+    const effectScope = dbAdapter
+      ? await fetchEffectScopeIndex(projectId, session.architecture_id)
+      : null;
+
     console.log(
       `[targetReplayRunner] op=start session=${sessionId.slice(0, 8)} ` +
         `source_baseline=${session.source_baseline_id.slice(0, 8)} ` +
@@ -575,6 +604,28 @@ export async function runTargetReplay(
         continue;
       }
 
+      // Spec 2026-07-06-n: PRE-call state snapshot for a mutating replay
+      // (target-side arm — mirrors the capture-side hook in
+      // execute_http_request). Best-effort: any failure leaves the delta
+      // null (state_unverified at diff time), never fails the replay.
+      let preStateSnapshot: StateSnapshot | null = null;
+      let stateEffectTables: string[] = [];
+      if (dbAdapter && effectScope && isMutating && mutatingConfirmed) {
+        try {
+          stateEffectTables = effectTablesFor(effectScope, req.method, req.path);
+          if (stateEffectTables.length > 0) {
+            preStateSnapshot = await snapshotEffectTables(dbAdapter, stateEffectTables);
+          }
+        } catch (snapErr) {
+          console.warn(
+            `[targetReplayRunner] pre-replay state snapshot failed for ${req.method} ${req.path}: ${
+              snapErr instanceof Error ? snapErr.message : String(snapErr)
+            } -- state delta left null (state_unverified)`,
+          );
+          preStateSnapshot = null;
+        }
+      }
+
       // --- Send the request ---
       const requestStartedAt = now();
       let capture: CaptureDto | null = null;
@@ -590,6 +641,31 @@ export async function runTargetReplay(
         // validateStatus: () => true). Reset the counter.
         consecutiveTransportFailures = 0;
         lastTransportErrorCode = null;
+
+        // Spec 2026-07-06-n: POST-call snapshot + delta (target side). The
+        // keyed rung uses an id-ish value from the target response when one
+        // is exposed. Failures leave the delta null (state_unverified).
+        let stateDeltaJson: Record<string, unknown> | null = null;
+        if (preStateSnapshot && dbAdapter) {
+          try {
+            const postStateSnapshot = await snapshotEffectTables(
+              dbAdapter,
+              stateEffectTables,
+              keyHintFromResponse(response.data),
+            );
+            stateDeltaJson = computeStateDelta(
+              preStateSnapshot,
+              postStateSnapshot,
+            ) as unknown as Record<string, unknown>;
+          } catch (snapErr) {
+            console.warn(
+              `[targetReplayRunner] post-replay state snapshot failed for ${req.method} ${req.path}: ${
+                snapErr instanceof Error ? snapErr.message : String(snapErr)
+              } -- state delta left null (state_unverified)`,
+            );
+            stateDeltaJson = null;
+          }
+        }
 
         capture = await archModelClient.createCapture(projectId, {
           session_id: session.id,
@@ -621,6 +697,9 @@ export async function runTargetReplay(
           // raw wire text rides verbatim (strict byte verdicts need BOTH
           // sides). Null when the executor could not retain it.
           response_body_raw: rawBodyOf(response),
+          // Spec 2026-07-06-n: target-side effect-table state delta; null =
+          // not captured (state_unverified at diff time).
+          state_delta_json: stateDeltaJson,
           duration_ms: now() - requestStartedAt,
           error_type: null,
           error_message: null,
@@ -654,6 +733,8 @@ export async function runTargetReplay(
           },
           // Spec 2026-07-06-j: byte-verdict input for the strict profile.
           response_body_raw: rawBodyOf(response),
+          // Spec 2026-07-06-n: state parity input for the diff.
+          state_delta_json: stateDeltaJson,
           business_notes: null,
         });
 

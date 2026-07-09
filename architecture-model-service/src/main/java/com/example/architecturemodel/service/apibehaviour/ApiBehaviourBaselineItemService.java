@@ -179,6 +179,7 @@ public class ApiBehaviourBaselineItemService {
             .volatilePathsJson(request.volatilePathsJson())
             .sequenceJson(request.sequenceJson())
             .responseBodyRaw(resolveResponseBodyRaw(request))
+            .stateDeltaJson(resolveStateDeltaJson(request))
             .businessNotes(request.businessNotes())
             .build();
     }
@@ -243,6 +244,27 @@ public class ApiBehaviourBaselineItemService {
         }
         return captureRepository.findById(request.captureId())
             .map(capture -> capture.getResponseBodyRaw())
+            .orElse(null);
+    }
+
+    /**
+     * Spec 2026-07-06-n: the item's state delta comes from the request when
+     * the caller passed it (target replay does), else it is COPIED from the
+     * referenced capture row (the frontend Save-as-baseline path) — the exact
+     * mirror of {@link #resolveResponseBodyRaw}. Best-effort: a missing
+     * capture row yields null ("state not captured"; reconcile degrades
+     * visibly to {@code state_unverified}).
+     */
+    private java.util.Map<String, Object> resolveStateDeltaJson(
+            CreateApiBehaviourBaselineItemRequest request) {
+        if (request.stateDeltaJson() != null) {
+            return request.stateDeltaJson();
+        }
+        if (request.captureId() == null) {
+            return null;
+        }
+        return captureRepository.findById(request.captureId())
+            .map(capture -> capture.getStateDeltaJson())
             .orElse(null);
     }
 }

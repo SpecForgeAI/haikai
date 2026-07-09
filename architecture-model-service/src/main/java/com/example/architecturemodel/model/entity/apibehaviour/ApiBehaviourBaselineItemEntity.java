@@ -182,6 +182,17 @@ public class ApiBehaviourBaselineItemEntity {
     @Column(name = "response_body_raw", columnDefinition = "text")
     private String responseBodyRaw;
 
+    /**
+     * Effect-table state delta frozen with the item (Spec 2026-07-06-n,
+     * changeset 207). {@code null} = state not captured (pre-N baselines;
+     * non-mutating scenarios) — reconcile degrades VISIBLY to
+     * {@code state_unverified}. Excluded from the content hash (derivative
+     * evidence; existing baselines hash unchanged).
+     */
+    @Type(JsonType.class)
+    @Column(name = "state_delta_json", columnDefinition = "jsonb")
+    private Map<String, Object> stateDeltaJson;
+
     @Column(name = "business_notes")
     private String businessNotes;
 

@@ -420,6 +420,13 @@ export interface CreateCaptureRequest {
    * verdicts degrade visibly).
    */
   response_body_raw?: string | null;
+  /**
+   * Spec 2026-07-06-n: effect-table state delta measured around a MUTATING
+   * call (pre/post snapshots of the operation's committed write-scope
+   * tables, `stateDelta.ts`). Omitted / null = state not captured — the
+   * reconcile verdict degrades VISIBLY to `state_unverified`.
+   */
+  state_delta_json?: Record<string, unknown> | null;
   duration_ms?: number | null;
   error_type?: string | null;
   error_message?: string | null;
@@ -623,6 +630,12 @@ export interface BaselineItemDto {
    * raw unavailable (pre-raw baselines; redaction-touched bodies).
    */
   response_body_raw?: string | null;
+  /**
+   * Spec 2026-07-06-n: effect-table state delta frozen with the item. Null =
+   * state not captured (pre-N baselines; non-mutating scenarios) — the diff
+   * verdict degrades VISIBLY to `state_unverified`, never a silent pass.
+   */
+  state_delta_json?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -644,6 +657,12 @@ export interface CreateBaselineItemRequest {
    * without client changes).
    */
   response_body_raw?: string | null;
+  /**
+   * Spec 2026-07-06-n: OPTIONAL effect-table state delta. When omitted, AMS
+   * copies the referenced capture row's delta server-side (the raw-body
+   * precedent) so Save-as-baseline inherits it without client changes.
+   */
+  state_delta_json?: Record<string, unknown> | null;
   business_notes?: string | null;
   /**
    * OPTIONAL volatility envelope `{ paths, volatility_source, k }` measured by

@@ -42,6 +42,8 @@ public record ApiBehaviourCaptureDto(
      * was a no-op on the body; null = raw unavailable (strict degrades).
      */
     String responseBodyRaw,
+    /** Spec 2026-07-06-n: effect-table state delta; null = not captured. */
+    Map<String, Object> stateDeltaJson,
     Integer durationMs,
     String errorType,
     String errorMessage,

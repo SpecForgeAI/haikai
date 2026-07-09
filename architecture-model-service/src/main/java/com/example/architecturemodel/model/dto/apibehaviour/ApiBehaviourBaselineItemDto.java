@@ -44,10 +44,44 @@ public record ApiBehaviourBaselineItemDto(
     Map<String, Object> volatilePathsJson,
     Map<String, Object> sequenceJson,
     String responseBodyRaw,
+    /** Spec 2026-07-06-n: effect-table state delta; null = not captured. */
+    Map<String, Object> stateDeltaJson,
     String businessNotes,
     Instant createdAt,
     Instant updatedAt
 ) {
+    /**
+     * Backward-compatible delegating constructor for pre-state-delta call
+     * sites (Spec 2026-07-06-n): delegates with {@code stateDeltaJson == null}
+     * ("state not captured" — reconcile degrades visibly to
+     * {@code state_unverified}).
+     */
+    public ApiBehaviourBaselineItemDto(
+        UUID id,
+        UUID baselineId,
+        UUID captureId,
+        UUID operationId,
+        UUID scenarioId,
+        String method,
+        String path,
+        String scenarioName,
+        Map<String, Object> requestJson,
+        Integer responseStatus,
+        Map<String, Object> responseJson,
+        Map<String, Object> volatilePathsJson,
+        Map<String, Object> sequenceJson,
+        String responseBodyRaw,
+        String businessNotes,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+        this(
+            id, baselineId, captureId, operationId, scenarioId,
+            method, path, scenarioName, requestJson, responseStatus,
+            responseJson, volatilePathsJson, sequenceJson, responseBodyRaw,
+            null, businessNotes, createdAt, updatedAt);
+    }
+
     /**
      * Backward-compatible delegating constructor for pre-raw call sites
      * (Spec 2026-07-06-j): delegates to the canonical constructor with
@@ -76,8 +110,8 @@ public record ApiBehaviourBaselineItemDto(
         this(
             id, baselineId, captureId, operationId, scenarioId,
             method, path, scenarioName, requestJson, responseStatus,
-            responseJson, volatilePathsJson, sequenceJson, null, businessNotes,
-            createdAt, updatedAt);
+            responseJson, volatilePathsJson, sequenceJson, null, null,
+            businessNotes, createdAt, updatedAt);
     }
 
     /**
@@ -105,7 +139,7 @@ public record ApiBehaviourBaselineItemDto(
         this(
             id, baselineId, captureId, operationId, scenarioId,
             method, path, scenarioName, requestJson, responseStatus,
-            responseJson, volatilePathsJson, null, null, businessNotes,
+            responseJson, volatilePathsJson, null, null, null, businessNotes,
             createdAt, updatedAt);
     }
 }

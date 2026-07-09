@@ -366,3 +366,56 @@ reported-only flags + scorer stamping/legacy default) + 6 gateway pins
 (`apiBehaviourCoverageFloor.test.ts`: floor/reported/waiver/legacy/auth/aggregate).
 Coverage-family regression 6 suites / 43 tests green (one existing scoring-test fixture
 gained the two new required fields).
+
+---
+
+## Spec N — Mutating State-Delta Capture (2026-07-09)
+
+**Status: BUILT + VERIFIED.**
+
+- AMS changeset 207: nullable `state_delta_json` JSONB on `api_behaviour_captures` +
+  `api_behaviour_baseline_items` (no backfill — null = "state not captured", the
+  fail-closed default for every pre-N row). Entity/DTO/CreateRequest/Mapper/Service
+  chain mirrors J's raw-body work EXACTLY, including new back-compat delegating record
+  constructors and a server-side `resolveStateDeltaJson` capture→item copy in
+  `ApiBehaviourBaselineItemService` (Save-as-baseline inherits the delta with zero
+  client changes). EXCLUDED from the baseline content hash (derivative evidence;
+  existing baselines hash unchanged).
+- AMVS `stateDelta.ts` (NEW): `fetchEffectScopeIndex` — ONE committed-model read maps
+  `endpoint_data_effects` WRITE/read-write edges → physical table names keyed
+  `${METHOD} ${pathTemplate}`; `effectTablesFor` template-matches concrete captured
+  paths against `{param}` segments. `snapshotEffectTables` — bounded ladder (COUNT
+  always; keyed row when the response exposes an id-ish value), SELECT-only through the
+  sqlGuard-enforcing `runReadonlySelect` (maxRows 5 / 10s timeout), SAFE_IDENTIFIER
+  regex refuses non-identifier table names with a RECORDED error. `computeStateDelta`
+  (strategy-tagged `counts` / `counts+keyed`) + `compareStateDeltas` →
+  state_match / state_drift / state_unverified — FAIL-CLOSED: either side missing, a
+  snapshot error, or a null delta ⇒ `state_unverified`, never a silent pass; keyed-row
+  equivalence skips volatile columns (id / created_at / updated_at / timestamp).
+- Capture side (`execute_http_request`): pre/post snapshots around a MUTATING call when
+  the session has a DB adapter + mutating confirmed + the committed model names effect
+  tables. Single-entry per-session effect-scope cache (one model read per session,
+  honouring the no-cross-session-cache contract). Auth-override negatives not
+  snapshotted (volatility-probe posture). Every guard-miss/failure leaves the delta
+  null → visible `state_unverified`.
+- Replay side (`targetReplayRunner`): OPTIONAL `dbAdapter` dep; same pre/post wrap on
+  mutating replays; `state_delta_json` rides the target capture AND target baseline
+  item.
+- Diff side (`diffRunner`): `state_classification` (+ `state_detail`) stamped into the
+  persisted item's `body_diff_json` ONLY when at least one side carries a delta (zero
+  regression for read-only scenarios / pre-N baselines); local state_drift /
+  state_unverified tallies (byte-dimension posture — Spec I's parity gate consumes the
+  verdicts; AMS count summary unchanged).
+
+Deviations/residuals: keyed ladder v1 keys on a response-exposed id-ish value only
+(spec's metadata-driven key-column discovery deferred; strategy field keeps coverage
+honest). Production route wiring for TARGET-DB secrets on the replay route is a LOGGED
+RESIDUAL — deps.dbAdapter is injectable and tested; the route currently passes none, so
+target deltas stay null (⇒ state_unverified, visible, fail-closed) until that wiring
+lands. Type-mapping-aware keyed equivalence simplified to the volatile-column set (the
+spec's DB-pack type-mapping reuse belongs with Spec F's dialect work).
+
+Verification: 12 new pins (`stateDelta.test.ts`: SCOPE ×2 / GUARD ×2 / DELTA /
+FAIL-CLOSED ×2 / WRITE ×2 / REPLAY / DIFF ×2). Touched-suite regression 13 suites /
+70 tests green (execute_http_request ×5, targetReplay ×3, diffRunner ×4,
+parityExactness). AMVS tsc clean. AMS compile + `ApiBehaviour*` tests green.

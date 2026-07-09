@@ -4819,3 +4819,27 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # Mutating-endpoint state deltas (Spec 2026-07-06-n, Code-Tier Oracle
+  # Program): state_delta_json on captures + baseline items — the WRITE
+  # endpoints' second oracle dimension (same DB delta, not just the same
+  # response). Nullable, no backfill; null degrades visibly to
+  # state_unverified.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 206).
+  # ============================================================================
+  - changeSet:
+      id: 207-api-behaviour-state-delta
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: api_behaviour_captures
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/207-api-behaviour-state-delta.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
