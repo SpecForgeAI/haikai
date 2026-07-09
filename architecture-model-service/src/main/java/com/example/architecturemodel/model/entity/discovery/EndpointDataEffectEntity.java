@@ -67,7 +67,13 @@ import java.util.Map;
     name = "endpoint_data_effects",
     indexes = {
         @Index(name = "idx_endpoint_data_effects_model_file", columnList = "model_file_id"),
-        @Index(name = "idx_endpoint_data_effects_endpoint", columnList = "endpoint_id")
+        @Index(name = "idx_endpoint_data_effects_endpoint", columnList = "endpoint_id"),
+        // Spec 2026-07-06-f (changeset 209): the reverse-query side — "which
+        // endpoints touch table X / proc Y" reads by data_entity_point_id.
+        @Index(
+            name = "idx_endpoint_data_effects_data_entity_point",
+            columnList = "data_entity_point_id"
+        )
     }
 )
 @Getter

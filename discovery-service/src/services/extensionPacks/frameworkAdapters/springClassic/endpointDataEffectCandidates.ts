@@ -45,6 +45,11 @@ import {
   type PathHop,
   type QueryKind,
 } from './endpointDataEffectResolver';
+import {
+  classifySqlDialect,
+  type NonPortableConstruct,
+  type SqlDialect,
+} from '../../../findings/sqlDialectClassifier';
 
 /**
  * The structured, ordered hop list persisted in `path_metadata_json`. Each hop
@@ -75,6 +80,21 @@ export interface EndpointDataEffectPathMetadata {
   query_text?: string;
   /** The dialect/source of {@link query_text}; present only when `query_text` is. */
   query_kind?: QueryKind;
+  /**
+   * Deterministic dialect classification of {@link query_text}
+   * (Spec 2026-07-06-f): 'tsql' iff ≥1 non-portable construct matched;
+   * 'unknown' for fragmentary/dynamic SQL; 'ansi' otherwise. Present ONLY
+   * when `query_text` is (derived-query edges stay unchanged). Additive key
+   * into the free-form JSONB — no schema change.
+   */
+  sql_dialect?: SqlDialect;
+  /**
+   * The matched non-portable constructs with their suggested PostgreSQL
+   * equivalents (single-source mapping — never invented here). Present only
+   * when non-empty; the plan/spec carriage renders them VERBATIM as rewrite
+   * guidance.
+   */
+  non_portable_constructs?: NonPortableConstruct[];
 }
 
 function toPathMetadata(edge: ResolvedDataEffect): EndpointDataEffectPathMetadata {
@@ -94,6 +114,14 @@ function toPathMetadata(edge: ResolvedDataEffect): EndpointDataEffectPathMetadat
   if (edge.queryText !== undefined) {
     meta.query_text = edge.queryText;
     if (edge.queryKind !== undefined) meta.query_kind = edge.queryKind;
+    // Spec 2026-07-06-f: deterministic dialect classification riding the
+    // same metadata blob (additive; classification only — the SQL itself is
+    // never touched).
+    const classification = classifySqlDialect(edge.queryText);
+    meta.sql_dialect = classification.dialect;
+    if (classification.non_portable_constructs.length > 0) {
+      meta.non_portable_constructs = classification.non_portable_constructs;
+    }
   }
   return meta;
 }

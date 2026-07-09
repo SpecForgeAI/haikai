@@ -112,6 +112,15 @@ export interface CodeModelView {
   baselineByEndpointId: Map<string, string>;
   /** endpoint element id -> attached finding ids (best-effort enrichment). */
   findingIdsByEndpointId: Map<string, string[]>;
+  /**
+   * Endpoints the DB-change consumer computation marked DIALECT-AFFECTED
+   * (Spec 2026-07-06-f — touches a translated proc, carries T-SQL SQL, or
+   * touches a shape-altered table). Optional + absent by default: the
+   * book-of-work handler computes it fail-soft via
+   * `dbChangeConsumerResolver`; absent = no dialect flags (legacy planning
+   * byte-identical).
+   */
+  dialectAffectedEndpointIds?: Set<string>;
 }
 
 export type FetchCodeModelViewFn = (
@@ -308,7 +317,8 @@ export function partitionEndpoints(view: CodeModelView): CodePartition {
 export type EndpointFlag =
   | 'missing_baseline'
   | 'attached_finding'
-  | 'soap_metadata_missing';
+  | 'soap_metadata_missing'
+  | 'dialect_affected';
 
 /**
  * Flag rules (Spec G §2). SOAP endpoints missing baselines are flagged the
@@ -330,6 +340,12 @@ export function flagEndpoint(
   }
   if (kind === 'soap' && !row.hasProtocolMetadata) {
     flags.push('soap_metadata_missing');
+  }
+  // Spec 2026-07-06-f: a dialect-affected endpoint (translated proc / T-SQL
+  // SQL / shape-altered table) needs an INDIVIDUAL story carrying the
+  // rewrite guidance — it must not hide inside an interface cluster.
+  if (view.dialectAffectedEndpointIds?.has(row.id)) {
+    flags.push('dialect_affected');
   }
   return flags;
 }

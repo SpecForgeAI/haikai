@@ -21,5 +21,20 @@ public interface EndpointDataEffectRepository extends JpaRepository<EndpointData
 
     List<EndpointDataEffectEntity> findByEndpointId(String endpointId);
 
+    /**
+     * Batch endpoint-side read (Spec 2026-07-06-f): all effects for a set of
+     * endpoints in one query — the code-spec carriage / gate read.
+     */
+    List<EndpointDataEffectEntity> findByEndpointIdIn(java.util.Collection<String> endpointIds);
+
+    /**
+     * REVERSE query (Spec 2026-07-06-f, indexed by changeset 209): all
+     * effects — hence endpoints — touching the given data-entity points
+     * ({@code dep_phy_*} tables / procs, {@code dep_log_*} logical entities).
+     * The affected-consumer computation's core read.
+     */
+    List<EndpointDataEffectEntity> findByDataEntityPointIdIn(
+        java.util.Collection<String> dataEntityPointIds);
+
     void deleteByModelFileId(String modelFileId);
 }

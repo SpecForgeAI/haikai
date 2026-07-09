@@ -490,3 +490,70 @@ green (driver + full reconciliation loop inherit the changes); AMVS 10 touched s
 green (one /start pin updated to the widened `(sessionId, undefined)` arity — the
 legacy-unscoped contract, asserted explicitly); IVS verification dir 132 passed /
 2 skipped; AMS compile + `ApiBehaviour*` green (changeset 208 chain).
+
+---
+
+## Spec F — T-SQL Affinity & Consumer Revalidation (2026-07-09)
+
+**Status: BUILT + VERIFIED.**
+
+- **Dialect classifier** (discovery `sqlDialectClassifier.ts`, deterministic — no
+  parser): pattern families over every captured SQL text — functions/globals (IMPORTED
+  from the single-source `NON_PORTABLE_DEFAULT_FUNCTIONS` table the DB pack mirrors —
+  pin 7 satisfied by import, plus dateadd/datediff/datepart/convert/isnull/charindex/
+  stuff/patindex/str), @@identity/@@rowcount/@@error/@@trancount, lock hints
+  (HOLDLOCK/NOLOCK/READPAST/UPDLOCK), legacy joins (*= / =*), TOP n, #temp +
+  SELECT-INTO-#, RAISERROR/PRINT/SET ROWCOUNT, EXEC + sp_/xp_ conventions. Output:
+  `tsql` (≥1 construct) / `ansi` / `unknown` (fragmentary — no SQL keyword), each
+  construct with matched text + position + suggested PostgreSQL equivalent (null =
+  flagged, never guessed). Classification STAMPED into every emitted edge's
+  `path_metadata_json` (`sql_dialect`, `non_portable_constructs`) via the shared
+  candidate builder — API, internal (Spec M) and MyBatis-XML edges all flow through it.
+- **Findings**: new cross-file scanner pass (`sqlDialectFindings.ts`, run-it-twice over
+  the resolver output, soft-fail + per-type caps) — `tsql_dialect_in_code` (medium;
+  HIGH when lock hints / @@identity) with SQL verbatim + construct list + suggestions;
+  `proc_call_unmatched` for extracted proc names (`EXEC x`, `{call x}`, `CALL x` —
+  case-insensitive, schema-tolerant `dbo.x` ≡ `x`) with no match in the run's proc
+  inventory (read defensively off pack candidates; a code-only run defers the match
+  VISIBLY in the finding wording, never silently).
+- **AMS**: changeset 209 (index on `endpoint_data_effects(data_entity_point_id)` +
+  entity `@Index`), `findByEndpointIdIn` / `findByDataEntityPointIdIn` finders, NEW
+  `EndpointDataEffectController` — one GET, two modes (`endpoint_ids` /
+  `data_entity_point_ids` reverse query); neither-or-both = 400 (never an unfiltered
+  dump). Callers resolve object NAMES → `dep_*` ids from the model read they already
+  hold (no name-join in AMS — documented deviation from the spec's `object_name`
+  param).
+- **Gateway**: `endpointDataEffectsClient.ts` (both directions);
+  `dbChangeConsumerResolver.ts` — affected iff touches a `translate`-disposition
+  proc/view (reverse query), carries `sql_dialect: 'tsql'` on any edge (model read),
+  or touches a caller-named altered table; reasons carried per endpoint;
+  `packObjectSetFromTranslations` adapts the pack rows. Planner: `dialect_affected`
+  EndpointFlag + optional `CodeModelView.dialectAffectedEndpointIds` — affected
+  endpoints split OUT of interface clusters into individual stories via the existing
+  flagged-endpoint machinery. Carriage: per-effect "T-SQL dialect rewrite guidance"
+  block — offending SQL verbatim + per-construct suggested equivalents (carried, never
+  invented). `revalidateDbConsumers` + route
+  `POST /projects/:p/db-migration-packs/:packId/revalidate-db-consumers` — computes
+  the affected set and runs ONE Spec-I scoped replay+diff over exactly those endpoint
+  keys (per-invocation target auth, in-memory only).
+
+Deviations/residuals: (1) proc-call EDGES are not minted at discovery (the linkage
+surfaces as finding detail + the resolver's reverse queries; minting `query_kind:
+'proc_call'` edges to proc data-entity points needs the committed proc inventory at
+scan time — recorded); (2) `object_name` query mode lives caller-side (see AMS note);
+(3) readiness surfacing (`affectedConsumerCount` + `db_consumers_unrevalidated` gap
+code on MigrationDiscoveryContext) NOT wired — the resolver + Spec I gate codes exist,
+the context-summary plumbing is the recorded follow-up; (4) planner wiring of
+`dialectAffectedEndpointIds` into the book-of-work handler's model-view fetch is
+injectable-but-not-defaulted (fail-soft absent = no flags) — wiring the resolver call
+at plan time is part of residual (3)'s follow-up.
+
+Verification: 9 discovery pins (`sqlDialectClassifier.test.ts`: golden tsql set ×13
+texts / ANSI set ×7 / unknown ×4 / single-source-by-import / HOLDLOCK guidance /
+MATCH extraction+schema-tolerance / STAMP ×2 / builder baseline) + 3 AMS MockMvc pins
+(REVERSE query / endpoint batch / 400 guard) + 5 gateway pins
+(`dbChangeConsumerResolver.test.ts`: AFFECTED ×2 / REVALIDATE-scope / PLAN flag /
+CARRIAGE verbatim guidance). Regressions: discovery 5 suites / 48 tests green;
+gateway 16 suites / 125 tests green (planner + carriage + book-of-work + parity gate);
+AMS compile + new controller test green (changeset 209 chain). tsc clean in both TS
+services.

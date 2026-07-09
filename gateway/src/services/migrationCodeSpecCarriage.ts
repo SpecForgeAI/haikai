@@ -490,6 +490,48 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
       if (effect.pathMetadata != null) {
         fencedJson(lines, effect.pathMetadata);
       }
+      // Spec 2026-07-06-f: T-SQL dialect rewrite guidance, carried VERBATIM
+      // from discovery's classifier (single-source suggestions — never
+      // invented here). Rendered only when the edge's metadata carries a
+      // tsql classification; ANSI/absent edges are untouched.
+      const meta = effect.pathMetadata as {
+        sql_dialect?: string;
+        query_text?: string;
+        non_portable_constructs?: Array<{
+          construct?: string;
+          matched_text?: string;
+          suggested_equivalent?: string | null;
+          note?: string;
+        }>;
+      } | null;
+      if (meta?.sql_dialect === 'tsql' && (meta.non_portable_constructs?.length ?? 0) > 0) {
+        lines.push('');
+        lines.push('#### T-SQL dialect rewrite guidance (Sybase → PostgreSQL)');
+        lines.push('');
+        lines.push(
+          'The SQL behind this edge uses T-SQL constructs that will NOT run ' +
+            'unchanged on PostgreSQL. Rewrite using the suggested equivalents ' +
+            'below, then prove behaviour with the scoped revalidation replay.'
+        );
+        if (typeof meta.query_text === 'string' && meta.query_text.length > 0) {
+          lines.push('');
+          lines.push('Offending SQL (verbatim):');
+          lines.push('');
+          lines.push('```sql');
+          lines.push(meta.query_text);
+          lines.push('```');
+        }
+        lines.push('');
+        for (const construct of meta.non_portable_constructs ?? []) {
+          const suggestion =
+            construct.suggested_equivalent != null
+              ? `→ \`${construct.suggested_equivalent}\``
+              : '→ NO exact PostgreSQL equivalent (flagged — review required)';
+          lines.push(
+            `- \`${construct.matched_text ?? construct.construct ?? ''}\` ${suggestion} — ${construct.note ?? ''}`
+          );
+        }
+      }
     }
 
     const examples = examplesByEndpoint.get(endpoint.id) ?? [];

@@ -4868,3 +4868,25 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 209: endpoint_data_effects reverse-query index (Spec 2026-07-06-f). The
+  # affected-consumer computation reads "which endpoints touch table X /
+  # proc Y" by data_entity_point_id -- previously unindexed on that side.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 208).
+  # ============================================================================
+  - changeSet:
+      id: 209-endpoint-data-effects-reverse-index
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - tableExists:
+            tableName: endpoint_data_effects
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/209-endpoint-data-effects-reverse-index.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

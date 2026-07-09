@@ -141,6 +141,9 @@ import {
 // outbound-integration passes) -- the detector had no production caller before.
 import { detectCustomSerializerFields } from '../../extensionPacks/frameworkAdapters/springClassic/requestContractScanner';
 import { buildRequestFormatUnresolvedFinding } from '../emissionSources';
+// SQL dialect + proc-call linkage findings (Spec 2026-07-06-f): T-SQL
+// constructs in captured code SQL + proc names with no inventory match.
+import { buildSqlDialectFindings } from '../../extensionPacks/frameworkAdapters/springClassic/sqlDialectFindings';
 
 const FINDING_SOURCE = 'spring-classic-framework-pack';
 const CREATED_BY_STAGE = 'deterministic_spring_classic_analysis';
@@ -1361,6 +1364,60 @@ function scanCustomSerializerFindings(
   return out;
 }
 
+/**
+ * Cross-file pass (Spec 2026-07-06-f): T-SQL dialect classification over the
+ * resolved data-effect edges' captured SQL + proc-call linkage against this
+ * run's proc inventory. The inventory is read DEFENSIVELY off the run's pack
+ * candidates (sidecar-sourced proc entities carry `procedureName` /
+ * routine-kind markers); a code-only run has none and the unmatched-proc
+ * finding wording defers the match visibly. Capped per type; soft-fails as a
+ * whole so a malformed IR cannot poison the run.
+ */
+function scanSqlDialectFindings(
+  irFiles: Map<string, SourceFileIR>,
+  packCandidates: PackFindingScannerInput['packCandidates'],
+  counts: Map<string, number>,
+): FindingEmitInput[] {
+  const out: FindingEmitInput[] = [];
+  try {
+    const procInventory: string[] = [];
+    for (const candidate of packCandidates ?? []) {
+      const data = (candidate as { data?: Record<string, unknown> }).data ?? {};
+      const procName =
+        (data.procedureName as string | undefined) ??
+        (data.procedure_name as string | undefined);
+      if (typeof procName === 'string' && procName.length > 0) {
+        procInventory.push(procName);
+        continue;
+      }
+      const routineKind =
+        (data.routineKind as string | undefined) ?? (data.routine_kind as string | undefined);
+      const name = (candidate as { name?: string }).name;
+      if (
+        typeof routineKind === 'string' &&
+        (routineKind === 'procedure' || routineKind === 'function') &&
+        typeof name === 'string' &&
+        name.length > 0
+      ) {
+        procInventory.push(name);
+      }
+    }
+    const files = Array.from(irFiles.values());
+    for (const f of buildSqlDialectFindings({ files, procInventory })) {
+      if (!underCap(counts, f.findingType)) continue;
+      out.push(f);
+      bumpCap(counts, f.findingType);
+    }
+  } catch (err) {
+    console.warn(
+      `[springClassicFindingScanner] sql-dialect pass failed; continuing:`,
+      err instanceof Error ? err.message : String(err),
+    );
+    console.warn(`[diag-pack] scanner=spring_classic soft_fail=true category=sql_dialect_error`);
+  }
+  return out;
+}
+
 export function runSpringClassicFindingScanner(
   input: PackFindingScannerInput,
 ): FindingEmitInput[] {
@@ -1407,6 +1464,12 @@ export function runSpringClassicFindingScanner(
   // whole IR set (cross-file controller -> @RequestBody DTO walk), AFTER the
   // per-file passes -- a peer of the cross-file passes above.
   collected.push(...scanCustomSerializerFindings(input.irFiles, counts));
+  // T-SQL dialect + proc-call linkage findings (Spec 2026-07-06-f). Run ONCE
+  // across the whole IR set over the SAME resolver output as the data-effect
+  // candidates (run-it-twice pattern). Proc inventory: proc-ish names read
+  // defensively off this run's pack candidates (a code-only run has none —
+  // the finding wording defers the match VISIBLY, never silently).
+  collected.push(...scanSqlDialectFindings(input.irFiles, input.packCandidates, counts));
 
   for (const [type, count] of counts) {
     if (count >= MAX_FINDINGS_PER_TYPE_PER_RUN) {
