@@ -738,3 +738,148 @@ test('DIFF: source measured a delta but target did not => state_unverified (fail
   const blob = diffItemsCreated[0].body_diff_json as Record<string, unknown>;
   expect(blob.state_classification).toBe('state_unverified');
 });
+
+// ---------------------------------------------------------------------------
+// REPLAY-SEQUENCE (Tier-1 batch 2026-07-10) — the ACT STEP ONLY is
+// snapshotted; setup/cleanup scaffolding never is. The promoted act item
+// carries state_delta_json exactly like a single-shot item.
+// ---------------------------------------------------------------------------
+
+test('REPLAY-SEQUENCE: act step snapshotted (pre/post + keyed), setup/cleanup untouched', async () => {
+  stubModelFetch();
+  const now = new Date().toISOString();
+  const sourceBaseline: BaselineDto = {
+    id: RP_SOURCE_BASELINE_ID,
+    project_id: RP_PROJECT_ID,
+    architecture_id: RP_ARCH_ID,
+    session_id: 'src-session',
+    name: 'src',
+    status: 'active',
+    accepted_capture_count: 1,
+    operation_count: 1,
+    notes: null,
+    kind: 'current',
+    paired_with_baseline_id: null,
+    created_at: now,
+    updated_at: now,
+  };
+  const step = (index: number, role: string, method: string, path: string) => ({
+    index,
+    role,
+    kind: 'http',
+    request: { method, path, query: null, headers: null, body: { ok: true } },
+    expected_status: 201,
+    response_refs: [],
+  });
+  const sequenceItem: BaselineItemDto = {
+    id: 'item-seq-1',
+    baseline_id: RP_SOURCE_BASELINE_ID,
+    capture_id: 'cap-seq-1',
+    operation_id: 'op-seq-1',
+    scenario_id: 'scen-seq-1',
+    method: 'POST',
+    path: '/owners/7/things',
+    scenario_name: 'sequence_scenario',
+    request_json: { query: null, headers: null, body: { ok: true } },
+    response_status: 201,
+    response_json: { ok: true },
+    business_notes: null,
+    sequence_json: {
+      steps: [
+        step(0, 'setup', 'POST', '/owners/7/things'),
+        step(1, 'act', 'POST', '/owners/7/things'),
+        step(2, 'cleanup', 'DELETE', '/owners/7/things/42'),
+      ],
+      act_step_index: 1,
+      cleanup_best_effort: true,
+    } as unknown as Record<string, unknown>,
+    created_at: now,
+    updated_at: now,
+  } as unknown as BaselineItemDto;
+
+  const capturesCreated: Array<Record<string, unknown>> = [];
+  const itemsCreated: Array<Record<string, unknown>> = [];
+  const archMock = {
+    listAllCaptureSessionsByStatus: jest.fn(async () => [buildReplaySession()]),
+    getBaseline: jest.fn(async () => sourceBaseline),
+    listBaselineItems: jest.fn(async () => [sequenceItem]),
+    createBaseline: jest.fn(async () => ({
+      ...sourceBaseline,
+      id: 'target-baseline-seq',
+      kind: 'target',
+      status: 'draft',
+    })),
+    patchBaseline: jest.fn(async () => ({})),
+    createCapture: jest.fn(async (_p: string, body: Record<string, unknown>) => {
+      capturesCreated.push(body);
+      return { id: 'cap-row-seq', response_headers_redacted_json: {}, response_body_json: {} };
+    }),
+    patchCapture: jest.fn(async () => ({})),
+    createBaselineItem: jest.fn(async (_p: string, body: Record<string, unknown>) => {
+      itemsCreated.push(body);
+      return { id: 'target-item-seq', ...body };
+    }),
+    patchCaptureSession: jest.fn(async () => ({})),
+    createDiagnostic: jest.fn(async () => ({})),
+  };
+
+  // Adapter script: pre-act count 5, post-act count 6, keyed row for id 42.
+  // Setup + cleanup steps must generate ZERO adapter calls.
+  const adapter = buildFakeAdapter([
+    [{ row_count: 5 }],
+    [{ row_count: 6 }],
+    [{ id: 42 }],
+  ]);
+  const secretsStore = new SecretsStore();
+  secretsStore.set({
+    sessionId: RP_SESSION_ID,
+    api: { type: 'bearer', bearerToken: 'plaintext' },
+    loadedAt: Date.now(),
+  });
+  const replayRunManager = new RunManager();
+  if (!replayRunManager.has(RP_SESSION_ID)) {
+    replayRunManager.start({
+      sessionId: RP_SESSION_ID,
+      projectId: RP_PROJECT_ID,
+      architectureId: RP_ARCH_ID,
+    });
+  }
+  const deps: TargetReplayDeps = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    archModelClient: archMock as any,
+    secretsStore,
+    runManager: replayRunManager,
+    createHttpExecutor: () =>
+      ({
+        request: jest.fn(async () => ({
+          data: { id: 42, ok: true },
+          status: 201,
+          statusText: '',
+          headers: { 'content-type': 'application/json' },
+          config: {} as never,
+        })),
+        requestWithAuthOverride: jest.fn(),
+        setAuth: jest.fn(),
+        dispose: jest.fn(),
+      }) as unknown as SessionHttpExecutor,
+    now: () => 1700000000000,
+    dbAdapter: adapter,
+  };
+
+  const outcome = await runTargetReplay(RP_SESSION_ID, deps);
+  expect(outcome.finalStatus).toBe('completed');
+  expect(outcome.itemsReplayed).toBe(1);
+
+  // Exactly 3 adapter calls — pre-act count, post-act count, keyed row.
+  // Setup and cleanup produced NONE.
+  expect(adapter.calls).toHaveLength(3);
+  expect(adapter.calls[0].sql).toBe('SELECT COUNT(*) AS row_count FROM things');
+  expect(adapter.calls[1].sql).toBe('SELECT COUNT(*) AS row_count FROM things');
+  expect(adapter.calls[2].sql).toBe('SELECT * FROM things WHERE id = ?');
+
+  const captureDelta = capturesCreated[0].state_delta_json as StateDeltaJson;
+  expect(captureDelta.strategy).toBe('counts+keyed');
+  expect(captureDelta.tables[0]).toMatchObject({ table: 'things', count_delta: 1 });
+  const itemDelta = itemsCreated[0].state_delta_json as StateDeltaJson;
+  expect(itemDelta.tables[0]).toMatchObject({ table: 'things', count_delta: 1 });
+});

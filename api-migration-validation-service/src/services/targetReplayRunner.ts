@@ -588,7 +588,15 @@ export async function runTargetReplay(
       // cleanup best-effort. NON-sequence items fall through to the existing
       // single-shot path BYTE-FOR-BYTE unchanged.
       if (item.sequence_json != null) {
-        const seqDeps: SequenceReplayDeps = { archModelClient, now };
+        // Spec 2026-07-06-n (Tier-1 batch): the sequence sub-runner snapshots
+        // the ACT step's effect tables when the run has a DB adapter — the
+        // same scope index computed above serves both replay paths.
+        const seqDeps: SequenceReplayDeps = {
+          archModelClient,
+          now,
+          dbAdapter,
+          effectScope,
+        };
         const seqResult = await replaySequenceItem(
           item,
           session,

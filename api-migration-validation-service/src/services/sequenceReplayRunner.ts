@@ -49,6 +49,15 @@ import { archModelClient as defaultArchModelClient } from './archModelClient';
 import { redactUrl } from './redactor';
 import { normaliseBodyForAms } from './amsBodyEnvelope';
 import type { SessionHttpExecutor } from './httpExecutor';
+import type { DbAdapter } from './db/DbAdapter';
+import {
+  computeStateDelta,
+  effectTablesFor,
+  keyHintFromResponse,
+  snapshotEffectTables,
+  type EffectScopeIndex,
+  type StateSnapshot,
+} from './stateDelta';
 
 /**
  * One parsed step from a baseline item's `sequence_json.steps`. Mirrors the R1
@@ -288,6 +297,17 @@ export interface SequenceReplayResult {
 export interface SequenceReplayDeps {
   archModelClient?: typeof defaultArchModelClient;
   now?: () => number;
+  /**
+   * OPTIONAL target-DB adapter + effect scope (Spec 2026-07-06-n, Tier-1
+   * batch): when BOTH are present, the ACT STEP ONLY is wrapped in pre/post
+   * effect-table snapshots and its promoted baseline item carries
+   * `state_delta_json`. Setup/cleanup steps are DELIBERATELY not
+   * snapshotted — they are scaffolding whose state changes are intentionally
+   * transient; recording them would enshrine noise as oracle. Absent =
+   * deltas stay null (`state_unverified`, fail-closed and visible).
+   */
+  dbAdapter?: DbAdapter | null;
+  effectScope?: EffectScopeIndex | null;
 }
 
 /**
@@ -452,6 +472,31 @@ export async function replaySequenceItem(
     return result;
   }
 
+  // Spec 2026-07-06-n (Tier-1 batch): PRE-act state snapshot — the act step
+  // is the sequence's oracle unit; its DB effect is the second parity
+  // dimension. Template-tolerant table resolution off the PINNED act path.
+  // Best-effort: any failure leaves the delta null (state_unverified).
+  let preActSnapshot: StateSnapshot | null = null;
+  let actEffectTables: string[] = [];
+  if (
+    deps.dbAdapter &&
+    deps.effectScope &&
+    MUTATING_METHODS.has(actStep.request.method)
+  ) {
+    try {
+      actEffectTables = effectTablesFor(
+        deps.effectScope,
+        actStep.request.method,
+        actStep.request.path,
+      );
+      if (actEffectTables.length > 0) {
+        preActSnapshot = await snapshotEffectTables(deps.dbAdapter, actEffectTables);
+      }
+    } catch {
+      preActSnapshot = null;
+    }
+  }
+
   const actSent = await sendStep(actStep, liveBodies, executor, now);
   if (actSent.transportFailed || actSent.status === null) {
     // A transport failure on the act itself is a setup-class failure (no usable
@@ -479,6 +524,25 @@ export async function replaySequenceItem(
     createdResourceCount += 1;
   }
 
+  // Spec 2026-07-06-n (Tier-1 batch): POST-act snapshot + delta. The keyed
+  // rung uses an id-ish value from the act response when one is exposed.
+  let actStateDeltaJson: Record<string, unknown> | null = null;
+  if (preActSnapshot && deps.dbAdapter) {
+    try {
+      const postActSnapshot = await snapshotEffectTables(
+        deps.dbAdapter,
+        actEffectTables,
+        keyHintFromResponse(actSent.body),
+      );
+      actStateDeltaJson = computeStateDelta(
+        preActSnapshot,
+        postActSnapshot,
+      ) as unknown as Record<string, unknown>;
+    } catch {
+      actStateDeltaJson = null;
+    }
+  }
+
   // Promote the act response to a target baseline-item -- EXACTLY mirroring the
   // single-shot promotion in targetReplayRunner.ts (createCapture ->
   // patchCapture accept -> createBaselineItem). Reuse the SOURCE item's
@@ -502,6 +566,9 @@ export async function replaySequenceItem(
     response_status: actSent.status,
     response_headers_redacted_json: actSent.headers,
     response_body_json: normaliseBodyForAms(actSent.body),
+    // Spec 2026-07-06-n: the act step's effect-table state delta; null =
+    // not captured (state_unverified at diff time).
+    state_delta_json: actStateDeltaJson,
     duration_ms: actSent.durationMs,
     error_type: null,
     error_message: null,
@@ -534,6 +601,8 @@ export async function replaySequenceItem(
       headers: capture.response_headers_redacted_json,
       body: capture.response_body_json,
     },
+    // Spec 2026-07-06-n: state parity input for the diff (act step only).
+    state_delta_json: actStateDeltaJson,
     business_notes: null,
   });
   result.actReplayed = true;
