@@ -33,8 +33,13 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.api_auth import verify_api_key
+from src.trace import tracer as _haikai_tracer
 from src.verification import recorder, store
 from src.verification.connectors.loader import ConnectorDefError, load_connector
+
+# REC-stage predicate emission (predicate run-judging batch — see
+# docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+_trace = _haikai_tracer("impl-verify")
 
 logger = logging.getLogger(__name__)
 
@@ -499,10 +504,19 @@ async def parity_verdict(request: Request,
                     "breaks": breaks[:MAX_BREAKS_ON_VERDICT],
                     "breaks_truncated": len(breaks) > MAX_BREAKS_ON_VERDICT},
         )
+        _corr = {"job": orchestrate_id}
         if not rec_ok:
+            _trace.predicate(
+                "REC.PAR.01", "parity verdict inbound processed honestly", False,
+                "verdict recorded; repair queued/exhausted per cap",
+                f"verdict record REJECTED: {rec_reason} spec={task_group_id}", _corr)
             return JSONResponse({"error": rec_reason}, status_code=409)
 
         if verdict == "pass":
+            _trace.predicate(
+                "REC.PAR.01", "parity verdict inbound processed honestly", True,
+                "verdict recorded; repair queued/exhausted per cap",
+                f"verdict=pass spec={task_group_id} repair=not_needed", _corr)
             return JSONResponse({"status": "accepted", "verdict": "pass",
                                  "repair": "not_needed"}, status_code=202)
 
@@ -523,6 +537,11 @@ async def parity_verdict(request: Request,
                          f"({attempts}/{cap} attempts)",
                 "detail": {"diff_id": diff_id, "breaks": breaks},
             })
+            _trace.predicate(
+                "REC.PAR.01", "parity verdict inbound processed honestly", True,
+                "verdict recorded; repair queued/exhausted per cap",
+                f"verdict=fail spec={task_group_id} repair=exhausted "
+                f"attempts={attempts}/{cap} parity_failed finding recorded", _corr)
             return JSONResponse({"status": "accepted", "verdict": "fail",
                                  "repair": "exhausted", "attempts": attempts,
                                  "cap": cap}, status_code=202)
@@ -533,6 +552,13 @@ async def parity_verdict(request: Request,
         store.append_event(conn, orchestrate_id, task_group_id, kind,
                            {"job_id": job_id, "attempt": attempts + 1,
                             "diff_id": diff_id, "break_count": len(breaks)}, repo)
+        _trace.predicate(
+            "REC.PAR.01", "parity verdict inbound processed honestly",
+            job_id is not None,
+            "verdict recorded; repair queued/exhausted per cap",
+            f"verdict=fail spec={task_group_id} "
+            f"repair={'queued' if job_id else 'ENQUEUE_FAILED'} "
+            f"attempt={attempts + 1}/{cap} breaks={len(breaks)}", _corr)
         return JSONResponse({"status": "accepted", "verdict": "fail",
                              "repair": "queued" if job_id else "enqueue_failed",
                              "attempt": attempts + 1, "cap": cap,

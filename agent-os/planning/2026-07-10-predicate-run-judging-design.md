@@ -222,3 +222,32 @@ STAGE banners + config headers first; DETAIL lines fetched selectively).
     persisted set), CONV.07 (api-lock known-open, fails by design), PLAN
     banners + counts (migrationBookOfWork handlers), SPEC/PLAN stage
     banners (shape-spec handler).
+- **Commit 5** — GATE/EXEC/REC instrumentation:
+  - **GATE.MIG.01 / GATE.MIG.02** (gateway migrate + migrate-selected
+    triggers, GATE banners around each evaluation): the hard-block gate
+    evaluated with an honest verdict — `started` AND `blocked` both PASS
+    (the judge decides from run context whether a block was expected); only
+    an evaluation error fails. Actual embeds the verdict + reasons/run-id
+    excerpt.
+  - **EXEC.CB.01** (gateway build-results door): callback correlated +
+    processed; 2xx passes, contract-rejects fail with status, processing
+    throw fails. Actual carries outcome + target_base_url-recorded marker.
+  - **REC.EMIT.01** (migrationParityVerdictEmitter completion): verdicts
+    emitted for every verifiable code story — post_failures==0 passes;
+    evaluated/posted/unverified counts in actual (unverified stays blocked
+    by the completion gate, honest by design).
+  - **REC.PAR.01** (IVS parity-verdict inbound, all outcome paths): verdict
+    recorded + repair disposition honest — pass on pass/exhausted(finding
+    recorded)/queued; fail on record-rejected or enqueue-failed. Attempt vs
+    PARITY_REPAIR_CAP in actual. IVS parity inbound tests 8/8 green.
+  - **REC.STAT.01** (gateway parity-status route): posture computed +
+    logged (posture excerpt in actual); fail when computation throws.
+  - **AUX**: no code emission — drift checks are already judge-readable via
+    the `[diag-gateway] baseline_drift` logs + the purpose:drift_check diff;
+    waiver visibility rides REC.EMIT unwaived counts + IVS exhausted
+    findings. Catalogue documents this.
+  - **Still open for a later slice (also listed under Commit 4):**
+    CAP.BASE.01, CONV.02/03/04/05/07, PLAN banners/counts, SPEC/PLAN stage
+    banners. GATE 4b/4c per-gate detail (DB gate, code gate incl.
+    story-scoped floor) currently surfaces through the blocked-reasons
+    excerpt on GATE.MIG.01/02 rather than per-gate predicates.

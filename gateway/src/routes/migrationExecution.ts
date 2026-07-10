@@ -34,6 +34,7 @@
 import { Router, Request, Response } from 'express';
 import { getConfig } from '../config';
 import { logger } from '../services/logger';
+import { createTracer } from '../trace';
 import {
   startMigration,
   defaultMigrationDriverDeps,
@@ -75,6 +76,31 @@ import type { TargetDbSecret } from '../services/migrationTargetCredentialsStore
 
 export const migrationExecutionRouter = Router();
 
+// GATE-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only. A
+// BLOCKED verdict is an honest gate evaluation (pass) — the judge decides
+// from run context whether the block was expected (negative-path detour) or
+// a golden-path problem. Only an evaluation ERROR fails the predicate.
+const trace = createTracer('gateway');
+
+function emitMigrateGatePredicate(
+  id: string,
+  result: { status: string; reasons?: unknown; runId?: unknown },
+  corr: { project: string; run?: string },
+): void {
+  let excerpt = '';
+  try {
+    excerpt = JSON.stringify(result).slice(0, 260);
+  } catch { /* unserializable */ }
+  trace.predicate(
+    id, 'migrate hard-block gate evaluated with an honest verdict',
+    result.status === 'started' || result.status === 'blocked',
+    'gate evaluation completes (started OR blocked-with-reasons)',
+    `verdict=${result.status} ${excerpt}`,
+    corr,
+  );
+}
+
 /** The gateway's build-results callback URL threaded on every submit (CD-3). */
 export function buildResultsCallbackUrl(): string {
   return `${getConfig().gatewayPublicBaseUrl}/api/implementation/build-results`;
@@ -115,7 +141,15 @@ migrationExecutionRouter.post(
 
     try {
       const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      trace.stageStart('GATE', { project: projectId });
       const result = await startMigration(scope, deps);
+      emitMigrateGatePredicate('GATE.MIG.01', result, {
+        project: projectId,
+        run: typeof (result as { runId?: unknown }).runId === 'string'
+          ? (result as { runId: string }).runId
+          : undefined,
+      });
+      trace.stageEnd('GATE', { project: projectId });
       if (result.status === 'started') {
         return res.status(202).json(result);
       }
@@ -131,6 +165,13 @@ migrationExecutionRouter.post(
         bookId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      trace.predicate(
+        'GATE.MIG.01', 'migrate hard-block gate evaluated with an honest verdict', false,
+        'gate evaluation completes (started OR blocked-with-reasons)',
+        `evaluation threw: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown'}`,
+        { project: projectId },
+      );
+      trace.stageEnd('GATE', { project: projectId });
       return res
         .status(500)
         .json({ status: 'error', message: 'Failed to start the migration run' });
@@ -214,7 +255,15 @@ migrationExecutionRouter.post(
 
     try {
       const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      trace.stageStart('GATE', { project: projectId });
       const result = await startMigration(scope, deps);
+      emitMigrateGatePredicate('GATE.MIG.02', result, {
+        project: projectId,
+        run: typeof (result as { runId?: unknown }).runId === 'string'
+          ? (result as { runId: string }).runId
+          : undefined,
+      });
+      trace.stageEnd('GATE', { project: projectId });
       if (result.status === 'started') {
         return res.status(202).json({ ...result, batchName });
       }
@@ -230,6 +279,13 @@ migrationExecutionRouter.post(
         bookId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      trace.predicate(
+        'GATE.MIG.02', 'migrate hard-block gate evaluated with an honest verdict', false,
+        'gate evaluation completes (started OR blocked-with-reasons)',
+        `evaluation threw: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown'}`,
+        { project: projectId },
+      );
+      trace.stageEnd('GATE', { project: projectId });
       return res
         .status(500)
         .json({ status: 'error', message: 'Failed to start the batch migration run' });
@@ -311,6 +367,16 @@ migrationExecutionRouter.get(
           driverDeps.resolveArchitectureForBaseline
         )
       );
+      let statusExcerpt = '';
+      try {
+        statusExcerpt = JSON.stringify(status).slice(0, 300);
+      } catch { /* unserializable */ }
+      trace.predicate(
+        'REC.STAT.01', 'run parity status computed and logged', true,
+        'completion/closure/drift evaluators produce a posture (fail-closed on read problems)',
+        statusExcerpt,
+        { project: projectId, run: runId },
+      );
       return res.status(200).json(status);
     } catch (error) {
       logger.error('[diag-gateway] migration_parity run_status_error', {
@@ -318,6 +384,12 @@ migrationExecutionRouter.get(
         runId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      trace.predicate(
+        'REC.STAT.01', 'run parity status computed and logged', false,
+        'completion/closure/drift evaluators produce a posture (fail-closed on read problems)',
+        `computation threw: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown'}`,
+        { project: projectId, run: runId },
+      );
       return res.status(502).json({ error: 'Failed to compute run parity status' });
     }
   }

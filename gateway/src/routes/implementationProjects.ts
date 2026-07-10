@@ -39,6 +39,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { logger } from '../services';
 import { request } from '../services/implementationLlmProxyClient';
+import { createTracer } from '../trace';
+
+// EXEC-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 import {
   ImplementationRepo,
   fetchProjectImplementationRepos,
@@ -411,12 +416,29 @@ implementationProjectsRouter.post(
 
       const body = (req.body ?? {}) as BuildResultCallbackBody;
       const outcome = await processBuildResult(body, buildResultsDeps());
+      // EXEC callback correlation: the driver either advanced/halted/deployed
+      // (2xx) or rejected the callback (contract/unknown-job). Both are
+      // honest; only a thrown processing error fails the predicate (below).
+      trace.predicate(
+        'EXEC.CB.01', 'build-result callback correlated and processed',
+        outcome.status >= 200 && outcome.status < 300,
+        'callback resolves to a known run item and advances the driver',
+        `status=${outcome.status} outcome=${(body as { outcome?: string }).outcome ?? '?'}` +
+          ((body as { target_base_url?: string }).target_base_url ? ' target_base_url=recorded' : ''),
+        { job: (body as { job_id?: string }).job_id ?? undefined },
+      );
       return res.status(outcome.status).json(outcome.body);
     } catch (error) {
       logger.error('[diag-gateway] migration_execution_driver build_results_error', {
         requestId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
+      trace.predicate(
+        'EXEC.CB.01', 'build-result callback correlated and processed', false,
+        'callback resolves to a known run item and advances the driver',
+        `processing threw: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown'}`,
+        undefined,
+      );
       next(error);
     }
   }
