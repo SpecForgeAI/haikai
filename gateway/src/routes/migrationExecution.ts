@@ -66,6 +66,10 @@ import {
   generateAllCapabilityStories,
   BatchCapabilityCandidate,
 } from '../services/migrationCarryOverActions';
+import {
+  computeRunParityStatus,
+  defaultRunParityStatusDeps,
+} from '../services/migrationRunParityStatus';
 
 export const migrationExecutionRouter = Router();
 
@@ -277,6 +281,42 @@ migrationExecutionRouter.get(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Failed to read migration execution run' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Run parity status (Spec 2026-07-06-i, Tier-1 batch): the on-demand read of
+// the completion / closure / drift evaluators for a run — gate codes on the
+// existing run surface, no new UI build-out. Evaluators fail CLOSED; input
+// read problems surface as warnings on the payload.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.get(
+  '/projects/:projectId/migration-execution-runs/:runId/parity-status',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    try {
+      const run = await getMigrationExecutionRun(projectId, runId);
+      if (!run) {
+        return res.status(404).json({ error: 'Migration execution run not found' });
+      }
+      const driverDeps = defaultReconciliationDriverDeps();
+      const status = await computeRunParityStatus(
+        { projectId, run },
+        defaultRunParityStatusDeps(
+          driverDeps.loadReconcileBookOfWork,
+          driverDeps.resolveArchitectureForBaseline
+        )
+      );
+      return res.status(200).json(status);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_parity run_status_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to compute run parity status' });
     }
   }
 );

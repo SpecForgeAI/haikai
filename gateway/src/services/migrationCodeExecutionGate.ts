@@ -282,6 +282,16 @@ function pathsMatch(a: string, b: string): boolean {
   return true;
 }
 
+/**
+ * Template-tolerant `"METHOD /path"` key equality (either side may carry
+ * `{param}` segments). Exported (Tier-1 batch) so the post-reconcile
+ * parity-verdict emitter judges story membership with the SAME rule the
+ * completion gate uses.
+ */
+export function endpointKeyMatches(keyA: string, keyB: string): boolean {
+  return keyMatches(keyA, keyB);
+}
+
 function keyMatches(keyA: string, keyB: string): boolean {
   const splitKey = (k: string): [string, string] | null => {
     const at = k.indexOf(' ');
