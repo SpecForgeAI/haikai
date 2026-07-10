@@ -25,6 +25,11 @@
 import { getConfig } from '../../config';
 import { logger } from '../logger';
 import type { TargetStateCapturedDecision } from '../targetStateCapturedDecisionsClient';
+import { createTracer } from '../../trace';
+
+// CONV-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 
 // ---------------------------------------------------------------------------
 // Wire-format request shape (mirrors the AMS Java DTO verbatim)
@@ -134,9 +139,21 @@ export async function postCapturedDecision(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
+    trace.predicate(
+      'CONV.01', 'captured decision persisted bound to target architecture', false,
+      'AMS captured-decisions POST returns 2xx',
+      `HTTP ${response.status} decision=${body.decisionCode} target=${targetArchitectureId}`,
+      { project: projectId, arch: targetArchitectureId },
+    );
     throw new CapturedDecisionsWriteError(response.status, text);
   }
 
   const created = (await response.json()) as TargetStateCapturedDecision;
+  trace.predicate(
+    'CONV.01', 'captured decision persisted bound to target architecture', true,
+    'AMS captured-decisions POST returns 2xx',
+    `decision=${body.decisionCode} scope=${body.scopeKind} target=${targetArchitectureId}`,
+    { project: projectId, arch: targetArchitectureId },
+  );
   return created;
 }

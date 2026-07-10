@@ -1452,6 +1452,9 @@ export async function orchestrateCaptureSession(
     arch: session.architectureId,
     session: session.id,
   };
+  // CAP-stage banner (predicate run-judging batch): a session that dies
+  // mid-capture leaves STAGE_START with no SCORECARD — absence detection.
+  trace.stageStart('CAP', corr);
 
   let scenariosAttempted = 0;
   let scenariosCompleted = 0;
@@ -1911,6 +1914,39 @@ export async function orchestrateCaptureSession(
       corr,
     );
   }
+
+  // CAP-stage predicates (predicate run-judging batch) — emission only.
+  trace.predicate(
+    'CAP.OPS.01', 'capture session persisted scenario captures',
+    infraError === null && scenariosCompleted > 0,
+    'no infra error; >= 1 scenario persisted a capture',
+    `completed=${scenariosCompleted}/${scenariosAttempted} errored=${scenariosErrored}` +
+      (infraError ? ` infraError=${infraError.slice(0, 160)}` : ''),
+    corr,
+  );
+  trace.predicate(
+    'CAP.COV.01', 'coverage summary assembled and persisted',
+    coverageSummary !== null,
+    'coverage_summary_json non-null on the completion PATCH',
+    coverageSummary
+      ? `perEndpoint=${perEndpointCoverage.length}`
+      : 'coverage summary not assembled (run aborted before assembly)',
+    corr,
+  );
+  // Mode predicate, pass in BOTH modes: with a DB bundle state snapshots run;
+  // without one every state_delta_json stays null and reconcile reports
+  // state_unverified — the fail-closed design. The judge cross-references
+  // this against REC-stage state classifications.
+  trace.predicate(
+    'CAP.STATE.01', 'state-delta capture mode consistent with db bundle',
+    true,
+    'db bundle present => snapshots enabled; absent => deltas null (fail-closed)',
+    dbAdapter
+      ? 'db bundle provided — state snapshots enabled for mutating verbs'
+      : 'no db bundle — state deltas null everywhere (fail-closed by design)',
+    corr,
+  );
+  trace.stageEnd('CAP', corr);
 
   return {
     sessionId: session.id,

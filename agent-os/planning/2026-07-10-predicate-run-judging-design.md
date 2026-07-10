@@ -195,3 +195,30 @@ STAGE banners + config headers first; DETAIL lines fetched selectively).
     preservation is verified downstream by the PLAN dialect predicate
     reading committed effects; the endpoint-baseline-coverage read predicate
     moves to the CAP slice.
+- **Commit 4** — CAP/CONV/SPEC instrumentation (first half of the
+  CAP/CONV/PLAN/SPEC group; the remainder rides the GATE/EXEC/REC/AUX slice):
+  - **CAP** (AMVS captureSessionOrchestrator; STAGE_START at session start,
+    scorecard at completion — a session that dies mid-capture leaves no
+    scorecard): **CAP.OPS.01** (no infra error + ≥1 scenario persisted;
+    tallies + infra error in actual), **CAP.COV.01** (coverage summary
+    assembled + persisted on the completion PATCH), **CAP.STATE.01** (mode
+    predicate, passes in both modes: db bundle ⇒ snapshots enabled; absent ⇒
+    deltas null fail-closed — judge cross-refs REC state classifications).
+  - **CONV.01** at the gateway writer boundary
+    (`targetStateCapturedDecisionsWriter.postCapturedDecision`): one line per
+    persisted decision (decision code + scope + target architecture id);
+    fail on non-2xx.
+  - **SPEC** (migrationCodeSpecCarriage completion): **SPEC.CARRIAGE.01**
+    (deterministic zero-LLM carriage engaged + fact counts — the design's
+    PLAN.EXP.01 intent folds in here, since epic EXPANSION legitimately uses
+    LLM batches + a judge), **SPEC.DIAL.01** (T-SQL guidance block present
+    iff tsql-classified edges exist; skip when none — this is also the
+    downstream verifier for COMMIT save-back dialect preservation),
+    **SPEC.OMIT.01** (omission manifest agrees with the trimmed-warning;
+    chars vs cap in actual).
+  - **DEFERRED to the next slice:** CAP.BASE.01 (AMS baseline activate +
+    hash stamp), CONV.02/03 (pending-question raise sites), CONV.04 (OSV
+    bridge reachable-or-degraded), CONV.05 (plan gen-time decision read ==
+    persisted set), CONV.07 (api-lock known-open, fails by design), PLAN
+    banners + counts (migrationBookOfWork handlers), SPEC/PLAN stage
+    banners (shape-spec handler).
