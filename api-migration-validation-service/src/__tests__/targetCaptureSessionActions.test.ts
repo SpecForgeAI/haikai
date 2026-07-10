@@ -358,3 +358,132 @@ test('startup reconciliation marks kind=target running sessions failed with secr
     );
   }
 });
+
+// ---------------------------------------------------------------------------
+// Spec 2026-07-06-n (Tier-1 batch): target-DB creds → state-delta adapter.
+//   - create persists the OPTIONAL dbConfigRedactedJson (config, NO password);
+//   - /secrets accepts the OPTIONAL db password (in-memory only);
+//   - /start builds the adapter (config + password) and passes it to the
+//     runner deps; the route disposes it when the run settles;
+//   - config-without-password (or vice versa) => NO adapter (fail-closed to
+//     state_unverified, never a throw).
+// ---------------------------------------------------------------------------
+
+test('target-DB creds: config on create, password on secrets, adapter into the runner deps', async () => {
+  const dbConfig = {
+    dbType: 'postgres',
+    host: 'pg.example.test',
+    port: 5432,
+    database: 'target_db',
+    schema: null,
+    username: 'replay',
+  };
+  const { mock, createdSessions } = buildArchModelClientMock({
+    session: buildSession({ db_config_redacted_json: dbConfig }),
+  });
+  const disposed: string[] = [];
+  const fakeAdapter = {
+    testConnection: jest.fn(),
+    listMetadata: jest.fn(),
+    runReadonlySelect: jest.fn(),
+    sampleValues: jest.fn(),
+    dispose: jest.fn(async () => {
+      disposed.push('yes');
+    }),
+  };
+  const factoryCalls: Array<Record<string, unknown>> = [];
+  const createDbAdapter = jest.fn((cfg: Record<string, unknown>) => {
+    factoryCalls.push(cfg);
+    return fakeAdapter;
+  });
+  const spawnRunner = jest.fn(
+    async (_sessionId: string, _deps?: { dbAdapter?: unknown }) => ({}) as never,
+  );
+  const app = buildApp({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    archModelClient: mock as any,
+    spawnRunner,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    createDbAdapter: createDbAdapter as any,
+  });
+
+  // Create: config rides the AMS payload (no password anywhere).
+  const createRes = await request(app)
+    .post(`/api/target-capture-sessions?projectId=${PROJECT_ID}`)
+    .send({
+      architectureId: ARCH_ID,
+      sourceBaselineId: SOURCE_BASELINE_ID,
+      targetApiBaseUrl: 'https://target.example.test',
+      dbConfigRedactedJson: dbConfig,
+    });
+  expect(createRes.status).toBe(201);
+  expect(createdSessions[0].body.db_config_redacted_json).toEqual(dbConfig);
+  expect(JSON.stringify(createdSessions[0].body)).not.toContain('password');
+
+  // Secrets: api + db password land in the in-memory bundle only.
+  const secretsRes = await request(app)
+    .post(`/api/target-capture-sessions/${SESSION_ID}/secrets`)
+    .send({ api: { type: 'none' }, db: { password: 's3cret' } });
+  expect(secretsRes.status).toBe(200);
+  expect(secretsRes.body.dbLoaded).toBe(true);
+
+  // Start: adapter built from config + password, passed to the runner deps.
+  const startRes = await request(app)
+    .post(`/api/target-capture-sessions/${SESSION_ID}/start?projectId=${PROJECT_ID}`)
+    .send({});
+  expect(startRes.status).toBe(202);
+  await new Promise((r) => setTimeout(r, 5));
+  expect(factoryCalls).toHaveLength(1);
+  expect(factoryCalls[0]).toMatchObject({
+    dbType: 'postgres',
+    host: 'pg.example.test',
+    port: 5432,
+    database: 'target_db',
+    username: 'replay',
+    password: 's3cret',
+  });
+  const runnerDeps = spawnRunner.mock.calls[0][1] as { dbAdapter?: unknown } | undefined;
+  expect(runnerDeps?.dbAdapter).toBe(fakeAdapter);
+  // Route owns the lifecycle: disposed once the spawned run settled.
+  await new Promise((r) => setTimeout(r, 5));
+  expect(disposed).toEqual(['yes']);
+  if (runManager.has(SESSION_ID)) runManager.end(SESSION_ID);
+});
+
+test('target-DB creds: config without password (or neither) yields NO adapter', async () => {
+  const dbConfig = {
+    dbType: 'postgres',
+    host: 'pg.example.test',
+    port: 5432,
+    database: 'target_db',
+    username: 'replay',
+  };
+  const { mock } = buildArchModelClientMock({
+    session: buildSession({ db_config_redacted_json: dbConfig }),
+  });
+  const createDbAdapter = jest.fn();
+  const spawnRunner = jest.fn(
+    async (_sessionId: string, _deps?: { dbAdapter?: unknown }) => ({}) as never,
+  );
+  const app = buildApp({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    archModelClient: mock as any,
+    spawnRunner,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    createDbAdapter: createDbAdapter as any,
+  });
+
+  // Secrets WITHOUT a db password.
+  await request(app)
+    .post(`/api/target-capture-sessions/${SESSION_ID}/secrets`)
+    .send({ api: { type: 'none' } });
+  const startRes = await request(app)
+    .post(`/api/target-capture-sessions/${SESSION_ID}/start?projectId=${PROJECT_ID}`)
+    .send({});
+  expect(startRes.status).toBe(202);
+  await new Promise((r) => setTimeout(r, 5));
+  expect(createDbAdapter).not.toHaveBeenCalled();
+  // Legacy contract: no scope/purpose/adapter => undefined deps.
+  expect(spawnRunner).toHaveBeenCalledWith(SESSION_ID, undefined);
+  if (runManager.has(SESSION_ID)) runManager.end(SESSION_ID);
+});

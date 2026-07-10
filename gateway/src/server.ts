@@ -307,6 +307,21 @@ if (require.main === module) {
       event: 'server_start',
       port: config.port,
     });
+    // Baseline drift scheduler (Spec 2026-07-06-i §6, Tier-1 batch): INERT
+    // until a project registers a drift watch (in-memory creds, process
+    // lifetime). Env knobs: DRIFT_CHECK_ENABLED / DRIFT_CHECK_INTERVAL_MS /
+    // DRIFT_CHECK_MAX_AGE_DAYS. The handle is unref'd — never keeps the
+    // process alive.
+    try {
+      // Lazy require keeps server start resilient to a scheduler import issue.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { startBaselineDriftScheduler } = require('./services/baselineDriftScheduler');
+      startBaselineDriftScheduler();
+    } catch (error) {
+      logger.warn('Baseline drift scheduler failed to start (non-fatal)', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     console.log(`[Gateway] Started on port ${config.port}`);
     console.log(`[Gateway] Health check: http://localhost:${config.port}/health`);
     console.log(`[Gateway] Chat endpoint: http://localhost:${config.port}/api/chat`);

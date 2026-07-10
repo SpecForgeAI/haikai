@@ -110,15 +110,30 @@ interface DiffStatusRow {
 
 /** All side-effecting calls the reconcile driver makes (mocked in tests). */
 export interface ReconciliationValidationDeps {
-  /** POST a target capture session; returns the created session id. */
+  /**
+   * POST a target capture session; returns the created session id.
+   * `dbConfig` (Spec 2026-07-06-n, Tier-1 batch) is the OPTIONAL target-DB
+   * connection CONFIG (no password) persisted redacted on the session row —
+   * with the in-memory password from loadSecrets it enables the replay
+   * runner's state-delta snapshots around mutating replays.
+   */
   createTargetSession(args: {
     projectId: string;
     architectureId: string;
     sourceBaselineId: string;
     targetApiBaseUrl: string;
+    dbConfig?: Record<string, unknown> | null;
   }): Promise<string>;
-  /** POST the run's target creds into the validation-service secretsStore. */
-  loadSecrets(args: { sessionId: string; projectId: string; api: TargetApiAuthSecret }): Promise<void>;
+  /**
+   * POST the run's target creds into the validation-service secretsStore.
+   * `dbPassword` (optional) rides the same in-memory-only bundle.
+   */
+  loadSecrets(args: {
+    sessionId: string;
+    projectId: string;
+    api: TargetApiAuthSecret;
+    dbPassword?: string | null;
+  }): Promise<void>;
   /**
    * POST /start -- fire-and-forget the replay (auto-triggers the diff).
    * `endpointScope` / `purpose` (Spec 2026-07-06-i) request a SCOPED replay:
@@ -199,6 +214,9 @@ export function defaultReconciliationValidationDeps(): ReconciliationValidationD
           // Allow replaying mutating ops against the target -- a like-for-like
           // reconcile MUST exercise every captured operation.
           mutatingCallsConfirmed: true,
+          // Spec 2026-07-06-n (Tier-1 batch): OPTIONAL target-DB connection
+          // config (NO password) — enables state-delta snapshots.
+          ...(args.dbConfig ? { dbConfigRedactedJson: args.dbConfig } : {}),
         }),
       });
       const body = (await readJson(response)) as { id?: string } | null;
@@ -216,7 +234,10 @@ export function defaultReconciliationValidationDeps(): ReconciliationValidationD
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         // The validation service holds this in-memory only; never logged here.
-        body: JSON.stringify({ api: args.api }),
+        body: JSON.stringify({
+          api: args.api,
+          ...(args.dbPassword ? { db: { password: args.dbPassword } } : {}),
+        }),
       });
       if (!response.ok) {
         throw new Error(`load secrets failed (status ${response.status})`);
@@ -326,6 +347,21 @@ export async function runHeadlessReconcile(
     endpointScope?: string[] | null;
     /** Spec 2026-07-06-i: run purpose ('parity' | 'drift_check') on the diff blob. */
     purpose?: string | null;
+    /**
+     * Spec 2026-07-06-n (Tier-1 batch): OPTIONAL target-DB credentials.
+     * Config (no password) rides the session create; the password rides the
+     * in-memory secrets load. Absent = no state snapshots (deltas stay null,
+     * `state_unverified` — fail-closed, visible).
+     */
+    db?: {
+      dbType: 'postgres' | 'sybase';
+      host: string;
+      port: number;
+      database: string;
+      schema?: string | null;
+      username: string;
+      password: string;
+    } | null;
   },
   deps: ReconciliationValidationDeps,
   options: ReconciliationPollOptions = {}
@@ -336,14 +372,31 @@ export async function runHeadlessReconcile(
 
   let sessionId: string | null = null;
   try {
-    // 1. Create + configure the target session.
+    // 1. Create + configure the target session. The DB CONFIG (no password)
+    // rides the session row; the password rides the in-memory secrets load.
+    const dbConfig = args.db
+      ? {
+          dbType: args.db.dbType,
+          host: args.db.host,
+          port: args.db.port,
+          database: args.db.database,
+          schema: args.db.schema ?? null,
+          username: args.db.username,
+        }
+      : null;
     sessionId = await deps.createTargetSession({
       projectId: args.projectId,
       architectureId: args.architectureId,
       sourceBaselineId: args.sourceBaselineId,
       targetApiBaseUrl: args.targetBaseUrl,
+      dbConfig,
     });
-    await deps.loadSecrets({ sessionId, projectId: args.projectId, api: args.api });
+    await deps.loadSecrets({
+      sessionId,
+      projectId: args.projectId,
+      api: args.api,
+      dbPassword: args.db?.password ?? null,
+    });
 
     // 2. Start the replay (fire-and-forget on the validation service; auto-diffs).
     await deps.startSession({

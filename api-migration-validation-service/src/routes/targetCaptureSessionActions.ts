@@ -11,6 +11,7 @@ import {
 } from '../services/targetReplayRunner';
 import type { ApiAuthSecret, SecretsBundle } from '../types/secrets';
 import { parseEndpointScopeKeys } from '../services/endpointScope';
+import { createDbAdapter } from '../services/db/dbAdapterFactory';
 
 /**
  * Target-side capture-session action endpoints. Mounted under the same
@@ -67,6 +68,11 @@ export interface TargetCaptureSessionActionsDeps {
     auth: ApiAuthSecret;
     defaultHeaders: Record<string, string>;
   }) => Promise<{ status: number; durationMs: number }>;
+  /**
+   * Optional DB-adapter factory override (Spec 2026-07-06-n, Tier-1 batch).
+   * Tests inject a fake so /start can be pinned without a real pool.
+   */
+  createDbAdapter?: typeof createDbAdapter;
 }
 
 function extractProjectId(req: Request): string | null {
@@ -106,6 +112,16 @@ interface CreateTargetSessionBody {
   authConfigRedactedJson?: Record<string, unknown> | null;
   defaultHeadersRedactedJson?: Record<string, string> | null;
   mutatingCallsConfirmed?: boolean;
+  /**
+   * OPTIONAL target-database connection CONFIG (Spec 2026-07-06-n, Tier-1
+   * batch): `{ dbType: 'postgres'|'sybase', host, port, database, schema?,
+   * username }` — persisted redacted on the session row exactly like the
+   * current-side capture sessions. The PASSWORD never travels here; it rides
+   * the in-memory /secrets bundle. When both are present the replay runner
+   * snapshots effect tables around mutating replays so target items carry
+   * `state_delta_json`.
+   */
+  dbConfigRedactedJson?: Record<string, unknown> | null;
 }
 
 /**
@@ -167,7 +183,7 @@ export function buildTargetCaptureSessionActionsRouter(
           auth_config_redacted_json: body.authConfigRedactedJson ?? null,
           default_headers_redacted_json: body.defaultHeadersRedactedJson ?? null,
           oas_spec_refs_json: null,
-          db_config_redacted_json: null,
+          db_config_redacted_json: body.dbConfigRedactedJson ?? null,
           mutating_calls_confirmed: body.mutatingCallsConfirmed === true,
           kind: 'target',
           source_baseline_id: body.sourceBaselineId,
@@ -193,6 +209,7 @@ export function buildTargetCaptureSessionActionsRouter(
       const sessionId = req.params.id;
       const body = (req.body || {}) as Partial<{
         api: ApiAuthSecret;
+        db: { password?: unknown };
       }>;
       if (!body.api || typeof body.api !== 'object' || typeof body.api.type !== 'string') {
         return fail(res, 400, 'secrets body must include { api: { type, ... } }');
@@ -208,13 +225,21 @@ export function buildTargetCaptureSessionActionsRouter(
       if (!validTypes.includes(body.api.type)) {
         return fail(res, 400, `Invalid auth type: ${String(body.api.type)}`);
       }
+      // Spec 2026-07-06-n (Tier-1 batch): OPTIONAL target-DB password —
+      // in-memory only, mirroring the current-side capture bundle. The
+      // connection CONFIG lives on the session row; the password ONLY here.
+      const dbPassword =
+        body.db && typeof body.db === 'object' && typeof body.db.password === 'string'
+          ? body.db.password
+          : null;
       const bundle: SecretsBundle = {
         sessionId,
         api: body.api,
+        ...(dbPassword !== null ? { db: { password: dbPassword } } : {}),
         loadedAt: Date.now(),
       };
       secretsStore.set(bundle);
-      return res.status(200).json({ sessionId, loaded: true });
+      return res.status(200).json({ sessionId, loaded: true, dbLoaded: dbPassword !== null });
     },
   );
 
@@ -377,20 +402,62 @@ export function buildTargetCaptureSessionActionsRouter(
           typeof startBody.purpose === 'string' && startBody.purpose.length > 0
             ? startBody.purpose
             : null;
+
+        // Spec 2026-07-06-n (Tier-1 batch): build the TARGET-DB adapter when
+        // the session row carries the connection config AND the in-memory
+        // bundle carries the password — the exact guard idiom of the
+        // current-side orchestrator (a malformed/absent config degrades to
+        // "no state snapshots", never a throw; deltas stay null =>
+        // state_unverified, fail-closed and visible). The route OWNS the
+        // adapter lifecycle: disposed when the spawned run settles.
+        const dbAdapter = (() => {
+          const cfg = session.db_config_redacted_json as {
+            dbType?: string;
+            host?: string;
+            port?: number;
+            database?: string;
+            schema?: string | null;
+            username?: string;
+          } | null;
+          const dbSecret = secretsStore.get(sessionId)?.db;
+          if (!cfg || !cfg.host || !cfg.port || !cfg.database || !cfg.username) return null;
+          if (!dbSecret?.password) return null;
+          if (cfg.dbType !== 'postgres' && cfg.dbType !== 'sybase') return null;
+          const factory = deps.createDbAdapter ?? createDbAdapter;
+          return factory({
+            dbType: cfg.dbType,
+            host: cfg.host,
+            port: cfg.port,
+            database: cfg.database,
+            schema: cfg.schema,
+            username: cfg.username,
+            password: dbSecret.password,
+          });
+        })();
+
         const runnerDeps: TargetReplayDeps | undefined =
-          endpointScope || scopePurpose
-            ? { endpointScope, scopePurpose }
+          endpointScope || scopePurpose || dbAdapter
+            ? { endpointScope, scopePurpose, dbAdapter }
             : undefined;
 
         // Fire-and-forget the runner. Per-run errors land as `failed`
-        // session patches inside the runner itself.
-        spawnRunner(sessionId, runnerDeps).catch((err) => {
-          console.error(
-            `[targetCaptureSessionActions] runTargetReplay failed for ${sessionId}: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          );
-        });
+        // session patches inside the runner itself; the DB adapter (route-
+        // owned) is disposed when the run settles either way.
+        spawnRunner(sessionId, runnerDeps)
+          .catch((err) => {
+            console.error(
+              `[targetCaptureSessionActions] runTargetReplay failed for ${sessionId}: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          })
+          .finally(() => {
+            if (dbAdapter) {
+              dbAdapter.dispose().catch(() => {
+                /* pool teardown errors don't matter */
+              });
+            }
+          });
 
         return res.status(202).json({ ...running, runId: sessionId });
       } catch (err) {

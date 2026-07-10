@@ -70,6 +70,8 @@ import {
   computeRunParityStatus,
   defaultRunParityStatusDeps,
 } from '../services/migrationRunParityStatus';
+import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
+import type { TargetDbSecret } from '../services/migrationTargetCredentialsStore';
 
 export const migrationExecutionRouter = Router();
 
@@ -514,14 +516,28 @@ migrationExecutionRouter.post(
  * run's target-env credentials (CD-2). Captured once at the Migrate confirm step
  * (the user knows the target auth up front); held in-memory for the run only,
  * NEVER persisted, NEVER logged. The reconcile loads them into the validation
- * service at reconcile time. Body: { api: { type, ... } }. `type:'none'` is
- * allowed for an unauthenticated like-for-like target.
+ * service at reconcile time. Body: { api: { type, ... }, db?: { dbType, host,
+ * port, database, schema?, username, password } }. `type:'none'` is allowed
+ * for an unauthenticated like-for-like target. The OPTIONAL `db` block
+ * (Spec 2026-07-06-n, Tier-1 batch — user decision Q3) enables state-delta
+ * snapshots on the reconcile's mutating replays; same in-memory posture.
  */
 migrationExecutionRouter.post(
   '/projects/:projectId/migration-execution-runs/:runId/target-credentials',
   async (req: Request, res: Response) => {
     const { runId } = req.params;
-    const body = (req.body ?? {}) as { api?: { type?: string } };
+    const body = (req.body ?? {}) as {
+      api?: { type?: string };
+      db?: {
+        dbType?: string;
+        host?: string;
+        port?: number;
+        database?: string;
+        schema?: string | null;
+        username?: string;
+        password?: string;
+      };
+    };
     if (!body.api || typeof body.api.type !== 'string') {
       return res.status(400).json({ error: 'body must include { api: { type, ... } }' });
     }
@@ -529,13 +545,133 @@ migrationExecutionRouter.post(
     if (!validTypes.includes(body.api.type)) {
       return res.status(400).json({ error: `invalid auth type: ${body.api.type}` });
     }
+    // OPTIONAL target-DB block: validated as a whole — a partial block is a
+    // 400, never a silently-degraded registration.
+    let db: Parameters<typeof migrationTargetCredentialsStore.set>[2];
+    if (body.db !== undefined && body.db !== null) {
+      const d = body.db;
+      const engineOk = d.dbType === 'postgres' || d.dbType === 'sybase';
+      if (
+        !engineOk ||
+        !d.host ||
+        typeof d.port !== 'number' ||
+        !d.database ||
+        !d.username ||
+        typeof d.password !== 'string' ||
+        d.password.length === 0
+      ) {
+        return res.status(400).json({
+          error:
+            'db block must include { dbType: postgres|sybase, host, port, database, username, password }',
+        });
+      }
+      db = {
+        dbType: d.dbType as 'postgres' | 'sybase',
+        host: d.host,
+        port: d.port,
+        database: d.database,
+        schema: d.schema ?? null,
+        username: d.username,
+        password: d.password,
+      };
+    }
     // Never log the secret material -- only that creds were registered.
-    migrationTargetCredentialsStore.set(runId, body.api as Parameters<typeof migrationTargetCredentialsStore.set>[1]);
+    migrationTargetCredentialsStore.set(
+      runId,
+      body.api as Parameters<typeof migrationTargetCredentialsStore.set>[1],
+      db
+    );
     logger.info('[diag-gateway] migration_reconciliation target_credentials_registered', {
       runId,
       authType: body.api.type,
+      dbRegistered: db !== undefined,
     });
-    return res.status(200).json({ runId, registered: true });
+    return res.status(200).json({ runId, registered: true, dbRegistered: db !== undefined });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Baseline drift watch (Spec 2026-07-06-i amendment §6; Tier-1 batch — user
+// decision Q2b): register the CURRENT system's credentials IN GATEWAY MEMORY
+// (process lifetime, never persisted, dropped on restart) so the in-process
+// scheduler can run unattended drift checks against the pinned baseline.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/baseline-drift-watch',
+  async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const body = (req.body ?? {}) as {
+      architecture_id?: string;
+      source_baseline_id?: string;
+      current_base_url?: string;
+      api?: { type?: string };
+      db?: Partial<TargetDbSecret>;
+    };
+    if (
+      !body.architecture_id ||
+      !body.source_baseline_id ||
+      !body.current_base_url ||
+      !body.api ||
+      typeof body.api.type !== 'string'
+    ) {
+      return res.status(400).json({
+        error:
+          'body must include architecture_id, source_baseline_id, current_base_url and api: { type, ... }',
+      });
+    }
+    let db: TargetDbSecret | undefined;
+    if (body.db !== undefined && body.db !== null) {
+      const d = body.db;
+      if (
+        (d.dbType !== 'postgres' && d.dbType !== 'sybase') ||
+        !d.host ||
+        typeof d.port !== 'number' ||
+        !d.database ||
+        !d.username ||
+        typeof d.password !== 'string' ||
+        d.password.length === 0
+      ) {
+        return res.status(400).json({
+          error:
+            'db block must include { dbType: postgres|sybase, host, port, database, username, password }',
+        });
+      }
+      db = {
+        dbType: d.dbType,
+        host: d.host,
+        port: d.port,
+        database: d.database,
+        schema: d.schema ?? null,
+        username: d.username,
+        password: d.password,
+      };
+    }
+    // Never log the secret material — only that a watch was registered.
+    currentSystemCredentialsStore.set({
+      projectId,
+      architectureId: body.architecture_id,
+      sourceBaselineId: body.source_baseline_id,
+      currentBaseUrl: body.current_base_url,
+      api: body.api as never,
+      ...(db ? { db } : {}),
+    });
+    logger.info('[diag-gateway] baseline_drift watch_registered', {
+      projectId,
+      sourceBaselineId: body.source_baseline_id,
+      dbRegistered: db !== undefined,
+    });
+    return res.status(200).json({ projectId, registered: true, dbRegistered: db !== undefined });
+  }
+);
+
+migrationExecutionRouter.delete(
+  '/projects/:projectId/baseline-drift-watch',
+  async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const removed = currentSystemCredentialsStore.delete(projectId);
+    logger.info('[diag-gateway] baseline_drift watch_removed', { projectId, removed });
+    return res.status(200).json({ projectId, removed });
   }
 );
 

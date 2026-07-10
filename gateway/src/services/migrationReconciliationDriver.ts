@@ -69,6 +69,7 @@ import {
 import {
   migrationTargetCredentialsStore,
   TargetApiAuthSecret,
+  TargetDbSecret,
 } from './migrationTargetCredentialsStore';
 import { request as defaultImplRequest } from './implementationLlmProxyClient';
 import { getConfig } from '../config';
@@ -133,6 +134,12 @@ export interface ReconciliationDriverDeps {
   resolveArchitectureForBaseline(projectId: string, baselineId: string): Promise<string | null>;
   /** Read the run's captured target creds (CD-2; undefined => pause). */
   getTargetCredentials(runId: string): TargetApiAuthSecret | undefined;
+  /**
+   * Read the run's OPTIONAL target-DB creds (Spec 2026-07-06-n, Tier-1
+   * batch). Absent = the replay makes no state snapshots (deltas stay null,
+   * `state_unverified` — fail-closed, never a pause).
+   */
+  getTargetDbCredentials?(runId: string): TargetDbSecret | undefined;
   /** The authed outbound seam for POST /api/v2/bugs (no new transport). */
   implRequest: typeof defaultImplRequest;
   /** Poll knobs (instant in tests). */
@@ -250,6 +257,7 @@ export function defaultReconciliationDriverDeps(): ReconciliationDriverDeps {
     validationDeps: defaultReconciliationValidationDeps(),
     resolveArchitectureForBaseline: defaultResolveArchitectureForBaseline,
     getTargetCredentials: (runId: string) => migrationTargetCredentialsStore.get(runId),
+    getTargetDbCredentials: (runId: string) => migrationTargetCredentialsStore.getDb(runId),
     implRequest: defaultImplRequest,
     circuitBreakerMaxAttempts: DEFAULT_CIRCUIT_BREAKER_MAX_ATTEMPTS,
     loadReconcileBookOfWork: defaultLoadReconcileBookOfWork,
@@ -473,6 +481,11 @@ export async function triggerFullBaselineReconcile(
       sourceBaselineId: pinnedBaselineId,
       targetBaseUrl,
       api,
+      // Spec 2026-07-06-n (Tier-1 batch): OPTIONAL target-DB creds — with
+      // them the replay snapshots effect tables around mutating replays and
+      // state parity gets a real verdict; without them deltas stay null
+      // (state_unverified, fail-closed) — never a pause.
+      db: deps.getTargetDbCredentials?.(runId) ?? null,
     },
     deps.validationDeps,
     deps.pollOptions ?? {}
