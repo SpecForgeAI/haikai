@@ -10,7 +10,9 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.temporal.ChronoField;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -43,6 +45,11 @@ import java.util.Map;
  *
  * <p>Tracing must NEVER throw: every filesystem / serialisation failure is
  * swallowed.</p>
+ *
+ * <p>Predicate self-scoring layer (rides the SUMMARY tier; greppable markers
+ * {@code HAIKAI_PREDICATE}, {@code HAIKAI_STAGE_START}, {@code HAIKAI_SCORECARD},
+ * {@code HAIKAI_CONFIG}) — same wire shapes as the Node helper; see
+ * {@code agent-os/planning/2026-07-10-predicate-run-judging-design.md}.</p>
  */
 public final class HaikaiTrace {
 
@@ -84,6 +91,26 @@ public final class HaikaiTrace {
     private static volatile boolean dirEnsured = false;
 
     /**
+     * Predicate self-scoring tally, per-process, keyed by the stage prefix of
+     * the predicate id ({@code "SCAN.EDGE.03"} tallies under {@code "SCAN"}) —
+     * no ambient current-stage state, so concurrent request threads can't
+     * mis-attribute a predicate. Guarded by {@link #TALLY_LOCK}.
+     */
+    private static final Map<String, StageTally> TALLY = new LinkedHashMap<>();
+    private static final Object TALLY_LOCK = new Object();
+    /** Caps keep predicate/scorecard lines bounded however hot a failing loop gets. */
+    private static final int SCORECARD_FAILED_CAP = 25;
+    private static final int SCORECARD_ACTUAL_CAP = 160;
+    private static final int PREDICATE_TEXT_CAP = 400;
+
+    private static final class StageTally {
+        private int pass;
+        private int fail;
+        private int skip;
+        private final List<Map<String, Object>> failed = new ArrayList<>();
+    }
+
+    /**
      * Test-only seam: re-read the configuration from the supplied raw values
      * (mirroring the env semantics) and reset the dir-ensured latch. NOT used in
      * production. Package-private so only the trace tests in this package reach
@@ -95,6 +122,9 @@ public final class HaikaiTrace {
             ? Paths.get(fileEnv.trim())
             : Paths.get(System.getProperty("user.home"), ".haikai", "trace.log");
         dirEnsured = false;
+        synchronized (TALLY_LOCK) {
+            TALLY.clear();
+        }
     }
 
     private HaikaiTrace() {
@@ -222,6 +252,33 @@ public final class HaikaiTrace {
             }
         }
         return false;
+    }
+
+    /** Stage a predicate id belongs to: the prefix before the first {@code '.'}. */
+    private static String stageOf(String id) {
+        int dot = id.indexOf('.');
+        return dot > 0 ? id.substring(0, dot) : id;
+    }
+
+    private static String capText(String s, int n) {
+        if (s == null) {
+            return "";
+        }
+        return s.length() > n ? s.substring(0, n) + "…" : s;
+    }
+
+    /** Corr as an ordered map (stable key order, only set keys) for embedding in JSON. */
+    private static Map<String, String> corrMap(Corr corr) {
+        Map<String, String> out = new LinkedHashMap<>();
+        if (corr != null) {
+            for (String k : CORR_ORDER) {
+                String v = corr.get(k);
+                if (v != null && !v.isEmpty()) {
+                    out.put(k, v);
+                }
+            }
+        }
+        return out;
     }
 
     // -----------------------------------------------------------------------
@@ -487,6 +544,149 @@ public final class HaikaiTrace {
             header.append("  ").append(nowTs()).append(" ===");
             // Leading blank line delimits runs in the shared append-only file.
             emit("\n" + header.toString());
+        }
+
+        /**
+         * Emit a {@code HAIKAI_PREDICATE} line (pass/fail from {@code ok}) and
+         * tally it for the stage scorecard.
+         */
+        public void predicate(String id, String title, boolean ok,
+                              String expected, String actual, Corr corr) {
+            emitPredicate(id, title, ok ? "pass" : "fail", expected, actual, corr);
+        }
+
+        /**
+         * Emit a skipped {@code HAIKAI_PREDICATE} — the check was not exercised
+         * this run; {@code why} says why.
+         */
+        public void predicateSkip(String id, String title, String why, Corr corr) {
+            emitPredicate(id, title, "skip", "", why, corr);
+        }
+
+        private void emitPredicate(String id, String title, String verdict,
+                                   String expected, String actual, Corr corr) {
+            if (off) {
+                return;
+            }
+            try {
+                synchronized (TALLY_LOCK) {
+                    StageTally t = TALLY.computeIfAbsent(stageOf(id), k -> new StageTally());
+                    if ("pass".equals(verdict)) {
+                        t.pass++;
+                    } else if ("fail".equals(verdict)) {
+                        t.fail++;
+                    } else {
+                        t.skip++;
+                    }
+                    if ("fail".equals(verdict) && t.failed.size() < SCORECARD_FAILED_CAP) {
+                        Map<String, Object> f = new LinkedHashMap<>();
+                        f.put("id", id);
+                        f.put("actual", capText(actual, SCORECARD_ACTUAL_CAP));
+                        t.failed.add(f);
+                    }
+                }
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("id", id);
+                payload.put("title", title);
+                payload.put("verdict", verdict);
+                payload.put("expected", capText(expected, PREDICATE_TEXT_CAP));
+                payload.put("actual", capText(actual, PREDICATE_TEXT_CAP));
+                Map<String, String> cj = corrMap(corr);
+                if (!cj.isEmpty()) {
+                    payload.put("corr", cj);
+                }
+                String glyph = "pass".equals(verdict) ? GLYPH_OK
+                    : "fail".equals(verdict) ? GLYPH_FAIL : GLYPH_WARN;
+                emit(nowTs(), "[SUMMARY]", service, emptyToNull(fmtCorr(corr)),
+                    glyph + " HAIKAI_PREDICATE " + toJson(payload));
+            } catch (RuntimeException ignored) {
+                // never throw from tracing
+            }
+        }
+
+        /** Emit the {@code HAIKAI_STAGE_START} banner (absence detection). */
+        public void stageStart(String stage, Corr corr) {
+            if (off) {
+                return;
+            }
+            try {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("stage", stage);
+                emit(nowTs(), "[SUMMARY]", service, emptyToNull(fmtCorr(corr)),
+                    GLYPH_STEP + " HAIKAI_STAGE_START " + toJson(payload));
+            } catch (RuntimeException ignored) {
+                // never throw from tracing
+            }
+        }
+
+        /**
+         * Emit the stage's {@code HAIKAI_SCORECARD} — per-stage tally plus the
+         * process-cumulative totals; doubles as the stage-END banner.
+         */
+        public void stageEnd(String stage, Corr corr) {
+            if (off) {
+                return;
+            }
+            try {
+                int pass = 0;
+                int fail = 0;
+                int skip = 0;
+                List<Map<String, Object>> failed = new ArrayList<>();
+                int cumPass = 0;
+                int cumFail = 0;
+                int cumSkip = 0;
+                synchronized (TALLY_LOCK) {
+                    StageTally t = TALLY.get(stage);
+                    if (t != null) {
+                        pass = t.pass;
+                        fail = t.fail;
+                        skip = t.skip;
+                        failed.addAll(t.failed);
+                    }
+                    for (StageTally v : TALLY.values()) {
+                        cumPass += v.pass;
+                        cumFail += v.fail;
+                        cumSkip += v.skip;
+                    }
+                }
+                Map<String, Object> cumulative = new LinkedHashMap<>();
+                cumulative.put("pass", cumPass);
+                cumulative.put("fail", cumFail);
+                cumulative.put("skip", cumSkip);
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("stage", stage);
+                payload.put("service", service);
+                payload.put("pass", pass);
+                payload.put("fail", fail);
+                payload.put("skip", skip);
+                payload.put("failed", failed);
+                payload.put("cumulative", cumulative);
+                emit(nowTs(), "[SUMMARY]", service, emptyToNull(fmtCorr(corr)),
+                    (fail > 0 ? GLYPH_FAIL : GLYPH_OK) + " HAIKAI_SCORECARD " + toJson(payload));
+            } catch (RuntimeException ignored) {
+                // never throw from tracing
+            }
+        }
+
+        /**
+         * Emit the startup {@code HAIKAI_CONFIG} header. Pass booleans/counts
+         * only — never secret values.
+         */
+        public void configHeader(Map<String, ?> config, Corr corr) {
+            if (off) {
+                return;
+            }
+            try {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("service", service);
+                if (config != null) {
+                    payload.putAll(config);
+                }
+                emit(nowTs(), "[SUMMARY]", service, emptyToNull(fmtCorr(corr)),
+                    GLYPH_STEP + " HAIKAI_CONFIG " + toJson(payload));
+            } catch (RuntimeException ignored) {
+                // never throw from tracing
+            }
         }
 
         private static String emptyToNull(String s) {
