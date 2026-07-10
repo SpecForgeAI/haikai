@@ -145,3 +145,35 @@ class TestRecordAndRepair:
         assert dup.status_code == 200
         assert "duplicate" in dup.json()["status"]
         assert len(enqueue_spy) == 1
+
+
+class TestDurableDefectInput:
+    def test_fail_verdict_row_carries_the_breaks(self, client, enqueue_spy):
+        """Tier-1 batch: the verdict row IS the durable defect input (D10.2) —
+        the breaks ride detail_json (bounded at 50) so the re-invoked loop
+        reconstructs them from the db without any side channel."""
+        _post(client, _fail_payload())
+
+        conn = store.connect()
+        cells = store.latest_verdicts(conn, "orch-p1", "spec-owners-api")
+        conn.close()
+        import json as _json
+        detail = _json.loads(cells[("owners-svc", "parity")]["detail_json"])
+        assert detail["diff_id"] == "diff-1"
+        assert detail["break_count"] == 1
+        assert detail["breaks"][0]["kind"] == "status_drift"
+        assert detail["breaks_truncated"] is False
+
+    def test_breaks_bounded_at_fifty(self, client, enqueue_spy):
+        body = _fail_payload()
+        body["breaks"] = [{"kind": f"k{i}"} for i in range(75)]
+        _post(client, body)
+
+        conn = store.connect()
+        cells = store.latest_verdicts(conn, "orch-p1", "spec-owners-api")
+        conn.close()
+        import json as _json
+        detail = _json.loads(cells[("owners-svc", "parity")]["detail_json"])
+        assert detail["break_count"] == 75
+        assert len(detail["breaks"]) == 50
+        assert detail["breaks_truncated"] is True

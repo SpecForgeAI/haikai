@@ -39,7 +39,10 @@ import {
   CODE_PROVENANCE_TAG,
   MANUAL_GATE_TAG,
 } from './migrationCodeStreamPlanner';
-import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
+import {
+  fetchEndpointBaselineCoverageRows,
+  type EndpointBaselineCoverageRow,
+} from './apiBehaviourBaselineCoverageClient';
 import {
   CoverageSummaryJson,
   evaluateCoverageFloor,
@@ -86,7 +89,13 @@ export interface GateDiffRow {
 }
 
 export interface CodeGateReads {
-  fetchEndpointBaselineCoverage: typeof fetchEndpointBaselineCoverage;
+  /**
+   * RAW coverage rows (endpoint id + baseline id + method/path). The gate
+   * derives BOTH the covered-id map (code_baseline_missing) and the
+   * endpoint-id → key map that scopes the floor evaluation to in-scope
+   * stories (Tier-1 batch).
+   */
+  fetchEndpointBaselineCoverageRows: typeof fetchEndpointBaselineCoverageRows;
   /** The pinned baseline's session coverage summary; null = none persisted. */
   fetchCoverageSummaryForBaseline(
     projectId: string,
@@ -119,7 +128,7 @@ async function readJson(response: Response): Promise<unknown> {
 export function defaultCodeGateReads(): CodeGateReads {
   const amsBase = () => getConfig().architectureModelServiceBaseUrl;
   return {
-    fetchEndpointBaselineCoverage,
+    fetchEndpointBaselineCoverageRows,
 
     async fetchCoverageSummaryForBaseline(projectId, baselineId) {
       const baselineUrl =
@@ -232,7 +241,13 @@ function storyMarkersOf(item: BookOfWorkItem): StoryEndpointMarkers | null {
   return {
     workItemId,
     apiEndpointIds,
-    flaggedMissingBaseline: flagReason === 'missing_baseline',
+    // The planner joins MULTIPLE flags with commas (e.g.
+    // 'missing_baseline,dialect_affected') — membership, not equality, or a
+    // multi-flagged story loses its exemption (Tier-1 batch fix).
+    flaggedMissingBaseline: (flagReason ?? '')
+      .split(',')
+      .map((f) => f.trim())
+      .includes('missing_baseline'),
   };
 }
 
@@ -280,6 +295,16 @@ function pathsMatch(a: string, b: string): boolean {
     if (!segmentMatches(as[i], bs[i])) return false;
   }
   return true;
+}
+
+/**
+ * Template-tolerant `"METHOD /path"` key equality (either side may carry
+ * `{param}` segments). Exported (Tier-1 batch) so the post-reconcile
+ * parity-verdict emitter judges story membership with the SAME rule the
+ * completion gate uses.
+ */
+export function endpointKeyMatches(keyA: string, keyB: string): boolean {
+  return keyMatches(keyA, keyB);
 }
 
 function keyMatches(keyA: string, keyB: string): boolean {
@@ -354,10 +379,13 @@ export async function evaluateCodeReadiness(params: {
     if (markers && markers.apiEndpointIds.length > 0) inScopeStories.push(markers);
   }
 
+  // endpoint element id → normalised `"METHOD /path"` key (from the coverage
+  // rows) — scopes the floor evaluation to in-scope stories below.
+  const endpointKeyById = new Map<string, string>();
   if (inScopeStories.length > 0) {
-    let coverage: Map<string, string>;
+    let coverageRows: EndpointBaselineCoverageRow[];
     try {
-      coverage = await reads.fetchEndpointBaselineCoverage(
+      coverageRows = await reads.fetchEndpointBaselineCoverageRows(
         params.projectId,
         params.currentArchitectureId ?? '',
       );
@@ -375,6 +403,13 @@ export async function evaluateCodeReadiness(params: {
           },
         ],
       };
+    }
+    const coverage = new Map<string, string>();
+    for (const row of coverageRows) {
+      if (row?.endpoint_id && row?.baseline_id) coverage.set(row.endpoint_id, row.baseline_id);
+      if (row?.endpoint_id && row.method && row.path) {
+        endpointKeyById.set(row.endpoint_id, `${row.method.toUpperCase()} ${row.path}`);
+      }
     }
 
     for (const story of inScopeStories) {
@@ -404,19 +439,38 @@ export async function evaluateCodeReadiness(params: {
       if (summary) {
         const floor = evaluateCoverageFloor(summary);
         if (!floor.passed) {
-          const failing = floor.operations.filter((op) => !op.passed);
-          const sample = failing
-            .slice(0, 3)
-            .map((op) => `${op.method.toUpperCase()} ${op.path}`)
-            .join(', ');
-          reasons.push({
-            code: 'code_coverage_floor_unmet',
-            message:
-              `The pinned baseline's scenario coverage fails the floor on ${failing.length} ` +
-              `operation(s) (${sample}${failing.length > 3 ? ', …' : ''}). Re-run capture to ` +
-              'cover the floor-bearing dimensions (happy / error / validation / seed) or waive ' +
-              'the specific (operation, dimension) misses.',
-          });
+          // Tier-1 batch: SCOPE floor misses to the run's in-scope story
+          // endpoints — an uncovered dimension on an endpoint NO dispatched
+          // story implements must not block THIS run. When the in-scope key
+          // set is empty (no endpoint keys resolvable), fall back to the
+          // whole-summary behaviour — fail closed, never silently narrower.
+          const inScopeKeys = inScopeStories
+            .flatMap((story) => story.apiEndpointIds)
+            .map((id) => endpointKeyById.get(id))
+            .filter((key): key is string => !!key);
+          const failing = floor.operations
+            .filter((op) => !op.passed)
+            .filter(
+              (op) =>
+                inScopeKeys.length === 0 ||
+                inScopeKeys.some((key) =>
+                  keyMatches(key, `${op.method.toUpperCase()} ${op.path}`),
+                ),
+            );
+          if (failing.length > 0) {
+            const sample = failing
+              .slice(0, 3)
+              .map((op) => `${op.method.toUpperCase()} ${op.path}`)
+              .join(', ');
+            reasons.push({
+              code: 'code_coverage_floor_unmet',
+              message:
+                `The pinned baseline's scenario coverage fails the floor on ${failing.length} ` +
+                `in-scope operation(s) (${sample}${failing.length > 3 ? ', …' : ''}). Re-run ` +
+                'capture to cover the floor-bearing dimensions (happy / error / validation / ' +
+                'seed) or waive the specific (operation, dimension) misses.',
+            });
+          }
         }
       }
       // summary === null: pre-K session (no persisted score) — the floor is

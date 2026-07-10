@@ -438,7 +438,11 @@ public class MigrationDiscoveryContextService {
             databaseDiscoverySummary,
             runtimeUsageSummary,
             targetArchitecture != null,
-            coverage);
+            coverage,
+            // Spec 2026-07-06-f §4 (Tier-1 batch): the clearing signal for
+            // db_consumers_unrevalidated — computed here so the assessment
+            // stays a pure static function.
+            hasScopedParityDiff(projectId));
         ReadinessAssessmentDto readiness = assessReadiness(readinessCtx);
         traceReadiness(projectId, currentArchitecture, readinessCtx, readiness);
 
@@ -1064,7 +1068,69 @@ public class MigrationDiscoveryContextService {
             dbFindings, dbRuns, sampleHints,
             dbFindings > 0 || dbRuns > 0 || sampleHints > 0,
             new ArrayList<>(engines),
-            buildDbMigrationPackSummary(projectId, currentArchitectureId));
+            buildDbMigrationPackSummary(projectId, currentArchitectureId),
+            countDialectAffectedConsumers(projectId, currentArchitectureId));
+    }
+
+    /**
+     * Code-side blast radius of the DB change (Spec 2026-07-06-f §4, Tier-1
+     * batch): DISTINCT committed endpoints whose captured data-effect SQL is
+     * T-SQL ({@code sql_dialect: 'tsql'} stamped on {@code path_metadata_json}
+     * by the discovery classifier). {@code null} = not computable (no
+     * committed model / repository unwired in test isolation) — consumers
+     * treat null as "unknown", never as zero.
+     */
+    private Integer countDialectAffectedConsumers(
+            UUID projectId, UUID currentArchitectureId) {
+        if (endpointDataEffectRepository == null) {
+            return null;
+        }
+        String modelFileId = resolveModelFileId(projectId, currentArchitectureId);
+        if (modelFileId == null) {
+            return null;
+        }
+        Set<String> affectedEndpointIds = new HashSet<>();
+        for (var effect : endpointDataEffectRepository.findByModelFileId(modelFileId)) {
+            Map<String, Object> meta = effect.getPathMetadataJson();
+            if (meta != null && "tsql".equals(meta.get("sql_dialect"))
+                    && effect.getEndpointId() != null) {
+                affectedEndpointIds.add(effect.getEndpointId());
+            }
+        }
+        return affectedEndpointIds.size();
+    }
+
+    /**
+     * True when ANY scoped-parity revalidation diff exists for the project
+     * (Spec 2026-07-06-f §4): a completed diff whose {@code endpoint_scope_json}
+     * audit blob is non-null with purpose 'parity' — the artefact the
+     * revalidate-db-consumers route produces. Java-side filtering; diffs per
+     * project are bounded. Fail-soft to {@code false} (the gap stays visible
+     * on an unreadable diff store — fail closed).
+     */
+    private boolean hasScopedParityDiff(UUID projectId) {
+        if (apiBehaviourDiffRepository == null) {
+            return false;
+        }
+        try {
+            for (ApiBehaviourDiffEntity diff : apiBehaviourDiffRepository
+                    .findByProjectId(projectId)) {
+                if (!"completed".equalsIgnoreCase(diff.getStatus())) {
+                    continue;
+                }
+                Map<String, Object> scope = diff.getEndpointScopeJson();
+                if (scope == null) {
+                    continue;
+                }
+                Object purpose = scope.get("purpose");
+                if (purpose == null || "parity".equals(purpose)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (RuntimeException ex) {
+            return false;
+        }
     }
 
     /**
@@ -1532,8 +1598,35 @@ public class MigrationDiscoveryContextService {
          * {@link CoverageAggregates#empty()} when no coverage signal is
          * available.
          */
-        CoverageAggregates coverage
-    ) {}
+        CoverageAggregates coverage,
+        /**
+         * True when a scoped-parity revalidation diff exists for the project
+         * (Spec 2026-07-06-f §4, Tier-1 batch) — the clearing signal for
+         * {@code db_consumers_unrevalidated}. Computed at build time (the
+         * assessment stays a pure static function).
+         */
+        boolean scopedParityDiffExists
+    ) {
+        /** Backward-compatible delegating constructor (no scoped diff). */
+        ReadinessContext(
+            MigrationDiscoveryContextDto.ArchitectureSummary currentArchSummary,
+            MigrationDiscoveryContextDto.ArchitectureSummary targetArchSummary,
+            List<DiscoveryRunEntity> runs,
+            List<DiscoveryFindingEntity> findings,
+            List<DiscoveryDecisionTaskEntity> unresolvedDecisionTasks,
+            MigrationDiscoveryContextDto.ApiBehaviourBaselineSummary baselineSummary,
+            MigrationDiscoveryContextDto.ArchitectureMappingsSummary mappingsSummary,
+            MigrationDiscoveryContextDto.DatabaseDiscoverySummary databaseDiscoverySummary,
+            MigrationDiscoveryContextDto.RuntimeUsageSummary runtimeUsageSummary,
+            boolean targetArchitectureProvided,
+            CoverageAggregates coverage
+        ) {
+            this(currentArchSummary, targetArchSummary, runs, findings,
+                unresolvedDecisionTasks, baselineSummary, mappingsSummary,
+                databaseDiscoverySummary, runtimeUsageSummary,
+                targetArchitectureProvided, coverage, false);
+        }
+    }
 
     /** Deterministic per-stream readiness rules + gap-code emission. */
     static ReadinessAssessmentDto assessReadiness(ReadinessContext ctx) {
@@ -1619,6 +1712,20 @@ public class MigrationDiscoveryContextService {
                     dataReadiness = downgradeToPartial(dataReadiness);
                 }
             }
+        }
+
+        // ------ Code-side blast radius (Spec 2026-07-06-f §4, Tier-1 batch) ------
+        //
+        // Dialect-affected consumers exist (T-SQL SQL in committed code edges)
+        // but NO scoped-parity revalidation diff has ever run: the DB change's
+        // code-side impact is unproven. ADVISORY (partial, never below); the
+        // scoped diff the revalidate-db-consumers route produces clears it.
+        Integer affectedConsumers = ctx.databaseDiscoverySummary == null
+            ? null : ctx.databaseDiscoverySummary.affectedConsumerCount();
+        if (affectedConsumers != null && affectedConsumers > 0
+                && !ctx.scopedParityDiffExists) {
+            gaps.add(MigrationGapCodes.DB_CONSUMERS_UNREVALIDATED);
+            dataReadiness = downgradeToPartial(dataReadiness);
         }
 
         // ------ Infrastructure readiness (Part 6 lists no specific gaps; surface model presence) ------

@@ -106,3 +106,35 @@ def test_cancelled_job_untouched(storage, monkeypatch):
 def test_missing_job_raises(storage):
     with pytest.raises(ValueError):
         run_verify_task_group("nope", storage)
+
+
+def test_parity_triggered_job_carries_the_trigger_marker(storage, monkeypatch, tmp_path):
+    """Tier-1 batch (Spec 2026-07-06-i): a repair job enqueued by the parity
+    inbound carries `parity_report` in its payload; the launched loop command
+    gains `trigger=parity` so the skill reads the (repo,'parity') cell's
+    verdict detail as its defect input. A plain CI re-invoke is unchanged."""
+    monkeypatch.setenv("API_WORKSPACE_DIR", str(tmp_path / "ws"))
+    monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))
+    monkeypatch.setattr("src.claude_cli_executor.ClaudeCLIExecutor", _FakeExecutor)
+    storage.save_job(_job(payload={
+        "orchestrate_id": "orch-x", "task_group_id": "g1", "repo": "slugify-svc",
+        "parity_report": {"diff_id": "diff-1", "breaks": [{"kind": "status_drift"}]},
+    }))
+
+    run_verify_task_group("verify-test-1", storage)
+
+    cmd = _FakeExecutor.last.command
+    assert "trigger=parity" in cmd
+
+    # Control: the plain CI-triggered payload stays byte-identical (no marker).
+    storage.save_job(Job(
+        job_id="verify-test-2",
+        type=JobType.VERIFY_TASK_GROUP,
+        status=JobStatus.QUEUED,
+        company="verification",
+        project="slugify-svc",
+        created_at=datetime.now(timezone.utc),
+        request_payload={"orchestrate_id": "orch-x", "task_group_id": "g2", "repo": "slugify-svc"},
+    ))
+    run_verify_task_group("verify-test-2", storage)
+    assert "trigger=parity" not in _FakeExecutor.last.command

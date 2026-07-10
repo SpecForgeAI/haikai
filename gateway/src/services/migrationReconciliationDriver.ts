@@ -69,6 +69,7 @@ import {
 import {
   migrationTargetCredentialsStore,
   TargetApiAuthSecret,
+  TargetDbSecret,
 } from './migrationTargetCredentialsStore';
 import { request as defaultImplRequest } from './implementationLlmProxyClient';
 import { getConfig } from '../config';
@@ -82,6 +83,10 @@ import {
   classifyBreakVolatility,
   VolatilitySource,
 } from './migrationReconciliationVolatilityDisposition';
+import {
+  defaultParityVerdictEmitterDeps,
+  emitParityVerdictsAfterReconcile,
+} from './migrationParityVerdictEmitter';
 
 // ============================================================================
 // Run-state status (Spec-4 extension of the Spec-3 RUN_STATUS vocabulary)
@@ -129,6 +134,12 @@ export interface ReconciliationDriverDeps {
   resolveArchitectureForBaseline(projectId: string, baselineId: string): Promise<string | null>;
   /** Read the run's captured target creds (CD-2; undefined => pause). */
   getTargetCredentials(runId: string): TargetApiAuthSecret | undefined;
+  /**
+   * Read the run's OPTIONAL target-DB creds (Spec 2026-07-06-n, Tier-1
+   * batch). Absent = the replay makes no state snapshots (deltas stay null,
+   * `state_unverified` — fail-closed, never a pause).
+   */
+  getTargetDbCredentials?(runId: string): TargetDbSecret | undefined;
   /** The authed outbound seam for POST /api/v2/bugs (no new transport). */
   implRequest: typeof defaultImplRequest;
   /** Poll knobs (instant in tests). */
@@ -142,6 +153,15 @@ export interface ReconciliationDriverDeps {
    * the caller (a read failure just skips the pass -- breaks stay open).
    */
   loadReconcileBookOfWork(projectId: string, bookOfWorkId: string): Promise<ReconcileBookOfWorkItem[]>;
+  /**
+   * Post-reconcile parity-verdict emission (Spec 2026-07-06-i §2–3, Tier-1
+   * batch): per-story verdicts derived from the reconcile's own diff items,
+   * POSTed to the IVS parity route (auto-repair on fail, capped by the IVS
+   * `PARITY_REPAIR_CAP` env). Optional + defaulted; FAIL-SOFT — emission
+   * failure never touches the already-completed reconcile. Tests inject a
+   * spy.
+   */
+  emitParityVerdicts?: typeof emitParityVerdictsAfterReconcile;
 }
 
 /** Resolve the architecture id off an AMS baseline row (default transport). */
@@ -196,6 +216,10 @@ async function defaultLoadReconcileBookOfWork(
       (obj.net_new_operations as string[] | null | undefined) ??
       (obj.netNewOperations as string[] | null | undefined) ??
       null;
+    const apiEndpointIds =
+      (obj.apiEndpointIds as string[] | null | undefined) ??
+      (obj.api_endpoint_ids as string[] | null | undefined) ??
+      null;
     items.push({
       id: String(obj.id ?? ''),
       title: String(obj.title ?? ''),
@@ -203,6 +227,8 @@ async function defaultLoadReconcileBookOfWork(
       provenance: (obj.provenance as string | null | undefined) ?? null,
       kind: (obj.kind as string | null | undefined) ?? null,
       netNewOperations: Array.isArray(netNewOps) ? netNewOps : null,
+      tags: Array.isArray(obj.tags) ? (obj.tags as unknown[]).map((t) => String(t)) : null,
+      apiEndpointIds: Array.isArray(apiEndpointIds) ? apiEndpointIds : null,
     });
   }
   return items;
@@ -231,6 +257,7 @@ export function defaultReconciliationDriverDeps(): ReconciliationDriverDeps {
     validationDeps: defaultReconciliationValidationDeps(),
     resolveArchitectureForBaseline: defaultResolveArchitectureForBaseline,
     getTargetCredentials: (runId: string) => migrationTargetCredentialsStore.get(runId),
+    getTargetDbCredentials: (runId: string) => migrationTargetCredentialsStore.getDb(runId),
     implRequest: defaultImplRequest,
     circuitBreakerMaxAttempts: DEFAULT_CIRCUIT_BREAKER_MAX_ATTEMPTS,
     loadReconcileBookOfWork: defaultLoadReconcileBookOfWork,
@@ -454,6 +481,11 @@ export async function triggerFullBaselineReconcile(
       sourceBaselineId: pinnedBaselineId,
       targetBaseUrl,
       api,
+      // Spec 2026-07-06-n (Tier-1 batch): OPTIONAL target-DB creds — with
+      // them the replay snapshots effect tables around mutating replays and
+      // state parity gets a real verdict; without them deltas stay null
+      // (state_unverified, fail-closed) — never a pause.
+      db: deps.getTargetDbCredentials?.(runId) ?? null,
     },
     deps.validationDeps,
     deps.pollOptions ?? {}
@@ -537,6 +569,29 @@ export async function triggerFullBaselineReconcile(
   const volatileDisposition = await autoDisposeVolatileBreaks(run, createdBreaks, deps);
 
   await safePatchRun(deps, projectId, runId, { status: RECONCILE_RUN_STATUS.RECONCILED });
+
+  // --- Spec 2026-07-06-i §2–3 (Tier-1 batch): per-story parity verdicts. ---
+  // Derived from the SAME diff items this reconcile produced and POSTed to
+  // the IVS parity route (a FAIL auto-enqueues capped repair runs — the
+  // user-approved auto-repair posture). FAIL-SOFT in its entirety: the
+  // reconcile above is already complete and its breaks persisted; a verdict
+  // emission failure is logged, never propagated.
+  try {
+    const emit = deps.emitParityVerdicts ?? emitParityVerdictsAfterReconcile;
+    await emit({
+      run,
+      architectureId,
+      diffId: result.diffId,
+      diffItems: result.diffItems,
+      deps: defaultParityVerdictEmitterDeps(deps.loadReconcileBookOfWork, deps.implRequest),
+    });
+  } catch (error) {
+    logger.warn('[diag-gateway] migration_parity verdict_emission_crashed', {
+      projectId,
+      runId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   logger.info('[diag-gateway] migration_reconciliation full_reconcile_complete', {
     projectId,

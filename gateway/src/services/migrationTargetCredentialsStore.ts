@@ -43,9 +43,30 @@ export interface TargetApiAuthSecret {
   password?: string;
 }
 
+/**
+ * OPTIONAL target-database credentials (Spec 2026-07-06-n, Tier-1 batch
+ * 2026-07-10 — user decision Q3): when supplied on the Migrate confirm, the
+ * reconcile's target replay snapshots effect tables around mutating replays
+ * so state parity gets a real verdict instead of `state_unverified`. Held
+ * in-memory with the API bundle, same never-persist posture. The connection
+ * CONFIG (host/port/db/user/engine) travels to the AMVS session row
+ * (redacted, like the current-side capture flow); the PASSWORD travels only
+ * to the AMVS in-memory secrets route.
+ */
+export interface TargetDbSecret {
+  dbType: 'postgres' | 'sybase';
+  host: string;
+  port: number;
+  database: string;
+  schema?: string | null;
+  username: string;
+  password: string;
+}
+
 interface RunCredentialsBundle {
   runId: string;
   api: TargetApiAuthSecret;
+  db?: TargetDbSecret;
   loadedAt: number;
 }
 
@@ -53,13 +74,18 @@ class MigrationTargetCredentialsStore {
   private readonly bundles = new Map<string, RunCredentialsBundle>();
 
   /** Register the run's target creds (captured at Migrate confirm). */
-  set(runId: string, api: TargetApiAuthSecret): void {
-    this.bundles.set(runId, { runId, api, loadedAt: Date.now() });
+  set(runId: string, api: TargetApiAuthSecret, db?: TargetDbSecret): void {
+    this.bundles.set(runId, { runId, api, ...(db ? { db } : {}), loadedAt: Date.now() });
   }
 
   /** Read the run's target creds; undefined when not registered / restarted. */
   get(runId: string): TargetApiAuthSecret | undefined {
     return this.bundles.get(runId)?.api;
+  }
+
+  /** Read the run's OPTIONAL target-DB creds (state-delta snapshots). */
+  getDb(runId: string): TargetDbSecret | undefined {
+    return this.bundles.get(runId)?.db;
   }
 
   has(runId: string): boolean {

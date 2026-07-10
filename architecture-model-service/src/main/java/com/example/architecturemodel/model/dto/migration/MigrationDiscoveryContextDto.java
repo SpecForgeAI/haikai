@@ -258,8 +258,32 @@ public record MigrationDiscoveryContextDto(
          * pair; {@code null} when no pack exists (key omitted on the wire per
          * the NON_NULL contract). Spec 2026-07-02-a.
          */
-        @JsonProperty("dbMigrationPack") DbMigrationPackSummary dbMigrationPack
-    ) {}
+        @JsonProperty("dbMigrationPack") DbMigrationPackSummary dbMigrationPack,
+        /**
+         * Code-side blast radius of the DB change (Spec 2026-07-06-f §4,
+         * Tier-1 batch): DISTINCT committed endpoints whose captured
+         * data-effect SQL is T-SQL ({@code sql_dialect: 'tsql'} on
+         * {@code path_metadata_json}) — the endpoints the Sybase→Postgres
+         * move breaks in code. The proc/table dimensions of the affected set
+         * are computed gateway-side by {@code dbChangeConsumerResolver}; this
+         * count is the AMS-computable dialect signal. Boxed; {@code null} =
+         * not computable (no model / repo unwired).
+         */
+        @JsonProperty("affectedConsumerCount") Integer affectedConsumerCount
+    ) {
+        /** Backward-compatible delegating constructor (count defaults null). */
+        public DatabaseDiscoverySummary(
+            Integer databaseFindingCount,
+            Integer databaseRunCount,
+            Integer sampleDataHintCount,
+            Boolean hasDatabaseDiscovery,
+            List<String> sourceEngines,
+            DbMigrationPackSummary dbMigrationPack
+        ) {
+            this(databaseFindingCount, databaseRunCount, sampleDataHintCount,
+                hasDatabaseDiscovery, sourceEngines, dbMigrationPack, null);
+        }
+    }
 
     /** Bounded DB-migration-pack roll-up (Spec 2026-07-02-a). All counts boxed. */
     public record DbMigrationPackSummary(

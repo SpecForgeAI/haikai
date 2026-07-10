@@ -489,9 +489,15 @@ async def parity_verdict(request: Request,
             return JSONResponse({"status": "duplicate delivery — already processed"},
                                 status_code=200)
 
+        # The verdict row is the DURABLE defect input (D10.2 — the verify loop
+        # reconstructs everything from the db): the breaks ride detail_json,
+        # bounded so one giant diff can't bloat the row. Tier-1 batch item 2.
+        MAX_BREAKS_ON_VERDICT = 50
         rec_ok, rec_reason = recorder.record_verdict(
             conn, orchestrate_id, task_group_id, repo, "parity", verdict,
-            detail={"diff_id": diff_id, "break_count": len(breaks)},
+            detail={"diff_id": diff_id, "break_count": len(breaks),
+                    "breaks": breaks[:MAX_BREAKS_ON_VERDICT],
+                    "breaks_truncated": len(breaks) > MAX_BREAKS_ON_VERDICT},
         )
         if not rec_ok:
             return JSONResponse({"error": rec_reason}, status_code=409)

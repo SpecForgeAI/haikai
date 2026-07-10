@@ -49,6 +49,15 @@ export interface ReconcileBookOfWorkItem {
   kind: string | null;
   /** The explicit `<METHOD> <path>` list (the authoritative match source). */
   netNewOperations: string[] | null;
+  /**
+   * Item tags (Spec G stream/provenance markers). OPTIONAL + additive —
+   * surfaced for the post-reconcile parity-verdict emission (Spec I §2–3,
+   * Tier-1 batch) so code-carriage stories are identifiable off the same
+   * projection. Absent on older projections; the net_new match ignores it.
+   */
+  tags?: string[] | null;
+  /** The story's committed endpoint element ids (Spec G markers). Optional. */
+  apiEndpointIds?: string[] | null;
 }
 
 /** One net_new item that owns a given operation key (for the audit note). */

@@ -181,3 +181,75 @@ test('STAMP: ansi query_text stamps dialect without constructs; no query_text = 
 test('FINDINGS: buildSqlDialectFindings over an empty IR set is empty (soft baseline)', () => {
   expect(buildSqlDialectFindings({ files: [], procInventory: null })).toEqual([]);
 });
+
+// ---------------------------------------------------------------------------
+// EDGE MINTING (Spec 2026-07-06-f §2 — Tier-1 batch 2026-07-10)
+// ---------------------------------------------------------------------------
+
+import {
+  mintProcCallEdgeCandidates,
+  procInventoryFromCandidates,
+} from '../services/procCallEdgeMinting';
+import type { DiscoveryCandidate } from '../types/candidate';
+
+function dataEffectCandidate(endpointName: string, queryText: string): DiscoveryCandidate {
+  return {
+    id: `c-${endpointName}`,
+    runId: 'run-1',
+    candidateType: 'endpoint_data_effects',
+    name: `${endpointName} → orders (write)`,
+    confidence: 0.9,
+    status: 'proposed',
+    sourceClusterIds: ['src/OrderRepo.java'],
+    data: {
+      endpointName,
+      dataEntityName: 'orders',
+      access_mode: 'write',
+      path_metadata_json: { query_text: queryText, query_kind: 'native' },
+    },
+    synthesizedAt: '2026-07-10T00:00:00Z',
+  } as unknown as DiscoveryCandidate;
+}
+
+function procCandidate(name: string): DiscoveryCandidate {
+  return {
+    id: `p-${name}`,
+    runId: 'run-1',
+    candidateType: 'physical_data_entities',
+    name,
+    confidence: 0.95,
+    status: 'proposed',
+    sourceClusterIds: [],
+    data: { procedureName: name, routineKind: 'procedure', language: 'TSQL' },
+    synthesizedAt: '2026-07-10T00:00:00Z',
+  } as unknown as DiscoveryCandidate;
+}
+
+test('MINT: combined run joins matched proc calls into execute edges; code-only mints none', () => {
+  const combined = [
+    dataEffectCandidate('POST /orders/{id}/update', 'EXEC dbo.sp_update_order @id = ?'),
+    dataEffectCandidate('GET /orders', 'SELECT * FROM orders WHERE id = ?'),
+    procCandidate('sp_update_order'),
+  ];
+  expect(procInventoryFromCandidates(combined)).toEqual(['sp_update_order']);
+
+  const minted = mintProcCallEdgeCandidates(combined, 'run-1');
+  expect(minted).toHaveLength(1);
+  const edge = minted[0];
+  expect(edge.candidateType).toBe('endpoint_data_effects');
+  expect(edge.data.endpointName).toBe('POST /orders/{id}/update');
+  expect(edge.data.dataEntityName).toBe('sp_update_order');
+  // 'execute' — deliberately outside write/read-write so Spec N's state
+  // scope never COUNT(*)s a procedure; reverse queries still see the edge.
+  expect(edge.data.access_mode).toBe('execute');
+  const meta = edge.data.path_metadata_json as Record<string, unknown>;
+  expect(meta.query_kind).toBe('proc_call');
+  expect(meta.proc_name).toBe('dbo.sp_update_order');
+
+  // Code-only run (no proc inventory): NOTHING minted — the
+  // proc_call_unmatched finding path stays the visible signal.
+  const codeOnly = [
+    dataEffectCandidate('POST /orders/{id}/update', 'EXEC dbo.sp_update_order @id = ?'),
+  ];
+  expect(mintProcCallEdgeCandidates(codeOnly, 'run-1')).toEqual([]);
+});

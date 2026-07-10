@@ -244,7 +244,7 @@ function storyItem(
 
 function gateReads(overrides: Partial<CodeGateReads> = {}): CodeGateReads {
   return {
-    fetchEndpointBaselineCoverage: jest.fn(async () => new Map<string, string>()),
+    fetchEndpointBaselineCoverageRows: jest.fn(async () => []),
     fetchCoverageSummaryForBaseline: jest.fn(async () => null),
     listDiffsForBaseline: jest.fn(async () => []),
     listDiffItems: jest.fn(async () => []),
@@ -277,7 +277,9 @@ test('GATE: scope detection sees API-parity code stories; internal + manual-gate
 
 test('GATE: code_baseline_missing blocks uncovered endpoints; flagged missing_baseline exempt', async () => {
   const reads = gateReads({
-    fetchEndpointBaselineCoverage: jest.fn(async () => new Map([['ep-covered', 'baseline-1']])),
+    fetchEndpointBaselineCoverageRows: jest.fn(async () => [
+      { endpoint_id: 'ep-covered', baseline_id: 'baseline-1', method: 'GET', path: '/covered' },
+    ]),
   });
   const result = await evaluateCodeReadiness({
     projectId: 'proj-1',
@@ -286,6 +288,12 @@ test('GATE: code_baseline_missing blocks uncovered endpoints; flagged missing_ba
       storyItem('w-ok', { apiEndpointIds: ['ep-covered'] }),
       storyItem('w-missing', { apiEndpointIds: ['ep-uncovered'] }),
       storyItem('w-flagged', { apiEndpointIds: ['ep-uncovered-2'], flagReason: 'missing_baseline' }),
+      // Tier-1 batch fix: a MULTI-flag story (comma-joined by the planner)
+      // keeps its missing_baseline exemption — membership, not equality.
+      storyItem('w-multi-flag', {
+        apiEndpointIds: ['ep-uncovered-3'],
+        flagReason: 'missing_baseline,dialect_affected',
+      }),
     ],
     deferredWorkItemIds: new Set(),
     pinnedBaselineId: 'baseline-1',
@@ -315,7 +323,7 @@ test('GATE: unpinned baseline + unreadable coverage fail closed', async () => {
     deferredWorkItemIds: new Set(),
     pinnedBaselineId: 'baseline-1',
     reads: gateReads({
-      fetchEndpointBaselineCoverage: jest.fn(async () => {
+      fetchEndpointBaselineCoverageRows: jest.fn(async () => {
         throw new Error('AMS unreachable');
       }),
     }),
@@ -358,6 +366,65 @@ test('GATE: code_coverage_floor_unmet from the persisted summary; null summary p
     reads: gateReads({ fetchCoverageSummaryForBaseline: jest.fn(async () => null) }),
   });
   expect(legacy.reasons.map((r) => r.code)).not.toContain('code_coverage_floor_unmet');
+});
+
+test('GATE: floor misses are SCOPED to in-scope story endpoints (Tier-1 batch)', async () => {
+  // The summary fails the floor on TWO operations, but only ONE belongs to a
+  // dispatched story's endpoint — the other must not block this run.
+  const summary = {
+    per_endpoint: [
+      {
+        operation_id: 'op-in',
+        method: 'GET',
+        path: '/owners/{id}',
+        dimensions: [{ name: 'happy_path', dimension_kind: 'happy', achieved: false, reason: null }],
+      },
+      {
+        operation_id: 'op-out',
+        method: 'DELETE',
+        path: '/legacy/unrelated',
+        dimensions: [{ name: 'happy_path', dimension_kind: 'happy', achieved: false, reason: null }],
+      },
+    ],
+  };
+  const reads = gateReads({
+    fetchEndpointBaselineCoverageRows: jest.fn(async () => [
+      { endpoint_id: 'ep-owners', baseline_id: 'baseline-1', method: 'GET', path: '/owners/{id}' },
+    ]),
+    fetchCoverageSummaryForBaseline: jest.fn(async () => summary),
+  });
+
+  // In-scope story covers ONLY the owners endpoint: the out-of-scope miss is
+  // filtered; the in-scope miss blocks with an "in-scope" message.
+  const scoped = await evaluateCodeReadiness({
+    projectId: 'proj-1',
+    currentArchitectureId: 'arch-1',
+    items: [storyItem('w-owners', { apiEndpointIds: ['ep-owners'] })],
+    deferredWorkItemIds: new Set(),
+    pinnedBaselineId: 'baseline-1',
+    reads,
+  });
+  const floorReasons = scoped.reasons.filter((r) => r.code === 'code_coverage_floor_unmet');
+  expect(floorReasons).toHaveLength(1);
+  expect(floorReasons[0].message).toContain('1 in-scope operation(s)');
+  expect(floorReasons[0].message).toContain('GET /owners/{id}');
+  expect(floorReasons[0].message).not.toContain('/legacy/unrelated');
+
+  // A different story whose endpoint has NO floor miss passes entirely.
+  const clean = await evaluateCodeReadiness({
+    projectId: 'proj-1',
+    currentArchitectureId: 'arch-1',
+    items: [storyItem('w-pets', { apiEndpointIds: ['ep-pets'] })],
+    deferredWorkItemIds: new Set(),
+    pinnedBaselineId: 'baseline-1',
+    reads: gateReads({
+      fetchEndpointBaselineCoverageRows: jest.fn(async () => [
+        { endpoint_id: 'ep-pets', baseline_id: 'baseline-1', method: 'POST', path: '/pets' },
+      ]),
+      fetchCoverageSummaryForBaseline: jest.fn(async () => summary),
+    }),
+  });
+  expect(clean.reasons.map((r) => r.code)).not.toContain('code_coverage_floor_unmet');
 });
 
 // ---------------------------------------------------------------------------

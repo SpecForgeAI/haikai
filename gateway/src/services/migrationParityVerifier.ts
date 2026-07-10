@@ -37,7 +37,10 @@ import {
   isDiffItemABreak,
   runHeadlessReconcile,
 } from './migrationReconciliationValidationClient';
-import type { TargetApiAuthSecret } from './migrationTargetCredentialsStore';
+import type {
+  TargetApiAuthSecret,
+  TargetDbSecret,
+} from './migrationTargetCredentialsStore';
 
 // ---------------------------------------------------------------------------
 // Verdict types
@@ -289,6 +292,8 @@ export async function runScopedParityVerify(
     api: TargetApiAuthSecret;
     /** `"METHOD /path/template"` keys; null = FULL-surface verify. */
     endpointScope: string[] | null;
+    /** OPTIONAL target-DB creds (Spec N, Tier-1 batch) — state snapshots. */
+    db?: TargetDbSecret | null;
   },
   deps: ParityVerifyDeps = {},
 ): Promise<ParityVerdict> {
@@ -304,6 +309,7 @@ export async function runScopedParityVerify(
       api: args.api,
       endpointScope: args.endpointScope,
       purpose: 'parity',
+      db: args.db ?? null,
     },
     validationDeps,
     deps.pollOptions ?? {},
@@ -350,6 +356,8 @@ export async function runBaselineDriftCheck(
     /** The CURRENT (legacy) system's base URL — not the migration target. */
     currentBaseUrl: string;
     api: TargetApiAuthSecret;
+    /** OPTIONAL current-DB creds — state deltas on the drift replay. */
+    db?: TargetDbSecret | null;
   },
   deps: ParityVerifyDeps = {},
 ): Promise<ParityVerdict> {
@@ -364,6 +372,7 @@ export async function runBaselineDriftCheck(
       api: args.api,
       endpointScope: null,
       purpose: 'drift_check',
+      db: args.db ?? null,
     },
     validationDeps,
     deps.pollOptions ?? {},

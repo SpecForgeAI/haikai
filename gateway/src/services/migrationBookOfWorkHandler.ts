@@ -61,6 +61,11 @@ import { logger } from './logger';
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
 import { EnsurePackFn, EnsurePackOutcome, ensureFreshDbMigrationPack } from './dbMigrationPackEnsure';
 import {
+  packObjectSetFromTranslations,
+  planTimeDialectAffectedSet,
+  resolveAffectedConsumers,
+} from './dbChangeConsumerResolver';
+import {
   FetchPackViewFn,
   PackView,
   buildDbStreamSkeleton,
@@ -766,6 +771,14 @@ export interface MigrationBookOfWorkHandlerDeps {
    * streams to the prerequisite skeleton (never freeform LLM).
    */
   fetchCodeModelView?: FetchCodeModelViewFn;
+  /**
+   * DB-change consumer resolver (Spec 2026-07-06-f §4, wired by the Tier-1
+   * batch 2026-07-10): computes the dialect-affected endpoint set at plan
+   * time so those endpoints split out of interface clusters as individual
+   * `dialect_affected` stories. Injected in tests; FAIL-SOFT — a resolver
+   * failure means no flags, never a blocked plan.
+   */
+  resolveAffectedConsumers?: typeof resolveAffectedConsumers;
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,6 +1041,61 @@ export async function generateMigrationBookOfWork(
       warnings.push(
         'Committed architecture model could not be read; the code delivery streams will ' +
           'carry prerequisite stories instead of model-driven work.'
+      );
+    }
+  }
+
+  // ----- Dialect-affected endpoints (Spec 2026-07-06-f §4; Tier-1 batch) -----
+  //
+  // Endpoints whose code carries T-SQL dialect SQL, or that touch a
+  // translate-disposition proc/view from the DB pack, must NOT hide inside an
+  // interface cluster — the planner splits them out as individual
+  // `dialect_affected` stories carrying the rewrite guidance. Plan-time set =
+  // `tsql_dialect_sql` + `translated_proc` reasons ONLY; `altered_table` is
+  // deliberately excluded here (an engine swap alters every table, which
+  // would flag every endpoint and dissolve clustering — table-scoped
+  // verification belongs to the revalidation route). FAIL-SOFT: a resolver
+  // failure leaves the set absent (no flags); the plan proceeds with a
+  // warning, never a block.
+  if (codeModelView) {
+    try {
+      const resolveAffected = deps.resolveAffectedConsumers ?? resolveAffectedConsumers;
+      // Translations come from the already-fetched pack view when a DB stream
+      // was selected; otherwise attempt an independent fail-soft read — the
+      // EXPANSION side reads the pack unconditionally, and the two sides must
+      // flag against identical facts or the drift check false-throws on a
+      // code-only plan whose project happens to carry a pack.
+      let dialectTranslations = dbPackView?.translations ?? [];
+      if (!dbPackView) {
+        try {
+          const packViewForDialect = await fetchPackView(projectId, currentArchitectureId);
+          dialectTranslations = packViewForDialect?.translations ?? [];
+        } catch {
+          // Pack absent/unreadable — proc dimension empty; tsql still applies.
+        }
+      }
+      const affected = await resolveAffected({
+        projectId,
+        currentArchitectureId,
+        packObjects: packObjectSetFromTranslations(dialectTranslations),
+      });
+      const planTimeAffected = planTimeDialectAffectedSet(affected);
+      if (planTimeAffected.size > 0) {
+        codeModelView.dialectAffectedEndpointIds = planTimeAffected;
+        logger.info('Dialect-affected endpoints flagged for individual stories', {
+          projectId,
+          count: planTimeAffected.size,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('Dialect-affected resolution failed; planning without dialect flags', {
+        projectId,
+        error: message,
+      });
+      warnings.push(
+        `Dialect-affected endpoint resolution failed (${message}); the plan carries no ` +
+          'dialect_affected stories this generation — regenerate after the model/pack reads recover.'
       );
     }
   }

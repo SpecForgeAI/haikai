@@ -946,10 +946,15 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
 
         # The loop reconstructs everything from the db (always-fresh, D10.2);
         # the command line carries only the correlation keys + db location.
+        # A parity-triggered re-invocation (Spec 2026-07-06-i, Tier-1 batch)
+        # additionally carries `trigger=parity` so the loop knows to read the
+        # (repo, 'parity') cell's verdict detail as its defect input — the
+        # breaks themselves are already DURABLE on that verdict row.
+        trigger_suffix = " trigger=parity" if payload.get("parity_report") else ""
         command = (
             f"/verify-task-group orchestrate_id={orchestrate_id} "
             f"task_group_id={task_group_id} repo={repo} "
-            f"verification_db={db_path}"
+            f"verification_db={db_path}{trigger_suffix}"
         )
         logger.info(f"Job {job_id}: launching verification-loop session: {command}")
         executor = _build_cli_executor(str(project_dir), anthropic_api_key)

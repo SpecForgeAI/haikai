@@ -63,4 +63,15 @@ When a cell's latest verdict is `fail`, classify it (D4) **before** you touch `o
 
 4. **Return.** You do NOT wait. The worker runs `/orchestrate` for the fix → the implementer re-implements in the repo → commits (D1 trailers) → CI fires at commit time (D9) → the inbound-gateway correlates the new SHA to this cell and re-invokes you with a fresh verdict. On that re-entry, reconcile against `jobs.db` and re-fold the gate (idempotent — D10.2). The loop is bounded by the `open_repair` cap in step 1.
 
+## Parity-verdict re-entry (`trigger=parity`)
+
+When this command is invoked with `trigger=parity` (the migration gateway posted a post-deploy PARITY verdict for this cell — "same request → same response" against the pinned current-state baseline), the defect input is NOT a CI failure: read the `(repo, "parity")` cell's latest verdict from `verdicts` — its `detail_json` carries `diff_id` plus the serialized `breaks` (per endpoint: method/path/scenario, the drift kind — status/body/header/byte/state — and the expected-vs-actual detail; `breaks_truncated: true` means only the first 50 ride the row, the full set is on the AMS diff `diff_id`).
+
+Treat a parity fail as **`real` by default** (the target implementation's response or DB state diverges from the captured oracle) and follow the standard `real` branch above, with two parity-specific substitutions:
+
+- `verifier` is `"parity"` in every recorder call and in `repair_of`.
+- The fix spec's **Verification** section names the SCOPED PARITY REPLAY as the success criterion — the gateway re-runs the scoped replay+diff for this story's endpoints after the fix deploys and posts a fresh verdict (that re-entry is your gate re-fold, exactly like a CI delivery). Quote the breaking scenarios verbatim from `detail_json.breaks` so the implementer reproduces the captured request and matches the captured response byte-for-byte (and, for mutating scenarios, the captured state delta).
+
+The loop is bounded twice: `open_repair`'s per-cell attempt cap (default 3) AND the gateway-side `PARITY_REPAIR_CAP` re-invocation cap (env, default 5) — whichever refuses first parks the group for a human, with the final diff attached on the `parity_failed` finding.
+
 <!-- NOTE: This is the async cross-repo verification GATE — per-`(group, repo)` cells folded by the D5 AND gate. It is NOT the single-spec box-check at workflows/implementation/verification/verify-tasks.md (which confirms tasks.md checkboxes for /implement-tasks). Different concerns; don't conflate. -->

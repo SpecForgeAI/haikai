@@ -103,6 +103,7 @@ import {
   scanInternalProcessXml,
   xmlEntryTargets,
 } from './extensionPacks/frameworkAdapters/springClassic/internalProcessXmlScanner';
+import { mintProcCallEdgeCandidates } from './procCallEdgeMinting';
 import { filterNonExternalInterfaces } from './packPostProcess';
 // Spec 0 (Unique, Aggregate Discovery Candidates): the universal, identity-keyed
 // cross-source MERGE replaces the parent-inclusive dedup-DROP. `mergeCandidates`
@@ -1463,9 +1464,35 @@ export async function runDiscoveryV3(
         );
       }
     }
+
   } else {
     console.log(
       `[DiscoveryV3:Stage3b] Tier ${tier} not admitted by behaviour-capture gate -- skipped.`,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Spec 2026-07-06-f §2 (Tier-1 batch): proc-call EDGE minting. Deterministic
+  // and TIER-INDEPENDENT (no LLM). A COMBINED run carries both the code-side
+  // proc references (data-effect query_text) and the sidecar's proc inventory
+  // — join them into `endpoint_data_effects` candidates (access_mode
+  // 'execute', query_kind 'proc_call'). Code-only runs mint nothing (the
+  // proc_call_unmatched finding stays the visible signal). Soft-fail: a
+  // minting error never aborts the run.
+  // ---------------------------------------------------------------------------
+  try {
+    const procEdges = mintProcCallEdgeCandidates(filteredPackCandidates, runId);
+    if (procEdges.length > 0) {
+      filteredPackCandidates.push(...procEdges);
+      console.log(
+        `[DiscoveryV3] proc-call edge minting: ${procEdges.length} edge(s) ` +
+          `joined against the run's proc inventory.`,
+      );
+    }
+  } catch (err) {
+    console.warn(
+      `[DiscoveryV3] proc-call edge minting failed; continuing without edges:`,
+      err instanceof Error ? err.message : String(err),
     );
   }
 
