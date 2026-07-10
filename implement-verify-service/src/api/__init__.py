@@ -252,6 +252,37 @@ JOBS_DB_PATH = jobs_db_path()
 job_queue = JobQueue(JOBS_DB_PATH)
 logger.info(f"Job Queue Database: {JOBS_DB_PATH}")
 
+# Predicate-run-judging BOOT header (docs/trace-logging.md §Predicates): one
+# HAIKAI_CONFIG line per boot so the run judge can score fail-closed
+# degradations against config. No-op unless HAIKAI_TRACE is on (the enabled
+# gate also skips the git-sha subprocess); must never affect boot.
+try:
+    from src.trace import tracer as _haikai_tracer
+
+    _boot_trace = _haikai_tracer("impl-verify")
+    if _boot_trace.enabled:
+        def _git_sha_short() -> str:
+            try:
+                import subprocess
+                out = subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                sha = (out.stdout or "").strip()
+                return sha if out.returncode == 0 and sha else "unknown"
+            except Exception:
+                return "unknown"
+
+        _boot_trace.config_header({
+            "git_sha": _git_sha_short(),
+            "workspace_dir_set": bool(os.getenv("API_WORKSPACE_DIR")),
+            "git_provider": os.getenv("GIT_PROVIDER", "github"),
+            "auto_push": os.getenv("GIT_AUTO_PUSH", "true").lower() == "true",
+            "parity_repair_cap": int(os.getenv("PARITY_REPAIR_CAP", "5") or "5"),
+        })
+except Exception:
+    pass  # tracing must never affect boot
+
 
 def load_env_config() -> dict:
     """Load configuration from environment variables.

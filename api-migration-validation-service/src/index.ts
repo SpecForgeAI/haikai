@@ -44,6 +44,35 @@ if (process.env.NODE_ENV !== 'test' && require.main === module) {
     console.log(`[API Migration Validation Service] Health: http://localhost:${PORT}/health`);
     console.log(`[API Migration Validation Service] Mount:  http://localhost:${PORT}/api-migration-validation`);
 
+    // Predicate-run-judging BOOT header (docs/trace-logging.md §Predicates):
+    // one HAIKAI_CONFIG line per boot so the run judge can score fail-closed
+    // degradations against config (e.g. DB creds are per-request only — a
+    // restart legitimately loses them). No-op unless HAIKAI_TRACE is on.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { createTracer } = require('./trace');
+      const bootTrace = createTracer('capture-svc');
+      if (bootTrace.enabled) {
+        let gitSha = 'unknown';
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { execSync } = require('child_process');
+          gitSha = execSync('git rev-parse --short HEAD', {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }).toString().trim() || 'unknown';
+        } catch { /* not a git checkout */ }
+        bootTrace.configHeader({
+          git_sha: gitSha,
+          db_creds_per_request_only: true,
+          volatility_probe_repeats: Number(process.env.VOLATILITY_PROBE_REPEATS ?? 3),
+          volatility_probe_budget_ms: Number(process.env.VOLATILITY_PROBE_BUDGET_MS ?? 10000),
+          replay_consecutive_failure_abort: Number(process.env.TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT ?? 10),
+          llm_scenario_round_limit: Number(process.env.LLM_SCENARIO_ROUND_LIMIT ?? 12),
+        });
+      }
+    } catch { /* tracing must never affect boot */ }
+
     // Fire-and-forget startup reconciliation -- don't block boot. Errors are
     // surfaced via stderr; the spec accepts that orphaned `running` rows
     // remain orphaned if AMS is unreachable at boot (operator restart of AMS

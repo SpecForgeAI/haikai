@@ -143,3 +143,55 @@ STAGE banners + config headers first; DETAIL lines fetched selectively).
 - **Q4:** production log files WILL be available (RUNT.* fires for real);
   NO SOAP endpoints in the pilot (SOAP predicates will `skip` — verify skip
   semantics render correctly).
+
+## As-built log (2026-07-11)
+
+- **Commit 1 (`a3490af`)** — trace default-path fix all 5 stacks
+  (`~/.haikai/trace.log`); audit result (all 5 emit; no mcp-server tracer);
+  root cause of the 3 IVS test failures was the `_git_one_spec` product-root
+  sync running for single-repo targets (fixed: polyrepo-gated, all repo
+  folders + `.git` excluded); tests/job_queue+git 310 pass.
+- **Commit 2 (`cb96c1d`)** — predicate primitives in all 5 trace modules:
+  `predicate()`/`predicateSkip()`/`stageStart()`/`stageEnd()`/`configHeader()`
+  emitting HAIKAI_PREDICATE / HAIKAI_STAGE_START / HAIKAI_SCORECARD /
+  HAIKAI_CONFIG on the SUMMARY tier; per-process tally keyed by id stage
+  prefix; caps failed[]=25, actual 160/400; tests in all 3 stacks
+  (jest 6, JUnit 8, pytest 16); docs/trace-logging.md §Predicates.
+- **Commit 3** — BOOT/SCAN/RUNT/COMMIT instrumentation. As-built predicate
+  IDs (catalogue source of truth for RUN_JUDGE_INSTRUCTIONS.md):
+  - **BOOT**: HAIKAI_CONFIG at startup in all 5 services (gateway: git_sha +
+    drift knobs + plan caps; discovery: log-parse caps + vuln enrich; AMVS
+    `capture-svc`: db_creds_per_request_only + volatility/replay/LLM knobs;
+    AMS: git_sha + changesets_applied via `TraceBootHeader`
+    CommandLineRunner; IVS: workspace/git_provider/parity_repair_cap).
+    Predicate **BOOT.AMS.01** changesets ≥ 209 (BOOT banners emitted by AMS
+    only; other services contribute headers, not predicates).
+  - **SCAN** (discovery; banners at run start / scorecard at COMPLETED — a
+    run that dies mid-scan leaves STAGE_START without SCORECARD): code runs
+    emit **SCAN.CAND.01** (endpoints minted, by-type counts),
+    **SCAN.VIEW.01** (view-html endpoints all carry
+    parity_scope=out_of_scope_view; skip when none), **SCAN.PROC.01**
+    (internal processes minted, subtype counts + verbatim-metadata count;
+    skip when none), **SCAN.DIAL.01** (query_text effects all carry
+    sql_dialect; dialect counts + constructs total; skip when no explicit
+    SQL), **SCAN.FID.01** (response_contract coverage), **SCAN.FIND.01**
+    (findings persisted without loss) — helper
+    `discovery-service/src/services/scanPredicates.ts`. Database runs emit
+    **SCAN.DB.01** (introspection surface) + **SCAN.DB.02** (persisted ==
+    minted).
+  - **RUNT** (inside `runDiscoveryRuntimeEvidence`, nested within the SCAN
+    window): **RUNT.01** ingestion healthy (skip=no_log_artifacts;
+    fail=all-files-failed or boundary error; actual carries
+    processed/attempted + time window + per-file format reasons),
+    **RUNT.02** endpoints observed (observations/matched/noUsage/unmatched),
+    **RUNT.03** observed ⊆ discovered OR unmatched_runtime_endpoint finding
+    per miss, **RUNT.05** evidence atoms + summary persisted, **RUNT.06**
+    skip (parser is HTTP-only this build). **RUNT.04 is judge-derived**
+    (RUNT.02 top hints vs the CAP coverage summary) — no code emission.
+  - **COMMIT** (gateway save-approved proxy — MCP server has no tracer):
+    **COMMIT.01** commit completed with accepted counts (skip on
+    commit=false dry-run; fail on MCP-unavailable/proxy error; actual embeds
+    a capped response-body excerpt with the counts). sql_dialect save-back
+    preservation is verified downstream by the PLAN dialect predicate
+    reading committed effects; the endpoint-baseline-coverage read predicate
+    moves to the CAP slice.
