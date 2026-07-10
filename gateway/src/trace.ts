@@ -36,10 +36,13 @@ const TIER: Tier = (() => {
   return v === 'summary' || v === 'detail' ? v : 'off';
 })();
 
+// Default matches docs/trace-logging.md (`~/.haikai/trace.log`). The old
+// hardcoded `C:\dev\data\haikai-trace.log` default was a bug — the doc was
+// never implemented (fixed 2026-07-10, predicate-run-judging batch).
 const FILE: string =
   process.env.HAIKAI_TRACE_FILE && process.env.HAIKAI_TRACE_FILE.trim() !== ''
     ? process.env.HAIKAI_TRACE_FILE
-    : join('C:\\dev\\data', 'haikai-trace.log');
+    : join(homedir(), '.haikai', 'trace.log');
 
 let dirEnsured = false;
 function ensureDir(): void {

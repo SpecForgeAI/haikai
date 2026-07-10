@@ -37,7 +37,10 @@ _RAW_FILE = os.environ.get("HAIKAI_TRACE_FILE")
 if _RAW_FILE and _RAW_FILE.strip():
     _FILE = Path(os.path.expanduser(_RAW_FILE))
 else:
-    _FILE = Path(r"C:\dev\data\haikai-trace.log")
+    # Default matches docs/trace-logging.md (~/.haikai/trace.log). The old
+    # hardcoded C:\dev\data\haikai-trace.log default was a bug — the doc was
+    # never implemented (fixed 2026-07-10, predicate-run-judging batch).
+    _FILE = Path.home() / ".haikai" / "trace.log"
 
 # Correlation ids, emitted in this EXACT stable order; only set keys appear.
 _CORR_ORDER = ("run", "session", "job", "bug", "project", "arch")

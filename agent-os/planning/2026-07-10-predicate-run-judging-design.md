@@ -118,16 +118,28 @@ baseline-red discipline. If the log exceeds the judge's context, the
 instructions include a pre-filter (grep HAIKAI_PREDICATE|HAIKAI_SCORECARD|
 STAGE banners + config headers first; DETAIL lines fetched selectively).
 
-## Open questions for the user (blocking-ish)
+## User answers (2026-07-10) — Q1–Q4 RESOLVED, BUILD IS GO
 
-- Q1: confirm the "single combined log" = the HAIKAI_TRACE file per
-  docs/trace-logging.md, and that ALL FIVE services (incl. IVS Python + AMS
-  Java) write to ONE file on the work machine today. If any don't, name them
-  — their predicate emission gets wired to the same file.
-- Q2: include the Windows test-fixture fix (read-only .git objects vs
-  shutil.copytree in test_orchestration_batch_single_branch /
-  test_orchestration_multispec_b2) in this batch?
-- Q3: how will Opus 4.8 be invoked on the work machine (Claude Code session
-  pointed at the files vs upload)? Affects instructions phrasing only.
-- Q4 (non-blocking, informs skip-semantics testing): will the pilot run have
-  production logs (RUNT) and/or SOAP endpoints?
+- **Q1:** YES — the combined log is the docs/trace-logging.md mechanism;
+  EXTEND it. **Known bug — FIXED in this batch:** the doc says
+  `~/.haikai/trace.log`, but all five tracer modules hardcoded a
+  `C:\dev\data\haikai-trace.log` default instead (the documented default was
+  never implemented; `homedir` sat imported-but-unused in the TS copies).
+  Fixed to `~/.haikai/trace.log` in all five; parent dir already auto-created
+  on first write. AUDIT RESULT: all five services emit today
+  (gateway 3 files, AMVS 8, discovery 1 — thin, SCAN instrumentation will add
+  more, AMS 2, IVS 8). The trace.ts doc header claims an mcp-server copy that
+  does NOT exist — noted, out of scope.
+- **Q2:** YES — include the Windows test-fixture fix (read-only .git objects
+  vs shutil.copytree in test_orchestration_batch_single_branch /
+  test_orchestration_multispec_b2 fixtures).
+- **Q3:** the user will COPY/PASTE files into a Kiro workspace running Opus
+  4.8 and say: "please read instructions <name>.MD and log file <name>.log
+  and summarise the results and issues". So: instructions must be ONE
+  self-contained file with a sensible name — `RUN_JUDGE_INSTRUCTIONS.md`
+  (embed the predicate catalogue INSIDE it rather than a second file, so the
+  paste is two files total), written to `docs/run-judge/`. The judge prompt
+  must work with exactly those two files and no repo access.
+- **Q4:** production log files WILL be available (RUNT.* fires for real);
+  NO SOAP endpoints in the pilot (SOAP predicates will `skip` — verify skip
+  semantics render correctly).

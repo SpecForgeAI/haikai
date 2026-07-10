@@ -93,7 +93,7 @@ public final class HaikaiTrace {
         tier = parseTier(traceEnv);
         file = (fileEnv != null && !fileEnv.trim().isEmpty())
             ? Paths.get(fileEnv.trim())
-            : Paths.get("C:\\dev\\data", "haikai-trace.log");
+            : Paths.get(System.getProperty("user.home"), ".haikai", "trace.log");
         dirEnsured = false;
     }
 
@@ -123,7 +123,10 @@ public final class HaikaiTrace {
         if (v != null && !v.trim().isEmpty()) {
             return Paths.get(v.trim());
         }
-        return Paths.get("C:\\dev\\data", "haikai-trace.log");
+        // Default matches docs/trace-logging.md (~/.haikai/trace.log). The old
+        // hardcoded C:\dev\data\haikai-trace.log default was a bug — the doc
+        // was never implemented (fixed 2026-07-10, predicate-run-judging batch).
+        return Paths.get(System.getProperty("user.home"), ".haikai", "trace.log");
     }
 
     /** Build a tracer bound to a service name (see the registry in the doc). */
