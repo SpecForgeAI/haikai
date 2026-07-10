@@ -70,6 +70,11 @@ import {
   DiskWriteError,
   ProjectFolderResolutionError,
 } from '../services/discoveryRunLogService';
+import { createTracer } from '../trace';
+
+// COMMIT-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 
 export const discoveryRouter = Router();
 
@@ -1919,6 +1924,13 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
     (req.body as Record<string, unknown> | undefined)?.commit;
   const commit = !(rawCommit === false || rawCommit === 'false');
 
+  // COMMIT stage banners + predicate (predicate run-judging batch). The MCP
+  // server has no tracer, so the commit outcome is scored here at the proxy.
+  // Save-back preservation of sql_dialect stamps is verified downstream by
+  // the PLAN dialect predicate reading the committed effects.
+  const commitCorr = { run: runId, project: projectId, arch: architectureId };
+  trace.stageStart('COMMIT', commitCorr);
+
   try {
     const { mcpBaseUrl } = getConfig();
 
@@ -1965,6 +1977,26 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
         success: response.ok,
       });
 
+      if (!commit) {
+        trace.predicateSkip(
+          'COMMIT.01', 'approved candidates committed to the model',
+          'dry-run preview (commit=false) — nothing persisted', commitCorr,
+        );
+      } else {
+        let bodyExcerpt = '';
+        try {
+          bodyExcerpt = JSON.stringify(responseBody).slice(0, 280);
+        } catch { /* unserializable body */ }
+        trace.predicate(
+          'COMMIT.01', 'approved candidates committed to the model',
+          response.ok,
+          'save_approved_candidates returns 2xx with accepted counts',
+          `status=${response.status} body=${bodyExcerpt}`,
+          commitCorr,
+        );
+      }
+      trace.stageEnd('COMMIT', commitCorr);
+
       return res.status(response.status).json(responseBody);
     } catch (fetchError) {
       const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
@@ -1976,6 +2008,14 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
         runId,
         error: errorMessage,
       });
+
+      trace.predicate(
+        'COMMIT.01', 'approved candidates committed to the model', false,
+        'save_approved_candidates returns 2xx with accepted counts',
+        `MCP server unavailable: ${errorMessage.slice(0, 200)}`,
+        commitCorr,
+      );
+      trace.stageEnd('COMMIT', commitCorr);
 
       return res.status(503).json({
         error: {
@@ -1992,6 +2032,13 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
       runId,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
+    trace.predicate(
+      'COMMIT.01', 'approved candidates committed to the model', false,
+      'save_approved_candidates returns 2xx with accepted counts',
+      `gateway proxy error: ${error instanceof Error ? error.message.slice(0, 200) : 'unknown'}`,
+      commitCorr,
+    );
+    trace.stageEnd('COMMIT', commitCorr);
     return res.status(500).json({
       error: {
         code: 500,

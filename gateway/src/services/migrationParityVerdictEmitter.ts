@@ -27,6 +27,7 @@
  */
 
 import { logger } from './logger';
+import { createTracer } from '../trace';
 import type { MigrationExecutionRun } from './migrationExecutionRunClient';
 import type { ReconciliationDiffItem } from './migrationReconciliationValidationClient';
 import { isDiffItemABreak } from './migrationReconciliationValidationClient';
@@ -39,6 +40,10 @@ import {
 } from './migrationParityVerifier';
 import { defaultConsumerResolverReads } from './dbChangeConsumerResolver';
 import { request as defaultImplRequest } from './implementationLlmProxyClient';
+
+// REC-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 
 // ---------------------------------------------------------------------------
 // Types + deps
@@ -252,5 +257,16 @@ export async function emitParityVerdictsAfterReconcile(args: {
     runId,
     ...emission,
   });
+  // REC verdict-emission summary (predicate run-judging batch). Unverified
+  // stories are honest (the completion gate keeps them blocked as
+  // code_parity_unverified); only failed POSTs fail the predicate.
+  trace.predicate(
+    'REC.EMIT.01', 'parity verdicts emitted for every verifiable code story',
+    emission.postFailures === 0,
+    'post_failures == 0 (unverified stories stay blocked, never silently passed)',
+    `evaluated=${emission.storiesEvaluated} posted=${emission.verdictsPosted} ` +
+      `unverified=${emission.storiesUnverified} post_failures=${emission.postFailures}`,
+    { project: projectId, run: runId },
+  );
   return emission;
 }

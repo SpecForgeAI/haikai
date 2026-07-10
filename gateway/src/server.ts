@@ -322,6 +322,35 @@ if (require.main === module) {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    // Predicate-run-judging BOOT header (docs/trace-logging.md §Predicates):
+    // one HAIKAI_CONFIG line per boot so the run judge can score fail-closed
+    // degradations against config. No-op unless HAIKAI_TRACE is on; must
+    // never affect boot.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { createTracer } = require('./trace');
+      const bootTrace = createTracer('gateway');
+      if (bootTrace.enabled) {
+        let gitSha = 'unknown';
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { execSync } = require('child_process');
+          gitSha = execSync('git rev-parse --short HEAD', {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }).toString().trim() || 'unknown';
+        } catch { /* not a git checkout */ }
+        bootTrace.configHeader({
+          git_sha: gitSha,
+          drift_check_enabled: process.env.DRIFT_CHECK_ENABLED !== 'false',
+          drift_check_interval_ms: Number(process.env.DRIFT_CHECK_INTERVAL_MS ?? 21600000),
+          drift_check_max_age_days: Number(process.env.DRIFT_CHECK_MAX_AGE_DAYS ?? 14),
+          plan_llm_concurrency: Number(process.env.MIGRATION_PLAN_LLM_CONCURRENCY ?? 4),
+          db_cluster_max_tables: Number(process.env.MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES ?? 25),
+          api_cluster_max_endpoints: Number(process.env.MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS ?? 15),
+        });
+      }
+    } catch { /* tracing must never affect boot */ }
     console.log(`[Gateway] Started on port ${config.port}`);
     console.log(`[Gateway] Health check: http://localhost:${config.port}/health`);
     console.log(`[Gateway] Chat endpoint: http://localhost:${config.port}/api/chat`);

@@ -118,16 +118,136 @@ baseline-red discipline. If the log exceeds the judge's context, the
 instructions include a pre-filter (grep HAIKAI_PREDICATE|HAIKAI_SCORECARD|
 STAGE banners + config headers first; DETAIL lines fetched selectively).
 
-## Open questions for the user (blocking-ish)
+## User answers (2026-07-10) — Q1–Q4 RESOLVED, BUILD IS GO
 
-- Q1: confirm the "single combined log" = the HAIKAI_TRACE file per
-  docs/trace-logging.md, and that ALL FIVE services (incl. IVS Python + AMS
-  Java) write to ONE file on the work machine today. If any don't, name them
-  — their predicate emission gets wired to the same file.
-- Q2: include the Windows test-fixture fix (read-only .git objects vs
-  shutil.copytree in test_orchestration_batch_single_branch /
-  test_orchestration_multispec_b2) in this batch?
-- Q3: how will Opus 4.8 be invoked on the work machine (Claude Code session
-  pointed at the files vs upload)? Affects instructions phrasing only.
-- Q4 (non-blocking, informs skip-semantics testing): will the pilot run have
-  production logs (RUNT) and/or SOAP endpoints?
+- **Q1:** YES — the combined log is the docs/trace-logging.md mechanism;
+  EXTEND it. **Known bug — FIXED in this batch:** the doc says
+  `~/.haikai/trace.log`, but all five tracer modules hardcoded a
+  `C:\dev\data\haikai-trace.log` default instead (the documented default was
+  never implemented; `homedir` sat imported-but-unused in the TS copies).
+  Fixed to `~/.haikai/trace.log` in all five; parent dir already auto-created
+  on first write. AUDIT RESULT: all five services emit today
+  (gateway 3 files, AMVS 8, discovery 1 — thin, SCAN instrumentation will add
+  more, AMS 2, IVS 8). The trace.ts doc header claims an mcp-server copy that
+  does NOT exist — noted, out of scope.
+- **Q2:** YES — include the Windows test-fixture fix (read-only .git objects
+  vs shutil.copytree in test_orchestration_batch_single_branch /
+  test_orchestration_multispec_b2 fixtures).
+- **Q3:** the user will COPY/PASTE files into a Kiro workspace running Opus
+  4.8 and say: "please read instructions <name>.MD and log file <name>.log
+  and summarise the results and issues". So: instructions must be ONE
+  self-contained file with a sensible name — `RUN_JUDGE_INSTRUCTIONS.md`
+  (embed the predicate catalogue INSIDE it rather than a second file, so the
+  paste is two files total), written to `docs/run-judge/`. The judge prompt
+  must work with exactly those two files and no repo access.
+- **Q4:** production log files WILL be available (RUNT.* fires for real);
+  NO SOAP endpoints in the pilot (SOAP predicates will `skip` — verify skip
+  semantics render correctly).
+
+## As-built log (2026-07-11)
+
+- **Commit 1 (`a3490af`)** — trace default-path fix all 5 stacks
+  (`~/.haikai/trace.log`); audit result (all 5 emit; no mcp-server tracer);
+  root cause of the 3 IVS test failures was the `_git_one_spec` product-root
+  sync running for single-repo targets (fixed: polyrepo-gated, all repo
+  folders + `.git` excluded); tests/job_queue+git 310 pass.
+- **Commit 2 (`cb96c1d`)** — predicate primitives in all 5 trace modules:
+  `predicate()`/`predicateSkip()`/`stageStart()`/`stageEnd()`/`configHeader()`
+  emitting HAIKAI_PREDICATE / HAIKAI_STAGE_START / HAIKAI_SCORECARD /
+  HAIKAI_CONFIG on the SUMMARY tier; per-process tally keyed by id stage
+  prefix; caps failed[]=25, actual 160/400; tests in all 3 stacks
+  (jest 6, JUnit 8, pytest 16); docs/trace-logging.md §Predicates.
+- **Commit 3** — BOOT/SCAN/RUNT/COMMIT instrumentation. As-built predicate
+  IDs (catalogue source of truth for RUN_JUDGE_INSTRUCTIONS.md):
+  - **BOOT**: HAIKAI_CONFIG at startup in all 5 services (gateway: git_sha +
+    drift knobs + plan caps; discovery: log-parse caps + vuln enrich; AMVS
+    `capture-svc`: db_creds_per_request_only + volatility/replay/LLM knobs;
+    AMS: git_sha + changesets_applied via `TraceBootHeader`
+    CommandLineRunner; IVS: workspace/git_provider/parity_repair_cap).
+    Predicate **BOOT.AMS.01** changesets ≥ 209 (BOOT banners emitted by AMS
+    only; other services contribute headers, not predicates).
+  - **SCAN** (discovery; banners at run start / scorecard at COMPLETED — a
+    run that dies mid-scan leaves STAGE_START without SCORECARD): code runs
+    emit **SCAN.CAND.01** (endpoints minted, by-type counts),
+    **SCAN.VIEW.01** (view-html endpoints all carry
+    parity_scope=out_of_scope_view; skip when none), **SCAN.PROC.01**
+    (internal processes minted, subtype counts + verbatim-metadata count;
+    skip when none), **SCAN.DIAL.01** (query_text effects all carry
+    sql_dialect; dialect counts + constructs total; skip when no explicit
+    SQL), **SCAN.FID.01** (response_contract coverage), **SCAN.FIND.01**
+    (findings persisted without loss) — helper
+    `discovery-service/src/services/scanPredicates.ts`. Database runs emit
+    **SCAN.DB.01** (introspection surface) + **SCAN.DB.02** (persisted ==
+    minted).
+  - **RUNT** (inside `runDiscoveryRuntimeEvidence`, nested within the SCAN
+    window): **RUNT.01** ingestion healthy (skip=no_log_artifacts;
+    fail=all-files-failed or boundary error; actual carries
+    processed/attempted + time window + per-file format reasons),
+    **RUNT.02** endpoints observed (observations/matched/noUsage/unmatched),
+    **RUNT.03** observed ⊆ discovered OR unmatched_runtime_endpoint finding
+    per miss, **RUNT.05** evidence atoms + summary persisted, **RUNT.06**
+    skip (parser is HTTP-only this build). **RUNT.04 is judge-derived**
+    (RUNT.02 top hints vs the CAP coverage summary) — no code emission.
+  - **COMMIT** (gateway save-approved proxy — MCP server has no tracer):
+    **COMMIT.01** commit completed with accepted counts (skip on
+    commit=false dry-run; fail on MCP-unavailable/proxy error; actual embeds
+    a capped response-body excerpt with the counts). sql_dialect save-back
+    preservation is verified downstream by the PLAN dialect predicate
+    reading committed effects; the endpoint-baseline-coverage read predicate
+    moves to the CAP slice.
+- **Commit 4** — CAP/CONV/SPEC instrumentation (first half of the
+  CAP/CONV/PLAN/SPEC group; the remainder rides the GATE/EXEC/REC/AUX slice):
+  - **CAP** (AMVS captureSessionOrchestrator; STAGE_START at session start,
+    scorecard at completion — a session that dies mid-capture leaves no
+    scorecard): **CAP.OPS.01** (no infra error + ≥1 scenario persisted;
+    tallies + infra error in actual), **CAP.COV.01** (coverage summary
+    assembled + persisted on the completion PATCH), **CAP.STATE.01** (mode
+    predicate, passes in both modes: db bundle ⇒ snapshots enabled; absent ⇒
+    deltas null fail-closed — judge cross-refs REC state classifications).
+  - **CONV.01** at the gateway writer boundary
+    (`targetStateCapturedDecisionsWriter.postCapturedDecision`): one line per
+    persisted decision (decision code + scope + target architecture id);
+    fail on non-2xx.
+  - **SPEC** (migrationCodeSpecCarriage completion): **SPEC.CARRIAGE.01**
+    (deterministic zero-LLM carriage engaged + fact counts — the design's
+    PLAN.EXP.01 intent folds in here, since epic EXPANSION legitimately uses
+    LLM batches + a judge), **SPEC.DIAL.01** (T-SQL guidance block present
+    iff tsql-classified edges exist; skip when none — this is also the
+    downstream verifier for COMMIT save-back dialect preservation),
+    **SPEC.OMIT.01** (omission manifest agrees with the trimmed-warning;
+    chars vs cap in actual).
+  - **DEFERRED to the next slice:** CAP.BASE.01 (AMS baseline activate +
+    hash stamp), CONV.02/03 (pending-question raise sites), CONV.04 (OSV
+    bridge reachable-or-degraded), CONV.05 (plan gen-time decision read ==
+    persisted set), CONV.07 (api-lock known-open, fails by design), PLAN
+    banners + counts (migrationBookOfWork handlers), SPEC/PLAN stage
+    banners (shape-spec handler).
+- **Commit 5** — GATE/EXEC/REC instrumentation:
+  - **GATE.MIG.01 / GATE.MIG.02** (gateway migrate + migrate-selected
+    triggers, GATE banners around each evaluation): the hard-block gate
+    evaluated with an honest verdict — `started` AND `blocked` both PASS
+    (the judge decides from run context whether a block was expected); only
+    an evaluation error fails. Actual embeds the verdict + reasons/run-id
+    excerpt.
+  - **EXEC.CB.01** (gateway build-results door): callback correlated +
+    processed; 2xx passes, contract-rejects fail with status, processing
+    throw fails. Actual carries outcome + target_base_url-recorded marker.
+  - **REC.EMIT.01** (migrationParityVerdictEmitter completion): verdicts
+    emitted for every verifiable code story — post_failures==0 passes;
+    evaluated/posted/unverified counts in actual (unverified stays blocked
+    by the completion gate, honest by design).
+  - **REC.PAR.01** (IVS parity-verdict inbound, all outcome paths): verdict
+    recorded + repair disposition honest — pass on pass/exhausted(finding
+    recorded)/queued; fail on record-rejected or enqueue-failed. Attempt vs
+    PARITY_REPAIR_CAP in actual. IVS parity inbound tests 8/8 green.
+  - **REC.STAT.01** (gateway parity-status route): posture computed +
+    logged (posture excerpt in actual); fail when computation throws.
+  - **AUX**: no code emission — drift checks are already judge-readable via
+    the `[diag-gateway] baseline_drift` logs + the purpose:drift_check diff;
+    waiver visibility rides REC.EMIT unwaived counts + IVS exhausted
+    findings. Catalogue documents this.
+  - **Still open for a later slice (also listed under Commit 4):**
+    CAP.BASE.01, CONV.02/03/04/05/07, PLAN banners/counts, SPEC/PLAN stage
+    banners. GATE 4b/4c per-gate detail (DB gate, code gate incl.
+    story-scoped floor) currently surfaces through the blocked-reasons
+    excerpt on GATE.MIG.01/02 rather than per-gate predicates.

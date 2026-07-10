@@ -80,15 +80,19 @@ Each service constructs a tracer bound to its service name, then calls:
   Convenience wrappers: `step(msg, corr?)` `ok(msg, corr?)` `warn(msg, corr?)` `fail(msg, corr?)`.
 - `detail(event, data?, corr?)` — write a `[detail]` line (only when tier == detail).
 - `runHeader(runId, project, arch)` — write the `=== HAIKAI TRACE … ===` delimiter.
+- `predicate(id, title, ok, expected, actual, corr?)` /
+  `predicateSkip(id, title, why, corr?)` — predicate self-scoring layer, below.
+- `stageStart(stage, corr?)` / `stageEnd(stage, corr?)` — stage banners + scorecard.
+- `configHeader(config, corr?)` — startup config header.
 
 `corr` is a small bag: `{ run, session, job, bug, project, arch }` (all optional).
 The tracer formats `corr` into the line and merges it into the detail JSON.
 All calls are cheap no-ops when `HAIKAI_TRACE=off`.
 
 Stack locations:
-- **Node/TS** (`gateway`, `discovery-service`, `api-migration-validation-service`,
-  `mcp-server`): a self-contained `src/trace.ts` per service (no external deps;
-  identical content), `createTracer('service-name')`.
+- **Node/TS** (`gateway`, `discovery-service`, `api-migration-validation-service`):
+  a self-contained `src/trace.ts` per service (no external deps; byte-identical
+  content), `createTracer('service-name')`. (`mcp-server` has no tracer today.)
 - **Java** (`architecture-model-service`): `com.example.architecturemodel.trace.HaikaiTrace`
   (static, no Spring dependency so it can be called from anywhere).
 - **Python** (`implement-verify-service`): `src/trace.py`, `tracer("impl-verify")`.
@@ -96,7 +100,46 @@ Stack locations:
 ## Service-name registry (keep stable)
 
 `gateway` · `discovery` · `capture-svc` (api-migration-validation-service) ·
-`ams` (architecture-model-service) · `mcp` · `impl-verify` (implement-verify-service).
+`ams` (architecture-model-service) · `mcp` (reserved; no tracer yet) ·
+`impl-verify` (implement-verify-service).
+
+## Predicate self-scoring layer
+
+Every execution area of the migration workflow also emits **boolean predicate
+results** so a whole run can be judged from the log alone (by the run-judge LLM
+via `docs/run-judge/RUN_JUDGE_INSTRUCTIONS.md`, or a quick `grep`). Design +
+predicate inventory: `agent-os/planning/2026-07-10-predicate-run-judging-design.md`.
+
+Predicate lines ride the **`[SUMMARY]` tier** (emitted when tier ≥ summary; full
+no-op when off) and use four greppable body markers, each `{glyph} {MARKER} {json}`:
+
+```
+✓ HAIKAI_PREDICATE {"id":"SCAN.EDGE.03","title":"...","verdict":"pass","expected":"...","actual":"...","corr":{"run":"mig-7f3"}}
+▶ HAIKAI_STAGE_START {"stage":"SCAN"}
+✗ HAIKAI_SCORECARD {"stage":"SCAN","service":"discovery","pass":14,"fail":1,"skip":2,"failed":[{"id":"...","actual":"..."}],"cumulative":{"pass":30,"fail":1,"skip":4}}
+▶ HAIKAI_CONFIG {"service":"discovery","git_sha":"abc1234","db_creds_present":false}
+```
+
+Rules (locked; the run judge depends on them):
+
+- **Ternary verdicts, never silent**: `pass` (glyph ✓) / `fail` (✗) / `skip` (⚠ —
+  the check was not exercised this run; `actual` says why). The JSON key order
+  above is the cross-stack contract — all three stacks emit byte-identical
+  bodies for the same inputs.
+- **Stage keying**: a predicate belongs to the stage named by its id prefix
+  (`"SCAN.EDGE.03"` → `SCAN`). The per-process scorecard tally is keyed that way,
+  so there is no ambient current-stage state to mis-attribute under concurrency.
+- **`stageEnd` = the scorecard**: it emits the stage's tally plus the process-
+  cumulative totals and doubles as the stage-END banner. A `HAIKAI_STAGE_START`
+  with no matching `HAIKAI_SCORECARD` means the stage died mid-flight. Scorecards
+  are per service process — when several processes contribute to one stage, sum
+  their scorecards (predicate lines are the ground truth; scorecards are tallies).
+- **`configHeader` at service startup**: git sha, trace tier, caps, and
+  present/absent booleans (e.g. `db_creds_present`) — so the judge can score
+  fail-closed degradations as passes when config explains them.
+- **No secrets, ever**: counts, ids, classifications, capped snippets only
+  (`expected`/`actual` capped at 400 chars; scorecard `failed[].actual` at 160;
+  `failed[]` at 25 entries).
 
 ## Event taxonomy
 

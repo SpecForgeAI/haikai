@@ -80,6 +80,11 @@ import {
 import { extractWithRecipeFromContent } from './recipeAwareExtractor';
 import { buildLogEvidenceAtoms } from './runtimeEvidenceAtomBuilder';
 import type { EvidenceAtom } from '../../types/evidenceAtom';
+import { createTracer } from '../../trace';
+
+// RUNT-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('discovery');
 
 
 /**
@@ -677,8 +682,15 @@ export async function runDiscoveryRuntimeEvidence(
   } = args;
 
   // Step 1: read configured log artifacts. Empty -> short-circuit.
+  const corr = { run: runId, project: projectId, arch: args.architectureId ?? undefined };
+  trace.stageStart('RUNT', corr);
   const logFiles = readLogFileArtifacts(configSnapshot);
   if (logFiles.length === 0) {
+    trace.predicateSkip(
+      'RUNT.01', 'production log ingestion healthy',
+      'no log artifacts configured on this run (RUNT.02-06 do not fire)', corr,
+    );
+    trace.stageEnd('RUNT', corr);
     const skipped: RuntimeEvidenceRunSummary = {
       skipped: true,
       reason: 'no_log_artifacts',
@@ -850,6 +862,13 @@ export async function runDiscoveryRuntimeEvidence(
 
     // All files failed -> short-circuit with `log_processing_failed`.
     if (logFilesProcessed === 0 && attemptedFiles > 0) {
+      trace.predicate(
+        'RUNT.01', 'production log ingestion healthy', false,
+        'all supplied log files parsed',
+        `processed=0/${attemptedFiles}; ${warnings.slice(0, 2).join(' | ').slice(0, 300)}`,
+        corr,
+      );
+      trace.stageEnd('RUNT', corr);
       const failedSummary: RuntimeEvidenceRunSummary = {
         skipped: true,
         reason: 'log_processing_failed',
@@ -910,6 +929,8 @@ export async function runDiscoveryRuntimeEvidence(
     // this MUST run even when zero candidates matched -- evidence alone clears
     // `insufficient_runtime_evidence`. Best-effort: a failure here is warned and
     // swallowed so the runtime stage never fails the discovery run.
+    let evidenceAtomsWritten = 0;
+    let evidenceWriteOk = true;
     try {
       const logEvidenceAtoms: EvidenceAtom[] = [];
       for (const artifact of logFiles) {
@@ -933,12 +954,14 @@ export async function runDiscoveryRuntimeEvidence(
           );
         }
       }
+      evidenceAtomsWritten = logEvidenceAtoms.length;
       // eslint-disable-next-line no-console
       console.log(
         `[runtimeEvidence] wrote ${logEvidenceAtoms.length} source='log' evidence ` +
           `atom(s) from ${richObservations.length} rich observation(s) for run ${runId}.`,
       );
     } catch (err) {
+      evidenceWriteOk = false;
       console.warn(
         `[runtimeEvidence] Failed to write source='log' evidence for run ${runId}: ` +
           `${(err as Error).message}`,
@@ -1021,6 +1044,7 @@ export async function runDiscoveryRuntimeEvidence(
     // abort the discovery run (the orchestrator's top-level safety net
     // already enforces that).
     // =====================================================================
+    let runtFindingsOk = true;
     try {
       const findingsRunContext: FindingEmitRunContext = {
         runId,
@@ -1082,6 +1106,7 @@ export async function runDiscoveryRuntimeEvidence(
         await findingEmitter.emitFindings(findingsRunContext, findingInputs);
       }
     } catch (err) {
+      runtFindingsOk = false;
       console.warn(
         `[runtimeEvidence:Findings] Emission boundary swallowed error:`,
         err instanceof Error ? err.message : String(err),
@@ -1111,12 +1136,62 @@ export async function runDiscoveryRuntimeEvidence(
       );
     }
 
+    // RUNT-stage predicates (predicate run-judging batch) — emission only.
+    // RUNT.04 (top-traffic endpoints have baseline coverage) is judge-derived
+    // from RUNT.02 vs the CAP coverage summary — no code emission here.
+    const logWindow =
+      'logWindow' in runSummary && runSummary.logWindow
+        ? `${runSummary.logWindow.firstSeen ?? '?'}..${runSummary.logWindow.lastSeen ?? '?'}`
+        : '?..?';
+    trace.predicate(
+      'RUNT.01', 'production log ingestion healthy',
+      logFilesProcessed === attemptedFiles,
+      'all supplied log files parsed',
+      `processed=${logFilesProcessed}/${attemptedFiles} window=${logWindow} ` +
+        `formats=[${perFileReasons.join('; ').slice(0, 220)}]`,
+      corr,
+    );
+    trace.predicate(
+      'RUNT.02', 'runtime endpoints observed in logs',
+      observations.length > 0,
+      'observations > 0',
+      `observations=${observations.length} matched=${matched.length} ` +
+        `noUsage=${noUsage.length} unmatchedHints=${unmatchedHints.length}`,
+      corr,
+    );
+    trace.predicate(
+      'RUNT.03', 'observed surface within discovered surface (or finding per miss)',
+      unmatchedHints.length === 0 || runtFindingsOk,
+      'unmatched=0 OR an unmatched_runtime_endpoint finding emitted per miss',
+      `unmatched=${unmatchedHints.length} findingsEmission=${runtFindingsOk ? 'ok' : 'FAILED'}`,
+      corr,
+    );
+    trace.predicate(
+      'RUNT.05', 'runtime evidence + summary persisted',
+      evidenceWriteOk,
+      "source='log' evidence atoms written; run summary persist attempted",
+      `evidenceAtoms=${evidenceAtomsWritten} richObservations=${richObservations.length}`,
+      corr,
+    );
+    trace.predicateSkip(
+      'RUNT.06', 'observed job executions matched to internal processes',
+      'parser extracts HTTP request observations only in this build', corr,
+    );
+    trace.stageEnd('RUNT', corr);
+
     return { persistenceSummary: runSummary, llmContext };
   } catch (err) {
     // Top-level safety net: ANY uncaught error here MUST NOT fail the
     // discovery run (acceptance criterion 22). Persist the failure-state
     // sub-stage and return the empty LLM context.
     const message = err instanceof Error ? err.message : String(err);
+    trace.predicate(
+      'RUNT.01', 'production log ingestion healthy', false,
+      'log processing completes without orchestrator-boundary error',
+      `orchestrator boundary error: ${message.slice(0, 300)}`,
+      corr,
+    );
+    trace.stageEnd('RUNT', corr);
     console.warn(
       `[runtimeEvidence] Run ${runId}: log processing failed at the orchestrator boundary: ${message}`,
     );

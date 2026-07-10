@@ -46,6 +46,7 @@ import { parsePomMetadataFromFile } from './dependencyResolvers/maven/mavenPomMe
 import { runMavenFindingScanner, type MavenPomScannerInput } from './findings/packFindingScanners';
 import { resolveLibrarySource } from './librarySourceResolver';
 import { createTracer } from '../trace';
+import { emitCodeScanPredicates } from './scanPredicates';
 
 // Haikai workflow trace (OFF unless HAIKAI_TRACE set). SUMMARY-only here:
 // run started / scan COMPLETED, keyed on project+arch+run. See docs/trace-logging.md.
@@ -1192,6 +1193,10 @@ export async function executeStepLlmAnalysis(
     candidatesByType[t] = (candidatesByType[t] || 0) + 1;
   }
 
+  // SCAN-stage predicate emission (predicate run-judging batch) — pure
+  // counting over the in-memory candidate set; never affects the run.
+  emitCodeScanPredicates(allCandidates, findingsEmit, { run: runId, project: projectId });
+
   const totalDuration = Date.now() - stepStart;
   console.log(`[RunManager:1c] Step 1c-llm-analysis complete in ${totalDuration}ms (${Math.round(totalDuration / 1000)}s). Files: ${filesAnalyzed} analyzed, ${filesFailed} failed. Candidates: ${candidateCount}. Evidence: ${evidenceCount}. Types: ${JSON.stringify(candidatesByType)}`);
 
@@ -1533,6 +1538,7 @@ export async function startRun(projectId: string, runId: string, architectureId:
 
   trace.runHeader(runId, projectId, architectureId);
   trace.step('discovery run started — kind=code', { run: runId, project: projectId, arch: architectureId });
+  trace.stageStart('SCAN', { run: runId, project: projectId, arch: architectureId });
 
   // Initialize steps payload with all steps pending
   const stepsPayload: Record<string, Record<string, unknown>> = {};
@@ -1637,6 +1643,9 @@ export async function startRun(projectId: string, runId: string, architectureId:
           `code scan COMPLETED — ${candCount} candidates, ${evCount} evidence, profiling ${profilingOn ? 'ON' : 'OFF'}`,
           { run: runId, project: projectId, arch: architectureId },
         );
+        // Stage-END scorecard for the SCAN predicates (a run that dies
+        // mid-scan leaves STAGE_START with no SCORECARD — absence detection).
+        trace.stageEnd('SCAN', { run: runId, project: projectId, arch: architectureId });
 
         // Emit structured log: run_complete
         const totalDurationMs = Date.now() - runStartTime;
@@ -2922,6 +2931,7 @@ export async function startDatabaseRun(
 
   trace.runHeader(runId, projectId, architectureId);
   trace.step('discovery run started — kind=database', { run: runId, project: projectId, arch: architectureId });
+  trace.stageStart('SCAN', { run: runId, project: projectId, arch: architectureId });
 
   // Validate state transition before updating.
   try {
@@ -3042,6 +3052,24 @@ export async function startDatabaseRun(
     } else {
       trace.fail(dbScanMsg, dbCorr);
     }
+    // SCAN predicates for the database-kind run: introspection surface +
+    // persistence parity, then the stage-END scorecard.
+    trace.predicate(
+      'SCAN.DB.01', 'database introspection produced a surface',
+      result.introspection.tables.length > 0,
+      'tables > 0',
+      `tables=${result.introspection.tables.length} candidates=${result.candidates.length} ` +
+        `findings=${result.emittedFindings.length} profiling=${dbProfilingOn ? 'on' : 'off'}`,
+      dbCorr,
+    );
+    trace.predicate(
+      'SCAN.DB.02', 'database candidates persisted without loss',
+      candidatesPersisted === result.candidates.length,
+      'persisted == minted',
+      `persisted=${candidatesPersisted}/${result.candidates.length}`,
+      dbCorr,
+    );
+    trace.stageEnd('SCAN', dbCorr);
 
     console.log(
       `[RunManager:database] Run ${runId} ${status}: tables=${result.introspection.tables.length} candidates=${result.candidates.length} persisted=${candidatesPersisted} findings=${result.emittedFindings.length}`,

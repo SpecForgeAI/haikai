@@ -140,6 +140,66 @@ class HaikaiTraceTest {
     }
 
     @Test
+    void predicateLinesCarryVerdictGlyphAndStableJsonKeyOrder() throws IOException {
+        // Re-point (same file/tier) to CLEAR the per-process predicate tally.
+        HaikaiTrace.resetForTest("detail", traceFile.toAbsolutePath().toString());
+        HaikaiTrace.Tracer t = HaikaiTrace.forService("ams");
+        t.predicate("COMMIT.DIAL.01", "committed effects keep sql_dialect", true,
+            "all sampled carry dialect", "12/12", HaikaiTrace.Corr.of().run("mig-1"));
+        t.predicateSkip("CAP.SOAP.01", "soap operations captured",
+            "pilot has no SOAP endpoints", null);
+        t.predicate("CONV.07", "api-lock derived values consumed", false,
+            "consumed", "ignored (known-open)", null);
+
+        List<String> lines = allLines();
+        // Key order is the cross-stack contract (byte-identical to the Node emitter).
+        assertThat(lines.get(0)).endsWith(
+            "✓ HAIKAI_PREDICATE {\"id\":\"COMMIT.DIAL.01\","
+                + "\"title\":\"committed effects keep sql_dialect\",\"verdict\":\"pass\","
+                + "\"expected\":\"all sampled carry dialect\",\"actual\":\"12/12\","
+                + "\"corr\":{\"run\":\"mig-1\"}}");
+        assertThat(lines.get(1)).contains("⚠ HAIKAI_PREDICATE ");
+        assertThat(lines.get(1)).contains("\"verdict\":\"skip\"");
+        assertThat(lines.get(1)).contains("\"actual\":\"pilot has no SOAP endpoints\"");
+        assertThat(lines.get(2)).contains("✗ HAIKAI_PREDICATE ");
+        assertThat(lines.get(2)).contains("\"verdict\":\"fail\"");
+    }
+
+    @Test
+    void scorecardTalliesByStagePrefixWithCumulativeTotals() throws IOException {
+        HaikaiTrace.resetForTest("detail", traceFile.toAbsolutePath().toString());
+        HaikaiTrace.Tracer t = HaikaiTrace.forService("ams");
+        t.stageStart("BOOT", null);
+        t.predicate("BOOT.A.01", "a", true, "x", "x", null);
+        t.predicate("BOOT.A.02", "b", false, "y", "z", null);
+        t.predicateSkip("BOOT.A.03", "c", "why", null);
+        t.predicate("COMMIT.B.01", "other stage", true, "1", "1", null);
+        t.stageEnd("BOOT", null);
+
+        List<String> lines = allLines();
+        assertThat(lines.get(0)).endsWith("▶ HAIKAI_STAGE_START {\"stage\":\"BOOT\"}");
+        // BOOT tallies exclude the COMMIT predicate; cumulative includes it.
+        assertThat(lines.get(5)).endsWith(
+            "✗ HAIKAI_SCORECARD {\"stage\":\"BOOT\",\"service\":\"ams\","
+                + "\"pass\":1,\"fail\":1,\"skip\":1,"
+                + "\"failed\":[{\"id\":\"BOOT.A.02\",\"actual\":\"z\"}],"
+                + "\"cumulative\":{\"pass\":2,\"fail\":1,\"skip\":1}}");
+    }
+
+    @Test
+    void configHeaderLeadsWithServiceAndMergesConfig() throws IOException {
+        Map<String, Object> cfg = new LinkedHashMap<>();
+        cfg.put("git_sha", "abc1234");
+        cfg.put("db_creds_present", true);
+        cfg.put("changesets_applied", 209);
+        HaikaiTrace.forService("ams").configHeader(cfg, null);
+
+        assertThat(onlyLine()).endsWith(
+            "▶ HAIKAI_CONFIG {\"service\":\"ams\",\"git_sha\":\"abc1234\","
+                + "\"db_creds_present\":true,\"changesets_applied\":209}");
+    }
+
+    @Test
     void runHeaderHasLeadingBlankDelimiterAndQuotesNames() throws IOException {
         HaikaiTrace.forService("ams").runHeader("mig-7f3", "HiFi SVC DB Migration", "Current State");
         // A leading blank line delimits runs in the shared append-only file.

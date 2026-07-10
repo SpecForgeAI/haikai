@@ -52,6 +52,34 @@ app.listen(PORT, () => {
   console.log(`[Discovery Service] Started on port ${PORT}`);
   console.log(`[Discovery Service] Health check: http://localhost:${PORT}/health`);
   console.log(`[Discovery Service] Discovery endpoint: http://localhost:${PORT}/discovery`);
+
+  // Predicate-run-judging BOOT header (docs/trace-logging.md §Predicates):
+  // one HAIKAI_CONFIG line per boot so the run judge can score fail-closed
+  // degradations against config. No-op unless HAIKAI_TRACE is on; must never
+  // affect boot.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { createTracer } = require('./trace');
+    const bootTrace = createTracer('discovery');
+    if (bootTrace.enabled) {
+      let gitSha = 'unknown';
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { execSync } = require('child_process');
+        gitSha = execSync('git rev-parse --short HEAD', {
+          cwd: __dirname,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).toString().trim() || 'unknown';
+      } catch { /* not a git checkout */ }
+      bootTrace.configHeader({
+        git_sha: gitSha,
+        log_parse_max_file_bytes: Number(process.env.LOG_PARSE_MAX_FILE_BYTES ?? 104857600),
+        log_parse_max_total_bytes: Number(process.env.LOG_PARSE_MAX_TOTAL_BYTES ?? 2097152000),
+        vuln_enrich_auto: process.env.DISCOVERY_VULN_ENRICH_AUTO !== 'false',
+        osv_base_url_default: !process.env.OSV_API_BASE_URL,
+      });
+    }
+  } catch { /* tracing must never affect boot */ }
 });
 
 export { app };

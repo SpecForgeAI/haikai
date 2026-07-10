@@ -181,6 +181,87 @@ def test_tracing_never_raises_on_bad_path(tmp_path, monkeypatch):
     t.step("resilient", {"project": "P"})
 
 
+# --- predicate self-scoring layer --------------------------------------------
+# The JSON key orders asserted here are the cross-stack contract: the Node
+# (trace.ts) and Java (HaikaiTrace) emitters produce byte-identical bodies for
+# the same inputs, so the run judge parses every stack uniformly. The reload in
+# each test also resets the per-process predicate tally.
+
+
+def test_predicate_line_glyph_and_stable_json_key_order(tmp_path, monkeypatch):
+    f = tmp_path / "trace.log"
+    t = _reload(monkeypatch, "summary", f).tracer("impl-verify")
+    t.predicate("EXEC.JOB.01", "dispatch recorded", True, "job id present", "job-42",
+                {"run": "mig-1"})
+
+    line = f.read_text(encoding="utf-8").splitlines()[0]
+    parts = line.split("  ")
+    assert len(parts) == 5, parts
+    assert parts[1] == "[SUMMARY]"
+    assert parts[2] == "impl-verify"
+    assert parts[3] == "run=mig-1"
+    assert parts[4] == (
+        '✓ HAIKAI_PREDICATE {"id":"EXEC.JOB.01","title":"dispatch recorded",'
+        '"verdict":"pass","expected":"job id present","actual":"job-42",'
+        '"corr":{"run":"mig-1"}}'
+    )
+
+
+def test_predicate_fail_and_skip_verdicts(tmp_path, monkeypatch):
+    f = tmp_path / "trace.log"
+    t = _reload(monkeypatch, "summary", f).tracer("impl-verify")
+    t.predicate("REC.PAR.01", "parity inbound recorded", False, "recorded", "missing")
+    t.predicate_skip("CAP.SOAP.01", "soap operations captured", "pilot has no SOAP endpoints")
+
+    fail_line, skip_line = f.read_text(encoding="utf-8").splitlines()
+    assert "✗ HAIKAI_PREDICATE " in fail_line and '"verdict":"fail"' in fail_line
+    assert "⚠ HAIKAI_PREDICATE " in skip_line and '"verdict":"skip"' in skip_line
+    assert '"actual":"pilot has no SOAP endpoints"' in skip_line
+
+
+def test_scorecard_tallies_by_stage_prefix_with_cumulative(tmp_path, monkeypatch):
+    f = tmp_path / "trace.log"
+    t = _reload(monkeypatch, "summary", f).tracer("impl-verify")
+    t.stage_start("EXEC")
+    t.predicate("EXEC.A.01", "a", True, "x", "x")
+    t.predicate("EXEC.A.02", "b", False, "y", "z")
+    t.predicate_skip("EXEC.A.03", "c", "why")
+    t.predicate("REC.B.01", "other stage", True, "1", "1")
+    t.stage_end("EXEC")
+
+    lines = f.read_text(encoding="utf-8").splitlines()
+    assert '▶ HAIKAI_STAGE_START {"stage":"EXEC"}' in lines[0]
+    # EXEC tallies exclude the REC predicate; cumulative includes it.
+    assert lines[-1].endswith(
+        '✗ HAIKAI_SCORECARD {"stage":"EXEC","service":"impl-verify",'
+        '"pass":1,"fail":1,"skip":1,'
+        '"failed":[{"id":"EXEC.A.02","actual":"z"}],'
+        '"cumulative":{"pass":2,"fail":1,"skip":1}}'
+    )
+
+
+def test_config_header_leads_with_service(tmp_path, monkeypatch):
+    f = tmp_path / "trace.log"
+    t = _reload(monkeypatch, "summary", f).tracer("impl-verify")
+    t.config_header({"git_sha": "abc1234", "db_creds_present": False})
+
+    assert f.read_text(encoding="utf-8").splitlines()[0].endswith(
+        '▶ HAIKAI_CONFIG {"service":"impl-verify","git_sha":"abc1234",'
+        '"db_creds_present":false}'
+    )
+
+
+def test_predicate_layer_off_tier_is_full_noop(tmp_path, monkeypatch):
+    f = tmp_path / "trace.log"
+    t = _reload(monkeypatch, "off", f).tracer("impl-verify")
+    t.config_header({"git_sha": "abc"})
+    t.stage_start("EXEC")
+    t.predicate("EXEC.A.01", "a", False, "x", "y")
+    t.predicate_skip("EXEC.A.02", "b", "why")
+    t.stage_end("EXEC")
+    assert not f.exists()
+
+
 @pytest.fixture(autouse=True)
 def _restore_module():
     """Leave src.trace in its repo-default (off) state for other tests."""

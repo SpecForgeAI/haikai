@@ -49,6 +49,13 @@ import type {
 import { SPEC_TEXT_REQUIRED_PREFIX } from './specGenerationResponseValidator';
 import { fenceFor } from './migrationDbPackSpecCarriage';
 import { MANUAL_GATE_TAG, CODE_PROVENANCE_TAG } from './migrationCodeStreamPlanner';
+import { createTracer } from '../trace';
+
+// SPEC-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only. A
+// carriage-built story is by definition a zero-LLM spec (the design's
+// PLAN.EXP.01 intent is folded into SPEC.CARRIAGE.01).
+const trace = createTracer('gateway');
 
 // ---------------------------------------------------------------------------
 // Markers on the book-of-work item blob (stamped by Spec -g)
@@ -983,6 +990,41 @@ export async function runCodeSpecCarriage(args: {
     `[diag-gateway] pm_migration_shape_spec_generation code_carriage ` +
       `workItemId=${baseRow.workItemId} endpoints=${facts.endpoints.length} ` +
       `examples=${totalExamples} behaviours=${behaviours.length} chars=${specText.length}`
+  );
+
+  // SPEC-stage predicates (predicate run-judging batch) — emission only.
+  const specCorr = { job: String(baseRow.workItemId ?? '') };
+  trace.predicate(
+    'SPEC.CARRIAGE.01', 'deterministic carriage engaged (zero-LLM spec) with fact counts',
+    facts.endpoints.length > 0,
+    'code story spec assembled from model facts; endpoints > 0',
+    `endpoints=${facts.endpoints.length} examples=${totalExamples} ` +
+      `behaviours=${behaviours.length} chars=${specText.length}`,
+    specCorr,
+  );
+  const tsqlEdges = JSON.stringify(facts).includes('"sql_dialect":"tsql"');
+  const guidanceIncluded = specText.includes('#### T-SQL dialect rewrite guidance');
+  if (!tsqlEdges) {
+    trace.predicateSkip(
+      'SPEC.DIAL.01', 'T-SQL rewrite guidance embedded when tsql edges exist',
+      'story carries no tsql-classified data-effect edges', specCorr,
+    );
+  } else {
+    trace.predicate(
+      'SPEC.DIAL.01', 'T-SQL rewrite guidance embedded when tsql edges exist',
+      guidanceIncluded,
+      'guidance block present for tsql-classified edges',
+      `tsql_edges=present guidance_block=${guidanceIncluded ? 'present' : 'MISSING'}`,
+      specCorr,
+    );
+  }
+  trace.predicate(
+    'SPEC.OMIT.01', 'trim omissions enumerated, never silent',
+    (omissions.length > 0) === warnings.some((w) => String(w.code) === 'code_carriage_trimmed'),
+    'omission manifest and trimmed-warning agree',
+    `omissions=${omissions.length} chars=${specText.length}/${maxChars} ` +
+      `warnings=[${warnings.map((w) => String(w.code)).join(',')}]`,
+    specCorr,
   );
 
   return {
