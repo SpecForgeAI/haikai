@@ -110,6 +110,11 @@ import {
   buildDbEpicStories,
   defaultFetchPackView,
 } from './migrationDbPackPlanner';
+import {
+  packObjectSetFromTranslations,
+  planTimeDialectAffectedSet,
+  resolveAffectedConsumers,
+} from './dbChangeConsumerResolver';
 import { getElementsInventory } from './architectureModelClient';
 import {
   TargetManifestArtifactWire,
@@ -251,6 +256,13 @@ export interface MigrationBookOfWorkExpansionDeps {
   fetchCodeModelView?: FetchCodeModelViewFn;
   /** API cluster-cap override for tests (defaults to config knob, then 15). */
   apiClusterCapOverride?: number;
+  /**
+   * DB-change consumer resolver (Spec 2026-07-06-f §4, Tier-1 batch): the
+   * expansion recomputes the dialect-affected set with the SAME rule the
+   * skeleton used so the drift check judges flags against identical facts.
+   * Injected in tests.
+   */
+  resolveAffectedConsumers?: typeof resolveAffectedConsumers;
 }
 
 // ---------------------------------------------------------------------------
@@ -1015,6 +1027,7 @@ async function runEpicPipeline(args: {
     dbClusterCap: number;
     fetchCodeModelView: FetchCodeModelViewFn;
     apiClusterCap: number;
+    resolveAffectedConsumers: typeof resolveAffectedConsumers;
   };
 }): Promise<MigrationBookOfWorkItem[]> {
   const { projectId, book, epic, features, stream, deps } = args;
@@ -1084,6 +1097,31 @@ async function runEpicPipeline(args: {
       projectId,
       book.currentArchitectureId ?? ''
     );
+    // Spec 2026-07-06-f §4 (Tier-1 batch): recompute the dialect-affected set
+    // with the SAME rule the skeleton used (tsql + translated procs) so the
+    // drift check below judges flags against identical facts. A pack read
+    // failure degrades to translations=[] (the tsql dimension still
+    // resolves); an unreadable model inside the resolver yields an EMPTY set,
+    // which the drift check surfaces as "regenerate" — fail-closed,
+    // retryable, never a silently narrower plan.
+    if (view) {
+      let translations: PackView['translations'] = [];
+      try {
+        const packView = await deps.fetchPackView(projectId, book.currentArchitectureId ?? '');
+        translations = packView?.translations ?? [];
+      } catch {
+        // Pack absent/unreadable — proc dimension empty; tsql still applies.
+      }
+      const affected = await deps.resolveAffectedConsumers({
+        projectId,
+        currentArchitectureId: book.currentArchitectureId ?? '',
+        packObjects: packObjectSetFromTranslations(translations),
+      });
+      const planTimeAffected = planTimeDialectAffectedSet(affected);
+      if (planTimeAffected.size > 0) {
+        view.dialectAffectedEndpointIds = planTimeAffected;
+      }
+    }
     return buildCodeEpicStories({
       epic,
       features,
@@ -1845,6 +1883,8 @@ export async function expandMigrationBookOfWorkEpic(
           dbClusterCap,
           fetchCodeModelView,
           apiClusterCap,
+          resolveAffectedConsumers:
+            deps.resolveAffectedConsumers ?? resolveAffectedConsumers,
         },
       });
 

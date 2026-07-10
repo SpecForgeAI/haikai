@@ -286,3 +286,79 @@ describe('MANUAL-GATE PINS (execution driver)', () => {
     expect(withoutCaptureSpec.ok).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dialect-affected plan wiring (Spec 2026-07-06-f §4 — Tier-1 batch 2026-07-10)
+// ---------------------------------------------------------------------------
+
+describe('Dialect-affected plan wiring (Spec 2026-07-06-f §4)', () => {
+  const affectedResolver = () =>
+    jest.fn().mockResolvedValue({
+      affectedEndpointIds: ['e-3'],
+      affectedEndpointKeys: ['GET /pets'],
+      reasonsByEndpointId: new Map([['e-3', ['tsql_dialect_sql']]]),
+    });
+
+  function dialectView(): CodeModelView {
+    const view = makeView(ENDPOINTS);
+    view.dialectAffectedEndpointIds = new Set(['e-3']);
+    return view;
+  }
+
+  it('skeleton splits the affected endpoint out; expansion recomputes the SAME set (no drift throw)', async () => {
+    // Skeleton built WITH the dialect flag: e-3 (iface-2's only endpoint)
+    // leaves the interface clusters and lands in the exceptional epic.
+    const book = makeBook(dialectView());
+    const exceptionalEpic = book.items.find((i) =>
+      i.id === `${STREAM}:${STREAM}-epic-exceptional`
+    );
+    expect(exceptionalEpic).toBeDefined();
+
+    // INTERFACES epic: the expansion-time view comes back WITHOUT the flag
+    // (fresh model read) — the wiring must recompute it via the resolver, or
+    // the drift check would false-throw on e-3.
+    const ams = makeAms(book);
+    const resolveAffectedConsumers = affectedResolver();
+    const interfacesOutcome = await expandMigrationBookOfWorkEpic(
+      { projectId: 'proj-1', bookId: 'book-code', epicId: `${STREAM}:${STREAM}-epic-interfaces` },
+      { ...depsWith(ams, makeView(ENDPOINTS)), resolveAffectedConsumers }
+    );
+    expect(interfacesOutcome.expansionState).toBe('expanded');
+    // Only iface-1 clusters (e-3's interface is fully flagged out).
+    expect(interfacesOutcome.storiesAppended).toBe(1);
+    expect(resolveAffectedConsumers).toHaveBeenCalled();
+
+    // EXCEPTIONAL epic: one individual story carrying the dialect flag.
+    const ams2 = makeAms(makeBook(dialectView()));
+    const exceptionalOutcome = await expandMigrationBookOfWorkEpic(
+      { projectId: 'proj-1', bookId: 'book-code', epicId: `${STREAM}:${STREAM}-epic-exceptional` },
+      { ...depsWith(ams2, makeView(ENDPOINTS)), resolveAffectedConsumers: affectedResolver() }
+    );
+    expect(exceptionalOutcome.expansionState).toBe('expanded');
+    const finalAppend = ams2.appends[ams2.appends.length - 1].body;
+    const dialectStory = finalAppend.items.find((s) =>
+      (s.title ?? '').includes('dialect_affected')
+    );
+    expect(dialectStory).toBeDefined();
+    // Extras are flattened onto the item blob (the H-carriage marker shape).
+    const blob = dialectStory as unknown as Record<string, unknown>;
+    expect(blob.flagReason).toBe('dialect_affected');
+    expect(blob.apiEndpointIds).toEqual(['e-3']);
+  });
+
+  it('resolver returning empty at expansion surfaces the drift throw (fail-closed, regenerate)', async () => {
+    const book = makeBook(dialectView());
+    const ams = makeAms(book);
+    const emptyResolver = jest.fn().mockResolvedValue({
+      affectedEndpointIds: [],
+      affectedEndpointKeys: [],
+      reasonsByEndpointId: new Map(),
+    });
+    const outcome = await expandMigrationBookOfWorkEpic(
+      { projectId: 'proj-1', bookId: 'book-code', epicId: `${STREAM}:${STREAM}-epic-interfaces` },
+      { ...depsWith(ams, makeView(ENDPOINTS)), resolveAffectedConsumers: emptyResolver }
+    );
+    expect(outcome.expansionState).toBe('failed');
+    expect(outcome.error).toMatch(/regenerate the migration plan/);
+  });
+});

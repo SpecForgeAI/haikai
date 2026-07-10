@@ -259,6 +259,24 @@ export async function resolveAffectedConsumers(params: {
   return { affectedEndpointIds, affectedEndpointKeys, reasonsByEndpointId };
 }
 
+/**
+ * The PLAN-TIME dialect-affected subset (Spec F §4, Tier-1 batch 2026-07-10):
+ * endpoints affected via `tsql_dialect_sql` or `translated_proc` ONLY.
+ * `altered_table` is deliberately excluded at plan time — an engine swap
+ * alters every table, which would flag every endpoint and dissolve interface
+ * clustering; table-scoped verification belongs to the revalidation route.
+ * Used by BOTH the skeleton planner and the epic expansion so the drift check
+ * judges flags against identical facts.
+ */
+export function planTimeDialectAffectedSet(affected: AffectedConsumerSet): Set<string> {
+  return new Set(
+    affected.affectedEndpointIds.filter((id) => {
+      const reasons = affected.reasonsByEndpointId.get(id) ?? [];
+      return reasons.includes('tsql_dialect_sql') || reasons.includes('translated_proc');
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Scoped revalidation convenience (§5 — consumes Spec I's scoped verify)
 // ---------------------------------------------------------------------------
