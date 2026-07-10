@@ -150,14 +150,22 @@ class TestOrchestrationModels:
 class TestClaudeCLIExecutor:
     """Test Claude CLI executor functionality."""
 
-    @patch('subprocess.run')
-    def test_execute_success(self, mock_run, test_project_dir):
+    # Parallel-worktrees D13: execution moved from blocking subprocess.run to
+    # Popen + communicate so the spawned tree is a tracked, killable handle.
+    # The fakes below mirror that contract (pid, communicate, returncode).
+
+    @staticmethod
+    def _fake_popen(returncode=0, stdout='{"success": true}', stderr=''):
+        proc = Mock()
+        proc.pid = 4242
+        proc.returncode = returncode
+        proc.communicate.return_value = (stdout, stderr)
+        return proc
+
+    @patch('subprocess.Popen')
+    def test_execute_success(self, mock_popen, test_project_dir):
         """Test successful command execution."""
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = '{"success": true}'
-        mock_result.stderr = ''
-        mock_run.return_value = mock_result
+        mock_popen.return_value = self._fake_popen(0)
 
         executor = ClaudeCLIExecutor(
             project_dir=test_project_dir,
@@ -169,16 +177,13 @@ class TestClaudeCLIExecutor:
         assert result["success"] is True
         assert result["return_code"] == 0
         assert "execution_time" in result
-        mock_run.assert_called_once()
+        mock_popen.assert_called_once()
 
-    @patch('subprocess.run')
-    def test_execute_failure(self, mock_run, test_project_dir):
+    @patch('subprocess.Popen')
+    def test_execute_failure(self, mock_popen, test_project_dir):
         """Test failed command execution."""
-        mock_result = Mock()
-        mock_result.returncode = 1
-        mock_result.stdout = ''
-        mock_result.stderr = 'Command failed'
-        mock_run.return_value = mock_result
+        mock_popen.return_value = self._fake_popen(1, stdout='',
+                                                   stderr='Command failed')
 
         executor = ClaudeCLIExecutor(
             project_dir=test_project_dir,
@@ -191,18 +196,14 @@ class TestClaudeCLIExecutor:
         assert result["return_code"] == 1
         assert "Command failed" in result["stderr"]
 
-    @patch('subprocess.run')
-    def test_execute_with_system_prompt(self, mock_run, test_project_dir):
+    @patch('subprocess.Popen')
+    def test_execute_with_system_prompt(self, mock_popen, test_project_dir):
         """Test command execution with system prompt.
 
-        Drift: the prompt is now piped via stdin (`input=full_prompt`)
-        rather than appended as a positional CLI arg. Inspect
-        `mock_run.call_args.kwargs['input']` instead of `argv[-1]`."""
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stdout = '{"success": true}'
-        mock_result.stderr = ''
-        mock_run.return_value = mock_result
+        Drift: the prompt is piped via stdin — now `communicate(input=...)`
+        under the Popen contract (was subprocess.run's `input` kwarg)."""
+        proc = self._fake_popen(0)
+        mock_popen.return_value = proc
 
         executor = ClaudeCLIExecutor(
             project_dir=test_project_dir,
@@ -214,9 +215,22 @@ class TestClaudeCLIExecutor:
             system_prompt="Implement all tasks without prompting"
         )
 
-        prompt_via_stdin = mock_run.call_args.kwargs["input"]
+        prompt_via_stdin = proc.communicate.call_args.kwargs["input"]
         assert "Implement all tasks without prompting" in prompt_via_stdin
         assert "/implement-tasks" in prompt_via_stdin
+
+    @patch('subprocess.Popen')
+    def test_execute_notifies_on_spawn_with_pid(self, mock_popen, test_project_dir):
+        """D13: the tracked-handle callback fires with the spawned pid."""
+        mock_popen.return_value = self._fake_popen(0)
+        executor = ClaudeCLIExecutor(
+            project_dir=test_project_dir,
+            anthropic_api_key="test-key"
+        )
+        seen = []
+        executor.on_spawn = seen.append
+        executor.execute("/write-spec")
+        assert seen == [4242]
 
 
 class TestHaikaiOrchestrator:

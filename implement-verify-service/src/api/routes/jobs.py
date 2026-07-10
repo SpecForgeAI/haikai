@@ -20,6 +20,7 @@ body to avoid a load cycle.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from fastapi import (
@@ -289,7 +290,12 @@ async def create_orchestration_job_v2(
             request_payload=request.model_dump(),
         )
         job_id = job_queue.enqueue_job(job)
-        background_tasks.add_task(_run_job_in_background, job_id)
+        # Under a worker fleet the API is enqueue-only (API_INLINE_JOBS=off):
+        # workers are the sole executors. Default keeps single-host behavior
+        # (in-process execution), now made race-safe by the CAS claim inside
+        # _run_job_in_background.
+        if os.getenv("API_INLINE_JOBS", "on").strip().lower() not in ("off", "false", "0"):
+            background_tasks.add_task(_run_job_in_background, job_id)
 
         logger.info(f"V2 orchestration job created and dispatched: {job_id}")
 

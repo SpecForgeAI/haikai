@@ -990,3 +990,59 @@ class TestOAuthTokenBranching:
             "executor sets ANTHROPIC_API_KEY without OAuth-token branching "
             "(sk-ant-oat -> CLAUDE_CODE_OAUTH_TOKEN): " + ", ".join(offenders)
         )
+
+
+# ─── Guard: worktree orchestration must run /write-spec FRESH ────────────────
+
+
+class TestWorktreeFreshWriteSpec:
+    """Every orchestration function that allocates a run WORKTREE must start
+    step 1 (`/write-spec`) with a FRESH session in the worktree
+    (`fresh_session_start`), NOT by resuming the shape-spec session.
+
+    A resumed session's conversation history is anchored to the live-tree cwd
+    (its transcript records live-tree absolute paths), so `/write-spec` follows
+    that context and writes `spec.md` OUTSIDE the worktree — even with the
+    process cwd set to the worktree and the transcript re-homed. Confirmed live
+    driving the UI end-to-end (56/67 transcript messages recorded the live-tree
+    cwd). requirements.md is already SEEDED into the worktree, which is all
+    `/write-spec` needs, so a fresh in-worktree session is correct and robust.
+
+    Guard: any function that CALLS `_allocate_run_worktrees(` must also pass
+    `fresh_session_start` to `run_workflow` (both the single-spec
+    `run_orchestration` and the per-spec `_run_per_spec_orchestration`).
+    """
+
+    TASKS = SRC / "job_queue" / "tasks.py"
+
+    @staticmethod
+    def _function_bodies(text: str) -> dict[str, str]:
+        """Map each top-level `def name` to its body (until the next
+        top-level def or EOF)."""
+        lines = text.split("\n")
+        starts = [
+            (i, re.match(r"def (\w+)\(", l).group(1))
+            for i, l in enumerate(lines)
+            if re.match(r"def \w+\(", l)
+        ]
+        bodies: dict[str, str] = {}
+        for idx, (start, name) in enumerate(starts):
+            end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lines)
+            bodies[name] = "\n".join(lines[start:end])
+        return bodies
+
+    def test_worktree_allocating_functions_start_fresh(self):
+        bodies = self._function_bodies(_read_text(self.TASKS))
+        offenders = []
+        for name, body in bodies.items():
+            # A *call* to _allocate_run_worktrees (not its own definition).
+            if not re.search(r"(?<!def )_allocate_run_worktrees\(", body):
+                continue
+            if "fresh_session_start" not in body:
+                offenders.append(name)
+        assert offenders == [], (
+            "Orchestration function(s) allocate a run worktree but never run "
+            "step 1 fresh (no `fresh_session_start`) — /write-spec will resume "
+            "the shape-spec session, which is anchored to the live tree and "
+            "writes spec.md outside the worktree: " + ", ".join(offenders)
+        )

@@ -412,6 +412,26 @@ def _safe_project_dir(company: str, project: str) -> Path:
 # to be past their definition points before triggering the call.
 _recover_interrupted_jobs()
 
+
+# Parallel-worktrees D14: recovery is the sole STATUS authority and is
+# promoted from startup-only to a PERIODIC pass — stuck-RUNNING jobs with
+# stale heartbeats get orphan treatment on a timer, not only after a
+# restart. Off via RECOVERY_PERIODIC=off.
+def _periodic_recovery_loop():
+    import time as _time
+    interval = int(os.getenv("RECOVERY_PERIODIC_SECONDS", "600"))
+    while True:
+        _time.sleep(interval)
+        try:
+            _recover_interrupted_jobs()
+        except Exception:
+            logger.warning("periodic recovery pass failed", exc_info=True)
+
+
+if os.getenv("RECOVERY_PERIODIC", "on").strip().lower() not in ("off", "false", "0"):
+    import threading as _threading_rec
+    _threading_rec.Thread(target=_periodic_recovery_loop, daemon=True).start()
+
 # Start the async-verification liveness backstops (D10.5 TTL sweeper + D9.1
 # poll-fallback). Both existed but nothing drove them; this runs them on a timer
 # in a daemon thread. Off via VERIFY_MAINTENANCE=off.
@@ -614,6 +634,33 @@ def _run_job_in_background(job_id: str):
         logger.error(f"Background job runner: job {job_id} not found")
         return
 
+    # CAS claim: a polling worker may have (or may be about to) claim this
+    # job. Whoever wins the QUEUED→RUNNING flip executes; the loser walks
+    # away. Without this, both paths execute the same job and stomp each
+    # other's whole-row save_job writes.
+    if not storage.claim_job(job_id, "api-background"):
+        logger.info(
+            f"Background job runner: job {job_id} already claimed elsewhere; skipping"
+        )
+        return
+
+    # The API-background path must heartbeat like the worker does (spec v2
+    # D14): recovery's discriminator is heartbeat-based, and without beats a
+    # live API-path job looks orphaned. Same loop also hosts the CANCELLING
+    # watchdog for trees this process owns.
+    import threading as _threading
+    from ..job_queue.process_tracking import job_liveness_loop
+    _hb_stop = _threading.Event()
+    try:
+        storage.beat(job_id)
+    except Exception:
+        logger.debug("initial beat failed for %s", job_id, exc_info=True)
+    _threading.Thread(
+        target=job_liveness_loop,
+        args=(storage, job_id, _hb_stop, "api-background"),
+        daemon=True,
+    ).start()
+
     try:
         if job.type == JobType.ORCHESTRATION:
             run_orchestration(job_id, storage)
@@ -632,6 +679,8 @@ def _run_job_in_background(job_id: str):
             job.completed_at = datetime.now(timezone.utc)
             job.error = str(e)
             storage.save_job(job)
+    finally:
+        _hb_stop.set()
 
 
 # ============================================================================

@@ -459,9 +459,14 @@ class ClaudeChatExecutor:
 
         Returns the live Popen handle. The caller is responsible for
         draining stdout/stderr and waiting on the process.
+
+        Parallel-worktrees D13: the spawn is a TRACKED handle — an optional
+        `on_spawn(pid)` callback (set as an attribute by the job runner)
+        registers the pid against the job so the owning process can kill
+        the tree on cancel. POSIX spawns get their own session so the
+        whole group is killable.
         """
-        return subprocess.Popen(
-            cli_args,
+        kwargs = dict(
             cwd=str(self.project_dir),
             env=self._build_env_vars(),
             stdout=subprocess.PIPE,
@@ -471,6 +476,16 @@ class ClaudeChatExecutor:
             encoding='utf-8',
             errors='replace',
         )
+        if subprocess.os.name == "posix":
+            kwargs["start_new_session"] = True
+        proc = subprocess.Popen(cli_args, **kwargs)
+        on_spawn = getattr(self, "on_spawn", None)
+        if on_spawn:
+            try:
+                on_spawn(proc.pid)
+            except Exception:
+                logger.warning("on_spawn callback failed", exc_info=True)
+        return proc
 
     def _build_env_vars(self) -> Dict[str, str]:
         """Build subprocess env. OAuth tokens (sk-ant-oat...) use

@@ -167,25 +167,38 @@ def _recover_interrupted_jobs():
                 )
                 continue
 
-            # Load session ID from spec-level active_session.json
+            # Load session ID from spec-level active_session.json.
+            # Parallel-worktrees D14: the WORKTREE copy is the freshest (the
+            # orchestrator persisted there per-step under the project_dir
+            # override) — read it first when the run's tree survived; the
+            # live product root is the durable fallback.
             request = OrchestrationRequest(**job.request_payload)
             session_id = None
+            product_roots = []
+            if job.worktree_root:
+                wt_product = (Path(job.worktree_root)
+                              / request.company / request.project)
+                if wt_product.is_dir():
+                    product_roots.append(wt_product)
+            product_roots.append(
+                _safe_project_dir(request.company, request.project))
             for spec_intent in request.spec_intents:
-                spec_dir = (
-                    _safe_project_dir(request.company, request.project)
-                    / "haikai" / "specs" / spec_intent.spec_name
-                )
-                spec_session_file = spec_dir / "active_session.json"
-                if spec_session_file.exists():
-                    try:
-                        data = json.loads(
-                            spec_session_file.read_text(encoding="utf-8")
-                        )
-                        session_id = data.get("session_id")
-                        if session_id:
-                            break
-                    except (json.JSONDecodeError, OSError):
-                        continue
+                for _root in product_roots:
+                    spec_session_file = (_root / "haikai" / "specs"
+                                         / spec_intent.spec_name
+                                         / "active_session.json")
+                    if spec_session_file.exists():
+                        try:
+                            data = json.loads(
+                                spec_session_file.read_text(encoding="utf-8")
+                            )
+                            session_id = data.get("session_id")
+                            if session_id:
+                                break
+                        except (json.JSONDecodeError, OSError):
+                            continue
+                if session_id:
+                    break
 
             if not session_id:
                 job.status = JobStatus.FAILED
@@ -209,10 +222,17 @@ def _recover_interrupted_jobs():
             # they don't have a spec-scoped session to restore.
             if _credentials_satisfied(anthropic_api_key):
                 try:
+                    # D14: a worktree job's session home is the RUN ROOT (its
+                    # project_dir keyed the transcript encoding), never the
+                    # global workspace — restoring against API_WORKSPACE_DIR
+                    # would target the wrong encoded directory.
+                    _restore_ws = API_WORKSPACE_DIR
+                    if job.worktree_root and Path(job.worktree_root).is_dir():
+                        _restore_ws = Path(job.worktree_root)
                     chat_executor = create_chat_executor(
                         company=request.company,
                         project=request.project,
-                        workspace_dir=API_WORKSPACE_DIR,
+                        workspace_dir=_restore_ws,
                         anthropic_api_key=anthropic_api_key or "",
                         session_uuid=session_id,
                     )
@@ -228,9 +248,12 @@ def _recover_interrupted_jobs():
                         f"job {job.job_id}: {e}"
                     )
 
-            # Re-queue with resume_from_step
+            # Re-queue with resume_from_step. D14: QUEUED_FOR_RESUME is a
+            # SWEEP-PROTECTED state — the surviving worktree is an asset the
+            # resume will reuse; the sweeper must not reclaim it while the
+            # job waits for a claim.
             next_step = completed_step + 1
-            job.status = JobStatus.QUEUED
+            job.status = JobStatus.QUEUED_FOR_RESUME
             job.resume_from_step = next_step
             job.completed_at = None
             storage.save_job(job)

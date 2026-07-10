@@ -289,18 +289,41 @@ class ClaudeCLIExecutor:
                 else None
             )
             
-            result = subprocess.run(
-                cli_args,
+            # Popen (not blocking subprocess.run) so the spawned tree is a
+            # TRACKED, killable handle (spec v2 D13: cancel = kill the
+            # tracked process tree; the handle must not stay trapped inside
+            # a blocking call). POSIX: new session → group-killable.
+            popen_kwargs = dict(
                 cwd=str(self.project_dir),
                 env=env_vars,
-                input=full_prompt,  # Pass prompt via stdin
-                capture_output=True,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                encoding='utf-8',  # Force UTF-8 encoding for cross-platform compatibility
-                errors='replace',  # Replace invalid characters instead of crashing
-                timeout=actual_timeout,
-                preexec_fn=preexec
+                encoding='utf-8',
+                errors='replace',
             )
+            if preexec is not None:
+                popen_kwargs["preexec_fn"] = preexec
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+            proc = subprocess.Popen(cli_args, **popen_kwargs)
+            on_spawn = getattr(self, "on_spawn", None)
+            if on_spawn:
+                try:
+                    on_spawn(proc.pid)
+                except Exception:
+                    logger.warning("on_spawn callback failed", exc_info=True)
+            try:
+                stdout, stderr = proc.communicate(
+                    input=full_prompt, timeout=actual_timeout)
+            except subprocess.TimeoutExpired:
+                from src.job_queue.process_tracking import kill_tree
+                kill_tree(proc.pid)
+                proc.wait()
+                raise
+            result = subprocess.CompletedProcess(
+                cli_args, proc.returncode, stdout, stderr)
             
             end_time = datetime.now()
             execution_time = (end_time - start_time).total_seconds()

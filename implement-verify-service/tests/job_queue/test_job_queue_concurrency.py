@@ -112,12 +112,17 @@ def test_cancel_queued_job(queue):
 
 
 def test_cancel_running_job(queue):
+    """Two-phase cancel (parallel-worktrees D13): cancelling a RUNNING job
+    requests termination (CANCELLING); CANCELLED only lands after the
+    owning process confirms the tracked tree is dead (mark_cancelled)."""
     job = _make_job()
     queue.enqueue_job(job)
     queue.storage.claim_next_queued_job(worker_id="w1")  # mark RUNNING
     assert queue.cancel_job(job.job_id) is True
     refetched = queue.get_job_status(job.job_id)
-    assert refetched.status == JobStatus.CANCELLED.value
+    assert refetched.status == JobStatus.CANCELLING.value
+    assert queue.storage.mark_cancelled(job.job_id) is True
+    assert queue.get_job_status(job.job_id).status == JobStatus.CANCELLED.value
 
 
 def test_cancel_completed_job_is_noop(queue):

@@ -88,6 +88,37 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         repair_of["attempt"] = resolved_attempt  # pin the validated attempt
 
+        # D8 (parallel-worktrees): the repair mini-spec is a FILESYSTEM
+        # hand-off — the verify session wrote it to the LIVE product root's
+        # haikai/specs/<spec>/planning; the repair run's allocation seeds it
+        # into the repair worktree. Stamp a sha256 over those files into the
+        # payload so allocation can verify the seeded copy is EXACTLY what
+        # was dispatched (fail fast on mismatch — W5, never guess).
+        try:
+            import os as _os
+            from pathlib import Path as _Path
+
+            from src.git.worktree_runs import spec_planning_checksum
+
+            live_product = (_Path(_os.environ["API_WORKSPACE_DIR"])
+                            / payload["company"] / payload["project"])
+            checksums = {}
+            for si in payload["spec_intents"]:
+                spec = si.get("spec_name")
+                digest = spec_planning_checksum(live_product, spec)
+                if digest is None:
+                    print(json.dumps({"error": (
+                        f"repair mini-spec not found: {live_product}/haikai/specs/"
+                        f"{spec}/planning — the verify session must write the "
+                        "mini-spec to the LIVE product root before dispatch (D8)")}))
+                    return 1
+                checksums[spec] = digest
+            payload["spec_checksums"] = checksums
+        except KeyError:
+            print(json.dumps({"error": "API_WORKSPACE_DIR not set — cannot "
+                              "checksum the repair mini-spec (D8)"}))
+            return 1
+
     try:
         from src.job_queue.job_models import Job, JobStatus, JobType
         from src.job_queue.job_queue import JobQueue

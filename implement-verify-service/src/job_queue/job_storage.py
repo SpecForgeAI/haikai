@@ -28,6 +28,10 @@ class JobStorage:
         """
         conn = sqlite3.connect(self.db_path, isolation_level=isolation_level) \
             if isolation_level is not None else sqlite3.connect(self.db_path)
+        # Parallel-N hardening: without a busy_timeout a concurrent writer gets
+        # an instant "database is locked" (the verification store already sets
+        # this — store.py; jobs.db was the gap). 5s matches the store.
+        conn.execute("PRAGMA busy_timeout=5000")
         if row_factory is not None:
             conn.row_factory = row_factory
         try:
@@ -79,14 +83,63 @@ class JobStorage:
             existing_cols = {row[1] for row in cursor.fetchall()}
             if "resume_from_step" not in existing_cols:
                 cursor.execute("ALTER TABLE jobs ADD COLUMN resume_from_step INTEGER")
+            # Parallel-worktrees (spec v2 D13/D14): worktree ownership +
+            # per-spec resume bookkeeping. ALTER order here MUST match the
+            # positional column order appended in save_job's VALUES tuple.
+            for col, typ in (
+                ("spec_idx", "INTEGER"),
+                ("last_committed_spec_idx", "INTEGER"),
+                ("run_branch", "TEXT"),
+                ("worktree_root", "TEXT"),
+            ):
+                if col not in existing_cols:
+                    cursor.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
+
+            # Tracked process handles (pid / process-group) per job — kept in
+            # a SEPARATE table (like heartbeats) so save_job's whole-row
+            # INSERT OR REPLACE can't clobber a fresh registration. The
+            # job-OWNING process kills via this handle (D13); cross-process
+            # liveness is heartbeat-based, never PID.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS job_processes (
+                    job_id TEXT NOT NULL,
+                    pid INTEGER NOT NULL,
+                    owner TEXT,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (job_id, pid)
+                )
+            """)
+            # Migration: the first cut had job_id as sole PK — one tracked pid
+            # per job. Per-spec parallel mode (D1) runs N concurrent sessions
+            # per job, so the key is composite. Rebuild if the old shape exists.
+            cursor.execute("PRAGMA table_info(job_processes)")
+            pk_cols = [r[1] for r in cursor.fetchall() if r[5] > 0]
+            if pk_cols == ["job_id"]:
+                cursor.execute("ALTER TABLE job_processes RENAME TO job_processes_old")
+                cursor.execute("""
+                    CREATE TABLE job_processes (
+                        job_id TEXT NOT NULL,
+                        pid INTEGER NOT NULL,
+                        owner TEXT,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (job_id, pid)
+                    )
+                """)
+                cursor.execute(
+                    "INSERT OR IGNORE INTO job_processes "
+                    "SELECT job_id, pid, owner, updated_at FROM job_processes_old")
+                cursor.execute("DROP TABLE job_processes_old")
             conn.commit()
     
     def save_job(self, job: Job):
         """Save or update job."""
         with self._connect() as conn:
             cursor = conn.cursor()
+            # NB: positional — the trailing columns MUST stay in the ALTER
+            # order declared in _init_db (resume_from_step, spec_idx,
+            # last_committed_spec_idx, run_branch, worktree_root).
             cursor.execute("""
-                INSERT OR REPLACE INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO jobs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 job.job_id,
                 job.type.value if isinstance(job.type, JobType) else job.type,
@@ -102,7 +155,11 @@ class JobStorage:
                 job.error,
                 job.worker_id,
                 job.logs_path,
-                job.resume_from_step
+                job.resume_from_step,
+                job.spec_idx,
+                job.last_committed_spec_idx,
+                job.run_branch,
+                job.worktree_root
             ))
             conn.commit()
 
@@ -153,26 +210,28 @@ class JobStorage:
             while True:
                 cursor.execute("""
                     SELECT job_id FROM jobs
-                    WHERE status = ?
+                    WHERE status IN (?, ?)
                     ORDER BY created_at ASC
                     LIMIT 1
-                """, (JobStatus.QUEUED.value,))
+                """, (JobStatus.QUEUED.value, JobStatus.QUEUED_FOR_RESUME.value))
                 row = cursor.fetchone()
                 if not row:
                     return None
 
-                # Atomic claim: only update if still QUEUED. Another worker may
-                # have grabbed it between our SELECT and UPDATE.
+                # Atomic claim: only update if still queued (fresh or
+                # queued-for-resume). Another worker may have grabbed it
+                # between our SELECT and UPDATE.
                 cursor.execute("""
                     UPDATE jobs
                     SET status = ?, started_at = ?, worker_id = ?
-                    WHERE job_id = ? AND status = ?
+                    WHERE job_id = ? AND status IN (?, ?)
                 """, (
                     JobStatus.RUNNING.value,
                     datetime.now(timezone.utc).isoformat(),
                     worker_id,
                     row['job_id'],
                     JobStatus.QUEUED.value,
+                    JobStatus.QUEUED_FOR_RESUME.value,
                 ))
                 if cursor.rowcount == 0:
                     # Lost the race; loop and try the next queued job.
@@ -187,6 +246,33 @@ class JobStorage:
     # claim-as-default-worker behavior. Deprecated; prefer claim_next_queued_job.
     def get_next_queued_job(self) -> Optional[Job]:
         return self.claim_next_queued_job()
+
+    def claim_job(self, job_id: str, worker_id: str) -> bool:
+        """Atomically claim a SPECIFIC queued job (CAS QUEUED → RUNNING).
+
+        Used by the API-background execution path so it cannot double-execute
+        a job a polling worker already claimed (and vice versa). Returns True
+        iff this caller won the claim.
+        """
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE jobs
+                SET status = ?, started_at = ?, worker_id = ?
+                WHERE job_id = ? AND status IN (?, ?)
+                """,
+                (
+                    JobStatus.RUNNING.value,
+                    datetime.now(timezone.utc).isoformat(),
+                    worker_id,
+                    job_id,
+                    JobStatus.QUEUED.value,
+                    JobStatus.QUEUED_FOR_RESUME.value,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
     
     def list_jobs(
         self,
@@ -223,29 +309,84 @@ class JobStorage:
             conn.commit()
 
     def cancel_job(self, job_id: str) -> bool:
-        """Atomically flip a job to CANCELLED if it is still cancellable.
+        """Two-phase cancel (spec v2 D13): cancel REQUESTS termination.
 
-        Returns True if the row was updated (status was QUEUED or RUNNING),
-        False if the job doesn't exist or has already terminated.
+        QUEUED / QUEUED_FOR_RESUME → CANCELLED immediately (no process).
+        RUNNING / RECOVERING → CANCELLING; the job-OWNING process observes
+        it, kills its tracked tree, then confirms via mark_cancelled().
+        Returns True if any transition happened.
         """
+        now = datetime.now(timezone.utc).isoformat()
         with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                """
-                UPDATE jobs
-                SET status = ?, completed_at = ?
-                WHERE job_id = ? AND status IN (?, ?)
-                """,
-                (
-                    JobStatus.CANCELLED.value,
-                    datetime.now(timezone.utc).isoformat(),
-                    job_id,
-                    JobStatus.QUEUED.value,
-                    JobStatus.RUNNING.value,
-                ),
+                "UPDATE jobs SET status = ?, completed_at = ? "
+                "WHERE job_id = ? AND status IN (?, ?)",
+                (JobStatus.CANCELLED.value, now, job_id,
+                 JobStatus.QUEUED.value, JobStatus.QUEUED_FOR_RESUME.value),
+            )
+            if cursor.rowcount > 0:
+                conn.commit()
+                return True
+            cursor.execute(
+                "UPDATE jobs SET status = ? "
+                "WHERE job_id = ? AND status IN (?, ?)",
+                (JobStatus.CANCELLING.value, job_id,
+                 JobStatus.RUNNING.value, JobStatus.RECOVERING.value),
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def mark_cancelled(self, job_id: str) -> bool:
+        """Owner-side confirmation: CANCELLING → CANCELLED after the tracked
+        process tree is confirmed dead. Reclaim eligibility starts here."""
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE jobs SET status = ?, completed_at = ? "
+                "WHERE job_id = ? AND status = ?",
+                (JobStatus.CANCELLED.value,
+                 datetime.now(timezone.utc).isoformat(),
+                 job_id, JobStatus.CANCELLING.value),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # ── tracked process handles (D13) ────────────────────────────────────
+    def track_process(self, job_id: str, pid: int, owner: str = "") -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO job_processes (job_id, pid, owner, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (job_id, pid, owner, datetime.now(timezone.utc).isoformat()),
+            )
+            conn.commit()
+
+    def tracked_pid(self, job_id: str) -> Optional[int]:
+        """Most recently tracked pid (single-session jobs). Per-spec parallel
+        jobs have several — use tracked_pids for kill loops."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT pid FROM job_processes WHERE job_id = ? "
+                "ORDER BY updated_at DESC LIMIT 1", (job_id,)
+            ).fetchone()
+        return row[0] if row else None
+
+    def tracked_pids(self, job_id: str) -> List[int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT pid FROM job_processes WHERE job_id = ?", (job_id,)
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def clear_process(self, job_id: str, pid: Optional[int] = None) -> None:
+        with self._connect() as conn:
+            if pid is None:
+                conn.execute("DELETE FROM job_processes WHERE job_id = ?", (job_id,))
+            else:
+                conn.execute("DELETE FROM job_processes WHERE job_id = ? AND pid = ?",
+                             (job_id, pid))
+            conn.commit()
 
     def cleanup_old_jobs(self, days: int = 7):
         """Delete completed/failed jobs older than specified days."""
@@ -285,7 +426,17 @@ class JobStorage:
         except (IndexError, KeyError):
             resume_from_step = None
 
+        def _opt(col):
+            try:
+                return row[col]
+            except (IndexError, KeyError):
+                return None
+
         return Job(
+            spec_idx=_opt('spec_idx'),
+            last_committed_spec_idx=_opt('last_committed_spec_idx'),
+            run_branch=_opt('run_branch'),
+            worktree_root=_opt('worktree_root'),
             job_id=row['job_id'],
             type=JobType(row['type']),
             status=JobStatus(row['status']),

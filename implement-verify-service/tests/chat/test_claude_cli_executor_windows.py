@@ -35,24 +35,29 @@ def test_get_uid_check_safe_when_attribute_missing(monkeypatch, tmp_path):
     project.mkdir()
     executor = ClaudeCLIExecutor(project_dir=str(project), anthropic_api_key="test-key")
 
-    # Capture the kwargs subprocess.run is called with so we can assert
-    # preexec_fn ended up None (the safe outcome on Windows).
+    # Capture the kwargs the spawn is called with so we can assert
+    # preexec_fn was NOT passed (the safe outcome on Windows). Parallel-
+    # worktrees D13 moved execution from subprocess.run to Popen (tracked,
+    # killable handle) — the guard's contract is unchanged.
     captured = {}
 
-    def fake_run(args, **kwargs):
+    def fake_popen(args, **kwargs):
         captured["preexec_fn"] = kwargs.get("preexec_fn")
-        from subprocess import CompletedProcess
-        return CompletedProcess(args, 0, stdout='{"result": "ok"}', stderr="")
+        proc = type("P", (), {})()
+        proc.pid = 1234
+        proc.returncode = 0
+        proc.communicate = lambda **kw: ('{"result": "ok"}', "")
+        return proc
 
-    with patch("src.claude_cli_executor.subprocess.run", side_effect=fake_run):
-        # The crash we're regressing against was at line 206, before
-        # subprocess.run is even called. If we reach this without raising
+    with patch("src.claude_cli_executor.subprocess.Popen", side_effect=fake_popen):
+        # The crash we're regressing against was at the getuid guard, before
+        # the spawn is even called. If we reach this without raising
         # AttributeError, the guard works.
         result = executor.execute("/write-spec", system_prompt="test", timeout=30)
 
     # On Windows-simulated environment, no privilege drop should be attempted
     assert captured["preexec_fn"] is None
-    # And the call chain reached subprocess.run successfully
+    # And the call chain reached the spawn successfully
     assert result["return_code"] == 0
 
 

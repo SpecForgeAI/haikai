@@ -7,6 +7,7 @@ executes the work, and updates the job status.
 """
 
 import os
+import subprocess
 from pathlib import Path
 import logging
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ def _setup_orchestrator_context(
     workspace_dir: str,
     session_id: str,
     anthropic_api_key: str,
+    logs_workspace: "str | None" = None,
 ) -> HaikaiOrchestrator:
     """Build the orchestrator with all required wiring.
 
@@ -37,8 +39,13 @@ def _setup_orchestrator_context(
     flow control rather than configuration plumbing. Extracted per
     deep-src-smells finding D-B1.
     """
+    # W12 (parallel-worktrees): logs are DURABLE control-plane state — they
+    # anchor to the GLOBAL workspace (logs_workspace), never the per-run
+    # worktree workspace, or reclamation would destroy the step logs
+    # recovery's resume depends on.
     logs_dir = os.getenv(
-        "ORCHESTRATION_LOG_DIR", f"{workspace_dir}/logs/orchestration"
+        "ORCHESTRATION_LOG_DIR",
+        f"{logs_workspace or workspace_dir}/logs/orchestration",
     )
     return HaikaiOrchestrator(
         request=request,
@@ -168,6 +175,244 @@ def _batch_branch(batch_name: str, folder) -> str:
     return f"feature/{batch_name}--{folder}" if folder is not None else f"feature/{batch_name}"
 
 
+def _worktree_runs_enabled() -> bool:
+    """WORKTREE_RUNS knob (spec v2 D12): default ON; 'off' restores the
+    legacy live-tree behavior including the full-phase project lock."""
+    return os.getenv("WORKTREE_RUNS", "on").strip().lower() not in ("off", "false", "0")
+
+
+def _run_branch_for(request: OrchestrationRequest, folder) -> str:
+    """The branch allocation pre-creates for a single-spec or batch run."""
+    if request.batch_name:
+        return _batch_branch(request.batch_name, folder)
+    spec = request.spec_intents[0].spec_name
+    return f"feature/{spec}--{folder}" if folder is not None else f"feature/{spec}"
+
+
+def _allocate_run_worktrees(job, request: OrchestrationRequest,
+                            workspace_dir: str, storage,
+                            spec_scope: "str | None" = None):
+    """Spec v2 D1-D4: allocate the run's worktree set as an OVERLAY WORKSPACE.
+
+    The run workspace is ``<workspace>/wt/<job_id8>[/<spec>]`` and the run's
+    product root sits at ``<run_ws>/<company>/<project>`` — so every
+    project_dir derivation downstream (orchestrator ctor validation, chat
+    executor homes, session encoding, git target resolution) works UNCHANGED
+    by swapping the workspace root. Durable paths (logs, DBs) stay pinned to
+    the global workspace (W12).
+
+    Returns ``(run_workspace|None, allocated, error|None)`` where allocated
+    is ``[(live_repo, worktree_path), ...]``. ``(None, [], None)`` = nothing
+    git-shaped to allocate (bare product root) — caller runs legacy-style.
+    """
+    from contextlib import suppress
+
+    from src.git import worktree_runs as wr
+
+    live_product = Path(workspace_dir) / request.company / request.project
+    targets = _resolve_repo_targets(live_product)
+    if not targets:
+        return None, [], None
+
+    specs = [si.spec_name for si in request.spec_intents]
+    if len(specs) > 1 and not request.batch_name and spec_scope is None:
+        # Per-spec parallel mode (D1) is dispatched by the caller — each spec
+        # gets its own allocation via spec_scope. Reaching here without a
+        # scope is a programming error, not a user error.
+        return None, [], (
+            "multi-spec request without batch_name must be dispatched "
+            "per-spec under worktree mode (D1 per-spec parallel mode)")
+
+    default_branch = "main"
+    with suppress(Exception):
+        default_branch = load_git_config().default_branch
+
+    run_ws = wr.run_root(workspace_dir, job.job_id, spec=spec_scope)
+    run_product = run_ws / request.company / request.project
+
+    # D14 reuse-if-alive: a resumed job whose tree survived (protected from
+    # the sweeper by QUEUED_FOR_RESUME) REUSES it — that tree holds the
+    # uncommitted mid-spec state a re-create from the branch cannot recover.
+    # Never re-seed on reuse: it would overwrite mid-run edits.
+    if job.resume_from_step and run_product.is_dir():
+        reused = []
+        for folder, live_repo in targets:
+            wt = run_product if folder is None else run_product / folder
+            if wt.is_dir() and subprocess.run(
+                    ["git", "-C", str(wt), "rev-parse", "--is-inside-work-tree"],
+                    capture_output=True).returncode == 0:
+                reused.append((live_repo, wt))
+        if len(reused) == len(targets):
+            logger.info("Job %s: reusing surviving worktree set at %s (resume)",
+                        job.job_id, run_ws)
+            return str(run_ws), reused, None
+        logger.info("Job %s: surviving tree at %s incomplete — re-creating "
+                    "from the run branch (mid-spec state unrecoverable)",
+                    job.job_id, run_ws)
+    scoped_specs = [spec_scope] if spec_scope else specs
+    branch = None
+    try:
+        with wr.project_git_lock(workspace_dir, request.company, request.project):
+            allocated = []
+            for folder, live_repo in targets:
+                if spec_scope:
+                    branch = (f"feature/{spec_scope}--{folder}"
+                              if folder is not None else f"feature/{spec_scope}")
+                else:
+                    branch = _run_branch_for(request, folder)
+                dest = run_product if folder is None else run_product / folder
+                wr.add_worktree(live_repo, dest, branch, default_branch,
+                                job_id=job.job_id)
+                wr.seed_repo_config(live_repo, dest)
+                allocated.append((live_repo, dest))
+        run_product.mkdir(parents=True, exist_ok=True)  # polyrepo meta root
+        wr.seed_run_root(live_product, run_product, scoped_specs)
+        # D8: a repair dispatch stamped sha256s over the mini-spec's planning
+        # files (enqueue_cli). Re-hash the SEEDED copies — mismatch means the
+        # hand-off was tampered with or partially written: fail fast (W5).
+        checksums = (job.request_payload or {}).get("spec_checksums") or {}
+        for spec in scoped_specs:
+            expected = checksums.get(spec)
+            if expected:
+                actual = wr.spec_planning_checksum(run_product, spec)
+                if actual != expected:
+                    raise wr.WorktreeAllocationError(
+                        f"mini-spec checksum mismatch for {spec}: the seeded "
+                        f"planning files do not match what the verify session "
+                        f"dispatched (expected {expected[:12]}…, got "
+                        f"{(actual or 'missing')[:12]}…) — refusing the repair")
+    except wr.WorktreeAllocationError as exc:
+        # W5 fail-fast — unwind anything half-allocated before reporting.
+        with suppress(Exception):
+            _reclaim_worktree_set(workspace_dir, request,
+                                  locals().get("allocated", []), run_ws)
+        return None, [], str(exc)
+
+    # Executor-agnostic worktree prep (D7): trust + session re-homing per
+    # the active backend (claude seeds ~/.claude.json + transplants its
+    # encoded session dir; kiro no-ops — it trusts via --trust-all-tools and
+    # keys sessions by cwd). NEVER hardcode one CLI here.
+    from src.chat.worktree_prep import prepare_worktree
+    prepare_worktree(run_product, live_product=live_product)
+
+    # worktree_root is always the JOB-level root (wt/<id8>) — per-spec mode
+    # nests spec roots under it, and the sweeper resolves by this one path.
+    job.worktree_root = str(wr.run_root(workspace_dir, job.job_id))
+    job.run_branch = (f"feature/{spec_scope}" if spec_scope
+                      else _run_branch_for(request, None))
+    storage.save_job(job)
+    logger.info("Job %s: allocated run worktrees at %s (branch %s)",
+                job.job_id, run_ws, job.run_branch)
+    return str(run_ws), allocated, None
+
+
+def _reclaim_worktree_set(workspace_dir: str, request, allocated, run_ws) -> None:
+    """Remove a worktree set under the narrowed lock (registry mutations)."""
+    from src.git import worktree_runs as wr
+
+    with wr.project_git_lock(workspace_dir, request.company, request.project):
+        for live_repo, wt_path in allocated:
+            try:
+                wr.remove_worktree(live_repo, wt_path)
+            except Exception:
+                logger.warning("remove_worktree(%s) failed", wt_path, exc_info=True)
+    import shutil
+    shutil.rmtree(run_ws, ignore_errors=True)
+
+
+def _reclaim_run_worktrees(job_id: str, storage, workspace_dir: str, request,
+                           allocated, run_workspace: "str | None") -> None:
+    """Owner-side reclamation (D13/D14 ordering): kill any tracked remnant →
+    copy observability out → remove worktrees under the lock → prune → rmtree.
+    Skips when recovery owns the tree (protected resume states) — it is an
+    asset, not debris; the sweeper handles it later via the full predicate."""
+    if not run_workspace:
+        return
+    from src.git import worktree_runs as wr
+    from src.job_queue.process_tracking import kill_tree, pid_alive
+
+    latest = storage.get_job(job_id)
+    status = getattr(latest, "status", None)
+    status = status.value if hasattr(status, "value") else status
+    if status in (JobStatus.QUEUED_FOR_RESUME.value, JobStatus.RECOVERING.value,
+                  JobStatus.RESUMABLE_FAILED.value):
+        logger.info("Job %s: worktree %s retained (status %s — recovery owns it)",
+                    job_id, run_workspace, status)
+        return
+    for pid in storage.tracked_pids(job_id):
+        if pid_alive(pid):
+            kill_tree(pid)
+    storage.clear_process(job_id)
+    run_product = Path(run_workspace) / request.company / request.project
+    try:
+        wr.copy_observability_out(run_product, latest.logs_path if latest else None)
+    except Exception:
+        logger.warning("observability copy-out failed for %s", job_id, exc_info=True)
+    # D14 session freshness: the per-step session persist landed in the
+    # WORKTREE's spec folders (project_dir override). Copy the backups to the
+    # durable live spec folders before deletion so recovery and human
+    # hand-offs restore a CURRENT transcript, not shape-time state.
+    try:
+        import shutil as _sh
+        live_product = Path(workspace_dir) / request.company / request.project
+        wt_specs = run_product / "haikai" / "specs"
+        if wt_specs.is_dir():
+            for spec_dir in wt_specs.iterdir():
+                for f in spec_dir.glob("*.jsonl"):
+                    dst = live_product / "haikai" / "specs" / spec_dir.name / f.name
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    _sh.copy2(f, dst)
+                asf = spec_dir / "active_session.json"
+                if asf.exists():
+                    _sh.copy2(asf, live_product / "haikai" / "specs"
+                              / spec_dir.name / "active_session.json")
+    except Exception:
+        logger.warning("session copy-back failed for %s", job_id, exc_info=True)
+    _reclaim_worktree_set(workspace_dir, request, allocated, Path(run_workspace))
+
+
+def _sweep_resolver(job):
+    """Map a job → [(live_repo, worktree_path)] for the D14 sweeper. Handles
+    both layouts: single/batch (root/<co>/<proj>[/folder]) and per-spec
+    (root/<spec>/<co>/<proj>[/folder])."""
+    try:
+        request = OrchestrationRequest(**(job.request_payload or {}))
+    except Exception:
+        return []
+    ws = os.getenv("API_WORKSPACE_DIR", ".")
+    live_product = Path(ws) / job.company / job.project
+    targets = _resolve_repo_targets(live_product)
+    root = Path(job.worktree_root) if job.worktree_root else None
+    if not root or not root.is_dir() or not targets:
+        return []
+    candidates = {root / job.company / job.project}
+    for child in root.iterdir():
+        if child.is_dir():
+            candidates.add(child / job.company / job.project)
+    pairs = []
+    for folder, live_repo in targets:
+        for prod in candidates:
+            wt = prod if folder is None else prod / folder
+            if wt.is_dir():
+                pairs.append((live_repo, wt))
+    return pairs
+
+
+def sweep_workspace_worktrees(storage) -> list:
+    """Periodic D14 filesystem sweep (worker-idle cadence): reclaims
+    worktrees whose six-condition predicate passes + TTL debris."""
+    from src.git import worktree_runs as wr
+
+    ws = os.getenv("API_WORKSPACE_DIR")
+    if not ws:
+        return []
+    try:
+        return wr.sweep(storage, ws, _sweep_resolver)
+    except Exception:
+        logger.warning("worktree sweep failed", exc_info=True)
+        return []
+
+
 def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha,
                        source: str = "orchestrate") -> None:
     """Link a pushed commit SHA -> (orchestration run, spec/batch, repo) so a LATE
@@ -179,9 +424,13 @@ def _record_ci_binding(git_config, orchestrate_id, task_group_id, repo, head_sha
     without this record the inbound gateway 409s the late CI result. Per-repo, so
     polyrepo runs link each repo's own pushed commit.
 
-    Opt-in (`ORCHESTRATE_CI_BIND=true`) and GitLab-only. Best-effort: a binding
-    failure must NEVER fail the orchestration — the work is already committed."""
-    if os.getenv("ORCHESTRATE_CI_BIND", "false").strip().lower() != "true":
+    GitLab-only. DEFAULT-ON under worktree mode (spec v2 D11/M3: bindings are
+    what make verify cells pinnable — without them every cell is UNPINNABLE
+    and pinned verification is dead code); opt-in when WORKTREE_RUNS=off.
+    Best-effort: a binding failure must NEVER fail the orchestration — the
+    work is already committed."""
+    _bind_default = "true" if _worktree_runs_enabled() else "false"
+    if os.getenv("ORCHESTRATE_CI_BIND", _bind_default).strip().lower() != "true":
         return
     if git_config.provider != "gitlab" or not head_sha or not orchestrate_id:
         return
@@ -559,14 +808,27 @@ def _finalize_job(job, storage: JobStorage, response, job_id: str, extra: dict |
     box_id/callback_delivered) into ``job.result`` so a poller can recover the
     deploy outcome when the callback was dropped."""
     latest = storage.get_job(job_id)
-    if latest and latest.status == JobStatus.CANCELLED.value:
+    if latest and latest.status in (JobStatus.CANCELLED.value,
+                                    JobStatus.CANCELLING.value):
         logger.info(
-            f"Job {job_id} was cancelled during execution; preserving CANCELLED status"
+            f"Job {job_id} was cancelled during execution; preserving cancel status"
         )
         return
-    job.status = JobStatus.COMPLETED
+    # Map the orchestration outcome onto the job STATUS — the only signal the
+    # UI (and any /api/v2/jobs poller) reads. A failed run must report FAILED,
+    # not COMPLETED-with-success:false-buried-in-result: the frontend gates its
+    # "Part N implementation completed" + increment badge purely on job.status
+    # (ImplementationAssistantPanel startJobPolling), so an unconditional
+    # COMPLETED here masked failures as success in the UI. Mirrors the
+    # success-gated status the verify + per-spec paths already use.
+    run_ok = getattr(response, "success", True) is not False
+    job.status = JobStatus.COMPLETED if run_ok else JobStatus.FAILED
     job.completed_at = datetime.now(timezone.utc)
     job.result = {**response.dict(), **extra} if extra else response.dict()
+    if not run_ok and not job.error:
+        errs = list(getattr(response, "errors", None) or [])
+        job.error = ("; ".join(str(e) for e in errs)[:1000]
+                     or "orchestration did not complete successfully")
     storage.save_job(job)
 
 
@@ -582,6 +844,169 @@ def _step_progress_percentage(step_num: int, total_steps: int) -> int:
     if total_steps <= 0:
         return 100
     return min(100, max(0, int(step_num / total_steps * 100)))
+
+
+def _resolve_spec_session(run_ws: str, request, spec: str) -> "str | None":
+    """The session id the shape-spec step persisted to this spec's folder
+    (seeded into the worktree). None if absent."""
+    import json as _json
+
+    asf = (Path(run_ws) / request.company / request.project / "haikai"
+           / "specs" / spec / "active_session.json")
+    if asf.exists():
+        try:
+            return _json.loads(asf.read_text(encoding="utf-8")).get("session_id")
+        except Exception:
+            return None
+    return None
+
+
+def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
+                                request: OrchestrationRequest,
+                                workspace_dir: str, anthropic_api_key: str,
+                                session_id: str, graph_ctx) -> None:
+    """Spec v2 D1 — per-spec PARALLEL mode (WORKTREE_RUNS=on + multi-spec +
+    no batch_name): one run, N specs, N worktree sets, N branches, N MRs.
+
+        run-123
+          spec-a → wt/<id8>/spec-a → feature/spec-a → MR A
+          spec-b → wt/<id8>/spec-b → feature/spec-b → MR B
+
+    Specs execute CONCURRENTLY (bounded by RUN_SPEC_CONCURRENCY, default 2)
+    with INDEPENDENT failure semantics — a failed spec reports failed, the
+    others push their MRs. Coupled specs belong in batch mode, never here.
+    NOTE (D9): per-spec graph command chains are emitted by the graph step
+    of the sequence; until then per-spec threads skip command-state emission
+    (an interleaved shared chain would be WRONG, not just incomplete).
+    """
+    import concurrent.futures as _cf
+    import shutil as _shutil
+
+    from src.git import worktree_runs as wr
+
+    specs = [si.spec_name for si in request.spec_intents]
+    cap = max(1, int(os.getenv("RUN_SPEC_CONCURRENCY", "2")))
+    logger.info("Job %s: per-spec parallel mode — %d specs, concurrency %d",
+                job_id, len(specs), cap)
+    _corr = {"project": request.project, "job": job_id}
+    _trace.step(f"per-spec parallel run — {len(specs)} specs (cap {cap})", _corr)
+    results: dict = {}
+    done = {"n": 0}
+
+    def _one(intent) -> dict:
+        spec_name = intent.spec_name
+        sub_payload = {**(job.request_payload or {}),
+                       "spec_intents": [{"spec_name": spec_name,
+                                         "session_id": intent.session_id}],
+                       "batch_name": None}
+        sub_request = OrchestrationRequest(**sub_payload)
+        run_ws, allocated, err = _allocate_run_worktrees(
+            job, sub_request, workspace_dir, storage, spec_scope=spec_name)
+        if err:
+            return {"spec": spec_name, "success": False, "error": err}
+        try:
+            # Each spec executes step 1 (/write-spec) FRESH in its own worktree
+            # rather than resuming its shaped session. A resumed session is
+            # anchored to the live-tree cwd (its transcript records live-tree
+            # paths), so /write-spec follows that context and writes spec.md
+            # OUTSIDE the worktree. requirements.md is already SEEDED into the
+            # worktree by seed_run_root — all write-spec needs. A fresh session
+            # id isolates this spec's transcript in its worktree; steps 2-3
+            # resume it.
+            import uuid as _uuid
+            run_session = str(_uuid.uuid4())
+            orchestrator = _setup_orchestrator_context(
+                sub_request, run_ws, run_session,
+                anthropic_api_key, logs_workspace=workspace_dir)
+            orchestrator.on_spawn = lambda pid: storage.track_process(
+                job_id, pid, f"{job.worker_id or ''}:{spec_name}")
+            git_setup, git_err = _resolve_git_targets(sub_request, run_ws)
+            git_results: list = []
+
+            def on_spec_complete(sname: str, sidx: int) -> bool:
+                if git_setup is None:
+                    return False
+                before = len(git_results)
+                _git_one_spec(git_setup[0], git_setup[1], git_results, sname,
+                              batch_name=None, orchestrate_id=job_id,
+                              repair_of=None)
+                return any(r.get("error") for r in git_results[before:])
+
+            response = orchestrator.run_workflow(
+                start_from_step=1, on_spec_complete=on_spec_complete,
+                fresh_session_start=True)
+            errors = list(response.errors or [])
+            if git_err:
+                errors.append(git_err)
+            errors += [r["error"] for r in git_results if r.get("error")]
+            return {
+                "spec": spec_name,
+                "success": bool(response.success) and not errors,
+                "errors": errors,
+                "git": git_results,
+                "branch": f"feature/{spec_name}",
+                "pr_url": next((r.get("pr_url") for r in git_results
+                                if r.get("pr_url")), None),
+            }
+        except Exception as exc:
+            logger.error("Job %s spec %s failed: %s", job_id, spec_name, exc,
+                         exc_info=True)
+            return {"spec": spec_name, "success": False, "error": str(exc)}
+        finally:
+            try:
+                _reclaim_run_worktrees(job_id, storage, workspace_dir,
+                                       sub_request, allocated, run_ws)
+            except Exception:
+                logger.warning("per-spec reclamation failed (%s)", spec_name,
+                               exc_info=True)
+            done["n"] += 1
+            try:  # coarse per-run progress: completed specs / total
+                job.progress = JobProgress(
+                    current_step=done["n"], total_steps=len(specs),
+                    step_description=f"specs completed {done['n']}/{len(specs)}",
+                    percentage=_step_progress_percentage(done["n"], len(specs)))
+                storage.save_job(job)
+            except Exception:
+                pass
+
+    with _cf.ThreadPoolExecutor(max_workers=cap) as pool:
+        futures = [pool.submit(_one, si) for si in request.spec_intents]
+        for fut in _cf.as_completed(futures):
+            r = fut.result()
+            results[r["spec"]] = r
+            _trace.detail("orchestration.per_spec",
+                          {"spec": r["spec"], "success": r.get("success"),
+                           "pr_url": r.get("pr_url"),
+                           "error": r.get("error")}, _corr)
+
+    ok = sorted(s for s, r in results.items() if r.get("success"))
+    failed = sorted(s for s, r in results.items() if not r.get("success"))
+    # Empty job-level root (spec roots were reclaimed individually).
+    latest = storage.get_job(job_id)
+    lstatus = getattr(latest, "status", None)
+    lstatus = lstatus.value if hasattr(lstatus, "value") else lstatus
+    if lstatus not in (JobStatus.QUEUED_FOR_RESUME.value,
+                       JobStatus.RECOVERING.value):
+        _shutil.rmtree(wr.run_root(workspace_dir, job_id), ignore_errors=True)
+    if lstatus in (JobStatus.CANCELLED.value, JobStatus.CANCELLING.value):
+        logger.info("Job %s cancelled during per-spec run; preserving status",
+                    job_id)
+        return
+    job.completed_at = datetime.now(timezone.utc)
+    job.result = {"mode": "per_spec_parallel", "specs": results,
+                  "succeeded": ok, "failed": failed}
+    if failed and not ok:
+        job.status = JobStatus.FAILED
+        job.error = f"all {len(failed)} specs failed"
+    else:
+        job.status = JobStatus.COMPLETED
+        job.error = (f"specs failed (independent semantics): {failed}"
+                     if failed else None)
+    storage.save_job(job)
+    _graph_completed(graph_ctx, bool(ok) and not failed,
+                     {"mode": "per_spec_parallel",
+                      "succeeded": ok, "failed": failed})
+    _trace.ok(f"per-spec run done — {len(ok)} ok, {len(failed)} failed", _corr)
 
 
 def run_orchestration(job_id: str, storage: JobStorage):
@@ -605,6 +1030,9 @@ def run_orchestration(job_id: str, storage: JobStorage):
         return
 
     graph_ctx = None  # run-flow-graph context; set after the request resolves
+    request = None
+    run_workspace, run_worktrees = None, []  # parallel-worktrees (spec v2)
+    workspace_dir = os.getenv("API_WORKSPACE_DIR", ".")
     try:
         # Mark RUNNING — no-op for the worker path that already claimed
         # atomically, but records started_at/worker_id for the
@@ -624,6 +1052,44 @@ def run_orchestration(job_id: str, storage: JobStorage):
         # repair-attempt attach (repair mode, D2c). Best-effort throughout.
         graph_ctx = _init_run_graph(job_id, job, request)
 
+        # Parallel-worktrees (spec v2 D1-D4): allocate the run's overlay
+        # workspace so this job executes in ISOLATION — the live checkout's
+        # repo tree is never mutated (W1). Everything downstream that derives
+        # project_dir from (workspace, company, project) just gets the run
+        # workspace instead. Fail-fast allocation errors (branch collision,
+        # submodules, missing spec) fail the job with the explicit reason.
+        if _worktree_runs_enabled():
+            if len(request.spec_intents) > 1 and not request.batch_name:
+                return _run_per_spec_orchestration(
+                    job_id, job, storage, request, workspace_dir,
+                    anthropic_api_key, session_id, graph_ctx)
+            run_workspace, run_worktrees, wt_err = _allocate_run_worktrees(
+                job, request, workspace_dir, storage)
+            if wt_err:
+                raise ValueError(f"worktree allocation failed: {wt_err}")
+        ws_for_run = run_workspace or workspace_dir
+        start_step = job.resume_from_step or 1
+
+        # Worktree runs execute step 1 (/write-spec) FRESH in the worktree
+        # rather than resuming the shape-spec session. A resumed session's
+        # conversation history is anchored to the LIVE-TREE cwd, so /write-spec
+        # follows that context and writes spec.md OUTSIDE the worktree — the
+        # worktree output-check then fails (confirmed live driving the UI:
+        # 56/67 transcript messages recorded the live-tree cwd, and Claude
+        # wrote spec.md there even with the process cwd set to the worktree and
+        # the transcript re-homed). requirements.md is already SEEDED into the
+        # worktree by seed_run_root — all write-spec needs. A fresh session id
+        # keeps this run's transcript isolated in the worktree; steps 2-3 then
+        # resume it. Legacy live-tree runs (no worktree) keep resuming the
+        # shaped session; resumes (start_step > 1) reuse the surviving worktree
+        # session and are handled by _restore_session below.
+        import uuid as _uuid
+        run_session_id = session_id
+        fresh_session_start = False
+        if run_workspace and start_step <= 1:
+            run_session_id = str(_uuid.uuid4())
+            fresh_session_start = True
+
         # SUMMARY: orchestration started — N specs. impl-verify knows
         # company/project + job_id; project is the workflow-spanning grouping key,
         # job the sub-thread (no arch here — grouping by project still works).
@@ -633,15 +1099,19 @@ def run_orchestration(job_id: str, storage: JobStorage):
         )
 
         orchestrator = _setup_orchestrator_context(
-            request, workspace_dir, session_id, anthropic_api_key
+            request, ws_for_run, run_session_id, anthropic_api_key,
+            logs_workspace=workspace_dir,
         )
+        # D13: every CLI spawn registers its pid against the job so the
+        # owning process's watchdog can kill the tree on cancel.
+        orchestrator.on_spawn = lambda pid: storage.track_process(
+            job_id, pid, job.worker_id or "")
         job.logs_path = str(orchestrator.orchestration_log_dir)
         storage.save_job(job)
 
-        start_step = job.resume_from_step or 1
         _restore_session(
-            job_id, start_step, request, workspace_dir,
-            session_id, anthropic_api_key,
+            job_id, start_step, request, ws_for_run,
+            run_session_id, anthropic_api_key,
         )
 
         def on_step_complete(step_num: int, step_description: str):
@@ -682,7 +1152,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
         # on_spec_complete) so `git add -A` stages only that spec's files. The git
         # results accumulate on a throwaway namespace during the run (the real
         # response doesn't exist yet), then fold into the response below.
-        git_setup, git_err = _resolve_git_targets(request, workspace_dir)
+        git_setup, git_err = _resolve_git_targets(request, ws_for_run)
         git_results: list = []  # C1/L3: one record per (spec, repo), never collapsed
 
         batch_name = request.batch_name  # set => N specs accumulate onto one branch
@@ -735,18 +1205,21 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 )
             return any(r.get("error") for r in new)
 
-        # R8: the interleaved per-spec git mutates the LIVE working tree
-        # (git add -A / commit / checkout-back). Two orchestration jobs for the
-        # SAME company/project (two workers, or worker + API-background) would race
-        # on that tree and cross-contaminate commits — the B2 bug across jobs. Hold
-        # a per-(company,project) inter-process lock over the whole generate+commit
-        # phase so same-project jobs serialize. (Deploy runs after, on an isolated
-        # worktree, so it's outside the lock.)
-        with _project_git_lock(workspace_dir, request.company, request.project):
+        # R8 (legacy live-tree mode ONLY): the interleaved per-spec git mutates
+        # the LIVE working tree, so same-project jobs must serialize over the
+        # whole generate+commit phase. Under WORKTREE MODE the run executes in
+        # its own worktree set — isolation replaces serialization (spec v2 D5):
+        # the project lock was already held briefly during allocation, and
+        # commits/pushes rely on git's own per-ref locking.
+        from contextlib import nullcontext
+        phase_lock = (nullcontext() if run_workspace
+                      else _project_git_lock(workspace_dir, request.company, request.project))
+        with phase_lock:
             response = orchestrator.run_workflow(
                 start_from_step=start_step,
                 on_step_complete=on_step_complete,
                 on_spec_complete=on_spec_complete,
+                fresh_session_start=fresh_session_start,
             )
             # Batch mode: all specs have committed onto the one shared branch; now
             # push it + open exactly ONE PR per repo target. Inside the lock (R8) so
@@ -818,11 +1291,15 @@ def run_orchestration(job_id: str, storage: JobStorage):
 
     except Exception as e:
         # Update with error — same cancel-preserving guard as the success path.
+        # D13: CANCELLING is preserved too — a killed session raises here while
+        # the owner's watchdog is mid-confirmation; stamping FAILED over it
+        # would break the two-phase cancel.
         logger.error(f"Orchestration job {job_id} failed: {str(e)}", exc_info=True)
         latest = storage.get_job(job_id)
-        if latest and latest.status == JobStatus.CANCELLED.value:
+        if latest and latest.status in (JobStatus.CANCELLED.value,
+                                        JobStatus.CANCELLING.value):
             logger.info(
-                f"Job {job_id} was cancelled during execution; preserving CANCELLED status"
+                f"Job {job_id} was cancelled during execution; preserving cancel status"
             )
             raise
         job.status = JobStatus.FAILED
@@ -831,6 +1308,16 @@ def run_orchestration(job_id: str, storage: JobStorage):
         storage.save_job(job)
         _graph_completed(graph_ctx, False, {"error": str(e)})
         raise
+    finally:
+        # Parallel-worktrees D14: owner-side reclamation on every exit path.
+        # Skips (leaves the tree as an asset) when recovery owns the job.
+        if run_workspace and request is not None:
+            try:
+                _reclaim_run_worktrees(job_id, storage, workspace_dir,
+                                       request, run_worktrees, run_workspace)
+            except Exception:
+                logger.warning("worktree reclamation failed for %s",
+                               job_id, exc_info=True)
 
 
 # Placeholder functions for Phase 2+ expansion
@@ -915,11 +1402,11 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
     except Exception:
         logger.warning("run-graph: verify-start emission failed (non-fatal)", exc_info=True)
 
+    verify_root_info = None  # set under worktree mode; used by the finally
+    workspace_dir = Path(os.getenv("API_WORKSPACE_DIR", "."))
     try:
         from src.backend_registry import _build_cli_executor
         from src.safe_paths import UnsafePathError, safe_project_dir
-
-        workspace_dir = Path(os.getenv("API_WORKSPACE_DIR", "."))
         try:
             project_dir = safe_project_dir(workspace_dir, job.company, job.project)  # C2: no traversal
         except UnsafePathError as exc:
@@ -930,8 +1417,61 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             return
         project_dir.mkdir(parents=True, exist_ok=True)
 
+        # F8 (parallel-worktrees): the composed command MUST never carry a
+        # relative --db. Under D11 the session cwd is an ephemeral verify
+        # root — a relative default would CREATE a fresh empty store there
+        # and silently swallow guarded verdicts/repair dispatches.
         db_path = os.getenv("VERIFICATION_DB_PATH") or os.getenv("JOBS_DB_PATH", "jobs.db")
+        db_path = str(Path(db_path).expanduser().resolve())
         anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+        # D11: composite verify run-root — context snapshot + one detached
+        # repo worktree per BOUND repo at its bound head_sha. Repos with no
+        # binding are UNPINNABLE (no binding → no code verification; never
+        # the live checkout). Falls back to the live product root only when
+        # worktree mode is off or nothing is git-shaped.
+        verify_root_info = None
+        session_dir = project_dir
+        extra_cmd = ""
+        if _worktree_runs_enabled():
+            from src.git import worktree_runs as wr
+            targets = _resolve_repo_targets(project_dir)
+            if targets:
+                from ..verification import store as vstore
+                bconn = vstore.connect(db_path)
+                try:
+                    bindings = {}
+                    for folder, live_repo in targets:
+                        label = folder if folder is not None else (repo or "repo")
+                        b = vstore.binding_for_cell(
+                            bconn, str(orchestrate_id), str(task_group_id), label)
+                        bindings[label] = {"live_repo": live_repo,
+                                           "head_sha": (b or {}).get("head_sha")}
+                finally:
+                    bconn.close()
+                verify_root_info = wr.allocate_verify_root(
+                    str(workspace_dir), job.company, job.project, job_id,
+                    bindings, specs=[str(task_group_id)])
+                infra_repos = wr.run_setup_commands(
+                    verify_root_info["context_dir"] / "coordination.lock.yaml",
+                    verify_root_info["repos"],
+                    verify_root_info["evidence_dir"] / "setup")
+                session_dir = verify_root_info["root"]
+                # Verify runs a FRESH session (D10.2, no --resume of a shape
+                # session) → prep for trust/skills only, no session re-home.
+                from src.chat.worktree_prep import prepare_worktree
+                prepare_worktree(verify_root_info["root"], live_product=None)
+                job.worktree_root = str(verify_root_info["root"])
+                storage.save_job(job)
+                extra_cmd = (
+                    f" context_dir={verify_root_info['context_dir']}"
+                    f" repos_dir={verify_root_info['repos_dir']}"
+                    f" evidence_dir={verify_root_info['evidence_dir']}"
+                )
+                if verify_root_info["unpinned"]:
+                    extra_cmd += f" unpinned_repos={','.join(verify_root_info['unpinned'])}"
+                if infra_repos:
+                    extra_cmd += f" setup_failed_repos={','.join(infra_repos)}"
 
         # The verification-loop agent records through the guarded recorder via its
         # Bash idiom (`python -m src.verification.recorder <tool> --json ... --db ...`,
@@ -945,24 +1485,29 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             os.environ["PYTHONPATH"] = ivs_repo_root + (os.pathsep + _pp if _pp else "")
 
         # The loop reconstructs everything from the db (always-fresh, D10.2);
-        # the command line carries only the correlation keys + db location.
-        # A parity-triggered re-invocation (Spec 2026-07-06-i, Tier-1 batch)
-        # additionally carries `trigger=parity` so the loop knows to read the
-        # (repo, 'parity') cell's verdict detail as its defect input — the
-        # breaks themselves are already DURABLE on that verdict row.
+        # the command line carries the correlation keys + db location, plus
+        # (D11) the explicit verify-root paths — commands MUST NOT assume the
+        # session cwd is a git repository. A parity-triggered re-invocation
+        # (Spec 2026-07-06-i, Tier-1 batch) additionally carries
+        # `trigger=parity` so the loop knows to read the (repo, 'parity')
+        # cell's verdict detail as its defect input — the breaks themselves
+        # are already DURABLE on that verdict row.
         trigger_suffix = " trigger=parity" if payload.get("parity_report") else ""
         command = (
             f"/verify-task-group orchestrate_id={orchestrate_id} "
             f"task_group_id={task_group_id} repo={repo} "
-            f"verification_db={db_path}{trigger_suffix}"
+            f"verification_db={db_path}{extra_cmd}{trigger_suffix}"
         )
         logger.info(f"Job {job_id}: launching verification-loop session: {command}")
-        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
+        executor = _build_cli_executor(str(session_dir), anthropic_api_key)
+        executor.on_spawn = lambda pid: storage.track_process(
+            job_id, pid, job.worker_id or "")
         result = executor.execute(command, timeout=payload.get("timeout_seconds", 1800))
 
         latest = storage.get_job(job_id)
-        if latest and latest.status == JobStatus.CANCELLED.value:
-            logger.info(f"Job {job_id} cancelled during execution; preserving CANCELLED")
+        if latest and latest.status in (JobStatus.CANCELLED.value,
+                                        JobStatus.CANCELLING.value):
+            logger.info(f"Job {job_id} cancelled during execution; preserving cancel status")
             return
         job.status = JobStatus.COMPLETED if result.get("success") else JobStatus.FAILED
         job.completed_at = datetime.now(timezone.utc)
@@ -972,6 +1517,9 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
             "execution_time": result.get("execution_time"),
             "stdout_tail": (result.get("stdout") or "")[-2000:],
         }
+        if verify_root_info is not None:
+            job.result["verify_root"] = str(verify_root_info["root"])
+            job.result["unpinned_repos"] = verify_root_info["unpinned"]
         if not result.get("success"):
             job.error = (result.get("stderr") or "")[-1000:] or "verification-loop session failed"
         storage.save_job(job)
@@ -982,6 +1530,29 @@ def run_verify_task_group(job_id: str, storage: JobStorage):
         job.error = str(exc)[:1000]
         storage.save_job(job)
         raise
+    finally:
+        # D11/D14: verify roots are ephemeral — evidence is copied into the
+        # job's durable logs dir, then the root + registrations reclaimed.
+        if verify_root_info is not None:
+            try:
+                from src.git import worktree_runs as wr
+                from src.job_queue.process_tracking import kill_tree, pid_alive
+                for pid in storage.tracked_pids(job_id):
+                    if pid_alive(pid):
+                        kill_tree(pid)
+                storage.clear_process(job_id)
+                if job.logs_path:
+                    import shutil as _sh
+                    _sh.copytree(verify_root_info["evidence_dir"],
+                                 Path(job.logs_path) / "verify-evidence",
+                                 dirs_exist_ok=True)
+                wr.reclaim_verify_root(str(workspace_dir), job.company,
+                                       job.project,
+                                       verify_root_info["allocated"],
+                                       verify_root_info["root"])
+            except Exception:
+                logger.warning("verify-root reclamation failed for %s",
+                               job_id, exc_info=True)
 
 
 def run_haibox_verify(job_id: str, storage: JobStorage):
@@ -1195,7 +1766,7 @@ def _git_changed_files(project_dir: Path) -> tuple[bool, list[str]]:
 
 
 def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branch="main",
-                           client=None):
+                           client=None, git_lock=None):
     """F2 (consolidate-at-deploy): merge the run's spec branches into one integrated
     tree and deploy the whole via haibox — so the target serves ALL N specs.
 
@@ -1217,6 +1788,7 @@ def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branc
     import shutil
     import subprocess as _sp
     import tempfile
+    from contextlib import nullcontext
 
     from src.haibox.client import HaiboxClient
     from src.haibox.integration import provision_for_job
@@ -1224,8 +1796,15 @@ def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branc
     def _git(*a, cwd=None):
         return _sp.run(["git", "-C", str(cwd or repo_dir), *a], capture_output=True, text=True)
 
+    def _lock():
+        # D5 (parallel-worktrees): worktree add/remove mutate the SHARED
+        # .git/worktrees registry — serialize with run allocation/reclaim.
+        # Held only around the registry mutations, never the merge/deploy.
+        return git_lock() if git_lock else nullcontext()
+
     wt = Path(tempfile.mkdtemp(prefix="haibox-deploy-")) / "wt"
-    add = _git("worktree", "add", "--detach", str(wt), default_branch)
+    with _lock():
+        add = _git("worktree", "add", "--detach", str(wt), default_branch)
     if add.returncode != 0:
         shutil.rmtree(wt.parent, ignore_errors=True)
         raise RuntimeError(f"cannot create deploy worktree from {default_branch}: {add.stderr[:300]}")
@@ -1248,7 +1827,8 @@ def consolidate_and_deploy(repo_dir, spec_branches, serve_spec, *, default_branc
     finally:
         # L1: the box has its own copy now — always reclaim the worktree + temp dir
         # + the .git/worktrees registration (success OR failure). No leak.
-        _git("worktree", "remove", "--force", str(wt))
+        with _lock():
+            _git("worktree", "remove", "--force", str(wt))
         shutil.rmtree(wt.parent, ignore_errors=True)
 
 
@@ -1289,8 +1869,12 @@ def _deploy_completed_run(request: OrchestrationRequest, workspace_dir: str, res
     else:
         branches = [f"feature/{si.spec_name}" for si in request.spec_intents]
     try:
-        return consolidate_and_deploy(repo_dir, branches, request.target,
-                                      default_branch=load_git_config().default_branch)
+        return consolidate_and_deploy(
+            repo_dir, branches, request.target,
+            default_branch=load_git_config().default_branch,
+            git_lock=lambda: _project_git_lock(
+                str(workspace_dir), request.company, request.project),
+        )
     except Exception as exc:  # merge conflict or haibox failure — report `failed`
         logger.warning("deploy_on_complete failed: %s", exc)
         response.errors.append(f"deploy failed: {exc}")
@@ -1317,11 +1901,21 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
     # DEPLOYED wins on a base_url; if any spec was committed the run IMPLEMENTED
     # (errors attached as warnings); ERROR is reserved for nothing-built.
     committed = bool(spec_git) and any(r.get("commit_sha") for r in spec_git)
+    # A failed run must NEVER report IMPLEMENTED just because no per-spec git
+    # error was recorded: a workflow step failure (e.g. /write-spec producing no
+    # spec.md) lives on `response.success`, not on `response.errors`. The old
+    # else-branch masked that as IMPLEMENTED — the callback then told the UI the
+    # feature was built when nothing was. Surfaced by the single-spec worktree
+    # write-spec landing in the live tree. Fold a reason in so `error` isn't blank.
+    run_ok = getattr(response, "success", True) is not False
+    if not run_ok and not response.errors:
+        response.errors = ["orchestration did not complete successfully "
+                           "(a workflow step failed — see orchestration logs)"]
     if deploy and deploy.get("base_url"):
         outcome = outcomes.DEPLOYED
     elif committed:
         outcome = outcomes.IMPLEMENTED
-    elif response.errors:
+    elif response.errors or not run_ok:
         outcome = outcomes.ERROR
     else:
         outcome = outcomes.IMPLEMENTED
@@ -1432,6 +2026,7 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
         return
 
     summary, session_ok = "", False
+    changed, changed_files = False, []
     try:
         from src.backend_registry import _build_cli_executor
 
@@ -1458,10 +2053,18 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
             "or VERDICT=NOFIX if a fix was warranted but none was kept."
         )
         logger.info(f"Job {job_id}: launching haikai bug investigation for {bug_id} in {project_dir}")
-        executor = _build_cli_executor(str(project_dir), anthropic_api_key)
-        result = executor.execute(command, timeout=int((job.request_payload or {}).get("timeout_seconds", 1800)))
-        session_ok = bool(result.get("success"))
-        summary = (result.get("stdout") or "")[-2000:]
+        # D5 (parallel-worktrees): bug investigation mutates the LIVE tree
+        # in place — the one remaining live-tree writer. It now serializes
+        # under the project git lock (it held NO lock before: a pre-existing
+        # race with anything else touching the live checkout). The lock also
+        # covers the change-detection read so a second investigation can't
+        # mutate between session end and `git status`.
+        with _project_git_lock(str(workspace_dir), str(bug.get("company")), str(bug.get("project"))):
+            executor = _build_cli_executor(str(project_dir), anthropic_api_key)
+            result = executor.execute(command, timeout=int((job.request_payload or {}).get("timeout_seconds", 1800)))
+            session_ok = bool(result.get("success"))
+            summary = (result.get("stdout") or "")[-2000:]
+            changed, changed_files = _git_changed_files(project_dir)
     except Exception as exc:
         summary = f"investigation session error: {exc}"
 
@@ -1470,7 +2073,6 @@ def run_bug_investigation(job_id: str, storage: JobStorage):
     # without a change is a no-op; a change without the verdict failed its tests.
     verdict_fixed = "VERDICT=FIXED" in summary
     not_a_bug = "VERDICT=NOTABUG" in summary
-    changed, changed_files = _git_changed_files(project_dir)
     fixed = bool(session_ok and verdict_fixed and changed)
     haikai_verdict = "FIXED" if verdict_fixed else ("NOTABUG" if not_a_bug else "NOFIX")
     detail = {

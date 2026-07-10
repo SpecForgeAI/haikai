@@ -6,6 +6,7 @@ and executes jobs asynchronously.
 """
 
 import os
+import socket
 import time
 import signal
 import sys
@@ -28,6 +29,9 @@ logger = logging.getLogger(__name__)
 # (in src.api.recovery), which must be comfortably larger than this.
 HEARTBEAT_INTERVAL_SECONDS = 30
 
+# Idle-cadence D14 filesystem sweep (parallel-worktrees).
+SWEEP_INTERVAL_SECONDS = 600
+
 
 class Worker:
     """Background worker for processing queued jobs."""
@@ -43,7 +47,11 @@ class Worker:
     def __init__(self, db_path: str = "jobs.db"):
         self.storage = JobStorage(db_path)
         self.running = True
-        self.worker_id = os.getenv("WORKER_ID", "worker-1")
+        # Per-replica identity: WORKER_ID if set, else hostname-derived so
+        # `docker compose --scale` replicas claim under DISTINCT identities
+        # (a hardcoded shared id would defeat claim attribution).
+        self.worker_id = os.getenv("WORKER_ID") or f"worker-{socket.gethostname()}"
+        self._last_sweep = 0.0
         
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGTERM, self._shutdown)
@@ -95,8 +103,10 @@ class Worker:
         
         while self.running:
             try:
-                # Get next queued job
-                job = self.storage.get_next_queued_job()
+                # Get next queued job — claim under THIS worker's identity so
+                # parallel workers are attributable (the deprecated shim claimed
+                # everything as the default worker id).
+                job = self.storage.claim_next_queued_job(self.worker_id)
                 
                 if job:
                     # Reload modules to pick up code changes (hot-reload)
@@ -107,12 +117,16 @@ class Worker:
                         f"(type: {job.type}, company: {job.company}, project: {job.project})"
                     )
                     
-                    # Heartbeat the job while it runs so recovery can tell a live
-                    # worker's job from an orphaned one (and not mark it failed).
+                    # Liveness loop: heartbeats + the CANCELLING watchdog that
+                    # kills THIS worker's tracked process tree (D13: only the
+                    # job-owning process kills).
+                    from .process_tracking import job_liveness_loop
                     hb_stop = threading.Event()
                     self.storage.beat(job.job_id)  # first beat before any work
                     hb = threading.Thread(
-                        target=self._heartbeat_loop, args=(job.job_id, hb_stop), daemon=True)
+                        target=job_liveness_loop,
+                        args=(self.storage, job.job_id, hb_stop, self.worker_id),
+                        daemon=True)
                     hb.start()
                     try:
                         # Execute job based on type
@@ -152,7 +166,21 @@ class Worker:
                         hb_stop.set()
 
                 else:
-                    # No jobs, sleep briefly
+                    # No jobs, sleep briefly. Idle time also hosts the D14
+                    # filesystem sweeper (protected states are never touched;
+                    # liveness gates every reclaim).
+                    now = time.monotonic()
+                    if now - self._last_sweep > SWEEP_INTERVAL_SECONDS:
+                        self._last_sweep = now
+                        try:
+                            reclaimed = _tasks_module.sweep_workspace_worktrees(
+                                self.storage)
+                            if reclaimed:
+                                logger.info("Worker %s: swept worktrees %s",
+                                            self.worker_id, reclaimed)
+                        except Exception:
+                            logger.warning("worktree sweep errored",
+                                           exc_info=True)
                     time.sleep(1)
             
             except Exception as e:

@@ -4,6 +4,18 @@ Run per task group after that group's implementer has committed (with the D1 tra
 
 The judgement is the loop's; the only code is the recorder tools, which are **guarded writes** (D10.1) — they refuse a red-gate advance, a double-advance, or an over-cap repair. The runtime is only irreducible I/O: the **inbound-gateway** (authenticated SHA→cell correlate, D10.4; re-invokes the loop on async verdicts, D10.2), **jobs.db** (the guarded recorders), and the **SSE** stream (D6).
 
+## Composite verify run-root (parallel-worktrees D11)
+
+Under worktree mode the runtime launches you inside an ephemeral **verify run-root**, not a repo, and passes explicit paths on the command line — **NEVER assume your cwd is a git repository**:
+
+- `context_dir=<root>/context` — the product-context snapshot: `coordination.yaml`, the pinned `coordination.lock.yaml`, and `haikai/specs/<task_group_id>/` (planning + rubrics). Read spec/rubric/lock inputs from HERE.
+- `repos_dir=<root>/repos` — one detached git worktree per BOUND repo, checked out at that repo's bound `head_sha`. Run every inline verifier command with `cwd=<repos_dir>/<repo>` — this is the exact commit whose CI verdict you are folding.
+- `evidence_dir=<root>/evidence` — write command outputs under `command-results/`; `setup/` already holds the pinned `setup_commands` logs the runtime ran at allocation.
+- `unpinned_repos=<csv>` (when present) — repos with **no CI binding**. Rule: **no binding → no code verification.** Do NOT run their commands against the live checkout, a branch tip, or any filesystem state; record their cells as `infra` with reason `UNPINNABLE — no bound repo SHA`, do not classify them `real`, and do not `open_repair` them (the dispatch gate refuses unpinnable repairs anyway).
+- `setup_failed_repos=<csv>` (when present) — repos whose pinned setup commands failed at allocation: their cells classify `infra`, never `real` (see `evidence/setup/<repo>.log`).
+
+Durable writes still go to durable homes: the repair mini-spec to the LIVE product root (see the `real` branch below), recorder writes through `--db <verification_db>` (always an absolute path — never re-derive it from cwd).
+
 {{IF use_claude_code_subagents}}
 ## Delegate to the verification-loop subagent
 
@@ -51,9 +63,11 @@ When a cell's latest verdict is `fail`, classify it (D4) **before** you touch `o
 
 1. **Anchor the attempt to the verdict ordinal.** Read the failing cell's latest `attempt` from `verdicts` (the atomic `MAX(attempt)` ordinal — it increments on each new CI verdict). Call `open_repair` with that `attempt`. If `open_repair` REFUSES (exit 1, "escalate to a human" — the cap, default 3, is hit), STOP: the gate stays red, the group + dependents park for a human. Do not dispatch.
 
-2. **Materialize the scoped fix as a fresh single-repo spec.** Pick `spec_name = <orig-spec>-repair-<repo>-attempt<N>` and write, under the failing repo's product root:
+2. **Materialize the scoped fix as a fresh single-repo spec.** Pick `spec_name = <orig-spec>-repair-<repo>-attempt<N>` and write it to the **LIVE product root** — `$API_WORKSPACE_DIR/<company>/<project>/haikai/specs/<spec_name>/planning/` — NEVER to your session's working directory if that is an ephemeral verify worktree (parallel-worktrees D8/W1: the live `haikai/` metadata tree is the durable hand-off home; an ephemeral tree is reclaimed and the repair run would find nothing). Files:
    - `haikai/specs/<spec_name>/planning/initialization.md` — the raw fix idea (the failure in one line).
    - `haikai/specs/<spec_name>/planning/requirements.md` — the SCOPED fix (`touched_repos: [<repo>]`), and a **Verification** section that names the EXACT failing verifier command for this cell (the pinned `inline_commands` / the CI step that went red, e.g. `pip-audit -r requirements.txt`) as the success criterion — so the implementer fixes the thing the gate actually checks, not the default test suite.
+
+   The enqueue CLI (step 3) stamps a sha256 over these planning files into the job payload; the repair run re-hashes its seeded copy and REFUSES the job on mismatch — so write the files completely BEFORE dispatching, and do not edit them after.
 
 3. **Dispatch via the enqueue CLI** (the verify-loop agent has no enqueue tool; this is the one sanctioned way — it only writes an ORCHESTRATION job to the jobs db the worker polls). You MUST include `repair_of` = THIS failing cell **with its COMPLETE identity including `verifier`** (D2b/I16 — a repair that doesn't name the failed verifier is under-specified and is REFUSED), and pass the same `--db <verification_db>` this command gave you (the CLI validates `repair_of` against the open repair record you just created — no match or ambiguity is refused; never guess):
    ```

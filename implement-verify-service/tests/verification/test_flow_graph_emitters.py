@@ -147,8 +147,11 @@ def test_init_run_graph_repair_mode_attaches_no_new_root(conn):
     """D2c: a validated repair job attaches to the PARENT graph; the repair
     job id NEVER becomes a visible run root."""
     from src.job_queue.tasks import _graph_step, _init_run_graph
+    from src.verification import store as _vstore
     recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
     recorder.open_repair(conn, RUN, SPEC, "app", "ci-trigger", 1)
+    # D11/M3: validation now also requires a binding (pinnable cell).
+    _vstore.record_binding(conn, "d" * 40, "gitlab", RUN, SPEC, "app")
     repair_job = "repair-job-999"
     job = SimpleNamespace(request_payload={"repair_of": {
         "orchestrate_id": RUN, "task_group_id": SPEC,
@@ -181,8 +184,15 @@ def test_init_run_graph_invalid_repair_of_rejected_never_guesses(conn):
 
 
 def test_validate_repair_target_rules(conn):
+    from src.verification import store as _vstore
     recorder.record_verdict(conn, RUN, SPEC, "app", "ci-trigger", "fail")
     recorder.open_repair(conn, RUN, SPEC, "app", "ci-trigger", 1)
+    # D11/M3: an unpinnable cell (no ci_binding) refuses dispatch outright.
+    ok, reason, _ = fg.validate_repair_target(conn, {
+        "orchestrate_id": RUN, "task_group_id": SPEC,
+        "repo": "app", "verifier": "ci-trigger"})
+    assert not ok and "no bound repo SHA" in reason
+    _vstore.record_binding(conn, "c" * 40, "gitlab", RUN, SPEC, "app")
     ok, _, att = fg.validate_repair_target(conn, {
         "orchestrate_id": RUN, "task_group_id": SPEC,
         "repo": "app", "verifier": "ci-trigger"})
@@ -224,6 +234,15 @@ def test_guard_zero_graph_event_writers_outside_flow_graph():
 def cli_env(tmp_path, monkeypatch):
     monkeypatch.setenv("VERIFICATION_DB_PATH", str(tmp_path / "verify.db"))
     monkeypatch.setenv("JOBS_DB_PATH", str(tmp_path / "jobs.db"))
+    # Parallel-worktrees D8: a repair dispatch checksums the mini-spec's
+    # planning files at the LIVE product root — materialize them like the
+    # verify session does before dispatching.
+    monkeypatch.setenv("API_WORKSPACE_DIR", str(tmp_path / "ws"))
+    planning = (tmp_path / "ws" / "acme" / "demo" / "haikai" / "specs"
+                / f"{SPEC}-repair" / "planning")
+    planning.mkdir(parents=True)
+    (planning / "initialization.md").write_text("fix idea\n")
+    (planning / "requirements.md").write_text("scoped fix\n")
     c = fg.connect()
     yield c
     c.close()
@@ -254,8 +273,11 @@ def _jobs_count():
 
 def test_enqueue_cli_validated_repair_dispatch(cli_env, capsys):
     from src.job_queue.enqueue_cli import main
+    from src.verification import store as _vstore
     recorder.record_verdict(cli_env, RUN, SPEC, "app", "ci-trigger", "fail")
     recorder.open_repair(cli_env, RUN, SPEC, "app", "ci-trigger", 1)
+    # D11/M3: unpinnable cells (no ci_binding) refuse repair dispatch.
+    _vstore.record_binding(cli_env, "b" * 40, "gitlab", RUN, SPEC, "app")
     rc = main(["orchestration", "--json", _dispatch_payload()])
     out = capsys.readouterr().out
     assert rc == 0 and '"ok": true' in out
