@@ -97,6 +97,17 @@ public final class MigrationGapCodes {
      */
     public static final String UNAPPROVED_DB_TRANSLATIONS = "unapproved_db_translations";
 
+    /**
+     * Code-side blast radius of the DB change is unproven (Spec 2026-07-06-f
+     * §4, Tier-1 batch): dialect-affected consumers exist (endpoints whose
+     * captured SQL is T-SQL — {@code affectedConsumerCount} on the database
+     * summary) but NO scoped-parity revalidation diff has ever run. Advisory
+     * (downgrades dataReadiness to partial); wayfinding: run
+     * {@code POST /db-migration-packs/:packId/revalidate-db-consumers}
+     * against the deployed target — the scoped diff row clears this code.
+     */
+    public static final String DB_CONSUMERS_UNREVALIDATED = "db_consumers_unrevalidated";
+
     /** Per-stream status string: stream is fully ready. */
     public static final String STATUS_SUFFICIENT = "sufficient";
 

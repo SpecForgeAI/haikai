@@ -54,7 +54,7 @@ function watch(projectId: string) {
 
 function gateReads(diffs: GateDiffRow[]): CodeGateReads {
   return {
-    fetchEndpointBaselineCoverage: jest.fn(),
+    fetchEndpointBaselineCoverageRows: jest.fn(),
     fetchCoverageSummaryForBaseline: jest.fn(),
     listDiffsForBaseline: jest.fn(async () => diffs),
     listDiffItems: jest.fn(async () => []),
@@ -114,7 +114,7 @@ test('TICK: one watch failing never blocks the others (failure-isolated)', async
   store.set(watch('proj-a'));
   store.set(watch('proj-b'));
   const reads = {
-    fetchEndpointBaselineCoverage: jest.fn(),
+    fetchEndpointBaselineCoverageRows: jest.fn(),
     fetchCoverageSummaryForBaseline: jest.fn(),
     listDiffsForBaseline: jest.fn(async (projectId: string) => {
       if (projectId === 'proj-a') throw new Error('AMS down for a');

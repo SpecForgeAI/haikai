@@ -43,6 +43,26 @@ export async function fetchEndpointBaselineCoverage(
   projectId: string,
   architectureId: string,
 ): Promise<Map<string, string>> {
+  const rows = await fetchEndpointBaselineCoverageRows(projectId, architectureId);
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (row?.endpoint_id && row?.baseline_id) {
+      map.set(row.endpoint_id, row.baseline_id);
+    }
+  }
+  return map;
+}
+
+/**
+ * RAW coverage rows (Tier-1 batch 2026-07-10): the gate's story-scoped floor
+ * evaluation needs the per-endpoint `method`/`path` alongside the ids, so it
+ * can attribute floor misses to in-scope stories. Same AMS read; the map
+ * wrapper above delegates here.
+ */
+export async function fetchEndpointBaselineCoverageRows(
+  projectId: string,
+  architectureId: string,
+): Promise<EndpointBaselineCoverageRow[]> {
   const baseUrl = getConfig().architectureModelServiceBaseUrl;
   const url =
     `${baseUrl}/api/projects/${encodeURIComponent(projectId)}` +
@@ -60,11 +80,5 @@ export async function fetchEndpointBaselineCoverage(
     );
   }
   const rows = (await response.json()) as EndpointBaselineCoverageRow[];
-  const map = new Map<string, string>();
-  for (const row of rows ?? []) {
-    if (row?.endpoint_id && row?.baseline_id) {
-      map.set(row.endpoint_id, row.baseline_id);
-    }
-  }
-  return map;
+  return Array.isArray(rows) ? rows : [];
 }

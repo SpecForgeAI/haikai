@@ -52,4 +52,12 @@ public interface ApiBehaviourDiffRepository
      */
     Optional<ApiBehaviourDiffEntity> findBySourceBaselineIdAndTargetBaselineId(
         UUID sourceBaselineId, UUID targetBaselineId);
+
+    /**
+     * Project-scoped read (Spec 2026-07-06-f §4, Tier-1 batch): the readiness
+     * assessment checks whether ANY scoped-parity revalidation diff exists for
+     * the project. `endpoint_scope_json` filtering happens in Java — diffs per
+     * project are bounded.
+     */
+    List<ApiBehaviourDiffEntity> findByProjectId(UUID projectId);
 }

@@ -96,3 +96,32 @@ Per-invocation credentials NEVER persisted (Q2b memory-hold is the one scoped
 exception, process-lifetime only). NEW Liquibase changesets only. snake_case
 AMS wire. Fail-closed gates; fail-soft enrichment. Baseline-red discipline:
 verify failures against the pre-batch baseline before attributing.
+
+## Completion record (2026-07-10)
+
+All five items BUILT + VERIFIED, one commit each on `feature/tier1-wiring-batch`:
+item 1 `6f621af`, item 2 `76c3062`, item 3 `b16a96f`, item 4 `a0a0864`, item 5 (this
+commit). Deviations from the plan above:
+
+- **Item 2:** stories with ZERO compared diff items post NO verdict (repair cannot fix
+  "not verified"; the completion gate keeps them blocked and the parity-status endpoint
+  shows them) — the plan's predicate said "posts two verdicts", refined to
+  pass+fail-with-breaks for compared stories only. The IVS defect input rides the
+  parity VERDICT ROW's detail_json (bounded 50 breaks + truncation marker) per D10.2
+  rather than a side channel; repair runs launch with `trigger=parity`.
+- **Item 5 readiness:** `affectedConsumerCount` v1 = the AMS-computable T-SQL-dialect
+  dimension only (DISTINCT endpoints with `sql_dialect: 'tsql'` edges); the
+  proc/table dimensions stay gateway-side in `dbChangeConsumerResolver` (computing
+  them AMS-side needs a proc-name→dep-id join recorded as follow-up). The
+  `db_consumers_unrevalidated` clearing signal = any completed diff whose
+  `endpoint_scope_json` purpose is 'parity'.
+- **Item 5 bonus fix:** the gate's `missing_baseline` exemption used string EQUALITY
+  on `flagReason`; the planner comma-joins multiple flags, so a
+  `missing_baseline,dialect_affected` story lost its exemption — now membership.
+- **Item 5 floor scoping:** empty in-scope key set falls back to whole-summary
+  evaluation (fail closed, never silently narrower).
+
+Verification: 2 plan-wiring pins + 4 emitter pins + 3 IVS pins + 2 target-DB route
+pins + 3 scheduler/threading pins + 1 sequence pin + 2 minting pins + 2 floor-scoping
+pins + 4 AMS readiness pins. Regressions green per item across gateway / AMVS /
+discovery / IVS / AMS.
