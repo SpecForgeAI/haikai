@@ -45,6 +45,7 @@
  */
 
 import { getConfig } from '../config';
+import { createTracer } from '../trace';
 import {
   fetchMigrationDiscoveryContext as defaultFetchMigrationDiscoveryContext,
   MigrationDiscoveryContext,
@@ -58,6 +59,10 @@ import {
   validateMigrationBookOfWorkFromContent,
 } from './generatedMigrationBookOfWorkSchema';
 import { logger } from './logger';
+
+// PLAN/CONV-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 import { LlmConcurrencyPool, getMigrationPlanLlmPool } from './llmConcurrencyPool';
 import { EnsurePackFn, EnsurePackOutcome, ensureFreshDbMigrationPack } from './dbMigrationPackEnsure';
 import {
@@ -963,6 +968,8 @@ export async function generateMigrationBookOfWork(
   console.log(
     `[diag-gateway] pm_migration_delivery_plan stage=loading_context projectId=${projectId}`
   );
+  const planCorr = { project: projectId, arch: targetArchitectureId };
+  trace.stageStart('PLAN', planCorr);
   const ctxRequest: MigrationDiscoveryContextRequest = {
     currentArchitectureId,
     targetArchitectureId,
@@ -970,6 +977,34 @@ export async function generateMigrationBookOfWork(
     apiBehaviourBaselineIds,
   };
   const rawContext = await fetchContext(projectId, ctxRequest);
+
+  // CONV.05 (predicate run-judging): the plan's gen-time view of the decision
+  // state, fetched BOUND to the plan's target. The judge compares this line
+  // against the CONV.01 lines for the same target architecture (the June
+  // binding-bug class: decisions persisted but the plan reading none).
+  {
+    const ctxView = rawContext as unknown as {
+      decisionReadiness?: string;
+      unresolvedDecisionTasks?: unknown[];
+    };
+    trace.predicate(
+      'CONV.05', 'plan generation read the decision state bound to its target',
+      true,
+      'migration-discovery-context fetched for the plan target at gen time',
+      `target=${targetArchitectureId} decisionReadiness=${ctxView.decisionReadiness ?? 'unreported'} ` +
+        `unresolvedDecisionTasks=${ctxView.unresolvedDecisionTasks?.length ?? 0}`,
+      planCorr,
+    );
+    // CONV.07: KNOWN-OPEN, fails by design — api-lock derived decision values
+    // have no consumer in this build (tracked since 2026-06-27). Derived
+    // rows, when created, appear as ordinary CONV.01 lines.
+    trace.predicate(
+      'CONV.07', 'api-lock derived decision values consumed by the plan', false,
+      'plan consumption of api-lock derived values',
+      'no consumer exists in this build (known-open since 2026-06-27)',
+      planCorr,
+    );
+  }
 
   // ----- Stage 2: token-budget cascade (Q-4) -----
   const cascade = applyTokenBudgetCascade(rawContext);
@@ -1414,6 +1449,17 @@ export async function generateMigrationBookOfWork(
   console.log(
     `[diag-gateway] pm_migration_delivery_plan stage=complete projectId=${projectId} draftId=${draftId}`
   );
+
+  // PLAN.GEN.01 + stage-END scorecard (predicate run-judging). A generation
+  // that throws anywhere above leaves STAGE_START with no SCORECARD —
+  // absence detection.
+  trace.predicate(
+    'PLAN.GEN.01', 'migration plan skeleton generated and persisted', true,
+    'draft created with a draft id',
+    `draftId=${draftId} items=${validated.items.length} warnings=${warnings.length}`,
+    { project: projectId, arch: targetArchitectureId },
+  );
+  trace.stageEnd('PLAN', { project: projectId, arch: targetArchitectureId });
 
   return {
     draftId,

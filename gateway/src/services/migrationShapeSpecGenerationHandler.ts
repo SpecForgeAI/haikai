@@ -99,12 +99,18 @@
  */
 
 import { getConfig } from '../config';
+import { createTracer } from '../trace';
 import {
   FetchPackFilesFn,
   defaultFetchPackFiles,
   isDbPackCarriageStory,
   runDbPackSpecCarriage,
 } from './migrationDbPackSpecCarriage';
+
+// SPEC-stage banners + batch predicate (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only; the
+// per-story SPEC.* predicates ride migrationCodeSpecCarriage.
+const trace = createTracer('gateway');
 import {
   FetchCodeSpecFactsFn,
   codeCarriageMarkersFromBlob,
@@ -2134,6 +2140,7 @@ async function runSinglePassBatch(
       `projectId=${projectId} bookOfWorkId=${bookOfWorkId} ` +
       `batchSize=${batchSize} regenerateAll=${regenerateAll} pass=${pass} workstreamId=${workstreamId}`
   );
+  trace.stageStart('SPEC', { project: projectId });
 
   // ----- Stage 1 + 2: load BoW and existing generations -----
   const bow = await loadBookOfWork(projectId, bookOfWorkId);
@@ -2714,6 +2721,19 @@ async function runSinglePassBatch(
       `skipped_blocked=${summary.skipped_blocked} ` +
       `couldNotPersist=${resultsCouldNotPersist} pass=${pass}`
   );
+  // SPEC.BATCH.01 + stage-END scorecard (predicate run-judging). Failed and
+  // insufficient_context stories are per-story-isolated and honest (they
+  // appear in their own rows); only persistence loss fails the batch.
+  trace.predicate(
+    'SPEC.BATCH.01', 'spec generation batch persisted every result',
+    resultsCouldNotPersist === 0,
+    'couldNotPersist == 0',
+    `generated=${summary.generated ?? 0} with_warnings=${summary.generated_with_warnings ?? 0} ` +
+      `insufficient_context=${summary.insufficient_context ?? 0} failed=${summary.failed ?? 0} ` +
+      `skipped_blocked=${summary.skipped_blocked ?? 0} couldNotPersist=${resultsCouldNotPersist} pass=${pass}`,
+    { project: projectId },
+  );
+  trace.stageEnd('SPEC', { project: projectId });
 
   return {
     perStoryResults,

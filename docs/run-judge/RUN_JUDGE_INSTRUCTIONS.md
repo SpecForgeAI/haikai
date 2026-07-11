@@ -168,33 +168,55 @@ not emitted in this build (do not expect it; listed for context).
 - **CAP.STATE.01** [E, mode predicate — passes in BOTH modes] — states
   whether a DB bundle was provided (snapshots on) or not (deltas null,
   fail-closed). Use it to judge REC state classifications (§3.1).
-- **CAP.BASE.01** [N] — baseline activation + content-hash stamp (AMS side).
-  Not emitted this build; activation evidence appears only in ordinary AMS
-  logs if at all.
+- **CAP.BASE.01** [E] — baseline activation stamped `content_hash` +
+  provenance over the persisted items at draft→active. Skip for
+  `kind='target'` baselines (transient by design, R8). Items count + hash
+  prefix in actual.
 
 ### CONV — target-state conversation (service `gateway`)
 - **CONV.01** [E, one per decision] — captured decision persisted bound to
   its target architecture id (decision code + scope + target id in actual).
   Zero CONV.01 lines in a run that claims target-state decisions were made =
   the conversation never persisted anything — a real finding.
-- **CONV.02 / CONV.03** [N] — required-keys + version-unknown pending
-  questions: logic exists in the product but emits no predicates yet.
-- **CONV.04** [N] — OSV bridge reachable-or-degraded: not emitted yet.
-- **CONV.05** [J, best-effort] — plan-consumption round-trip: compare the
-  decision codes seen in CONV.01 lines against any decision counts the plan
-  stage logs. A plan generated with zero decisions while CONV.01 lines exist
-  suggests the June target-binding bug class — flag it.
-- **CONV.06** [N] — readiness snapshot baked at gen time: not emitted yet.
-- **CONV.07** [N, KNOWN-OPEN] — api-lock derived values consumed: the
-  derivation exists but nothing consumes it (tracked, pre-existing). Do NOT
-  report as a new finding; mention only under "known-open items".
+- **CONV.02** [J] — required keys per selected stream (db.engine when
+  persistence is in scope, framework, versions): check that CONV.01 lines
+  cover those codes, or that a pending question exists (CONV.03). No direct
+  emission.
+- **CONV.03** [E, one per pending-set write] — version-unknown raised pending
+  confirmations, never silent: every recomputed pending set is persisted +
+  logged (count + codes; an empty set legitimately CLEARS the pending
+  questions). A silent-version-default bug would show as pending=0 with no
+  CONV.01 version rows despite version-bearing streams — flag that pattern.
+- **CONV.04** [E, one per OSV query batch] — OSV bridge reachable or visibly
+  degraded: pass when `outcome=ok`; fail with the mapped reason
+  (http_/tls/timeout/transport) on any unavailable outcome. An unavailable
+  outcome is a VISIBLE degrade — score it as expected when the operator's
+  environment has no OSV access, and investigate otherwise.
+- **CONV.05** [E, at plan generation] — the plan's gen-time decision-state
+  view, fetched BOUND to the plan's target (decisionReadiness +
+  unresolvedDecisionTasks in actual). Cross-check against the CONV.01 lines
+  for the same target: decisions persisted but the plan reading a
+  contradictory readiness suggests the June target-binding bug class.
+- **CONV.06** [N] — readiness snapshot baked at gen time: not emitted yet
+  (CONV.05's decisionReadiness field is the partial signal).
+- **CONV.07** [E, KNOWN-OPEN — fails by design on every plan generation] —
+  api-lock derived values consumed: no consumer exists in this build
+  (tracked since 2026-06-27). Expect exactly this fail line; report it ONLY
+  under "known-open items", never as a new finding.
 
-### PLAN — migration plan / book of work (service `gateway`)
-- No dedicated predicates or banners this build **[N]** — judge from
-  ordinary `[diag-gateway]` prose lines if present in the full log. The
-  design's zero-LLM-for-code-specs intent is verified by SPEC.CARRIAGE.01.
+### PLAN — migration plan / book of work (service `gateway`; banners per generation)
+- **PLAN.GEN.01** [E] — plan skeleton generated + persisted as a draft
+  (draft id, item count, warning count in actual). A generation that dies
+  mid-flight leaves the PLAN STAGE_START with no scorecard.
+- **PLAN.EXP.02** [E, one per epic expansion] — epic expanded atomically
+  with verified stories (story count in actual); a failed epic emits ✗ with
+  the error and is retryable — one failed epic among many successes is a
+  medium finding, repeated failures on retry are high.
+- The design's zero-LLM-for-code-specs intent is verified by
+  SPEC.CARRIAGE.01 (epic expansion itself legitimately uses LLM batches +
+  a judge pass).
 
-### SPEC — story spec generation (service `gateway`; no stage banners yet)
+### SPEC — story spec generation (service `gateway`; banners per batch)
 - **SPEC.CARRIAGE.01** [E, one per code story] — deterministic zero-LLM
   carriage engaged with fact counts (endpoints/examples/behaviours/chars).
 - **SPEC.DIAL.01** [E] — T-SQL rewrite guidance block present iff
@@ -202,6 +224,10 @@ not emitted in this build (do not expect it; listed for context).
   COMMIT dialect preservation (see COMMIT.01 note).
 - **SPEC.OMIT.01** [E] — trim omissions enumerated, never silent (manifest
   agrees with the trimmed-warning; chars vs cap in actual).
+- **SPEC.BATCH.01** [E, one per batch] — every batch result persisted
+  (`couldNotPersist == 0`); generated / with_warnings / insufficient_context
+  / failed / skipped_blocked tallies in actual. Per-story failures are
+  isolated and honest — judge their counts, not the predicate verdict.
 
 ### GATE — execution gates (service `gateway`; banners per evaluation)
 - **GATE.MIG.01 / GATE.MIG.02** [E] — migrate (all / selected) hard-block
@@ -240,7 +266,8 @@ not emitted in this build (do not expect it; listed for context).
 ## 5. Known-open items (do NOT report as new findings)
 
 - **CONV.07 api-lock consumption** — wired-but-inert, tracked since
-  2026-06-27.
+  2026-06-27. It now EMITS a fail line on every plan generation by design —
+  count it under known-open, never as a new issue.
 - **Not-emitted-this-build ids** (all [N] above): their absence is expected.
 - **mcp-server** has no tracer; MCP activity is visible only via the gateway
   proxy predicates (e.g. COMMIT.01).

@@ -73,6 +73,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getConfig } from '../config';
 import { logger } from './logger';
+import { createTracer } from '../trace';
+
+// PLAN-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 import { extractJson } from './plannerResponseValidator';
 import {
   MigrationBookOfWorkItem,
@@ -1944,6 +1949,12 @@ export async function expandMigrationBookOfWorkEpic(
         `[diag-gateway] pm_migration_delivery_plan stage=expansion_complete projectId=${projectId} ` +
           `epicId=${epicId} stories=${stories.length}`
       );
+      trace.predicate(
+        'PLAN.EXP.02', 'epic expanded atomically with verified stories', true,
+        'stories appended in one atomic append after layered verification',
+        `epicId=${epicId} stories=${stories.length}`,
+        { project: projectId },
+      );
       return { epicId, expansionState: 'expanded', storiesAppended: stories.length };
     } catch (pipelineError) {
       const message =
@@ -1975,6 +1986,12 @@ export async function expandMigrationBookOfWorkEpic(
           error: markError instanceof Error ? markError.message : String(markError),
         });
       }
+      trace.predicate(
+        'PLAN.EXP.02', 'epic expanded atomically with verified stories', false,
+        'stories appended in one atomic append after layered verification',
+        `epicId=${epicId} FAILED (retryable): ${message.slice(0, 200)}`,
+        { project: projectId },
+      );
       return { epicId, expansionState: 'failed', storiesAppended: 0, error: message };
     }
   } finally {

@@ -29,6 +29,11 @@ import type {
   PendingVersionConfirmationEntry,
   PendingVersionConfirmationsTurn,
 } from './turnShape';
+import { createTracer } from '../../trace';
+
+// CONV-stage predicate emission (predicate run-judging batch — see
+// docs/trace-logging.md §Predicate self-scoring layer). Emission only.
+const trace = createTracer('gateway');
 
 /**
  * Builds a `pending-version-confirmations` turn from the full recomputed
@@ -58,6 +63,25 @@ export async function writePendingVersionConfirmations(
     projectId,
     targetArchitectureId,
     buildPendingVersionConfirmationsTurn(entries),
+  );
+  // CONV.03 (predicate run-judging): version-unknown => pending question,
+  // zero silent defaults. Every write of the recomputed pending set is
+  // logged (an empty set legitimately CLEARS pending questions); the judge
+  // checks that unknown versions produced pending entries rather than
+  // silent defaults.
+  const codes = entries
+    .slice(0, 5)
+    .map((e) => {
+      const r = e as unknown as Record<string, unknown>;
+      return String(r.decisionCode ?? r.code ?? r.libraryCode ?? '?');
+    })
+    .join(',');
+  trace.predicate(
+    'CONV.03', 'version-unknown raised pending confirmations (never silent)',
+    true,
+    'the recomputed pending set is persisted on the thread',
+    `pending=${entries.length}${entries.length > 0 ? ` codes=[${codes}${entries.length > 5 ? ',…' : ''}]` : ' (set cleared)'}`,
+    { project: projectId, arch: targetArchitectureId },
   );
 }
 
