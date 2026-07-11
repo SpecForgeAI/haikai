@@ -12,9 +12,12 @@
   Comma-separated list of service folder names to skip.
 
 .PARAMETER Trace
-  off | summary | detail   (default: off)
+  off | summary | detail   (default: summary)
     Sets HAIKAI_TRACE for each spawned service tab so the instrumented services
-    write to the shared trace file (~/.haikai/trace.log). See docs/trace-logging.md.
+    write to the shared trace file (~/.haikai/trace.log) — including the
+    HAIKAI_PREDICATE / HAIKAI_SCORECARD self-scoring lines the run judge reads
+    (docs/run-judge/RUN_JUDGE_INSTRUCTIONS.md). Pass -t off to disable.
+    See docs/trace-logging.md.
 
 .EXAMPLES
   ./install-run-all.ps1
@@ -33,7 +36,7 @@ param(
 
   [Alias('t')]
   [ValidateSet('off','summary','detail')]
-  [string]$Trace = 'off'
+  [string]$Trace = 'summary'
 )
 
 $ErrorActionPreference = 'Stop'
