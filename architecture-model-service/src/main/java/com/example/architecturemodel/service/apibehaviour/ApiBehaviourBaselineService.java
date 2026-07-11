@@ -312,6 +312,10 @@ public class ApiBehaviourBaselineService {
             ApiBehaviourBaselineEntity baseline) {
         if (!"current".equalsIgnoreCase(baseline.getKind())) {
             // R8: out of scope for target baselines.
+            TRACE.predicateSkip("CAP.BASE.01", "baseline activation stamped content hash",
+                "kind='" + baseline.getKind() + "' baselines are transient (R8) — "
+                    + "only kind='current' is stamped",
+                HaikaiTrace.Corr.of().project(String.valueOf(baseline.getProjectId())));
             return baseline;
         }
 
@@ -328,7 +332,17 @@ public class ApiBehaviourBaselineService {
 
         baseline.setContentHash(contentHash);
         baseline.setProvenanceJson(provenance);
-        return repository.saveAndFlush(baseline);
+        ApiBehaviourBaselineEntity stamped = repository.saveAndFlush(baseline);
+        // CAP.BASE.01 (predicate run-judging): the activate transition stamped
+        // an integrity hash + provenance over the persisted items.
+        TRACE.predicate("CAP.BASE.01", "baseline activation stamped content hash",
+            contentHash != null && !contentHash.isEmpty(),
+            "content_hash + provenance stamped at draft->active over persisted items",
+            "items=" + items.size() + " hash="
+                + (contentHash == null || contentHash.isEmpty() ? "MISSING"
+                    : contentHash.substring(0, Math.min(12, contentHash.length())) + "…"),
+            HaikaiTrace.Corr.of().project(String.valueOf(baseline.getProjectId())));
+        return stamped;
     }
 
     /**

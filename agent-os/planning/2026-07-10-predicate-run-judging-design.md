@@ -251,3 +251,32 @@ STAGE banners + config headers first; DETAIL lines fetched selectively).
     banners. GATE 4b/4c per-gate detail (DB gate, code gate incl.
     story-scoped floor) currently surfaces through the blocked-reasons
     excerpt on GATE.MIG.01/02 rather than per-gate predicates.
+- **Deferred slice (feature/predicate-deferred-slice, 2026-07-11)** — closes
+  the Commit-4/5 deferrals:
+  - **CAP.BASE.01** [AMS `stampIntegrityIfCurrent`]: content_hash +
+    provenance stamped at draft→active (items + hash prefix in actual);
+    skip for kind='target' (R8).
+  - **CONV.03** [gateway `writePendingVersionConfirmations`]: every
+    recomputed pending set persisted + logged (count + codes; empty set =
+    legitimate clear).
+  - **CONV.04** [gateway `DiscoveryOsvBridgeSource.queryBatch`, all four
+    outcome paths]: pass on outcome=ok; fail with mapped reason on any
+    unavailable (visible degrade — judge scores expectedness from
+    environment).
+  - **CONV.05** [plan gen, after the bound context fetch]: gen-time
+    decision-state view (decisionReadiness + unresolvedDecisionTasks) bound
+    to the plan target — the judge cross-checks CONV.01 lines for the same
+    target (June binding-bug class).
+  - **CONV.07** [same point]: KNOWN-OPEN fail-by-design line on every plan
+    generation (no api-lock consumer exists; tracked 2026-06-27) — the
+    user's standing red reminder; judge doc files it under known-open.
+  - **PLAN banners + PLAN.GEN.01** [generateMigrationBookOfWork]: STAGE
+    START at context load, scorecard + draft-persisted predicate (draftId,
+    item count, warnings) at completion. **PLAN.EXP.02**
+    [expansion handler]: per-epic atomic-append predicate, pass with story
+    count / fail (retryable) with error.
+  - **SPEC banners + SPEC.BATCH.01** [runShapeSpecGenerationBatch]: STAGE
+    START at batch start; scorecard + couldNotPersist==0 predicate with the
+    full status tally at batch_completed.
+  - **CONV.02/06 remain judge-derived / not-emitted** (documented in the
+    judge doc). Verified: gateway tsc exit 0, AMS mvn compile exit 0.
