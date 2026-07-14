@@ -167,6 +167,41 @@ export class PostgresAdapter implements DbAdapter {
     return this.runReadonlySelect(sql, params, args.limits);
   }
 
+  async countRows(args: {
+    schema?: string | null;
+    table: string;
+    limits: DbQueryLimits;
+  }): Promise<number> {
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    const sql = `SELECT COUNT(*) AS row_count FROM ${qSchema}${quoteIdent(args.table)}`;
+    const res = await this.runReadonlySelect(sql, [], args.limits);
+    const first = res.rows[0] ?? {};
+    const raw = (first as Record<string, unknown>).row_count ?? Object.values(first)[0];
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  async fetchOrderedRows(args: {
+    schema?: string | null;
+    table: string;
+    orderBy: string[];
+    limits: DbQueryLimits;
+  }): Promise<DbReadResult> {
+    if (args.orderBy.length === 0) {
+      throw new Error('fetchOrderedRows requires at least one order column');
+    }
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    // NULLS FIRST pins the cross-engine NULLS-LOW ordering contract (the
+    // sibling engine sorts NULLs low in ascending order natively).
+    const orderBy = args.orderBy
+      .map((c) => `${quoteIdent(c)} ASC NULLS FIRST`)
+      .join(', ');
+    const sql =
+      `SELECT * FROM ${qSchema}${quoteIdent(args.table)} ` +
+      `ORDER BY ${orderBy} LIMIT ${Math.max(1, args.limits.maxRows)}`;
+    return this.runReadonlySelect(sql, [], args.limits);
+  }
+
   async dispose(): Promise<void> {
     await this.pool.end();
   }

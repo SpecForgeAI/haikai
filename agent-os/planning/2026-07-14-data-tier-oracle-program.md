@@ -177,6 +177,26 @@ runtime-evidence source; AMS-side proc/table consumer-count dimensions
   unclaimed-write-capable summary dimension dropped (unclaimed objects have
   no mode evidence by definition). Verified: 7 JUnit tests green (Mockito),
   gateway tsc exit 0.
-- **NEXT: Spec P** (data parity gate, AMVS-hosted) — comparator internals to
-  be finalised against Spec O's as-built rule shapes per the wave-1 plan;
-  then the checkpoint (fold in the first live judged run) before wave 2.
+- **Spec P CORE BUILT (2026-07-15, commit 3).** AMVS: `DbAdapter` gains
+  `countRows` + `fetchOrderedRows` (pack-owned SQL/quoting; cross-engine
+  NULLS-LOW ordering contract — the Postgres side appends NULLS FIRST, ASE
+  sorts nulls low natively); generic
+  `services/dataParity/dataParityComparator.ts` — ladder counts → column
+  sets → ordered row comparison (full ≤ fullScanMaxRows, keyed sample
+  above), cell equality through the pair ruleset with rule-id CITATION,
+  strict when ruleless, ternary depth-honest verdicts
+  (match(full|sampled) / divergent(count_mismatch|column_set|cell_values) /
+  unverifiable(reason)), evidence capped (20 examples × 80 chars, report
+  only — predicates carry counts + rule ids, never cell values).
+  `POST /api/data-parity/run` (session-less; credentials request-scoped,
+  adapters disposed in finally; knobs DATA_PARITY_SAMPLE_ROWS=1000 /
+  FULLSCAN_MAX_ROWS=10000 / TIMEOUT_SECONDS=60); DATA stage banners +
+  DATA.CNT.01/ROW.01/REP.01 predicates, DATA.SUM.01 emitted as an honest
+  skip (engine-side checksum tier deferred to the pack canonical-SQL
+  work). AMS: changeset 210 `data_parity_reports` + entity/repo/controller
+  (POST + GET /latest, 404 = gate-closed unverified). Verified: 10 jest
+  comparator tests green, AMVS tsc exit 0, AMS compile exit 0.
+  **P part 2 (next slice): the migrate-gate wiring** —
+  `data_parity_unverified`/`data_parity_failed` block reasons in the
+  gateway driver + DATA.GATE.01 + waiver path; then the wave-1→2
+  checkpoint (fold in the first live judged run).

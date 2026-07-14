@@ -166,6 +166,23 @@ not emitted in this build (do not expect it; listed for context).
   "guidance MISSING" while SCAN.DIAL.01 passed, suspect a COMMIT-time
   metadata loss and say so (cascade attribution).
 
+### DATA — data-parity gate (service `capture-svc`; banners per run)
+- **DATA.CNT.01** [E] — row counts compared for every scoped table
+  (count-mismatch tally in actual).
+- **DATA.SUM.01** [E, always skip this build] — engine-side checksum tier is
+  not built; client-side canonical comparison covers full-scan below the
+  threshold and keyed samples above (the skip actual states the bounds).
+- **DATA.ROW.01** [E] — ordered rows compared through the migration-pair
+  ruleset: pass only when NO table is divergent; tolerated divergences are
+  rule-cited (rule ids in actual — never cell values). `unverifiable`
+  tables don't fail this predicate but DO keep the gate closed.
+- **DATA.REP.01** [E] — the report persisted to AMS (the migrate gate reads
+  the LATEST report fail-closed; a persist failure = gate stays closed).
+- **DATA.GATE.01** [N this build] — migrate-gate wiring
+  (`data_parity_unverified` / `data_parity_failed` block reasons) lands in
+  the next slice; until then judge data parity from DATA.ROW.01/REP.01 and
+  note that execution is NOT yet blocked by data divergence.
+
 ### CAP — API behaviour baseline capture (service `capture-svc`; banners per session)
 - **CAP.OPS.01** [E] — no infra error AND ≥1 scenario persisted a capture;
   completed/attempted/errored tallies in actual. A completed-with-0-captured
