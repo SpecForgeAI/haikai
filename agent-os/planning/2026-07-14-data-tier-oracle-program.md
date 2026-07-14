@@ -158,3 +158,25 @@ runtime-evidence source; AMS-side proc/table consumer-count dimensions
   `services/dbMigrationPack/**` and discovery's sqlDialectClassifier are
   DESIGNATED PACK CODE, excluded by classification. Verified: 27 new jest
   tests + dbChangeConsumerResolver heading test green; tsc exit 0 ×3.
+- **Spec Q BUILT (2026-07-15, commit 2).** AMS
+  `DbSurfaceInventoryService` + controller:
+  `GET /api/projects/{p}/architectures/{a}/db-surface-inventory` — computed
+  on read (no changesets) from `physical_data_entities` (tables/views) +
+  `db_migration_pack_translations` (procs/triggers/views with dispositions)
+  + `endpoint_data_effects` (claims). Claim resolution: direct `dep_phy_*`
+  point, dep_log NAME-BRIDGE (logical name == physical name,
+  case/schema/bracket-normalised — mapping-table join is the recorded
+  follow-up), and `path_metadata_json.proc_name` vs translation
+  `object_ref` tail for procs. Pack view rows MERGE onto their physical
+  rows. Unclaimed = zero claims (triggers: null, dimension n/a). Predicates
+  SCAN.DBINV.01/.02 emitted at compute with corr project+arch; judge doc
+  updated ([E, on-demand]). Gateway proxy on migrationContextRouter.
+  **Deviations from shaping:** discovery-side `unclaimed_db_surface`
+  findings DEFERRED (cross-scan timing — the read endpoint + predicates
+  carry the signal; findings ride the P/R write path later);
+  unclaimed-write-capable summary dimension dropped (unclaimed objects have
+  no mode evidence by definition). Verified: 7 JUnit tests green (Mockito),
+  gateway tsc exit 0.
+- **NEXT: Spec P** (data parity gate, AMVS-hosted) — comparator internals to
+  be finalised against Spec O's as-built rule shapes per the wave-1 plan;
+  then the checkpoint (fold in the first live judged run) before wave 2.

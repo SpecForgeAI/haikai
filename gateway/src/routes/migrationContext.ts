@@ -21,6 +21,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { getConfig } from '../config';
 import { logger } from '../services/logger';
 import {
   fetchMigrationDiscoveryContext,
@@ -29,6 +30,46 @@ import {
 import { ArchitectureModelHttpError } from '../services/architectureModelClient';
 
 export const migrationContextRouter = Router();
+
+/**
+ * GET /api/v1/projects/:projectId/architectures/:architectureId/db-surface-inventory
+ *
+ * Spec Q (Data-Tier Oracle Program): thin pass-through to the AMS
+ * computed-on-read DB surface inventory (tables/views/procs/triggers with
+ * per-object claim status + the unclaimed surface). AMS errors round-trip;
+ * network failure returns the standard 503 envelope.
+ */
+migrationContextRouter.get(
+  '/projects/:projectId/architectures/:architectureId/db-surface-inventory',
+  async (req: Request, res: Response) => {
+    const requestId = (req as { requestId?: string }).requestId ?? 'unknown';
+    const { projectId, architectureId } = req.params;
+    try {
+      const baseUrl = getConfig().architectureModelServiceBaseUrl;
+      const url =
+        `${baseUrl}/api/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/db-surface-inventory`;
+      const upstream = await fetch(url, { headers: { Accept: 'application/json' } });
+      let body: unknown = null;
+      try {
+        body = await upstream.json();
+      } catch {
+        /* non-JSON upstream body — status still round-trips */
+      }
+      return res.status(upstream.status).json(body);
+    } catch (error) {
+      logger.error('[diag-gateway] db_surface_inventory proxy failed', {
+        requestId,
+        projectId,
+        architectureId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(503).json({
+        error: { code: 503, message: 'architecture model service unavailable' },
+      });
+    }
+  }
+);
 
 /**
  * POST /api/v1/projects/:projectId/migration-discovery-context

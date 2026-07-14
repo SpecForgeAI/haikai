@@ -132,6 +132,13 @@ not emitted in this build (do not expect it; listed for context).
   (attempted vs persisted vs deduped).
 - **SCAN.DB.01 / SCAN.DB.02** [E] — database-kind runs: introspection
   produced a surface; candidates persisted == minted.
+- **SCAN.DBINV.01 / SCAN.DBINV.02** [E, on-demand] — DB surface inventory
+  computed (tables/views/procs/triggers + effect counts) and the UNCLAIMED
+  surface enumerated (objects no discovered effect references — dead schema
+  or another client writing the same database). Fires when the
+  db-surface-inventory endpoint is read (AMS side), not automatically per
+  scan. A large unclaimed-write surface before a db_only migration is a
+  high-severity scoping finding.
 
 ### RUNT — production-log runtime evidence (nested inside the SCAN window)
 - **RUNT.01** [E] — ingestion healthy: all supplied log files parsed;
