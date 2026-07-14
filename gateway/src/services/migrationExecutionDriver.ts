@@ -106,6 +106,10 @@ import {
   codeStoriesInScope,
   evaluateCodeReadiness,
 } from './migrationCodeExecutionGate';
+import {
+  DataParityGateReads,
+  evaluateDataParityReadiness,
+} from './migrationDataParityGate';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -197,6 +201,12 @@ export interface MigrationDriverDeps {
    * compiling; injected in tests.
    */
   codeGateReads?: CodeGateReads;
+  /**
+   * Data-parity gate reads (Data-Tier Oracle Spec P part 2). Optional +
+   * defaulted inside {@link evaluateDataParityReadiness} so pre-existing
+   * deps mocks keep compiling; injected in tests.
+   */
+  dataParityGateReads?: DataParityGateReads;
   recordWorkItemImplementationError: typeof recordWorkItemImplementationError;
   /** The headless shape-spec auto-answerer (Group 4); mocked in tests. */
   autoAnswerer: ShapeSpecAutoAnswerer;
@@ -687,7 +697,34 @@ export async function startMigration(
     });
   }
 
-  const allBlockReasons = [...gate.reasons, ...dbGateReasons, ...codeGateReasons];
+  // 4d. Data-parity gate (Data-Tier Oracle Spec P part 2): when DB-pack
+  //     stories are in scope, Migrate additionally requires the LATEST
+  //     data-parity report for (project, current architecture) to be CLEAN —
+  //     no report / unreadable => data_parity_unverified; divergent tables
+  //     minus per-table waivers (target "data-parity:<table>") =>
+  //     data_parity_failed. FAIL-CLOSED. Reasons STACK with the gates above.
+  let dataParityGateReasons: HardBlockResult['reasons'] = [];
+  if (dbStoriesInScope({ items, deferredWorkItemIds, selectedWorkItemIds: selectedSet })) {
+    const dataParityGate = await evaluateDataParityReadiness({
+      projectId,
+      architectureId: book.current_architecture_id ?? null,
+      reads: deps.dataParityGateReads,
+    });
+    dataParityGateReasons = dataParityGate.reasons;
+    logger.info('[diag-gateway] migration_execution_driver data_parity_gate', {
+      projectId,
+      bookId,
+      ok: dataParityGate.ok,
+      reasons: dataParityGate.reasons.map((r) => r.code),
+    });
+  }
+
+  const allBlockReasons = [
+    ...gate.reasons,
+    ...dbGateReasons,
+    ...codeGateReasons,
+    ...dataParityGateReasons,
+  ];
   if (allBlockReasons.length > 0) {
     logger.warn('[diag-gateway] migration_execution_driver start_blocked', {
       projectId,

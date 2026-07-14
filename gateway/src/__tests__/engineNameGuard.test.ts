@@ -39,6 +39,7 @@ const GENERIC_MODULE_ALLOWLIST: Record<string, { allowed: number; reason: string
   'services/migrationCodeStreamPlanner.ts': { allowed: 2, reason: 'dialect_affected flag vocabulary' },
   'routes/migrationExecution.ts': { allowed: 5, reason: 'target-DB credential route comments (Spec N residual)' },
   // Generic-by-construction modules: MUST stay clean.
+  'services/migrationDataParityGate.ts': { allowed: 0, reason: 'generic (Spec P part 2)' },
   'services/migrationShapeSpecGenerationHandler.ts': { allowed: 0, reason: 'generic' },
   'services/migrationParityVerdictEmitter.ts': { allowed: 0, reason: 'generic' },
   'services/migrationRunParityStatus.ts': { allowed: 0, reason: 'generic' },

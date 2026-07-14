@@ -178,10 +178,15 @@ not emitted in this build (do not expect it; listed for context).
   tables don't fail this predicate but DO keep the gate closed.
 - **DATA.REP.01** [E] — the report persisted to AMS (the migrate gate reads
   the LATEST report fail-closed; a persist failure = gate stays closed).
-- **DATA.GATE.01** [N this build] — migrate-gate wiring
-  (`data_parity_unverified` / `data_parity_failed` block reasons) lands in
-  the next slice; until then judge data parity from DATA.ROW.01/REP.01 and
-  note that execution is NOT yet blocked by data divergence.
+- **DATA.GATE.01** [E, fires at Migrate when DB-pack stories are in scope]
+  — the data-parity gate evaluated honestly: pass = the latest report was
+  READ (verdict ok or blocked-with-reasons in actual); fail = the read
+  itself failed and the fail-closed path engaged. Block codes:
+  `data_parity_unverified` (no report / non-clean status / unreadable) and
+  `data_parity_failed` (unwaived divergent tables — waive per table with
+  target `data-parity:<table>`). A block during the golden path AFTER a
+  clean parity run is a real finding; a block because no parity run
+  happened yet is the gate working.
 
 ### CAP — API behaviour baseline capture (service `capture-svc`; banners per session)
 - **CAP.OPS.01** [E] — no infra error AND ≥1 scenario persisted a capture;

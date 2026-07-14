@@ -200,3 +200,19 @@ runtime-evidence source; AMS-side proc/table consumer-count dimensions
   `data_parity_unverified`/`data_parity_failed` block reasons in the
   gateway driver + DATA.GATE.01 + waiver path; then the wave-1→2
   checkpoint (fold in the first live judged run).
+- **Spec P part 2 BUILT (2026-07-15, commit 4) — WAVE 1 COMPLETE.**
+  Gateway gate 4d (`migrationDataParityGate.ts`, generic, guard-pinned at
+  0): fires when DB-pack stories are in the dispatch scope (same trigger as
+  gate 4b — the applicability reading of decision 2's fail-closed-in-both:
+  non-DB projects are untouched; wherever the data tier is in play the gate
+  blocks). Reads the LATEST report for (project, CURRENT architecture):
+  none/unreadable/non-clean ⇒ `data_parity_unverified` (fail-closed);
+  divergent minus per-table waivers (break-fingerprint waiver store,
+  target `data-parity:<table>` or `data-parity:<schema>.<table>`) ⇒
+  `data_parity_failed` naming the tables. Reasons STACK with gates
+  4/4b/4c. DATA.GATE.01 emitted both ways (fail only when the read itself
+  fails). `dataParityGateReads` injectable on MigrationDriverDeps.
+  Verified: 8 gate tests + guard ratchet green, gateway tsc exit 0.
+  **CHECKPOINT NEXT:** run the live judged run (work machine) with wave 1
+  merged; fold its findings + Spec O's as-built learnings into wave 2
+  (R, S, T, U).
