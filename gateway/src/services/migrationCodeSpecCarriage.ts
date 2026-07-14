@@ -50,12 +50,24 @@ import { SPEC_TEXT_REQUIRED_PREFIX } from './specGenerationResponseValidator';
 import { fenceFor } from './migrationDbPackSpecCarriage';
 import { MANUAL_GATE_TAG, CODE_PROVENANCE_TAG } from './migrationCodeStreamPlanner';
 import { createTracer } from '../trace';
+import { loadPairRuleset } from '../migrationPairRules';
 
 // SPEC-stage predicate emission (predicate run-judging batch — see
 // docs/trace-logging.md §Predicate self-scoring layer). Emission only. A
 // carriage-built story is by definition a zero-LLM spec (the design's
 // PLAN.EXP.01 intent is folded into SPEC.CARRIAGE.01).
 const trace = createTracer('gateway');
+
+// Dialect guidance heading: pair-owned text from the migration-pair ruleset
+// (Data-Tier Oracle Spec O) with a neutral fallback — this generic module
+// names no engine; the pair file owns the words.
+const DIALECT_GUIDANCE_HEADING: string = (() => {
+  try {
+    return loadPairRuleset()?.guidance_heading ?? 'SQL dialect rewrite guidance';
+  } catch {
+    return 'SQL dialect rewrite guidance';
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // Markers on the book-of-work item blob (stamped by Spec -g)
@@ -513,7 +525,7 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
       } | null;
       if (meta?.sql_dialect === 'tsql' && (meta.non_portable_constructs?.length ?? 0) > 0) {
         lines.push('');
-        lines.push('#### T-SQL dialect rewrite guidance (Sybase → PostgreSQL)');
+        lines.push(`#### ${DIALECT_GUIDANCE_HEADING}`);
         lines.push('');
         lines.push(
           'The SQL behind this edge uses T-SQL constructs that will NOT run ' +
@@ -1003,7 +1015,7 @@ export async function runCodeSpecCarriage(args: {
     specCorr,
   );
   const tsqlEdges = JSON.stringify(facts).includes('"sql_dialect":"tsql"');
-  const guidanceIncluded = specText.includes('#### T-SQL dialect rewrite guidance');
+  const guidanceIncluded = specText.includes(`#### ${DIALECT_GUIDANCE_HEADING}`);
   if (!tsqlEdges) {
     trace.predicateSkip(
       'SPEC.DIAL.01', 'T-SQL rewrite guidance embedded when tsql edges exist',

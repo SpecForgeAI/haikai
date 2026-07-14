@@ -1,0 +1,137 @@
+{
+  "pair_id": "sybase15-postgres18",
+  "version": 1,
+  "source": { "engine": "sybase", "version": "15", "display": "Sybase ASE 15" },
+  "target": { "engine": "postgres", "version": "18", "display": "PostgreSQL 18" },
+  "guidance_heading": "T-SQL dialect rewrite guidance (Sybase → PostgreSQL)",
+  "notes": "Migration-pair ruleset v1 (Data-Tier Oracle Program, Spec O). Pair knowledge lives HERE as data — generic code never names an engine. Rules with a `comparison` block drive the data-parity comparator and diff classification; guidance-only rules (comparison: null) carry rewrite/seed knowledge. `construct_refs` key pair guidance to the discovery-side sqlDialectClassifier's stable construct names (the classifier is pack code and remains the detector).",
+  "rules": [
+    {
+      "id": "SYBPG.DT.001",
+      "divergence_class": "datetime_precision",
+      "title": "Sybase datetime carries 1/300s precision; Postgres timestamp is microseconds",
+      "applies_to": { "column_types": ["datetime"] },
+      "comparison": { "strategy": "timestamp-truncate", "params": { "ticks_per_second": 300 } },
+      "rewrite_guidance": "Values loaded from Sybase datetime can never carry sub-1/300s precision; the target must not synthesise finer precision (e.g. via now()/clock_timestamp() defaults) on like-for-like paths.",
+      "scenario_seed": "Round-trip a timestamp whose milliseconds are not a multiple of 1/300s and assert the persisted+returned value matches the source system's rounding.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "SYBPG.DT.002",
+      "divergence_class": "datetime_precision",
+      "title": "Sybase smalldatetime has minute precision",
+      "applies_to": { "column_types": ["smalldatetime"] },
+      "comparison": { "strategy": "timestamp-truncate", "params": { "granularity_ms": 60000 } },
+      "rewrite_guidance": "smalldatetime maps to timestamp(0) at best; compare at minute granularity.",
+      "scenario_seed": "Write a value with seconds set and verify the returned value truncates to the minute exactly as the source does.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "SYBPG.STR.001",
+      "divergence_class": "trailing_space_semantics",
+      "title": "Sybase char/varchar comparison ignores trailing spaces; empty string inserts as a single space",
+      "applies_to": { "column_types": ["char", "varchar", "nchar", "nvarchar", "unichar", "univarchar"] },
+      "comparison": { "strategy": "string-rtrim", "params": {} },
+      "rewrite_guidance": "Sybase stores '' as ' ' in (var)char and treats trailing spaces as insignificant in equality. Postgres preserves both. Loads and WHERE-clause rewrites must not let '' vs ' ' or padded values become spurious mismatches — right-trimmed equality is the like-for-like contract.",
+      "scenario_seed": "Persist an empty string and a trailing-space value through the API; assert lookup/equality behaviour matches the source system on both.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "SYBPG.NUM.001",
+      "divergence_class": "fixed_scale_money",
+      "title": "Sybase money/smallmoney is fixed 4-decimal scale",
+      "applies_to": { "column_types": ["money", "smallmoney"] },
+      "comparison": { "strategy": "numeric-rescale", "params": { "scale": 4 } },
+      "rewrite_guidance": "Map to numeric(19,4)/numeric(10,4); never to floating types. Rounding at scale 4 is part of the observed contract.",
+      "scenario_seed": "Write an amount requiring rounding at the 4th decimal and assert identical rounding behaviour.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "SYBPG.NUM.002",
+      "divergence_class": "float_representation",
+      "title": "float/real representational differences across engines",
+      "applies_to": { "column_types": ["float", "real", "double precision"] },
+      "comparison": { "strategy": "numeric-epsilon", "params": { "relative": 1e-9 } },
+      "rewrite_guidance": "Bit-identical float round-trips are not guaranteed across engines; equality within relative epsilon is the honest contract. Columns needing exactness must migrate to numeric.",
+      "scenario_seed": "Round-trip values with no exact binary representation (e.g. 0.1 accumulations) and compare within tolerance.",
+      "severity": "tolerated_divergence"
+    },
+    {
+      "id": "SYBPG.STR.002",
+      "divergence_class": "charset_conversion",
+      "title": "Legacy Sybase charsets (cp850/iso_1/roman8) convert to UTF-8 on load",
+      "applies_to": { "column_types": ["char", "varchar", "text", "unichar", "univarchar", "unitext"] },
+      "comparison": { "strategy": "charset-normalize", "params": { "form": "NFC" } },
+      "rewrite_guidance": "Compare after Unicode NFC normalisation; conversion may change byte length (column overflow risk on load) without changing the logical value.",
+      "scenario_seed": "Round-trip accented/extended characters present in the estate's data and assert logical equality plus no truncation.",
+      "severity": "value_divergence",
+      "enabled_by_default": true
+    },
+    {
+      "id": "SYBPG.COLL.001",
+      "divergence_class": "collation_case_sensitivity",
+      "title": "Case-insensitive Sybase sort orders vs Postgres case-sensitive default collations",
+      "applies_to": { "column_types": ["char", "varchar", "nchar", "nvarchar"] },
+      "comparison": { "strategy": "collation-case", "params": { "mode": "casefold" } },
+      "rewrite_guidance": "Only applies to estates configured with a case-insensitive sort order. Equality, uniqueness and ORDER BY semantics all shift; target needs citext/ICU collation or expression indexes to preserve behaviour.",
+      "scenario_seed": "Lookup by a key differing only in case; assert hit/miss parity with the source system.",
+      "severity": "behaviour_divergence",
+      "enabled_by_default": false
+    },
+    {
+      "id": "SYBPG.BIT.001",
+      "divergence_class": "type_nullability",
+      "title": "Sybase bit is non-nullable; Postgres boolean is nullable",
+      "applies_to": { "column_types": ["bit"] },
+      "comparison": null,
+      "rewrite_guidance": "Map bit -> boolean NOT NULL DEFAULT false to preserve the source's it-can-never-be-null contract; a nullable boolean silently widens the state space.",
+      "scenario_seed": "Attempt writes that omit the flag and assert the default/constraint behaviour matches the source.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "SYBPG.INT.001",
+      "divergence_class": "integer_range",
+      "title": "Sybase tinyint is unsigned 0..255; Postgres has no unsigned single-byte type",
+      "applies_to": { "column_types": ["tinyint"] },
+      "comparison": null,
+      "rewrite_guidance": "Map to smallint + CHECK (0..255) to preserve the range contract; values 128..255 are legal in the source data.",
+      "scenario_seed": "Write boundary values 0, 255 and an out-of-range attempt; assert identical accept/reject behaviour.",
+      "severity": "schema_divergence"
+    },
+    {
+      "id": "SYBPG.LOB.001",
+      "divergence_class": "lob_mapping",
+      "title": "text/image map to text/bytea with different length and NULL semantics",
+      "applies_to": { "column_types": ["text", "image", "unitext"] },
+      "comparison": { "strategy": "charset-normalize", "params": { "form": "NFC" } },
+      "rewrite_guidance": "image -> bytea compares byte-exact (no normalisation); text/unitext compare after charset conversion. Sybase readtext/writetext idioms have no direct equivalent.",
+      "scenario_seed": "Round-trip a large text payload and a binary payload; assert byte/logical equality respectively.",
+      "severity": "value_divergence"
+    },
+    {
+      "id": "SYBPG.SEQ.001",
+      "divergence_class": "identity_semantics",
+      "title": "Identity gaps and @@identity scope differ across engines",
+      "applies_to": { "column_types": ["numeric identity", "int identity", "bigint identity"] },
+      "comparison": null,
+      "rewrite_guidance": "Generated ids are volatility, not oracle: mark identity columns as excluded-by-volatility in comparisons. Sequences must be resynced above MAX(id) after load; identity burn/gap behaviour differs and must not be asserted.",
+      "scenario_seed": "Fail an insert mid-transaction then insert successfully; assert the OBSERVABLE contract (uniqueness, monotonicity if relied upon) rather than specific values.",
+      "severity": "tolerated_divergence"
+    }
+  ],
+  "construct_refs": [
+    { "construct": "getdate", "seed": "Freeze/inject clock or mark timestamp fields volatile; getdate() precision follows SYBPG.DT.001." },
+    { "construct": "isnull", "seed": "Probe NULL-argument paths: isnull(x,y) typing follows the FIRST arg in T-SQL, coalesce follows the highest type — seed a scenario where the types differ." },
+    { "construct": "convert", "seed": "Seed each convert() style code in use — date style codes (103, 112 etc.) have no direct to_char equivalent and formatting is response-visible." },
+    { "construct": "@@identity", "seed": "Seed an insert-through-trigger path: @@identity in T-SQL sees the LAST identity including triggers; the rewrite must preserve which id the app observed." },
+    { "construct": "@@rowcount", "seed": "Seed an update-zero-rows path; branch logic on @@rowcount must behave identically." },
+    { "construct": "@@error", "seed": "Seed a constraint-violation path; vendor error-code branching must map to the equivalent condition, and the API-visible error body is part of the oracle." },
+    { "construct": "TOP", "seed": "Seed a TOP-n query on a tie: without a deterministic ORDER BY tiebreak the selected rows may legitimately differ — the rewrite must add the tiebreak the app implicitly relied on." },
+    { "construct": "HOLDLOCK", "seed": "Concurrency detour: lock-hint semantics do not map onto MVCC; seed a two-session scenario if the estate relies on blocking reads." },
+    { "construct": "NOLOCK", "seed": "NOLOCK dirty reads have no MVCC equivalent; the like-for-like target reads committed data — seed only to document the intentional divergence." },
+    { "construct": "temp_table", "seed": "Seed the proc paths using #temp tables end-to-end; scoping and implicit creation semantics differ." },
+    { "construct": "RAISERROR", "seed": "Seed the error path: raiserror severity/message formatting is response-visible where procs surface errors to the API." },
+    { "construct": "SET_ROWCOUNT", "seed": "SET ROWCOUNT limits DML in T-SQL; seed the affected update path — silent partial updates are a data-integrity trap." },
+    { "construct": "legacy_outer_join", "seed": "*= joins can silently become inner joins in naive rewrites; seed rows that only appear via the outer side." }
+  ]
+}

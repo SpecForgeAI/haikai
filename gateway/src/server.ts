@@ -340,6 +340,21 @@ if (require.main === module) {
             stdio: ['ignore', 'pipe', 'ignore'],
           }).toString().trim() || 'unknown';
         } catch { /* not a git checkout */ }
+        // Migration-pair ruleset stamp (Data-Tier Oracle Spec O): the judge
+        // scores divergence handling against the pair the run declared.
+        let pairInfo: Record<string, unknown> = { migration_pair: 'none' };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { loadPairRuleset } = require('./migrationPairRules');
+          const rs = loadPairRuleset();
+          if (rs) {
+            pairInfo = {
+              migration_pair: rs.pair_id,
+              ruleset_version: rs.version,
+              rule_count: rs.rules.length,
+            };
+          }
+        } catch { /* fail-soft */ }
         bootTrace.configHeader({
           git_sha: gitSha,
           drift_check_enabled: process.env.DRIFT_CHECK_ENABLED !== 'false',
@@ -348,6 +363,7 @@ if (require.main === module) {
           plan_llm_concurrency: Number(process.env.MIGRATION_PLAN_LLM_CONCURRENCY ?? 4),
           db_cluster_max_tables: Number(process.env.MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES ?? 25),
           api_cluster_max_endpoints: Number(process.env.MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS ?? 15),
+          ...pairInfo,
         });
       }
     } catch { /* tracing must never affect boot */ }
