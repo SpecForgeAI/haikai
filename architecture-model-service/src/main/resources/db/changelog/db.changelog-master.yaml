@@ -4890,3 +4890,20 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 210: data_parity_reports (Data-Tier Oracle Program, Spec P). The AMVS
+  # data-parity run persists its per-table verdict report here; the migrate
+  # gate reads the LATEST row per (project, architecture) FAIL-CLOSED.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 209).
+  # ============================================================================
+  - changeSet:
+      id: 210-data-parity-reports
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/210-data-parity-reports.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

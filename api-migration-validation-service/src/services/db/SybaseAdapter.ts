@@ -213,6 +213,43 @@ export class SybaseAdapter implements DbAdapter {
     return this.runReadonlySelect(sql, [], args.limits);
   }
 
+  async countRows(args: {
+    schema?: string | null;
+    table: string;
+    limits: DbQueryLimits;
+  }): Promise<number> {
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    const sql = `SELECT COUNT(*) AS row_count FROM ${qSchema}${quoteIdent(args.table)}`;
+    const res = await this.runReadonlySelect(sql, [], args.limits);
+    const first = res.rows[0] ?? {};
+    const raw =
+      (first as Record<string, unknown>).row_count ??
+      (first as Record<string, unknown>).ROW_COUNT ??
+      Object.values(first)[0];
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  async fetchOrderedRows(args: {
+    schema?: string | null;
+    table: string;
+    orderBy: string[];
+    limits: DbQueryLimits;
+  }): Promise<DbReadResult> {
+    if (args.orderBy.length === 0) {
+      throw new Error('fetchOrderedRows requires at least one order column');
+    }
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    const orderBy = args.orderBy.map((c) => quoteIdent(c)).join(', ');
+    // Ascending sort places NULLs low natively on this engine — the
+    // cross-engine NULLS-LOW ordering contract (the sibling appends
+    // NULLS FIRST to match).
+    const sql =
+      `SELECT TOP ${Math.max(1, args.limits.maxRows)} * ` +
+      `FROM ${qSchema}${quoteIdent(args.table)} ORDER BY ${orderBy}`;
+    return this.runReadonlySelect(sql, [], args.limits);
+  }
+
   async dispose(): Promise<void> {
     // Stateless wrapper over HTTP -- no pool, no per-instance resources.
   }

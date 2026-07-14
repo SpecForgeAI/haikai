@@ -68,6 +68,32 @@ export interface DbAdapter {
   }): Promise<DbReadResult>;
 
   /**
+   * Count the rows in ONE table (data-parity Spec P). Adapter-owned SQL
+   * construction + identifier quoting — the engine-equivalent of
+   * `SELECT COUNT(*) FROM schema.table`.
+   */
+  countRows(args: {
+    schema?: string | null;
+    table: string;
+    limits: DbQueryLimits;
+  }): Promise<number>;
+
+  /**
+   * Fetch up to `limits.maxRows` whole rows in a DETERMINISTIC total order
+   * over the supplied columns, ascending (data-parity Spec P). Cross-engine
+   * ordering contract: NULLS-LOW — implementations must place NULLs first in
+   * ascending order so both sides of a parity comparison enumerate rows
+   * identically. Adapter-owned SQL construction + quoting; throws when
+   * `orderBy` is empty (a total order is the whole point).
+   */
+  fetchOrderedRows(args: {
+    schema?: string | null;
+    table: string;
+    orderBy: string[];
+    limits: DbQueryLimits;
+  }): Promise<DbReadResult>;
+
+  /**
    * Release pooled resources. Idempotent.
    */
   dispose(): Promise<void>;

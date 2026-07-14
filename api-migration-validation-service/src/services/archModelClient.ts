@@ -1563,6 +1563,26 @@ class ArchModelClient {
     }
   }
 
+  /**
+   * Persist a data-parity report (Spec P, Data-Tier Oracle Program). The
+   * migrate gate reads the LATEST report per (project, architecture)
+   * fail-closed. Report body is the comparator's snake_case shape.
+   */
+  async saveDataParityReport(
+    projectId: string,
+    architectureId: string,
+    report: Record<string, unknown> | object,
+  ): Promise<{ id: string }> {
+    const endpoint =
+      `/api/projects/${projectId}/architectures/${architectureId}/data-parity-reports`;
+    try {
+      const res = await this.client.post<{ id: string }>(endpoint, report);
+      return res.data;
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'save data-parity report');
+    }
+  }
+
   async listCaptureSessionsByStatus(
     projectId: string,
     status: CaptureSessionStatus,

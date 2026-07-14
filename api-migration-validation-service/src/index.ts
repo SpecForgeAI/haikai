@@ -62,6 +62,20 @@ if (process.env.NODE_ENV !== 'test' && require.main === module) {
             stdio: ['ignore', 'pipe', 'ignore'],
           }).toString().trim() || 'unknown';
         } catch { /* not a git checkout */ }
+        // Migration-pair ruleset stamp (Data-Tier Oracle Spec O).
+        let pairInfo: Record<string, unknown> = { migration_pair: 'none' };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { loadPairRuleset } = require('./migrationPairRules');
+          const rs = loadPairRuleset();
+          if (rs) {
+            pairInfo = {
+              migration_pair: rs.pair_id,
+              ruleset_version: rs.version,
+              rule_count: rs.rules.length,
+            };
+          }
+        } catch { /* fail-soft */ }
         bootTrace.configHeader({
           git_sha: gitSha,
           db_creds_per_request_only: true,
@@ -69,6 +83,7 @@ if (process.env.NODE_ENV !== 'test' && require.main === module) {
           volatility_probe_budget_ms: Number(process.env.VOLATILITY_PROBE_BUDGET_MS ?? 10000),
           replay_consecutive_failure_abort: Number(process.env.TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT ?? 10),
           llm_scenario_round_limit: Number(process.env.LLM_SCENARIO_ROUND_LIMIT ?? 12),
+          ...pairInfo,
         });
       }
     } catch { /* tracing must never affect boot */ }

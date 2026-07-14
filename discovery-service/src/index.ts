@@ -71,12 +71,27 @@ app.listen(PORT, () => {
           stdio: ['ignore', 'pipe', 'ignore'],
         }).toString().trim() || 'unknown';
       } catch { /* not a git checkout */ }
+      // Migration-pair ruleset stamp (Data-Tier Oracle Spec O).
+      let pairInfo: Record<string, unknown> = { migration_pair: 'none' };
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { loadPairRuleset } = require('./migrationPairRules');
+        const rs = loadPairRuleset();
+        if (rs) {
+          pairInfo = {
+            migration_pair: rs.pair_id,
+            ruleset_version: rs.version,
+            rule_count: rs.rules.length,
+          };
+        }
+      } catch { /* fail-soft */ }
       bootTrace.configHeader({
         git_sha: gitSha,
         log_parse_max_file_bytes: Number(process.env.LOG_PARSE_MAX_FILE_BYTES ?? 104857600),
         log_parse_max_total_bytes: Number(process.env.LOG_PARSE_MAX_TOTAL_BYTES ?? 2097152000),
         vuln_enrich_auto: process.env.DISCOVERY_VULN_ENRICH_AUTO !== 'false',
         osv_base_url_default: !process.env.OSV_API_BASE_URL,
+        ...pairInfo,
       });
     }
   } catch { /* tracing must never affect boot */ }

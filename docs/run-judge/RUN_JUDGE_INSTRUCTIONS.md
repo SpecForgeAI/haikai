@@ -132,6 +132,13 @@ not emitted in this build (do not expect it; listed for context).
   (attempted vs persisted vs deduped).
 - **SCAN.DB.01 / SCAN.DB.02** [E] — database-kind runs: introspection
   produced a surface; candidates persisted == minted.
+- **SCAN.DBINV.01 / SCAN.DBINV.02** [E, on-demand] — DB surface inventory
+  computed (tables/views/procs/triggers + effect counts) and the UNCLAIMED
+  surface enumerated (objects no discovered effect references — dead schema
+  or another client writing the same database). Fires when the
+  db-surface-inventory endpoint is read (AMS side), not automatically per
+  scan. A large unclaimed-write surface before a db_only migration is a
+  high-severity scoping finding.
 
 ### RUNT — production-log runtime evidence (nested inside the SCAN window)
 - **RUNT.01** [E] — ingestion healthy: all supplied log files parsed;
@@ -158,6 +165,28 @@ not emitted in this build (do not expect it; listed for context).
   downstream by **SPEC.DIAL.01** — if SPEC.DIAL.01 fails with
   "guidance MISSING" while SCAN.DIAL.01 passed, suspect a COMMIT-time
   metadata loss and say so (cascade attribution).
+
+### DATA — data-parity gate (service `capture-svc`; banners per run)
+- **DATA.CNT.01** [E] — row counts compared for every scoped table
+  (count-mismatch tally in actual).
+- **DATA.SUM.01** [E, always skip this build] — engine-side checksum tier is
+  not built; client-side canonical comparison covers full-scan below the
+  threshold and keyed samples above (the skip actual states the bounds).
+- **DATA.ROW.01** [E] — ordered rows compared through the migration-pair
+  ruleset: pass only when NO table is divergent; tolerated divergences are
+  rule-cited (rule ids in actual — never cell values). `unverifiable`
+  tables don't fail this predicate but DO keep the gate closed.
+- **DATA.REP.01** [E] — the report persisted to AMS (the migrate gate reads
+  the LATEST report fail-closed; a persist failure = gate stays closed).
+- **DATA.GATE.01** [E, fires at Migrate when DB-pack stories are in scope]
+  — the data-parity gate evaluated honestly: pass = the latest report was
+  READ (verdict ok or blocked-with-reasons in actual); fail = the read
+  itself failed and the fail-closed path engaged. Block codes:
+  `data_parity_unverified` (no report / non-clean status / unreadable) and
+  `data_parity_failed` (unwaived divergent tables — waive per table with
+  target `data-parity:<table>`). A block during the golden path AFTER a
+  clean parity run is a real finding; a block because no parity run
+  happened yet is the gate working.
 
 ### CAP — API behaviour baseline capture (service `capture-svc`; banners per session)
 - **CAP.OPS.01** [E] — no infra error AND ≥1 scenario persisted a capture;
