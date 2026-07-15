@@ -268,6 +268,44 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
     );
   });
 
+  it('closing the wizard stays on the page (reveals the Create button + tabs + draft list), not the backlog', async () => {
+    mockListArchitectures.mockResolvedValueOnce([buildArchitecture()]);
+    mockListMigrationBookOfWorks.mockResolvedValueOnce([buildDraft()]);
+
+    renderRoute();
+
+    // Wizard auto-opens on landing.
+    await waitFor(() =>
+      expect(screen.getByTestId('mdp-wizard')).toBeInTheDocument(),
+    );
+
+    // Cancel the wizard.
+    fireEvent.click(screen.getByTestId('mdp-wizard-cancel'));
+
+    // The wizard is gone, but we did NOT navigate away: the Migration Delivery
+    // Plan page (its section tabs + draft list) is still here, plus a Create
+    // launcher to re-open the wizard. Previously Cancel ejected to the backlog,
+    // which made the Schema migration tab unreachable.
+    await waitFor(() =>
+      expect(screen.queryByTestId('mdp-wizard')).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByTestId('migration-delivery-plan-create-button'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId('migration-delivery-plan-tab-schema-migration'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('draft-list-view')).toBeInTheDocument();
+
+    // The Create launcher re-opens the wizard in place.
+    fireEvent.click(
+      screen.getByTestId('migration-delivery-plan-create-button'),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('mdp-wizard')).toBeInTheDocument(),
+    );
+  });
+
   it('navigates to the review URL when an existing draft row is clicked', async () => {
     mockListArchitectures.mockResolvedValueOnce([buildArchitecture()]);
     mockListMigrationBookOfWorks.mockResolvedValueOnce([buildDraft()]);

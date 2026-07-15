@@ -182,6 +182,28 @@
   font-weight: 600;
 }
 
+/* Create-plan launcher shown on the Delivery plan section when the wizard is
+   closed (open-on-demand). Landing on the route auto-opens the wizard; after
+   closing it, this button re-opens it without leaving the page. */
+.createPlanBar {
+  padding: 16px 0;
+}
+
+.createPlanButton {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 16px;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.createPlanButton:hover {
+  background: #1d4ed8;
+}
+
 /* ------------------------------------------------------------------ */
 /* Pack contents (file tree + preview + manifest sections) */
 /* ------------------------------------------------------------------ */

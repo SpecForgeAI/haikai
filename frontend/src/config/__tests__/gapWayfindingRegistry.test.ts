@@ -26,7 +26,7 @@ const CTX: GapWayfindingContext = {
 
 const BASE = '/projects/proj-1/architectures/arch-1';
 
-const ALL_17_CODES = [
+const ALL_NAMED_CODES = [
   // The 11 original MigrationGapCodes.
   'no_api_behaviour_baseline',
   'unresolved_discovery_decisions',
@@ -44,6 +44,9 @@ const ALL_17_CODES = [
   'db_migration_pack_missing',
   'unresolved_db_pack_decisions',
   'unapproved_db_translations',
+  // Tier-1 wiring batch (Spec 2026-07-06-f §4): dialect-affected consumers
+  // awaiting scoped revalidation against the deployed target.
+  'db_consumers_unrevalidated',
   // The 2 context warnings.
   'no_discovery_runs_selected',
   'no_findings_in_run',
@@ -51,7 +54,7 @@ const ALL_17_CODES = [
 
 describe('gapWayfindingRegistry (Spec 2026-06-11, Task Group 2)', () => {
   it('has a complete entry (title, explanation, actionLabel, destination) for every gap / context-warning code, with the spec-table routes', () => {
-    for (const code of ALL_17_CODES) {
+    for (const code of ALL_NAMED_CODES) {
       const entry = GAP_WAYFINDING[code];
       expect(entry, `missing registry entry for ${code}`).toBeDefined();
       expect(entry.title.length).toBeGreaterThan(0);
@@ -59,9 +62,10 @@ describe('gapWayfindingRegistry (Spec 2026-06-11, Task Group 2)', () => {
       expect(entry.actionLabel.length).toBeGreaterThan(0);
       expect(typeof entry.buildDestination).toBe('function');
     }
-    // The synthetic per-finding entry completes the 18.
+    // The synthetic per-finding entry completes the set (19 named codes above
+    // + unaddressed_finding).
     expect(GAP_WAYFINDING.unaddressed_finding).toBeDefined();
-    expect(Object.keys(GAP_WAYFINDING)).toHaveLength(18);
+    expect(Object.keys(GAP_WAYFINDING)).toHaveLength(ALL_NAMED_CODES.length + 1);
 
     // Spot-check run-scoped destinations.
     expect(
@@ -104,6 +108,18 @@ describe('gapWayfindingRegistry (Spec 2026-06-11, Task Group 2)', () => {
     expect(GAP_WAYFINDING.no_discovery_runs_selected.buildDestination(CTX)).toBe(
       `${BASE}/discovery`,
     );
+    // DB-pack gaps deep-link to the Schema migration section so the link
+    // lands on that surface directly (the section is URL-addressable via
+    // ?section=) rather than the wizard-covered default 'plan' landing.
+    expect(GAP_WAYFINDING.db_migration_pack_missing.buildDestination(CTX)).toBe(
+      `${BASE}/migration-delivery-plan?section=schema-migration`,
+    );
+    expect(
+      GAP_WAYFINDING.unresolved_db_pack_decisions.buildDestination(CTX),
+    ).toBe(`${BASE}/migration-delivery-plan?section=schema-migration`);
+    expect(
+      GAP_WAYFINDING.unapproved_db_translations.buildDestination(CTX),
+    ).toBe(`${BASE}/migration-delivery-plan?section=schema-migration`);
   });
 
   it('generates a non-throwing fallback entry for unknown codes (humanized title, generic explanation, no link)', () => {
