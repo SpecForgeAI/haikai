@@ -55,7 +55,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   listArchitectures,
   type Architecture,
@@ -80,13 +80,45 @@ export function MigrationDeliveryPlanRoute() {
     architectureId: string;
   }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [architectures, setArchitectures] = useState<ArchitectureOption[]>([]);
   const [architecturesError, setArchitecturesError] = useState<string | null>(
     null,
   );
-  const [activeSection, setActiveSection] =
-    useState<MigrationDeliveryPlanSection>('plan');
+
+  // The section is URL-driven (`?section=`) so the Schema migration + Interface
+  // contracts surfaces are directly addressable and bookmarkable — gap
+  // wayfinding links can deep-link straight to `?section=schema-migration`.
+  // Absent / unknown => 'plan' (the original default landing).
+  const sectionParam = searchParams.get('section');
+  const activeSection: MigrationDeliveryPlanSection =
+    sectionParam === 'schema-migration' || sectionParam === 'interface-contracts'
+      ? sectionParam
+      : 'plan';
+  const setActiveSection = useCallback(
+    (section: MigrationDeliveryPlanSection) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (section === 'plan') next.delete('section');
+          else next.set('section', section);
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  // The generation wizard opens on demand. It still auto-opens on a fresh
+  // landing (the only ways onto this route are the "Create Migration Delivery
+  // Plan" launchers, so create-intent is implied), but CLOSING it now stays on
+  // this page — revealing the section tabs + draft list — instead of ejecting
+  // to the backlog. That eject-on-close was the dead-end that made the Schema
+  // migration tab unreachable: the modal covered the tabs and Cancel navigated
+  // away.
+  const [wizardOpen, setWizardOpen] = useState(true);
 
   // Fetch the project's architectures for the wizard's Stage-1 pickers. The
   // wizard only needs `{ id, name }`; archived architectures are still valid
@@ -123,10 +155,6 @@ export function MigrationDeliveryPlanRoute() {
     },
     [navigate, archScopedPrefix],
   );
-
-  const goToBacklog = useCallback(() => {
-    navigate(`${archScopedPrefix}/product/backlog`);
-  }, [navigate, archScopedPrefix]);
 
   if (!projectId || !architectureId) {
     return null;
@@ -171,14 +199,27 @@ export function MigrationDeliveryPlanRoute() {
 
       {activeSection === 'plan' && (
         <>
-          <MigrationDeliveryPlanWizard
-            open
-            projectId={projectId}
-            architectures={architectures}
-            initialCurrentArchitectureId={architectureId}
-            onClose={goToBacklog}
-            onGenerationComplete={(result) => goToReview(result.draftId)}
-          />
+          {wizardOpen ? (
+            <MigrationDeliveryPlanWizard
+              open
+              projectId={projectId}
+              architectures={architectures}
+              initialCurrentArchitectureId={architectureId}
+              onClose={() => setWizardOpen(false)}
+              onGenerationComplete={(result) => goToReview(result.draftId)}
+            />
+          ) : (
+            <div className={packStyles.createPlanBar}>
+              <button
+                type="button"
+                className={packStyles.createPlanButton}
+                onClick={() => setWizardOpen(true)}
+                data-testid="migration-delivery-plan-create-button"
+              >
+                Create Migration Delivery Plan
+              </button>
+            </div>
+          )}
 
           {architecturesError && (
             <div

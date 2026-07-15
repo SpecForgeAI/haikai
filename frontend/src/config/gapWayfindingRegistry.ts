@@ -188,7 +188,8 @@ export const GAP_WAYFINDING: Record<string, GapWayfindingEntry> = {
       'No deterministic DB migration pack exists for this architecture. The pack is the schema-migration source of truth the plan’s DB streams are generated from; Create Migration Plan generates it automatically once db.engine is captured.',
     actionLabel:
       'Open the Migration Delivery Plan page — the Schema migration tab generates the pack (or re-run Create Migration Plan)',
-    buildDestination: (ctx) => `${architectureBase(ctx)}/migration-delivery-plan`,
+    buildDestination: (ctx) =>
+      `${architectureBase(ctx)}/migration-delivery-plan?section=schema-migration`,
   },
   unresolved_db_pack_decisions: {
     title: 'Unresolved DB pack decisions',
@@ -196,7 +197,8 @@ export const GAP_WAYFINDING: Record<string, GapWayfindingEntry> = {
       'The DB migration pack raised needs-decision entries (unmappable types, collation hazards, computed columns, delta keys) that are still open. Flagged objects stay individually gated in the plan until each decision is resolved.',
     actionLabel:
       'Open the Schema migration tab and resolve the pack decision queue, then regenerate',
-    buildDestination: (ctx) => `${architectureBase(ctx)}/migration-delivery-plan`,
+    buildDestination: (ctx) =>
+      `${architectureBase(ctx)}/migration-delivery-plan?section=schema-migration`,
   },
   unapproved_db_translations: {
     title: 'Unapproved DB translations',
@@ -204,7 +206,17 @@ export const GAP_WAYFINDING: Record<string, GapWayfindingEntry> = {
       'DB code-object translation drafts (procs / triggers / views) are awaiting review. Only APPROVED translations are ever applied to the target; unreviewed drafts block the apply stories.',
     actionLabel:
       'Open the Schema migration tab → Translations and review the outstanding drafts',
-    buildDestination: (ctx) => `${architectureBase(ctx)}/migration-delivery-plan`,
+    buildDestination: (ctx) =>
+      `${architectureBase(ctx)}/migration-delivery-plan?section=schema-migration`,
+  },
+  db_consumers_unrevalidated: {
+    title: 'DB consumers not revalidated',
+    explanation:
+      'The DB migration changed schema/procedures that code endpoints depend on (dialect-affected consumers), but those consumers have not been revalidated against the deployed target. Until a scoped parity check clears them, their behaviour after the DB change is unverified.',
+    actionLabel:
+      'Open the Schema migration tab and run “Revalidate DB consumers” against the deployed target',
+    buildDestination: (ctx) =>
+      `${architectureBase(ctx)}/migration-delivery-plan?section=schema-migration`,
   },
   // -- Context warnings ------------------------------------------------------
   no_discovery_runs_selected: {

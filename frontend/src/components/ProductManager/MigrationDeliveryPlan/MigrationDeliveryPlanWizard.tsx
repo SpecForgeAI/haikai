@@ -917,6 +917,12 @@ export function MigrationDeliveryPlanWizard({
             to={destination}
             className={styles.gapCardAction}
             data-testid={`mdp-wizard-gap-link-${code}`}
+            // Dismiss the wizard as we navigate: otherwise the modal stays
+            // mounted over the destination (a same-route section deep-link
+            // like ?section=schema-migration would look like nothing
+            // happened), and the close now stays on the page rather than
+            // ejecting to the backlog.
+            onClick={onClose}
           >
             {entry.actionLabel}
           </Link>
