@@ -438,13 +438,37 @@ class MigrationDiscoveryContextServiceTest {
 
         assertThat(readiness.overallStatus()).isEqualTo(MigrationGapCodes.STATUS_INSUFFICIENT);
         assertThat(readiness.discoveryReadiness()).isEqualTo(MigrationGapCodes.STATUS_INSUFFICIENT);
-        assertThat(readiness.mappingReadiness()).isEqualTo(MigrationGapCodes.STATUS_INSUFFICIENT);
+        // No target architecture supplied => the mapping dimension is NOT
+        // assessed (neutral), NOT insufficient — and the missing-mappings gap
+        // is NOT added. A target-less read must not contradict a target-bearing
+        // one (run-judge readiness.mappings false "non-determinism"). Overall is
+        // still insufficient here, driven by discovery + baseline, not mapping.
+        assertThat(readiness.mappingReadiness()).isEqualTo(MigrationGapCodes.STATUS_NOT_ASSESSED);
         assertThat(readiness.baselineReadiness()).isEqualTo(MigrationGapCodes.STATUS_INSUFFICIENT);
         assertThat(readiness.gaps()).contains(
-            MigrationGapCodes.MISSING_CURRENT_TO_TARGET_MAPPINGS,
             MigrationGapCodes.INSUFFICIENT_RUNTIME_EVIDENCE,
             MigrationGapCodes.NO_SAMPLE_DATA_HINTS
         );
+        assertThat(readiness.gaps())
+            .doesNotContain(MigrationGapCodes.MISSING_CURRENT_TO_TARGET_MAPPINGS);
+    }
+
+    @Test
+    @DisplayName("Test 10b: target present but zero mappings => insufficient + missing-mappings gap")
+    void readinessTargetPresentZeroMappingsIsInsufficient() {
+        stubProjectAndArchs(true, true);
+        stubLatestRuns(Collections.emptyList());
+        stubBaselines(Collections.emptyList());
+        // Target IS supplied, but no current->target mappings exist. This is the
+        // GENUINELY insufficient mapping case (distinct from target-absent): the
+        // missing-mappings gap fires and the dimension is insufficient.
+        MigrationDiscoveryContextDto result =
+            service.build(PROJECT_ID, newRequest(CURRENT_ARCH_ID, TARGET_ARCH_ID));
+        ReadinessAssessmentDto readiness = result.readinessAssessment();
+
+        assertThat(readiness.mappingReadiness()).isEqualTo(MigrationGapCodes.STATUS_INSUFFICIENT);
+        assertThat(readiness.gaps())
+            .contains(MigrationGapCodes.MISSING_CURRENT_TO_TARGET_MAPPINGS);
     }
 
     // -----------------------------------------------------------------------

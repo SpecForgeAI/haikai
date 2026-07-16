@@ -1758,8 +1758,12 @@ public class MigrationDiscoveryContextService {
         // ------ Mapping readiness ------
         String mappingReadiness;
         if (!ctx.targetArchitectureProvided) {
-            mappingReadiness = MigrationGapCodes.STATUS_INSUFFICIENT;
-            gaps.add(MigrationGapCodes.MISSING_CURRENT_TO_TARGET_MAPPINGS);
+            // No target architecture in THIS request => the current->target
+            // mapping dimension cannot be assessed. It is NOT insufficient (a
+            // target-less read must not add the missing-mappings gap or drag
+            // the overall verdict to insufficient — that is what made the
+            // prompt-context resolver's read contradict the wizard's). Neutral.
+            mappingReadiness = MigrationGapCodes.STATUS_NOT_ASSESSED;
         } else {
             int mappings = ctx.mappingsSummary != null
                 && ctx.mappingsSummary.totalMappings() != null
@@ -1920,8 +1924,15 @@ public class MigrationDiscoveryContextService {
                 ? List.of() : readiness.gaps();
             String gapCodesJoined = gaps.isEmpty() ? "(none)" : String.join(", ", gaps);
 
+            // target=present|absent disambiguates independent readiness reads:
+            // the prompt-context resolver evaluates WITHOUT a target (mapping
+            // dimension not_assessed), the wizard/plan-gen WITH one. Without
+            // this, two adjacent readiness lines differing only by caller look
+            // like one verdict flipping (a run-judge false "non-determinism").
+            String targetState = ctx.targetArchitectureProvided() ? "present" : "absent";
             String message = "plan readiness " + verdict.toUpperCase()
-                + " — baselines=" + totalBaselines + "; gaps: " + gapCodesJoined;
+                + " — baselines=" + totalBaselines + " target=" + targetState
+                + "; gaps: " + gapCodesJoined;
             if (MigrationGapCodes.STATUS_INSUFFICIENT.equals(verdict)) {
                 TRACE.fail(message, corr);
             } else if (MigrationGapCodes.STATUS_PARTIAL.equals(verdict)) {
@@ -1944,6 +1955,7 @@ public class MigrationDiscoveryContextService {
             }
             Map<String, Object> detail = new LinkedHashMap<>();
             detail.put("verdict", verdict);
+            detail.put("targetProvided", ctx.targetArchitectureProvided());
             detail.put("findings", ctx.findings() == null ? 0 : ctx.findings().size());
             detail.put("totalBaselines", totalBaselines);
             detail.put("activeBaselineCount", activeBaselineCount);
