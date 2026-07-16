@@ -983,15 +983,22 @@ export async function generateMigrationBookOfWork(
   // against the CONV.01 lines for the same target architecture (the June
   // binding-bug class: decisions persisted but the plan reading none).
   {
+    // decisionReadiness lives UNDER readinessAssessment (not top-level) — the
+    // original CONV.05 read the top level and always logged "unreported",
+    // contradicting AMS's readiness.assessed (run-judge CONV.05). unresolved
+    // decision tasks ARE top-level. Also surface overallStatus for context.
     const ctxView = rawContext as unknown as {
-      decisionReadiness?: string;
+      readinessAssessment?: { decisionReadiness?: string; overallStatus?: string } | null;
       unresolvedDecisionTasks?: unknown[];
     };
+    const decisionReadiness = ctxView.readinessAssessment?.decisionReadiness ?? 'unreported';
+    const overallReadiness = ctxView.readinessAssessment?.overallStatus ?? 'unreported';
     trace.predicate(
       'CONV.05', 'plan generation read the decision state bound to its target',
       true,
       'migration-discovery-context fetched for the plan target at gen time',
-      `target=${targetArchitectureId} decisionReadiness=${ctxView.decisionReadiness ?? 'unreported'} ` +
+      `target=${targetArchitectureId} overall=${overallReadiness} ` +
+        `decisionReadiness=${decisionReadiness} ` +
         `unresolvedDecisionTasks=${ctxView.unresolvedDecisionTasks?.length ?? 0}`,
       planCorr,
     );
