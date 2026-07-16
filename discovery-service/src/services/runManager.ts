@@ -2018,6 +2018,11 @@ async function startServiceScopedRun(
 
   trace.runHeader(runId, projectId, architectureId);
   trace.step('discovery run started — kind=code', { run: runId, project: projectId, arch: architectureId });
+  // SCAN stage banner — the service-scoped pipeline is the LIVE code-scan path
+  // (the legacy sequential startRun/executeStepLlmAnalysis path is not taken
+  // for service-scoped runs). Without this the SCAN.* code predicates never
+  // fired even though the scan completed (run-judge issue SCAN.CAND.01).
+  trace.stageStart('SCAN', { run: runId, project: projectId, arch: architectureId });
 
   try {
     // Mark step as running
@@ -2697,6 +2702,12 @@ async function startServiceScopedRun(
       `code scan COMPLETED — ${allCandidates.length} candidates, ${evidenceCount} evidence, profiling ${profilingOn ? 'ON' : 'OFF'}`,
       { run: runId, project: projectId, arch: architectureId },
     );
+    // SCAN-stage predicate emission + scorecard for the LIVE service-scoped
+    // code scan (run-judge issue SCAN.CAND.01: these never fired because the
+    // emission was wired only into the unused legacy executeStepLlmAnalysis
+    // path). Pure counting over the in-memory candidate set; never throws.
+    emitCodeScanPredicates(allCandidates, findingsEmit, { run: runId, project: projectId });
+    trace.stageEnd('SCAN', { run: runId, project: projectId, arch: architectureId });
 
     const totalDurationMs = Date.now() - runStartTime;
     logRunEvent({
