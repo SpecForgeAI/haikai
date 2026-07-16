@@ -97,6 +97,21 @@ lines by timestamp/corr for each issue you write up.
    this build* must NOT be flagged as absent.
 6. **Duplicate emissions are normal** for per-item predicates (e.g. one
    `CONV.01` per decision, one `REC.PAR.01` per verdict). Aggregate them.
+7. **Do NOT infer non-determinism from interleaved, repeated evaluations.**
+   The log is a single chronological stream multiplexing many independent
+   operations — user clicks, background context resolvers, readiness banners,
+   re-fetches from different surfaces. The SAME endpoint is legitimately
+   called many times with DIFFERENT inputs. Before calling two adjacent lines
+   a "flip" / "race" / "non-deterministic", check whether their `corr` AND
+   their inputs match. If the inputs differ, they are two independent, valid
+   evaluations — report neither as a bug. Concrete example: a
+   `plan readiness` line with `target=absent` (the prompt-context resolver,
+   which cannot assess the current→target mapping dimension, so it is
+   `not_assessed`) is a DIFFERENT evaluation from one with `target=present`
+   (the wizard / plan generation). Adjacent `target=absent` INSUFFICIENT/
+   not-fully-ready and `target=present` PARTIAL lines are expected, not a
+   contradiction. Only flag non-determinism when the corr AND inputs are
+   identical but the verdict differs.
 
 ## 4. Predicate catalogue (as built)
 

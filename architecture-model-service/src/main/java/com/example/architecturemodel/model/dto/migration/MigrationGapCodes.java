@@ -116,4 +116,16 @@ public final class MigrationGapCodes {
 
     /** Per-stream status string: stream is missing critical inputs. */
     public static final String STATUS_INSUFFICIENT = "insufficient";
+
+    /**
+     * Per-stream status string: the dimension was NOT assessed because a
+     * required input was absent from THIS evaluation (e.g. the mapping
+     * dimension when no target architecture was supplied). Distinct from
+     * {@code insufficient}: a not-assessed dimension is neutral — it neither
+     * forces the overall verdict to insufficient nor blocks; it only prevents
+     * an overall {@code sufficient}. This stops a target-less readiness read
+     * (the prompt/context resolver) from contradicting a target-bearing one
+     * (the wizard / plan generation) with a spurious "insufficient".
+     */
+    public static final String STATUS_NOT_ASSESSED = "not_assessed";
 }
