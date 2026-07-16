@@ -1151,14 +1151,33 @@ export async function runDiscoveryRuntimeEvidence(
         `formats=[${perFileReasons.join('; ').slice(0, 220)}]`,
       corr,
     );
-    trace.predicate(
-      'RUNT.02', 'runtime endpoints observed in logs',
-      observations.length > 0,
-      'observations > 0',
-      `observations=${observations.length} matched=${matched.length} ` +
-        `noUsage=${noUsage.length} unmatchedHints=${unmatchedHints.length}`,
-      corr,
-    );
+    if (observations.length > 0) {
+      trace.predicate(
+        'RUNT.02', 'runtime endpoints observed in logs',
+        true,
+        'observations > 0',
+        `observations=${observations.length} matched=${matched.length} ` +
+          `noUsage=${noUsage.length} unmatchedHints=${unmatchedHints.length}`,
+        corr,
+      );
+    } else {
+      // Zero observations is NOT a tool failure — the supplied log simply
+      // carries no recoverable HTTP request traffic (it is an application /
+      // validation log rather than an access log, or has no traffic in the
+      // captured window). We deliberately do NOT hand-code format matchers for
+      // this (the LLM recipe-induction path is the only lever, by design);
+      // instead we report the absence honestly as a SKIP. Runtime verification
+      // is unavailable here, which the insufficient_runtime_evidence gap
+      // already covers — a hard fail would wrongly read as "the parser broke".
+      trace.predicateSkip(
+        'RUNT.02', 'runtime endpoints observed in logs',
+        `no HTTP request observations recovered from ${logFilesProcessed} parsed ` +
+          `file(s) — not an access log, or no request traffic in window ` +
+          `(parse: ${perFileReasons.join('; ').slice(0, 160)}). Runtime evidence ` +
+          `unavailable; insufficient_runtime_evidence covers this.`,
+        corr,
+      );
+    }
     trace.predicate(
       'RUNT.03', 'observed surface within discovered surface (or finding per miss)',
       unmatchedHints.length === 0 || runtFindingsOk,

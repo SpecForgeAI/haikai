@@ -145,7 +145,14 @@ not emitted in this build (do not expect it; listed for context).
   processed/attempted + time window + per-file format reasons in actual.
   Skip = `no_log_artifacts` configured (then RUNT.02–06 do not fire).
 - **RUNT.02** [E] — runtime endpoints observed (observations / matched /
-  noUsage / unmatched counts).
+  noUsage / unmatched counts). **Skips (with reason) when zero HTTP
+  observations were recovered** — the supplied log is an application/
+  validation log rather than an access log, or carried no request traffic in
+  the window. That skip is the HONEST "no runtime evidence" state (it feeds
+  `insufficient_runtime_evidence`), NOT a failure and NOT a missing format
+  matcher — the tool relies on LLM recipe-induction for log shapes and never
+  hand-codes formats. Do not flag a RUNT.02 skip as an issue unless the
+  operator says that log definitely IS an access log for this system.
 - **RUNT.03** [E] — observed surface ⊆ discovered surface, OR an
   `unmatched_runtime_endpoint` finding exists per miss. Unmatched hints with
   findings-emission OK still PASS (the misses are visible); this is the
