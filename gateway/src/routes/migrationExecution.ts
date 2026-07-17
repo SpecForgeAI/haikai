@@ -37,6 +37,7 @@ import { logger } from '../services/logger';
 import { createTracer } from '../trace';
 import {
   startMigration,
+  resumeMigration,
   defaultMigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -339,6 +340,57 @@ migrationExecutionRouter.get(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Failed to read migration execution run' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST .../migration-execution-runs/:runId/resume -- "approve & continue"
+// (Spec W phased execution). Resumes a run PAUSED at a plane boundary
+// (awaiting_approval): dispatches the next plane's first spec. When the plane
+// being left is the DB plane, the repositioned data-parity gate is re-checked
+// (Persistence-conditional) unless `override` is set (human sign-off).
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/resume',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as { company?: string; project?: string; override?: boolean };
+    if (!body.company || typeof body.company !== 'string' || body.company.trim() === '') {
+      return res.status(400).json({ status: 'error', message: 'company is required' });
+    }
+    if (!body.project || typeof body.project !== 'string' || body.project.trim() === '') {
+      return res.status(400).json({ status: 'error', message: 'project is required' });
+    }
+    // bookId is recovered from the run itself inside resumeMigration.
+    const scope: MigrateScope = { projectId, bookId: '', company: body.company, project: body.project };
+    try {
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      const result = await resumeMigration(scope, runId, deps, { override: body.override === true });
+      logger.info('[diag-gateway] migration_execution_driver resume_requested', {
+        projectId,
+        runId,
+        override: body.override === true,
+        outcome: result.status,
+      });
+      if (result.status === 'resumed' || result.status === 'complete') {
+        return res.status(200).json(result);
+      }
+      // not_paused / blocked both surface as 409 (the run is not resumable now).
+      if (result.status === 'not_paused' || result.status === 'blocked') {
+        return res.status(409).json(result);
+      }
+      return res.status(422).json(result);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver resume_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res
+        .status(500)
+        .json({ status: 'error', message: 'Failed to resume the migration run' });
     }
   }
 );
