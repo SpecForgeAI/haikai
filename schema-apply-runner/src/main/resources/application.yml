@@ -1,0 +1,41 @@
+# Schema Apply Runner (Spec X) — configuration.
+#
+# All values come from the environment at invocation time. Target credentials
+# live in the process environment ONLY: they are never written to a persisted
+# file and never logged (the trace config header emits a db_creds_present
+# boolean, never the values). See docs/trace-logging.md.
+spring:
+  main:
+    web-application-type: none
+    banner-mode: "off"
+  # The runner applies Liquibase itself (see SchemaApplyRunner) so it can filter
+  # by context, self-score the apply as predicates, and control the exit code.
+  # Spring's own Liquibase auto-run is therefore disabled.
+  liquibase:
+    enabled: false
+  datasource:
+    url: ${SCHEMA_APPLY_JDBC_URL:}
+    username: ${SCHEMA_APPLY_DB_USER:}
+    password: ${SCHEMA_APPLY_DB_PASSWORD:}
+
+schema-apply:
+  # Filesystem root of the generated pack (the directory that contains the
+  # `liquibase/` folder). Empty => resolve the changelog from the classpath.
+  pack-root: ${SCHEMA_APPLY_PACK_ROOT:}
+  # Master changelog path, relative to pack-root. Default matches the pack's
+  # MASTER_CHANGELOG_PATH (gateway dbMigrationPack/liquibase.ts).
+  changelog: ${SCHEMA_APPLY_CHANGELOG:liquibase/db.changelog-master.xml}
+  # Comma-separated Liquibase contexts. Empty => apply ALL changesets at once
+  # (valid for schema-only migrations with no data step). The phased executor
+  # (Spec W) invokes this runner twice: contexts=structural, then, after the
+  # data load, contexts=post-load.
+  contexts: ${SCHEMA_APPLY_CONTEXTS:}
+  # Correlation ids stamped onto every trace/predicate line for this apply.
+  corr:
+    run: ${HAIKAI_RUN:}
+    project: ${HAIKAI_PROJECT:}
+    arch: ${HAIKAI_ARCH:}
+
+logging:
+  level:
+    liquibase: INFO
