@@ -5,11 +5,13 @@
  * NO LLM anywhere in this module, NO silent freeform fallback, coverage as a
  * code guarantee.
  *
- * Replaces the LLM for BOTH phases of the three CODE delivery streams:
+ * Replaces the LLM for BOTH phases of the CODE delivery streams:
  *
- *   `target_service_api_implementation`      — REST endpoints
- *   `api_soap_integration_compatibility`     — SOAP endpoints
- *   `internal_processing_implementation`     — non-HTTP entry points (NEW stream)
+ *   `api_migration`                          — REST + SOAP endpoints (ONE generic
+ *                                              API stream; protocol is carried into
+ *                                              each spec, not split into streams —
+ *                                              Spec V, 2026-07-17)
+ *   `internal_processing_implementation`     — non-HTTP entry points
  *
  *   Phase 1 (skeleton): initiative -> epics (foundations / baseline capture /
  *   interface implementation / exceptional endpoints / closure) -> ONE FEATURE
@@ -53,10 +55,14 @@ import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageCli
 // Public constants
 // ---------------------------------------------------------------------------
 
-/** The three deterministically-planned code streams. */
+/**
+ * The deterministically-planned code streams (Spec V, 2026-07-17). REST + SOAP
+ * are ONE generic `api_migration` stream — the planner no longer partitions by
+ * protocol at the STREAM level; each endpoint's protocol is preserved internally
+ * (SOAP-aware clustering + WSDL-metadata flagging) and carried into its spec.
+ */
 export const CODE_DELIVERY_STREAMS: readonly string[] = [
-  'target_service_api_implementation',
-  'api_soap_integration_compatibility',
+  'api_migration',
   'internal_processing_implementation',
 ];
 
@@ -497,21 +503,38 @@ export interface BuildCodeStreamSkeletonArgs {
   clusterCap: number;
 }
 
+/** Stream-level kind. `api_migration` is `api` (REST + SOAP together). */
+type StreamKind = 'api' | 'internal';
+/** Per-endpoint protocol kind — drives flagging + clustering within a stream. */
+type EndpointKind = 'rest' | 'soap' | 'internal';
+
 interface StreamScope {
-  kind: 'rest' | 'soap' | 'internal';
+  kind: StreamKind;
   rows: CodeEndpointRow[];
   partition: CodePartition;
 }
 
 function scopeForStream(stream: string, view: CodeModelView): StreamScope {
   const partition = partitionEndpoints(view);
-  if (stream === 'api_soap_integration_compatibility') {
-    return { kind: 'soap', rows: partition.soap, partition };
-  }
   if (stream === 'internal_processing_implementation') {
     return { kind: 'internal', rows: partition.internal, partition };
   }
-  return { kind: 'rest', rows: partition.rest, partition };
+  // api_migration (Spec V): ONE generic API stream covering REST + SOAP. The
+  // per-endpoint protocol survives as an endpoint/interface kind (below), so
+  // SOAP still clusters as operations and flags missing WSDL metadata; the
+  // protocol is carried into each generated spec, not split into a stream.
+  return { kind: 'api', rows: [...partition.rest, ...partition.soap], partition };
+}
+
+/** Per-endpoint protocol kind (drives flagging — e.g. SOAP metadata gaps). */
+function rowKind(row: CodeEndpointRow): EndpointKind {
+  if (isSoapRow(row)) return 'soap';
+  return row.verb === null ? 'internal' : 'rest';
+}
+
+/** Per-interface protocol kind (drives clustering: verb-groups vs SOAP ops). */
+function interfaceKind(group: InterfaceGroup): 'rest' | 'soap' {
+  return group.endpoints.some(isSoapRow) ? 'soap' : 'rest';
 }
 
 function assembleSkeleton(
@@ -596,12 +619,11 @@ function prerequisiteSkeleton(
 
 function streamTitle(stream: string): string {
   switch (stream) {
-    case 'api_soap_integration_compatibility':
-      return 'Target SOAP API implementation (like-for-like)';
     case 'internal_processing_implementation':
       return 'Internal processing implementation (jobs, listeners, batch)';
+    case 'api_migration':
     default:
-      return 'Target service / API implementation (like-for-like)';
+      return 'Target API implementation — REST + SOAP (like-for-like)';
   }
 }
 
@@ -649,7 +671,7 @@ export function buildCodeStreamSkeleton(
   const groups = groupByInterface(scope.rows);
   const flagsById = new Map<string, EndpointFlag[]>();
   for (const row of scope.rows) {
-    const flags = flagEndpoint(row, view, scope.kind);
+    const flags = flagEndpoint(row, view, rowKind(row));
     if (flags.length > 0) flagsById.set(row.id, flags);
   }
   const flaggedIds = new Set(flagsById.keys());
@@ -777,7 +799,7 @@ export function buildCodeStreamSkeleton(
         tags: [...baseTags, `interface:${group.interfaceId}`],
         extras: {
           codeFeatureKind: 'interface',
-          codeStreamKind: scope.kind,
+          codeStreamKind: interfaceKind(group),
           apiInterfaceId: group.interfaceId,
           interfaceName: group.interfaceName,
           apiEndpointIds: unflagged.map((e) => e.id),
@@ -907,7 +929,7 @@ export interface BuildCodeEpicStoriesArgs {
 
 type FeatureBlob = MigrationBookOfWorkItem & {
   codeFeatureKind?: string;
-  codeStreamKind?: 'rest' | 'soap' | 'internal';
+  codeStreamKind?: 'rest' | 'soap' | 'internal' | 'api';
   codePrereqReason?: string;
   apiInterfaceId?: string;
   interfaceName?: string;
@@ -1034,7 +1056,7 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
         // Row must be one the skeleton flagged (exceptional epic) — verify it
         // WOULD flag under the stamped facts; if it has no flag markers at
         // all, the model has drifted.
-        const flags = flagEndpoint(row, args.view, scope.kind);
+        const flags = flagEndpoint(row, args.view, rowKind(row));
         if (flags.length === 0) {
           throw new Error(
             `Code plan drift for ${stream}: endpoint ${row.id} (${row.name}) is not covered ` +
@@ -1162,7 +1184,7 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
       const clusters = clusterInterfaceEndpoints(
         group,
         clusterCap,
-        feature.codeStreamKind ?? 'rest'
+        feature.codeStreamKind === 'soap' ? 'soap' : 'rest',
       );
       const covered = new Set<string>();
       clusters.forEach((cluster, i) => {

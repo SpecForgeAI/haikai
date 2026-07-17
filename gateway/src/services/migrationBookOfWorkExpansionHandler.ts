@@ -675,10 +675,17 @@ const INVENTORY_STREAM_SOURCES: Record<
   string,
   { domain: string; types: string[]; kind: InventoryWorkItemKind }
 > = {
-  // NOTE (Spec 2026-07-06-g): the two API entries below are UNREACHABLE in
+  // NOTE (Spec 2026-07-06-g): the API entries below are UNREACHABLE in
   // production — the deterministic code-epic branch intercepts those streams
   // before fetchEpicInventory runs (same situation as the DB entries after
   // Spec 2026-07-02-b). Kept for the legacy tests + as cleanup candidates.
+  // `api_migration` is the Spec V canonical stream; the two pre-reframe keys
+  // are retained for legacy plans.
+  api_migration: {
+    domain: 'Applications',
+    types: ['Endpoints'],
+    kind: 'api_endpoint',
+  },
   target_service_api_implementation: {
     domain: 'Applications',
     types: ['Endpoints'],
@@ -1401,7 +1408,7 @@ function streamOfEpic(epic: MigrationBookOfWorkItem): string {
 export const ECOSYSTEM_WORKSTREAM_MAP: Readonly<
   Record<string, MigrationBookOfWorkWorkstream>
 > = {
-  maven: 'target_service_api_implementation',
+  maven: 'api_migration', // Spec V: Java service scaffold homes into the merged API stream
   npm: 'target_frontend_implementation',
 };
 
@@ -1418,7 +1425,7 @@ export function workstreamServiceLabel(
   workstream: MigrationBookOfWorkWorkstream | null
 ): string {
   if (workstream === 'target_frontend_implementation') return 'frontend';
-  if (workstream === 'target_service_api_implementation') return 'service API';
+  if (workstream === 'api_migration') return 'service API';
   return 'service';
 }
 

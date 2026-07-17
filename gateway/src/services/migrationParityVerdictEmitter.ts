@@ -91,6 +91,10 @@ export function defaultParityVerdictEmitterDeps(
 
 /** The API-parity code streams (internal stream is exempt — Spec M's oracle). */
 const API_PARITY_STREAM_TAGS = new Set([
+  // Spec V (2026-07-17): REST + SOAP merged into one api_migration stream.
+  'stream:api_migration',
+  // Pre-reframe stream tags — retained so plans built before Spec V still
+  // resolve to API-parity applicability.
   'stream:target_service_api_implementation',
   'stream:api_soap_integration_compatibility',
 ]);

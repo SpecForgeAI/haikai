@@ -72,7 +72,7 @@ describe('expansion prompt baseline scoping (bug 1)', () => {
 
   it('DOES describe an api_endpoint item with a baselineId line', () => {
     const prompt = buildExpansionBatchPrompt({
-      epic: { ...epic(), workstream: 'target_service_api_implementation' } as MigrationBookOfWorkItem,
+      epic: { ...epic(), workstream: 'api_migration' } as MigrationBookOfWorkItem,
       features: [feature()],
       batch: [apiEndpointItem],
       batchIndex: 0,

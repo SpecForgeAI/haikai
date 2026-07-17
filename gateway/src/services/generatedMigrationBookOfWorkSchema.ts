@@ -48,25 +48,30 @@ export type MigrationBookOfWorkItemType =
   (typeof MIGRATION_BOOK_OF_WORK_ITEM_TYPES)[number];
 
 /**
- * The 15 workstream values — 14 domain values (13 per Q-7 plus
- * `internal_processing_implementation`, Spec 2026-07-06-g) and the `unknown`
- * sentinel. The sentinel is used ONLY when no other workstream applies; the
- * prompt restricts its use and the review-workspace filter surfaces items
- * tagged `unknown` so reviewers can reclassify them.
+ * Canonical workstream vocabulary (Spec V, 2026-07-17 — plane-based streams).
+ * Grouped by plane: REST + SOAP are ONE generic `api_migration`; reconciles are
+ * per-plane (`data_parity_reconciliation_reporting`, `api_reconciliation_reporting`);
+ * tests are peppered into build stories (no separate `migration_test_pack`).
+ * The `unknown` sentinel is used ONLY when no other workstream applies; the
+ * review-workspace filter surfaces `unknown` items so reviewers reclassify them.
+ *
+ * The 4 pre-reframe values are RETAINED for validation only (see
+ * DEPRECATED_MIGRATION_BOOK_OF_WORK_WORKSTREAMS) so plans generated before the
+ * reframe still validate; the planner / prompt / wizard no longer emit them.
  */
 export const MIGRATION_BOOK_OF_WORK_WORKSTREAMS = [
-  'target_service_api_implementation',
-  'target_frontend_implementation',
+  // Persistence plane
   'target_database_schema_implementation',
-  'target_infrastructure_environment_implementation',
   'data_migration',
-  'api_soap_integration_compatibility',
-  // Internal (non-HTTP) functionality stream — scheduled jobs, message
-  // listeners, batch entrypoints (Spec 2026-07-06-g, Code-Tier Oracle
-  // Program). Planned deterministically like the API streams.
+  'data_parity_reconciliation_reporting',
+  // Service plane (REST + SOAP merged; internal = non-HTTP entrypoints)
+  'api_migration',
   'internal_processing_implementation',
-  'migration_test_pack',
-  'reconciliation_reporting',
+  'api_reconciliation_reporting',
+  // UI plane
+  'target_frontend_implementation',
+  // Optional / cross-cutting
+  'target_infrastructure_environment_implementation',
   'cutover_rollback_decommission',
   'architecture_refinement',
   'discovery_gap_resolution',
@@ -76,6 +81,28 @@ export const MIGRATION_BOOK_OF_WORK_WORKSTREAMS = [
 ] as const;
 export type MigrationBookOfWorkWorkstream =
   (typeof MIGRATION_BOOK_OF_WORK_WORKSTREAMS)[number];
+
+/**
+ * Pre-reframe workstream values, retained for BACKWARD-COMPATIBLE VALIDATION
+ * only (plans persisted before Spec V). Never emitted by current code:
+ *   target_service_api_implementation, api_soap_integration_compatibility
+ *     -> api_migration
+ *   migration_test_pack       -> tests peppered into build-story specs
+ *   reconciliation_reporting  -> data_parity_reconciliation_reporting +
+ *                                api_reconciliation_reporting
+ */
+export const DEPRECATED_MIGRATION_BOOK_OF_WORK_WORKSTREAMS = [
+  'target_service_api_implementation',
+  'api_soap_integration_compatibility',
+  'migration_test_pack',
+  'reconciliation_reporting',
+] as const;
+
+/** All workstream tokens the validator accepts (canonical ∪ retained). */
+const ACCEPTED_WORKSTREAMS: ReadonlySet<string> = new Set<string>([
+  ...MIGRATION_BOOK_OF_WORK_WORKSTREAMS,
+  ...DEPRECATED_MIGRATION_BOOK_OF_WORK_WORKSTREAMS,
+]);
 
 export const MIGRATION_BOOK_OF_WORK_CONFIDENCES = [
   'high',
@@ -396,15 +423,13 @@ function validateItem(
     errors.push(`items[${index}].acceptanceCriteria must be an array of strings`);
   }
 
-  // workstream
+  // workstream (canonical plane-based vocabulary or a retained pre-reframe value)
   if (
     typeof obj.workstream !== 'string' ||
-    !(MIGRATION_BOOK_OF_WORK_WORKSTREAMS as readonly string[]).includes(
-      obj.workstream as string
-    )
+    !ACCEPTED_WORKSTREAMS.has(obj.workstream as string)
   ) {
     errors.push(
-      `items[${index}].workstream must be one of the 14 allowed values (Q-7) including the "unknown" sentinel (got ${JSON.stringify(obj.workstream)})`
+      `items[${index}].workstream must be one of the canonical plane-based values (Spec V) or a retained pre-reframe value (got ${JSON.stringify(obj.workstream)})`
     );
   }
 

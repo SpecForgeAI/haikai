@@ -40,7 +40,7 @@ function makeItem(
     title: `${type} ${id}`,
     description: `description for ${id}`,
     acceptanceCriteria: ['AC 1'],
-    workstream: 'target_service_api_implementation',
+    workstream: 'api_migration',
     sequenceOrder: 1,
     tags: ['mig-2026q2'],
     confidence: 'high',
@@ -122,8 +122,8 @@ describe('GeneratedMigrationBookOfWork schema (Spec 2026-05-17, Task Group 5)', 
     }
   });
 
-  // Test 2: all 14 workstream values pass; a 15th value is rejected.
-  it('accepts all 14 workstream values (Q-7) and rejects an out-of-vocabulary value', () => {
+  // Test 2: every canonical workstream value passes; a bogus value is rejected.
+  it('accepts all canonical workstream values (Spec V) and rejects an out-of-vocabulary value', () => {
     for (const ws of MIGRATION_BOOK_OF_WORK_WORKSTREAMS) {
       const payload = makeHappyPathPayload();
       payload.items[3].workstream = ws;
@@ -139,7 +139,7 @@ describe('GeneratedMigrationBookOfWork schema (Spec 2026-05-17, Task Group 5)', 
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.join(' ')).toMatch(/workstream/);
-      expect(result.errors.join(' ')).toMatch(/14 allowed/);
+      expect(result.errors.join(' ')).toMatch(/canonical plane-based/);
     }
   });
 
