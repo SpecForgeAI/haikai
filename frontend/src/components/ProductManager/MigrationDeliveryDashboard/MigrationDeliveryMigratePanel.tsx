@@ -51,11 +51,13 @@ import {
   triggerMigrate as defaultTriggerMigrate,
   triggerMigrateSelected as defaultTriggerMigrateSelected,
   getLatestMigrationExecutionRun as defaultGetLatestRun,
+  resumeMigrationRun as defaultResumeRun,
   type MigrationDeliveryHierarchyNodeDto,
   type MigrationExecutionRunDto,
   type MigrationExecutionRunItemDto,
   type MigrateBlockReason,
   type TriggerMigrateResult,
+  type ResumeMigrationResult,
 } from '../../../api/migrationDeliveryDashboardApi';
 import styles from './MigrationDeliveryDashboard.module.css';
 
@@ -198,6 +200,11 @@ export interface MigrationDeliveryMigratePanelProps {
   /** Test seam: override the run-state read. Defaults to the real client. */
   fetchLatestRunFn?: typeof defaultGetLatestRun;
   /**
+   * Test seam: override the resume ("approve & continue") call. Defaults to the
+   * real client. Drives the phased-execution approve button (Spec W).
+   */
+  resumeRunFn?: typeof defaultResumeRun;
+  /**
    * Spec 4 (reconciliation): notified whenever the latest run is (re)loaded so
    * the dashboard can mount the reconciliation review panel for the same run
    * without a duplicate fetch. Best-effort; optional.
@@ -243,6 +250,7 @@ export const MigrationDeliveryMigratePanel: React.FC<
   triggerMigrateFn = defaultTriggerMigrate,
   triggerMigrateSelectedFn = defaultTriggerMigrateSelected,
   fetchLatestRunFn = defaultGetLatestRun,
+  resumeRunFn = defaultResumeRun,
   onRunLoaded,
   onReviewCarryOver,
   refreshToken,
@@ -256,6 +264,11 @@ export const MigrationDeliveryMigratePanel: React.FC<
     MigrateBlockReason[] | null
   >(null);
   const [run, setRun] = useState<MigrationExecutionRunDto | null>(null);
+  // Phased execution (Spec W): approve-&-continue state for a paused run.
+  const [approving, setApproving] = useState<boolean>(false);
+  const [approveBlockReasons, setApproveBlockReasons] = useState<
+    MigrateBlockReason[] | null
+  >(null);
 
   // ----- Client-side hard-block predicate (CD-7) --------------------------
   const blockReasons = useMemo(
@@ -428,6 +441,44 @@ export const MigrationDeliveryMigratePanel: React.FC<
     batchName,
     loadRun,
   ]);
+
+  // ----- Phased execution: approve & continue (Spec W) --------------------
+  // A run PAUSED at a plane boundary (status `awaiting_approval`) resumes on the
+  // human's approval, dispatching the next plane. When the plane just completed
+  // was the DB plane, the server re-checks data-parity; a `blocked` result lists
+  // the un-clean tables and the user can override after reviewing them.
+  const handleApproveContinue = useCallback(
+    async (override: boolean) => {
+      if (!run?.id) return;
+      setApproving(true);
+      setError(null);
+      setApproveBlockReasons(null);
+      try {
+        const result: ResumeMigrationResult = await resumeRunFn(projectId, run.id, {
+          company,
+          project,
+          override,
+        });
+        if (result.status === 'resumed' || result.status === 'complete') {
+          await loadRun();
+        } else if (result.status === 'blocked') {
+          setApproveBlockReasons(result.reasons);
+        } else if (result.status === 'not_paused') {
+          // Something already advanced it — just refresh the progress view.
+          await loadRun();
+        } else {
+          setError(result.message);
+        }
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : 'Failed to continue the migration run',
+        );
+      } finally {
+        setApproving(false);
+      }
+    },
+    [resumeRunFn, projectId, run, company, project, loadRun],
+  );
 
   const items = run?.items ?? [];
 
@@ -699,6 +750,55 @@ export const MigrationDeliveryMigratePanel: React.FC<
               Refresh
             </button>
           </div>
+
+          {/* ----- Phased execution HARD PAUSE (Spec W). When a plane finished
+              its build/verify/reconcile, the run pauses awaiting the human's
+              "approve & continue" before the next plane dispatches. ----- */}
+          {run.status === 'awaiting_approval' && (
+            <div
+              className={styles.warningBanner}
+              role="status"
+              data-testid="mdd-migrate-run-paused"
+            >
+              <span>
+                This plane completed its build, verify and reconcile and the run
+                is paused. Review the plane's results (data-parity for the DB
+                plane, API reconciliation for the Service plane), then approve to
+                continue to the next plane.
+              </span>
+              <button
+                type="button"
+                className={styles.dialogPrimaryButton}
+                data-testid="mdd-migrate-approve-continue"
+                disabled={approving}
+                onClick={() => void handleApproveContinue(false)}
+              >
+                {approving ? 'Continuing…' : 'Approve & continue'}
+              </button>
+              {approveBlockReasons && approveBlockReasons.length > 0 && (
+                <div data-testid="mdd-migrate-approve-blocked" role="alert">
+                  <span>
+                    Data-parity is not clean for this DB plane. Review the
+                    divergences, then override to continue anyway:
+                  </span>
+                  <ul className={styles.defineTestsBannerList}>
+                    {approveBlockReasons.map((r, i) => (
+                      <li key={`${r.code}-${i}`}>{r.message}</li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className={styles.headerNavLink}
+                    data-testid="mdd-migrate-approve-override"
+                    disabled={approving}
+                    onClick={() => void handleApproveContinue(true)}
+                  >
+                    Override &amp; continue anyway
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <ul
             className={styles.defineTestsBannerList}
             data-testid="mdd-migrate-run-items"

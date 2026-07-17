@@ -1095,6 +1095,84 @@ export async function getLatestMigrationExecutionRun(
 }
 
 /**
+ * The resume ("approve & continue") response union (gateway
+ * `POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/resume`,
+ * Spec W phased execution):
+ *   - `resumed`    : the next plane's first spec was dispatched (200); `nextPlane`
+ *                    is the plane now executing (`db` | `service` | `ui`).
+ *   - `complete`   : nothing left to dispatch; the run is marked deployed (200).
+ *   - `not_paused` : the run is not awaiting approval right now (409).
+ *   - `blocked`    : the repositioned DB-plane data-parity gate refused; `reasons`
+ *                    lists what is unclean — retry with `override` after review (409).
+ *   - `error`      : a driver/validation error (4xx/5xx).
+ */
+export type ResumeMigrationResult =
+  | { status: 'resumed'; nextPlane: string }
+  | { status: 'complete' }
+  | { status: 'not_paused'; message: string }
+  | { status: 'blocked'; reasons: MigrateBlockReason[] }
+  | { status: 'error'; message: string };
+
+/**
+ * Approve a run PAUSED at a plane boundary and dispatch the next plane (Spec W).
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/resume
+ *
+ * Only a run in `awaiting_approval` resumes. When the plane just completed was
+ * the DB plane, the repositioned data-parity gate is re-checked server-side; a
+ * non-clean parity returns `blocked` (retry with `override: true` for a human
+ * sign-off). Like {@link triggerMigrate}, the documented non-2xx statuses are
+ * mapped (not thrown); only a network failure rejects. The caller should refresh
+ * the run on success so the progress view advances.
+ */
+export async function resumeMigrationRun(
+  projectId: string,
+  runId: string,
+  body: { company: string; project: string; override?: boolean },
+): Promise<ResumeMigrationResult> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-execution-runs/${encodeURIComponent(runId)}/resume`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // fall through to the status-based fallback below
+  }
+  const obj = (payload ?? {}) as Record<string, unknown>;
+  if (obj.status === 'resumed') {
+    return { status: 'resumed', nextPlane: String(obj.nextPlane ?? '') };
+  }
+  if (obj.status === 'complete') {
+    return { status: 'complete' };
+  }
+  if (obj.status === 'not_paused') {
+    return {
+      status: 'not_paused',
+      message: typeof obj.message === 'string' ? obj.message : 'Run is not awaiting approval',
+    };
+  }
+  if (obj.status === 'blocked') {
+    return {
+      status: 'blocked',
+      reasons: Array.isArray(obj.reasons) ? (obj.reasons as MigrateBlockReason[]) : [],
+    };
+  }
+  return {
+    status: 'error',
+    message:
+      typeof obj.message === 'string' && obj.message
+        ? obj.message
+        : `Failed to resume the migration run: ${res.status} ${res.statusText}`,
+  };
+}
+
+/**
  * Set or clear the `deferred` flag on a story's work item (CD-7).
  *
  * PATCH /api/model/projects/{projectId}/work-items/{workItemId}/deferred
