@@ -81,6 +81,11 @@ export interface CreateMigrationExecutionRunRequest {
 export const RUN_STATUS = {
   STARTED: 'started',
   DISPATCHING: 'dispatching',
+  /**
+   * Phased execution (Spec W): a plane finished build/verify/reconcile and the
+   * run is PAUSED awaiting a human "approve & continue" before the next plane.
+   */
+  AWAITING_APPROVAL: 'awaiting_approval',
   HALTED: 'halted',
   DEPLOYED: 'deployed',
   FAILED: 'failed',

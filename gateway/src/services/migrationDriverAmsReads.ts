@@ -40,6 +40,12 @@ export interface BookOfWorkItem {
   /** Stored WorkItem UUID (presence = saved-to-backlog). */
   workItemId?: string | null;
   /**
+   * Plane workstream (Spec V vocabulary). Present in `book_of_work_json.items[]`;
+   * the driver reads it to assign the item to a migration plane (Spec W phased
+   * execution). Falls back to the `stream:<name>` tag when absent.
+   */
+  workstream?: string | null;
+  /**
    * The discovery-finding ids this book item cites (D4 carry_over gate, D8): a
    * finding is `cited-by-story` iff its id appears in ANY book item's
    * `discoveryFindingReferences`. Reused as-is from the finding-citation
