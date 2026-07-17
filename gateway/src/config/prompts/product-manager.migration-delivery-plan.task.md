@@ -19,7 +19,7 @@ This is a planning artifact, not a "Migration Plan" document. The reviewing Prod
 3. Use only the provided evidence; **do not invent** contracts, mappings, or data details. Every item must trace back to elements present in the provided context (Product Definition, Current/Target Architecture, mappings, API Behaviour Baselines, discovery findings, evidence). If a contract, mapping, schema, endpoint, data entity, or runtime detail is not in the context, you may not assume it.
 4. Where detail is missing, create **prerequisite / refinement stories** and mark readiness accordingly (`needs_focused_context`, `needs_user_decision`, or `blocked`). NEVER fabricate detail to fill a gap.
 5. Order work to respect **practical delivery dependencies** via `sequenceOrder`. Earlier items must not depend on later ones. Database / schema work precedes API work that consumes it; mapping prerequisites precede the work that uses them; cutover and decommission come last.
-6. Generate migration test pack work as **backlog items**, not as immediate test artifacts. Items in the `migration_test_pack` workstream describe test work to be done by the Test Engineer persona later — they are stories, not test specs or test plans.
+6. Tests are peppered into the BUILD stories (unit / functional / integration / e2e per what the story builds) — NOT a separate test-pack workstream (Spec V, 2026-07-17). Do not emit a `migration_test_pack` workstream; describe the tests a build story needs within that story's acceptance criteria.
 7. Include `traceabilitySummary` + `confidence` + `readiness` on every item. No item may omit these three fields. The traceability summary must cite specific input elements (entity ids, finding ids, baseline ids, mapping ids) where applicable.
 8. Workstream `unknown` is used **only** when no other workstream applies — never as a guess or hedge. Prefer to leave readiness at `needs_focused_context` with a specific reason over reaching for `unknown`. The `unknown` sentinel exists so reviewers can find items needing reclassification; do not bury indecision in it.
 
@@ -157,19 +157,24 @@ You MUST respond with a single JSON object matching this exact shape. No markdow
 - A `story`'s `parentId` MUST point to a `feature`.
 - No `parentId` may point to a non-existent id. No cycles. No skipped levels.
 
-### Workstream vocabulary (14 values)
+### Workstream vocabulary (14 values, plane-grouped — Spec V, 2026-07-17)
 
-Use exactly one of:
+Use exactly one of. REST and SOAP are ONE generic `api_migration` stream (the
+per-endpoint spec carries the protocol). Reconciliation is a per-plane AUTO
+capability (`data_parity_reconciliation_reporting` after the DB plane;
+`api_reconciliation_reporting` after the Service plane) — use these ONLY for
+reconcile/reporting work, never for build work. Tests are peppered into build
+stories, so there is no separate test-pack workstream.
 
-- `target_service_api_implementation`
-- `target_frontend_implementation`
-- `target_database_schema_implementation`
-- `target_infrastructure_environment_implementation`
-- `data_migration`
-- `api_soap_integration_compatibility`
-- `migration_test_pack`
-- `reconciliation_reporting`
-- `cutover_rollback_decommission`
+- `target_database_schema_implementation` — Persistence build
+- `data_migration` — Persistence build (implied whenever Persistence is in scope)
+- `data_parity_reconciliation_reporting` — Persistence reconcile (auto)
+- `api_migration` — Service build (REST + SOAP; the spec carries the protocol)
+- `internal_processing_implementation` — Service build (jobs / listeners / batch)
+- `api_reconciliation_reporting` — Service reconcile (auto)
+- `target_frontend_implementation` — UI build
+- `target_infrastructure_environment_implementation` — optional
+- `cutover_rollback_decommission` — optional
 - `architecture_refinement`
 - `discovery_gap_resolution`
 - `test_strategy`
