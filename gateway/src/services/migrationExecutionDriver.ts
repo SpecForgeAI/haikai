@@ -110,6 +110,7 @@ import {
   DataParityGateReads,
   evaluateDataParityReadiness,
 } from './migrationDataParityGate';
+import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -672,6 +673,11 @@ export function defaultMigrationDriverDeps(
     buildResultsCallbackUrl,
     reconciliationDeps: defaultReconciliationDriverDeps(),
     triggerReconcile: triggerFullBaselineReconcile,
+    // Spec W: the DB-plane reconcile fires the live AMVS data-parity comparator
+    // (fail-soft; produces + persists the report the pause review + resume gate
+    // read). Tests inject a mock; the fallback stub inside kickPlaneReconcile
+    // only applies to deps built without this field.
+    triggerDataParityReconcile: createDataParityReconcileTrigger(),
     handleBugCallback,
     carryOverCoverageReads: defaultCarryOverCoverageReadsDeps(),
   };
