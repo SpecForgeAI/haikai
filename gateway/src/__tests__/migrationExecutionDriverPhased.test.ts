@@ -51,6 +51,7 @@ function makeDeps(overrides: Partial<MigrationDriverDeps> = {}): MigrationDriver
     buildResultsCallbackUrl: 'http://gw/cb',
     triggerReconcile: jest.fn().mockResolvedValue(undefined),
     triggerDataParityReconcile: jest.fn().mockResolvedValue(undefined),
+    triggerDataMigration: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } as unknown as MigrationDriverDeps;
 }
@@ -183,6 +184,10 @@ describe('phased advance (pause vs final) + resume', () => {
       (c) => c[2].status === RUN_STATUS.AWAITING_APPROVAL,
     );
     expect(paused).toBeTruthy();
+    // The DB plane LOADS the target (Spec Y) THEN reconciles it (Spec P) — the
+    // chain is fire-and-forget, so flush the microtask queue before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(deps.triggerDataMigration as jest.Mock).toHaveBeenCalled();
     expect(deps.triggerDataParityReconcile as jest.Mock).toHaveBeenCalled();
     // The Service plane did NOT auto-dispatch.
     expect(deps.patchMigrationExecutionRun as jest.Mock).not.toHaveBeenCalledWith(

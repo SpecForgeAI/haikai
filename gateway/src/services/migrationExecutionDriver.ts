@@ -111,6 +111,7 @@ import {
   evaluateDataParityReadiness,
 } from './migrationDataParityGate';
 import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
+import { createDataMigrationTrigger } from './migrationDataRunnerDispatch';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -244,6 +245,17 @@ export interface MigrationDriverDeps {
    * data-parity invocation is a work-machine shakedown seam.
    */
   triggerDataParityReconcile?: (
+    scope: MigrateScope,
+    runId: string,
+    deps: MigrationDriverDeps
+  ) => Promise<void>;
+  /**
+   * DB-plane data-migration dispatch (Spec W / Y): runs the bulk-load runner
+   * (via the AMVS data-migration route) BEFORE the data-parity reconcile so the
+   * target is populated for the comparison. Lazily defaulted; tests inject a
+   * mock. The live source->target load is a work-machine shakedown seam.
+   */
+  triggerDataMigration?: (
     scope: MigrateScope,
     runId: string,
     deps: MigrationDriverDeps
@@ -678,6 +690,9 @@ export function defaultMigrationDriverDeps(
     // read). Tests inject a mock; the fallback stub inside kickPlaneReconcile
     // only applies to deps built without this field.
     triggerDataParityReconcile: createDataParityReconcileTrigger(),
+    // Spec W / Y: the DB plane loads the target via the data-migration runner
+    // (AMVS route) before the data-parity reconcile compares it.
+    triggerDataMigration: createDataMigrationTrigger(),
     handleBugCallback,
     carryOverCoverageReads: defaultCarryOverCoverageReadsDeps(),
   };
@@ -1667,14 +1682,23 @@ export function kickPlaneReconcile(
     return;
   }
   if (plane === 'db') {
-    const trigger = deps.triggerDataParityReconcile ?? defaultTriggerDataParityReconcile;
-    void trigger(scope, runId, deps).catch((error) => {
-      logger.error('[diag-gateway] migration_execution_driver data_parity_reconcile_crashed', {
-        projectId: scope.projectId,
-        runId,
-        error: error instanceof Error ? error.message : 'Unknown error',
+    // DB plane: LOAD the target (Spec Y data-migration runner) THEN RECONCILE it
+    // (Spec P data-parity), in sequence — the target must be populated before
+    // the comparison. Both fire-and-forget; the run is already paused
+    // (awaiting_approval) and the human reviews the persisted parity report once
+    // it lands. A skipped/failed load leaves the report unclean, so the resume
+    // gate blocks — never a silent pass.
+    const migrate = deps.triggerDataMigration ?? defaultNoopRunnerTrigger;
+    const reconcile = deps.triggerDataParityReconcile ?? defaultTriggerDataParityReconcile;
+    void migrate(scope, runId, deps)
+      .then(() => reconcile(scope, runId, deps))
+      .catch((error) => {
+        logger.error('[diag-gateway] migration_execution_driver db_plane_runner_chain_crashed', {
+          projectId: scope.projectId,
+          runId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
       });
-    });
     return;
   }
   // ui: build-only, no reconcile.
@@ -1704,6 +1728,15 @@ async function defaultTriggerDataParityReconcile(
     run: runId,
     project: scope.project,
   });
+}
+
+/**
+ * Fallback DB-plane data-migration trigger — a no-op. The real runner dispatch
+ * is wired in defaultMigrationDriverDeps; unit tests that do not inject
+ * `triggerDataMigration` simply skip the load step.
+ */
+async function defaultNoopRunnerTrigger(): Promise<void> {
+  /* no-op */
 }
 
 /** Outcome of a resume ("approve & continue") request. */
