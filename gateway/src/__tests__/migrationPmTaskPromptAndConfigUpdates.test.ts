@@ -80,8 +80,8 @@ describe('PM task prompt + config updates -- Spec 2026-05-25 (Group 1)', () => {
     // Rule 5 -- practical delivery dependencies via sequenceOrder
     expect(prompt).toMatch(/\*\*practical delivery dependencies\*\*/i);
     expect(prompt).toContain('`sequenceOrder`');
-    // Rule 6 -- migration test pack work as backlog items
-    expect(prompt).toMatch(/migration test pack work as\s*\*\*backlog items\*\*/i);
+    // Rule 6 -- tests peppered into build stories (Spec V), not a test-pack workstream
+    expect(prompt).toMatch(/tests are peppered into the BUILD stories/i);
     // Rule 7 -- traceabilitySummary + confidence + readiness on every item
     expect(prompt).toContain('`traceabilitySummary`');
     expect(prompt).toContain('`confidence`');

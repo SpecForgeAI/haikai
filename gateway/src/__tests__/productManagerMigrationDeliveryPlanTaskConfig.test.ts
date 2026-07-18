@@ -93,14 +93,14 @@ describe('Product Manager Migration Delivery Plan task config (Spec 2026-05-17, 
       'story',
     ]);
     expect(itemsSchema.properties.workstream.enum).toEqual([
-      'target_service_api_implementation',
-      'target_frontend_implementation',
       'target_database_schema_implementation',
-      'target_infrastructure_environment_implementation',
       'data_migration',
-      'api_soap_integration_compatibility',
-      'migration_test_pack',
-      'reconciliation_reporting',
+      'data_parity_reconciliation_reporting',
+      'api_migration',
+      'internal_processing_implementation',
+      'api_reconciliation_reporting',
+      'target_frontend_implementation',
+      'target_infrastructure_environment_implementation',
       'cutover_rollback_decommission',
       'architecture_refinement',
       'discovery_gap_resolution',
@@ -174,9 +174,9 @@ describe('Product Manager Migration Delivery Plan task config (Spec 2026-05-17, 
     expect(prompt).toMatch(/\*\*practical delivery dependencies\*\*/i);
     expect(prompt).toMatch(/`sequenceOrder`/);
 
-    // Rule 6 — migration test pack work as backlog items, not test artifacts
-    expect(prompt).toMatch(/migration test pack work as\s*\*\*backlog items\*\*/i);
-    expect(prompt).toMatch(/not as immediate test artifacts/i);
+    // Rule 6 — tests peppered into build stories (Spec V), not a test-pack workstream
+    expect(prompt).toMatch(/tests are peppered into the BUILD stories/i);
+    expect(prompt).toMatch(/not a separate test-pack workstream/i);
 
     // Rule 7 — traceabilitySummary + confidence + readiness on every item
     expect(prompt).toMatch(/`traceabilitySummary`/);

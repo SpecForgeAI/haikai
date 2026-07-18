@@ -404,6 +404,11 @@ describe('advanceRunOnBuildResult', () => {
   it('deployed (final spec) -> marks the run deployed + records target_base_url', async () => {
     // Final item ri-2 carries the deployed callback.
     const run = runWithItems();
+    // Phased execution (Spec W): the final item deploys only once the earlier
+    // items are terminal — no PENDING items remain, so this is the FINAL plane
+    // boundary (a deploy that completes the run, not a mid-run pause).
+    run.items![0].status = RUN_ITEM_STATUS.IMPLEMENTED;
+    run.items![1].status = RUN_ITEM_STATUS.IMPLEMENTED;
     run.items![2].status = RUN_ITEM_STATUS.SUBMITTED;
     run.items![2].job_id = 'job-final';
     const deps = mockDeps({

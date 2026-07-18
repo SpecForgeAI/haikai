@@ -57,13 +57,13 @@ function manifest(overrides: Partial<TargetManifestArtifactWire> = {}): TargetMa
 }
 
 describe('workstreamForEcosystem — code-owned, case-insensitive', () => {
-  it('maps maven -> target_service_api_implementation and npm -> target_frontend_implementation', () => {
-    expect(workstreamForEcosystem('maven')).toBe('target_service_api_implementation');
+  it('maps maven -> api_migration and npm -> target_frontend_implementation', () => {
+    expect(workstreamForEcosystem('maven')).toBe('api_migration');
     expect(workstreamForEcosystem('npm')).toBe('target_frontend_implementation');
   });
 
   it('is case-insensitive and trims, and returns null for unmapped/empty ecosystems', () => {
-    expect(workstreamForEcosystem('MAVEN')).toBe('target_service_api_implementation');
+    expect(workstreamForEcosystem('MAVEN')).toBe('api_migration');
     expect(workstreamForEcosystem('  Npm ')).toBe('target_frontend_implementation');
     expect(workstreamForEcosystem('gradle')).toBeNull();
     expect(workstreamForEcosystem(null)).toBeNull();
@@ -72,7 +72,7 @@ describe('workstreamForEcosystem — code-owned, case-insensitive', () => {
 });
 
 describe('resolveScaffoldHostForEpic — lowest sequenceOrder in the mapped workstream', () => {
-  const WS = 'target_service_api_implementation';
+  const WS = 'api_migration';
   const items: MigrationBookOfWorkItem[] = [
     epic('svc:E2', WS, 5),
     epic('svc:E1', WS, 2), // lowest sequenceOrder in this workstream -> host
@@ -107,7 +107,7 @@ describe('resolveScaffoldHostForEpic — lowest sequenceOrder in the mapped work
 });
 
 describe('resolveScaffoldServiceName — graceful fallback chain (never blocks)', () => {
-  const WS = 'target_service_api_implementation';
+  const WS = 'api_migration';
 
   it('(1) resolves the Spec-4 FK to the bound services element name + carries the FK id', () => {
     const res = resolveScaffoldServiceName({

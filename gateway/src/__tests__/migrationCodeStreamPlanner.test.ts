@@ -9,9 +9,9 @@
  *     then path-sorted chunks, every story ≤ the cap
  *   - COVERAGE: unplanned / planned-but-gone / duplicated endpoints all THROW
  *     with the "regenerate the migration plan" message
- *   - PROTOCOL: REST and SOAP partition cleanly; a 100%-SOAP model yields a
- *     prerequisite-only REST stream (never invented work)
- *   - INTERNAL: no-HTTP-verb endpoints never enter the API streams
+ *   - PROTOCOL: REST + SOAP are ONE api_migration stream (Spec V) but still
+ *     partition internally so SOAP clusters as ops and flags WSDL-metadata gaps
+ *   - INTERNAL: no-HTTP-verb endpoints never enter the api_migration stream
  *   - FLAGS: missing-baseline endpoints leave their cluster, gain an
  *     individual story, and their interface gains a MANUAL-GATE capture story
  *     sequenced before implementation
@@ -31,8 +31,8 @@ import {
 } from '../services/migrationCodeStreamPlanner';
 import { MigrationBookOfWorkItem } from '../services/generatedMigrationBookOfWorkSchema';
 
-const REST_STREAM = 'target_service_api_implementation';
-const SOAP_STREAM = 'api_soap_integration_compatibility';
+// Spec V (2026-07-17): REST + SOAP are ONE generic api_migration stream.
+const API_STREAM = 'api_migration';
 const INTERNAL_STREAM = 'internal_processing_implementation';
 
 function ep(
@@ -96,15 +96,15 @@ describe('ANTI-EXPLOSION PIN', () => {
       }
     }
     const v = view(endpoints);
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
-    const epicId = `${REST_STREAM}-epic-interfaces`;
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
+    const epicId = `${API_STREAM}-epic-interfaces`;
     const features = featuresOf(skeleton, epicId);
     expect(features).toHaveLength(40);
 
     const stories = buildCodeEpicStories({
       epic: epicOf(skeleton, epicId),
       features,
-      stream: REST_STREAM,
+      stream: API_STREAM,
       view: v,
       clusterCap: 15,
       maxSequence: 100,
@@ -114,10 +114,10 @@ describe('ANTI-EXPLOSION PIN', () => {
       const extras = story as unknown as { apiEndpointIds: string[] };
       expect(extras.apiEndpointIds).toHaveLength(10);
       expect(story.tags).toContain(CODE_PROVENANCE_TAG);
-      expect(story.tags).toContain(`stream:${REST_STREAM}`);
+      expect(story.tags).toContain(`stream:${API_STREAM}`);
     }
     // No capture epic: everything is baselined (at floor).
-    expect(skeleton.items.find((i) => i.id === `${REST_STREAM}-epic-capture`)).toBeUndefined();
+    expect(skeleton.items.find((i) => i.id === `${API_STREAM}-epic-capture`)).toBeUndefined();
   });
 });
 
@@ -158,8 +158,8 @@ describe('VERB-SPLIT PIN', () => {
 
 describe('COVERAGE PINS', () => {
   function skeletonAndEpic(v: CodeModelView) {
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
-    const epicId = `${REST_STREAM}-epic-interfaces`;
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
+    const epicId = `${API_STREAM}-epic-interfaces`;
     return {
       epic: epicOf(skeleton, epicId),
       features: featuresOf(skeleton, epicId),
@@ -171,7 +171,7 @@ describe('COVERAGE PINS', () => {
     const { epic, features } = skeletonAndEpic(view(planned));
     const grown = view([...planned, ep('e-new', 'iface-1', 'GET', '/new')]);
     expect(() =>
-      buildCodeEpicStories({ epic, features, stream: REST_STREAM, view: grown, clusterCap: 15, maxSequence: 0 })
+      buildCodeEpicStories({ epic, features, stream: API_STREAM, view: grown, clusterCap: 15, maxSequence: 0 })
     ).toThrow(/regenerate the migration plan/);
   });
 
@@ -180,7 +180,7 @@ describe('COVERAGE PINS', () => {
     const { epic, features } = skeletonAndEpic(view(planned));
     const shrunk = view([planned[0]]);
     expect(() =>
-      buildCodeEpicStories({ epic, features, stream: REST_STREAM, view: shrunk, clusterCap: 15, maxSequence: 0 })
+      buildCodeEpicStories({ epic, features, stream: API_STREAM, view: shrunk, clusterCap: 15, maxSequence: 0 })
     ).toThrow(/regenerate the migration plan/);
   });
 
@@ -193,7 +193,7 @@ describe('COVERAGE PINS', () => {
     >;
     tampered[1].apiEndpointIds = [...(tampered[1].apiEndpointIds ?? []), 'e-1'];
     expect(() =>
-      buildCodeEpicStories({ epic, features: tampered, stream: REST_STREAM, view: v, clusterCap: 15, maxSequence: 0 })
+      buildCodeEpicStories({ epic, features: tampered, stream: API_STREAM, view: v, clusterCap: 15, maxSequence: 0 })
     ).toThrow(/regenerate the migration plan/);
   });
 });
@@ -207,29 +207,27 @@ describe('PROTOCOL PIN', () => {
     verb: null,
   });
 
-  it('partitions REST and SOAP into their own streams', () => {
+  it('still partitions REST / SOAP / internal internally (for flagging + clustering)', () => {
     const v = view([rest, soap]);
     const p = partitionEndpoints(v);
     expect(p.rest.map((e) => e.id)).toEqual(['r-1']);
     expect(p.soap.map((e) => e.id)).toEqual(['s-1']);
     expect(p.internal).toHaveLength(0);
-
-    const restSkel = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
-    const restIds = JSON.stringify(restSkel.items);
-    expect(restIds).toContain('r-1');
-    expect(restIds).not.toContain('s-1');
-
-    const soapSkel = buildCodeStreamSkeleton({ stream: SOAP_STREAM, view: v, clusterCap: 15 });
-    const soapIds = JSON.stringify(soapSkel.items);
-    expect(soapIds).toContain('s-1');
-    expect(soapIds).not.toContain('r-1');
   });
 
-  it('yields a prerequisite-only REST stream for a 100%-SOAP model', () => {
+  it('plans REST AND SOAP together under the one api_migration stream', () => {
+    const v = view([rest, soap]);
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
+    const ids = JSON.stringify(skeleton.items);
+    expect(ids).toContain('r-1');
+    expect(ids).toContain('s-1'); // SOAP is no longer split into its own stream
+  });
+
+  it('plans a 100%-SOAP model under api_migration (no longer a prerequisite-only stream)', () => {
     const v = view([soap]);
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
-    expect(skeleton.items.every((i) => (i.tags ?? []).includes(CODE_PREREQUISITE_TAG))).toBe(true);
-    expect(skeleton.items[0].readiness).toBe('blocked');
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
+    expect(skeleton.items.some((i) => (i.tags ?? []).includes(CODE_PROVENANCE_TAG))).toBe(true);
+    expect(JSON.stringify(skeleton.items)).toContain('s-1');
   });
 });
 
@@ -243,7 +241,7 @@ describe('INTERNAL PIN', () => {
 
   it('routes no-verb endpoints to the internal stream, never the API streams', () => {
     const v = view([jms, rest]);
-    const restSkel = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
+    const restSkel = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
     expect(JSON.stringify(restSkel.items)).not.toContain('j-1');
     const internalSkel = buildCodeStreamSkeleton({ stream: INTERNAL_STREAM, view: v, clusterCap: 15 });
     expect(JSON.stringify(internalSkel.items)).toContain('j-1');
@@ -261,7 +259,7 @@ describe('INTERNAL PIN', () => {
     const v = view([rest, outbound]);
     const p = partitionEndpoints(v);
     expect(p.excludedOutbound.map((e) => e.id)).toEqual(['o-1']);
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
     expect(JSON.stringify(skeleton.items)).not.toContain('o-1');
     const meta = skeleton.generationInputs.codePlanner as { excludedOutboundCount: number };
     expect(meta.excludedOutboundCount).toBe(1);
@@ -275,24 +273,24 @@ describe('FLAG + CAPTURE-STORY + MANUAL-GATE PINS', () => {
 
   function build() {
     const v = view([covered, uncovered, otherIface], { baselines: ['c-1', 'c-2'] });
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
     return { v, skeleton };
   }
 
   it('extracts the missing-baseline endpoint from its cluster into an individual story', () => {
     const { v, skeleton } = build();
-    const ifaceEpicId = `${REST_STREAM}-epic-interfaces`;
+    const ifaceEpicId = `${API_STREAM}-epic-interfaces`;
     const ifaceFeatures = featuresOf(skeleton, ifaceEpicId) as Array<
       MigrationBookOfWorkItem & { apiEndpointIds?: string[] }
     >;
     const ifaceA = ifaceFeatures.find((f) => JSON.stringify(f).includes('iface-a'))!;
     expect(ifaceA.apiEndpointIds).toEqual(['c-1']); // u-1 extracted
 
-    const excEpicId = `${REST_STREAM}-epic-exceptional`;
+    const excEpicId = `${API_STREAM}-epic-exceptional`;
     const excStories = buildCodeEpicStories({
       epic: epicOf(skeleton, excEpicId),
       features: featuresOf(skeleton, excEpicId),
-      stream: REST_STREAM,
+      stream: API_STREAM,
       view: v,
       clusterCap: 15,
       maxSequence: 0,
@@ -305,15 +303,15 @@ describe('FLAG + CAPTURE-STORY + MANUAL-GATE PINS', () => {
 
   it('plans one MANUAL-GATE capture story for the below-floor interface, before implementation', () => {
     const { v, skeleton } = build();
-    const captureEpic = epicOf(skeleton, `${REST_STREAM}-epic-capture`);
-    const interfacesEpic = epicOf(skeleton, `${REST_STREAM}-epic-interfaces`);
+    const captureEpic = epicOf(skeleton, `${API_STREAM}-epic-capture`);
+    const interfacesEpic = epicOf(skeleton, `${API_STREAM}-epic-interfaces`);
     // CAPTURE-STORY PIN: sequenced before implementation.
     expect(captureEpic.sequenceOrder).toBeLessThan(interfacesEpic.sequenceOrder);
 
     const stories = buildCodeEpicStories({
       epic: captureEpic,
       features: featuresOf(skeleton, captureEpic.id),
-      stream: REST_STREAM,
+      stream: API_STREAM,
       view: v,
       clusterCap: 15,
       maxSequence: 0,
@@ -330,11 +328,11 @@ describe('FLAG + CAPTURE-STORY + MANUAL-GATE PINS', () => {
 
   it('tags the closure story manual-gate', () => {
     const { v, skeleton } = build();
-    const closureEpic = epicOf(skeleton, `${REST_STREAM}-epic-closure`);
+    const closureEpic = epicOf(skeleton, `${API_STREAM}-epic-closure`);
     const stories = buildCodeEpicStories({
       epic: closureEpic,
       features: featuresOf(skeleton, closureEpic.id),
-      stream: REST_STREAM,
+      stream: API_STREAM,
       view: v,
       clusterCap: 15,
       maxSequence: 0,
@@ -348,12 +346,12 @@ describe('FLAG + CAPTURE-STORY + MANUAL-GATE PINS', () => {
       baselines: ['c-1', 'c-2'],
       findings: { 'c-2': ['finding-9'] },
     });
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: v, clusterCap: 15 });
-    const excEpicId = `${REST_STREAM}-epic-exceptional`;
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: v, clusterCap: 15 });
+    const excEpicId = `${API_STREAM}-epic-exceptional`;
     const stories = buildCodeEpicStories({
       epic: epicOf(skeleton, excEpicId),
       features: featuresOf(skeleton, excEpicId),
-      stream: REST_STREAM,
+      stream: API_STREAM,
       view: v,
       clusterCap: 15,
       maxSequence: 0,
@@ -370,7 +368,7 @@ describe('FLAG + CAPTURE-STORY + MANUAL-GATE PINS', () => {
 
 describe('PREREQUISITE PIN', () => {
   it('null view (AMS unreadable) yields the blocked prerequisite skeleton', () => {
-    const skeleton = buildCodeStreamSkeleton({ stream: REST_STREAM, view: null, clusterCap: 15 });
+    const skeleton = buildCodeStreamSkeleton({ stream: API_STREAM, view: null, clusterCap: 15 });
     expect(skeleton.items[0].readiness).toBe('blocked');
     expect(skeleton.items.every((i) => (i.tags ?? []).includes(CODE_PREREQUISITE_TAG))).toBe(true);
     const meta = skeleton.generationInputs.codePlanner as { generationMode: string };

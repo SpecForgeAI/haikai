@@ -17,6 +17,8 @@ import java.util.Set;
  * <ul>
  *   <li>{@code started}     -- the run was created and the first spec dispatched.</li>
  *   <li>{@code dispatching} -- a spec is mid-flight (shape-spec-answer / orchestration submit).</li>
+ *   <li>{@code awaiting_approval} -- a plane completed (build / verify / reconcile); the run is
+ *       PAUSED for a human "approve &amp; continue" before the next plane dispatches (Spec W).</li>
  *   <li>{@code halted}      -- a spec failed / was rejected; the run stopped and is recorded.</li>
  *   <li>{@code deployed}    -- the final spec's deployed build-results callback arrived;
  *       {@code target_base_url} recorded; reconciliation hand-off (Spec 4) is the next step.</li>
@@ -30,13 +32,20 @@ public final class MigrationExecutionRunStatus {
 
     public static final String STARTED = "started";
     public static final String DISPATCHING = "dispatching";
+    /**
+     * Phased execution (Spec W, 2026-07-17): a plane finished its
+     * build / verify / reconcile and the run is PAUSED awaiting a human
+     * "approve &amp; continue" before the next plane dispatches. No DDL change
+     * is needed (the {@code status} column is plain TEXT; validation is here).
+     */
+    public static final String AWAITING_APPROVAL = "awaiting_approval";
     public static final String HALTED = "halted";
     public static final String DEPLOYED = "deployed";
     public static final String FAILED = "failed";
 
     /** The set of all allowed persisted run-status values. */
     public static final Set<String> ALL = Set.of(
-        STARTED, DISPATCHING, HALTED, DEPLOYED, FAILED
+        STARTED, DISPATCHING, AWAITING_APPROVAL, HALTED, DEPLOYED, FAILED
     );
 
     private MigrationExecutionRunStatus() {

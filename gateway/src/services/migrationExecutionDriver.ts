@@ -110,6 +110,8 @@ import {
   DataParityGateReads,
   evaluateDataParityReadiness,
 } from './migrationDataParityGate';
+import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
+import { createDataMigrationTrigger } from './migrationDataRunnerDispatch';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -138,8 +140,15 @@ export interface DispatchDescriptor {
   generatedSpecText: string;
   /** Book-item title (diagnostics). */
   title: string;
-  /** TRUE only on the FINAL item (big-bang deploy). */
+  /**
+   * TRUE on the LAST item of a plane (Spec W phased deploy). Big-bang callers
+   * (buildOrderedDispatchSet) still set it on the final item only.
+   */
   deployOnComplete: boolean;
+  /** The item's plane workstream (Spec W plane derivation). */
+  workstream?: string | null;
+  /** The migration plane this item belongs to (Spec W). */
+  plane?: MigrationPlane;
 }
 
 /** Result of the hard-block readiness evaluation. */
@@ -229,6 +238,28 @@ export interface MigrationDriverDeps {
    * production wiring runs it fire-and-forget (the door must 202 promptly).
    */
   triggerReconcile?: typeof triggerFullBaselineReconcile;
+  /**
+   * DB-plane reconcile trigger (Spec W): runs the data-parity comparator
+   * (Spec P) against the pinned source + freshly-loaded target when the DB
+   * plane deploys. Lazily defaulted; tests inject a mock. The live AMVS
+   * data-parity invocation is a work-machine shakedown seam.
+   */
+  triggerDataParityReconcile?: (
+    scope: MigrateScope,
+    runId: string,
+    deps: MigrationDriverDeps
+  ) => Promise<void>;
+  /**
+   * DB-plane data-migration dispatch (Spec W / Y): runs the bulk-load runner
+   * (via the AMVS data-migration route) BEFORE the data-parity reconcile so the
+   * target is populated for the comparison. Lazily defaulted; tests inject a
+   * mock. The live source->target load is a work-machine shakedown seam.
+   */
+  triggerDataMigration?: (
+    scope: MigrateScope,
+    runId: string,
+    deps: MigrationDriverDeps
+  ) => Promise<void>;
   /**
    * Handles a `bug_id` build-results callback (Group 4 seam). Defaults to
    * {@link handleBugCallback}; run fire-and-forget for `deployed` (scoped
@@ -517,6 +548,8 @@ export function buildOrderedDispatchSet(params: {
       generatedSpecText: specGen.generated_spec_text ?? '',
       title: item.title ?? '',
       deployOnComplete: false,
+      workstream: item.workstream ?? workstreamFromTags(item.tags),
+      plane: planeForItem(item),
     });
   }
   // Big-bang: only the FINAL spec deploys.
@@ -524,6 +557,106 @@ export function buildOrderedDispatchSet(params: {
     descriptors[descriptors.length - 1].deployOnComplete = true;
   }
   return descriptors;
+}
+
+// ============================================================================
+// Plane model + phased dispatch (Spec W — plane-based execution)
+// ============================================================================
+
+/** Migration planes, in execution order (foundation-first). */
+export type MigrationPlane = 'db' | 'service' | 'ui';
+export const PLANE_ORDER: readonly MigrationPlane[] = ['db', 'service', 'ui'];
+
+const DB_PLANE_WORKSTREAMS = new Set([
+  'target_database_schema_implementation',
+  'data_migration',
+  // Infra is positionable (Spec V/W); v1 default is early, with the DB plane.
+  'target_infrastructure_environment_implementation',
+]);
+const UI_PLANE_WORKSTREAMS = new Set([
+  'target_frontend_implementation',
+  // Cutover sorts last within the UI phase (STREAM_SEQUENCE_RANK keeps it last).
+  'cutover_rollback_decommission',
+]);
+
+/**
+ * Map a workstream token to its plane. `service` is the default — it owns the
+ * API + internal-processing build AND all cross-cutting / meta work (Spec V).
+ */
+export function planeForWorkstream(workstream: string | null | undefined): MigrationPlane {
+  const ws = (workstream ?? '').trim();
+  if (DB_PLANE_WORKSTREAMS.has(ws)) return 'db';
+  if (UI_PLANE_WORKSTREAMS.has(ws)) return 'ui';
+  return 'service';
+}
+
+/** Extract the `stream:<name>` tag the deterministic planner stamps, if present. */
+export function workstreamFromTags(tags: string[] | null | undefined): string | null {
+  for (const t of tags ?? []) {
+    if (typeof t === 'string' && t.startsWith('stream:')) return t.slice('stream:'.length);
+  }
+  return null;
+}
+
+/** Resolve a book item's plane: its workstream, else its `stream:` tag, else service. */
+export function planeForItem(item: BookOfWorkItem): MigrationPlane {
+  return planeForWorkstream(item.workstream ?? workstreamFromTags(item.tags));
+}
+
+/** One phase of the phased plan: a plane and the dispatch descriptors it owns. */
+export interface DispatchPhase {
+  plane: MigrationPlane;
+  descriptors: DispatchDescriptor[];
+}
+
+export interface PhasedDispatchPlan {
+  /** Descriptors re-sequenced in plane order (db -> service -> ui). */
+  descriptors: DispatchDescriptor[];
+  /** The non-empty phases, in execution order. */
+  phases: DispatchPhase[];
+}
+
+/**
+ * Group the ordered dispatch set into plane phases (db -> service -> ui),
+ * preserving intra-plane order, re-sequencing globally, and marking the LAST
+ * item of EACH phase `deployOnComplete=true` — so every plane deploys +
+ * reconciles before the run PAUSES for human approval (Spec W). Only planes
+ * with items appear, so tier-driven inclusion falls out naturally (a DB-only or
+ * service-only migration simply has one phase).
+ */
+export function buildPhasedDispatchSet(params: {
+  book: BookOfWork;
+  specGens: SpecGeneration[];
+  deferredWorkItemIds: Set<string>;
+  selectedWorkItemIds?: Set<string> | null;
+}): PhasedDispatchPlan {
+  const ordered = buildOrderedDispatchSet(params);
+  const byPlane = new Map<MigrationPlane, DispatchDescriptor[]>();
+  for (const d of ordered) {
+    const plane = d.plane ?? 'service';
+    const list = byPlane.get(plane) ?? [];
+    list.push(d);
+    byPlane.set(plane, list);
+  }
+
+  const phases: DispatchPhase[] = [];
+  const descriptors: DispatchDescriptor[] = [];
+  let seq = 0;
+  for (const plane of PLANE_ORDER) {
+    const list = byPlane.get(plane);
+    if (!list || list.length === 0) continue;
+    const phaseDescriptors = list.map((d) => ({
+      ...d,
+      sequencePosition: seq++,
+      deployOnComplete: false,
+    }));
+    // The plane's LAST build item deploys -> its `deployed` callback runs the
+    // plane reconcile and then pauses the run (unless it is the final plane).
+    phaseDescriptors[phaseDescriptors.length - 1].deployOnComplete = true;
+    phases.push({ plane, descriptors: phaseDescriptors });
+    descriptors.push(...phaseDescriptors);
+  }
+  return { descriptors, phases };
 }
 
 // ============================================================================
@@ -552,6 +685,14 @@ export function defaultMigrationDriverDeps(
     buildResultsCallbackUrl,
     reconciliationDeps: defaultReconciliationDriverDeps(),
     triggerReconcile: triggerFullBaselineReconcile,
+    // Spec W: the DB-plane reconcile fires the live AMVS data-parity comparator
+    // (fail-soft; produces + persists the report the pause review + resume gate
+    // read). Tests inject a mock; the fallback stub inside kickPlaneReconcile
+    // only applies to deps built without this field.
+    triggerDataParityReconcile: createDataParityReconcileTrigger(),
+    // Spec W / Y: the DB plane loads the target via the data-migration runner
+    // (AMVS route) before the data-parity reconcile compares it.
+    triggerDataMigration: createDataMigrationTrigger(),
     handleBugCallback,
     carryOverCoverageReads: defaultCarryOverCoverageReadsDeps(),
   };
@@ -697,33 +838,17 @@ export async function startMigration(
     });
   }
 
-  // 4d. Data-parity gate (Data-Tier Oracle Spec P part 2): when DB-pack
-  //     stories are in scope, Migrate additionally requires the LATEST
-  //     data-parity report for (project, current architecture) to be CLEAN —
-  //     no report / unreadable => data_parity_unverified; divergent tables
-  //     minus per-table waivers (target "data-parity:<table>") =>
-  //     data_parity_failed. FAIL-CLOSED. Reasons STACK with the gates above.
-  let dataParityGateReasons: HardBlockResult['reasons'] = [];
-  if (dbStoriesInScope({ items, deferredWorkItemIds, selectedWorkItemIds: selectedSet })) {
-    const dataParityGate = await evaluateDataParityReadiness({
-      projectId,
-      architectureId: book.current_architecture_id ?? null,
-      reads: deps.dataParityGateReads,
-    });
-    dataParityGateReasons = dataParityGate.reasons;
-    logger.info('[diag-gateway] migration_execution_driver data_parity_gate', {
-      projectId,
-      bookId,
-      ok: dataParityGate.ok,
-      reasons: dataParityGate.reasons.map((r) => r.code),
-    });
-  }
+  // 4d. Data-parity is NO LONGER a pre-migrate gate (Spec W): it is repositioned
+  //     into the DB-plane reconcile inside phased execution and evaluated at the
+  //     post-DB-plane approval pause (resumeMigration, Persistence-conditional).
+  //     A pre-flight data-parity gate was a chicken-and-egg — the target data is
+  //     loaded DURING the migration, so parity can only be judged after the DB
+  //     plane deploys.
 
   const allBlockReasons = [
     ...gate.reasons,
     ...dbGateReasons,
     ...codeGateReasons,
-    ...dataParityGateReasons,
   ];
   if (allBlockReasons.length > 0) {
     logger.warn('[diag-gateway] migration_execution_driver start_blocked', {
@@ -735,13 +860,16 @@ export async function startMigration(
     return { status: 'blocked', reasons: allBlockReasons };
   }
 
-  // 4. Build the ordered dispatch set (excludes deferred, includes TEST).
-  const dispatchSet = buildOrderedDispatchSet({
+  // 4. Build the PHASED dispatch set (Spec W): plane-grouped (db -> service ->
+  //    ui), each plane's LAST item deploys so the plane reconciles before the
+  //    run PAUSES for human approval. Big-bang is gone (batch mode aside).
+  const phasedPlan = buildPhasedDispatchSet({
     book,
     specGens,
     deferredWorkItemIds,
     selectedWorkItemIds: selectedSet,
   });
+  const dispatchSet = phasedPlan.descriptors;
   if (dispatchSet.length === 0) {
     return {
       status: 'error',
@@ -798,11 +926,15 @@ export async function startMigration(
   });
 
   trace.runHeader(runId, scope.project, architectureId);
-  trace.step(`migrate run started — ${dispatchSet.length} specs`, {
-    run: runId,
-    project: scope.project,
-    arch: architectureId,
-  });
+  trace.step(
+    `migrate run started — ${dispatchSet.length} specs across ${phasedPlan.phases.length} plane(s): ` +
+      phasedPlan.phases.map((p) => `${p.plane}(${p.descriptors.length})`).join(' -> '),
+    {
+      run: runId,
+      project: scope.project,
+      arch: architectureId,
+    }
+  );
 
   // 6. Dispatch. BATCH mode auto-answers ALL selected specs then submits them as
   //    ONE job (one branch); the sequential mode kicks the FIRST spec and
@@ -1147,6 +1279,7 @@ export type AdvanceDecision =
   | 'advanced_next_dispatched'
   | 'advanced_run_complete'
   | 'deployed_recorded'
+  | 'awaiting_approval'
   | 'halted'
   | 'noop_idempotent'
   | 'run_item_not_found';
@@ -1292,14 +1425,47 @@ export async function advanceRunOnBuildResult(
   }
 
   if (outcome === 'deployed') {
-    // Final spec deployed -> record target_base_url on the item + run, mark the
-    // run deployed. The reconciliation hand-off is Spec 4 (clean seam below).
+    // A plane's LAST build item deployed (Spec W phased execution). Record the
+    // item deployed, then decide: is this the FINAL plane, or a mid-run plane
+    // boundary that must PAUSE for human approval?
     await safePatchItem(deps, projectId, runItemId, {
       status: RUN_ITEM_STATUS.DEPLOYED,
       outcome: 'deployed',
       target_base_url: input.targetBaseUrl ?? null,
       pr_url: input.prUrl ?? null,
     });
+
+    // Pending items still exist => a later plane awaits => this is a plane
+    // boundary, not the end of the run.
+    const hasPendingLater = (run.items ?? []).some(
+      (i) => i.id !== runItemId && i.status === RUN_ITEM_STATUS.PENDING
+    );
+    const completedPlane = await resolveItemPlane(scope, run, item, deps);
+
+    if (hasPendingLater) {
+      // HARD PAUSE (Spec W §2.9): run the completed plane's reconcile, then set
+      // the run awaiting_approval. The next plane dispatches only on the human's
+      // "approve & continue" (resumeMigration). Do NOT auto-advance.
+      await safePatchRun(deps, projectId, runId, {
+        status: RUN_STATUS.AWAITING_APPROVAL,
+        target_base_url: input.targetBaseUrl ?? null,
+      });
+      logger.info('[diag-gateway] migration_execution_driver plane_paused', {
+        projectId,
+        runId,
+        runItemId,
+        plane: completedPlane,
+      });
+      trace.warn(`plane ${completedPlane} deployed — reconcile + PAUSE for approval`, {
+        run: runId,
+        job: jobId,
+        project: scope.project,
+      });
+      kickPlaneReconcile(scope, runId, completedPlane, deps);
+      return 'awaiting_approval';
+    }
+
+    // FINAL plane: mark the run deployed + run the final plane's reconcile.
     await safePatchRun(deps, projectId, runId, {
       status: RUN_STATUS.DEPLOYED,
       target_base_url: input.targetBaseUrl ?? null,
@@ -1309,20 +1475,14 @@ export async function advanceRunOnBuildResult(
       runId,
       runItemId,
       targetBaseUrl: input.targetBaseUrl ?? null,
+      finalPlane: completedPlane,
     });
     trace.ok(`run deployed — ${input.targetBaseUrl ?? '(no target_base_url)'}`, {
       run: runId,
       job: jobId,
       project: scope.project,
     });
-    // === Spec 4 reconciliation hand-off (Group 2) ===
-    // The run is deployed against the pinned current-state baseline. Hand off
-    // to the Reconciler to replay the FULL pinned baseline against
-    // target_base_url and raise breaks (CD-B: NO deferred-exclusion). The
-    // reconcile is long-running, so it is fired fire-and-forget; the door
-    // must 202 promptly. Re-read the run (so the trigger sees target_base_url +
-    // the pinned baseline) and kick the trigger detached.
-    kickFullReconcile(scope, runId, deps);
+    kickPlaneReconcile(scope, runId, completedPlane, deps);
     return 'deployed_recorded';
   }
 
@@ -1476,6 +1636,201 @@ export function kickFullReconcile(
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   });
+}
+
+// ============================================================================
+// Phased execution: plane reconcile + human-gated resume (Spec W)
+// ============================================================================
+
+/**
+ * Resolve the plane of a run-item by mapping its work item to the book item's
+ * workstream (Spec W). Fail-soft to `service` (the default plane).
+ */
+async function resolveItemPlane(
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  item: MigrationExecutionRunItem,
+  deps: MigrationDriverDeps
+): Promise<MigrationPlane> {
+  try {
+    const bookId = run.book_of_work_id ?? scope.bookId;
+    if (!bookId || !item.work_item_id) return 'service';
+    const book = await deps.fetchBookOfWork(scope.projectId, bookId);
+    const items = book?.book_of_work_json?.items ?? [];
+    const bookItem = items.find((bi) => bi.workItemId === item.work_item_id);
+    return bookItem ? planeForItem(bookItem) : 'service';
+  } catch {
+    return 'service';
+  }
+}
+
+/**
+ * Run a plane's reconcile after it deploys (Spec W):
+ *   - `service` -> API baseline replay (the existing full-baseline reconcile);
+ *   - `db`      -> data-parity comparator (Spec P) via the injectable seam;
+ *   - `ui`      -> none (the UI plane is build-only — no UI reconcile).
+ * Fire-and-forget; failures are isolated inside the triggers.
+ */
+export function kickPlaneReconcile(
+  scope: MigrateScope,
+  runId: string,
+  plane: MigrationPlane,
+  deps: MigrationDriverDeps
+): void {
+  if (plane === 'service') {
+    kickFullReconcile(scope, runId, deps);
+    return;
+  }
+  if (plane === 'db') {
+    // DB plane: LOAD the target (Spec Y data-migration runner) THEN RECONCILE it
+    // (Spec P data-parity), in sequence — the target must be populated before
+    // the comparison. Both fire-and-forget; the run is already paused
+    // (awaiting_approval) and the human reviews the persisted parity report once
+    // it lands. A skipped/failed load leaves the report unclean, so the resume
+    // gate blocks — never a silent pass.
+    const migrate = deps.triggerDataMigration ?? defaultNoopRunnerTrigger;
+    const reconcile = deps.triggerDataParityReconcile ?? defaultTriggerDataParityReconcile;
+    void migrate(scope, runId, deps)
+      .then(() => reconcile(scope, runId, deps))
+      .catch((error) => {
+        logger.error('[diag-gateway] migration_execution_driver db_plane_runner_chain_crashed', {
+          projectId: scope.projectId,
+          runId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      });
+    return;
+  }
+  // ui: build-only, no reconcile.
+  logger.info('[diag-gateway] migration_execution_driver plane_no_reconcile', {
+    projectId: scope.projectId,
+    runId,
+    plane,
+  });
+}
+
+/**
+ * Default DB-plane reconcile (Spec W): records intent + traces. Wiring the live
+ * AMVS data-parity comparator (Spec P) against the pinned source + freshly
+ * loaded target is a work-machine shakedown seam; production injects the real
+ * trigger. Never throws.
+ */
+async function defaultTriggerDataParityReconcile(
+  scope: MigrateScope,
+  runId: string,
+  _deps: MigrationDriverDeps
+): Promise<void> {
+  logger.info('[diag-gateway] migration_execution_driver data_parity_reconcile_seam', {
+    projectId: scope.projectId,
+    runId,
+  });
+  trace.step('data-parity reconcile (DB plane) — live seam', {
+    run: runId,
+    project: scope.project,
+  });
+}
+
+/**
+ * Fallback DB-plane data-migration trigger — a no-op. The real runner dispatch
+ * is wired in defaultMigrationDriverDeps; unit tests that do not inject
+ * `triggerDataMigration` simply skip the load step.
+ */
+async function defaultNoopRunnerTrigger(): Promise<void> {
+  /* no-op */
+}
+
+/** Outcome of a resume ("approve & continue") request. */
+export type ResumeMigrationResult =
+  | { status: 'resumed'; nextPlane: MigrationPlane }
+  | { status: 'not_paused'; message: string }
+  | { status: 'blocked'; reasons: HardBlockResult['reasons'] }
+  | { status: 'complete' }
+  | { status: 'error'; message: string };
+
+/**
+ * Resume a run PAUSED at a plane boundary (Spec W "approve & continue"). Only a
+ * run in `awaiting_approval` resumes. When the plane being LEFT is the DB plane,
+ * the data-parity gate is re-evaluated here (repositioned from the pre-migrate
+ * gate, Persistence-conditional) — a non-clean parity blocks the resume unless
+ * `override` is set (human sign-off). Dispatches the next plane's first pending
+ * item and returns the run to `dispatching`. Never throws.
+ */
+export async function resumeMigration(
+  scope: MigrateScope,
+  runId: string,
+  deps: MigrationDriverDeps,
+  opts?: { override?: boolean }
+): Promise<ResumeMigrationResult> {
+  const run = await deps.getMigrationExecutionRun(scope.projectId, runId);
+  if (!run) return { status: 'error', message: `Run ${runId} not found` };
+  if (run.status !== RUN_STATUS.AWAITING_APPROVAL) {
+    return {
+      status: 'not_paused',
+      message: `Run is '${run.status ?? 'unknown'}', not awaiting approval`,
+    };
+  }
+
+  const items = (run.items ?? [])
+    .slice()
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+  const next = items.find((i) => i.status === RUN_ITEM_STATUS.PENDING);
+  if (!next || !next.id) {
+    // Nothing left to dispatch -> the run is actually complete.
+    await safePatchRun(deps, scope.projectId, runId, { status: RUN_STATUS.DEPLOYED });
+    return { status: 'complete' };
+  }
+
+  // Repositioned data-parity gate (Spec W §2.12): if the plane being LEFT is the
+  // DB plane, parity must be clean (or explicitly overridden) before the next
+  // plane begins. Persistence-conditional: only fires at a DB-plane pause.
+  const deployedItems = items.filter((i) => i.status === RUN_ITEM_STATUS.DEPLOYED);
+  const lastDeployed = deployedItems[deployedItems.length - 1];
+  const completedPlane = lastDeployed
+    ? await resolveItemPlane(scope, run, lastDeployed, deps)
+    : 'service';
+  if (completedPlane === 'db' && !opts?.override) {
+    const book = run.book_of_work_id
+      ? await deps.fetchBookOfWork(scope.projectId, run.book_of_work_id)
+      : null;
+    const parity = await evaluateDataParityReadiness({
+      projectId: scope.projectId,
+      architectureId: book?.current_architecture_id ?? null,
+      reads: deps.dataParityGateReads,
+    });
+    if (!parity.ok) {
+      logger.info('[diag-gateway] migration_execution_driver resume_blocked_data_parity', {
+        projectId: scope.projectId,
+        runId,
+        reasons: parity.reasons.map((r) => r.code),
+      });
+      return { status: 'blocked', reasons: parity.reasons };
+    }
+  }
+
+  const descriptor = await resolveDescriptorForItem(scope, run, next, deps);
+  if (!descriptor) {
+    await haltRunForItem(deps, scope, runId, next.id, next, RUN_ITEM_STATUS.FAILED,
+      'Could not resolve generated_spec_text to resume the next plane.');
+    return { status: 'error', message: 'Next spec text could not be resolved.' };
+  }
+
+  const nextPlane = await resolveItemPlane(scope, run, next, deps);
+  await safePatchRun(deps, scope.projectId, runId, {
+    status: RUN_STATUS.DISPATCHING,
+    current_sequence_position: next.sequence_position ?? null,
+  });
+  kickSpecRunner(scope, run, next, descriptor, deps);
+  logger.info('[diag-gateway] migration_execution_driver plane_resumed', {
+    projectId: scope.projectId,
+    runId,
+    nextRunItemId: next.id,
+    nextPlane,
+  });
+  trace.step(`plane ${nextPlane} approved — dispatching`, {
+    run: runId,
+    project: scope.project,
+  });
+  return { status: 'resumed', nextPlane };
 }
 
 /**

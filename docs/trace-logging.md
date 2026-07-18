@@ -101,7 +101,9 @@ Stack locations:
 
 `gateway` · `discovery` · `capture-svc` (api-migration-validation-service) ·
 `ams` (architecture-model-service) · `mcp` (reserved; no tracer yet) ·
-`impl-verify` (implement-verify-service).
+`impl-verify` (implement-verify-service) · `schema-apply` (schema-apply-runner,
+Spec X — Liquibase-on-boot schema apply) · `data-migrate` (data-migration
+runner, Spec Y — Phase-2 bulk load, lives in api-migration-validation-service).
 
 ## Predicate self-scoring layer
 
@@ -149,6 +151,8 @@ Rules (locked; the run judge depends on them):
 - API baseline: capture started (base url + auth), capture completed (**X/Y captured, Z errored**), baseline saved (draft), baseline activated.
 - readiness: plan readiness assessed → verdict + the gap list.
 - migrate/execute: run started, spec dispatched, build-results received (outcome), run deployed.
+- schema apply (Spec X): changelog applied per Liquibase context → `EXEC.SCHEMA.*`.
+- data migrate (Spec Y): per-table bulk load + count reconcile → `EXEC.DATA.*`.
 - reconcile: reconcile started/completed, breaks count, circuit-breaker trips, verdict posted.
 
 **DETAIL — concentrated where failures hide** (capture, readiness, reconcile):

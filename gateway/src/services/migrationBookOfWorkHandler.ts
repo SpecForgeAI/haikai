@@ -473,18 +473,26 @@ export function buildUserPrompt(
  * wizard selection order via stable sort.
  */
 const STREAM_SEQUENCE_RANK: Record<string, number> = {
+  // Plane-based ordering (Spec V/W): optional infra first (positionable),
+  // then Persistence (schema -> data -> data-parity reconcile), then Service
+  // (API + internal build -> API reconcile), then UI, then cutover last.
   target_infrastructure_environment_implementation: 1,
   target_database_schema_implementation: 2,
-  target_service_api_implementation: 3,
-  target_frontend_implementation: 4,
+  data_migration: 3,
+  data_parity_reconciliation_reporting: 4,
+  // Service plane: api_migration + internal processing share a rank (stable
+  // sort keeps wizard order for ties), then the API reconcile.
+  api_migration: 5,
+  internal_processing_implementation: 5,
+  api_reconciliation_reporting: 6,
+  // UI plane (build-only, last before cutover).
+  target_frontend_implementation: 7,
+  cutover_rollback_decommission: 10,
+  // Pre-reframe values retained so plans built before Spec V still order:
+  target_service_api_implementation: 5,
   api_soap_integration_compatibility: 5,
-  data_migration: 6,
-  // Internal processing shares rank 6 (after the API streams, alongside data
-  // migration) — Spec 2026-07-06-g; stable sort keeps wizard order for ties.
-  internal_processing_implementation: 6,
   migration_test_pack: 8,
   reconciliation_reporting: 9,
-  cutover_rollback_decommission: 10,
 };
 
 const DEFAULT_STREAM_RANK = 7;

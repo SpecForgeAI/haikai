@@ -34,7 +34,7 @@ import {
   evaluateHardBlock,
 } from '../services/migrationExecutionDriver';
 
-const STREAM = 'target_service_api_implementation';
+const STREAM = 'api_migration';
 
 function ep(id: string, interfaceId: string, verb: string, path: string): CodeEndpointRow {
   return {

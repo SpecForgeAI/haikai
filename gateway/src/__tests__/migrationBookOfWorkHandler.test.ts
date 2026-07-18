@@ -117,7 +117,7 @@ function makeValidBookOfWorkJson(): string {
         title: 'CustomerService extraction',
         description: 'Extract CustomerService.',
         acceptanceCriteria: ['Customer endpoints live in CustomerService.'],
-        workstream: 'target_service_api_implementation',
+        workstream: 'api_migration',
         sequenceOrder: 1,
         tags: ['customer'],
         confidence: 'high',
@@ -134,7 +134,7 @@ function makeValidBookOfWorkJson(): string {
         title: 'GET /customers/{id}',
         description: 'Single-customer GET on the new service.',
         acceptanceCriteria: ['Behavioural parity with monolith endpoint.'],
-        workstream: 'target_service_api_implementation',
+        workstream: 'api_migration',
         sequenceOrder: 1,
         tags: [],
         confidence: 'high',
@@ -151,7 +151,7 @@ function makeValidBookOfWorkJson(): string {
         title: 'Implement GET /customers/{id} in new service',
         description: 'Implement single-customer GET.',
         acceptanceCriteria: ['Returns identical body to monolith endpoint.'],
-        workstream: 'target_service_api_implementation',
+        workstream: 'api_migration',
         sequenceOrder: 1,
         tags: [],
         confidence: 'high',
@@ -539,14 +539,14 @@ describe('Migration Delivery Plan — per-stream split generation', () => {
     const assembled = assembleBookOfWork([
       // Deliberately out of dependency order.
       { stream: 'cutover_rollback_decommission', book },
-      { stream: 'target_service_api_implementation', book },
+      { stream: 'api_migration', book },
       { stream: 'target_database_schema_implementation', book },
     ]);
 
-    // Stream order: db(2) -> api(3) -> cutover(10).
+    // Stream order: db(2) -> api(5) -> cutover(10).
     const order = assembled.items.map((i) => i.id.split(':')[0]);
     expect(order.slice(0, 4).every((s) => s === 'target_database_schema_implementation')).toBe(true);
-    expect(order.slice(4, 8).every((s) => s === 'target_service_api_implementation')).toBe(true);
+    expect(order.slice(4, 8).every((s) => s === 'api_migration')).toBe(true);
     expect(order.slice(8).every((s) => s === 'cutover_rollback_decommission')).toBe(true);
 
     // Global sequenceOrder is 1..N.

@@ -122,39 +122,35 @@ export const MIGRATION_INTENT_OPTIONS: ReadonlyArray<{ key: string; label: strin
 ] as const;
 
 /**
- * Stage 3 — delivery streams. Vocabulary maps 1:1 to the spec's user-facing
- * stream names (subset of the 14-value workstream enum minus the sentinel
- * values like `architecture_refinement`/`discovery_gap_resolution`/`other`/
- * `unknown` which the LLM may apply but are not user-driven choices).
+ * Scope stage — plane-grouped BUILD streams (Spec V/Z, 2026-07-17). REST + SOAP
+ * are one generic `api_migration` stream; reconciles are AUTO (per-plane,
+ * implied by an in-scope build plane) and tests are peppered into build stories,
+ * so neither is a user-picked stream any more. `data_migration` is shown but is
+ * implied whenever Persistence is in scope; infra + cutover are optional.
  */
 export const DELIVERY_STREAM_OPTIONS: ReadonlyArray<{ key: string; label: string }> = [
-  {
-    key: 'target_service_api_implementation',
-    label: 'Target service / API implementation',
-  },
-  { key: 'target_frontend_implementation', label: 'Target frontend implementation' },
+  // Persistence plane
   {
     key: 'target_database_schema_implementation',
-    label: 'Target DB / schema implementation',
+    label: 'DB / schema (Persistence)',
   },
-  {
-    key: 'target_infrastructure_environment_implementation',
-    label: 'Target infrastructure implementation',
-  },
-  { key: 'data_migration', label: 'Data migration' },
-  {
-    key: 'api_soap_integration_compatibility',
-    label: 'API / SOAP integration compatibility',
-  },
+  { key: 'data_migration', label: 'Data migration (Persistence)' },
+  // Service plane (REST + SOAP merged into one api_migration stream — Spec V)
+  { key: 'api_migration', label: 'API — REST + SOAP (Service)' },
   {
     key: 'internal_processing_implementation',
-    label: 'Internal processing (jobs / listeners / batch)',
+    label: 'Internal processing — jobs / listeners / batch (Service)',
   },
-  { key: 'migration_test_pack', label: 'Migration Test Pack' },
-  { key: 'reconciliation_reporting', label: 'Reconciliation / reporting' },
+  // UI plane
+  { key: 'target_frontend_implementation', label: 'Frontend (UI)' },
+  // Optional / cross-cutting
+  {
+    key: 'target_infrastructure_environment_implementation',
+    label: 'Infrastructure (optional)',
+  },
   {
     key: 'cutover_rollback_decommission',
-    label: 'Cutover / rollback / decommissioning',
+    label: 'Cutover / rollback / decommission (optional)',
   },
 ] as const;
 
@@ -311,16 +307,17 @@ export interface MigrationDeliveryPlanWizardProps {
 // Step enumeration
 // ============================================================================
 
-type WizardStage = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+// Spec Z (2026-07-17): the 7-stage flow collapses to 3. The target-state
+// conversation already confirmed tiers / tech / decisions, so the intent, style
+// and test-pack stages are gone (intent is inferred; phased is the only in-tool
+// model — Spec W; tests are peppered into build stories); data/cutover fold into
+// Scope.
+type WizardStage = 1 | 2 | 3;
 
 const STAGE_TITLES: Record<WizardStage, string> = {
-  1: 'Inputs & context',
-  2: 'Migration intent',
-  3: 'Delivery streams',
-  4: 'Migration style',
-  5: 'Data & cutover',
-  6: 'Test Pack',
-  7: 'Generate',
+  1: 'Context & inputs',
+  2: 'Scope',
+  3: 'Generate',
 };
 
 // ============================================================================
@@ -342,11 +339,9 @@ export function deriveDefaultDeliveryStreams(
   const out = new Set<string>();
   const readiness = ctx.readinessAssessment ?? null;
   if (readiness?.apiReadiness) {
-    out.add('target_service_api_implementation');
-    out.add('api_soap_integration_compatibility');
-    // Internal (non-HTTP) processing rides the same readiness signal — the
-    // committed code surface is what both partitions derive from
-    // (Spec 2026-07-06-g).
+    // REST + SOAP are one generic api_migration stream (Spec V); internal
+    // (non-HTTP) processing rides the same committed-code-surface signal.
+    out.add('api_migration');
     out.add('internal_processing_implementation');
   }
   if (readiness?.dataReadiness) {
@@ -356,12 +351,9 @@ export function deriveDefaultDeliveryStreams(
   if (readiness?.infrastructureReadiness) {
     out.add('target_infrastructure_environment_implementation');
   }
-  const findingsTotal = ctx.findingsSummary?.totalFindings ?? 0;
-  if (findingsTotal > 0) {
-    out.add('migration_test_pack');
-    out.add('reconciliation_reporting');
-    out.add('cutover_rollback_decommission');
-  }
+  // Reconciles are AUTO (per-plane) and tests are peppered into build stories
+  // (Spec V), so neither is a user-picked stream. Cutover stays an explicit
+  // optional toggle rather than a findings-driven default.
   return Array.from(out);
 }
 
@@ -578,8 +570,8 @@ export function MigrationDeliveryPlanWizard({
   // ---- Stage 3: delivery streams (multi-select, context-defaulted) ----
   const [deliveryStreams, setDeliveryStreams] = useState<Set<string>>(() => new Set());
 
-  // ---- Stage 4: migration style (single-select, context-recommended) ----
-  const [migrationStyle, setMigrationStyle] = useState<string>('unsure_recommend');
+  // ---- Migration style: phased is the only in-tool model (Spec W); no stage ----
+  const [migrationStyle] = useState<string>('phased');
 
   // ---- Stage 5: data + cutover ----
   const [dataAndCutoverAssumptions, setDataAndCutoverAssumptions] =
@@ -618,7 +610,6 @@ export function MigrationDeliveryPlanWizard({
     setSelectedBaselineIds(new Set());
     setMigrationIntent(new Set());
     setDeliveryStreams(new Set());
-    setMigrationStyle('unsure_recommend');
     setDataAndCutoverAssumptions({});
     setTestPackExpectations(new Set());
     setManifestRows([]);
@@ -659,7 +650,6 @@ export function MigrationDeliveryPlanWizard({
         // Apply context-derived defaults for Stage 3, 4, 6.
         setDeliveryStreams(new Set(deriveDefaultDeliveryStreams(ctx)));
         setTestPackExpectations(new Set(deriveDefaultTestPackExpectations(ctx)));
-        setMigrationStyle(recommendMigrationStyle(ctx));
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : 'Context unavailable';
@@ -681,7 +671,7 @@ export function MigrationDeliveryPlanWizard({
   // read only runs when the closeout line is actually visible.
   useEffect(() => {
     if (!open) return;
-    if (stage !== 7 || !targetArchitectureId) {
+    if (stage !== 3 || !targetArchitectureId) {
       setManifestRows([]);
       return;
     }
@@ -775,16 +765,8 @@ export function MigrationDeliveryPlanWizard({
     []
   );
 
-  const toggleIntent = useMemo(
-    () => toggleMember(setMigrationIntent),
-    [toggleMember]
-  );
   const toggleStream = useMemo(
     () => toggleMember(setDeliveryStreams),
-    [toggleMember]
-  );
-  const toggleTestPack = useMemo(
-    () => toggleMember(setTestPackExpectations),
     [toggleMember]
   );
   const toggleDiscoveryRun = useMemo(
@@ -799,16 +781,12 @@ export function MigrationDeliveryPlanWizard({
   // ---- Stage gating ----
   const canAdvance: Record<WizardStage, boolean> = {
     1: Boolean(currentArchitectureId && targetArchitectureId),
-    2: migrationIntent.size > 0,
-    3: true, // streams may default; user may also reduce to zero deliberately
-    4: Boolean(migrationStyle),
-    5: true,
-    6: true,
-    7: !submitting,
+    2: true, // scope defaults from the target-state tiers; the user may adjust
+    3: !submitting,
   };
 
   const goNext = useCallback(() => {
-    setStage((s) => (s < 7 ? ((s + 1) as WizardStage) : s));
+    setStage((s) => (s < 3 ? ((s + 1) as WizardStage) : s));
   }, []);
   const goBack = useCallback(() => {
     setStage((s) => (s > 1 ? ((s - 1) as WizardStage) : s));
@@ -821,9 +799,14 @@ export function MigrationDeliveryPlanWizard({
     setSubmitError(null);
     onGenerationStart?.();
     const wizardAnswers: MigrationDeliveryPlanWizardAnswers = {
-      migrationIntent: Array.from(migrationIntent),
+      // Intent is inferred from the completed target-state conversation now (no
+      // stage) — default to the catch-all so the generator infers from context.
+      migrationIntent:
+        migrationIntent.size > 0
+          ? Array.from(migrationIntent)
+          : ['unsure_infer_from_context'],
       deliveryStreams: Array.from(deliveryStreams),
-      migrationStyle,
+      migrationStyle, // 'phased' — the only in-tool model (Spec W)
       dataAndCutoverAssumptions,
       migrationTestPackExpectations: Array.from(testPackExpectations),
     };
@@ -1170,42 +1153,20 @@ export function MigrationDeliveryPlanWizard({
     );
   }
 
-  function renderStage2() {
-    return (
-      <>
-        <p className={styles.helperText}>
-          What migration goals apply? Pick all that match.
-        </p>
-        <div className={styles.chipList} data-testid="mdp-wizard-intent-chips">
-          {MIGRATION_INTENT_OPTIONS.map((opt) => {
-            const selected = migrationIntent.has(opt.key);
-            return (
-              <button
-                type="button"
-                key={opt.key}
-                className={`${styles.chip} ${selected ? styles.chipSelected : ''}`}
-                onClick={() => toggleIntent(opt.key)}
-                data-testid={`mdp-wizard-intent-${opt.key}`}
-                aria-pressed={selected}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-        {migrationIntent.size === 0 && (
-          <p className={styles.subtle}>Select at least one intent to continue.</p>
-        )}
-      </>
-    );
-  }
+  // [Spec Z] Migration-intent stage removed — intent is inferred from the
+  // completed target-state conversation, not asked.
 
-  function renderStage3() {
+  function renderScope() {
     return (
       <>
         <p className={styles.helperText}>
-          Which delivery streams are in scope? Defaults are pre-selected from
-          your Migration Discovery Context. Adjust as needed.
+          Scope for this migration. Planes (Persistence &rarr; Service &rarr; UI)
+          are derived from your target-state conversation; adjust the build
+          streams below plus the optional infrastructure / cutover work. Data
+          migration is implied whenever Persistence is in scope, and
+          reconciliation runs automatically per plane &mdash; neither is a
+          separate pick. Execution is phased, with a human review pause between
+          planes.
         </p>
         <div className={styles.chipList} data-testid="mdp-wizard-stream-chips">
           {DELIVERY_STREAM_OPTIONS.map((opt) => {
@@ -1228,150 +1189,14 @@ export function MigrationDeliveryPlanWizard({
     );
   }
 
-  function renderStage4() {
-    return (
-      <>
-        <p className={styles.helperText}>
-          Pick a migration style. The default is recommended from your
-          Migration Discovery Context; pick a different option if you have a
-          strong preference.
-        </p>
-        <div className={styles.radioGroup} data-testid="mdp-wizard-style-radios">
-          {MIGRATION_STYLE_OPTIONS.map((opt) => (
-            <label key={opt.key} className={styles.radioOption}>
-              <input
-                type="radio"
-                name="mdp-wizard-migration-style"
-                value={opt.key}
-                checked={migrationStyle === opt.key}
-                onChange={() => setMigrationStyle(opt.key)}
-                data-testid={`mdp-wizard-style-${opt.key}`}
-              />
-              <span>{opt.label}</span>
-            </label>
-          ))}
-        </div>
-      </>
-    );
-  }
+  // [Spec Z] Migration-style stage removed — phased is the only in-tool model (Spec W).
 
-  function renderStage5() {
-    return (
-      <>
-        <p className={styles.helperText}>
-          Set your data and cutover assumptions. Pick "Unsure" for any axis
-          you'd like the generator to recommend.
-        </p>
+  // [Spec Z] Data/cutover stage removed — folded into Scope; data migration is
+  // implied with Persistence and cutover is an optional scope toggle.
 
-        <div className={styles.fieldGroup}>
-          <span className={styles.readinessKey}>Data approach</span>
-          <div className={styles.radioGroup}>
-            {DATA_APPROACH_OPTIONS.map((opt) => (
-              <label key={opt.key} className={styles.radioOption}>
-                <input
-                  type="radio"
-                  name="mdp-wizard-data-approach"
-                  value={opt.key}
-                  checked={dataAndCutoverAssumptions.dataApproach === opt.key}
-                  onChange={() =>
-                    setDataAndCutoverAssumptions((prev) => ({
-                      ...prev,
-                      dataApproach: opt.key,
-                    }))
-                  }
-                  data-testid={`mdp-wizard-data-approach-${opt.key}`}
-                />
-                <span>{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+  // [Spec Z] Test Pack stage removed — tests are peppered into build stories.
 
-        <div className={styles.fieldGroup}>
-          <span className={styles.readinessKey}>Cutover approach</span>
-          <div className={styles.radioGroup}>
-            {CUTOVER_APPROACH_OPTIONS.map((opt) => (
-              <label key={opt.key} className={styles.radioOption}>
-                <input
-                  type="radio"
-                  name="mdp-wizard-cutover-approach"
-                  value={opt.key}
-                  checked={
-                    dataAndCutoverAssumptions.cutoverApproach === opt.key
-                  }
-                  onChange={() =>
-                    setDataAndCutoverAssumptions((prev) => ({
-                      ...prev,
-                      cutoverApproach: opt.key,
-                    }))
-                  }
-                  data-testid={`mdp-wizard-cutover-approach-${opt.key}`}
-                />
-                <span>{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div className={styles.fieldGroup}>
-          <span className={styles.readinessKey}>Rollback required</span>
-          <div className={styles.radioGroup}>
-            {ROLLBACK_OPTIONS.map((opt) => (
-              <label key={opt.key} className={styles.radioOption}>
-                <input
-                  type="radio"
-                  name="mdp-wizard-rollback"
-                  value={opt.key}
-                  checked={dataAndCutoverAssumptions.rollbackRequired === opt.key}
-                  onChange={() =>
-                    setDataAndCutoverAssumptions((prev) => ({
-                      ...prev,
-                      rollbackRequired: opt.key,
-                    }))
-                  }
-                  data-testid={`mdp-wizard-rollback-${opt.key}`}
-                />
-                <span>{opt.label}</span>
-              </label>
-            ))}
-          </div>
-        </div>
-      </>
-    );
-  }
-
-  function renderStage6() {
-    return (
-      <>
-        <p className={styles.helperText}>
-          What does the Migration Test Pack need to cover? Defaults are
-          pre-selected from your Migration Discovery Context.
-        </p>
-        <div
-          className={styles.chipList}
-          data-testid="mdp-wizard-test-pack-chips"
-        >
-          {TEST_PACK_OPTIONS.map((opt) => {
-            const selected = testPackExpectations.has(opt.key);
-            return (
-              <button
-                type="button"
-                key={opt.key}
-                className={`${styles.chip} ${selected ? styles.chipSelected : ''}`}
-                onClick={() => toggleTestPack(opt.key)}
-                data-testid={`mdp-wizard-test-pack-${opt.key}`}
-                aria-pressed={selected}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      </>
-    );
-  }
-
-  function renderStage7() {
+  function renderGenerate() {
     // Confirmed-manifest closeout line (Spec 5 Phase 2 follow-up): list each
     // persisted manifest as "filename (tag)", comma-separated, or the literal
     // "None" when the read returned nothing (the FAIL-SOFT path also lands here,
@@ -1486,7 +1311,7 @@ export function MigrationDeliveryPlanWizard({
         </div>
 
         <div className={styles.stepper} data-testid="mdp-wizard-stepper">
-          {([1, 2, 3, 4, 5, 6, 7] as WizardStage[]).map((n, idx) => (
+          {([1, 2, 3] as WizardStage[]).map((n, idx) => (
             <React.Fragment key={n}>
               {idx > 0 && (
                 <span className={styles.stepSeparator} aria-hidden="true">
@@ -1507,12 +1332,8 @@ export function MigrationDeliveryPlanWizard({
 
         <div className={styles.content} data-testid="mdp-wizard-content">
           {stage === 1 && renderStage1()}
-          {stage === 2 && renderStage2()}
-          {stage === 3 && renderStage3()}
-          {stage === 4 && renderStage4()}
-          {stage === 5 && renderStage5()}
-          {stage === 6 && renderStage6()}
-          {stage === 7 && renderStage7()}
+          {stage === 2 && renderScope()}
+          {stage === 3 && renderGenerate()}
         </div>
 
         <div className={styles.footer}>
@@ -1536,7 +1357,7 @@ export function MigrationDeliveryPlanWizard({
               Back
             </button>
           )}
-          {stage < 7 && (
+          {stage < 3 && (
             <button
               type="button"
               className={`${styles.button} ${styles.buttonPrimary}`}
@@ -1547,7 +1368,7 @@ export function MigrationDeliveryPlanWizard({
               Next
             </button>
           )}
-          {stage === 7 && (
+          {stage === 3 && (
             <button
               type="button"
               className={`${styles.button} ${styles.buttonPrimary}`}
