@@ -4,6 +4,7 @@ import { targetCaptureSessionActionsRouter } from './targetCaptureSessionActions
 import { diffActionsRouter } from './diffActions';
 import { testConnectionActionRouter } from './testConnectionAction';
 import { dataParityRunRouter } from './dataParityRun';
+import { dataMigrationRunRouter } from './dataMigrationRun';
 
 /**
  * API Migration Validation Routes Barrel
@@ -57,5 +58,9 @@ apiMigrationValidationRouter.use(testConnectionActionRouter);
 // Data-parity run (Spec P, Data-Tier Oracle Program): one-shot session-less
 // source/target data comparison; credentials request-scoped only.
 apiMigrationValidationRouter.use(dataParityRunRouter);
+// Data-migration run (Spec Y / W runner dispatch): one-shot session-less
+// Phase-2 bulk load source -> target through the pair ruleset; credentials
+// request-scoped only.
+apiMigrationValidationRouter.use(dataMigrationRunRouter);
 
 export { apiMigrationValidationRouter };
