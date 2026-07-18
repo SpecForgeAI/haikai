@@ -1,0 +1,14 @@
+# Keep the Docker build context lean and reproducible. Stage 1 rebuilds the
+# jar from pom.xml + src/ inside the image, so nothing built locally should be
+# shipped into the context.
+target/
+*.iml
+.idea/
+.vscode/
+.git/
+.gitignore
+README.md
+docs/
+deploy/
+Dockerfile
+.dockerignore

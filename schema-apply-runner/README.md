@@ -31,14 +31,37 @@ The pack tags its changesets so schema application can straddle the data load:
   non-PK indexes).
 - `context:post-load` — all FKs + indexes once, then sequence/identity reseed.
 
-So the phased executor (Spec W) invokes this runner **twice**:
+So the **deploy orchestration** invokes this runner **twice**, straddling the
+data load:
 
 1. `SCHEMA_APPLY_CONTEXTS=structural` → build empty tables.
 2. *(data-migration runner, Spec Y, loads the data)*
 3. `SCHEMA_APPLY_CONTEXTS=post-load` → apply FKs/indexes, reseed sequences.
 
+The sequencing lives in the **deployment layer** (a compose chain / k8s Job set /
+IVS deploy step), gated on each phase exiting `0` — see **Dispatch** below. The
+gateway's phased executor (Spec W) governs the *run's* plane gating and pause,
+but it cannot spawn this JVM, so it never invokes the runner directly.
+
 Leaving `SCHEMA_APPLY_CONTEXTS` unset applies **all** changesets at once — valid
 for a schema-only migration with no data step.
+
+## Dispatch (deploy-time)
+
+This runner is applied at **deploy time**, as the target service is stood up —
+the Node gateway cannot spawn a JVM, so the dispatch is a deployment-level
+integration, never gateway code. Three artefacts make it dispatchable:
+
+- **`Dockerfile`** — packages the runner as a one-shot image (multi-stage,
+  Temurin 21, non-root). `docker build -t schema-apply-runner:latest .`
+- **`deploy/docker-compose.db-plane.yml`** — a runnable example of the DB-plane
+  sequence (structural → data-migrate → post-load → target boot), gated with
+  `depends_on: { condition: service_completed_successfully }` — the compose
+  primitive that matches the runner's exit-code contract.
+- **`docs/deploy-dispatch.md`** — the agent-followable dispatch contract (env
+  wiring, two-phase sequence, exit-code gating, credential discipline, how it
+  slots into the target-service deploy, and the pack-materialisation
+  responsibility).
 
 ## Configuration (all via environment)
 

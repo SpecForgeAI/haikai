@@ -1,0 +1,143 @@
+# DB-plane deploy dispatch (Spec X dispatch + Spec Y + Spec P) — EXAMPLE.
+#
+# This file is the deploy-time DISPATCH for the schema-apply runner: it encodes
+# the sequence and the exit-code gating that Spec X was built for. Spec X is a
+# standalone JVM process the Node gateway cannot spawn, so the ordering lives
+# HERE, in the deployment layer — not in gateway code. A real deploy pipeline
+# (IVS, this compose, a k8s Job chain, an init-container set) drives it.
+#
+# The DB plane, in order, each step gated on the previous exiting 0:
+#
+#   1. schema-apply (contexts=structural)  build empty tables + PKs/uniques/checks
+#   2. data-migrate (Spec Y)               bulk-load source -> forward-transform -> target
+#   3. schema-apply (contexts=post-load)   apply FKs + indexes, reseed sequences
+#   4. (data-parity reconcile, Spec P)     compare — run by the tool, then HARD PAUSE
+#   5. target-service                      the migrated app boots against the ready schema
+#
+# `service_completed_successfully` is the compose primitive that matches the
+# runner's exit-code contract (0 = requested contexts fully applied): the next
+# step starts ONLY when the previous one exited clean. A non-zero exit halts the
+# chain — the DB plane's hard block.
+#
+# Everything secret comes from the environment / an .env file the pipeline
+# supplies; nothing is hardcoded here. Credentials travel as process env only
+# and are never persisted or logged (the runners emit presence booleans in their
+# trace config header, never the values).
+#
+# Usage (from this directory, with the pack materialised + env exported):
+#   docker compose -f docker-compose.db-plane.yml up --build --abort-on-container-exit
+#
+# NOTE: this is an example wiring, not a turnkey stack. The pack volume must be
+# populated first (see docs/deploy-dispatch.md) and the target-service image is
+# whatever IVS built for the migration.
+
+services:
+  # --- 1. Structural schema ------------------------------------------------
+  schema-apply-structural:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: schema-apply-runner:latest
+    environment:
+      SCHEMA_APPLY_JDBC_URL: ${TARGET_JDBC_URL}
+      SCHEMA_APPLY_DB_USER: ${TARGET_DB_USER}
+      SCHEMA_APPLY_DB_PASSWORD: ${TARGET_DB_PASSWORD}
+      SCHEMA_APPLY_PACK_ROOT: /pack
+      SCHEMA_APPLY_CONTEXTS: structural
+      HAIKAI_RUN: ${HAIKAI_RUN:-}
+      HAIKAI_PROJECT: ${HAIKAI_PROJECT:-}
+      HAIKAI_ARCH: ${HAIKAI_ARCH:-}
+      HAIKAI_GIT_SHA: ${HAIKAI_GIT_SHA:-}
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
+    volumes:
+      - ${DB_PLANE_PACK_DIR:-./pack}:/pack:ro
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
+    networks:
+      - db-plane
+
+  # --- 2. Data migration (Spec Y — the AMVS data-migration CLI) ------------
+  # Rides the api-migration-validation-service image and runs its
+  # runDataMigrationCli entrypoint the same way AMVS runs everything else — via
+  # `tsx` against mounted source (the dev image has no compiled dist/). The CLI
+  # reads SOURCE_DB_* / TARGET_DB_* / DATA_MIGRATION_PACK_ROOT and exits 0 on a
+  # clean/empty load. Runs ONLY after the structural schema applied cleanly.
+  # (Y also has a live in-process dispatch — the AMVS POST /api/data-migration/run
+  # route the gateway fires during a run; this container form is for a
+  # deploy-time / work-machine sequence.)
+  data-migrate:
+    build:
+      context: ../../api-migration-validation-service
+      dockerfile: Dockerfile.dev
+    command: ["npx", "tsx", "src/services/dataMigration/runDataMigrationCli.ts"]
+    environment:
+      SOURCE_DB_HOST: ${SOURCE_DB_HOST}
+      SOURCE_DB_PORT: ${SOURCE_DB_PORT:-5000}
+      SOURCE_DB_NAME: ${SOURCE_DB_NAME}
+      SOURCE_DB_USER: ${SOURCE_DB_USER}
+      SOURCE_DB_PASSWORD: ${SOURCE_DB_PASSWORD}
+      TARGET_DB_HOST: ${TARGET_DB_HOST}
+      TARGET_DB_PORT: ${TARGET_DB_PORT:-5432}
+      TARGET_DB_NAME: ${TARGET_DB_NAME}
+      TARGET_DB_USER: ${TARGET_DB_USER}
+      TARGET_DB_PASSWORD: ${TARGET_DB_PASSWORD}
+      DATA_MIGRATION_PACK_ROOT: /pack
+      HAIKAI_RUN: ${HAIKAI_RUN:-}
+      HAIKAI_PROJECT: ${HAIKAI_PROJECT:-}
+      HAIKAI_ARCH: ${HAIKAI_ARCH:-}
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
+    volumes:
+      - ../../api-migration-validation-service/src:/app/src:delegated
+      - ${DB_PLANE_PACK_DIR:-./pack}:/pack:ro
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
+    networks:
+      - db-plane
+    depends_on:
+      schema-apply-structural:
+        condition: service_completed_successfully
+
+  # --- 3. Post-load schema (FKs, indexes, sequence reseed) -----------------
+  schema-apply-postload:
+    image: schema-apply-runner:latest
+    environment:
+      SCHEMA_APPLY_JDBC_URL: ${TARGET_JDBC_URL}
+      SCHEMA_APPLY_DB_USER: ${TARGET_DB_USER}
+      SCHEMA_APPLY_DB_PASSWORD: ${TARGET_DB_PASSWORD}
+      SCHEMA_APPLY_PACK_ROOT: /pack
+      SCHEMA_APPLY_CONTEXTS: post-load
+      HAIKAI_RUN: ${HAIKAI_RUN:-}
+      HAIKAI_PROJECT: ${HAIKAI_PROJECT:-}
+      HAIKAI_ARCH: ${HAIKAI_ARCH:-}
+      HAIKAI_GIT_SHA: ${HAIKAI_GIT_SHA:-}
+      HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
+      HAIKAI_TRACE_FILE: /trace/trace.log
+    volumes:
+      - ${DB_PLANE_PACK_DIR:-./pack}:/pack:ro
+      - ${HAIKAI_TRACE_DIR:-./.haikai-trace}:/trace
+    networks:
+      - db-plane
+    depends_on:
+      data-migrate:
+        condition: service_completed_successfully
+
+  # --- 5. Target service ---------------------------------------------------
+  # The migrated app IVS built. It boots ONLY once the schema is fully applied
+  # (structural + data + post-load). Data-parity reconcile (Spec P, step 4) is a
+  # tool capability the phased executor runs between post-load and the human
+  # approval pause — it is NOT a container in this chain.
+  target-service:
+    image: ${TARGET_SERVICE_IMAGE:-migrated-target-service:latest}
+    environment:
+      SPRING_DATASOURCE_URL: ${TARGET_JDBC_URL}
+      SPRING_DATASOURCE_USERNAME: ${TARGET_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${TARGET_DB_PASSWORD}
+    networks:
+      - db-plane
+    depends_on:
+      schema-apply-postload:
+        condition: service_completed_successfully
+
+networks:
+  db-plane:
+    driver: bridge
