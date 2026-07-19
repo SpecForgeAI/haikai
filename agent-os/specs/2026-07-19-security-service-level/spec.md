@@ -51,3 +51,31 @@ C. **Diagram + Overview**: nested generation from display_levels (parent_node_id
 
 Service<->repo N:1 modeling; finding-class split; register-config UI; action plans;
 cross-upload diffs; CWE enrichment beyond seed.
+
+## As-built log (2026-07-19 late evening, autonomous run)
+
+All 3 specs BUILT and committed on `feature/security-service-level`
+(Spec A 33510f0, Spec B 4eb494f, Spec C follows). Not merged — user review pending.
+
+Verification: AMS 13 H2 tests green (incl. new service-level attribution/ancestry/filter
+coverage) + a real-Postgres-16 bind-shape IT (throwaway docker, prod dialect, full Liquibase
+incl. 213 backfill) for the new sentinel/IN-list/rollup query shapes — scratch IT removed
+after the run (requires a local container; the H2Dialect-masking lesson from the register-500
+fix is why real-Postgres verification is now part of the loop). Gateway 13 jest green.
+Frontend 59 vitest green across the security + diagram-type suites; tsc clean on touched files.
+
+Notable implementation facts:
+- Drag-to-move on the Overview is OUTERMOST boxes only (children re-lay inside on
+  regenerate); full editing incl. resize/palette stays in the Diagrams area per user decision.
+- The wizard's display-levels chooser lives in the level step; the same chooser appears in
+  the Overview's Regenerate dialog; config persists in diagram settings
+  (`security_display_levels`), chain-ordered, non-empty enforced.
+- Rollup keeps the pre-213 `applications` wire field for application-level reports; the
+  Overview accepts it as a fallback, so mixed-version FE/AMS deployments degrade gracefully.
+- Alias memory is level-scoped end-to-end; manual picks teach back at the upload's level.
+- Service matching includes normalized repo-URL collision (https/ssh/bare, .git, case).
+
+Live-shakedown residuals (work machine): service-level upload against a real GitLab export
+(Full Path/repo-path linking), nested diagram open/edit in the Diagrams area (containment
+rendering of SECURITY_SUMMARY via the General canvas with parent_node_id set by generation),
+drag persistence round-trip, and the Regenerate chooser against a user-edited diagram.
