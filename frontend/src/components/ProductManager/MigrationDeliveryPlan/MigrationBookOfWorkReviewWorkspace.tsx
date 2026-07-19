@@ -434,6 +434,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   );
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [dialogMode, setDialogMode] = useState<SaveToBacklogMode>('all');
+  // Findings-coverage detail modal (2026-07-19 UX): the advisory list opens on
+  // demand so it never dominates the review screen.
+  const [showFindingsDetail, setShowFindingsDetail] = useState<boolean>(false);
   const [saveResponse, setSaveResponse] = useState<SaveToBacklogResponse | null>(
     null,
   );
@@ -1077,15 +1080,16 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         />
       )}
 
-      {/* Unaddressed findings panel (Spec 2026-06-11, Task Group 4.3).
-          Advisory only -- coverage never gates Save Draft, Save to Backlog,
-          or expansion. Hidden entirely when the draft has no snapshot. */}
+      {/* Findings-coverage panel (Spec 2026-06-11, Task Group 4.3).
+          Advisory only -- coverage never gates Save Draft, Save to Backlog, or
+          expansion. Collapsed to a ONE-LINE summary (2026-07-19 UX); the full
+          list opens in a modal so it never dominates the review screen. Hidden
+          entirely when the draft has no snapshot. */}
       {findingsCoverage && (
         <section
           className={styles.coveragePanel}
           data-testid="unaddressed-findings-panel"
         >
-          <h2 className={styles.coveragePanelTitle}>Unaddressed findings</h2>
           {findingsCoverage.total === 0 ? (
             <p
               className={styles.coveragePanelNote}
@@ -1099,54 +1103,109 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
               data-testid="unaddressed-findings-all-addressed"
             >
               All {findingsCoverage.total} accepted critical/high findings are
-              addressed by this plan.
+              linked to a work item in this plan.
             </p>
           ) : (
-            <>
-              <p className={styles.coveragePanelNote}>
-                {findingsCoverage.notAddressedCount} of {findingsCoverage.total}{' '}
-                accepted critical/high findings are not referenced by any
-                book-of-work item. Advisory only &mdash; this never blocks
-                saving the plan.
-              </p>
-              <ul className={styles.coverageList}>
-                {findingsCoverage.unaddressed.map((finding) => {
-                  const entry = buildUnaddressedFindingEntry(finding, {
-                    projectId,
-                    architectureId: draft.currentArchitectureId,
-                  });
-                  return (
-                    <li
-                      key={finding.id}
-                      className={styles.coverageRow}
-                      data-testid={`unaddressed-finding-row-${finding.id}`}
-                    >
-                      <span
-                        className={`${styles.badge} ${severityBadgeClass(finding.severity)}`}
-                        data-testid={`unaddressed-finding-severity-${finding.id}`}
-                      >
-                        {finding.severity || 'unknown'}
-                      </span>
-                      <span className={styles.coverageRowTitle}>
-                        {entry.title}
-                      </span>
-                      {entry.destination && (
-                        <Link
-                          to={entry.destination}
-                          className={styles.coverageRowLink}
-                          data-testid={`unaddressed-finding-link-${finding.id}`}
-                        >
-                          {entry.actionLabel}
-                        </Link>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
+            <p
+              className={styles.coveragePanelNote}
+              data-testid="unaddressed-findings-summary"
+            >
+              <span aria-hidden="true">{'ⓘ'} </span>
+              {findingsCoverage.notAddressedCount} of {findingsCoverage.total}{' '}
+              accepted critical/high findings aren{'’'}t linked to a work
+              item yet {'—'} advisory, this doesn{'’'}t block saving.{' '}
+              <button
+                type="button"
+                className={styles.coverageInlineLink}
+                onClick={() => setShowFindingsDetail(true)}
+                data-testid="unaddressed-findings-view-button"
+              >
+                View findings ({findingsCoverage.notAddressedCount})
+              </button>
+            </p>
           )}
         </section>
       )}
+
+      {/* Findings-coverage detail modal — the advisory list, on demand. */}
+      {findingsCoverage &&
+        showFindingsDetail &&
+        findingsCoverage.notAddressedCount > 0 && (
+          <div
+            className={styles.modalOverlay}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowFindingsDetail(false);
+            }}
+            data-testid="unaddressed-findings-dialog"
+          >
+            <div
+              className={styles.modal}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Findings not linked to a work item"
+            >
+              <div className={styles.modalHeader}>
+                <h2 className={styles.modalTitle}>
+                  Findings not linked to a work item
+                </h2>
+              </div>
+              <div className={styles.modalBody}>
+                <p className={styles.coveragePanelNote}>
+                  These {findingsCoverage.notAddressedCount} accepted
+                  critical/high finding(s) aren{'’'}t referenced by any work
+                  item in this plan. Advisory only {'—'} it never blocks
+                  saving. To reduce this, bring the relevant tier into scope so
+                  the plan generates work that references them, or open a finding
+                  below to act on it.
+                </p>
+                <ul className={styles.coverageList}>
+                  {findingsCoverage.unaddressed.map((finding) => {
+                    const entry = buildUnaddressedFindingEntry(finding, {
+                      projectId,
+                      architectureId: draft.currentArchitectureId,
+                    });
+                    return (
+                      <li
+                        key={finding.id}
+                        className={styles.coverageRow}
+                        data-testid={`unaddressed-finding-row-${finding.id}`}
+                      >
+                        <span
+                          className={`${styles.badge} ${severityBadgeClass(finding.severity)}`}
+                          data-testid={`unaddressed-finding-severity-${finding.id}`}
+                        >
+                          {finding.severity || 'unknown'}
+                        </span>
+                        <span className={styles.coverageRowTitle}>
+                          {entry.title}
+                        </span>
+                        {entry.destination && (
+                          <Link
+                            to={entry.destination}
+                            className={styles.coverageRowLink}
+                            data-testid={`unaddressed-finding-link-${finding.id}`}
+                          >
+                            {entry.actionLabel}
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <div className={styles.modalFooter}>
+                <button
+                  type="button"
+                  className={styles.selectButton}
+                  onClick={() => setShowFindingsDetail(false)}
+                  data-testid="unaddressed-findings-dialog-close"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       <div
         className={styles.workspaceBody}

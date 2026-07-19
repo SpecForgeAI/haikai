@@ -316,7 +316,7 @@ describe('MigrationBookOfWorkReviewWorkspace — unaddressed findings panel (4.3
     );
   }
 
-  it('lists each unaddressed snapshot finding with title + severity badge + drawer deep link, plus the computed summary line', () => {
+  it('collapses to a one-line advisory summary + View button; the modal lists each unaddressed finding with title + severity + deep link', () => {
     renderWorkspace(makeDraft());
 
     // s-1 references ' F-1 ' → f-1 addressed (trim + case-insensitive);
@@ -325,13 +325,33 @@ describe('MigrationBookOfWorkReviewWorkspace — unaddressed findings panel (4.3
       'Findings addressed: 1 / 3',
     );
 
+    // The panel is a COMPACT advisory summary — the full list is NOT inline.
     const panel = screen.getByTestId('unaddressed-findings-panel');
     expect(panel).toBeInTheDocument();
     expect(
-      within(panel).queryByTestId('unaddressed-finding-row-f-1'),
+      within(panel).getByTestId('unaddressed-findings-summary'),
+    ).toHaveTextContent(
+      /2 of 3 accepted critical\/high findings aren.t linked to a work item/i,
+    );
+    // No rows and no modal before the user opens it.
+    expect(
+      screen.queryByTestId('unaddressed-finding-row-f-2'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('unaddressed-findings-dialog'),
     ).not.toBeInTheDocument();
 
-    const row2 = within(panel).getByTestId('unaddressed-finding-row-f-2');
+    // Open the detail modal.
+    fireEvent.click(
+      within(panel).getByTestId('unaddressed-findings-view-button'),
+    );
+    const dialog = screen.getByTestId('unaddressed-findings-dialog');
+
+    // f-1 is addressed → never listed; f-2 + f-3 are, with their deep links.
+    expect(
+      within(dialog).queryByTestId('unaddressed-finding-row-f-1'),
+    ).not.toBeInTheDocument();
+    const row2 = within(dialog).getByTestId('unaddressed-finding-row-f-2');
     expect(row2).toHaveTextContent('Trigger cascade on customer delete');
     expect(
       within(row2).getByTestId('unaddressed-finding-severity-f-2'),
@@ -341,13 +361,20 @@ describe('MigrationBookOfWorkReviewWorkspace — unaddressed findings panel (4.3
         .getByTestId('unaddressed-finding-link-f-2')
         .getAttribute('href'),
     ).toBe(`${ARCH_BASE}/discovery/runs/run-1?tab=findings&findingId=f-2`);
-
     // f-3 deep-links to ITS OWN run (run-2), not the sibling's.
     expect(
-      screen
+      within(dialog)
         .getByTestId('unaddressed-finding-link-f-3')
         .getAttribute('href'),
     ).toBe(`${ARCH_BASE}/discovery/runs/run-2?tab=findings&findingId=f-3`);
+
+    // Close returns to the collapsed summary.
+    fireEvent.click(
+      within(dialog).getByTestId('unaddressed-findings-dialog-close'),
+    );
+    expect(
+      screen.queryByTestId('unaddressed-findings-dialog'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the positive all-addressed state, the empty-snapshot state, and hides the panel entirely for legacy drafts (D8)', () => {
@@ -366,7 +393,7 @@ describe('MigrationBookOfWorkReviewWorkspace — unaddressed findings panel (4.3
     expect(
       screen.getByTestId('unaddressed-findings-all-addressed'),
     ).toHaveTextContent(
-      'All 3 accepted critical/high findings are addressed by this plan.',
+      'All 3 accepted critical/high findings are linked to a work item in this plan.',
     );
     first.unmount();
 
