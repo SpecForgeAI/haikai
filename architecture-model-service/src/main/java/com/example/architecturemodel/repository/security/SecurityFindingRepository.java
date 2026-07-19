@@ -31,6 +31,13 @@ public interface SecurityFindingRepository
      * Parameterized register search over one report's findings. Null filters
      * are skipped; {@code text} is a case-insensitive contains over title /
      * description / linking value / location.
+     *
+     * <p>The {@code CAST(:text AS STRING)} inside CONCAT is load-bearing on
+     * PostgreSQL: a null bind parameter inside CONCAT has no inferable type
+     * there ("could not determine data type of parameter" -&gt; HTTP 500 on
+     * the no-filter register read), while the H2 test profile tolerates it.
+     * Mirrors the same deliberate cast in
+     * {@code VulnerabilityRepository.search}.</p>
      */
     @Query("""
         SELECT f FROM SecurityFindingEntity f
@@ -39,11 +46,13 @@ public interface SecurityFindingRepository
           AND (:matchStatus IS NULL OR f.matchStatus = :matchStatus)
           AND (:severity IS NULL OR f.severity = :severity)
           AND (:level IS NULL OR f.level = :level)
-          AND (:text IS NULL
-               OR LOWER(COALESCE(f.title, '')) LIKE LOWER(CONCAT('%', :text, '%'))
-               OR LOWER(COALESCE(f.description, '')) LIKE LOWER(CONCAT('%', :text, '%'))
-               OR LOWER(COALESCE(f.linkingValue, '')) LIKE LOWER(CONCAT('%', :text, '%'))
-               OR LOWER(COALESCE(f.location, '')) LIKE LOWER(CONCAT('%', :text, '%')))
+          AND (
+            :text IS NULL
+            OR LOWER(COALESCE(f.title, '')) LIKE LOWER(CONCAT('%', CAST(:text AS STRING), '%'))
+            OR LOWER(COALESCE(f.description, '')) LIKE LOWER(CONCAT('%', CAST(:text AS STRING), '%'))
+            OR LOWER(COALESCE(f.linkingValue, '')) LIKE LOWER(CONCAT('%', CAST(:text AS STRING), '%'))
+            OR LOWER(COALESCE(f.location, '')) LIKE LOWER(CONCAT('%', CAST(:text AS STRING), '%'))
+          )
         """)
     Page<SecurityFindingEntity> search(@Param("reportId") UUID reportId,
                                        @Param("applicationId") String applicationId,
