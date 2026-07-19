@@ -128,6 +128,37 @@
   stroke-width: 1.6;
 }
 
+/* Containment parents (boxes holding nested children) render as light frames
+   so the leaf boxes + circles stay the visual focus. */
+.containerRect {
+  fill: #f4f7fc;
+  stroke: #7a8ab0;
+  stroke-width: 1.4;
+}
+
+.containerLabel {
+  font-size: 12px;
+  font-weight: 700;
+  fill: #3d4d78;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.appBox:hover .containerRect {
+  stroke: #1d5fbf;
+  stroke-width: 2.2;
+}
+
+.levelOption {
+  display: block;
+  padding: 6px 4px;
+  font-size: 14px;
+}
+
+.levelOption input {
+  margin-right: 8px;
+}
+
 .appBox:hover .appRect,
 .appBox:hover .unmatchedRect {
   stroke: #1d5fbf;
@@ -213,7 +244,9 @@
 
 .modalFooter {
   margin-top: 12px;
-  text-align: right;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .modalFooter button {

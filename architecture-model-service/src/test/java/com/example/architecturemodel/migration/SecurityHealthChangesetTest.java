@@ -33,6 +33,7 @@ class SecurityHealthChangesetTest {
 
     private static final String SQL_211 = "db/changelog/sql/211-security-health-foundation.sql";
     private static final String SQL_212 = "db/changelog/sql/212-cwe-mitre-seed.sql";
+    private static final String SQL_213 = "db/changelog/sql/213-security-finding-entity-id.sql";
 
     @Test
     @DisplayName("211 creates the seven security-health tables with the M:N joins + unique keys; 212 seeds 944 MITRE CWEs (CWE-89 = SQL injection) onto them")
@@ -65,6 +66,10 @@ class SecurityHealthChangesetTest {
                     "IS_LATEST");
 
             applyStatementWise(conn, SQL_212);
+            applyStatementWise(conn, SQL_213);
+            assertThat(columnNames(conn, "SECURITY_FINDINGS"))
+                .as("213 adds the level-generic entity_id attribution column")
+                .contains("ENTITY_ID");
 
             try (Statement st = conn.createStatement()) {
                 ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM cwes");

@@ -102,10 +102,11 @@ class SecurityFindingControllerTest {
     }
 
     @Test
-    @DisplayName("GET .../security/register forwards snake_case filters + the comma-separated column set")
+    @DisplayName("GET .../security/register forwards snake_case filters (incl. component/service entity filters) + the comma-separated column set")
     void registerForwardsParameters() throws Exception {
         when(registerService.register(eq(PROJECT_ID), eq(ARCHITECTURE_ID), isNull(),
-                eq("app-1"), eq("unmatched"), eq("high"), eq("spring"),
+                eq("app-1"), eq("comp-1"), eq("svc-1"),
+                eq("unmatched"), eq("high"), eq("spring"),
                 eq(List.of("finding_id", "title")), eq(2), eq(25)))
             .thenReturn(new SecurityRegisterResponse(
                 List.of(Map.of("finding_id", "f-1", "title", "Spring DoS")),
@@ -113,6 +114,8 @@ class SecurityFindingControllerTest {
 
         mockMvc.perform(get(BASE + "/register")
                 .param("application_id", "app-1")
+                .param("application_component_id", "comp-1")
+                .param("service_id", "svc-1")
                 .param("match_status", "unmatched")
                 .param("severity", "high")
                 .param("text", "spring")
@@ -125,7 +128,8 @@ class SecurityFindingControllerTest {
             .andExpect(jsonPath("$.data[0].title").value("Spring DoS"));
 
         verify(registerService).register(eq(PROJECT_ID), eq(ARCHITECTURE_ID), isNull(),
-            eq("app-1"), eq("unmatched"), eq("high"), eq("spring"),
+            eq("app-1"), eq("comp-1"), eq("svc-1"),
+            eq("unmatched"), eq("high"), eq("spring"),
             eq(List.of("finding_id", "title")), eq(2), eq(25));
     }
 
@@ -134,6 +138,8 @@ class SecurityFindingControllerTest {
     void rollup() throws Exception {
         when(registerService.rollup(PROJECT_ID, ARCHITECTURE_ID, REPORT_ID))
             .thenReturn(new SecurityRollupDto(REPORT_ID, NOW, "application",
+                List.of(new SecurityRollupDto.EntityEntry(
+                    "application", "app-1", "MRX", "app-1", null, Map.of("high", 3L))),
                 List.of(new SecurityRollupDto.Entry("app-1", "MRX",
                     Map.of("high", 3L))),
                 Map.of("critical", 1L),
@@ -143,6 +149,9 @@ class SecurityFindingControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.report_id").value(REPORT_ID.toString()))
             .andExpect(jsonPath("$.association_level").value("application"))
+            .andExpect(jsonPath("$.entities[0].entity_name").value("MRX"))
+            .andExpect(jsonPath("$.entities[0].level").value("application"))
+            .andExpect(jsonPath("$.entities[0].counts.high").value(3))
             .andExpect(jsonPath("$.applications[0].application_name").value("MRX"))
             .andExpect(jsonPath("$.applications[0].counts.high").value(3))
             .andExpect(jsonPath("$.unmatched.critical").value(1));

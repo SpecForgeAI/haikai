@@ -26,12 +26,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Application } from '../../types/model';
+import type { MetaModel } from '../../types/model';
 import {
   SecurityFindingsApiError,
   SecurityGenericAttribute,
   SecurityIngestSummary,
-  SecurityLinkingAlias,
   SecurityLinkingResolution,
   SecurityParsePreview,
   getSecurityPrefill,
@@ -40,6 +39,16 @@ import {
   parseSecurityUpload,
   upsertSecurityAliases,
 } from '../../api/securityFindingsApi';
+import {
+  ASSOCIATION_LEVELS,
+  DEFAULT_DISPLAY_LEVELS,
+  LEVEL_ORDER,
+  LevelEntityOption,
+  SecurityAssociationLevel,
+  buildLevelMatchIndex,
+  entityOptionsForLevel,
+  resolveAgainstIndex,
+} from '../../utils/securityLevels';
 import styles from './SecurityUploadWizard.module.css';
 
 const NOT_MAPPED = '';
@@ -57,9 +66,15 @@ const STEP_LABELS: Record<WizardStep, string> = {
 
 /** How one distinct linking value is currently resolved. */
 interface ValueResolution {
-  applicationId: string | null;
-  /** exact = id/name/abbreviation match; alias = taught memory; manual = user pick. */
+  entityId: string | null;
+  /** exact = id/name/abbrev/repo-URL match; alias = taught memory; manual = user pick. */
   source: 'exact' | 'alias' | 'manual' | null;
+}
+
+/** The wizard's per-upload configuration handed back on completion. */
+export interface SecurityWizardConfig {
+  associationLevel: SecurityAssociationLevel;
+  displayLevels: SecurityAssociationLevel[];
 }
 
 interface SecurityUploadWizardProps {
@@ -67,9 +82,11 @@ interface SecurityUploadWizardProps {
   onClose: () => void;
   projectId: string;
   architectureId: string;
-  applications: Application[];
-  /** Called with the ingest summary after a successful upload. */
-  onComplete: (summary: SecurityIngestSummary) => void;
+  metaModel: MetaModel;
+  /** Prefill for the display-levels chooser (from the existing diagram's settings). */
+  initialDisplayLevels?: SecurityAssociationLevel[];
+  /** Called with the ingest summary + the confirmed config after a successful upload. */
+  onComplete: (summary: SecurityIngestSummary, config: SecurityWizardConfig) => void;
 }
 
 export function SecurityUploadWizard({
@@ -77,15 +94,20 @@ export function SecurityUploadWizard({
   onClose,
   projectId,
   architectureId,
-  applications,
+  metaModel,
+  initialDisplayLevels,
   onComplete,
 }: SecurityUploadWizardProps) {
   const [step, setStep] = useState<WizardStep>('files');
   const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<SecurityParsePreview | null>(null);
-  const [aliases, setAliases] = useState<SecurityLinkingAlias[]>([]);
   const [prefillMapping, setPrefillMapping] = useState<Record<string, string> | null>(null);
-  const [level, setLevel] = useState('application');
+  const [level, setLevel] = useState<SecurityAssociationLevel>('application');
+  const [displayLevels, setDisplayLevels] = useState<SecurityAssociationLevel[]>(
+    initialDisplayLevels && initialDisplayLevels.length > 0
+      ? initialDisplayLevels
+      : DEFAULT_DISPLAY_LEVELS,
+  );
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const [visibleAttrs, setVisibleAttrs] = useState<Set<string>>(new Set());
   const [distinctValues, setDistinctValues] = useState<{ value: string; count: number }[]>([]);
@@ -95,19 +117,20 @@ export function SecurityUploadWizard({
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const applicationById = useMemo(() => {
-    const map = new Map<string, Application>();
-    for (const app of applications) map.set(app.id, app);
-    return map;
-  }, [applications]);
-
-  const sortedApplications = useMemo(
-    () => [...applications].sort((a, b) => a.name.localeCompare(b.name)),
-    [applications],
+  const entityOptions: LevelEntityOption[] = useMemo(
+    () => entityOptionsForLevel(metaModel, level),
+    [metaModel, level],
   );
 
-  // Reset + load the project memory (prefill mapping/level + taught aliases)
-  // each time the wizard opens.
+  const entityOptionById = useMemo(() => {
+    const map = new Map<string, LevelEntityOption>();
+    for (const option of entityOptions) map.set(option.id, option);
+    return map;
+  }, [entityOptions]);
+
+  // Reset + load the project memory (prefill mapping/level) each time the
+  // wizard opens. Aliases are fetched level-aware when entering the value
+  // matcher (the level may change in step 2).
   useEffect(() => {
     if (!isOpen) return;
     setStep('files');
@@ -118,22 +141,25 @@ export function SecurityUploadWizard({
     setResolutions(new Map());
     setSummary(null);
     setError(null);
+    setDisplayLevels(
+      initialDisplayLevels && initialDisplayLevels.length > 0
+        ? initialDisplayLevels
+        : DEFAULT_DISPLAY_LEVELS,
+    );
     void (async () => {
       try {
-        const [prefill, taught] = await Promise.all([
-          getSecurityPrefill(projectId),
-          listSecurityAliases(projectId, 'application'),
-        ]);
-        if (prefill?.association_level) setLevel(prefill.association_level);
+        const prefill = await getSecurityPrefill(projectId);
+        if (prefill?.association_level
+            && LEVEL_ORDER.includes(prefill.association_level as SecurityAssociationLevel)) {
+          setLevel(prefill.association_level as SecurityAssociationLevel);
+        }
         setPrefillMapping(prefill?.column_mapping ?? null);
-        setAliases(taught);
       } catch {
         // Memory is a convenience -- absence never blocks the wizard.
         setPrefillMapping(null);
-        setAliases([]);
       }
     })();
-  }, [isOpen, projectId]);
+  }, [isOpen, projectId, initialDisplayLevels]);
 
   const genericAttributes: SecurityGenericAttribute[] = preview?.generic_attributes ?? [];
 
@@ -196,35 +222,6 @@ export function SecurityUploadWizard({
     }
   };
 
-  const autoResolve = useCallback(
-    (values: { value: string; count: number }[]) => {
-      const aliasByValue = new Map(aliases.map((a) => [a.alias_value.toLowerCase(), a]));
-      const byExact = new Map<string, Application>();
-      for (const app of applications) {
-        byExact.set(app.id.toLowerCase(), app);
-        byExact.set(app.name.toLowerCase(), app);
-        if (app.abbreviation) byExact.set(app.abbreviation.toLowerCase(), app);
-      }
-      const next = new Map<string, ValueResolution>();
-      for (const { value } of values) {
-        const lower = value.toLowerCase();
-        const exact = byExact.get(lower);
-        if (exact) {
-          next.set(value, { applicationId: exact.id, source: 'exact' });
-          continue;
-        }
-        const alias = aliasByValue.get(lower);
-        if (alias && applicationById.has(alias.entity_id)) {
-          next.set(value, { applicationId: alias.entity_id, source: 'alias' });
-          continue;
-        }
-        next.set(value, { applicationId: null, source: null });
-      }
-      setResolutions(next);
-    },
-    [aliases, applications, applicationById],
-  );
-
   const handleColumnsNext = async () => {
     if (!requiredMapped || !linkingHeader || !preview) return;
     setBusy(true);
@@ -236,7 +233,32 @@ export function SecurityUploadWizard({
           ? preview
           : await runParse(files, linkingHeader);
       setDistinctValues(parsed.distinct_linking_values);
-      autoResolve(parsed.distinct_linking_values);
+      // Level-aware auto-resolution: exact match (id / name / abbreviation /
+      // normalized repo URL for services) first, then the level's taught
+      // aliases. Alias absence never blocks.
+      let aliasByValue = new Map<string, string>();
+      try {
+        const taught = await listSecurityAliases(projectId, level);
+        aliasByValue = new Map(taught.map((a) => [a.alias_value.toLowerCase(), a.entity_id]));
+      } catch {
+        // fall through -- exact matching still works
+      }
+      const index = buildLevelMatchIndex(metaModel, level);
+      const next = new Map<string, ValueResolution>();
+      for (const { value } of parsed.distinct_linking_values) {
+        const exact = resolveAgainstIndex(index, level, value);
+        if (exact) {
+          next.set(value, { entityId: exact, source: 'exact' });
+          continue;
+        }
+        const aliasTarget = aliasByValue.get(value.toLowerCase());
+        if (aliasTarget && entityOptionById.has(aliasTarget)) {
+          next.set(value, { entityId: aliasTarget, source: 'alias' });
+          continue;
+        }
+        next.set(value, { entityId: null, source: null });
+      }
+      setResolutions(next);
       setStep('values');
     } catch (err) {
       setError(errorText(err, 'Failed to extract linking values'));
@@ -249,24 +271,25 @@ export function SecurityUploadWizard({
     setBusy(true);
     setError(null);
     try {
-      // Teach manual picks back as project aliases (living memory: the next
-      // upload auto-resolves them). Exact/alias resolutions need no teaching.
+      // Teach manual picks back as LEVEL-SCOPED project aliases (living
+      // memory: the next upload auto-resolves them). Exact/alias resolutions
+      // need no teaching.
       const toTeach = Array.from(resolutions.entries())
-        .filter(([, r]) => r.source === 'manual' && r.applicationId)
+        .filter(([, r]) => r.source === 'manual' && r.entityId)
         .map(([value, r]) => ({
           alias_value: value,
-          entity_id: r.applicationId as string,
-          entity_name: applicationById.get(r.applicationId as string)?.name ?? null,
+          entity_id: r.entityId as string,
+          entity_name: entityOptionById.get(r.entityId as string)?.name ?? null,
         }));
       if (toTeach.length > 0) {
-        await upsertSecurityAliases(projectId, 'application', toTeach);
+        await upsertSecurityAliases(projectId, level, toTeach);
       }
       const wireResolutions: SecurityLinkingResolution[] = Array.from(
         resolutions.entries(),
       ).map(([value, r]) => ({
         linking_value: value,
-        application_id: r.applicationId,
-        match_status: r.applicationId === null ? 'unmatched' : r.source === 'manual' ? 'manual' : 'auto',
+        entity_id: r.entityId,
+        match_status: r.entityId === null ? 'unmatched' : r.source === 'manual' ? 'manual' : 'auto',
       }));
       const result = await ingestSecurityUpload(
         projectId,
@@ -278,7 +301,7 @@ export function SecurityUploadWizard({
       );
       setSummary(result);
       setStep('summary');
-      onComplete(result);
+      onComplete(result, { associationLevel: level, displayLevels });
     } catch (err) {
       setError(errorText(err, 'Upload failed'));
     } finally {
@@ -293,7 +316,7 @@ export function SecurityUploadWizard({
   if (!isOpen) return null;
 
   const matchedCount = Array.from(resolutions.values()).filter(
-    (r) => r.applicationId !== null,
+    (r) => r.entityId !== null,
   ).length;
 
   const attributeRows = genericAttributes.filter((a) => visibleAttrs.has(a.name));
@@ -392,25 +415,47 @@ export function SecurityUploadWizard({
             <div>
               <p className={styles.hint}>
                 Which level of the application hierarchy does this file&apos;s linking column
-                refer to? The summary diagram shows severity counts at this level.
+                refer to? Severity counts attach at this level and roll up to whatever the
+                summary diagram displays.
               </p>
-              <label className={styles.levelOption}>
-                <input
-                  type="radio"
-                  name="association-level"
-                  checked={level === 'application'}
-                  onChange={() => setLevel('application')}
-                />
-                Application
-              </label>
-              <label className={`${styles.levelOption} ${styles.levelDisabled}`}>
-                <input type="radio" name="association-level" disabled />
-                Application component (later phase)
-              </label>
-              <label className={`${styles.levelOption} ${styles.levelDisabled}`}>
-                <input type="radio" name="association-level" disabled />
-                Service / repo (later phase)
-              </label>
+              {ASSOCIATION_LEVELS.map((option) => (
+                <label key={option.value} className={styles.levelOption}>
+                  <input
+                    type="radio"
+                    name="association-level"
+                    checked={level === option.value}
+                    onChange={() => {
+                      setLevel(option.value);
+                      setResolutions(new Map());
+                    }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+              <p className={styles.hint} style={{ marginTop: 16 }}>
+                Which levels should the summary diagram display? Multiple levels render as
+                nested boxes; this is saved on the diagram and changeable later via
+                Regenerate.
+              </p>
+              {ASSOCIATION_LEVELS.map((option) => (
+                <label key={`display-${option.value}`} className={styles.levelOption}>
+                  <input
+                    type="checkbox"
+                    checked={displayLevels.includes(option.value)}
+                    onChange={(e) => {
+                      setDisplayLevels((prev) => {
+                        const next = e.target.checked
+                          ? [...prev, option.value]
+                          : prev.filter((l) => l !== option.value);
+                        // At least one level stays displayed; keep chain order.
+                        const ordered = LEVEL_ORDER.filter((l) => next.includes(l));
+                        return ordered.length > 0 ? ordered : prev;
+                      });
+                    }}
+                  />
+                  Show {option.label.toLowerCase()} boxes
+                </label>
+              ))}
             </div>
           )}
 
@@ -488,14 +533,14 @@ export function SecurityUploadWizard({
                   <tr>
                     <th>Value in file</th>
                     <th>Rows</th>
-                    <th>Application</th>
+                    <th>{ASSOCIATION_LEVELS.find((l) => l.value === level)?.label}</th>
                     <th>How</th>
                   </tr>
                 </thead>
                 <tbody>
                   {distinctValues.map(({ value, count }) => {
                     const resolution = resolutions.get(value) ?? {
-                      applicationId: null,
+                      entityId: null,
                       source: null,
                     };
                     return (
@@ -504,24 +549,24 @@ export function SecurityUploadWizard({
                         <td>{count}</td>
                         <td>
                           <select
-                            value={resolution.applicationId ?? ''}
+                            value={resolution.entityId ?? ''}
                             onChange={(e) => {
-                              const applicationId = e.target.value || null;
+                              const entityId = e.target.value || null;
                               setResolutions((prev) => {
                                 const next = new Map(prev);
                                 next.set(value, {
-                                  applicationId,
-                                  source: applicationId ? 'manual' : null,
+                                  entityId,
+                                  source: entityId ? 'manual' : null,
                                 });
                                 return next;
                               });
                             }}
                           >
                             <option value="">— leave unmatched —</option>
-                            {sortedApplications.map((app) => (
-                              <option key={app.id} value={app.id}>
-                                {app.name}
-                                {app.abbreviation ? ` (${app.abbreviation})` : ''}
+                            {entityOptions.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.name}
+                                {option.contextLabel ? ` — ${option.contextLabel}` : ''}
                               </option>
                             ))}
                           </select>
@@ -529,12 +574,12 @@ export function SecurityUploadWizard({
                         <td>
                           <span
                             className={`${styles.badge} ${
-                              resolution.applicationId
+                              resolution.entityId
                                 ? styles.badgeMatched
                                 : styles.badgeUnmatched
                             }`}
                           >
-                            {resolution.applicationId
+                            {resolution.entityId
                               ? resolution.source === 'exact'
                                 ? 'exact'
                                 : resolution.source === 'alias'

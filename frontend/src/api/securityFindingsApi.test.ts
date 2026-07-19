@@ -50,18 +50,18 @@ describe('securityFindingsApi', () => {
       'a1',
       files,
       { 'Project Name': 'linking_value', Severity: 'severity' },
-      'application',
-      [{ linking_value: 'HiFi', application_id: 'app-1', match_status: 'auto' }],
+      'service',
+      [{ linking_value: 'grh/payments', entity_id: 'svc-1', match_status: 'auto' }],
     );
     const ingestForm = fetchMock.mock.calls[1][1].body as FormData;
     expect(fetchMock.mock.calls[1][0]).toBe(
       '/api/v1/projects/p1/architectures/a1/security/uploads/ingest',
     );
     expect(JSON.parse(ingestForm.get('column_mapping') as string).Severity).toBe('severity');
-    expect(ingestForm.get('association_level')).toBe('application');
+    expect(ingestForm.get('association_level')).toBe('service');
     expect(JSON.parse(ingestForm.get('resolutions') as string)[0]).toEqual({
-      linking_value: 'HiFi',
-      application_id: 'app-1',
+      linking_value: 'grh/payments',
+      entity_id: 'svc-1',
       match_status: 'auto',
     });
   });
@@ -70,6 +70,8 @@ describe('securityFindingsApi', () => {
     fetchMock.mockResolvedValue(okJson({ data: [], total: 0, page: 0, size: 50, columns: [] }));
     await getSecurityRegister('p1', 'a1', {
       applicationId: 'app-1',
+      applicationComponentId: 'comp-1',
+      serviceId: 'svc-1',
       matchStatus: 'unmatched',
       severity: 'high',
       text: 'spring',
@@ -80,6 +82,8 @@ describe('securityFindingsApi', () => {
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain('/api/model/projects/p1/architectures/a1/security/register?');
     expect(url).toContain('application_id=app-1');
+    expect(url).toContain('application_component_id=comp-1');
+    expect(url).toContain('service_id=svc-1');
     expect(url).toContain('match_status=unmatched');
     expect(url).toContain('severity=high');
     expect(url).toContain('columns=finding_id%2Ctitle');

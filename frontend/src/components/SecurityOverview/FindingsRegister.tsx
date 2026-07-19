@@ -28,8 +28,14 @@ const PAGE_SIZE = 50;
 /** Human labels for the register's flattened column vocabulary. */
 const COLUMN_LABELS: Record<string, string> = {
   finding_id: 'Finding',
+  entity_id: 'Entity id',
+  entity_name: 'Entity',
   application_id: 'Application id',
   application_name: 'Application',
+  application_component_id: 'Component id',
+  application_component_name: 'Component',
+  service_name: 'Service',
+  service_repo_location: 'Repo',
   linking_value: 'Linking value',
   level: 'Level',
   match_status: 'Match',
@@ -67,8 +73,12 @@ export function FindingsRegister() {
   const [textDraft, setTextDraft] = useState(searchParams.get('text') ?? '');
 
   const applications = state.model.metaModel.entities.applications;
+  const components = state.model.metaModel.entities.app_components;
+  const services = state.model.metaModel.entities.services;
 
   const applicationId = searchParams.get('application_id') ?? '';
+  const applicationComponentId = searchParams.get('application_component_id') ?? '';
+  const serviceId = searchParams.get('service_id') ?? '';
   const matchStatus = searchParams.get('match_status') ?? '';
   const severity = searchParams.get('severity') ?? '';
   const text = searchParams.get('text') ?? '';
@@ -99,6 +109,8 @@ export function FindingsRegister() {
     getSecurityRegister(project.id, architectureId, {
       reportId: reportId || undefined,
       applicationId: applicationId || undefined,
+      applicationComponentId: applicationComponentId || undefined,
+      serviceId: serviceId || undefined,
       matchStatus: matchStatus || undefined,
       severity: severity || undefined,
       text: text || undefined,
@@ -120,14 +132,18 @@ export function FindingsRegister() {
     return () => {
       cancelled = true;
     };
-  }, [project?.id, architectureId, reportId, applicationId, matchStatus, severity, text, page]);
+  }, [project?.id, architectureId, reportId, applicationId, applicationComponentId,
+      serviceId, matchStatus, severity, text, page]);
 
   const totalPages = useMemo(
     () => (response ? Math.max(1, Math.ceil(response.total / PAGE_SIZE)) : 1),
     [response],
   );
 
-  const hasActiveFilter = Boolean(applicationId || matchStatus || severity || text || reportId);
+  const hasActiveFilter = Boolean(
+    applicationId || applicationComponentId || serviceId
+    || matchStatus || severity || text || reportId,
+  );
 
   if (!project?.id || !architectureId) {
     return (
@@ -166,6 +182,38 @@ export function FindingsRegister() {
               </option>
             ))}
         </select>
+        {components.length > 0 && (
+          <select
+            value={applicationComponentId}
+            onChange={(e) => setFilter('application_component_id', e.target.value)}
+            aria-label="Filter by application component"
+          >
+            <option value="">Any component</option>
+            {[...components]
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((comp) => (
+                <option key={comp.id} value={comp.id}>
+                  {comp.name}
+                </option>
+              ))}
+          </select>
+        )}
+        {services.length > 0 && (
+          <select
+            value={serviceId}
+            onChange={(e) => setFilter('service_id', e.target.value)}
+            aria-label="Filter by service"
+          >
+            <option value="">Any service</option>
+            {[...services]
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((service) => (
+                <option key={service.id} value={service.id}>
+                  {service.name}
+                </option>
+              ))}
+          </select>
+        )}
         <select
           value={matchStatus}
           onChange={(e) => setFilter('match_status', e.target.value)}

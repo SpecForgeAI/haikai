@@ -118,8 +118,8 @@ describe('Security Findings gateway route', () => {
         .field(
           'resolutions',
           JSON.stringify([
-            { linking_value: 'HiFi', application_id: 'app-hifi', match_status: 'auto' },
-            { linking_value: 'MRX (Risk)', application_id: null, match_status: 'unmatched' },
+            { linking_value: 'HiFi', entity_id: 'app-hifi', match_status: 'auto' },
+            { linking_value: 'MRX (Risk)', entity_id: null, match_status: 'unmatched' },
           ]),
         )
         .attach('files', Buffer.from(GITLAB_CSV, 'utf-8'), 'export-a.csv')
@@ -144,7 +144,7 @@ describe('Security Findings gateway route', () => {
       expect(body.rows).toHaveLength(4);
       expect(body.rows[0]).toMatchObject({
         linking_value: 'HiFi',
-        application_id: 'app-hifi',
+        entity_id: 'app-hifi',
         match_status: 'auto',
         severity_raw: 'medium',
         cve_ids: ['CVE-2024-38808'],
@@ -153,7 +153,7 @@ describe('Security Findings gateway route', () => {
       });
       expect(body.rows[1]).toMatchObject({
         linking_value: 'MRX (Risk)',
-        application_id: null,
+        entity_id: null,
         match_status: 'unmatched',
         cve_ids: [],
       });

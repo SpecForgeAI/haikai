@@ -4961,3 +4961,30 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 213: security_findings.entity_id (Spec: Security health dashboard --
+  # service-level association, 2026-07-19, Spec A of 3, second wave).
+  # Generalizes attribution beyond applications: entity_id holds the resolved
+  # model-entity id for the finding's level (application | application_component
+  # | service id families), backfilled from application_id. application_id is
+  # RETAINED (still populated for level=application) as a deprecated read path.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 212).
+  # ============================================================================
+  - changeSet:
+      id: 213-security-finding-entity-id
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: security_findings
+              columnName: entity_id
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/213-security-finding-entity-id.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

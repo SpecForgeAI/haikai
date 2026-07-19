@@ -193,10 +193,17 @@ export function distinctLinkingValues(
 // Normalization into the AMS ingest wire shape
 // ============================================================================
 
-/** Wizard-confirmed resolution for one distinct linking value. */
+/**
+ * Wizard-confirmed resolution for one distinct linking value.
+ * `entity_id` is the resolved model-entity id AT THE UPLOAD'S ASSOCIATION
+ * LEVEL (application / application_component / service id families --
+ * changeset 213 generalization); `application_id` is the pre-213 field name
+ * accepted as a fallback from older callers.
+ */
 export interface LinkingResolution {
   linking_value: string;
-  application_id: string | null;
+  entity_id?: string | null;
+  application_id?: string | null;
   /** auto | manual | unmatched */
   match_status: string;
 }
@@ -204,7 +211,7 @@ export interface LinkingResolution {
 /** One normalized row on the AMS `IngestSecurityFindingRowDto` wire. */
 export interface NormalizedSecurityRow {
   linking_value: string;
-  application_id: string | null;
+  entity_id: string | null;
   match_status: string;
   severity_raw: string | null;
   title: string | null;
@@ -272,7 +279,7 @@ export function normalizeSecurityRows(
       const resolution = resolutionByValue.get(linkingValue);
       rows.push({
         linking_value: linkingValue,
-        application_id: resolution?.application_id ?? null,
+        entity_id: resolution?.entity_id ?? resolution?.application_id ?? null,
         match_status: resolution?.match_status ?? 'unmatched',
         severity_raw: cell(raw, 'severity'),
         title: cell(raw, 'title'),

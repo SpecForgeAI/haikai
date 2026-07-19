@@ -41,7 +41,8 @@ export interface SecurityParsePreview {
 
 export interface SecurityLinkingResolution {
   linking_value: string;
-  application_id: string | null;
+  /** Resolved model-entity id at the upload's association level (changeset 213). */
+  entity_id: string | null;
   match_status: 'auto' | 'manual' | 'unmatched';
 }
 
@@ -100,10 +101,26 @@ export interface SecurityRollupEntry {
   counts: Record<string, number>;
 }
 
+/**
+ * Level-generic rollup entry (changeset 213): counts keyed by the finding's
+ * own entity at the report's association level, with resolved ancestor ids
+ * for client-side nearest-displayed-ancestor aggregation.
+ */
+export interface SecurityRollupEntityEntry {
+  level: string;
+  entity_id: string;
+  entity_name: string;
+  application_id: string | null;
+  application_component_id: string | null;
+  counts: Record<string, number>;
+}
+
 export interface SecurityRollup {
   report_id: string | null;
   uploaded_at: string | null;
   association_level: string | null;
+  entities: SecurityRollupEntityEntry[];
+  /** Pre-213 shape; populated only for application-level reports. */
   applications: SecurityRollupEntry[];
   unmatched: Record<string, number>;
   totals: Record<string, number>;
@@ -236,7 +253,10 @@ export async function listSecurityReports(
 
 export interface SecurityRegisterQuery {
   reportId?: string;
+  /** Ancestor-aware: matches findings attributed to the app OR its descendants. */
   applicationId?: string;
+  applicationComponentId?: string;
+  serviceId?: string;
   matchStatus?: string;
   severity?: string;
   text?: string;
@@ -254,6 +274,10 @@ export async function getSecurityRegister(
   const params = new URLSearchParams();
   if (query.reportId) params.set('report_id', query.reportId);
   if (query.applicationId) params.set('application_id', query.applicationId);
+  if (query.applicationComponentId) {
+    params.set('application_component_id', query.applicationComponentId);
+  }
+  if (query.serviceId) params.set('service_id', query.serviceId);
   if (query.matchStatus) params.set('match_status', query.matchStatus);
   if (query.severity) params.set('severity', query.severity);
   if (query.text) params.set('text', query.text);
