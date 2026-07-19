@@ -4907,3 +4907,57 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 211: security health dashboard foundation (Spec: Security health dashboard,
+  # 2026-07-19, Spec 1 of 3). Department-level structured security store under
+  # the one-fact-one-home rule: security_finding_reports (snapshot-list
+  # lifecycle + per-upload association_level/column_mapping),
+  # security_findings (the scanner's reported copy + wizard attribution),
+  # cves / cwes (world facts; ingest writes pending STUBS only), M:N joins by
+  # identifier string (security_finding_cves / security_finding_cwes), and
+  # security_linking_aliases (project-scoped value-match memory). Distinct
+  # from and UNTOUCHING the migration-workflow vulnerabilities store (197).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 210).
+  # ============================================================================
+  - changeSet:
+      id: 211-security-health-foundation
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: security_findings
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/211-security-health-foundation.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 212: CWE reference seed from the real MITRE Research Concepts catalog
+  # (view 1000, 944 rows, retrieved 2026-07-19). One-source rule: cwes rows
+  # are MITRE-owned world facts -- uploads never write name/description here.
+  # Guarded on cwes being EMPTY (sqlCheck) so a re-run or pre-seeded
+  # environment is a clean no-op (MARK_RAN).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 211).
+  # ============================================================================
+  - changeSet:
+      id: 212-cwe-mitre-seed
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: "0"
+            sql: SELECT COUNT(*) FROM cwes
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/212-cwe-mitre-seed.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

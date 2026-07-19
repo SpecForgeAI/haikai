@@ -1,0 +1,225 @@
+/* Security Overview (Security health dashboard, 2026-07-19, Spec 3 of 3) */
+
+.container {
+  padding: 16px 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.title:hover {
+  color: #1d5fbf;
+  text-decoration: underline;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: #667;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.historicalBadge {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.linkButton {
+  border: none;
+  background: none;
+  color: #1d5fbf;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions button {
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.primary {
+  background: #1d5fbf !important;
+  border-color: #1d5fbf !important;
+  color: #fff;
+}
+
+.emptyState {
+  margin-top: 24px;
+  padding: 24px;
+  background: #f5f7fa;
+  border: 1px dashed #c5cedb;
+  border-radius: 8px;
+  color: #556;
+  font-size: 14px;
+}
+
+.error {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #fdecea;
+  color: #a4272b;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.canvasScroll {
+  flex: 1;
+  overflow: auto;
+  margin-top: 14px;
+  border: 1px solid #e5e8ee;
+  border-radius: 8px;
+  background: #fcfdff;
+  min-height: 0;
+}
+
+.canvas {
+  display: block;
+}
+
+.edge {
+  stroke: #8a94a6;
+  stroke-width: 1.6;
+}
+
+.appBox {
+  cursor: pointer;
+}
+
+.appRect {
+  fill: #ffffff;
+  stroke: #4a5875;
+  stroke-width: 1.6;
+}
+
+.appBox:hover .appRect,
+.appBox:hover .unmatchedRect {
+  stroke: #1d5fbf;
+  stroke-width: 2.4;
+}
+
+.unmatchedRect {
+  fill: #fffdf6;
+  stroke: #a35b00;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
+}
+
+.appLabel {
+  font-size: 13px;
+  font-weight: 600;
+  fill: #26324b;
+}
+
+.circleText {
+  font-size: 11px;
+  font-weight: 700;
+  fill: #ffffff;
+  pointer-events: none;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 8px;
+  padding: 18px 22px;
+  width: min(520px, 90vw);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.modal h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.historyList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.historyList li {
+  margin-bottom: 6px;
+}
+
+.historyList button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.historyList button:hover {
+  border-color: #1d5fbf;
+}
+
+.historyMeta {
+  font-size: 11px;
+  color: #778;
+}
+
+.modalFooter {
+  margin-top: 12px;
+  text-align: right;
+}
+
+.modalFooter button {
+  padding: 6px 14px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}

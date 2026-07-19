@@ -184,6 +184,12 @@ export const DIAGRAM_TYPE_PALETTE_RULES: Record<DiagramType, string[] | null> = 
   // General: All sections - null indicates no filtering
   General: null,
 
+  // Security Summary (Security health dashboard, 2026-07-19, Spec 3 of 3):
+  // generated from the Security Overview screen (application boxes +
+  // data-movement edges); opened in the Diagrams area for basic editing.
+  // Palette limited to the application hierarchy.
+  SECURITY_SUMMARY: ['applications', 'app_components', 'services'],
+
   // ER: Entity-Relationship diagrams (data modeling)
   // Entities: logical_data_entities, logical_data_attributes, physical_data_entities, physical_data_attributes
   // Relationships: logical_data_entity_relationships

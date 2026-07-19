@@ -61,6 +61,15 @@ export interface Config {
   // OSV_REDUCTION_BRIDGE_ENABLED.
   osvReductionBridgeEnabled: boolean;
 
+  // OSV API base for per-CVE security-health enrichment (Spec 2026-07-19).
+  // Read from OSV_API_BASE_URL.
+  osvApiBaseUrl: string;
+
+  // Security-health CVE enrichment kill-switch (Spec 2026-07-19). When false
+  // the post-ingest enrichment kick is skipped; stubs stay pending and every
+  // read surface still works. Read from SECURITY_CVE_ENRICHMENT_ENABLED.
+  securityCveEnrichmentEnabled: boolean;
+
   // API Migration Validation Service Configuration
   // Spec 2026-05-15: API Behaviour Baseline Capture Service -- Task Group 6
   // Base URL for the new api-migration-validation-service (port 8092). The
@@ -287,6 +296,11 @@ export function loadConfig(): Config {
 
     // OSV Reduction Bridge Kill-Switch (Spec 2026-06-27). Default true.
     osvReductionBridgeEnabled: parseBoolEnv(process.env.OSV_REDUCTION_BRIDGE_ENABLED, true),
+
+    // Security health dashboard (Spec 2026-07-19): per-CVE OSV enrichment.
+    osvApiBaseUrl: process.env.OSV_API_BASE_URL || 'https://api.osv.dev',
+    securityCveEnrichmentEnabled:
+      parseBoolEnv(process.env.SECURITY_CVE_ENRICHMENT_ENABLED, true),
 
     // API Migration Validation Service Configuration
     // Spec 2026-05-15: API Behaviour Baseline Capture Service -- Task Group 6
