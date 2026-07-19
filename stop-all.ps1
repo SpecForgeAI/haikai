@@ -13,12 +13,23 @@
 
   This script terminates, in order:
     1. Any process LISTENING on a known service port (freeing the ports).
-    2. Any java/node/python/uvicorn/npm process whose executable path or
-       working directory is UNDER this repo root (catches the detached
-       children + the separate IVS worker window that no longer own a port).
+    2. Any java/node/python/uvicorn/npm process matched THREE ways:
+       a. executable path or command line under this repo root;
+       b. launcher SIGNATURES in the command line (debug_worker, src.api,
+          src.entrypoints, --multiprocessing-fork, spring-boot:run,
+          run-local.ps1) -- catches the orphaned IVS multiprocessing
+          workers that run from a SYSTEM python.exe with a generic
+          "-c from multiprocessing.spawn import spawn_main ..." command
+          line: neither exe nor args carry the repo path (only their CWD
+          did, which Win32_Process does not expose), so path matching
+          alone let them survive and keep the folder locked;
+       c. a process-TREE walk: every matched process's runtime
+          descendants are swept too, so forks whose parent already
+          exited still go.
 
   It does NOT touch this Kiro/VS Code session, other editors, or processes
-  outside the repo.
+  outside the repo. The script's own process ancestry is explicitly
+  protected from the sweep.
 
 .PARAMETER WhatIf
   Show what would be killed without killing anything.
@@ -81,29 +92,101 @@ foreach ($port in $ports) {
   }
 }
 
-# --- 2. Kill leftover children whose image/CWD is under the repo ---------------
-# Catches detached JVMs, node/vite watchers, the uvicorn reloader, and the
-# separate IVS worker PowerShell window that may no longer hold a port but still
-# lock files inside the repo.
+# --- 2. Kill leftover children spawned by our services -------------------------
+# Catches detached JVMs, node/vite watchers, the uvicorn reloader, the separate
+# IVS worker PowerShell window's python, AND the orphaned IVS multiprocessing
+# forks. Those forks run from the SYSTEM python.exe with a generic
+# "-c from multiprocessing.spawn import spawn_main ... --multiprocessing-fork"
+# command line -- neither exe nor args carry the repo path (only their CWD did,
+# which Win32_Process does not expose), so repo-path matching alone missed them.
+# Three-way match: repo path in exe/cmdline, launcher signatures, then a
+# process-tree walk over every match's descendants.
 Write-Host ""
 Write-Host "=== Stopping leftover processes rooted in the repo ===" -ForegroundColor Cyan
 
 $targetNames = 'java', 'javaw', 'node', 'python', 'pythonw', 'uvicorn', 'npm', 'mvn'
 
-# Query once via CIM to get ExecutablePath + CommandLine (CWD isn't directly
-# exposed, so we match on the executable path and the command line, both of
-# which reference the repo path for our spawned processes).
-$cim = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-  $name = ($_.Name -replace '\.exe$', '')
-  if ($targetNames -notcontains $name) { return $false }
-  $inRepo =
-    ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) -or
-    ($_.CommandLine    -and $_.CommandLine    -match [Regex]::Escape($repoRoot))
-  return $inRepo
+# Launcher signatures that identify OUR spawned processes regardless of where
+# the executable lives (see install-run-all.ps1 / implement-verify-service\
+# run-local.ps1: `python -m src.entrypoints.debug_worker`, uvicorn on src.api,
+# `mvn spring-boot:run`, and Python multiprocessing's spawn forks).
+$launcherSignature = '(?i)(debug_worker|src\.api|src\.entrypoints|--multiprocessing-fork|spring-boot:run|run-local\.ps1)'
+
+# One CIM snapshot for matching AND the tree walk.
+$allProcs = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+$procById = @{}
+$childrenByParent = @{}
+foreach ($p in $allProcs) {
+  $procById[[int]$p.ProcessId] = $p
+  $parentId = [int]$p.ParentProcessId
+  if (-not $childrenByParent.ContainsKey($parentId)) {
+    $childrenByParent[$parentId] = New-Object System.Collections.Generic.List[object]
+  }
+  $childrenByParent[$parentId].Add($p)
 }
 
-foreach ($proc in $cim) {
-  Stop-One -ProcId ([int]$proc.ProcessId) -Reason "repo-rooted $($proc.Name)"
+# Guard: never touch this script's own ancestry (the invoking shell, the
+# editor session hosting it, and so on up the chain).
+$protected = New-Object System.Collections.Generic.HashSet[int]
+$cursor = [int]$PID
+while ($cursor -gt 0 -and $protected.Add($cursor)) {
+  $me = $procById[$cursor]
+  $cursor = if ($me) { [int]$me.ParentProcessId } else { 0 }
+}
+
+# Why a process is ours -- the reason names the matching RULE so a -WhatIf
+# review explains why e.g. a system-python fork got flagged. Null = not ours.
+function Get-MatchReason($Process) {
+  $name = ($Process.Name -replace '\.exe$', '')
+  if ($targetNames -notcontains $name) { return $null }
+  if ($Process.ExecutablePath -and
+      $Process.ExecutablePath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    return "repo-rooted $($Process.Name)"
+  }
+  if ($Process.CommandLine -and $Process.CommandLine -match [Regex]::Escape($repoRoot)) {
+    return "repo path in command line ($($Process.Name))"
+  }
+  if ($Process.CommandLine -and $Process.CommandLine -match $launcherSignature) {
+    return "launcher signature '$($Matches[1])' ($($Process.Name))"
+  }
+  return $null
+}
+
+$matched = @($allProcs | Where-Object { Get-MatchReason $_ })
+
+# Breadth-first descendants of one PID from the snapshot (visited-set bounded
+# against parent-PID cycles from PID reuse).
+function Get-Descendants([int]$RootPid) {
+  $out = New-Object System.Collections.Generic.List[object]
+  $visited = New-Object System.Collections.Generic.HashSet[int]
+  $queue = New-Object System.Collections.Generic.Queue[int]
+  $queue.Enqueue($RootPid)
+  [void]$visited.Add($RootPid)
+  while ($queue.Count -gt 0) {
+    $current = $queue.Dequeue()
+    if (-not $childrenByParent.ContainsKey($current)) { continue }
+    foreach ($child in $childrenByParent[$current]) {
+      $childId = [int]$child.ProcessId
+      if ($visited.Add($childId)) {
+        $out.Add($child)
+        $queue.Enqueue($childId)
+      }
+    }
+  }
+  return $out
+}
+
+foreach ($proc in $matched) {
+  $procId = [int]$proc.ProcessId
+  if ($protected.Contains($procId)) { continue }
+  # Descendants first (from the snapshot), so a killed parent can't orphan
+  # forks we haven't reached yet -- then the matched process itself.
+  foreach ($descendant in (Get-Descendants $procId)) {
+    $descendantId = [int]$descendant.ProcessId
+    if ($protected.Contains($descendantId)) { continue }
+    Stop-One -ProcId $descendantId -Reason "descendant of PID $procId ($($proc.Name))"
+  }
+  Stop-One -ProcId $procId -Reason (Get-MatchReason $proc)
 }
 
 Write-Host ""
