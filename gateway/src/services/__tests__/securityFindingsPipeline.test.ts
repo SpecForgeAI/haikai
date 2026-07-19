@@ -118,9 +118,10 @@ describe('normalizeSecurityRows (the append + wizard resolutions)', () => {
   ];
   const mapping = proposeColumnMapping(unionHeaders(files));
 
-  it('appends all files into one row list, applies resolutions, and defaults unresolved values to unmatched', () => {
+  it('appends all files into one row list, applies resolutions (entity_id with application_id fallback), and defaults unresolved values to unmatched', () => {
     const result = normalizeSecurityRows(files, mapping, [
-      { linking_value: 'HiFi', application_id: 'app-hifi', match_status: 'auto' },
+      { linking_value: 'HiFi', entity_id: 'svc-hifi-web', match_status: 'auto' },
+      // Pre-213 caller shape: application_id still accepted as the fallback.
       { linking_value: 'MRX (Risk)', application_id: 'app-mrx', match_status: 'manual' },
     ]);
     expect(result.rows).toHaveLength(2);
@@ -128,7 +129,7 @@ describe('normalizeSecurityRows (the append + wizard resolutions)', () => {
 
     const dep = result.rows[0];
     expect(dep.linking_value).toBe('HiFi');
-    expect(dep.application_id).toBe('app-hifi');
+    expect(dep.entity_id).toBe('svc-hifi-web');
     expect(dep.match_status).toBe('auto');
     expect(dep.severity_raw).toBe('medium');
     expect(dep.cve_ids).toEqual(['CVE-2024-38808']);
@@ -140,7 +141,7 @@ describe('normalizeSecurityRows (the append + wizard resolutions)', () => {
     expect(dep.cvss_vector_reported).toContain('NVD=CVSS:3.1');
 
     const sast = result.rows[1];
-    expect(sast.application_id).toBe('app-mrx');
+    expect(sast.entity_id).toBe('app-mrx');
     expect(sast.match_status).toBe('manual');
     expect(sast.cve_ids).toEqual([]);
     expect(sast.cwe_ids).toEqual(['CWE-89']);
@@ -149,7 +150,7 @@ describe('normalizeSecurityRows (the append + wizard resolutions)', () => {
     // No resolution entry -> kept as unmatched (the Not-matched bucket).
     const unresolved = normalizeSecurityRows(files, mapping, []);
     expect(unresolved.rows.every((r) => r.match_status === 'unmatched')).toBe(true);
-    expect(unresolved.rows.every((r) => r.application_id === null)).toBe(true);
+    expect(unresolved.rows.every((r) => r.entity_id === null)).toBe(true);
   });
 
   it('requires linking_value + severity mappings and counts empty-linking rows as dropped', () => {

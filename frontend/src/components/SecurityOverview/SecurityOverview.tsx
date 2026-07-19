@@ -30,13 +30,18 @@ import type { Diagram } from '../../types/model';
 import { saveModelToBackend } from '../../utils/saveUtils';
 import { generateSecuritySummaryDiagram } from '../../utils/securitySummaryDiagram';
 import {
+  DEFAULT_DISPLAY_LEVELS,
+  LEVEL_ORDER,
+  SecurityAssociationLevel,
+} from '../../utils/securityLevels';
+import {
   SecurityFindingReport,
   SecurityIngestSummary,
   SecurityRollup,
   getSecurityRollup,
   listSecurityReports,
 } from '../../api/securityFindingsApi';
-import { SecurityUploadWizard } from './SecurityUploadWizard';
+import { SecurityUploadWizard, SecurityWizardConfig } from './SecurityUploadWizard';
 import styles from './SecurityOverview.module.css';
 
 /** Severity order + circle colours (the existing screen's info..critical palette). */
@@ -75,6 +80,22 @@ export function SecurityOverview() {
     [state.model.diagrams],
   );
 
+  /**
+   * The display-levels config lives ON THE DIAGRAM (settings json) so it is
+   * changeable via Regenerate without re-uploading; the wizard's chooser
+   * updates it on completion.
+   */
+  const displayLevels: SecurityAssociationLevel[] = useMemo(() => {
+    const raw = summaryDiagram?.settings?.security_display_levels;
+    if (Array.isArray(raw)) {
+      const known = LEVEL_ORDER.filter((l) => (raw as string[]).includes(l));
+      if (known.length > 0) return known;
+    }
+    return DEFAULT_DISPLAY_LEVELS;
+  }, [summaryDiagram]);
+  const [pendingDisplayLevels, setPendingDisplayLevels] =
+    useState<SecurityAssociationLevel[] | null>(null);
+
   const applicationNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const app of applications) map.set(app.id, app.name);
@@ -104,12 +125,24 @@ export function SecurityOverview() {
     void refreshRollup();
   }, [refreshRollup]);
 
-  /** Generate or regenerate the persisted diagram (layout-preserving), then save. */
-  const regenerateDiagram = useCallback(async () => {
+  /**
+   * Generate or regenerate the persisted diagram (layout-preserving), then
+   * save. The display-levels config is persisted into the diagram's settings
+   * ({@code security_display_levels}); {@code levelsOverride} carries a fresh
+   * wizard choice.
+   */
+  const regenerateDiagram = useCallback(async (
+    levelsOverride?: SecurityAssociationLevel[],
+  ) => {
     if (!project?.id || !architectureId || !state.loadedFileName) return;
     setSaving(true);
     try {
+      const effectiveLevels = levelsOverride ?? pendingDisplayLevels ?? displayLevels;
       const generated = generateSecuritySummaryDiagram(metaModel, summaryDiagram);
+      const settings: Record<string, unknown> = {
+        ...(summaryDiagram?.settings ?? generated.settings ?? {}),
+        security_display_levels: effectiveLevels,
+      };
       if (summaryDiagram) {
         dispatch({
           type: 'UPDATE_DIAGRAM',
@@ -117,10 +150,11 @@ export function SecurityOverview() {
           updates: {
             diagram_nodes: generated.diagram_nodes,
             diagram_edges: generated.diagram_edges,
+            settings,
           },
         });
       } else {
-        dispatch({ type: 'ADD_DIAGRAM', payload: generated });
+        dispatch({ type: 'ADD_DIAGRAM', payload: { ...generated, settings } });
       }
       const updatedDiagrams: Diagram[] = summaryDiagram
         ? state.model.diagrams.map((d) =>
@@ -129,10 +163,11 @@ export function SecurityOverview() {
                   ...d,
                   diagram_nodes: generated.diagram_nodes,
                   diagram_edges: generated.diagram_edges,
+                  settings,
                 }
               : d,
           )
-        : [...state.model.diagrams, generated];
+        : [...state.model.diagrams, { ...generated, settings }];
       await saveModelToBackend(
         { ...state.model, diagrams: updatedDiagrams },
         state.loadedFileName,
@@ -140,18 +175,22 @@ export function SecurityOverview() {
         architectureId,
         dispatch,
       );
+      setPendingDisplayLevels(null);
     } finally {
       setSaving(false);
     }
-  }, [project?.id, architectureId, state.loadedFileName, state.model, metaModel, summaryDiagram, dispatch]);
+  }, [project?.id, architectureId, state.loadedFileName, state.model, metaModel,
+      summaryDiagram, dispatch, displayLevels, pendingDisplayLevels]);
 
   const handleWizardComplete = useCallback(
-    (_summary: SecurityIngestSummary) => {
+    (_summary: SecurityIngestSummary, config: SecurityWizardConfig) => {
       // A fresh upload becomes the new latest snapshot.
       setReportId(null);
       void refreshRollup();
-      // First-ever upload: derive the diagram so the overlay has boxes to land on.
-      if (!summaryDiagram) void regenerateDiagram();
+      // Persist the wizard's display choice on the diagram: immediately when
+      // deriving the first diagram, on the next Regenerate otherwise.
+      setPendingDisplayLevels(config.displayLevels);
+      if (!summaryDiagram) void regenerateDiagram(config.displayLevels);
     },
     [refreshRollup, regenerateDiagram, summaryDiagram],
   );
@@ -436,7 +475,8 @@ export function SecurityOverview() {
           onClose={() => setWizardOpen(false)}
           projectId={project.id}
           architectureId={architectureId}
-          applications={applications}
+          metaModel={metaModel}
+          initialDisplayLevels={displayLevels}
           onComplete={handleWizardComplete}
         />
       )}
