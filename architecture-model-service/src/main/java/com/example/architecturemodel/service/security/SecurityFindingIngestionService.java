@@ -138,7 +138,7 @@ public class SecurityFindingIngestionService {
                 droppedDuplicates++;
                 continue;
             }
-            String matchStatus = normalizeMatchStatus(row.matchStatus(), row.applicationId());
+            String matchStatus = normalizeMatchStatus(row.matchStatus(), effectiveEntityId(row));
             if ("unmatched".equals(matchStatus)) {
                 unmatchedCount++;
             } else {
@@ -226,12 +226,21 @@ public class SecurityFindingIngestionService {
     }
 
     /**
-     * Attribution invariant: a row with a resolved application id is matched
+     * The row's authoritative resolved entity id: {@code entityId} (changeset
+     * 213) with fallback to the pre-213 {@code applicationId} wire field.
+     */
+    private static String effectiveEntityId(IngestSecurityFindingRowDto row) {
+        String entityId = trimToNull(row.entityId());
+        return entityId != null ? entityId : trimToNull(row.applicationId());
+    }
+
+    /**
+     * Attribution invariant: a row with a resolved entity id is matched
      * ({@code auto} unless the wizard says {@code manual}); a row without one
      * is {@code unmatched} regardless of what the payload claims.
      */
-    private static String normalizeMatchStatus(String claimed, String applicationId) {
-        if (isBlank(applicationId)) {
+    private static String normalizeMatchStatus(String claimed, String entityId) {
+        if (isBlank(entityId)) {
             return "unmatched";
         }
         return "manual".equalsIgnoreCase(trimToEmpty(claimed)) ? "manual" : "auto";
@@ -244,6 +253,7 @@ public class SecurityFindingIngestionService {
                                                   IngestSecurityFindingRowDto row,
                                                   String matchStatus) {
         String severity = VulnerabilitySeverityNormalizer.normalize(row.severityRaw());
+        String entityId = "unmatched".equals(matchStatus) ? null : effectiveEntityId(row);
         return SecurityFindingEntity.builder()
             .id(UUID.randomUUID())
             .projectId(projectId)
@@ -251,8 +261,9 @@ public class SecurityFindingIngestionService {
             .reportId(reportId)
             .linkingValue(row.linkingValue().trim())
             .level(level)
-            .applicationId("unmatched".equals(matchStatus)
-                ? null : trimToNull(row.applicationId()))
+            .entityId(entityId)
+            // Deprecated back-compat column: application-level rows only.
+            .applicationId("application".equals(level) ? entityId : null)
             .matchStatus(matchStatus)
             .severity(severity)
             .severityRaw(trimToNull(row.severityRaw()))

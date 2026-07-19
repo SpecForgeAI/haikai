@@ -51,6 +51,7 @@ import java.util.UUID;
         @Index(name = "idx_sec_finding_architecture_id", columnList = "architecture_id"),
         @Index(name = "idx_sec_finding_report_id", columnList = "report_id"),
         @Index(name = "idx_sec_finding_application_id", columnList = "application_id"),
+        @Index(name = "idx_sec_finding_entity_id", columnList = "entity_id"),
         @Index(name = "idx_sec_finding_severity", columnList = "severity"),
         @Index(name = "idx_sec_finding_match_status", columnList = "match_status"),
         @Index(name = "idx_sec_finding_source_finding",
@@ -92,15 +93,28 @@ public class SecurityFindingEntity {
     @Column(name = "linking_value", nullable = false)
     private String linkingValue;
 
-    /** Attribution level. v1: {@code application}. String-typed, no enum. */
+    /**
+     * Attribution level: {@code application | application_component | service}
+     * (changeset 213 generalization; v1 wired application only). String-typed,
+     * no enum.
+     */
     @Column(name = "level", nullable = false)
     private String level;
 
     /**
-     * Resolved {@code applications.id} (String id family, matching
-     * {@code ApplicationEntity}) when matched; null when
-     * {@code match_status='unmatched'}. The application NAME is resolved on
-     * read (never denormalized here) so model renames don't drift.
+     * AUTHORITATIVE attribution (changeset 213): the resolved model-entity id
+     * for {@link #level} ({@code applications.id} /
+     * {@code application_components.id} / {@code services.id} -- all String id
+     * families). Null when {@code match_status='unmatched'}. Entity NAMES and
+     * ancestor roll-ups (service -&gt; component -&gt; application) are resolved
+     * on read from the live model, never denormalized here.
+     */
+    @Column(name = "entity_id")
+    private String entityId;
+
+    /**
+     * DEPRECATED (changeset 213): populated only for {@code level=application}
+     * rows as a back-compat read path; {@link #entityId} is authoritative.
      */
     @Column(name = "application_id")
     private String applicationId;

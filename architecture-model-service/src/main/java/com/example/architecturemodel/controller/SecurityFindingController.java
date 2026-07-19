@@ -89,7 +89,10 @@ public class SecurityFindingController {
      * The parameterized Findings Register. {@code columns} is a comma-separated
      * subset of the flattened vocabulary (unknown names ignored; empty falls
      * back to the default set) -- the future register-configurability UI speaks
-     * this same contract.
+     * this same contract. Entity filters are ANCESTOR-AWARE (most specific of
+     * service &gt; component &gt; application wins and expands to its
+     * descendants -- an application filter matches service-attributed findings
+     * under that application).
      */
     @GetMapping("/register")
     public ResponseEntity<SecurityRegisterResponse> register(
@@ -97,6 +100,9 @@ public class SecurityFindingController {
             @PathVariable UUID architectureId,
             @RequestParam(name = "report_id", required = false) UUID reportId,
             @RequestParam(name = "application_id", required = false) String applicationId,
+            @RequestParam(name = "application_component_id", required = false)
+                String applicationComponentId,
+            @RequestParam(name = "service_id", required = false) String serviceId,
             @RequestParam(name = "match_status", required = false) String matchStatus,
             @RequestParam(required = false) String severity,
             @RequestParam(required = false) String text,
@@ -108,7 +114,8 @@ public class SecurityFindingController {
             : Arrays.stream(columns.split(",")).map(String::trim).toList();
         return ResponseEntity.ok(registerService.register(
             projectId, architectureId, reportId,
-            applicationId, matchStatus, severity, text,
+            applicationId, applicationComponentId, serviceId,
+            matchStatus, severity, text,
             columnList, page, size));
     }
 

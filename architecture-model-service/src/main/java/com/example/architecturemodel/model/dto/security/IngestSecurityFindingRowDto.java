@@ -18,6 +18,13 @@ import java.util.List;
  */
 public record IngestSecurityFindingRowDto(
     String linkingValue,
+    /**
+     * Authoritative resolved entity id for the request's association level
+     * (changeset 213). {@code applicationId} is the pre-213 field name kept
+     * for wire back-compat -- ingestion falls back to it when
+     * {@code entityId} is absent.
+     */
+    String entityId,
     String applicationId,
     String matchStatus,
     String severityRaw,
