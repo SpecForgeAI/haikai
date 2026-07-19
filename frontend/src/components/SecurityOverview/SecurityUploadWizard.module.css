@@ -1,0 +1,208 @@
+/* Security Upload Wizard (Security health dashboard, 2026-07-19, Spec 2 of 3) */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dialog {
+  background: #fff;
+  border-radius: 8px;
+  width: min(760px, 92vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.closeButton {
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+}
+
+.stepBar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 20px 0;
+  flex-wrap: wrap;
+}
+
+.stepChip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #f0f0f0;
+  color: #777;
+}
+
+.stepActive {
+  background: #1d5fbf;
+  color: #fff;
+}
+
+.stepDone {
+  background: #dcebff;
+  color: #1d5fbf;
+}
+
+.body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.hint {
+  font-size: 13px;
+  color: #555;
+  margin: 6px 0 12px;
+}
+
+.error {
+  margin: 10px 20px 0;
+  padding: 8px 12px;
+  background: #fdecea;
+  color: #a4272b;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.fileList {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.fileList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border: 1px solid #e2e2e2;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.levelOption {
+  display: block;
+  padding: 8px 4px;
+  font-size: 14px;
+}
+
+.levelOption input {
+  margin-right: 8px;
+}
+
+.levelDisabled {
+  color: #999;
+}
+
+.matcherTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.matcherTable th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid #e2e2e2;
+  color: #444;
+}
+
+.matcherTable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #efefef;
+}
+
+.matcherTable select {
+  width: 100%;
+  max-width: 320px;
+}
+
+.required {
+  color: #c22;
+}
+
+.addAttribute {
+  margin-top: 10px;
+}
+
+.valueCell {
+  font-weight: 500;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.badgeMatched {
+  background: #e2f4e5;
+  color: #1c7c31;
+}
+
+.badgeUnmatched {
+  background: #fbeee0;
+  color: #a35b00;
+}
+
+.summary ul {
+  padding-left: 18px;
+  font-size: 14px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 1px solid #e2e2e2;
+  gap: 8px;
+}
+
+.footerSpacer {
+  flex: 1;
+}
+
+.footer button {
+  padding: 7px 16px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.primary {
+  background: #1d5fbf !important;
+  border-color: #1d5fbf !important;
+  color: #fff;
+}

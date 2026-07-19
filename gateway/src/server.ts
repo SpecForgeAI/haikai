@@ -7,7 +7,7 @@
 
 import express from 'express';
 import { getConfig } from './config';
-import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, vulnerabilitiesRouter, vulnerabilityReductionRouter, migrationExecutionRouter } from './routes';
+import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, vulnerabilitiesRouter, securityFindingsRouter, vulnerabilityReductionRouter, migrationExecutionRouter } from './routes';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -149,6 +149,16 @@ app.use('/api/v1', oasExportRouter);
 // and forwards the parsed rows to the AMS vulnerabilities ingest endpoint; the
 // GET read routes are JSON pass-throughs to architecture-model-service.
 app.use('/api/v1', vulnerabilitiesRouter);
+// Security Findings routes (Spec 2026-07-19 Security health dashboard,
+// Spec 2 of 3). Mounted at /api/v1 so the router's internal paths resolve to
+// /api/v1/projects/:projectId/architectures/:architectureId/security/uploads/parse
+// (multi-file wizard preview: headers + proposed mapping + distinct linking
+// values), .../security/uploads/ingest (normalize + forward ONE appended
+// report to the AMS security store, then fire-and-forget the OSV CVE
+// enrichment kick), and /api/v1/security/enrichment/run (manual enrichment
+// cycle; SECURITY_CVE_ENRICHMENT_ENABLED kill-switch). Distinct from and
+// untouching the migration-workflow vulnerabilities surface above.
+app.use('/api/v1', securityFindingsRouter);
 // Vulnerability Reduction + Steering routes (Spec 2026-06-24 Vulnerability
 // Reduction + Steering, Spec 4 of 6 -- Task Group 5). Mounted at /api/v1 so the
 // router's internal paths resolve to

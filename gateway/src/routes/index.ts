@@ -169,6 +169,13 @@ export { oasExportRouter } from './oasExport';
 // list, report history, and severity/group-by-library rollup.
 export { vulnerabilitiesRouter } from './vulnerabilities';
 
+// Security Findings routes (Spec: 2026-07-19 Security health dashboard,
+// Spec 2 of 3): the department-level upload wizard's gateway surface --
+// multi-file parse preview, normalize + append + AMS security-store ingest,
+// and the OSV CVE-enrichment cycle. Distinct from and untouching the
+// migration-workflow vulnerabilities surface above.
+export { securityFindingsRouter } from './securityFindings';
+
 // Vulnerability Reduction + Steering routes (Spec: 2026-06-24 Vulnerability
 // Reduction + Steering, Spec 4 of 6 -- Task Group 5). Exposes the shared
 // current->target delta service (Task Group 2) + the recommended-minimum-fixed
