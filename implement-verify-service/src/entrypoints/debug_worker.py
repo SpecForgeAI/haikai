@@ -22,7 +22,8 @@ Note:
 
 Environment Variables:
     Set these in your IDE's run configuration or in a .env file:
-    - ANTHROPIC_API_KEY: Required for orchestration
+    - ANTHROPIC_API_KEY: Required for orchestration UNLESS the active
+      CHAT_EXECUTOR backend brings its own auth (kiro does, via kiro-cli SSO)
     - JOBS_DB_PATH: Job queue database path (default: ./api_workspace/jobs.db)
     - WORKER_ID: Worker identifier (default: worker-1)
     - API_WORKSPACE_DIR: Workspace directory (default: ./api_workspace)
@@ -84,9 +85,24 @@ print("\n" + "=" * 60)
 print("Environment Check")
 print("=" * 60)
 
-required_keys = {
-    "ANTHROPIC_API_KEY": "Required for orchestration jobs"
-}
+# Executor-aware requirement: with CHAT_EXECUTOR=kiro the backend brings its
+# own auth (kiro-cli SSO) and the orchestration gates skip ANTHROPIC_API_KEY,
+# so the startup check must not warn about it. Falls back to "required" when
+# the helper can't be imported (stripped environment) — never crash here.
+try:
+    from src.entrypoints.env_check import anthropic_key_requirement
+except ImportError:
+    def anthropic_key_requirement():
+        return (True, "Required for orchestration jobs")
+
+anthropic_required, anthropic_note = anthropic_key_requirement()
+
+required_keys = {}
+if anthropic_required:
+    required_keys["ANTHROPIC_API_KEY"] = anthropic_note
+
+if not anthropic_required:
+    print(f"- ANTHROPIC_API_KEY: {anthropic_note}")
 
 missing_keys = []
 for key, description in required_keys.items():
