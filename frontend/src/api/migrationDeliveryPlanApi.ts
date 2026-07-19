@@ -458,10 +458,11 @@ export interface ExpandAllMigrationBookOfWorkEpicsOutcome {
 }
 
 /**
- * Expand ONE epic into detailed stories (phase 2). Targets
- * `not_expanded` / `failed` / stale-`expanding` epics; the gateway rejects
- * already-`expanded` (409) and unknown epics (404) via its precondition
- * mapping.
+ * Expand ONE epic into detailed stories (phase 2). Works on
+ * `not_expanded` / `failed` / stale-`expanding` epics AND on an already-
+ * `expanded` epic (a RE-expand — the pipeline re-runs against the current pack
+ * and REPLACES the epic's stories, 2026-07-19). The gateway maps unknown epics
+ * to 404 and a live in-flight expansion to 409.
  */
 export async function expandMigrationBookOfWorkEpic(
   projectId: string,
@@ -493,13 +494,21 @@ export async function expandMigrationBookOfWorkEpic(
 }
 
 /**
- * Expand ALL `not_expanded` / `failed` / stale-`expanding` epics for a
- * book. The gateway fans the per-epic pipelines out over its ONE shared
- * bounded-concurrency LLM pool and skips `expanded` epics.
+ * Expand epics for a book, fanned out over the gateway's ONE shared
+ * bounded-concurrency LLM pool.
+ *
+ * - `includeExpanded = false` (default) — "Expand remaining": only
+ *   `not_expanded` / `failed` / stale-`expanding` epics; already-`expanded`
+ *   epics are skipped.
+ * - `includeExpanded = true` — "Expand all": ALSO re-expands already-`expanded`
+ *   epics (replacing their stories against the current pack).
+ *
+ * Live in-flight epics are always skipped.
  */
 export async function expandAllMigrationBookOfWorkEpics(
   projectId: string,
-  bookId: string
+  bookId: string,
+  includeExpanded = false
 ): Promise<ExpandAllMigrationBookOfWorkEpicsOutcome> {
   const url = `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(
     projectId
@@ -507,6 +516,7 @@ export async function expandAllMigrationBookOfWorkEpics(
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ include_expanded: includeExpanded }),
   });
   if (!res.ok) {
     let serverMessage = '';

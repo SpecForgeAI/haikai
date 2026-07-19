@@ -721,10 +721,26 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       .map(([epicId]) => epicId);
   }, [expansionStateById, liveExpandingEpicIds]);
 
+  /**
+   * "Expand all" targets: every tracked epic EXCEPT a live in-flight one —
+   * i.e. `expandableEpicIds` plus the already-`expanded` epics (which are
+   * re-expanded, replacing their stories, 2026-07-19).
+   */
+  const reExpandableEpicIds = useMemo(() => {
+    return Object.entries(expansionStateById)
+      .filter(
+        ([epicId, state]) =>
+          state !== undefined &&
+          !(state === 'expanding' && liveExpandingEpicIds.has(epicId)),
+      )
+      .map(([epicId]) => epicId);
+  }, [expansionStateById, liveExpandingEpicIds]);
+
   const anyExpansionInFlight = liveExpandingEpicIds.size > 0;
 
-  const handleExpandAll = useCallback(async () => {
-    const targets = expandableEpicIds;
+  const handleExpandAll = useCallback(
+    async (includeExpanded: boolean) => {
+    const targets = includeExpanded ? reExpandableEpicIds : expandableEpicIds;
     if (targets.length === 0) return;
     setExpansionError(null);
     setExpansionStateById((prev) => {
@@ -739,6 +755,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       const outcome = await expandAllMigrationBookOfWorkEpics(
         projectId,
         bookId,
+        includeExpanded,
       );
       setExpansionStateById((prev) => {
         const next = { ...prev };
@@ -773,6 +790,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     }
   }, [
     expandableEpicIds,
+    reExpandableEpicIds,
     projectId,
     bookId,
     refreshDraftAfterExpansion,
@@ -974,16 +992,28 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {showExpandControls && (
-            <button
-              type="button"
-              className={styles.selectButton}
-              onClick={() => void handleExpandAll()}
-              disabled={expandableEpicIds.length === 0 || anyExpansionInFlight}
-              data-testid="expand-all-epics-button"
-              title="Expand all not-yet-expanded (and failed) epics into detailed stories"
-            >
-              {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand all epics'}
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => void handleExpandAll(false)}
+                disabled={expandableEpicIds.length === 0 || anyExpansionInFlight}
+                data-testid="expand-remaining-epics-button"
+                title="Expand only the not-yet-expanded (and failed) epics into detailed stories"
+              >
+                {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand remaining'}
+              </button>
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => void handleExpandAll(true)}
+                disabled={reExpandableEpicIds.length === 0 || anyExpansionInFlight}
+                data-testid="expand-all-epics-button"
+                title="Expand every epic, RE-expanding already-expanded ones (replaces their stories against the current pack)"
+              >
+                {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand all epics'}
+              </button>
+            </>
           )}
           {hasUnsavedChanges ? (
             <span

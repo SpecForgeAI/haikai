@@ -49,6 +49,13 @@ import java.util.Set;
  *     Nullable / empty for a state-only merge.
  * @param expansionState The epic's new expansion state — one of
  *     {@code not_expanded | expanding | expanded | failed}. Required.
+ * @param replaceEpicExpansion When {@code TRUE}, the merge first REMOVES the
+ *     epic's prior expansion output (every descendant story, plus any item
+ *     tagged {@code expansionGenerated:true}) before appending {@link #items} —
+ *     so a RE-expand replaces an epic's stories instead of duplicating them.
+ *     Nullable / {@code false} for the additive first-expand + state-only marks
+ *     (skeleton features are never touched — they carry no {@code
+ *     expansionGenerated} tag and are not stories).
  */
 public record AppendGeneratedMigrationBookOfWorkItemsRequest(
     @JsonProperty("epic_id")
@@ -60,8 +67,22 @@ public record AppendGeneratedMigrationBookOfWorkItemsRequest(
 
     @JsonProperty("expansion_state")
     @JsonAlias({"expansionState"})
-    String expansionState
+    String expansionState,
+
+    @JsonProperty("replace_epic_expansion")
+    @JsonAlias({"replaceEpicExpansion"})
+    Boolean replaceEpicExpansion
 ) {
+
+    /**
+     * Back-compat convenience: the additive first-expand / state-only merge
+     * (no replace). Existing 3-arg callers keep compiling; {@code
+     * replaceEpicExpansion} defaults to {@code null} (treated as {@code false}).
+     */
+    public AppendGeneratedMigrationBookOfWorkItemsRequest(
+        String epicId, List<Map<String, Object>> items, String expansionState) {
+        this(epicId, items, expansionState, null);
+    }
 
     /** Epic not yet expanded (the phase-1 skeleton seeds every epic with this). */
     public static final String STATE_NOT_EXPANDED = "not_expanded";

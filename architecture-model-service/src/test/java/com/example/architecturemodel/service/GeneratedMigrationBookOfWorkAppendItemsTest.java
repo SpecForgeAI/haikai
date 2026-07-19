@@ -158,6 +158,56 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
     }
 
     @Test
+    @DisplayName("re-expand (replaceEpicExpansion) drops the epic's prior stories + tagged scaffold, keeps skeleton features, no duplicates")
+    void reExpandReplacesEpicExpansionOutput() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+
+        // First expand (additive): a tagged scaffold feature + its story, and a
+        // story under the skeleton feature api:F1 — all tagged expansionGenerated
+        // exactly as the gateway now tags every expansion-produced item.
+        service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(
+                    Map.of("id", "api:SF", "type", "feature", "parentId", "api:E1",
+                        "title", "Scaffold", "expansionGenerated", true),
+                    Map.of("id", "api:SFS", "type", "story", "parentId", "api:SF",
+                        "title", "Scaffold story", "expansionGenerated", true),
+                    Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                        "title", "old story", "expansionGenerated", true)),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                null)); // first expand: no prior output to replace
+
+        // Re-expand WITH replace: a fresh story (new id) under the skeleton
+        // feature, replace flag on.
+        GeneratedMigrationBookOfWorkDto updated = service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S2", "type", "story", "parentId", "api:F1",
+                    "title", "new story", "expansionGenerated", true)),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED,
+                true));
+
+        List<Map<String, Object>> items = itemsOf(updated.bookOfWorkJson());
+        // Prior expansion output is GONE: old story + scaffold feature + scaffold story.
+        assertThat(itemById(items, "api:S1")).isNull();
+        assertThat(itemById(items, "api:SF")).isNull();
+        assertThat(itemById(items, "api:SFS")).isNull();
+        // Fresh story present, parented to the surviving skeleton feature.
+        assertThat(itemById(items, "api:S2")).containsEntry("parentId", "api:F1");
+        // Skeleton preserved: initiative, epic (state stamped), skeleton feature.
+        assertThat(itemById(items, "api:E1")).containsEntry("expansionState", "expanded");
+        assertThat(itemById(items, "api:F1")).isNotNull();
+        assertThat(itemById(items, "api:I1")).isNotNull();
+        // The OTHER epic untouched.
+        assertThat(itemById(items, "api:E2")).containsEntry("expansionState", "not_expanded");
+        // No duplicates / no stale leftovers: 4 skeleton + 1 fresh story = 5.
+        assertThat(items).hasSize(5);
+    }
+
+    @Test
     @DisplayName("two sequential appends for DIFFERENT epics both survive — server-side merge, no lost update")
     void sequentialAppendsForDifferentEpicsBothSurvive() {
         UUID projectId = UUID.randomUUID();

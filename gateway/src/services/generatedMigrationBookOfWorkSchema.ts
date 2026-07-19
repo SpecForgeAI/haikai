@@ -191,6 +191,14 @@ export interface MigrationBookOfWorkItem {
    * merged server-side by the AMS `items/append` endpoint thereafter.
    */
   expansionState?: MigrationBookOfWorkExpansionState;
+  /**
+   * Marks an item as produced by epic EXPANSION (phase-2), as opposed to the
+   * phase-1 skeleton. Set on every story + injected scaffold item at expand
+   * time (2026-07-19 re-expand). The AMS `items/append` replace step uses it
+   * (plus `type:'story'`) to drop an epic's prior output before a RE-expand, so
+   * re-expanding replaces stories instead of duplicating them.
+   */
+  expansionGenerated?: boolean;
   workItemId?: string | null;
   errorMessage?: string | null;
 }

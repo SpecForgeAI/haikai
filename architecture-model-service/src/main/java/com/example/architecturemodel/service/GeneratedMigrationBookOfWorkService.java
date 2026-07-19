@@ -1449,6 +1449,33 @@ public class GeneratedMigrationBookOfWorkService {
                     + "'; appended items must target an existing epic in book_of_work_json");
         }
 
+        // RE-EXPAND replace (2026-07-19): drop the epic's PRIOR expansion output
+        // before appending the fresh stories, so re-expanding an epic replaces
+        // its stories instead of duplicating them. "Expansion output" = every
+        // descendant story of the epic, plus any descendant tagged
+        // `expansionGenerated:true` (catches an injected scaffold feature). The
+        // skeleton (epic + its features) is untouched: features carry no tag and
+        // are not stories, so a re-expand keeps the structure the pipeline
+        // parents its new stories onto. Runs BEFORE the dup-id scan below so the
+        // replaced ids are free for the fresh append, all inside the one
+        // transaction (a later validation failure rolls the removal back too).
+        if (Boolean.TRUE.equals(request.replaceEpicExpansion())) {
+            Set<String> descendantIds = collectDescendantIds(request.epicId(), items);
+            int before = items.size();
+            items.removeIf(it -> {
+                String id = stringField(it, "id");
+                if (id == null || !descendantIds.contains(id)) {
+                    return false;
+                }
+                boolean isStory = "story".equalsIgnoreCase(stringField(it, "type"));
+                boolean tagged = Boolean.TRUE.equals(it.get("expansionGenerated"));
+                return isStory || tagged;
+            });
+            log.info(
+                "[diag-ams] book_of_work stage=replace_epic_expansion draftId={} epicId={} removed={}",
+                bookId, request.epicId(), before - items.size());
+        }
+
         // Validate every appended item BEFORE mutating anything, so a bad
         // batch leaves the stored JSON untouched (the transaction would roll
         // back anyway; this keeps the failure mode obvious).
@@ -1629,6 +1656,30 @@ public class GeneratedMigrationBookOfWorkService {
             if (id.equals(stringField(it, "id"))) return it;
         }
         return null;
+    }
+
+    /**
+     * All transitive descendant ids of {@code rootId} (children, grandchildren,
+     * ...) via the {@code parentId} chain -- the root itself is NOT included.
+     * Fixed-point iteration so hierarchy order in the list does not matter.
+     */
+    private static Set<String> collectDescendantIds(
+        String rootId, List<Map<String, Object>> items) {
+        Set<String> descendants = new HashSet<>();
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Map<String, Object> it : items) {
+                String id = stringField(it, "id");
+                String pid = stringField(it, "parentId");
+                if (id == null || pid == null || descendants.contains(id)) continue;
+                if (rootId.equals(pid) || descendants.contains(pid)) {
+                    descendants.add(id);
+                    changed = true;
+                }
+            }
+        }
+        return descendants;
     }
 
     private static Set<String> toIdSet(List<String> list) {

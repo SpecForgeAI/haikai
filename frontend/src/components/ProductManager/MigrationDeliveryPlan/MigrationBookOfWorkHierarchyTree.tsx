@@ -324,13 +324,16 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
     const expBadge = expansionState
       ? expansionBadge(expansionState, isStaleExpanding)
       : null;
-    // `expanded` is terminal (no re-expansion in this spec); `not_expanded`,
-    // `failed`, and stale `expanding` are all actionable.
+    // `not_expanded`, `failed`, and stale `expanding` are all actionable; an
+    // already-`expanded` epic can be RE-expanded (re-runs against the current
+    // pack and replaces its stories, 2026-07-19). Only a LIVE expansion has no
+    // action.
     const showExpandAction =
       onExpandEpic !== undefined &&
       expansionState !== undefined &&
       (expansionState === 'not_expanded' ||
         expansionState === 'failed' ||
+        expansionState === 'expanded' ||
         isStaleExpanding);
     const gaps = gapRollupById.get(item.id) ?? 0;
     const isSelected = selectedItemId === item.id;
@@ -471,7 +474,11 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
                 }}
                 data-testid={`expand-epic-button-${item.id}`}
               >
-                {expansionState === 'not_expanded' ? 'Expand epic' : 'Retry expansion'}
+                {expansionState === 'not_expanded'
+                  ? 'Expand epic'
+                  : expansionState === 'expanded'
+                    ? 'Re-expand'
+                    : 'Retry expansion'}
               </button>
             )}
           </span>

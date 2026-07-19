@@ -33,8 +33,9 @@
  *      the real fan-out) with one mid-flight failure leaving the other
  *      epics `expanded` (per-epic atomicity in the persisted document).
  *   9. failed → retry: re-running ONLY the failed epic succeeds without
- *      touching the expanded epic's stories; `expanded` refuses
- *      re-expansion (409 precondition).
+ *      touching the expanded epic's stories. (Re-expansion of an `expanded`
+ *      epic is now SUPPORTED — see the re-expand test — with the success
+ *      append carrying the replace flag + `expansionGenerated` tags.)
  *  10. Coverage guarantee — a batch response that DROPS an inventory item
  *      ("item 73 of 100") never lands: the epic fails retryably.
  *  11. Route-level end-to-end: POST expand on the REAL router drives the
@@ -696,13 +697,20 @@ describe('Two-phase end-to-end flows (Spec 2026-06-11, Task Group 6)', () => {
     }
     expect(validateBookOfWorkHierarchy(ams.store.items).ok).toBe(true);
 
-    // The state machine now treats the expanded epic as terminal: a follow-up
-    // "Expand all" would pick ONLY the still-unexpanded epic.
-    const selection = selectExpandableEpics('book-rt', ams.store.items);
-    expect(selection.expandable.map((e) => e.epicId)).toEqual([reconEpicId]);
-    expect(selection.skipped).toEqual([
+    // "Expand remaining" (default) leaves the expanded epic alone — only the
+    // still-unexpanded epic is picked.
+    const remaining = selectExpandableEpics('book-rt', ams.store.items);
+    expect(remaining.expandable.map((e) => e.epicId)).toEqual([reconEpicId]);
+    expect(remaining.skipped).toEqual([
       expect.objectContaining({ epicId: cutoverEpicId, reason: expect.stringContaining('expanded') }),
     ]);
+    // "Expand all" (includeExpanded) RE-expands the terminal epic too.
+    const all = selectExpandableEpics('book-rt', ams.store.items, { includeExpanded: true });
+    expect(all.expandable.map((e) => e.epicId).sort()).toEqual(
+      [cutoverEpicId, reconEpicId].sort()
+    );
+    expect(all.expandable.find((e) => e.epicId === cutoverEpicId)?.reason).toBe('re_expand');
+    expect(all.skipped).toEqual([]);
   });
 
   it('expand-all under a limit-1 pool runs FULLY SERIALLY; one epic failing after retry leaves the others expanded (per-epic atomicity)', async () => {
@@ -788,7 +796,7 @@ describe('Two-phase end-to-end flows (Spec 2026-06-11, Task Group 6)', () => {
     expect(storyParents.sort()).toEqual(['cut:E1-F', 'cut:E3-F']);
   });
 
-  it("failed → retry: re-running ONLY the failed epic succeeds without touching the expanded epic's stories; expanded refuses re-expansion (409)", async () => {
+  it("failed → retry: re-running ONLY the failed epic succeeds without touching the expanded epic's stories", async () => {
     const items: MigrationBookOfWorkItem[] = [
       makeItem({ id: 'cut:I1', type: 'initiative', parentId: null, sequenceOrder: 1 }),
       makeItem({
@@ -849,14 +857,61 @@ describe('Two-phase end-to-end flows (Spec 2026-06-11, Task Group 6)', () => {
     expect(byId.get('cut:E2')!.expansionState).toBe('expanded');
     expect(byId.get('cut:E1')!.expansionState).toBe('expanded');
     expect(byId.get('cut:E1-s-1')).toBeDefined();
+  });
 
-    // `expanded` is terminal: re-expansion is refused as a 409 precondition.
-    await expect(
-      expandMigrationBookOfWorkEpic(
-        { projectId: 'p-retry', bookId: 'book-retry', epicId: 'cut:E2' },
-        deps
+  it('re-expand: an already-`expanded` epic re-runs; its success append carries replace_epic_expansion + tags every item', async () => {
+    const items: MigrationBookOfWorkItem[] = [
+      makeItem({ id: 'cut:I1', type: 'initiative', parentId: null, sequenceOrder: 1 }),
+      makeItem({
+        id: 'cut:E1',
+        type: 'epic',
+        parentId: 'cut:I1',
+        sequenceOrder: 2,
+        expansionState: 'expanded',
+        workstream: 'cutover_rollback_decommission',
+        tags: ['stream:cutover_rollback_decommission'],
+      }),
+      makeItem({ id: 'cut:E1-F', type: 'feature', parentId: 'cut:E1', sequenceOrder: 3 }),
+      // Prior expansion output (tagged) — a re-expand replaces this.
+      { ...makeStory('cut:E1-F', 'cut:E1-old'), sequenceOrder: 4, expansionGenerated: true },
+    ];
+    const ams = makeInMemoryAms(items);
+    const appendSpy = jest.fn(ams.appendItems);
+    const callLlm = jest.fn().mockImplementation(async ({ userPrompt }: LlmArgs) => {
+      if (userPrompt.includes('NON-INVENTORY EPIC') && userPrompt.includes('Epic id: cut:E1\n')) {
+        return { content: JSON.stringify({ stories: [makeStory('cut:E1-F', 'cut:E1-new')] }) };
+      }
+      throw new Error('unexpected prompt');
+    });
+    const deps = {
+      fetchBook: ams.fetchBook,
+      appendItems: appendSpy as AppendItemsFn,
+      fetchEpicInventory: jest.fn().mockResolvedValue([]),
+      callLlm,
+      llmPool: new LlmConcurrencyPool(1),
+      systemPromptOverride: 'SYS',
+      batchSizeOverride: 12,
+    };
+
+    // No 409 — re-expansion is allowed now.
+    const outcome = await expandMigrationBookOfWorkEpic(
+      { projectId: 'p-re', bookId: 'book-re', epicId: 'cut:E1' },
+      deps
+    );
+    expect(outcome).toMatchObject({ epicId: 'cut:E1', expansionState: 'expanded' });
+
+    // The story-carrying append REPLACES (not appends) and tags its items, so
+    // AMS drops the stale story instead of duplicating it.
+    const successCall = appendSpy.mock.calls
+      .map((c) => c[2] as AppendItemsRequestBody)
+      .find((b) => b.expansion_state === 'expanded' && (b.items?.length ?? 0) > 0);
+    expect(successCall).toBeDefined();
+    expect(successCall!.replace_epic_expansion).toBe(true);
+    expect(
+      successCall!.items.every(
+        (i) => (i as MigrationBookOfWorkItem).expansionGenerated === true
       )
-    ).rejects.toMatchObject({ name: 'ExpansionPreconditionError', statusCode: 409 });
+    ).toBe(true);
   });
 
   it('coverage guarantee — a batch response that DROPS an inventory item never lands: the epic fails retryably with no story append', async () => {

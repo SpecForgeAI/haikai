@@ -567,7 +567,7 @@ describe('MigrationBookOfWorkReviewWorkspace -- phase-2 expansion (Spec 2026-06-
     mockExpandAll.mockReset();
   });
 
-  it('renders all four expansion-state badges; failed + stale-expanding offer retry; expanded offers no re-expansion', async () => {
+  it('renders all four expansion-state badges; failed + stale-expanding offer retry; expanded offers Re-expand', async () => {
     mockGetMigrationBookOfWork.mockResolvedValueOnce(
       makeDraft(makeSkeletonFixture()),
     );
@@ -605,9 +605,13 @@ describe('MigrationBookOfWorkReviewWorkspace -- phase-2 expansion (Spec 2026-06-
     expect(
       screen.getByTestId('expand-epic-button-epic-s'),
     ).toBeInTheDocument();
-    // `expanded` is terminal in this spec -- no expand affordance.
-    expect(screen.queryByTestId('expand-epic-button-epic-x')).toBeNull();
-    // The bulk control renders and is enabled (3 expandable epics).
+    // `expanded` now offers a RE-expand affordance (re-runs + replaces stories).
+    expect(screen.getByTestId('expand-epic-button-epic-x')).toHaveTextContent(
+      'Re-expand',
+    );
+    // Both bulk controls render and are enabled: "Expand remaining" (the
+    // 3 not-yet-done epics) and "Expand all" (which also re-expands epic-x).
+    expect(screen.getByTestId('expand-remaining-epics-button')).toBeEnabled();
     expect(screen.getByTestId('expand-all-epics-button')).toBeEnabled();
   });
 
@@ -661,8 +665,10 @@ describe('MigrationBookOfWorkReviewWorkspace -- phase-2 expansion (Spec 2026-06-
       expect(screen.getByTestId('hierarchy-node-story-new')).toBeInTheDocument(),
     );
     expect(mockGetMigrationBookOfWork).toHaveBeenCalledTimes(2);
-    // No expand affordance remains on the now-expanded epic.
-    expect(screen.queryByTestId('expand-epic-button-epic-ne')).toBeNull();
+    // The now-expanded epic offers a RE-expand affordance (re-run + replace).
+    expect(screen.getByTestId('expand-epic-button-epic-ne')).toHaveTextContent(
+      'Re-expand',
+    );
   });
 
   it('retry on a failed epic re-calls expand for THAT epic only (never expand-all)', async () => {
@@ -749,7 +755,8 @@ describe('MigrationBookOfWorkReviewWorkspace -- phase-2 expansion (Spec 2026-06-
       ),
     );
     expect(mockExpandAll).toHaveBeenCalledTimes(1);
-    expect(mockExpandAll).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID);
+    // "Expand all" re-expands terminal epics → includeExpanded = true.
+    expect(mockExpandAll).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, true);
     // The failed epic stays retryable and the failure is surfaced.
     expect(screen.getByTestId('badge-expansion-epic-f')).toHaveTextContent(
       'expansion failed',
@@ -760,5 +767,25 @@ describe('MigrationBookOfWorkReviewWorkspace -- phase-2 expansion (Spec 2026-06-
     expect(screen.getByTestId('expansion-error-banner')).toHaveTextContent(
       /1 epic\(s\) failed to expand/,
     );
+  });
+
+  it('"Expand remaining" calls the expand-all API with includeExpanded = false (leaves expanded epics alone)', async () => {
+    const skeleton = makeSkeletonFixture();
+    mockGetMigrationBookOfWork
+      .mockResolvedValueOnce(makeDraft(skeleton))
+      .mockResolvedValue(makeDraft(skeleton));
+    mockExpandAll.mockResolvedValueOnce({ results: [], skipped: [] });
+
+    render(
+      <MigrationBookOfWorkReviewWorkspace projectId={PROJECT_ID} bookId={BOOK_ID} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('review-workspace')).toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByTestId('expand-remaining-epics-button'));
+
+    await waitFor(() => expect(mockExpandAll).toHaveBeenCalledTimes(1));
+    expect(mockExpandAll).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, false);
   });
 });

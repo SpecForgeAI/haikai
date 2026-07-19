@@ -255,7 +255,23 @@ describe('POST /api/v1/projects/:projectId/migration-books-of-work/:bookId/expan
       expect.objectContaining({ epicId: 's:E2', expansionState: 'failed', error: 'judge failed' }),
     ]);
     expect(res.body.skipped[0].reason).toContain('already expanded');
-    expect(mockExpandAll).toHaveBeenCalledWith({ projectId: 'p-1', bookId: 'b-1' });
+    // No body → "Expand remaining" (includeExpanded false).
+    expect(mockExpandAll).toHaveBeenCalledWith({
+      projectId: 'p-1',
+      bookId: 'b-1',
+      includeExpanded: false,
+    });
+
+    // `include_expanded: true` → "Expand all" (re-expands terminal epics).
+    mockExpandAll.mockResolvedValueOnce({ results: [], skipped: [] });
+    await request(createTestApp())
+      .post('/api/v1/projects/p-1/migration-books-of-work/b-1/expand-all')
+      .send({ include_expanded: true });
+    expect(mockExpandAll).toHaveBeenLastCalledWith({
+      projectId: 'p-1',
+      bookId: 'b-1',
+      includeExpanded: true,
+    });
 
     // An AMS failure round-trips its status + body byte-for-byte.
     mockExpandAll.mockRejectedValueOnce(
