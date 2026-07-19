@@ -319,7 +319,9 @@ migrationBookOfWorkRouter.post(
 );
 
 // ---------------------------------------------------------------------------
-// POST .../:bookId/expand-all — expand all unexpanded/failed/stale epics
+// POST .../:bookId/expand-all — expand epics. Body `{ include_expanded }`:
+//   false / absent = "Expand remaining" (unexpanded / failed / stale only);
+//   true            = "Expand all" (ALSO re-expands already-expanded epics).
 // ---------------------------------------------------------------------------
 
 migrationBookOfWorkRouter.post(
@@ -327,9 +329,15 @@ migrationBookOfWorkRouter.post(
   async (req: Request, res: Response) => {
     const requestId = (req as { requestId?: string }).requestId ?? 'unknown';
     const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as { include_expanded?: boolean; includeExpanded?: boolean };
+    const includeExpanded = body.include_expanded === true || body.includeExpanded === true;
     const start = Date.now();
     try {
-      const outcome = await expandAllMigrationBookOfWorkEpics({ projectId, bookId });
+      const outcome = await expandAllMigrationBookOfWorkEpics({
+        projectId,
+        bookId,
+        includeExpanded,
+      });
       console.log(
         `[diag-gw] route=migration-books-of-work-expand-all status=200 ` +
           `expanded=${outcome.results.filter((r) => r.expansionState === 'expanded').length} ` +

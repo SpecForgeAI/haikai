@@ -434,6 +434,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   );
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [dialogMode, setDialogMode] = useState<SaveToBacklogMode>('all');
+  // Findings-coverage detail modal (2026-07-19 UX): the advisory list opens on
+  // demand so it never dominates the review screen.
+  const [showFindingsDetail, setShowFindingsDetail] = useState<boolean>(false);
   const [saveResponse, setSaveResponse] = useState<SaveToBacklogResponse | null>(
     null,
   );
@@ -721,10 +724,26 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       .map(([epicId]) => epicId);
   }, [expansionStateById, liveExpandingEpicIds]);
 
+  /**
+   * "Expand all" targets: every tracked epic EXCEPT a live in-flight one —
+   * i.e. `expandableEpicIds` plus the already-`expanded` epics (which are
+   * re-expanded, replacing their stories, 2026-07-19).
+   */
+  const reExpandableEpicIds = useMemo(() => {
+    return Object.entries(expansionStateById)
+      .filter(
+        ([epicId, state]) =>
+          state !== undefined &&
+          !(state === 'expanding' && liveExpandingEpicIds.has(epicId)),
+      )
+      .map(([epicId]) => epicId);
+  }, [expansionStateById, liveExpandingEpicIds]);
+
   const anyExpansionInFlight = liveExpandingEpicIds.size > 0;
 
-  const handleExpandAll = useCallback(async () => {
-    const targets = expandableEpicIds;
+  const handleExpandAll = useCallback(
+    async (includeExpanded: boolean) => {
+    const targets = includeExpanded ? reExpandableEpicIds : expandableEpicIds;
     if (targets.length === 0) return;
     setExpansionError(null);
     setExpansionStateById((prev) => {
@@ -739,6 +758,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       const outcome = await expandAllMigrationBookOfWorkEpics(
         projectId,
         bookId,
+        includeExpanded,
       );
       setExpansionStateById((prev) => {
         const next = { ...prev };
@@ -773,6 +793,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     }
   }, [
     expandableEpicIds,
+    reExpandableEpicIds,
     projectId,
     bookId,
     refreshDraftAfterExpansion,
@@ -974,16 +995,28 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {showExpandControls && (
-            <button
-              type="button"
-              className={styles.selectButton}
-              onClick={() => void handleExpandAll()}
-              disabled={expandableEpicIds.length === 0 || anyExpansionInFlight}
-              data-testid="expand-all-epics-button"
-              title="Expand all not-yet-expanded (and failed) epics into detailed stories"
-            >
-              {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand all epics'}
-            </button>
+            <>
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => void handleExpandAll(false)}
+                disabled={expandableEpicIds.length === 0 || anyExpansionInFlight}
+                data-testid="expand-remaining-epics-button"
+                title="Expand only the not-yet-expanded (and failed) epics into detailed stories"
+              >
+                {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand remaining'}
+              </button>
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => void handleExpandAll(true)}
+                disabled={reExpandableEpicIds.length === 0 || anyExpansionInFlight}
+                data-testid="expand-all-epics-button"
+                title="Expand every epic, RE-expanding already-expanded ones (replaces their stories against the current pack)"
+              >
+                {anyExpansionInFlight ? 'Expanding\u2026' : 'Expand all epics'}
+              </button>
+            </>
           )}
           {hasUnsavedChanges ? (
             <span
@@ -1047,15 +1080,16 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         />
       )}
 
-      {/* Unaddressed findings panel (Spec 2026-06-11, Task Group 4.3).
-          Advisory only -- coverage never gates Save Draft, Save to Backlog,
-          or expansion. Hidden entirely when the draft has no snapshot. */}
+      {/* Findings-coverage panel (Spec 2026-06-11, Task Group 4.3).
+          Advisory only -- coverage never gates Save Draft, Save to Backlog, or
+          expansion. Collapsed to a ONE-LINE summary (2026-07-19 UX); the full
+          list opens in a modal so it never dominates the review screen. Hidden
+          entirely when the draft has no snapshot. */}
       {findingsCoverage && (
         <section
           className={styles.coveragePanel}
           data-testid="unaddressed-findings-panel"
         >
-          <h2 className={styles.coveragePanelTitle}>Unaddressed findings</h2>
           {findingsCoverage.total === 0 ? (
             <p
               className={styles.coveragePanelNote}
@@ -1069,54 +1103,109 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
               data-testid="unaddressed-findings-all-addressed"
             >
               All {findingsCoverage.total} accepted critical/high findings are
-              addressed by this plan.
+              linked to a work item in this plan.
             </p>
           ) : (
-            <>
-              <p className={styles.coveragePanelNote}>
-                {findingsCoverage.notAddressedCount} of {findingsCoverage.total}{' '}
-                accepted critical/high findings are not referenced by any
-                book-of-work item. Advisory only &mdash; this never blocks
-                saving the plan.
-              </p>
-              <ul className={styles.coverageList}>
-                {findingsCoverage.unaddressed.map((finding) => {
-                  const entry = buildUnaddressedFindingEntry(finding, {
-                    projectId,
-                    architectureId: draft.currentArchitectureId,
-                  });
-                  return (
-                    <li
-                      key={finding.id}
-                      className={styles.coverageRow}
-                      data-testid={`unaddressed-finding-row-${finding.id}`}
-                    >
-                      <span
-                        className={`${styles.badge} ${severityBadgeClass(finding.severity)}`}
-                        data-testid={`unaddressed-finding-severity-${finding.id}`}
-                      >
-                        {finding.severity || 'unknown'}
-                      </span>
-                      <span className={styles.coverageRowTitle}>
-                        {entry.title}
-                      </span>
-                      {entry.destination && (
-                        <Link
-                          to={entry.destination}
-                          className={styles.coverageRowLink}
-                          data-testid={`unaddressed-finding-link-${finding.id}`}
-                        >
-                          {entry.actionLabel}
-                        </Link>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
+            <p
+              className={styles.coveragePanelNote}
+              data-testid="unaddressed-findings-summary"
+            >
+              <span aria-hidden="true">{'ⓘ'} </span>
+              {findingsCoverage.notAddressedCount} of {findingsCoverage.total}{' '}
+              accepted critical/high findings aren{'’'}t linked to a work
+              item yet {'—'} advisory, this doesn{'’'}t block saving.{' '}
+              <button
+                type="button"
+                className={styles.coverageInlineLink}
+                onClick={() => setShowFindingsDetail(true)}
+                data-testid="unaddressed-findings-view-button"
+              >
+                View findings ({findingsCoverage.notAddressedCount})
+              </button>
+            </p>
           )}
         </section>
       )}
+
+      {/* Findings-coverage detail modal — the advisory list, on demand. */}
+      {findingsCoverage &&
+        showFindingsDetail &&
+        findingsCoverage.notAddressedCount > 0 && (
+          <div
+            className={styles.modalOverlay}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setShowFindingsDetail(false);
+            }}
+            data-testid="unaddressed-findings-dialog"
+          >
+            <div
+              className={styles.modal}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Findings not linked to a work item"
+            >
+              <div className={styles.modalHeader}>
+                <h2 className={styles.modalTitle}>
+                  Findings not linked to a work item
+                </h2>
+              </div>
+              <div className={styles.modalBody}>
+                <p className={styles.coveragePanelNote}>
+                  These {findingsCoverage.notAddressedCount} accepted
+                  critical/high finding(s) aren{'’'}t referenced by any work
+                  item in this plan. Advisory only {'—'} it never blocks
+                  saving. To reduce this, bring the relevant tier into scope so
+                  the plan generates work that references them, or open a finding
+                  below to act on it.
+                </p>
+                <ul className={styles.coverageList}>
+                  {findingsCoverage.unaddressed.map((finding) => {
+                    const entry = buildUnaddressedFindingEntry(finding, {
+                      projectId,
+                      architectureId: draft.currentArchitectureId,
+                    });
+                    return (
+                      <li
+                        key={finding.id}
+                        className={styles.coverageRow}
+                        data-testid={`unaddressed-finding-row-${finding.id}`}
+                      >
+                        <span
+                          className={`${styles.badge} ${severityBadgeClass(finding.severity)}`}
+                          data-testid={`unaddressed-finding-severity-${finding.id}`}
+                        >
+                          {finding.severity || 'unknown'}
+                        </span>
+                        <span className={styles.coverageRowTitle}>
+                          {entry.title}
+                        </span>
+                        {entry.destination && (
+                          <Link
+                            to={entry.destination}
+                            className={styles.coverageRowLink}
+                            data-testid={`unaddressed-finding-link-${finding.id}`}
+                          >
+                            {entry.actionLabel}
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <div className={styles.modalFooter}>
+                <button
+                  type="button"
+                  className={styles.selectButton}
+                  onClick={() => setShowFindingsDetail(false)}
+                  data-testid="unaddressed-findings-dialog-close"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       <div
         className={styles.workspaceBody}

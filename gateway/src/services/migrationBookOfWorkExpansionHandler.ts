@@ -199,6 +199,14 @@ export interface AppendItemsRequestBody {
   epic_id: string;
   items: MigrationBookOfWorkItem[];
   expansion_state: MigrationBookOfWorkExpansionState;
+  /**
+   * When true, AMS first removes the epic's PRIOR expansion output (descendant
+   * stories + any `expansionGenerated` item) before appending — a RE-expand
+   * replaces the epic's stories instead of duplicating them. Set only on the
+   * success append; the `expanding` / `failed` state marks leave it unset so a
+   * failed re-expand keeps the old stories.
+   */
+  replace_epic_expansion?: boolean;
 }
 
 export type FetchBookFn = (projectId: string, bookId: string) => Promise<FetchedBookOfWork>;
@@ -317,25 +325,66 @@ export function resetActiveExpansionsForTests(): void {
 // State-machine helpers (4.2)
 // ---------------------------------------------------------------------------
 
+/**
+ * Ids of an epic's prior EXPANSION OUTPUT: every transitive descendant that is a
+ * `story` OR is tagged `expansionGenerated` (an injected scaffold feature). The
+ * skeleton (the epic + its untagged features) is excluded. Mirrors the AMS
+ * replace rule so the gateway's pre-append hierarchy check validates the same
+ * document AMS will persist after a re-expand replace. Fixed-point walk over
+ * `parentId`, so hierarchy order in the array does not matter.
+ */
+export function epicExpansionOutputIds(
+  items: MigrationBookOfWorkItem[],
+  epicId: string
+): Set<string> {
+  const descendants = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const it of items) {
+      const pid = it.parentId ?? undefined;
+      if (!it.id || !pid || descendants.has(it.id)) continue;
+      if (pid === epicId || descendants.has(pid)) {
+        descendants.add(it.id);
+        changed = true;
+      }
+    }
+  }
+  const output = new Set<string>();
+  for (const it of items) {
+    if (!it.id || !descendants.has(it.id)) continue;
+    if (it.type === 'story' || it.expansionGenerated === true) {
+      output.add(it.id);
+    }
+  }
+  return output;
+}
+
 export interface ExpandableEpicSelection {
   expandable: Array<{
     epicId: string;
     previousState: MigrationBookOfWorkExpansionState | undefined;
-    reason: 'not_expanded' | 'failed' | 'stale_expanding';
+    reason: 'not_expanded' | 'failed' | 'stale_expanding' | 're_expand';
   }>;
   skipped: Array<{ epicId: string; expansionState?: string; reason: string }>;
 }
 
 /**
- * Selects the epics "Expand all" should run: `not_expanded` (including epics
- * with no state — pre-feature drafts), `failed` (retryable), and STALE
- * `expanding` (persisted state with no live in-process pipeline). `expanded`
- * epics are terminal and never re-expanded; live `expanding` epics are
- * skipped so a double-click cannot double-run a pipeline.
+ * Selects the epics an "Expand" run should process: `not_expanded` (including
+ * epics with no state — pre-feature drafts), `failed` (retryable), and STALE
+ * `expanding` (persisted state with no live in-process pipeline). Live
+ * `expanding` epics are always skipped so a double-click cannot double-run a
+ * pipeline.
+ *
+ * `expanded` epics are terminal for **Expand remaining** (`includeExpanded`
+ * omitted/false) but are RE-expanded for **Expand all**
+ * (`includeExpanded: true`) — the pipeline re-runs against the current pack and
+ * replaces the epic's stories (2026-07-19).
  */
 export function selectExpandableEpics(
   bookId: string,
-  items: MigrationBookOfWorkItem[]
+  items: MigrationBookOfWorkItem[],
+  opts: { includeExpanded?: boolean } = {}
 ): ExpandableEpicSelection {
   const expandable: ExpandableEpicSelection['expandable'] = [];
   const skipped: ExpandableEpicSelection['skipped'] = [];
@@ -343,7 +392,11 @@ export function selectExpandableEpics(
     if (item.type !== 'epic') continue;
     const state = item.expansionState;
     if (state === 'expanded') {
-      skipped.push({ epicId: item.id, expansionState: state, reason: 'already expanded (terminal)' });
+      if (opts.includeExpanded) {
+        expandable.push({ epicId: item.id, previousState: state, reason: 're_expand' });
+      } else {
+        skipped.push({ epicId: item.id, expansionState: state, reason: 'already expanded (terminal)' });
+      }
       continue;
     }
     if (state === 'expanding') {
@@ -1846,12 +1899,10 @@ export async function expandMigrationBookOfWorkEpic(
   if (!epic) {
     throw new ExpansionPreconditionError(404, `No epic "${epicId}" in book ${bookId}`);
   }
-  if (epic.expansionState === 'expanded') {
-    throw new ExpansionPreconditionError(
-      409,
-      `Epic "${epicId}" is already expanded — re-expansion is out of scope`
-    );
-  }
+  // Re-expansion is supported (2026-07-19): an already-`expanded` epic re-runs
+  // its pipeline and REPLACES its stories via the AMS replace step on the
+  // success append below — no longer a terminal state. Only a LIVE in-flight
+  // expansion is rejected (a double-click cannot double-run a pipeline).
   const key = activeKey(bookId, epicId);
   if (activeExpansions.has(key)) {
     throw new ExpansionPreconditionError(409, `Epic "${epicId}" expansion is already in flight`);
@@ -1924,18 +1975,31 @@ export async function expandMigrationBookOfWorkEpic(
             fetchScaffoldServices,
           });
 
+      // Tag every expansion-produced item so a later RE-expand can find and
+      // replace exactly this output. The AMS replace step (below) drops the
+      // epic's descendant stories + any `expansionGenerated` item; the
+      // skeleton's untagged features are kept for the fresh stories to parent to.
+      const expansionItems: MigrationBookOfWorkItem[] = [...scaffoldItems, ...stories].map(
+        (it) => ({ ...it, expansionGenerated: true })
+      );
+
       // Validate every story against the item schema, then the FULL merged
       // hierarchy (no orphans/cycles/level-jumps/duplicate ids against the
       // merged document) BEFORE the atomic append.
       const itemErrors: string[] = [];
-      [...scaffoldItems, ...stories].forEach((story, idx) => {
+      expansionItems.forEach((story, idx) => {
         const result = validateMigrationBookOfWorkItem(story, idx);
         if (!result.ok) itemErrors.push(...result.errors);
       });
       if (itemErrors.length > 0) {
         throw new Error(`Expanded stories failed schema validation: ${itemErrors.join('; ')}`);
       }
-      const merged = validateBookOfWorkHierarchy([...book.items, ...scaffoldItems, ...stories]);
+      // Validate against the book with THIS epic's prior expansion output pruned
+      // (mirrors the AMS replace), so a re-run whose stories carry deterministic
+      // ids does not trip the duplicate-id guard on the rows about to be replaced.
+      const priorOutputIds = epicExpansionOutputIds(book.items, epicId);
+      const survivors = book.items.filter((it) => !priorOutputIds.has(it.id));
+      const merged = validateBookOfWorkHierarchy([...survivors, ...expansionItems]);
       if (!merged.ok) {
         throw new Error(
           `Merged book-of-work hierarchy validation failed: ${merged.errors.join('; ')}`
@@ -1949,8 +2013,12 @@ export async function expandMigrationBookOfWorkEpic(
       );
       await appendItems(projectId, bookId, {
         epic_id: epicId,
-        items: [...scaffoldItems, ...stories],
+        items: expansionItems,
         expansion_state: 'expanded',
+        // Replace, not append: AMS drops the epic's prior output first. A no-op
+        // on a first expand (nothing tagged yet); on a re-expand it swaps the
+        // stale stories for the fresh ones in one transaction.
+        replace_epic_expansion: true,
       });
       console.log(
         `[diag-gateway] pm_migration_delivery_plan stage=expansion_complete projectId=${projectId} ` +
@@ -2008,18 +2076,22 @@ export async function expandMigrationBookOfWorkEpic(
 
 /**
  * Expand ALL expandable epics of a book: `not_expanded`, `failed`
- * (retryable), and STALE `expanding`; `expanded` epics are skipped (terminal).
- * Per-epic pipelines fan out concurrently, but every LLM call still goes
+ * (retryable), and STALE `expanding`. With `input.includeExpanded` (the
+ * "Expand all" button) already-`expanded` epics are RE-expanded too; without it
+ * ("Expand remaining") they are skipped. Live in-flight epics are always
+ * skipped. Per-epic pipelines fan out concurrently, but every LLM call still goes
  * through the ONE shared pool — total in-flight LLM requests never exceed
  * MIGRATION_PLAN_LLM_CONCURRENCY regardless of epic count.
  */
 export async function expandAllMigrationBookOfWorkEpics(
-  input: { projectId: string; bookId: string },
+  input: { projectId: string; bookId: string; includeExpanded?: boolean },
   deps: MigrationBookOfWorkExpansionDeps = {}
 ): Promise<ExpandAllOutcome> {
   const fetchBook = deps.fetchBook ?? defaultFetchBook;
   const book = await fetchBook(input.projectId, input.bookId);
-  const selection = selectExpandableEpics(input.bookId, book.items);
+  const selection = selectExpandableEpics(input.bookId, book.items, {
+    includeExpanded: input.includeExpanded === true,
+  });
   console.log(
     `[diag-gateway] pm_migration_delivery_plan stage=expand_all projectId=${input.projectId} ` +
       `bookId=${input.bookId} expandable=${selection.expandable.length} skipped=${selection.skipped.length}`
