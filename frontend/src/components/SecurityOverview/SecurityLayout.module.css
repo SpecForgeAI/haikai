@@ -1,0 +1,45 @@
+/* Security area layout (Security health dashboard, 2026-07-19, Spec 3 of 3) */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tabBar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.tab {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #555;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+}
+
+.tab:hover {
+  background: #f0f0f0;
+}
+
+.tabActive {
+  background: #fff;
+  border-color: #e0e0e0;
+  color: #1d5fbf;
+  font-weight: 600;
+  margin-bottom: -1px;
+}
+
+.content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}

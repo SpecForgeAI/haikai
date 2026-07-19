@@ -65,3 +65,36 @@ multi-CVE-per-cell delimiter handling beyond join-table shape; CWE enrichment be
 
 Existing migration-workflow Security screen, `vulnerabilities` / `vulnerability_reports` tables
 and every consumer of them. User's uncommitted local changes stay out of commits.
+
+## As-built log (2026-07-19, autonomous run)
+
+All three specs BUILT and committed on `feature/security-health-dashboard` (one commit each).
+
+**Deviations from the conversation, all deliberate:**
+- Register = service-layer projection, not a SQL VIEW (documented above).
+- Jira import turned out to be JQL-based (no column-mapping UI to copy); the matcher is new UI
+  seeded from the deterministic parser proposal (the GitLab format is known, so no LLM parse —
+  the wizard's matcher is the flexibility mechanism).
+- The AMS-side OSV bridge did not exist (memory was of the gateway-side reduction bridge, which
+  queries by package, not CVE); enrichment is a NEW gateway service calling api.osv.dev/v1/vulns
+  per CVE, behind SECURITY_CVE_ENRICHMENT_ENABLED.
+- The Not-matched pseudo-box is an Overview-screen overlay element only — NOT persisted into the
+  diagram (it is not a model entity; in the Diagrams area the Security Summary shows apps+edges).
+- Security tab became a tabbed AREA (Overview landing / Findings Register / Current-State Scan);
+  the legacy screen is UNTOUCHED as a component but re-homed from /security to /security/scan
+  (user pre-authorised breaking a few things; old bookmarks land on Overview via index redirect).
+- CWE seed capped descriptions at 1000 chars; real MITRE view-1000 CSV, 944 rows, retrieved live.
+
+**Verification:** AMS — 12 new tests green (SpringBootTest suite, MockMvc wire, changeset apply of
+211+212 incl. 944-row seed + unique-key enforcement); full-suite failures verified pre-existing on
+main via worktree baseline (ApiContractSmokeTest NoDb nested classes, ArchitectureIdAutoDeriveTrigger,
+DiscoveryFindingStatusTransition, TerraformExportGoldenFile). Gateway — 13 new jest tests green;
+tsc clean. Frontend — 7 new vitest tests green (api client, diagram generation/regeneration);
+diagram-type suite 43 green; routing suite 58 green; tsc shows zero errors in touched files
+(whole-repo red is the known pre-existing baseline).
+
+**Residuals for the live shakedown (work machine):** end-to-end wizard flow against a real GitLab
+export; OSV enrichment against live api.osv.dev (corporate proxy/TLS may need the same handling as
+the reduction bridge); Diagrams-area open/edit of a generated Security Summary; TopBar Security
+button lands on Overview via the index redirect — confirm the currentView active-state parsing is
+happy with nested /security/* paths.

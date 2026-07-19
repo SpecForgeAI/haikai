@@ -24,12 +24,12 @@ import { Diagram } from './model';
  * DiagramType union type
  * Represents the allowed diagram type values
  */
-export type DiagramType = 'General' | 'ER' | 'Sequence' | 'Activity' | 'State' | 'UI_Workflow' | 'UI_SCREEN' | 'USER_JOURNEY' | 'USER_JOURNEY_OVERVIEW' | 'Infrastructure';
+export type DiagramType = 'General' | 'ER' | 'Sequence' | 'Activity' | 'State' | 'UI_Workflow' | 'UI_SCREEN' | 'USER_JOURNEY' | 'USER_JOURNEY_OVERVIEW' | 'Infrastructure' | 'SECURITY_SUMMARY';
 
 /**
  * Array of all diagram types for iteration
  */
-export const ALL_DIAGRAM_TYPES: DiagramType[] = ['General', 'ER', 'Sequence', 'Activity', 'State', 'UI_Workflow', 'UI_SCREEN', 'USER_JOURNEY', 'USER_JOURNEY_OVERVIEW', 'Infrastructure'];
+export const ALL_DIAGRAM_TYPES: DiagramType[] = ['General', 'ER', 'Sequence', 'Activity', 'State', 'UI_Workflow', 'UI_SCREEN', 'USER_JOURNEY', 'USER_JOURNEY_OVERVIEW', 'Infrastructure', 'SECURITY_SUMMARY'];
 
 /**
  * Array of diagram types that can be manually created via the NewDiagramModal.
@@ -53,6 +53,7 @@ export const DIAGRAM_TYPE_LABELS: Record<DiagramType, string> = {
   USER_JOURNEY: 'User Journey',
   USER_JOURNEY_OVERVIEW: 'User Journey Overview',
   Infrastructure: 'Infrastructure',
+  SECURITY_SUMMARY: 'Security Summary',
 };
 
 /**
@@ -80,6 +81,11 @@ const DIAGRAM_TYPE_MAP: Record<string, DiagramType> = {
   user_journey_overview: 'USER_JOURNEY_OVERVIEW',
   'user journey overview': 'USER_JOURNEY_OVERVIEW',
   infrastructure: 'Infrastructure',
+  // Security health dashboard (2026-07-19, Spec 3 of 3): generated from the
+  // Security Overview screen only -- deliberately NOT in
+  // CREATABLE_DIAGRAM_TYPES; renders via the General boxes-and-arrows canvas.
+  security_summary: 'SECURITY_SUMMARY',
+  'security summary': 'SECURITY_SUMMARY',
 };
 
 /**

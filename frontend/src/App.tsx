@@ -81,6 +81,12 @@ import { BaselineDetailPage } from './components/DashboardView/BaselineDetailPag
 // inherits the TopBar + providers and survives ProjectLayout's
 // missing-architecture redirect via the `security` KNOWN_VIEW_SEGMENTS entry.
 import { SecurityView } from './components/SecurityView/SecurityView';
+// Security health dashboard (2026-07-19, Spec 3 of 3): the tabbed Security
+// area -- Overview (generated Security Summary diagram + severity overlays),
+// Findings Register (flattened detail), with the legacy scan screen re-homed.
+import { SecurityLayout } from './components/SecurityOverview/SecurityLayout';
+import { SecurityOverview } from './components/SecurityOverview/SecurityOverview';
+import { FindingsRegister } from './components/SecurityOverview/FindingsRegister';
 // Spec 2026-05-19 PM Migration Shape-Spec Batch Generation -- follow-up route wiring
 // Workspace surface for batch-generated shape-specs, drill-into from the
 // WorkItem Implement tab's `ImplementTabShapeSpecCard`.
@@ -800,7 +806,22 @@ function AppRoutes() {
             architecture from context and lists the latest report's
             vulnerabilities via vulnerabilitiesApi.ts.
           */}
-          <Route path="security" element={<SecurityView />} />
+          {/*
+            Spec 2026-07-19 Security health dashboard (Spec 3 of 3). The
+            Security tab grows into a small tabbed AREA: Overview (the
+            department health dashboard with the generated Security Summary
+            diagram + severity overlays, the landing tab), the Findings
+            Register (flattened detail over the structured security store,
+            deep-linked from Overview clicks), and the pre-existing
+            migration-workflow screen re-homed UNTOUCHED at security/scan.
+            Old /security bookmarks land on Overview via the index redirect.
+          */}
+          <Route path="security" element={<SecurityLayout />}>
+            <Route index element={<Navigate replace to="overview" />} />
+            <Route path="overview" element={<SecurityOverview />} />
+            <Route path="register" element={<FindingsRegister />} />
+            <Route path="scan" element={<SecurityView />} />
+          </Route>
           {/*
             Spec 2026-05-24 Target State Sub-tab + Deterministic Suggest -- Task Group 3.3
             Legacy top-level Target Architecture route. The view has been
