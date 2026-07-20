@@ -73,6 +73,13 @@ import {
 } from './migrationTargetCredentialsStore';
 import { request as defaultImplRequest } from './implementationLlmProxyClient';
 import { getConfig } from '../config';
+// Residual 1 (2026-07-20): break-glass echo attribution.
+import {
+  extractOverrideDivergentTables,
+  buildEchoClassifier,
+  defaultFetchEchoFacts,
+  FetchEchoFactsFn,
+} from './migrationReconciliationEchoClassifier';
 import {
   ReconcileBookOfWorkItem,
   NetNewOperationLookup,
@@ -142,6 +149,13 @@ export interface ReconciliationDriverDeps {
   getTargetDbCredentials?(runId: string): TargetDbSecret | undefined;
   /** The authed outbound seam for POST /api/v2/bugs (no new transport). */
   implRequest: typeof defaultImplRequest;
+  /**
+   * Committed endpoint↔data-effect surface for the echo classifier
+   * (Residual 1, 2026-07-20). Read ONLY when the run carries a
+   * `data_parity_override` decision-log entry; failure-isolated (a read
+   * hiccup skips classification — breaks land unclassified, never blocked).
+   */
+  fetchEchoFacts?: FetchEchoFactsFn;
   /** Poll knobs (instant in tests). */
   pollOptions?: ReconciliationPollOptions;
   /** The circuit-breaker max-attempts cap (configurable per CD-6). */
@@ -506,6 +520,59 @@ export async function triggerFullBaselineReconcile(
   const breakRows = result.diffItems
     .filter(isDiffItemABreak)
     .map((item) => diffItemToBreak(item, runId, pinnedBaselineId));
+
+  // --- Echo attribution (Residual 1, 2026-07-20) ---------------------------
+  // A run that BREAK-GLASSED past the DB data-parity gate reconciles under
+  // KNOWN data divergence: every break is deterministically partitioned into
+  // `possible_data_echo` (its endpoint's committed data effects reference a
+  // frozen divergent table) vs `unexplained` (full oracle authority — treat
+  // as a real defect). Clean-context runs (no override entry) are untouched.
+  // Failure-isolated: a facts-read hiccup leaves breaks unclassified.
+  const override = extractOverrideDivergentTables(run.decision_log_json);
+  if (override && breakRows.length > 0) {
+    try {
+      const fetchFacts = deps.fetchEchoFacts ?? defaultFetchEchoFacts;
+      const facts = await fetchFacts(projectId, architectureId);
+      const classify = buildEchoClassifier(facts, override.tables);
+      let echoCount = 0;
+      for (const row of breakRows) {
+        const detail = (row.detail_json ?? {}) as Record<string, unknown>;
+        const verdict = classify(
+          typeof detail.method === 'string' ? detail.method : null,
+          typeof detail.path === 'string' ? detail.path : null
+        );
+        detail.echo_classification = verdict.classification;
+        if (verdict.classification === 'possible_data_echo') {
+          detail.echo_tables = verdict.tables;
+          echoCount++;
+        }
+        detail.ran_under_data_parity_override = {
+          at: override.at,
+          divergent_tables: override.tables,
+        };
+        row.detail_json = detail;
+      }
+      logger.info('[diag-gateway] migration_reconciliation echo_classified', {
+        projectId,
+        runId,
+        breaks: breakRows.length,
+        possibleDataEcho: echoCount,
+        unexplained: breakRows.length - echoCount,
+        divergentTables: override.tables.length,
+      });
+      trace.warn(
+        `reconcile ran under data-parity override — breaks partitioned: ` +
+          `${breakRows.length - echoCount} unexplained (real signal), ${echoCount} possible data echo`,
+        reconcileCorr,
+      );
+    } catch (error) {
+      logger.warn('[diag-gateway] migration_reconciliation echo_classify_failed', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'unknown',
+      });
+    }
+  }
 
   let createdBreaks: MigrationReconciliationBreak[] = [];
   if (breakRows.length > 0) {

@@ -36,6 +36,13 @@ export interface DataParityGateReason {
   code: 'data_parity_unverified' | 'data_parity_failed';
   message: string;
   workItemId?: string | null;
+  /**
+   * The UNWAIVED divergent tables (schema-qualified when known) behind a
+   * `data_parity_failed` reason (Residual 1, 2026-07-20). The break-glass
+   * override records THIS list on the run's decision log so the downstream
+   * API reconcile can attribute breaks (data-echo classification).
+   */
+  tables?: string[];
 }
 
 export interface DataParityGateResult {
@@ -156,6 +163,11 @@ export async function evaluateDataParityReadiness(params: {
                 `data (${names}${unwaived.length > 8 ? ', …' : ''}). Fix the load and ` +
                 're-run data parity, or waive an accepted divergence per table with ' +
                 'a waiver target "data-parity:<table>".',
+              // Full structured list (uncapped) — the override recorder freezes
+              // it onto the run for downstream echo attribution.
+              tables: unwaived.map((t) =>
+                t.schema ? `${t.schema}.${t.table ?? '?'}` : (t.table ?? '?'),
+              ),
             });
           }
           actual =

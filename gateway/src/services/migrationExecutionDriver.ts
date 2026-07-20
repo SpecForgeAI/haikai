@@ -1807,6 +1807,51 @@ export async function resumeMigration(
     }
   }
 
+  // Break-glass RECORDING (Residual 1, 2026-07-20): an override past the DB
+  // parity gate is frozen onto the run's decision log — who overrode is the
+  // caller's audit trail; WHAT was overridden (the unwaived divergent tables
+  // at this moment) is what the downstream API reconcile needs to attribute
+  // breaks (possible data echo vs real defect). Best-effort: a recording
+  // failure never blocks the resume.
+  if (completedPlane === 'db' && opts?.override) {
+    try {
+      const book = run.book_of_work_id
+        ? await deps.fetchBookOfWork(scope.projectId, run.book_of_work_id)
+        : null;
+      const parity = await evaluateDataParityReadiness({
+        projectId: scope.projectId,
+        architectureId: book?.current_architecture_id ?? null,
+        reads: deps.dataParityGateReads,
+      });
+      const divergentTables = [
+        ...new Set(parity.reasons.flatMap((r) => r.tables ?? [])),
+      ];
+      const entry: Record<string, unknown> = {
+        type: 'data_parity_override',
+        at: new Date().toISOString(),
+        parity_codes: parity.reasons.map((r) => r.code),
+        divergent_tables: divergentTables,
+        note:
+          'Break-glass: resumed past the DB-plane data-parity gate. The next ' +
+          "plane's API reconcile runs under KNOWN data divergence — its breaks " +
+          'are echo-classified against these tables.',
+      };
+      await deps.patchMigrationExecutionRun(scope.projectId, runId, {
+        decision_log_json: [...(run.decision_log_json ?? []), entry],
+      });
+      trace.warn(
+        `data-parity override RECORDED — ${divergentTables.length} divergent table(s) frozen for echo attribution`,
+        { run: runId, project: scope.project },
+      );
+    } catch (err) {
+      logger.warn('[diag-gateway] migration_execution_driver override_record_failed', {
+        projectId: scope.projectId,
+        runId,
+        error: err instanceof Error ? err.message : 'unknown',
+      });
+    }
+  }
+
   const descriptor = await resolveDescriptorForItem(scope, run, next, deps);
   if (!descriptor) {
     await haltRunForItem(deps, scope, runId, next.id, next, RUN_ITEM_STATUS.FAILED,

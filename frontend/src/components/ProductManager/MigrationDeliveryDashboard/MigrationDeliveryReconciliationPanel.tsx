@@ -120,6 +120,36 @@ function breakDetail(b: MigrationReconciliationBreakDto): {
 }
 
 /**
+ * Echo attribution (Residual 1, 2026-07-20): read the gateway's per-break
+ * partition off `detail_json`. Present ONLY when the run break-glassed past
+ * the DB data-parity gate — clean-context reconciles carry none of this.
+ */
+function echoInfo(b: MigrationReconciliationBreakDto): {
+  classification: 'possible_data_echo' | 'unexplained' | null;
+  tables: string[];
+  overrideTables: string[];
+} {
+  const d = (b.detail_json ?? {}) as Record<string, unknown>;
+  const cls =
+    d.echo_classification === 'possible_data_echo' ||
+    d.echo_classification === 'unexplained'
+      ? d.echo_classification
+      : null;
+  const tables = Array.isArray(d.echo_tables)
+    ? (d.echo_tables as unknown[]).filter((t): t is string => typeof t === 'string')
+    : [];
+  const override = d.ran_under_data_parity_override as
+    | { divergent_tables?: unknown }
+    | undefined;
+  const overrideTables = Array.isArray(override?.divergent_tables)
+    ? (override!.divergent_tables as unknown[]).filter(
+        (t): t is string => typeof t === 'string',
+      )
+    : [];
+  return { classification: cls, tables, overrideTables };
+}
+
+/**
  * The matched work-item reference (D6) written by the gateway auto-disposition
  * pass onto `detail_json.net_new_match` when a `target_only` diff was uniquely
  * recognised as an additive net_new endpoint. Returns null unless the break was
@@ -1151,6 +1181,41 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
         </button>
       </div>
 
+      {/* Echo-attribution banner (Residual 1): the run BREAK-GLASSED past the
+          DB data-parity gate — the two buckets are hard-walled: unexplained
+          keeps full oracle authority; possible data echo is honestly labelled
+          unreadable-until-parity-is-fixed. */}
+      {(() => {
+        const classified = breaks.filter(
+          (b) => echoInfo(b).classification !== null,
+        );
+        if (classified.length === 0) return null;
+        const echo = classified.filter(
+          (b) => echoInfo(b).classification === 'possible_data_echo',
+        ).length;
+        const withOverride = classified.find(
+          (b) => echoInfo(b).overrideTables.length > 0,
+        );
+        const overrideTables = withOverride
+          ? echoInfo(withOverride).overrideTables
+          : [];
+        return (
+          <div
+            className={styles.needsAttentionReason}
+            role="alert"
+            data-testid="mdd-recon-echo-banner"
+          >
+            {'⚠'} This reconcile ran under a DATA-PARITY OVERRIDE
+            {overrideTables.length > 0
+              ? ` (divergent: ${overrideTables.join(', ')})`
+              : ''}
+            . Breaks are partitioned: {classified.length - echo} unexplained
+            (treat as real defects) · {echo} possible data echo (explained by
+            the divergent tables — re-check after parity is fixed).
+          </div>
+        );
+      })()}
+
       {/* ----- Breaks table (break == drifting api_behaviour_diff_item) ----- */}
       {breaks.length === 0 ? (
         <div className={styles.needsAttentionReason} data-testid="mdd-recon-empty">
@@ -1197,6 +1262,25 @@ export const MigrationDeliveryReconciliationPanel: React.FC<
                   </td>
                   <td data-testid={`mdd-recon-break-op-${id}`}>
                     <strong>{method}</strong> {path}
+                    {(() => {
+                      const echo = echoInfo(b);
+                      if (echo.classification !== 'possible_data_echo') return null;
+                      return (
+                        <span
+                          className={styles.badge}
+                          data-testid={`mdd-recon-echo-badge-${id}`}
+                          style={{ marginLeft: 6 }}
+                          title={
+                            'Possible data echo — this endpoint’s committed ' +
+                            'data effects reference divergent table(s): ' +
+                            echo.tables.join(', ') +
+                            '. Re-check after data parity is fixed.'
+                          }
+                        >
+                          data echo? ({echo.tables.join(', ')})
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>
                     {/* Spec 2026-06-17 (R1 + R2): one small badge per drifted
