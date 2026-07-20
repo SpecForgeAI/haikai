@@ -331,6 +331,17 @@ function mapRowDtoToRow(dto: SpecGenerationRowDto): SpecGenerationRow {
       dto.covered_endpoint_ids ??
       (dto as { coveredEndpointIds?: string[] | null }).coveredEndpointIds ??
       null,
+    // Display-only join fields (2026-07-20): the readable story + parent titles
+    // the gateway batch response supplies (camelCase), so the table shows names
+    // rather than raw work-item UUIDs. Tolerant of a snake_case producer too.
+    storyTitle:
+      (c.storyTitle as string | undefined) ??
+      (c.story_title as string | undefined) ??
+      undefined,
+    parentTitle:
+      (c.parentTitle as string | undefined) ??
+      (c.parent_title as string | undefined) ??
+      undefined,
   };
 }
 

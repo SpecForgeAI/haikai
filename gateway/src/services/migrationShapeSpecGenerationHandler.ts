@@ -288,6 +288,14 @@ export interface MigrationStorySpecGenerationDto {
   structuredTestsJson?: Array<Record<string, unknown>> | null;
   /** Model EndpointEntity UUIDs the story migrates (D9); EMPTY for non-endpoint stories. */
   coveredEndpointIds?: string[] | null;
+  /**
+   * Display-only join fields (2026-07-20): the story's readable title + its
+   * parent feature/epic title, joined from the book of work AFTER persistence
+   * so they NEVER reach the AMS row. Present only on the gateway batch response
+   * — they let the spec-gen table render names instead of raw work-item UUIDs.
+   */
+  storyTitle?: string | null;
+  parentTitle?: string | null;
 }
 
 /**
@@ -2679,6 +2687,29 @@ async function runSinglePassBatch(
       for (const r of perStoryResults) {
         (r as unknown as Record<string, unknown>)['_confirmOverwrite'] = true;
       }
+    }
+  }
+
+  // ----- Stage 6.4: display-only title join (2026-07-20) -----
+  // Join each row's readable story title + its parent feature/epic title from
+  // the book of work so the spec-gen batch table shows names, not raw
+  // work-item UUIDs. Runs AFTER persistence, so these display fields ride the
+  // response only and never reach the AMS row.
+  {
+    const itemByWorkItem = new Map<string, LoadedBookOfWorkItem>();
+    const itemById = new Map<string, LoadedBookOfWorkItem>();
+    for (const it of bow.items) {
+      itemById.set(it.id, it);
+      if (it.workItemId) itemByWorkItem.set(it.workItemId, it);
+    }
+    for (const row of perStoryResults) {
+      const item =
+        (row.workItemId ? itemByWorkItem.get(row.workItemId) : undefined) ??
+        (row.bookItemId ? itemById.get(row.bookItemId) : undefined);
+      if (!item) continue;
+      row.storyTitle = item.title;
+      const parent = item.parentId ? itemById.get(item.parentId) : undefined;
+      row.parentTitle = parent?.title ?? null;
     }
   }
 

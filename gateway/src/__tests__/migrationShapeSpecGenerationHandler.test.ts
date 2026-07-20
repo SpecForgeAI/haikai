@@ -440,6 +440,13 @@ describe('Migration Shape-Spec Batch Generation handler (Spec 2026-05-19, Task G
       expect(workItemsAttempted).not.toContain(`wi-${i}`);
     }
     expect(result.summary.generated).toBe(25);
+
+    // Display-only enrichment (2026-07-20): each result row carries the
+    // readable story title + its parent feature title, joined from the book of
+    // work — so the spec-gen table renders names, not raw work-item UUIDs.
+    const wi1 = result.perStoryResults.find((r) => r.workItemId === 'wi-1')!;
+    expect(wi1.storyTitle).toBe('Implement Customer Lookup API Compatibility');
+    expect(wi1.parentTitle).toBe('Feature F1');
   });
 
   // ----- Test 2: batch selection preserves sequenceOrder + parent hierarchy ordering -----
