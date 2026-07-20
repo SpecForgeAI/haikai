@@ -1331,3 +1331,117 @@ export async function addWorkItem(
     message: body.message ?? null,
   };
 }
+
+// ============================================================================
+// Migration credentials status + target-DB registration (Residual 2, 2026-07-20)
+// ============================================================================
+
+/** The pack-DECLARED target-DB binding (coordinates only — never secrets). */
+export interface TargetDbBinding {
+  engine: string;
+  host: string;
+  port: number;
+  database: string;
+  schema: string;
+  username: string;
+  note?: string;
+}
+
+/** Presence + non-secret coordinates from the gateway's in-memory stores. */
+export interface MigrationCredentialsStatus {
+  targetBinding: TargetDbBinding | null;
+  source: {
+    registered: boolean;
+    dbType?: string;
+    host?: string;
+    port?: number;
+    database?: string;
+    username?: string;
+  };
+  targetRegistered: boolean;
+}
+
+/**
+ * GET /api/v1/projects/{projectId}/migration-credentials-status
+ *
+ * The plan DECLARED the target binding (the plan creates the target DB), so
+ * the Start-stage dialog prefills coordinates from here and asks the operator
+ * for SECRETS only. Passwords never ride this endpoint.
+ */
+export async function fetchMigrationCredentialsStatus(
+  projectId: string,
+  opts: { architectureId?: string; runId?: string } = {},
+): Promise<MigrationCredentialsStatus> {
+  const params = new URLSearchParams();
+  if (opts.architectureId) params.set('architectureId', opts.architectureId);
+  if (opts.runId) params.set('runId', opts.runId);
+  const qs = params.toString();
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-credentials-status${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Failed to read migration credentials status: ${res.status} ${res.statusText}`,
+    );
+  }
+  const body = (await res.json()) as {
+    target_binding?: TargetDbBinding | null;
+    source?: MigrationCredentialsStatus['source'];
+    target_registered?: boolean;
+  };
+  return {
+    targetBinding: body.target_binding ?? null,
+    source: body.source ?? { registered: false },
+    targetRegistered: body.target_registered ?? false,
+  };
+}
+
+/**
+ * Register the run's TARGET-DB credentials (in gateway memory only — never
+ * persisted, never logged). Coordinates come prefilled from the declared
+ * binding; the operator supplies the password. `api.type='none'` satisfies the
+ * route's api-block requirement for a DB-only registration.
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/target-credentials
+ */
+export async function registerRunTargetDbCredentials(
+  projectId: string,
+  runId: string,
+  db: {
+    host: string;
+    port: number;
+    database: string;
+    schema?: string | null;
+    username: string;
+    password: string;
+  },
+): Promise<void> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-execution-runs/${encodeURIComponent(runId)}/target-credentials`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      api: { type: 'none' },
+      db: { dbType: 'postgres', ...db },
+    }),
+  });
+  if (!res.ok) {
+    let message = '';
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      message = parsed.error ?? '';
+    } catch {
+      // ignore parse failure
+    }
+    throw new Error(
+      message ||
+        `Failed to register target DB credentials: ${res.status} ${res.statusText}`,
+    );
+  }
+}

@@ -100,6 +100,7 @@ export function MigrationBookOfWorkReviewRoute() {
       initialSelectedWorkItemId={initialSelectedWorkItemId}
       companyName={company || undefined}
       projectName={project || undefined}
+      activeArchitectureId={architectureId}
       onOpenDelivery={() =>
         navigate(
           `${archScopedPrefix}/migration-books-of-work/${bookId}/delivery`,

@@ -825,6 +825,24 @@ export function buildDbMigrationPackArtifacts(
       cast_notes: castNotes,
     },
     expected_schema: expectedSchema,
+    // The DECLARED target-DB binding (2026-07-20): the plan creates the target
+    // database, so the plan states its coordinates — local-machine defaults
+    // (data parity runs locally). The seed story's spec text confirms this
+    // binding; the Start-stage dialog prefills from it, so the operator
+    // supplies SECRETS only, never re-types what the tool decided.
+    target_db: {
+      engine: 'postgresql',
+      host: 'localhost',
+      port: 5432,
+      database: 'haikai_target',
+      schema: 'public',
+      username: 'postgres',
+      note:
+        'Declared by the migration plan — the schema-apply seed CREATES this ' +
+        'database at these coordinates. Confirm in the seed story spec; ' +
+        'override at apply time only when reality differs. Credentials are ' +
+        'NEVER stored here.',
+    },
     sync: buildSyncManifestSection(deltaStrategies),
   };
 

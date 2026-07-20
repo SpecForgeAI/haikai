@@ -270,7 +270,55 @@ export async function runDbPackSpecCarriage(args: {
     };
   }
 
-  const specText = buildDbPackSpecText({ story, packId, files: selection.files });
+  // Target-DB binding confirmation (2026-07-20): the story that CARRIES the
+  // master changelog is the story that CREATES the target database — its spec
+  // must state, verbatim, where it creates it (the manifest's declared
+  // binding). The operator confirms coordinates here; secrets never appear.
+  let bindingSection = '';
+  const carriesMasterChangelog = selection.files.some((f) =>
+    f.file_path.endsWith('db.changelog-master.xml'),
+  );
+  if (carriesMasterChangelog) {
+    const manifestRow = rows.find((r) => r.file_path === 'manifest.json');
+    if (manifestRow?.content) {
+      try {
+        const manifest = JSON.parse(manifestRow.content) as {
+          target_db?: {
+            engine: string;
+            host: string;
+            port: number;
+            database: string;
+            schema: string;
+            username: string;
+            note?: string;
+          };
+        };
+        const t = manifest.target_db;
+        if (t) {
+          bindingSection = [
+            '',
+            '## Target database (declared binding)',
+            '',
+            'This spec CREATES the target database at the coordinates the plan',
+            'declared — confirm them before applying; override only when your',
+            'environment genuinely differs. Credentials are supplied at apply',
+            'time and are never part of this spec.',
+            '',
+            `- Engine: ${t.engine}`,
+            `- JDBC URL: jdbc:postgresql://${t.host}:${t.port}/${t.database}`,
+            `- Schema: ${t.schema}`,
+            `- Username: ${t.username}`,
+            '',
+          ].join('\n');
+        }
+      } catch {
+        // Malformed manifest content — the binding section is best-effort.
+      }
+    }
+  }
+
+  const specText =
+    buildDbPackSpecText({ story, packId, files: selection.files }) + bindingSection;
   const warnings: Array<Record<string, unknown>> = [];
   if (specText.length > DB_PACK_CARRIAGE_SIZE_WARNING_CHARS) {
     warnings.push({

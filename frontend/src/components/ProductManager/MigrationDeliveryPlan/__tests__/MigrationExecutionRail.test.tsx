@@ -31,6 +31,8 @@ vi.mock('../../../../api/specGenerationApi', async () => {
 const mockTriggerMigrate = vi.fn();
 const mockGetRun = vi.fn();
 const mockResume = vi.fn();
+const mockCredsStatus = vi.fn();
+const mockRegisterTargetDb = vi.fn();
 vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
   const actual = await vi.importActual<
     typeof import('../../../../api/migrationDeliveryDashboardApi')
@@ -40,6 +42,9 @@ vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
     triggerMigrate: (...a: unknown[]) => mockTriggerMigrate(...a),
     getLatestMigrationExecutionRun: (...a: unknown[]) => mockGetRun(...a),
     resumeMigrationRun: (...a: unknown[]) => mockResume(...a),
+    fetchMigrationCredentialsStatus: (...a: unknown[]) => mockCredsStatus(...a),
+    registerRunTargetDbCredentials: (...a: unknown[]) =>
+      mockRegisterTargetDb(...a),
   };
 });
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
@@ -163,6 +168,19 @@ beforeEach(() => {
     .mockResolvedValue({ status: 'started', runId: 'run-1', itemCount: 2 });
   mockGetRun.mockReset().mockResolvedValue(null);
   mockResume.mockReset().mockResolvedValue({ status: 'resumed', nextPlane: 'service' });
+  mockCredsStatus.mockReset().mockResolvedValue({
+    targetBinding: {
+      engine: 'postgresql',
+      host: 'localhost',
+      port: 5432,
+      database: 'haikai_target',
+      schema: 'public',
+      username: 'postgres',
+    },
+    source: { registered: true, host: 'sh', port: 5000, database: 'sd' },
+    targetRegistered: false,
+  });
+  mockRegisterTargetDb.mockReset().mockResolvedValue(undefined);
 });
 
 describe('planeForStory — the display mirror of the gateway plane vocabulary', () => {
@@ -209,7 +227,7 @@ describe('execution rail (Phase 1b)', () => {
     expect(await screen.findByTestId('item-drawer-s-no')).toBeInTheDocument();
   });
 
-  it('Start calls triggerMigrate with the resolved scope once every story is satisfied', async () => {
+  it('Start opens the binding-prefilled dialog; confirm triggers the run AND registers target creds against the new runId', async () => {
     mockFetchRows.mockResolvedValue([generatedRow('wi-1', 's-1')]);
     renderWorkspace(
       draftWith([makeItem({ id: 's-1', title: 'Schema story', workItemId: 'wi-1' } as never)]),
@@ -218,10 +236,39 @@ describe('execution rail (Phase 1b)', () => {
       expect(screen.getByTestId('execution-rail-start')).toBeEnabled(),
     );
     fireEvent.click(screen.getByTestId('execution-rail-start'));
+
+    // The dialog prefills the plan-DECLARED binding — the operator confirms
+    // coordinates and supplies only the secret.
+    const dialog = await screen.findByTestId('start-stage-dialog');
+    expect(
+      (within(dialog).getByTestId('start-stage-database') as HTMLInputElement)
+        .value,
+    ).toBe('haikai_target');
+    expect(
+      (within(dialog).getByTestId('start-stage-host') as HTMLInputElement)
+        .value,
+    ).toBe('localhost');
+    expect(dialog).toHaveTextContent(/Source DB:\s*registered ✓/);
+
+    fireEvent.change(within(dialog).getByTestId('start-stage-password'), {
+      target: { value: 's3cret' },
+    });
+    fireEvent.click(within(dialog).getByTestId('start-stage-confirm'));
+
     await waitFor(() =>
       expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
         company: 'acme',
         project: 'hifi',
+      }),
+    );
+    await waitFor(() =>
+      expect(mockRegisterTargetDb).toHaveBeenCalledWith(PROJECT_ID, 'run-1', {
+        host: 'localhost',
+        port: 5432,
+        database: 'haikai_target',
+        schema: 'public',
+        username: 'postgres',
+        password: 's3cret',
       }),
     );
   });

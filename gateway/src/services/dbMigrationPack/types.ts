@@ -280,6 +280,23 @@ export interface PackManifest {
   /** The Group 5 diff baseline — emitted at generation time (spec 2.5). */
   expected_schema: ExpectedSchema;
   /**
+   * The DECLARED target-database binding (2026-07-20): the plan CREATES the
+   * target DB, so the plan states its coordinates — the operator confirms
+   * them and supplies only SECRETS, never re-types what the tool decided.
+   * Local-machine defaults (data parity runs locally); override at apply
+   * time when reality differs. NEVER carries credentials. Absent on packs
+   * generated before this field.
+   */
+  target_db?: {
+    engine: 'postgresql';
+    host: string;
+    port: number;
+    database: string;
+    schema: string;
+    username: string;
+    note: string;
+  };
+  /**
    * Side-by-side operation section (Spec 2026-07-02-d): daily one-way sync
    * runner + state table, reconciliation artefacts, swap-over runbook, and
    * the per-table sync posture. Absent on packs generated before the spec.

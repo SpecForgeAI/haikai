@@ -91,6 +91,15 @@ export interface MigrationExecutionRailProps {
   onBreakGlass: () => void;
   onSelectStory: (bookItemId: string) => void;
   onOpenDelivery?: () => void;
+  /**
+   * Target-DB credential registration presence for the ACTIVE run (Residual 2).
+   * null = no run / unknown. Rendered on the DB card so a lost registration
+   * (e.g. gateway restart — the store is in-memory) is visible, not a silent
+   * parity block later.
+   */
+  dbCredsRegistered?: boolean | null;
+  /** Open the credentials dialog to (re)register the run's target-DB secrets. */
+  onProvideCreds?: () => void;
 }
 
 function describeBlockReason(r: Record<string, unknown>): string {
@@ -113,6 +122,8 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
   onBreakGlass,
   onSelectStory,
   onOpenDelivery,
+  dbCredsRegistered,
+  onProvideCreds,
 }) => {
   if (planes.length === 0) return null;
 
@@ -248,6 +259,28 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
               {p.runTotal > 0 && (
                 <div data-testid={`execution-rail-progress-${p.plane}`}>
                   run: {p.runDone}/{p.runTotal} done
+                </div>
+              )}
+              {p.plane === 'db' && runActive && dbCredsRegistered !== null && (
+                <div
+                  className={styles.coveragePanelNote}
+                  data-testid="execution-rail-db-creds"
+                >
+                  target DB creds:{' '}
+                  {dbCredsRegistered ? 'registered ✓' : 'NOT registered'}
+                  {!dbCredsRegistered && onProvideCreds && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className={styles.coverageInlineLink}
+                        onClick={onProvideCreds}
+                        data-testid="execution-rail-provide-creds"
+                      >
+                        Provide credentials…
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
               {isFirst && !runActive && (
