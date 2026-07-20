@@ -35,7 +35,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { MigrationBookOfWorkReviewWorkspace } from './MigrationBookOfWorkReviewWorkspace';
 // Phase 1b: the execution rail needs the orchestration scope — company =
 // organisation NAME, project = active project name; resolved exactly as the
@@ -50,7 +50,11 @@ export function MigrationBookOfWorkReviewRoute() {
     bookId: string;
   }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const activeProject = useProject();
+  // Phase 1c: deep links that used to open the standalone spec-generation
+  // workspace's drawer now auto-select the story here (?workItemId=...).
+  const initialSelectedWorkItemId = searchParams.get('workItemId') ?? undefined;
 
   const [company, setCompany] = useState<string>('');
   const [project, setProject] = useState<string>('');
@@ -93,11 +97,7 @@ export function MigrationBookOfWorkReviewRoute() {
       onBackToPlans={() =>
         navigate(`${archScopedPrefix}/migration-delivery-plan`)
       }
-      onOpenSpecGeneration={() =>
-        navigate(
-          `${archScopedPrefix}/migration-books-of-work/${bookId}/spec-generation`,
-        )
-      }
+      initialSelectedWorkItemId={initialSelectedWorkItemId}
       companyName={company || undefined}
       projectName={project || undefined}
       onOpenDelivery={() =>

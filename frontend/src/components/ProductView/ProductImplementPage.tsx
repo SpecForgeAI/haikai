@@ -582,11 +582,14 @@ export function ProductImplementPage({
   const handleDrillBackToWorkspace = useCallback(
     (input: { workItemId: string; bookOfWorkId: string | null }) => {
       if (!projectUuid || !input.bookOfWorkId || !activeArchitectureId) return;
+      // Phase 1c (2026-07-20): the standalone spec-generation workspace is
+      // gone — the plan REVIEW screen owns the spec lifecycle. The workItemId
+      // query param auto-selects the story so its drawer (spec section) opens.
       const url =
         `/projects/${encodeURIComponent(projectUuid)}` +
         `/architectures/${encodeURIComponent(activeArchitectureId)}` +
         `/migration-books-of-work/${encodeURIComponent(input.bookOfWorkId)}` +
-        `/spec-generation` +
+        `/review` +
         `?workItemId=${encodeURIComponent(input.workItemId)}`;
       navigate(url);
     },

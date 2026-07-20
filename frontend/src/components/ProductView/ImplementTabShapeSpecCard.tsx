@@ -39,9 +39,9 @@
  * (D7); the tiles are read-only and MAY drift from a manually-edited body.
  *
  * Styling notes:
- *   - Reuses the existing `MigrationShapeSpecGeneration.module.css` so the
- *     chip + spec text rendering is visually consistent with the workspace
- *     drawer.
+ *   - Phase 1c (2026-07-20): the standalone spec-generation workspace was
+ *     removed; its stylesheet moved here as
+ *     `ImplementTabShapeSpecCard.module.css` (this card is its last consumer).
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -59,7 +59,7 @@ import {
   SCOPE_OUT_ALIASES,
   ACCEPTANCE_CRITERIA_ALIASES,
 } from '../../utils/migrationSpecSection';
-import styles from '../ProductManager/MigrationShapeSpecGeneration/MigrationShapeSpecGeneration.module.css';
+import styles from './ImplementTabShapeSpecCard.module.css';
 
 // ============================================================================
 // Label helpers (mirrored from BatchResultsTable / StoryResultDrawer)

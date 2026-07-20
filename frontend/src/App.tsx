@@ -90,7 +90,6 @@ import { FindingsRegister } from './components/SecurityOverview/FindingsRegister
 // Spec 2026-05-19 PM Migration Shape-Spec Batch Generation -- follow-up route wiring
 // Workspace surface for batch-generated shape-specs, drill-into from the
 // WorkItem Implement tab's `ImplementTabShapeSpecCard`.
-import { SpecGenerationWorkspaceRoute } from './components/ProductManager/MigrationShapeSpecGeneration/SpecGenerationWorkspaceRoute';
 // Spec 2026-05-19 Migration Delivery Progress and Evidence Tracking -- Task Group 13
 // Route registration + AppShell wiring (Q-10). The dashboard surface is
 // architecture-scoped (mirrors the SpecGenerationWorkspaceRoute precedent
@@ -852,19 +851,10 @@ function AppRoutes() {
             path="architecture-design/target-state"
             element={<ArchitectureDesignTargetStatePage />}
           />
-          {/*
-            Spec 2026-05-19 PM Migration Shape-Spec Batch Generation -- follow-up
-            Migration book-of-work shape-spec generation workspace. Mounted
-            architecture-scoped so the surface inherits `<AppShell>`'s TopBar +
-            providers, and so `<ProjectLayout>`'s missing-architecture redirect
-            does not bounce a deep-link away. The `workItemId` query param is
-            optional; when present the workspace auto-opens the story drawer
-            for that WorkItem (drill-back from `ImplementTabShapeSpecCard`).
-          */}
-          <Route
-            path="migration-books-of-work/:bookId/spec-generation"
-            element={<SpecGenerationWorkspaceRoute />}
-          />
+          {/* Phase 1c (2026-07-20): the standalone spec-generation workspace
+              route is GONE — the plan review screen owns the spec lifecycle.
+              Deep links with ?workItemId land on .../review, which auto-selects
+              the story. */}
           {/*
             Spec 2026-05-19 Migration Delivery Progress and Evidence Tracking -- Task Group 13
             Read-only delivery-dashboard surface for a single saved
