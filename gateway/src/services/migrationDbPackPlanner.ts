@@ -1165,9 +1165,20 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
         acceptanceCriteria: [
           `Every APPROVED ${label.replace(/s$/, '')} translation is applied byte-for-byte; unapproved objects are NEVER applied.`,
         ],
-        readiness: approved.length > 0 ? 'ready_for_spec' : 'blocked',
+        // Readiness is gated on the CARRIABLE condition — emitted files present
+        // (the same condition that stamps the carriage tag below), NOT on the
+        // approval count. Phase 0 alignment fix (2026-07-20): approvals without
+        // emitted files previously predicted ready_for_spec yet fell through to
+        // the LLM resolver and surfaced as generic "insufficient context".
+        readiness: approvedFiles.length > 0 ? 'ready_for_spec' : 'blocked',
         readinessReasons:
-          approved.length > 0 ? [] : [`No approved ${label} translations yet.`],
+          approvedFiles.length > 0
+            ? []
+            : approved.length > 0
+              ? [
+                  `${approved.length} approved ${label} translation(s) have no emitted files yet — regenerate the pack to emit them.`,
+                ]
+              : [`No approved ${label} translations yet.`],
         tags: [...packTags, ...(approvedFiles.length > 0 ? [SEED_DB_PACK_FILES_TAG] : [])],
         traceabilitySummary: `Pack ${packView.packId} approved-translation emission (${approvedFiles.length} file(s)).`,
         extras: {

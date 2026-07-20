@@ -31,6 +31,12 @@
  *     Returns `{ totalScored, totalSkipped, gradeBreakdown: { A, B, C, D, F,
  *     na } }`. NO LLM contact.
  *
+ *   POST /api/v1/projects/:projectId/migration-books-of-work/:bookId/spec-generations/preflight
+ *     Phase 0 (2026-07-20) — the ONE readiness function. Runs the generator's
+ *     own first half (carriage checks / focused-context resolver +
+ *     detectInsufficientContext) for EVERY story and stops before the LLM.
+ *     Response: `{ rows: SpecPreflightRow[] }`. Read-only; NO LLM contact.
+ *
  * Auth gating: matches `migrationBookOfWork.ts` (Spec 1) — no role gate today.
  * R-11 says the gating mirrors the PM-task entry from Spec 1; both routers
  * should adopt project-wide gating together when it lands.
@@ -63,6 +69,7 @@ import {
   ShapeSpecGenerationDeps,
   WorkstreamLockedError,
 } from '../services/migrationShapeSpecGenerationHandler';
+import { runSpecPreflight } from '../services/migrationSpecPreflight';
 import { fetchProjectConfigWithDefaults } from '../services/architectureModelClient';
 import { autoSeedEpicCapturedDecision } from '../services/epicCapturedDecisionsClient';
 // Spec 5 Phase 2 (2026-06-25-confirmed-manifest-producer-wiring, Task Group 5):
@@ -101,6 +108,41 @@ const productionDeps: ShapeSpecGenerationDeps = {
   // the consumer-side carriage.
   seedBuildFilesSource: productionSeedBuildFilesSource,
 };
+
+// ---------------------------------------------------------------------------
+// POST .../spec-generations/preflight — the ONE readiness function (Phase 0)
+// ---------------------------------------------------------------------------
+
+migrationShapeSpecGenerationRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/spec-generations/preflight',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    const start = Date.now();
+    try {
+      const rows = await runSpecPreflight({ projectId, bookOfWorkId: bookId });
+      console.log(
+        `[diag-gw] route=spec-generations-preflight status=200 ` +
+          `elapsed_ms=${Date.now() - start} stories=${rows.length} ` +
+          `ready=${rows.filter((r) => r.ready).length}`
+      );
+      res.status(200).json({ rows });
+    } catch (error) {
+      logger.error('Spec preflight: unexpected error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      console.warn(
+        `[diag-gw] route=spec-generations-preflight status=500 elapsed_ms=${Date.now() - start}`
+      );
+      res.status(500).json({
+        error: {
+          message: error instanceof Error ? error.message : 'Preflight failed',
+        },
+      });
+    }
+  }
+);
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/projects/:projectId/migration-books-of-work/:bookId/spec-generations/generate-batch

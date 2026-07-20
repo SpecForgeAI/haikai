@@ -66,6 +66,18 @@ export interface MigrationBookOfWorkItemDrawerProps {
    * id on miss). Other reference lists ignore it and render verbatim.
    */
   resolveRef?: ResolveRefFn;
+  /**
+   * Live spec-generation PREFLIGHT verdict for this story (Phase 0,
+   * 2026-07-20) — the generator's own input check, run without the LLM.
+   * When present it renders the authoritative "Readiness check (live)"
+   * section; the baked missingInputs stay as expansion-time provenance.
+   */
+  preflight?: {
+    route: string;
+    ready: boolean;
+    missingInputs: Array<Record<string, unknown>>;
+    note: string | null;
+  } | null;
 }
 
 function RefChipList({
@@ -109,7 +121,7 @@ function RefChipList({
 
 export const MigrationBookOfWorkItemDrawer: React.FC<
   MigrationBookOfWorkItemDrawerProps
-> = ({ item, dbMigrationPack, onDownloadDbMigrationPack, resolveRef }) => {
+> = ({ item, dbMigrationPack, onDownloadDbMigrationPack, resolveRef, preflight }) => {
   if (!item) {
     return (
       <div className={styles.drawerEmpty} data-testid="item-drawer-empty">
@@ -150,6 +162,38 @@ export const MigrationBookOfWorkItemDrawer: React.FC<
       </div>
 
       <div className={styles.drawerBody}>
+        {preflight && (
+          <div className={styles.section} data-testid="item-drawer-preflight">
+            <h3 className={styles.sectionTitle}>Readiness check (live)</h3>
+            {preflight.ready ? (
+              <p className={styles.bodyText} data-testid="item-drawer-preflight-ready">
+                Ready {'✓'} — the generator has every input it needs
+                (route: {preflight.route.replace(/_/g, ' ')}
+                {preflight.note ? ` · ${preflight.note.replace(/_/g, ' ')}` : ''}).
+              </p>
+            ) : (
+              <>
+                <p className={styles.bodyText} data-testid="item-drawer-preflight-blocked">
+                  Blocked — {preflight.missingInputs.length} missing input
+                  {preflight.missingInputs.length === 1 ? '' : 's'} (route:{' '}
+                  {preflight.route.replace(/_/g, ' ')}):
+                </p>
+                <ul className={styles.bulletList}>
+                  {preflight.missingInputs.map((m, idx) => {
+                    const label =
+                      typeof m.reason === 'string'
+                        ? m.reason
+                        : typeof m.input === 'string'
+                          ? m.input
+                          : JSON.stringify(m);
+                    return <li key={idx}>{label}</li>;
+                  })}
+                </ul>
+              </>
+            )}
+          </div>
+        )}
+
         {dbMigrationPack && dbMigrationPack.workItemId === item.id && (
           <div
             className={styles.section}

@@ -1044,6 +1044,21 @@ public class MigrationStorySpecGenerationService {
     }
 
     /**
+     * True when the row is a deterministic MANUAL-GATE spec — identified by the
+     * {@code focused_context_refs_json.source == 'code_plan_manual_gate'} marker
+     * the gateway code-carriage stamps. Manual-gate specs intentionally omit
+     * the decisions/interfaces/assumptions sections (they are HUMAN/WIZARD
+     * procedure + gate-condition text), so full-shape-spec heading warnings do
+     * not apply to them.
+     */
+    private static boolean isManualGateSpec(MigrationStorySpecGenerationEntity entity) {
+        Map<String, Object> refs = entity.getFocusedContextRefsJson();
+        if (refs == null) return false;
+        Object source = refs.get("source");
+        return "code_plan_manual_gate".equals(source);
+    }
+
+    /**
      * Invoke {@link ShapeSpecHeadingParser} on the entity's current
      * {@code generated_spec_text} and apply the structured output.
      */
@@ -1064,6 +1079,19 @@ public class MigrationStorySpecGenerationService {
         entity.setDecisionsJson(result.decisions().isEmpty() ? null : new ArrayList<>(result.decisions()));
         entity.setInterfacesJson(result.interfaces().isEmpty() ? null : new ArrayList<>(result.interfaces()));
         entity.setAssumptionsJson(result.assumptions().isEmpty() ? null : new ArrayList<>(result.assumptions()));
+
+        // Manual-gate exemption (Phase 0, 2026-07-20): manual-gate specs
+        // (deterministic HUMAN/WIZARD procedure text, focused_context_refs
+        // source 'code_plan_manual_gate') intentionally omit the
+        // decisions/interfaces/assumptions sections — appending
+        // parser_missing_heading warnings for them is spurious noise. Sections
+        // are still parsed (correctly empty); only the warnings are skipped.
+        if (isManualGateSpec(entity)) {
+            log.debug(
+                "[diag-ams] spec_generation parser_warnings_skipped_manual_gate workItemId={}",
+                shortPrefix(entity.getWorkItemId()));
+            return;
+        }
 
         if (!result.warnings().isEmpty()) {
             List<Map<String, Object>> existing = entity.getWarningsJson();
