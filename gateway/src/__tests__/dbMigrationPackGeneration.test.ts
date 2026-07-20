@@ -432,6 +432,19 @@ describe('dbMigrationPack generation core (Group 2)', () => {
       schemaName: 'dbo',
       tableName: 'orders',
     });
+
+    // The DECLARED target-DB binding (Residual 2): the plan creates the target
+    // database, so the plan states its coordinates — local defaults, never
+    // secrets.
+    expect(artifacts.manifest.target_db).toMatchObject({
+      engine: 'postgresql',
+      host: 'localhost',
+      port: 5432,
+      database: 'haikai_target',
+      schema: 'public',
+      username: 'postgres',
+    });
+    expect(JSON.stringify(artifacts.manifest.target_db)).not.toMatch(/password/i);
     expect(
       artifacts.manifest.expected_schema.keysAndIndexes.some(
         (k) => k.kind === 'foreign_key' && k.onDelete === 'SET NULL'

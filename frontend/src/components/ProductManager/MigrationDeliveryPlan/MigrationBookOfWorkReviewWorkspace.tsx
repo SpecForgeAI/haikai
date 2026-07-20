@@ -100,6 +100,9 @@ import {
   getLatestMigrationExecutionRun,
   resumeMigrationRun,
   MigrationExecutionRunDto,
+  fetchMigrationCredentialsStatus,
+  registerRunTargetDbCredentials,
+  MigrationCredentialsStatus,
 } from '../../../api/migrationDeliveryDashboardApi';
 import MigrationBookOfWorkSelectionControls from './MigrationBookOfWorkSelectionControls';
 import MigrationBookOfWorkSaveToBacklogDialog, {
@@ -141,6 +144,11 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
   projectName?: string;
   /** Deep link to the delivery dashboard (run forensics). */
   onOpenDelivery?: () => void;
+  /**
+   * Active architecture id (Residual 2): resolves the pack's DECLARED
+   * target-DB binding for the Start-stage dialog prefill.
+   */
+  activeArchitectureId?: string;
 }
 
 /**
@@ -315,6 +323,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   companyName,
   projectName,
   onOpenDelivery,
+  activeArchitectureId,
 }) => {
   const { showToast } = useToast();
   const [draft, setDraft] = useState<MigrationBookOfWorkDraft | null>(
@@ -813,28 +822,130 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
 
   const railScopeReady = Boolean(companyName && projectName);
 
-  const handleRailStart = useCallback(async () => {
+  // ----- Start-stage dialog (Residual 2) -----
+  // The plan DECLARED the target-DB binding (it creates the target database),
+  // so the dialog prefills coordinates and asks for SECRETS only. Mode
+  // 'start' = confirm + trigger the run + register creds against the new
+  // runId; mode 'register' = (re)register creds for the ACTIVE run (e.g.
+  // after a gateway restart dropped the in-memory store).
+  const [startDialog, setStartDialog] = useState<{
+    open: boolean;
+    mode: 'start' | 'register';
+  }>({ open: false, mode: 'start' });
+  const [credsStatus, setCredsStatus] =
+    useState<MigrationCredentialsStatus | null>(null);
+  const [targetDbFields, setTargetDbFields] = useState({
+    host: 'localhost',
+    port: 5432,
+    database: 'haikai_target',
+    schema: 'public',
+    username: 'postgres',
+  });
+  const [targetDbPassword, setTargetDbPassword] = useState('');
+  const [dialogBusy, setDialogBusy] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  const refreshCredsStatus = useCallback(async () => {
+    try {
+      const status = await fetchMigrationCredentialsStatus(projectId, {
+        architectureId: activeArchitectureId,
+        runId: run?.id,
+      });
+      setCredsStatus(status);
+      return status;
+    } catch {
+      setCredsStatus(null);
+      return null;
+    }
+  }, [projectId, activeArchitectureId, run?.id]);
+
+  useEffect(() => {
+    // Presence indicator stays live while a run exists.
+    if (run?.id) void refreshCredsStatus();
+  }, [run?.id, refreshCredsStatus]);
+
+  const openStartDialog = useCallback(
+    async (mode: 'start' | 'register') => {
+      setDialogError(null);
+      setTargetDbPassword('');
+      const status = await refreshCredsStatus();
+      const b = status?.targetBinding;
+      if (b) {
+        setTargetDbFields({
+          host: b.host,
+          port: b.port,
+          database: b.database,
+          schema: b.schema,
+          username: b.username,
+        });
+      }
+      setStartDialog({ open: true, mode });
+    },
+    [refreshCredsStatus],
+  );
+
+  const confirmStartDialog = useCallback(async () => {
     if (!companyName || !projectName) return;
-    setRailBusy(true);
-    setRailError(null);
+    setDialogBusy(true);
+    setDialogError(null);
     setRailBlockers(null);
     try {
-      const result = await triggerMigrate(projectId, bookId, {
-        company: companyName,
-        project: projectName,
-      });
-      if (result.status === 'blocked') {
-        setRailError(
-          `Start refused by the server gate: ${result.reasons.length} reason(s) — see the plane cards.`,
-        );
-      } else if (result.status === 'error') {
-        setRailError(result.message);
+      let runId: string | null = null;
+      if (startDialog.mode === 'start') {
+        const result = await triggerMigrate(projectId, bookId, {
+          company: companyName,
+          project: projectName,
+        });
+        if (result.status === 'blocked') {
+          setDialogError(
+            `Start refused by the server gate: ${result.reasons.length} reason(s) — see the plane cards.`,
+          );
+          return;
+        }
+        if (result.status === 'error') {
+          setDialogError(result.message);
+          return;
+        }
+        runId = result.runId;
+      } else {
+        runId = run?.id ?? null;
       }
+      // Register the target-DB secrets against the run (skippable: an empty
+      // password means "not now" — the data step will fail-soft and the
+      // parity gate blocks until provided, exactly as Spec W designed).
+      if (runId && targetDbPassword.trim().length > 0) {
+        try {
+          await registerRunTargetDbCredentials(projectId, runId, {
+            ...targetDbFields,
+            password: targetDbPassword,
+          });
+        } catch (err) {
+          setRailError(
+            `Run started, but credential registration failed: ${
+              err instanceof Error ? err.message : 'unknown'
+            } — use "Provide credentials…" on the DB card.`,
+          );
+        }
+      }
+      setStartDialog({ open: false, mode: 'start' });
+      setTargetDbPassword('');
       await refreshRun();
+      await refreshCredsStatus();
     } finally {
-      setRailBusy(false);
+      setDialogBusy(false);
     }
-  }, [companyName, projectName, projectId, bookId, refreshRun]);
+  }, [
+    companyName,
+    projectName,
+    projectId,
+    bookId,
+    startDialog.mode,
+    run?.id,
+    targetDbFields,
+    targetDbPassword,
+    refreshRun,
+    refreshCredsStatus,
+  ]);
 
   const handleRailApprove = useCallback(
     async (override: boolean) => {
@@ -1767,11 +1878,13 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           busy={railBusy}
           error={railError}
           pausedBlockers={railBlockers}
-          onStart={() => void handleRailStart()}
+          onStart={() => void openStartDialog('start')}
           onApprove={() => void handleRailApprove(false)}
           onBreakGlass={() => void handleRailApprove(true)}
           onSelectStory={(id) => setSelectedItemId(id)}
           onOpenDelivery={onOpenDelivery}
+          dbCredsRegistered={credsStatus ? credsStatus.targetRegistered : null}
+          onProvideCreds={() => void openStartDialog('register')}
         />
       )}
 
@@ -1843,6 +1956,161 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 data-testid="delete-story-confirm"
               >
                 {deleteInProgress ? 'Deleting…' : 'Delete story'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Start-stage / provide-credentials dialog (Residual 2). The plan
+          DECLARED the target-DB binding — coordinates come prefilled; the
+          operator supplies the password only. */}
+      {startDialog.open && (
+        <div
+          className={styles.modalOverlay}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !dialogBusy)
+              setStartDialog({ open: false, mode: 'start' });
+          }}
+          data-testid="start-stage-dialog"
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              startDialog.mode === 'start'
+                ? 'Start stage'
+                : 'Provide target credentials'
+            }
+          >
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>
+                {startDialog.mode === 'start'
+                  ? 'Start stage 1'
+                  : 'Provide target-DB credentials'}
+              </h2>
+            </div>
+            <div className={styles.modalBody}>
+              {startDialog.mode === 'start' && (
+                <p className={styles.coveragePanelNote}>
+                  Runs the plane end-to-end (build {'→'} verify {'→'}{' '}
+                  reconcile), then pauses for your review.
+                </p>
+              )}
+              <p data-testid="start-stage-binding-note">
+                <strong>Target database (declared by this plan):</strong>{' '}
+                {credsStatus?.targetBinding
+                  ? 'the coordinates below come from the pack — confirm, don’t re-type.'
+                  : 'no pack binding found — enter the target coordinates.'}
+              </p>
+              <div className={styles.modalInputRow}>
+                <label htmlFor="tgt-host">Host</label>
+                <input
+                  id="tgt-host"
+                  className={styles.modalInput}
+                  value={targetDbFields.host}
+                  onChange={(e) =>
+                    setTargetDbFields((f) => ({ ...f, host: e.target.value }))
+                  }
+                  data-testid="start-stage-host"
+                />
+                <label htmlFor="tgt-port">Port</label>
+                <input
+                  id="tgt-port"
+                  className={styles.modalInput}
+                  type="number"
+                  value={targetDbFields.port}
+                  onChange={(e) =>
+                    setTargetDbFields((f) => ({
+                      ...f,
+                      port: Number(e.target.value),
+                    }))
+                  }
+                  data-testid="start-stage-port"
+                />
+                <label htmlFor="tgt-db">Database</label>
+                <input
+                  id="tgt-db"
+                  className={styles.modalInput}
+                  value={targetDbFields.database}
+                  onChange={(e) =>
+                    setTargetDbFields((f) => ({
+                      ...f,
+                      database: e.target.value,
+                    }))
+                  }
+                  data-testid="start-stage-database"
+                />
+                <label htmlFor="tgt-user">Username</label>
+                <input
+                  id="tgt-user"
+                  className={styles.modalInput}
+                  value={targetDbFields.username}
+                  onChange={(e) =>
+                    setTargetDbFields((f) => ({
+                      ...f,
+                      username: e.target.value,
+                    }))
+                  }
+                  data-testid="start-stage-username"
+                />
+                <label htmlFor="tgt-pass">Password</label>
+                <input
+                  id="tgt-pass"
+                  className={styles.modalInput}
+                  type="password"
+                  value={targetDbPassword}
+                  onChange={(e) => setTargetDbPassword(e.target.value)}
+                  data-testid="start-stage-password"
+                />
+                <span className={styles.modalHint}>
+                  In memory only, for this run — never persisted, never
+                  logged. Leave blank to skip: the data load + parity will
+                  skip and the approval gate blocks until provided.
+                </span>
+              </div>
+              <p
+                className={styles.coveragePanelNote}
+                data-testid="start-stage-source-status"
+              >
+                Source DB:{' '}
+                {credsStatus?.source.registered
+                  ? `registered ✓ (${credsStatus.source.host}:${credsStatus.source.port}/${credsStatus.source.database})`
+                  : 'not registered — register via the API capture / drift-watch screen for the data load to run.'}
+              </p>
+              {dialogError && (
+                <div
+                  className={styles.modalWarning}
+                  role="alert"
+                  data-testid="start-stage-error"
+                >
+                  {dialogError}
+                </div>
+              )}
+            </div>
+            <div className={styles.modalFooter}>
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => setStartDialog({ open: false, mode: 'start' })}
+                disabled={dialogBusy}
+                data-testid="start-stage-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
+                onClick={() => void confirmStartDialog()}
+                disabled={dialogBusy}
+                data-testid="start-stage-confirm"
+              >
+                {dialogBusy
+                  ? 'Working…'
+                  : startDialog.mode === 'start'
+                    ? '▶ Start'
+                    : 'Register credentials'}
               </button>
             </div>
           </div>

@@ -165,6 +165,60 @@ describe('runDbPackSpecCarriage', () => {
     ).toHaveLength(2);
   });
 
+  it('the story carrying the MASTER CHANGELOG confirms the declared target-DB binding in its spec text (Residual 2)', async () => {
+    const rows = [
+      {
+        file_path: 'liquibase/db.changelog-master.xml',
+        content: '<databaseChangeLog/>',
+        sort_order: 0,
+      },
+      {
+        file_path: 'manifest.json',
+        content: JSON.stringify({
+          target_db: {
+            engine: 'postgresql',
+            host: 'localhost',
+            port: 5432,
+            database: 'haikai_target',
+            schema: 'public',
+            username: 'postgres',
+          },
+        }),
+        sort_order: 1,
+      },
+    ];
+    const story = {
+      ...carriageStory(),
+      packFilePaths: ['liquibase/db.changelog-master.xml'],
+      packFilePathPrefixes: [],
+    };
+    const row = await runDbPackSpecCarriage({
+      projectId: 'proj-1',
+      story: story as never,
+      baseRow: baseRow(),
+      fetchPackFiles: async () => rows as never,
+    });
+    expect(row.status).toBe('generated');
+    expect(row.generatedSpecText).toContain('## Target database (declared binding)');
+    expect(row.generatedSpecText).toContain(
+      'jdbc:postgresql://localhost:5432/haikai_target',
+    );
+    expect(row.generatedSpecText).toContain('Username: postgres');
+    // Coordinates only — never secrets.
+    expect(row.generatedSpecText).not.toMatch(/password/i);
+
+    // A NON-seed story (no master changelog) gets no binding section.
+    const other = await runDbPackSpecCarriage({
+      projectId: 'proj-1',
+      story: carriageStory(),
+      baseRow: baseRow(),
+      fetchPackFiles: async () => FILES,
+    });
+    expect(other.generatedSpecText).not.toContain(
+      '## Target database (declared binding)',
+    );
+  });
+
   it('missing pack file -> insufficient_context naming the path (never a spec with holes)', async () => {
     const row = await runDbPackSpecCarriage({
       projectId: 'proj-1',

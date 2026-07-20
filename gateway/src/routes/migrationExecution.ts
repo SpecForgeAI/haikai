@@ -74,6 +74,7 @@ import {
 } from '../services/migrationRunParityStatus';
 import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
 import type { TargetDbSecret } from '../services/migrationTargetCredentialsStore';
+import { defaultFetchPackView } from '../services/migrationDbPackPlanner';
 
 export const migrationExecutionRouter = Router();
 
@@ -711,6 +712,62 @@ migrationExecutionRouter.post(
       dbRegistered: db !== undefined,
     });
     return res.status(200).json({ runId, registered: true, dbRegistered: db !== undefined });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Migration credentials STATUS (Residual 2, 2026-07-20). Presence + NON-SECRET
+// coordinates only — passwords NEVER leave the in-memory stores. Feeds the
+// plan screen's Start-stage dialog (prefill) and the DB card's creds
+// indicator: the plan DECLARED the target binding, so the operator confirms
+// coordinates and supplies secrets, never re-types what the tool decided.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.get(
+  '/projects/:projectId/migration-credentials-status',
+  async (req: Request, res: Response) => {
+    const { projectId } = req.params;
+    const architectureId =
+      typeof req.query.architectureId === 'string' ? req.query.architectureId : null;
+    const runId = typeof req.query.runId === 'string' ? req.query.runId : null;
+
+    // Declared target binding from the pack manifest (null when no pack or a
+    // pre-binding pack).
+    let targetBinding: unknown = null;
+    if (architectureId) {
+      try {
+        const packView = await defaultFetchPackView(projectId, architectureId);
+        targetBinding =
+          (packView?.manifest as { target_db?: unknown } | undefined)?.target_db ??
+          null;
+      } catch {
+        targetBinding = null;
+      }
+    }
+
+    // Source (current-system) coordinates — non-secret fields only.
+    const sourceDb = currentSystemCredentialsStore.get(projectId)?.db;
+    const source = sourceDb
+      ? {
+          registered: true,
+          dbType: sourceDb.dbType,
+          host: sourceDb.host,
+          port: sourceDb.port,
+          database: sourceDb.database,
+          username: sourceDb.username,
+        }
+      : { registered: false };
+
+    // Target registration presence for a specific run (boolean only).
+    const targetRegistered = runId
+      ? migrationTargetCredentialsStore.getDb(runId) !== undefined
+      : false;
+
+    return res.status(200).json({
+      target_binding: targetBinding,
+      source,
+      target_registered: targetRegistered,
+    });
   }
 );
 
