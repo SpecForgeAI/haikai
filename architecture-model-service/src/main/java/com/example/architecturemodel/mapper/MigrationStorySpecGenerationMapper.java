@@ -77,7 +77,10 @@ public final class MigrationStorySpecGenerationMapper {
             entity.getLastManuallyEditedBy(),
             entity.getPreviousSpecText(),
             entity.getStructuredTestsJson(),
-            entity.getCoveredEndpointIds()
+            entity.getCoveredEndpointIds(),
+            entity.getManualReady() != null ? entity.getManualReady() : Boolean.FALSE,
+            entity.getManualReadyAt() != null ? entity.getManualReadyAt().toString() : null,
+            entity.getManualReadyBy()
         );
     }
 

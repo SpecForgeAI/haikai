@@ -198,6 +198,13 @@ export interface SpecGenerationRow {
   workstream?: string | null;
   recommendedNextAction?: string | null;
   reason?: string | null;
+  /**
+   * Manual-ready marker (Phase 1a, 2026-07-20): explicit story-by-story
+   * acceptance of a human-supplied/edited spec. Gate semantics: satisfied =
+   * status in (generated, generated_with_warnings) OR manualReady.
+   */
+  manualReady?: boolean;
+  manualReadyBy?: string | null;
   // ---- Cross-Story Context Injection (2026-05-20) ----------------------
   /** 1 = pass-1 row; 2 = pass-2 row. Null on legacy rows. */
   generationPass?: number | null;
@@ -342,6 +349,16 @@ function mapRowDtoToRow(dto: SpecGenerationRowDto): SpecGenerationRow {
       (c.parentTitle as string | undefined) ??
       (c.parent_title as string | undefined) ??
       undefined,
+    // Manual-ready marker (Phase 1a, 2026-07-20): explicit story-by-story
+    // acceptance of a human-supplied spec. Drives the `spec ✎ manual` chip and
+    // the Phase 1b stage gate.
+    manualReady:
+      ((dto as { manual_ready?: boolean | null }).manual_ready ??
+        (c.manualReady as boolean | null | undefined)) ?? false,
+    manualReadyBy: s(
+      (dto as { manual_ready_by?: string | null }).manual_ready_by,
+      'manualReadyBy',
+    ),
   };
 }
 
@@ -1134,4 +1151,45 @@ export async function runSpecPreflight(
     missingInputs: Array.isArray(d.missing_inputs) ? d.missing_inputs : [],
     note: d.note ?? null,
   }));
+}
+
+/**
+ * Mark (or unmark) a spec row MANUAL-READY — the explicit, story-by-story
+ * acceptance of a human-supplied/edited spec (Phase 1a, 2026-07-20). AMS-direct
+ * (same surface as the row reads); `X-User-Id` carries the audit identity.
+ * There is deliberately NO bulk variant.
+ *
+ * POST /api/projects/{projectId}/spec-generations/{specId}/manual-ready
+ */
+export async function setSpecManualReady(
+  projectId: string,
+  specId: string,
+  ready: boolean,
+  markedBy: string,
+): Promise<SpecGenerationRow> {
+  const url =
+    `${MODEL_SERVICE_BASE}/api/projects/${encodeURIComponent(projectId)}` +
+    `/spec-generations/${encodeURIComponent(specId)}/manual-ready`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-User-Id': markedBy,
+    },
+    body: JSON.stringify({ ready }),
+  });
+  if (!res.ok) {
+    let message = '';
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      message = parsed.error ?? '';
+    } catch {
+      // ignore parse failure
+    }
+    throw new Error(
+      message || `Manual-ready update failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  return mapRowDtoToRow((await res.json()) as SpecGenerationRowDto);
 }

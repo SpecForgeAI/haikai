@@ -230,6 +230,36 @@ public class GeneratedMigrationBookOfWorkController {
     }
 
     /**
+     * POST /api/projects/{projectId}/migration-books-of-work/{bookId}/items/{bookItemId}/delete
+     *
+     * <p>Phase 1a (2026-07-20): delete a STORY the plan should never have
+     * created (distinct from an unresolved problem). One story per call —
+     * never bulk. The item is removed AND tombstoned in
+     * {@code suppressed_item_ids} so re-expansion cannot resurrect it; a
+     * linked WorkItem is best-effort archived. See
+     * {@link GeneratedMigrationBookOfWorkService#deleteStoryItem}.</p>
+     */
+    @PostMapping("/{bookId}/items/{bookItemId}/delete")
+    public ResponseEntity<?> deleteStoryItem(
+            @PathVariable UUID projectId,
+            @PathVariable UUID bookId,
+            @PathVariable String bookItemId) {
+        log.debug("POST /api/projects/{}/migration-books-of-work/{}/items/{}/delete",
+            projectId, bookId, bookItemId);
+        try {
+            GeneratedMigrationBookOfWorkDto updated =
+                service.deleteStoryItem(projectId, bookId, bookItemId);
+            return ResponseEntity.ok(updated);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("Bad items/delete request for book {} item {}: {}",
+                bookId, bookItemId, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * POST /api/projects/{projectId}/migration-books-of-work/{bookId}/items/{bookItemId}/repair-orphan
      *
      * <p>One-click repair for an orphan {@code book_of_work_json.items[].workItemId}

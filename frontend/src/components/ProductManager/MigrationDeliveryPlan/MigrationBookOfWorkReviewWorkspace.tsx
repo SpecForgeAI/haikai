@@ -73,10 +73,20 @@ import MigrationBookOfWorkFilters, {
 import MigrationBookOfWorkItemDrawer from './MigrationBookOfWorkItemDrawer';
 // Phase 0 (2026-07-20): the ONE readiness function — live generator-input
 // preflight consumed by the tree chip + drawer instead of the baked value.
+// Phase 1a: the spec lifecycle folds into THIS screen (chips, generation,
+// manual supply/ready, deletion) — the standalone Generate Specs screen dies.
 import {
   runSpecPreflight,
   SpecPreflightRow,
+  SpecGenerationRow,
+  fetchSpecGenerationsForBook,
+  fetchSpecGenerationSummary,
+  startBatchGeneration,
+  regenerateSingleStory,
+  manualEditSpec,
+  setSpecManualReady,
 } from '../../../api/specGenerationApi';
+import { deleteBookOfWorkStory } from '../../../api/migrationBookOfWorkApi';
 import MigrationBookOfWorkSelectionControls from './MigrationBookOfWorkSelectionControls';
 import MigrationBookOfWorkSaveToBacklogDialog, {
   type SaveToBacklogCounts,
@@ -507,6 +517,178 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     }
     return out;
   }, [preflightRows]);
+
+  // ----- Spec lifecycle (Phase 1a) -----
+  const [specRows, setSpecRows] = useState<SpecGenerationRow[] | null>(null);
+  const [specBatchInProgress, setSpecBatchInProgress] = useState<boolean>(false);
+  const [specActionError, setSpecActionError] = useState<string | null>(null);
+  const [deleteConfirmItem, setDeleteConfirmItem] =
+    useState<MigrationBookOfWorkItem | null>(null);
+  const [deleteInProgress, setDeleteInProgress] = useState<boolean>(false);
+
+  const refreshSpecRows = useCallback(async () => {
+    try {
+      setSpecRows(await fetchSpecGenerationsForBook(projectId, bookId));
+    } catch {
+      // Fail-soft: chips simply don't render until the next successful read.
+    }
+  }, [projectId, bookId]);
+
+  useEffect(() => {
+    if (draft) void refreshSpecRows();
+  }, [draft, refreshSpecRows]);
+
+  /** Latest spec row per story WorkItem id (later rows win). */
+  const specRowByWorkItem = useMemo(() => {
+    const out = new Map<string, SpecGenerationRow>();
+    for (const r of specRows ?? []) {
+      if (r.workItemId) out.set(r.workItemId, r);
+    }
+    return out;
+  }, [specRows]);
+
+  /** Spec chip per story BOOK-ITEM id for the tree. */
+  const specStateById = useMemo(() => {
+    if (!specRows) return undefined;
+    const out: Record<
+      string,
+      { label: string; kind: 'generating' | 'ok' | 'warn' | 'blocked' | 'manual' }
+    > = {};
+    for (const item of draft?.bookOfWork?.items ?? []) {
+      if (item.type !== 'story') continue;
+      const wi = (item as { workItemId?: string | null }).workItemId;
+      const row = wi ? specRowByWorkItem.get(wi) : undefined;
+      if (!row) continue;
+      if (row.manualReady) {
+        out[item.id] = { label: 'spec ✎ manual', kind: 'manual' };
+      } else if (row.status === 'generated') {
+        out[item.id] = {
+          label: `spec ✓${row.confidence ? ` ${row.confidence}` : ''}`,
+          kind: 'ok',
+        };
+      } else if (row.status === 'generated_with_warnings') {
+        out[item.id] = {
+          label: `spec ⚠ (${row.warnings.length})`,
+          kind: 'warn',
+        };
+      } else if (
+        row.status === 'insufficient_context' ||
+        row.status === 'failed' ||
+        row.status === 'skipped_blocked'
+      ) {
+        out[item.id] = { label: 'spec ✕', kind: 'blocked' };
+      }
+    }
+    return out;
+  }, [specRows, specRowByWorkItem, draft]);
+
+  /** Header rollup: generated / warnings / blocked / manual. */
+  const specCounts = useMemo(() => {
+    if (!specRows) return null;
+    let ok = 0;
+    let warn = 0;
+    let blocked = 0;
+    let manual = 0;
+    for (const r of specRowByWorkItem.values()) {
+      if (r.manualReady) manual++;
+      else if (r.status === 'generated') ok++;
+      else if (r.status === 'generated_with_warnings') warn++;
+      else if (
+        r.status === 'insufficient_context' ||
+        r.status === 'failed' ||
+        r.status === 'skipped_blocked'
+      )
+        blocked++;
+    }
+    return { ok, warn, blocked, manual };
+  }, [specRows, specRowByWorkItem]);
+
+  /**
+   * Generate specs for every saved, not-yet-attempted story — batches loop
+   * until the book reports none remaining (bounded), then spec rows AND the
+   * preflight refresh so chips stay live.
+   */
+  const handleGenerateSpecs = useCallback(async () => {
+    setSpecActionError(null);
+    setSpecBatchInProgress(true);
+    try {
+      for (let i = 0; i < 20; i++) {
+        await startBatchGeneration({ projectId, bookOfWorkId: bookId });
+        const summary = await fetchSpecGenerationSummary(projectId, bookId);
+        if (summary.notAttemptedCount <= 0) break;
+      }
+      await Promise.all([refreshSpecRows(), refreshPreflight()]);
+    } catch (err) {
+      setSpecActionError(
+        err instanceof Error ? err.message : 'Spec generation failed.',
+      );
+      await refreshSpecRows();
+    } finally {
+      setSpecBatchInProgress(false);
+    }
+  }, [projectId, bookId, refreshSpecRows, refreshPreflight]);
+
+  /** Per-story regenerate from the drawer (confirmOverwrite pass-through). */
+  const handleRegenerateSpec = useCallback(
+    async (workItemId: string, confirmOverwrite: boolean) => {
+      await regenerateSingleStory({
+        projectId,
+        bookOfWorkId: bookId,
+        workItemId,
+        ...(confirmOverwrite
+          ? { confirmOverwrite: true, overwriteManuallyEdited: true }
+          : {}),
+      });
+      await Promise.all([refreshSpecRows(), refreshPreflight()]);
+    },
+    [projectId, bookId, refreshSpecRows, refreshPreflight],
+  );
+
+  const handleSaveSpecEdit = useCallback(
+    async (specId: string, specText: string) => {
+      await manualEditSpec(projectId, specId, specText, 'plan-screen-user');
+      await refreshSpecRows();
+    },
+    [projectId, refreshSpecRows],
+  );
+
+  const handleSetManualReady = useCallback(
+    async (specId: string, ready: boolean) => {
+      await setSpecManualReady(projectId, specId, ready, 'plan-screen-user');
+      await refreshSpecRows();
+    },
+    [projectId, refreshSpecRows],
+  );
+
+  /** Confirmed story deletion: tombstone at AMS, then full refresh. */
+  const handleDeleteStoryConfirmed = useCallback(async () => {
+    if (!deleteConfirmItem) return;
+    setDeleteInProgress(true);
+    setSpecActionError(null);
+    try {
+      await deleteBookOfWorkStory(projectId, bookId, deleteConfirmItem.id);
+      setDeleteConfirmItem(null);
+      setSelectedItemId(null);
+      const d = await getMigrationBookOfWork(projectId, bookId);
+      setDraft(d);
+      const seeded = seedSaveState(d.bookOfWork?.items ?? []);
+      setSaveStateById(seeded);
+      setPersistedSaveStateById(seeded);
+      await Promise.all([refreshSpecRows(), refreshPreflight()]);
+    } catch (err) {
+      setSpecActionError(
+        err instanceof Error ? err.message : 'Story deletion failed.',
+      );
+    } finally {
+      setDeleteInProgress(false);
+    }
+  }, [
+    deleteConfirmItem,
+    projectId,
+    bookId,
+    refreshSpecRows,
+    refreshPreflight,
+  ]);
 
   const archived = draft?.status === 'archived';
 
@@ -1033,6 +1215,13 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 {findingsCoverage.addressedCount} / {findingsCoverage.total}
               </span>
             )}
+            {specCounts && (
+              <span data-testid="review-spec-summary">
+                {' '}
+                &middot; Specs: {specCounts.ok} {'✓'} · {specCounts.warn} {'⚠'} ·{' '}
+                {specCounts.blocked} {'✕'} · {specCounts.manual} {'✎'}
+              </span>
+            )}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1046,6 +1235,18 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
               title="Re-run the generator's own input check for every story (no LLM) \u2014 chips update in place"
             >
               {preflightLoading ? 'Checking\u2026' : 'Re-check readiness'}
+            </button>
+          )}
+          {!archived && (
+            <button
+              type="button"
+              className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
+              onClick={() => void handleGenerateSpecs()}
+              disabled={specBatchInProgress}
+              data-testid="generate-specs-saved-button"
+              title="Generate implementation specs for every SAVED story not yet generated (batched; chips update as results land)"
+            >
+              {specBatchInProgress ? 'Generating specs\u2026' : 'Generate specs (saved)'}
             </button>
           )}
           {showExpandControls && (
@@ -1124,6 +1325,16 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           data-testid="expansion-error-banner"
         >
           {expansionError}
+        </div>
+      )}
+
+      {specActionError && (
+        <div
+          className={styles.expansionErrorBanner}
+          role="alert"
+          data-testid="spec-action-error-banner"
+        >
+          {specActionError}
         </div>
       )}
 
@@ -1294,6 +1505,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 : undefined
             }
             preflightById={preflightById}
+            specStateById={specStateById}
           />
         </div>
         <div
@@ -1317,6 +1529,30 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                     (r) => r.bookItemId === selectedItem.id,
                   ) ?? null)
                 : null
+            }
+            spec={
+              selectedItem?.type === 'story'
+                ? (specRowByWorkItem.get(
+                    (selectedItem as { workItemId?: string | null })
+                      .workItemId ?? '',
+                  ) ?? null)
+                : null
+            }
+            onRegenerateSpec={
+              archived ? undefined : (wi, confirm) => handleRegenerateSpec(wi, confirm)
+            }
+            onSaveSpecEdit={
+              archived ? undefined : (specId, text) => handleSaveSpecEdit(specId, text)
+            }
+            onSetManualReady={
+              archived
+                ? undefined
+                : (specId, ready) => handleSetManualReady(specId, ready)
+            }
+            onDeleteStory={
+              archived || !selectedItem || selectedItem.type !== 'story'
+                ? undefined
+                : () => setDeleteConfirmItem(selectedItem)
             }
             resolveRef={resolveRef}
             dbMigrationPack={(() => {
@@ -1346,6 +1582,71 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         onClose={() => setDialogOpen(false)}
         onConfirm={confirmSave}
       />
+
+      {/* Story-deletion confirm (Phase 1a) — per-story, never bulk. */}
+      {deleteConfirmItem && (
+        <div
+          className={styles.modalOverlay}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !deleteInProgress)
+              setDeleteConfirmItem(null);
+          }}
+          data-testid="delete-story-dialog"
+        >
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Delete story"
+          >
+            <div className={styles.modalHeader}>
+              <h2 className={styles.modalTitle}>Delete story?</h2>
+            </div>
+            <div className={styles.modalBody}>
+              <p>
+                Delete <strong>{deleteConfirmItem.title}</strong> from this
+                plan? Use this only when the plan created something unwanted —
+                a story with an unresolved problem should be fixed or given a
+                manual spec instead.
+              </p>
+              <ul className={styles.bulletList}>
+                <li>
+                  The story is tombstoned: re-expanding its epic will NOT
+                  recreate it.
+                </li>
+                {(deleteConfirmItem as { workItemId?: string | null })
+                  .workItemId && (
+                  <li>Its saved backlog work item will be archived.</li>
+                )}
+                <li>
+                  Reconciliation scope is unchanged — if this story's surfaces
+                  mattered, data parity will say so.
+                </li>
+              </ul>
+            </div>
+            <div className={styles.modalFooter}>
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => setDeleteConfirmItem(null)}
+                disabled={deleteInProgress}
+                data-testid="delete-story-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
+                onClick={() => void handleDeleteStoryConfirmed()}
+                disabled={deleteInProgress}
+                data-testid="delete-story-confirm"
+              >
+                {deleteInProgress ? 'Deleting…' : 'Delete story'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

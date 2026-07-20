@@ -4988,3 +4988,20 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  - changeSet:
+      id: 214-spec-generation-manual-ready
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_story_spec_generations
+              columnName: manual_ready
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/214-spec-generation-manual-ready.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

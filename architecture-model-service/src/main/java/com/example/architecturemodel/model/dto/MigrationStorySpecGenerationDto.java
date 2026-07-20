@@ -148,7 +148,16 @@ public record MigrationStorySpecGenerationDto(
     List<Map<String, Object>> structuredTestsJson,
 
     @JsonProperty("covered_endpoint_ids")
-    List<String> coveredEndpointIds
+    List<String> coveredEndpointIds,
+
+    @JsonProperty("manual_ready")
+    Boolean manualReady,
+
+    @JsonProperty("manual_ready_at")
+    String manualReadyAt,
+
+    @JsonProperty("manual_ready_by")
+    String manualReadyBy
 ) {
 
     /**
@@ -190,6 +199,49 @@ public record MigrationStorySpecGenerationDto(
             generatedAt, errorMessage, generationAttemptNumber, createdByTask,
             createdAt, updatedAt,
             Boolean.FALSE, null, null, null,
-            null, null);
+            null, null,
+            Boolean.FALSE, null, null);
+    }
+
+    /**
+     * Backward-compatible 25-arg constructor preserving the pre-manual-ready
+     * signature (Phase 1a, 2026-07-20). Delegates to the canonical 28-arg
+     * constructor with the manual-ready trio defaulted ({@code manualReady}
+     * mirrors the DB default of {@code false}).
+     */
+    public MigrationStorySpecGenerationDto(
+            UUID id,
+            UUID projectId,
+            UUID workItemId,
+            UUID bookOfWorkId,
+            String bookItemId,
+            String status,
+            String confidence,
+            String predictedReadiness,
+            String generatedSpecText,
+            List<Map<String, Object>> warningsJson,
+            List<Map<String, Object>> missingInputsJson,
+            Map<String, Object> focusedContextRefsJson,
+            List<String> evidenceRefsJson,
+            String generatedAt,
+            String errorMessage,
+            Integer generationAttemptNumber,
+            String createdByTask,
+            String createdAt,
+            String updatedAt,
+            Boolean manuallyEdited,
+            String lastManuallyEditedAt,
+            String lastManuallyEditedBy,
+            String previousSpecText,
+            List<Map<String, Object>> structuredTestsJson,
+            List<String> coveredEndpointIds) {
+        this(id, projectId, workItemId, bookOfWorkId, bookItemId, status,
+            confidence, predictedReadiness, generatedSpecText, warningsJson,
+            missingInputsJson, focusedContextRefsJson, evidenceRefsJson,
+            generatedAt, errorMessage, generationAttemptNumber, createdByTask,
+            createdAt, updatedAt,
+            manuallyEdited, lastManuallyEditedAt, lastManuallyEditedBy,
+            previousSpecText, structuredTestsJson, coveredEndpointIds,
+            Boolean.FALSE, null, null);
     }
 }
