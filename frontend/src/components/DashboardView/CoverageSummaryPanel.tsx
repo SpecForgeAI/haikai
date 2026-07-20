@@ -261,6 +261,160 @@ export function formatScorePct(score: number): string {
 }
 
 // ============================================================================
+// Happy-path coverage GATE (Spec 2026-07-20 Coverage Closure -- CC1)
+//
+// Mirrors the validation-service `captureCoverageGate.computeHappyPathGate`
+// VERBATIM so the capture-screen banner and the server-side closure driver can
+// never disagree. The gate the user must clear before leaving the capture
+// screen is NOT full dimensional coverage -- it is "every included endpoint has
+// its happy-path baseline". Dimensional coverage stays reported (above); only
+// happy-path gates. Excluded endpoints (absent from `per_endpoint`) are OUT of
+// the denominator -- accounted, not unresolved.
+// ============================================================================
+
+/** One included endpoint still missing its happy-path baseline. */
+export interface UnresolvedEndpoint {
+  operation_id: string;
+  method: string;
+  path: string;
+  reason: string;
+}
+
+/** The happy-path gate verdict (snake_case, mirrors the service type). */
+export interface HappyPathGate {
+  complete: boolean;
+  included_total: number;
+  happy_achieved: number;
+  unresolved: UnresolvedEndpoint[];
+}
+
+/**
+ * Compute the happy-path gate from a raw `coverage_summary_json` blob. Pure.
+ * A null / unrecorded summary or zero included endpoints is never "complete".
+ */
+export function computeHappyPathGate(
+  raw: Record<string, unknown> | null | undefined,
+): HappyPathGate {
+  const summary = parseCoverageSummary(raw);
+  if (!summary) {
+    return { complete: false, included_total: 0, happy_achieved: 0, unresolved: [] };
+  }
+  const unresolved: UnresolvedEndpoint[] = [];
+  let happyAchieved = 0;
+  for (const ep of summary.per_endpoint) {
+    const happy = ep.dimensions.find(isHappyDimension);
+    if (happy && happy.achieved) {
+      happyAchieved += 1;
+    } else {
+      unresolved.push({
+        operation_id: ep.operation_id,
+        method: ep.method,
+        path: ep.path,
+        reason:
+          (happy && happy.reason) ||
+          'happy-path baseline not captured (no successful reference request recorded)',
+      });
+    }
+  }
+  const includedTotal = summary.per_endpoint.length;
+  return {
+    complete: includedTotal > 0 && unresolved.length === 0,
+    included_total: includedTotal,
+    happy_achieved: happyAchieved,
+    unresolved,
+  };
+}
+
+export interface CoverageGateBannerClasses {
+  /** Outer banner container. */
+  banner: string;
+  /** A neutral/info badge. */
+  badge: string;
+  /** A warning badge variant. */
+  badgeWarning?: string;
+  /** The "Retry uncovered APIs" action button. */
+  button?: string;
+}
+
+export interface CoverageGateBannerProps {
+  raw: Record<string, unknown> | null | undefined;
+  classes: CoverageGateBannerClasses;
+  /**
+   * Kick off Coverage Closure for the unresolved endpoints. When omitted the
+   * action button is not rendered (the host has not wired closure yet).
+   */
+  onRetryUncovered?: (unresolved: UnresolvedEndpoint[]) => void;
+  testId?: string;
+}
+
+/**
+ * The capture-screen gate banner: "Baseline complete ✓" once every included
+ * endpoint has its happy-path baseline, otherwise "N endpoint(s) unresolved"
+ * with a "Retry uncovered APIs" action. Renders nothing until coverage exists
+ * (there is no gate to show before the first capture).
+ */
+export const CoverageGateBanner: React.FC<CoverageGateBannerProps> = ({
+  raw,
+  classes,
+  onRetryUncovered,
+  testId = 'coverage-gate',
+}) => {
+  const gate = computeHappyPathGate(raw);
+  if (gate.included_total === 0) return null;
+  const warnClass = classes.badgeWarning ?? classes.badge;
+  const n = gate.unresolved.length;
+
+  return (
+    <div
+      className={classes.banner}
+      data-testid={testId}
+      data-complete={gate.complete ? 'true' : 'false'}
+      role="status"
+    >
+      {gate.complete ? (
+        <strong data-testid={`${testId}-complete`}>
+          ✓ Baseline complete — all {gate.included_total} included endpoints have
+          a happy-path baseline.
+        </strong>
+      ) : (
+        <>
+          <strong data-testid={`${testId}-incomplete`}>
+            {n} endpoint{n === 1 ? '' : 's'} unresolved — {gate.happy_achieved} of{' '}
+            {gate.included_total} included endpoints have a happy-path baseline.
+          </strong>
+          <span className={classes.badge}>
+            You should not leave this screen until every included endpoint has its
+            happy-path baseline. Dimensional coverage above is informational.
+          </span>
+          <ul data-testid={`${testId}-unresolved-list`}>
+            {gate.unresolved.map((u) => (
+              <li
+                key={u.operation_id}
+                className={warnClass}
+                data-testid={`${testId}-unresolved`}
+                data-operation-id={u.operation_id}
+              >
+                {(u.method || '').toUpperCase()} {u.path || u.operation_id}: {u.reason}
+              </li>
+            ))}
+          </ul>
+          {onRetryUncovered && (
+            <button
+              type="button"
+              className={classes.button}
+              data-testid={`${testId}-retry`}
+              onClick={() => onRetryUncovered(gate.unresolved)}
+            >
+              Retry uncovered APIs
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
 // Presentational component
 // ============================================================================
 

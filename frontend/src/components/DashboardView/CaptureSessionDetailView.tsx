@@ -80,7 +80,9 @@ import {
 } from '../../api/apiBehaviourClient';
 import { CaptureReviewPanel } from './CaptureReviewPanel';
 import { PostmanImportAppendModal } from '../ApiBehaviour/PostmanImportAppendModal';
-import { CoverageSummaryPanel } from './CoverageSummaryPanel';
+import { CoverageSummaryPanel, CoverageGateBanner } from './CoverageSummaryPanel';
+import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
+import { RetryUncoveredModal } from './RetryUncoveredModal';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
@@ -176,6 +178,12 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   // detail view; the modal replays the imported collection live via
   // manual-capture and prompts re-enter-secrets on a purged finished session.
   const [appendModalOpen, setAppendModalOpen] = useState(false);
+
+  // Coverage Closure: the "Retry uncovered APIs" modal (Spec 2026-07-20 CC1).
+  // Holds the unresolved endpoints captured when the gate-banner button fired.
+  const [retryModalEndpoints, setRetryModalEndpoints] = useState<
+    UnresolvedEndpoint[] | null
+  >(null);
 
   // Re-enter secrets prompt visible/hidden + transient form state.
   //
@@ -645,6 +653,38 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           classes={{
             banner: styles.secretsPrompt,
             badge: styles.statusBadge,
+          }}
+        />
+      )}
+
+      {/* Happy-path coverage GATE banner (Spec 2026-07-20 Coverage Closure --
+          CC1). The user must not leave the capture screen until every included
+          endpoint has its happy-path baseline. "Retry uncovered APIs" opens the
+          closure modal; the deterministic + LLM run is wired in CC3. */}
+      {session.status === 'completed' && (
+        <CoverageGateBanner
+          raw={session.coverage_summary_json}
+          testId="capture-session-coverage-gate"
+          classes={{
+            banner: styles.secretsPrompt,
+            badge: styles.statusBadge,
+            button: styles.primaryButton,
+          }}
+          onRetryUncovered={(unresolved) => setRetryModalEndpoints(unresolved)}
+        />
+      )}
+
+      {retryModalEndpoints && (
+        <RetryUncoveredModal
+          unresolved={retryModalEndpoints}
+          onClose={() => setRetryModalEndpoints(null)}
+          classes={{
+            backdrop: styles.diffModalBackdrop,
+            panel: styles.diffModalPanel,
+            header: styles.diffModalHeader,
+            body: styles.diffModalBody,
+            primaryButton: styles.primaryButton,
+            secondaryButton: styles.secondaryButton,
           }}
         />
       )}
