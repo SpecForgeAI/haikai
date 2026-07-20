@@ -87,6 +87,20 @@ import {
   setSpecManualReady,
 } from '../../../api/specGenerationApi';
 import { deleteBookOfWorkStory } from '../../../api/migrationBookOfWorkApi';
+// Phase 1b (2026-07-20): the tier-flexible execution rail — kickoff, status,
+// pause/approve, and break-glass ride the EXISTING migrate machinery.
+import {
+  MigrationExecutionRail,
+  RailPlane,
+  PLANE_ORDER,
+  planeForStory,
+} from './MigrationExecutionRail';
+import {
+  triggerMigrate,
+  getLatestMigrationExecutionRun,
+  resumeMigrationRun,
+  MigrationExecutionRunDto,
+} from '../../../api/migrationDeliveryDashboardApi';
 import MigrationBookOfWorkSelectionControls from './MigrationBookOfWorkSelectionControls';
 import MigrationBookOfWorkSaveToBacklogDialog, {
   type SaveToBacklogCounts,
@@ -113,6 +127,15 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
    * ready specs (where they can pick a subset to generate).
    */
   onOpenSpecGeneration?: () => void;
+  /**
+   * Orchestration scope for the execution rail (Phase 1b): organisation NAME +
+   * project name, resolved by the route exactly as the delivery dashboard does.
+   * The rail's Start/Approve need both; absent scope disables Start only.
+   */
+  companyName?: string;
+  projectName?: string;
+  /** Deep link to the delivery dashboard (run forensics). */
+  onOpenDelivery?: () => void;
 }
 
 /**
@@ -277,7 +300,17 @@ const RIGHT_PANEL_DEFAULT_WIDTH = 420;
 
 export const MigrationBookOfWorkReviewWorkspace: React.FC<
   MigrationBookOfWorkReviewWorkspaceProps
-> = ({ projectId, bookId, initialDraft, onOpenBacklog, onBackToPlans, onOpenSpecGeneration }) => {
+> = ({
+  projectId,
+  bookId,
+  initialDraft,
+  onOpenBacklog,
+  onBackToPlans,
+  onOpenSpecGeneration,
+  companyName,
+  projectName,
+  onOpenDelivery,
+}) => {
   const { showToast } = useToast();
   const [draft, setDraft] = useState<MigrationBookOfWorkDraft | null>(
     initialDraft ?? null,
@@ -689,6 +722,144 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     refreshSpecRows,
     refreshPreflight,
   ]);
+
+  // ----- Execution rail (Phase 1b) -----
+  const [run, setRun] = useState<MigrationExecutionRunDto | null>(null);
+  const [railBusy, setRailBusy] = useState<boolean>(false);
+  const [railError, setRailError] = useState<string | null>(null);
+  const [railBlockers, setRailBlockers] = useState<Array<
+    Record<string, unknown>
+  > | null>(null);
+
+  const refreshRun = useCallback(async () => {
+    try {
+      setRun(await getLatestMigrationExecutionRun(projectId, bookId));
+    } catch {
+      // No run yet / read hiccup — the rail simply shows the pre-run state.
+      setRun(null);
+    }
+  }, [projectId, bookId]);
+
+  useEffect(() => {
+    if (draft) void refreshRun();
+  }, [draft, refreshRun]);
+
+  // Poll while a run is in flight so cards + the pause banner stay live.
+  useEffect(() => {
+    const status = run?.status ?? null;
+    if (!status || !['dispatching', 'awaiting_approval'].includes(status)) {
+      return;
+    }
+    const t = setInterval(() => void refreshRun(), 10000);
+    return () => clearInterval(t);
+  }, [run?.status, refreshRun]);
+
+  /** Tier-flexible plane rollups — cards derive from the plan's content. */
+  const railPlanes = useMemo((): RailPlane[] => {
+    const stories = (draft?.bookOfWork?.items ?? []).filter(
+      (i) => i.type === 'story',
+    );
+    if (stories.length === 0) return [];
+    const byPlane = new Map<string, typeof stories>();
+    for (const s of stories) {
+      const plane = planeForStory(s);
+      const bucket = byPlane.get(plane) ?? [];
+      bucket.push(s);
+      byPlane.set(plane, bucket);
+    }
+    const runItemsByWorkItem = new Map<string, string>();
+    for (const it of run?.items ?? []) {
+      if (it.work_item_id) runItemsByWorkItem.set(it.work_item_id, it.status ?? '');
+    }
+    return PLANE_ORDER.filter((p) => (byPlane.get(p) ?? []).length > 0).map(
+      (p) => {
+        const planeStories = byPlane.get(p)!;
+        const blockers: Array<{ id: string; title: string }> = [];
+        let satisfied = 0;
+        let runDone = 0;
+        let runTotal = 0;
+        for (const s of planeStories) {
+          const wi = (s as { workItemId?: string | null }).workItemId;
+          const row = wi ? specRowByWorkItem.get(wi) : undefined;
+          const ok =
+            !!row &&
+            (row.manualReady === true ||
+              row.status === 'generated' ||
+              row.status === 'generated_with_warnings');
+          if (ok) satisfied++;
+          else blockers.push({ id: s.id, title: s.title });
+          if (wi && runItemsByWorkItem.has(wi)) {
+            runTotal++;
+            const st = runItemsByWorkItem.get(wi)!;
+            if (st === 'implemented' || st === 'deployed') runDone++;
+          }
+        }
+        return {
+          plane: p,
+          totalStories: planeStories.length,
+          satisfiedStories: satisfied,
+          blockers,
+          runDone,
+          runTotal,
+        };
+      },
+    );
+  }, [draft, specRowByWorkItem, run]);
+
+  const railScopeReady = Boolean(companyName && projectName);
+
+  const handleRailStart = useCallback(async () => {
+    if (!companyName || !projectName) return;
+    setRailBusy(true);
+    setRailError(null);
+    setRailBlockers(null);
+    try {
+      const result = await triggerMigrate(projectId, bookId, {
+        company: companyName,
+        project: projectName,
+      });
+      if (result.status === 'blocked') {
+        setRailError(
+          `Start refused by the server gate: ${result.reasons.length} reason(s) — see the plane cards.`,
+        );
+      } else if (result.status === 'error') {
+        setRailError(result.message);
+      }
+      await refreshRun();
+    } finally {
+      setRailBusy(false);
+    }
+  }, [companyName, projectName, projectId, bookId, refreshRun]);
+
+  const handleRailApprove = useCallback(
+    async (override: boolean) => {
+      if (!companyName || !projectName || !run?.id) return;
+      setRailBusy(true);
+      setRailError(null);
+      try {
+        const result = await resumeMigrationRun(projectId, run.id, {
+          company: companyName,
+          project: projectName,
+          ...(override ? { override: true } : {}),
+        });
+        if (result.status === 'blocked') {
+          // Unclean parity — surface the reasons + the break-glass action.
+          setRailBlockers(
+            result.reasons as unknown as Array<Record<string, unknown>>,
+          );
+        } else {
+          setRailBlockers(null);
+          if (result.status === 'not_paused' || result.status === 'error') {
+            setRailError(result.message);
+          }
+        }
+        await refreshRun();
+      } finally {
+        setRailBusy(false);
+      }
+    },
+    [companyName, projectName, run?.id, projectId, refreshRun],
+  );
 
   const archived = draft?.status === 'archived';
 
@@ -1573,6 +1744,23 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           />
         </div>
       </div>
+
+      {/* Execution rail (Phase 1b) — tier-flexible plane cards. */}
+      {!archived && railPlanes.length > 0 && (
+        <MigrationExecutionRail
+          planes={railPlanes}
+          runStatus={run?.status ?? null}
+          scopeReady={railScopeReady}
+          busy={railBusy}
+          error={railError}
+          pausedBlockers={railBlockers}
+          onStart={() => void handleRailStart()}
+          onApprove={() => void handleRailApprove(false)}
+          onBreakGlass={() => void handleRailApprove(true)}
+          onSelectStory={(id) => setSelectedItemId(id)}
+          onOpenDelivery={onOpenDelivery}
+        />
+      )}
 
       <MigrationBookOfWorkSaveToBacklogDialog
         open={dialogOpen}

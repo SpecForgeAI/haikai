@@ -34,8 +34,14 @@
  * post-save view.
  */
 
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MigrationBookOfWorkReviewWorkspace } from './MigrationBookOfWorkReviewWorkspace';
+// Phase 1b: the execution rail needs the orchestration scope — company =
+// organisation NAME, project = active project name; resolved exactly as the
+// delivery-dashboard route does (fail-soft; missing scope only disables Start).
+import { useProject } from '../../../contexts/ProjectContext';
+import { getOrganisationById } from '../../../api/organisationsApi';
 
 export function MigrationBookOfWorkReviewRoute() {
   const { projectId, architectureId, bookId } = useParams<{
@@ -44,6 +50,34 @@ export function MigrationBookOfWorkReviewRoute() {
     bookId: string;
   }>();
   const navigate = useNavigate();
+  const activeProject = useProject();
+
+  const [company, setCompany] = useState<string>('');
+  const [project, setProject] = useState<string>('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const derive = async () => {
+      const projectName = activeProject?.name || projectId || '';
+      if (!cancelled) setProject(projectName);
+      if (!activeProject?.organisationId) {
+        if (!cancelled) setCompany('');
+        return;
+      }
+      try {
+        const organisation = await getOrganisationById(
+          activeProject.organisationId,
+        );
+        if (!cancelled) setCompany(organisation?.name ?? '');
+      } catch {
+        if (!cancelled) setCompany('');
+      }
+    };
+    void derive();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject, projectId]);
 
   if (!projectId || !architectureId || !bookId) {
     return null;
@@ -62,6 +96,13 @@ export function MigrationBookOfWorkReviewRoute() {
       onOpenSpecGeneration={() =>
         navigate(
           `${archScopedPrefix}/migration-books-of-work/${bookId}/spec-generation`,
+        )
+      }
+      companyName={company || undefined}
+      projectName={project || undefined}
+      onOpenDelivery={() =>
+        navigate(
+          `${archScopedPrefix}/migration-books-of-work/${bookId}/delivery`,
         )
       }
     />
