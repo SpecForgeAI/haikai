@@ -34,10 +34,11 @@
  * chips render verbatim.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type {
   MigrationBookOfWorkItem,
 } from '../../../api/migrationBookOfWorkApi';
+import type { SpecGenerationRow } from '../../../api/specGenerationApi';
 import styles from './MigrationBookOfWork.module.css';
 
 /**
@@ -78,6 +79,20 @@ export interface MigrationBookOfWorkItemDrawerProps {
     missingInputs: Array<Record<string, unknown>>;
     note: string | null;
   } | null;
+  /**
+   * The story's latest spec-generation row (Phase 1a) — drives the
+   * "Generated spec" section: view/copy, edit + save (manual edit), Mark
+   * ready (manual), regenerate. Null/omitted = no spec attempted yet.
+   */
+  spec?: SpecGenerationRow | null;
+  /** Regenerate this story's spec (confirmOverwrite on manual-edit protect). */
+  onRegenerateSpec?: (workItemId: string, confirmOverwrite: boolean) => Promise<void>;
+  /** Persist a user-authored spec edit (AMS manual-edit; audit preserved). */
+  onSaveSpecEdit?: (specId: string, specText: string) => Promise<void>;
+  /** Mark/unmark the story MANUAL-READY — story by story, never bulk. */
+  onSetManualReady?: (specId: string, ready: boolean) => Promise<void>;
+  /** Open the delete-story confirm (the parent owns the dialog). */
+  onDeleteStory?: () => void;
 }
 
 function RefChipList({
@@ -121,7 +136,54 @@ function RefChipList({
 
 export const MigrationBookOfWorkItemDrawer: React.FC<
   MigrationBookOfWorkItemDrawerProps
-> = ({ item, dbMigrationPack, onDownloadDbMigrationPack, resolveRef, preflight }) => {
+> = ({
+  item,
+  dbMigrationPack,
+  onDownloadDbMigrationPack,
+  resolveRef,
+  preflight,
+  spec,
+  onRegenerateSpec,
+  onSaveSpecEdit,
+  onSetManualReady,
+  onDeleteStory,
+}) => {
+  // ----- Spec-section local state (Phase 1a) -----
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [specBusy, setSpecBusy] = useState(false);
+  const [specError, setSpecError] = useState<string | null>(null);
+  const [overwriteConfirm, setOverwriteConfirm] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Reset transient spec state whenever the selected item changes.
+  useEffect(() => {
+    setEditing(false);
+    setEditText('');
+    setSpecBusy(false);
+    setSpecError(null);
+    setOverwriteConfirm(false);
+    setCopied(false);
+  }, [item?.id]);
+
+  const runSpecAction = async (fn: () => Promise<void>) => {
+    setSpecBusy(true);
+    setSpecError(null);
+    try {
+      await fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Action failed.';
+      if (message.includes('manual_edit_protected')) {
+        // Regenerate over a manually-edited spec needs an explicit confirm.
+        setOverwriteConfirm(true);
+      } else {
+        setSpecError(message);
+      }
+    } finally {
+      setSpecBusy(false);
+    }
+  };
+
   if (!item) {
     return (
       <div className={styles.drawerEmpty} data-testid="item-drawer-empty">
@@ -191,6 +253,246 @@ export const MigrationBookOfWorkItemDrawer: React.FC<
                 </ul>
               </>
             )}
+          </div>
+        )}
+
+        {item.type === 'story' && spec && (
+          <div className={styles.section} data-testid="item-drawer-spec">
+            <h3 className={styles.sectionTitle}>Generated spec</h3>
+            <div className={styles.badgeRow}>
+              <span className={styles.badge} data-testid="item-drawer-spec-status">
+                {spec.manualReady ? 'manual ✎ ready' : spec.status}
+              </span>
+              {spec.confidence && (
+                <span className={styles.badge}>{spec.confidence}</span>
+              )}
+              {spec.manuallyEdited && (
+                <span className={styles.badge} title="Spec text was manually edited">
+                  edited
+                </span>
+              )}
+            </div>
+
+            {editing ? (
+              <div data-testid="item-drawer-spec-editor">
+                <textarea
+                  className={styles.modalInput}
+                  style={{ width: '100%', minHeight: 220, fontFamily: 'monospace' }}
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  data-testid="item-drawer-spec-edit-textarea"
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className={styles.selectButton}
+                    disabled={specBusy}
+                    onClick={() => setEditing(false)}
+                    data-testid="item-drawer-spec-edit-cancel"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
+                    disabled={specBusy || !spec.id || editText.trim().length === 0}
+                    onClick={() =>
+                      void runSpecAction(async () => {
+                        await onSaveSpecEdit!(spec.id!, editText);
+                        setEditing(false);
+                      })
+                    }
+                    data-testid="item-drawer-spec-edit-save"
+                  >
+                    {specBusy ? 'Saving…' : 'Save spec'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <pre
+                  className={styles.bodyText}
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    maxHeight: 320,
+                    overflowY: 'auto',
+                    background: '#f6f8fa',
+                    padding: 8,
+                    borderRadius: 4,
+                  }}
+                  data-testid="item-drawer-spec-text"
+                >
+                  {spec.generatedSpecText ??
+                    'No spec text yet — generate, or write one below.'}
+                </pre>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className={styles.selectButton}
+                    onClick={() => {
+                      void navigator.clipboard
+                        ?.writeText(spec.generatedSpecText ?? '')
+                        .then(() => {
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 1500);
+                        });
+                    }}
+                    data-testid="item-drawer-spec-copy"
+                  >
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                  {onSaveSpecEdit && spec.id && (
+                    <button
+                      type="button"
+                      className={styles.selectButton}
+                      onClick={() => {
+                        setEditText(spec.generatedSpecText ?? '');
+                        setEditing(true);
+                      }}
+                      data-testid="item-drawer-spec-edit"
+                    >
+                      {spec.generatedSpecText ? 'Edit spec' : 'Write spec'}
+                    </button>
+                  )}
+                  {onRegenerateSpec && spec.workItemId && (
+                    <button
+                      type="button"
+                      className={styles.selectButton}
+                      disabled={specBusy}
+                      onClick={() =>
+                        void runSpecAction(() =>
+                          onRegenerateSpec(spec.workItemId!, false),
+                        )
+                      }
+                      data-testid="item-drawer-spec-regenerate"
+                    >
+                      {specBusy ? 'Working…' : 'Regenerate'}
+                    </button>
+                  )}
+                  {onSetManualReady && spec.id && (
+                    <button
+                      type="button"
+                      className={styles.selectButton}
+                      disabled={
+                        specBusy ||
+                        (!spec.manualReady &&
+                          !(spec.generatedSpecText ?? '').trim())
+                      }
+                      title={
+                        spec.manualReady
+                          ? 'Withdraw the manual-ready acceptance'
+                          : 'Accept this human-supplied spec as ready — story by story, never bulk'
+                      }
+                      onClick={() =>
+                        void runSpecAction(() =>
+                          onSetManualReady(spec.id!, !spec.manualReady),
+                        )
+                      }
+                      data-testid="item-drawer-spec-manual-ready"
+                    >
+                      {spec.manualReady ? 'Unmark manual-ready' : 'Mark ready (manual)'}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {overwriteConfirm && (
+              <div
+                className={styles.modalWarning}
+                data-testid="item-drawer-spec-overwrite-confirm"
+              >
+                This spec was manually edited — regenerating replaces the
+                edits.{' '}
+                <button
+                  type="button"
+                  className={styles.selectButton}
+                  disabled={specBusy}
+                  onClick={() => {
+                    setOverwriteConfirm(false);
+                    void runSpecAction(() =>
+                      onRegenerateSpec!(spec.workItemId!, true),
+                    );
+                  }}
+                  data-testid="item-drawer-spec-overwrite-continue"
+                >
+                  Overwrite &amp; regenerate
+                </button>{' '}
+                <button
+                  type="button"
+                  className={styles.selectButton}
+                  onClick={() => setOverwriteConfirm(false)}
+                  data-testid="item-drawer-spec-overwrite-cancel"
+                >
+                  Keep edits
+                </button>
+              </div>
+            )}
+
+            {spec.warnings.length > 0 && (
+              <>
+                <h3 className={styles.sectionTitle}>Spec warnings</h3>
+                <ul
+                  className={styles.bulletList}
+                  data-testid="item-drawer-spec-warnings"
+                >
+                  {spec.warnings.map((w, idx) => (
+                    <li key={idx}>
+                      {typeof w.message === 'string'
+                        ? w.message
+                        : typeof w.code === 'string'
+                          ? w.code
+                          : JSON.stringify(w)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {spec.missingInputs.length > 0 && (
+              <>
+                <h3 className={styles.sectionTitle}>Spec missing inputs</h3>
+                <ul
+                  className={styles.bulletList}
+                  data-testid="item-drawer-spec-missing-inputs"
+                >
+                  {spec.missingInputs.map((m, idx) => (
+                    <li key={idx}>
+                      {typeof m.reason === 'string'
+                        ? m.reason
+                        : typeof m.input === 'string'
+                          ? m.input
+                          : JSON.stringify(m)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {specError && (
+              <div
+                className={styles.modalWarning}
+                role="alert"
+                data-testid="item-drawer-spec-error"
+              >
+                {specError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {item.type === 'story' && onDeleteStory && (
+          <div className={styles.section} data-testid="item-drawer-delete-story">
+            <button
+              type="button"
+              className={styles.selectButton}
+              style={{ color: '#b91c1c', borderColor: '#b91c1c' }}
+              onClick={onDeleteStory}
+              title="Delete this story — only when the plan created something unwanted (a story with an unresolved problem should be fixed or given a manual spec instead)"
+              data-testid="item-drawer-delete-story-button"
+            >
+              Delete story…
+            </button>
           </div>
         )}
 

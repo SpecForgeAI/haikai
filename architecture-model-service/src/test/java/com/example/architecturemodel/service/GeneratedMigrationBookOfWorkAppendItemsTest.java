@@ -208,6 +208,53 @@ class GeneratedMigrationBookOfWorkAppendItemsTest {
     }
 
     @Test
+    @DisplayName("delete story: tombstoned in suppressed_item_ids; re-append of the SAME id is silently skipped (no resurrection); non-story delete rejects")
+    void deleteStoryTombstonesAndSuppressesResurrection() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft =
+            service.createDraft(projectId, buildSkeletonCreateRequest());
+
+        // Expand a story, then DELETE it.
+        service.appendItems(projectId, draft.id(),
+            new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                "api:E1",
+                List.of(Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                    "title", "Unwanted story")),
+                AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED));
+        GeneratedMigrationBookOfWorkDto afterDelete =
+            service.deleteStoryItem(projectId, draft.id(), "api:S1");
+
+        List<Map<String, Object>> items = itemsOf(afterDelete.bookOfWorkJson());
+        assertThat(itemById(items, "api:S1")).isNull();
+        @SuppressWarnings("unchecked")
+        List<String> suppressed =
+            (List<String>) afterDelete.bookOfWorkJson().get("suppressed_item_ids");
+        assertThat(suppressed).containsExactly("api:S1");
+
+        // Re-expansion regenerates the SAME deterministic id — the append
+        // silently SKIPS it (deletion survives; the sibling id still lands).
+        GeneratedMigrationBookOfWorkDto afterReappend =
+            service.appendItems(projectId, draft.id(),
+                new AppendGeneratedMigrationBookOfWorkItemsRequest(
+                    "api:E1",
+                    List.of(
+                        Map.of("id", "api:S1", "type", "story", "parentId", "api:F1",
+                            "title", "Unwanted story (regenerated)"),
+                        Map.of("id", "api:S2", "type", "story", "parentId", "api:F1",
+                            "title", "Wanted story")),
+                    AppendGeneratedMigrationBookOfWorkItemsRequest.STATE_EXPANDED));
+        List<Map<String, Object>> reItems = itemsOf(afterReappend.bookOfWorkJson());
+        assertThat(itemById(reItems, "api:S1")).isNull();
+        assertThat(itemById(reItems, "api:S2")).isNotNull();
+
+        // Only stories are deletable.
+        assertThatThrownBy(() ->
+            service.deleteStoryItem(projectId, draft.id(), "api:F1"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Only STORY items");
+    }
+
+    @Test
     @DisplayName("two sequential appends for DIFFERENT epics both survive — server-side merge, no lost update")
     void sequentialAppendsForDifferentEpicsBothSurvive() {
         UUID projectId = UUID.randomUUID();

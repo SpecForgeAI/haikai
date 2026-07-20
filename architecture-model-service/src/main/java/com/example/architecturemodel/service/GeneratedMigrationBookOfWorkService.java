@@ -1490,6 +1490,13 @@ public class GeneratedMigrationBookOfWorkService {
         }
         Map<String, String> batchTypesById = new HashMap<>();
         List<Map<String, Object>> appendedCopies = new ArrayList<>(toAppend.size());
+        // Tombstone suppression (Phase 1a, 2026-07-20): a user-DELETED story's
+        // id lives in book_of_work_json.suppressed_item_ids. Deterministic
+        // re-expansion regenerates stories under the SAME ids, so an incoming
+        // suppressed id is silently skipped here — deletion survives
+        // re-expansion; never an error.
+        Set<String> suppressedIds = readSuppressedIds(bookOfWork);
+        int skippedSuppressed = 0;
         for (Map<String, Object> rawItem : toAppend) {
             if (rawItem == null) {
                 throw new IllegalArgumentException("appended items must be objects");
@@ -1499,6 +1506,10 @@ public class GeneratedMigrationBookOfWorkService {
             if (id == null || id.isBlank()) {
                 throw new IllegalArgumentException(
                     "every appended item requires a non-blank 'id'");
+            }
+            if (suppressedIds.contains(id)) {
+                skippedSuppressed++;
+                continue;
             }
             if (knownIds.contains(id)) {
                 throw new IllegalArgumentException(
@@ -1549,8 +1560,9 @@ public class GeneratedMigrationBookOfWorkService {
         GeneratedMigrationBookOfWorkEntity saved = repository.save(draft);
 
         log.info(
-            "[diag-ams] book_of_work stage=append_items draftId={} epicId={} appended={} expansionState={}",
-            bookId, request.epicId(), appendedCopies.size(), expansionState);
+            "[diag-ams] book_of_work stage=append_items draftId={} epicId={} appended={} "
+                + "skippedSuppressed={} expansionState={}",
+            bookId, request.epicId(), appendedCopies.size(), skippedSuppressed, expansionState);
 
         return GeneratedMigrationBookOfWorkMapper.toDto(saved);
     }
@@ -1656,6 +1668,94 @@ public class GeneratedMigrationBookOfWorkService {
             if (id.equals(stringField(it, "id"))) return it;
         }
         return null;
+    }
+
+    /** The blob-level tombstone list key (Phase 1a story deletion). */
+    private static final String SUPPRESSED_ITEM_IDS_KEY = "suppressed_item_ids";
+
+    /** Read the tombstoned item-id set from the blob root ([] when absent). */
+    @SuppressWarnings("unchecked")
+    private static Set<String> readSuppressedIds(Map<String, Object> bookOfWork) {
+        Object raw = bookOfWork.get(SUPPRESSED_ITEM_IDS_KEY);
+        if (!(raw instanceof List<?> list)) return Set.of();
+        Set<String> out = new HashSet<>();
+        for (Object o : list) {
+            if (o instanceof String s && !s.isBlank()) out.add(s);
+        }
+        return out;
+    }
+
+    /**
+     * DELETE a story from the plan (Phase 1a, 2026-07-20) — the "the plan
+     * created something unwanted" escape hatch, distinct from an unresolved
+     * problem. Story-type only, one story per call (never bulk). Mechanics:
+     * the item is removed from {@code book_of_work_json.items} AND its id is
+     * recorded in {@code suppressed_item_ids} so deterministic re-expansion
+     * (which regenerates the SAME ids) cannot resurrect it; a linked WorkItem
+     * is best-effort archived ({@code status='ARCHIVED'}). The oracle is
+     * unshrunk: pack surfaces stay in parity scope, so deleting a story that
+     * mattered surfaces as reconcile drift.
+     */
+    @Transactional
+    public GeneratedMigrationBookOfWorkDto deleteStoryItem(
+        UUID projectId, UUID bookId, String bookItemId) {
+        GeneratedMigrationBookOfWorkEntity draft = repository.findById(bookId)
+            .filter(e -> projectId.equals(e.getProjectId()))
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Unknown book of work '" + bookId + "' for project " + projectId));
+        if ("archived".equalsIgnoreCase(draft.getStatus())) {
+            throw new IllegalArgumentException(
+                "Cannot delete items from an archived book of work");
+        }
+        Map<String, Object> bookOfWork = draft.getBookOfWorkJson();
+        List<Map<String, Object>> extracted = extractItems(bookOfWork);
+        List<Map<String, Object>> items = extracted != null ? extracted : new ArrayList<>();
+
+        Map<String, Object> item = findById(bookItemId, items);
+        if (item == null) {
+            throw new IllegalArgumentException(
+                "Unknown item id '" + bookItemId + "' in book_of_work_json");
+        }
+        if (!"story".equalsIgnoreCase(stringField(item, "type"))) {
+            throw new IllegalArgumentException(
+                "Only STORY items can be deleted; '" + bookItemId + "' is a "
+                    + stringField(item, "type"));
+        }
+
+        // Remove + tombstone.
+        items.removeIf(it -> bookItemId.equals(stringField(it, "id")));
+        List<String> suppressed = new ArrayList<>(readSuppressedIds(bookOfWork));
+        if (!suppressed.contains(bookItemId)) suppressed.add(bookItemId);
+        bookOfWork.put(SUPPRESSED_ITEM_IDS_KEY, suppressed);
+        bookOfWork.put("items", items);
+
+        // Best-effort archive of the linked WorkItem (backlog shows archived
+        // items behind its toggle; never blocks the deletion).
+        String workItemIdRaw = stringField(item, "workItemId");
+        if (workItemIdRaw != null) {
+            try {
+                UUID workItemId = UUID.fromString(workItemIdRaw);
+                workItemRepository.findByIdAndProjectId(workItemId, projectId)
+                    .ifPresent(wi -> {
+                        wi.setStatus("ARCHIVED");
+                        workItemRepository.save(wi);
+                    });
+            } catch (RuntimeException ex) {
+                log.warn(
+                    "[diag-ams] book_of_work stage=delete_item work_item_archive_failed "
+                        + "bookItemId={} reason={}",
+                    bookItemId, ex.getMessage());
+            }
+        }
+
+        draft.setBookOfWorkJson(bookOfWork);
+        draft.setUpdatedAt(Instant.now());
+        GeneratedMigrationBookOfWorkEntity saved = repository.save(draft);
+        log.info(
+            "[diag-ams] book_of_work stage=delete_item draftId={} bookItemId={} "
+                + "workItemArchived={} suppressedTotal={}",
+            bookId, bookItemId, workItemIdRaw != null, suppressed.size());
+        return GeneratedMigrationBookOfWorkMapper.toDto(saved);
     }
 
     /**

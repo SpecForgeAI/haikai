@@ -260,6 +260,40 @@ public class MigrationStorySpecGenerationController {
         }
     }
 
+    /** Wire shape for the {@code manual-ready} request body. */
+    public record ManualReadyRequest(Boolean ready) {}
+
+    /**
+     * POST /api/projects/{projectId}/spec-generations/{specId}/manual-ready
+     *
+     * <p>Phase 1a (2026-07-20): explicit, story-by-story acceptance that a
+     * human-supplied/edited spec is ready for its plane. {@code ready=true}
+     * requires a non-blank spec text (409 otherwise); {@code ready=false}
+     * unmarks. The marker identity comes from {@code X-User-Id} (audit,
+     * never the body). There is deliberately NO bulk variant.</p>
+     */
+    @PostMapping("/api/projects/{projectId}/spec-generations/{specId}/manual-ready")
+    public ResponseEntity<?> applyManualReady(
+            @PathVariable UUID projectId,
+            @PathVariable UUID specId,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-User-Id", required = false)
+                String markedBy,
+            @RequestBody ManualReadyRequest body) {
+        if (body == null || body.ready() == null) {
+            return ResponseEntity.badRequest()
+                .body(Map.of("error", "ready is required"));
+        }
+        try {
+            MigrationStorySpecGenerationDto dto =
+                service.applyManualReady(projectId, specId, body.ready(), markedBy);
+            return ResponseEntity.ok(dto);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(409).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     /**
      * GET /api/projects/{projectId}/migration-books-of-work/{bookId}/spec-generations/manually-edited-in-scope
      *

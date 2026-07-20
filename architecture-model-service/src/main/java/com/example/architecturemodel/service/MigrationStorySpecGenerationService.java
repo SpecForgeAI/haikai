@@ -706,6 +706,53 @@ public class MigrationStorySpecGenerationService {
         return MigrationStorySpecGenerationMapper.toDto(repository.save(entity));
     }
 
+    /**
+     * Mark (or unmark) a spec row MANUAL-READY (Phase 1a, 2026-07-20) — the
+     * explicit, story-by-story acceptance that a human-supplied/edited spec is
+     * ready for its plane. Marking requires a non-blank spec text (a story
+     * never enters a plane without a spec — user doctrine); unmarking clears
+     * the trio. The Phase 1b stage gate treats {@code status IN (generated,
+     * generated_with_warnings) OR manual_ready} as satisfied. There is NO bulk
+     * variant on purpose.
+     *
+     * @throws IllegalStateException when marking ready with a blank spec text
+     */
+    @Transactional
+    public MigrationStorySpecGenerationDto applyManualReady(
+            UUID projectId, UUID specId, boolean ready, String markedBy) {
+        if (projectId == null || specId == null) {
+            throw new ResourceNotFoundException(
+                "Spec generation row not found: " + specId);
+        }
+        MigrationStorySpecGenerationEntity entity = repository.findById(specId)
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "Spec generation row not found: " + specId));
+        if (!projectId.equals(entity.getProjectId())) {
+            throw new ResourceNotFoundException(
+                "Spec generation row not in project " + projectId + ": " + specId);
+        }
+        if (ready) {
+            String text = entity.getGeneratedSpecText();
+            if (text == null || text.isBlank()) {
+                throw new IllegalStateException(
+                    "Cannot mark ready: the story has no spec text — supply or "
+                        + "edit the spec first.");
+            }
+            entity.setManualReady(Boolean.TRUE);
+            entity.setManualReadyAt(Instant.now());
+            entity.setManualReadyBy(markedBy);
+        } else {
+            entity.setManualReady(Boolean.FALSE);
+            entity.setManualReadyAt(null);
+            entity.setManualReadyBy(null);
+        }
+        entity.setUpdatedAt(Instant.now());
+        log.info(
+            "[diag-ams] spec_generation manual_ready_set specId={} workItemId={} ready={} by={}",
+            shortPrefix(specId), shortPrefix(entity.getWorkItemId()), ready, markedBy);
+        return MigrationStorySpecGenerationMapper.toDto(repository.save(entity));
+    }
+
     // -----------------------------------------------------------------------
     // Manually-edited-in-scope listing (Task Group 3.4 -- 2026-05-20)
     // -----------------------------------------------------------------------

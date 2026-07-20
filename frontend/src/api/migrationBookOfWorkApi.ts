@@ -506,3 +506,39 @@ export async function saveMigrationBookOfWorkToBacklog(
   }
   return mapSaveResponseDto((await res.json()) as SaveToBacklogResponseDto);
 }
+
+/**
+ * DELETE a story from the plan (Phase 1a, 2026-07-20) — the "plan created
+ * something unwanted" escape hatch. Story-type only; one story per call
+ * (never bulk). AMS removes the item, tombstones its id in
+ * `suppressed_item_ids` (so re-expansion cannot resurrect it), and
+ * best-effort archives a linked WorkItem.
+ *
+ * POST /api/projects/{projectId}/migration-books-of-work/{bookId}/items/{bookItemId}/delete
+ */
+export async function deleteBookOfWorkStory(
+  projectId: string,
+  bookId: string,
+  bookItemId: string,
+): Promise<void> {
+  const url =
+    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/items/${encodeURIComponent(bookItemId)}/delete`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    let message = '';
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      message = parsed.error ?? '';
+    } catch {
+      // ignore parse failure
+    }
+    throw new Error(
+      message || `Story deletion failed: ${res.status} ${res.statusText}`,
+    );
+  }
+}

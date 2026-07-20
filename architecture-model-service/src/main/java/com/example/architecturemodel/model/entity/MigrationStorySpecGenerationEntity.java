@@ -578,6 +578,26 @@ public class MigrationStorySpecGenerationEntity {
     @Column(name = "previous_spec_text", columnDefinition = "TEXT")
     private String previousSpecText;
 
+    /**
+     * Manual-ready marker (Phase 1a, 2026-07-20; changeset 214). Set — story
+     * by story, never in bulk — when the user has supplied/edited the spec for
+     * a tool-unresolvable story and explicitly accepted it as ready. The
+     * Phase 1b stage gate treats {@code status IN (generated,
+     * generated_with_warnings) OR manual_ready} as satisfied. Never set by
+     * the tool itself.
+     */
+    @Column(name = "manual_ready", nullable = false)
+    @Builder.Default
+    private Boolean manualReady = Boolean.FALSE;
+
+    /** Wall-clock timestamp of the manual-ready mark; NULL when unmarked. */
+    @Column(name = "manual_ready_at")
+    private Instant manualReadyAt;
+
+    /** X-User-Id of the marker (audit; never from the request body). */
+    @Column(name = "manual_ready_by", length = 255)
+    private String manualReadyBy;
+
     // ------------------------------------------------------------------
     // End manual-edit columns
     // ------------------------------------------------------------------

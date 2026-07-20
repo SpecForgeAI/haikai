@@ -247,6 +247,18 @@ export interface MigrationBookOfWorkHierarchyTreeProps {
    * (preflight still loading, or legacy view).
    */
   preflightById?: Record<string, { ready: boolean; missingCount: number }>;
+  /**
+   * Spec lifecycle chip per STORY item id (Phase 1a, 2026-07-20) — fed from
+   * the book's persisted spec-generation rows. Absent entries render no chip
+   * (spec not attempted yet).
+   */
+  specStateById?: Record<
+    string,
+    {
+      label: string;
+      kind: 'generating' | 'ok' | 'warn' | 'blocked' | 'manual';
+    }
+  >;
 }
 
 export const MigrationBookOfWorkHierarchyTree: React.FC<
@@ -261,6 +273,7 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
   liveExpandingEpicIds,
   onExpandEpic,
   preflightById,
+  specStateById,
 }) => {
   const { roots, childrenOf } = useMemo(() => buildAdjacency(items), [items]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -458,6 +471,31 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
                   data-testid={`badge-readiness-${item.id}`}
                 >
                   {item.readiness}
+                </span>
+              );
+            })()}
+            {(() => {
+              // Spec lifecycle chip (Phase 1a) — story rows only.
+              const spec = specStateById?.[item.id];
+              if (!spec) return null;
+              const kindClass =
+                spec.kind === 'ok' || spec.kind === 'manual'
+                  ? readinessBadgeClass('ready_for_spec')
+                  : spec.kind === 'blocked'
+                    ? readinessBadgeClass('blocked')
+                    : readinessBadgeClass('needs_focused_context');
+              return (
+                <span
+                  className={`${styles.badge} ${kindClass}`}
+                  data-testid={`badge-spec-${item.id}`}
+                  data-spec-kind={spec.kind}
+                  title={
+                    spec.kind === 'manual'
+                      ? 'Human-supplied spec, explicitly marked ready'
+                      : `Spec status: ${spec.label}`
+                  }
+                >
+                  {spec.label}
                 </span>
               );
             })()}
