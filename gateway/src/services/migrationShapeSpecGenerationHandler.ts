@@ -873,7 +873,7 @@ const defaultFetchElementInventoryForCitationCheck: ElementInventoryForCitationF
   }
 };
 
-const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfWorkId) => {
+export const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfWorkId) => {
   const baseUrl = getConfig().architectureModelServiceBaseUrl;
   const url = `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/migration-books-of-work/${encodeURIComponent(bookOfWorkId)}`;
   const response = await fetch(url, {
@@ -1302,8 +1302,11 @@ export function selectEligibleStories(
  * Detect insufficient-context signals on the focused-context payload BEFORE
  * the LLM call (acceptance signal 9). Returns the missingInputs[] array to
  * record on the per-story row, or null if context is sufficient.
+ *
+ * Exported (Phase 0, 2026-07-20): the spec PREFLIGHT reuses this exact check so
+ * the plan screen's readiness chip and the generator agree by construction.
  */
-function detectInsufficientContext(
+export function detectInsufficientContext(
   ctx: MigrationSpecContextDto
 ): Array<Record<string, unknown>> | null {
   // Top-level missingInputs from AMS (story-wide blockers).

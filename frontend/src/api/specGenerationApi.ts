@@ -1063,3 +1063,75 @@ export async function fetchManuallyEditedInScope(
   const dtos = (await res.json()) as ManuallyEditedScopeRowDto[];
   return (dtos ?? []).map(mapManuallyEditedScopeRowDto);
 }
+
+// ============================================================================
+// Spec preflight — the ONE readiness function (Phase 0, 2026-07-20)
+// ============================================================================
+
+/** How a story would generate — the gateway batch loop's routing, named. */
+export type SpecPreflightRoute =
+  | 'db_pack'
+  | 'manual_gate'
+  | 'code_facts'
+  | 'description'
+  | 'resolver';
+
+/**
+ * One story's preflight verdict. `ready` means the generator's OWN input
+ * check passed (carriage inputs present, or focused context resolves with no
+ * missing inputs) — the plan screen's readiness chip renders THIS, so it can
+ * never disagree with what generation would do.
+ */
+export interface SpecPreflightRow {
+  bookItemId: string;
+  workItemId: string | null;
+  title: string;
+  route: SpecPreflightRoute;
+  ready: boolean;
+  missingInputs: Array<Record<string, unknown>>;
+  note: string | null;
+}
+
+interface SpecPreflightRowDto {
+  book_item_id: string;
+  work_item_id: string | null;
+  title: string;
+  route: SpecPreflightRoute;
+  ready: boolean;
+  missing_inputs: Array<Record<string, unknown>>;
+  note: string | null;
+}
+
+/**
+ * Run the spec preflight for a book. Read-only on the backend (no LLM); the
+ * gateway executes the generator's first half per story and stops before the
+ * LLM call.
+ *
+ * POST /api/v1/projects/{projectId}/migration-books-of-work/{bookId}/spec-generations/preflight
+ */
+export async function runSpecPreflight(
+  projectId: string,
+  bookOfWorkId: string,
+): Promise<SpecPreflightRow[]> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookOfWorkId)}` +
+    `/spec-generations/preflight`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error(`Spec preflight failed: ${res.status} ${res.statusText}`);
+  }
+  const body = (await res.json()) as { rows?: SpecPreflightRowDto[] };
+  return (body.rows ?? []).map((d) => ({
+    bookItemId: d.book_item_id,
+    workItemId: d.work_item_id ?? null,
+    title: d.title,
+    route: d.route,
+    ready: d.ready,
+    missingInputs: Array.isArray(d.missing_inputs) ? d.missing_inputs : [],
+    note: d.note ?? null,
+  }));
+}

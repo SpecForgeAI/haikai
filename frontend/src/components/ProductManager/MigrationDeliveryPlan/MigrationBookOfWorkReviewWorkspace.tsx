@@ -71,6 +71,12 @@ import MigrationBookOfWorkFilters, {
   type MigrationBookOfWorkFilterState,
 } from './MigrationBookOfWorkFilters';
 import MigrationBookOfWorkItemDrawer from './MigrationBookOfWorkItemDrawer';
+// Phase 0 (2026-07-20): the ONE readiness function — live generator-input
+// preflight consumed by the tree chip + drawer instead of the baked value.
+import {
+  runSpecPreflight,
+  SpecPreflightRow,
+} from '../../../api/specGenerationApi';
 import MigrationBookOfWorkSelectionControls from './MigrationBookOfWorkSelectionControls';
 import MigrationBookOfWorkSaveToBacklogDialog, {
   type SaveToBacklogCounts,
@@ -465,6 +471,42 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     setLiveExpandingEpicIds(next);
   }, []);
   const [expansionError, setExpansionError] = useState<string | null>(null);
+
+  // ----- Spec preflight (Phase 0) -----
+  // Live generator-input check per story; null until the first run completes.
+  // Re-run on demand ("Re-check readiness") and after expansion refreshes.
+  const [preflightRows, setPreflightRows] = useState<SpecPreflightRow[] | null>(
+    null,
+  );
+  const [preflightLoading, setPreflightLoading] = useState<boolean>(false);
+
+  const refreshPreflight = useCallback(async () => {
+    setPreflightLoading(true);
+    try {
+      const rows = await runSpecPreflight(projectId, bookId);
+      setPreflightRows(rows);
+    } catch {
+      // Fail-soft: chips fall back to the baked readiness until the next run.
+      setPreflightRows(null);
+    } finally {
+      setPreflightLoading(false);
+    }
+  }, [projectId, bookId]);
+
+  useEffect(() => {
+    // First preflight once the draft is available (archived drafts are
+    // read-only history — no live check).
+    if (draft && draft.status !== 'archived') void refreshPreflight();
+  }, [draft, refreshPreflight]);
+
+  const preflightById = useMemo(() => {
+    if (!preflightRows) return undefined;
+    const out: Record<string, { ready: boolean; missingCount: number }> = {};
+    for (const r of preflightRows) {
+      out[r.bookItemId] = { ready: r.ready, missingCount: r.missingInputs.length };
+    }
+    return out;
+  }, [preflightRows]);
 
   const archived = draft?.status === 'archived';
 
@@ -994,6 +1036,18 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {!archived && (
+            <button
+              type="button"
+              className={styles.selectButton}
+              onClick={() => void refreshPreflight()}
+              disabled={preflightLoading}
+              data-testid="recheck-readiness-button"
+              title="Re-run the generator's own input check for every story (no LLM) \u2014 chips update in place"
+            >
+              {preflightLoading ? 'Checking\u2026' : 'Re-check readiness'}
+            </button>
+          )}
           {showExpandControls && (
             <>
               <button
@@ -1239,6 +1293,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 ? (epicId) => void handleExpandEpic(epicId)
                 : undefined
             }
+            preflightById={preflightById}
           />
         </div>
         <div
@@ -1256,6 +1311,13 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         >
           <MigrationBookOfWorkItemDrawer
             item={selectedItem}
+            preflight={
+              selectedItem
+                ? (preflightRows?.find(
+                    (r) => r.bookItemId === selectedItem.id,
+                  ) ?? null)
+                : null
+            }
             resolveRef={resolveRef}
             dbMigrationPack={(() => {
               if (!selectedItem) return null;

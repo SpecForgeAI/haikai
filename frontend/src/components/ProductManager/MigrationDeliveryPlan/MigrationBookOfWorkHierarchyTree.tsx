@@ -239,6 +239,14 @@ export interface MigrationBookOfWorkHierarchyTreeProps {
   liveExpandingEpicIds?: ReadonlySet<string>;
   /** "Expand epic" / retry action per epic row. Omit for read-only views. */
   onExpandEpic?: (epicId: string) => void;
+  /**
+   * Live PREFLIGHT readiness per story item id (Phase 0, 2026-07-20) — the
+   * generator's own input check, run without the LLM. When an entry exists it
+   * OVERRIDES the baked `readiness` chip: the tool never says "ready" here and
+   * "missing inputs" at generation. Absent entries fall back to the baked chip
+   * (preflight still loading, or legacy view).
+   */
+  preflightById?: Record<string, { ready: boolean; missingCount: number }>;
 }
 
 export const MigrationBookOfWorkHierarchyTree: React.FC<
@@ -252,6 +260,7 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
   expansionStateById,
   liveExpandingEpicIds,
   onExpandEpic,
+  preflightById,
 }) => {
   const { roots, childrenOf } = useMemo(() => buildAdjacency(items), [items]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -419,14 +428,39 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
             >
               {item.confidence}
             </span>
-            <span
-              className={`${styles.badge} ${readinessBadgeClass(
-                item.readiness,
-              )}`}
-              data-testid={`badge-readiness-${item.id}`}
-            >
-              {item.readiness}
-            </span>
+            {(() => {
+              // Preflight override (Phase 0): live generator-input check wins
+              // over the baked expansion-time readiness when present.
+              const pf = preflightById?.[item.id];
+              if (pf) {
+                return (
+                  <span
+                    className={`${styles.badge} ${readinessBadgeClass(
+                      pf.ready ? 'ready_for_spec' : 'blocked',
+                    )}`}
+                    data-testid={`badge-readiness-${item.id}`}
+                    data-preflight={pf.ready ? 'ready' : 'blocked'}
+                    title={
+                      pf.ready
+                        ? 'Preflight passed — the generator has every input it needs'
+                        : `Preflight found ${pf.missingCount} missing input(s) — open the story for details`
+                    }
+                  >
+                    {pf.ready ? 'ready ✓' : `blocked (${pf.missingCount})`}
+                  </span>
+                );
+              }
+              return (
+                <span
+                  className={`${styles.badge} ${readinessBadgeClass(
+                    item.readiness,
+                  )}`}
+                  data-testid={`badge-readiness-${item.id}`}
+                >
+                  {item.readiness}
+                </span>
+              );
+            })()}
             <span
               className={`${styles.badge} ${
                 item.workstream === 'unknown'
