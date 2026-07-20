@@ -224,6 +224,49 @@ describe('phased advance (pause vs final) + resume', () => {
     expect(dispatching).toBeTruthy();
   });
 
+  it('break-glass override RECORDS the frozen divergent tables on the run decision log (Residual 1)', async () => {
+    const run = pausedRun();
+    run.status = RUN_STATUS.AWAITING_APPROVAL;
+    run.items![0].status = RUN_ITEM_STATUS.DEPLOYED;
+    const deps = makeDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      fetchBookOfWork: jest.fn().mockResolvedValue(book),
+      fetchSpecGenerationsForBook: jest.fn().mockResolvedValue([specGen('wi-svc', 'sg-svc')]),
+      // Parity reads report DIVERGENT tables — the override proceeds anyway
+      // but freezes what was overridden for downstream echo attribution.
+      dataParityGateReads: {
+        fetchLatestDataParityReport: jest.fn().mockResolvedValue({
+          status: 'divergent',
+          report_json: {
+            tables: [
+              { table: 'orders', schema: 'dbo', verdict: 'divergent' },
+              { table: 'hir_book', schema: 'dbo', verdict: 'divergent' },
+              { table: 'clean_one', schema: 'dbo', verdict: 'clean' },
+            ],
+          },
+        }),
+        fetchWaivers: jest.fn().mockResolvedValue([]),
+      } as never,
+    });
+
+    const result = await resumeMigration(
+      { projectId: PROJECT_ID, bookId: 'book-1', company: 'acme', project: 'order-mig' },
+      'run-1',
+      deps,
+      { override: true },
+    );
+    expect(result.status).toBe('resumed');
+
+    const overridePatch = (deps.patchMigrationExecutionRun as jest.Mock).mock.calls.find(
+      (c) => Array.isArray(c[2]?.decision_log_json),
+    );
+    expect(overridePatch).toBeTruthy();
+    const log = overridePatch![2].decision_log_json as Array<Record<string, unknown>>;
+    const entry = log[log.length - 1];
+    expect(entry).toMatchObject({ type: 'data_parity_override' });
+    expect(entry.divergent_tables).toEqual(['dbo.orders', 'dbo.hir_book']);
+  });
+
   it('resumeMigration on a non-paused run is a no-op', async () => {
     const run = pausedRun(); // status = dispatching
     const deps = makeDeps({ getMigrationExecutionRun: jest.fn().mockResolvedValue(run) });
