@@ -126,7 +126,12 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
    * backlog, the user can jump straight to generating their implementation-
    * ready specs (where they can pick a subset to generate).
    */
-  onOpenSpecGeneration?: () => void;
+  /**
+   * Auto-select the story owning this WorkItem id once the draft loads
+   * (Phase 1c): deep links that used to open the standalone spec-generation
+   * drawer land here instead — the drawer's spec section opens in place.
+   */
+  initialSelectedWorkItemId?: string;
   /**
    * Orchestration scope for the execution rail (Phase 1b): organisation NAME +
    * project name, resolved by the route exactly as the delivery dashboard does.
@@ -306,7 +311,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   initialDraft,
   onOpenBacklog,
   onBackToPlans,
-  onOpenSpecGeneration,
+  initialSelectedWorkItemId,
   companyName,
   projectName,
   onOpenDelivery,
@@ -898,6 +903,25 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     };
   }, [projectId, bookId, initialDraft]);
 
+  // ----- Deep-link auto-select (Phase 1c) -----
+  // ?workItemId=... selects the owning story once the draft is available so
+  // its drawer (incl. the spec section) opens — the replacement for the old
+  // spec-generation workspace's auto-open drawer.
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (!initialSelectedWorkItemId || autoSelectedRef.current || !draft) return;
+    const match = (draft.bookOfWork?.items ?? []).find(
+      (i) =>
+        i.type === 'story' &&
+        (i as { workItemId?: string | null }).workItemId ===
+          initialSelectedWorkItemId,
+    );
+    if (match) {
+      setSelectedItemId(match.id);
+      autoSelectedRef.current = true;
+    }
+  }, [initialSelectedWorkItemId, draft]);
+
   // ----- Filtered items (visible in tree) -----
   const visibleItems = useMemo(() => {
     // For the hierarchy tree to render parents of admitted descendants,
@@ -1475,17 +1499,6 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           >
             {saveDraftState === 'saving' ? 'Saving\u2026' : 'Save draft'}
           </button>
-          {onOpenSpecGeneration && (
-            <button
-              type="button"
-              className={styles.selectButton}
-              onClick={onOpenSpecGeneration}
-              title="Open the spec-generation workspace to generate implementation-ready specs for the saved stories (you can pick a subset there)"
-              data-testid="open-spec-generation-button"
-            >
-              Generate specs {'\u2192'}
-            </button>
-          )}
         </div>
       </div>
 

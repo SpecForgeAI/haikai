@@ -348,8 +348,10 @@ export function MigrationDeliveryDashboardRoute({
         }
         onOpenBacklog={() => navigate(`${archScopedPrefix}/product/backlog`)}
         onOpenGeneratedSpecs={() =>
+          // Phase 1c (2026-07-20): the plan REVIEW screen owns the spec
+          // lifecycle — the standalone spec-generation workspace is gone.
           navigate(
-            `${archScopedPrefix}/migration-books-of-work/${bookId}/spec-generation`,
+            `${archScopedPrefix}/migration-books-of-work/${bookId}/review`,
           )
         }
         epicDecisionsSummaries={epicDecisionsSummaries}
