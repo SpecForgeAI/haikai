@@ -166,7 +166,7 @@ describe('plan screen — preflight readiness (the one readiness function)', () 
       ),
     );
 
-    fireEvent.click(screen.getByText('Blocked story'));
+    fireEvent.click(screen.getByTestId('hierarchy-node-row-s-blocked'));
     const section = await screen.findByTestId('item-drawer-preflight');
     expect(
       within(section).getByTestId('item-drawer-preflight-blocked'),

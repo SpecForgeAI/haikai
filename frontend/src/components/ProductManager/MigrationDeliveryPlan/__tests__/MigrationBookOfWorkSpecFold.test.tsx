@@ -232,7 +232,7 @@ describe('plan screen — spec lifecycle fold (Phase 1a)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('badge-spec-s-ok')).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByText('OK story'));
+    fireEvent.click(screen.getByTestId('hierarchy-node-row-s-ok'));
 
     const section = await screen.findByTestId('item-drawer-spec');
     expect(
@@ -255,7 +255,7 @@ describe('plan screen — spec lifecycle fold (Phase 1a)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('badge-spec-s-bad')).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByText('Blocked story'));
+    fireEvent.click(screen.getByTestId('hierarchy-node-row-s-bad'));
 
     fireEvent.click(await screen.findByTestId('item-drawer-delete-story-button'));
     const dialog = screen.getByTestId('delete-story-dialog');
