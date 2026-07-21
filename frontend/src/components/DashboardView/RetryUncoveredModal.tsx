@@ -52,6 +52,17 @@ export interface RetryUncoveredModalProps {
   busy?: boolean;
   /** Progress / error note shown after a closure run (e.g. "closed 3; 2 left"). */
   note?: string | null;
+  /**
+   * Pass C: download ALL endpoints (covered + uncovered) as a Postman
+   * collection. When omitted the button is not rendered.
+   */
+  onDownloadPostman?: () => void;
+  /**
+   * Pass C: exclude-with-reason for a genuinely uncapturable endpoint. Called
+   * with the operation id + the reason (the row's notes value). When omitted
+   * the per-row exclude button is not rendered.
+   */
+  onExclude?: (operationId: string, reason: string) => void;
   testId?: string;
 }
 
@@ -62,6 +73,8 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
   onLaunch,
   busy = false,
   note = null,
+  onDownloadPostman,
+  onExclude,
   testId = 'retry-uncovered-modal',
 }) => {
   const [config, setConfig] = useState<Record<string, { attempts: number; notes: string }>>(() =>
@@ -151,6 +164,20 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
                     onChange={(e) => setNotes(u.operation_id, e.target.value)}
                   />
                 </label>
+                {onExclude && (
+                  <button
+                    type="button"
+                    className={classes.secondaryButton}
+                    data-testid={`${testId}-exclude-${u.operation_id}`}
+                    disabled={busy || (config[u.operation_id]?.notes ?? '').trim().length === 0}
+                    title="Exclude this endpoint from the baseline — uses the notes above as the audited reason"
+                    onClick={() =>
+                      onExclude(u.operation_id, (config[u.operation_id]?.notes ?? '').trim())
+                    }
+                  >
+                    Exclude (reason = notes)
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -174,6 +201,18 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
             >
               {busy ? 'Running closure…' : 'Run closure'}
             </button>
+            {onDownloadPostman && (
+              <button
+                type="button"
+                className={classes.secondaryButton}
+                data-testid={`${testId}-postman`}
+                onClick={onDownloadPostman}
+                disabled={busy}
+                title="Download all endpoints as a Postman collection — fix the uncovered ones and re-upload"
+              >
+                Download Postman collection
+              </button>
+            )}
             <button
               type="button"
               className={classes.secondaryButton}
@@ -184,6 +223,15 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               Close
             </button>
           </div>
+          {onDownloadPostman && (
+            <p data-testid={`${testId}-postman-hint`}>
+              Prefer to fix these by hand? Download every endpoint as a Postman
+              collection — covered ones carry their proven request as a reference,
+              uncovered ones carry the last attempt + the failure reason. Fix them
+              in Postman, then re-upload via “Append a Postman collection”; only the
+              uncovered endpoints are re-attempted.
+            </p>
+          )}
         </div>
       </div>
     </div>

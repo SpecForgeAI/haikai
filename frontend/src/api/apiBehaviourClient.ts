@@ -1858,6 +1858,35 @@ export async function retryUncoveredApis(
   );
 }
 
+/** Response from the `exclude-endpoint` Pass C action (fresh gate). */
+export interface ExcludeEndpointResponse {
+  sessionId: string;
+  gate: RetryUncoveredResponse['gate'];
+}
+
+/**
+ * Coverage Closure Pass C exclude-with-reason (Spec 2026-07-20). Proxied to the
+ * validation service's `exclude-endpoint` action, which drops the endpoint from
+ * the coverage summary (leaving the happy-path gate denominator, "accounted"
+ * not "unresolved") with an audited reason, and returns the fresh gate.
+ */
+export async function excludeEndpoint(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  operationId: string,
+  reason: string,
+): Promise<ExcludeEndpointResponse> {
+  return jsonRequest<ExcludeEndpointResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'exclude-endpoint'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operationId, reason }),
+    },
+  );
+}
+
 /**
  * Compute the wizard Step 5 "Data-type formats" preview (Spec 2026-06-20
  * Capture data-type format defaults). Proxied by the gateway to the amvs

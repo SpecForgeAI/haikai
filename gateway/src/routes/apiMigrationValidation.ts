@@ -535,6 +535,7 @@ export const API_BEHAVIOUR_ACTION_PATHS = [
   'add-operation',
   'data-type-defaults-preview',
   'retry-uncovered',
+  'exclude-endpoint',
 ] as const;
 
 type ApiBehaviourAction = (typeof API_BEHAVIOUR_ACTION_PATHS)[number];

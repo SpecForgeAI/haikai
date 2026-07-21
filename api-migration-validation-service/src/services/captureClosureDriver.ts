@@ -193,6 +193,47 @@ export async function runClosureOrchestration(
   };
 }
 
+/**
+ * Exclude-with-reason (Pass C): drop one endpoint from the coverage summary so
+ * it leaves the happy-path gate denominator — "accounted", not "unresolved" —
+ * for the genuinely uncapturable (endpoint 500s, not deployed on non-prod).
+ * PURE. Removes the endpoint from `per_endpoint`, records it under
+ * `closure_excluded` with its reason + timestamp (audit trail), and recomputes
+ * the aggregate counts/score. A no-op (returns the input) when the endpoint is
+ * not present. `at` is injected (callers stamp the time) to keep this pure.
+ */
+export function removeEndpointFromSummary(
+  summary: CoverageSummary,
+  operationId: string,
+  reason: string,
+  at: string,
+): CoverageSummary {
+  const target = summary.per_endpoint.find((e) => e.operation_id === operationId);
+  if (!target) return summary;
+  const perEndpoint = summary.per_endpoint.filter((e) => e.operation_id !== operationId);
+  const removedDims = target.dimensions.length;
+  const removedAchieved = target.dimensions.filter((d) => d.achieved).length;
+  const dimensionsTotal = Math.max(0, summary.dimensions_total - removedDims);
+  const dimensionsAchieved = Math.max(0, summary.dimensions_achieved - removedAchieved);
+  const priorExcluded = Array.isArray((summary as { closure_excluded?: unknown }).closure_excluded)
+    ? ((summary as unknown as { closure_excluded: Array<Record<string, unknown>> }).closure_excluded)
+    : [];
+  return {
+    ...summary,
+    per_endpoint: perEndpoint,
+    dimensions_total: dimensionsTotal,
+    dimensions_achieved: dimensionsAchieved,
+    overall_score: dimensionsTotal > 0 ? dimensionsAchieved / dimensionsTotal : 0,
+    // Audit list rides alongside the typed fields (tolerated by the JSONB wire).
+    ...({
+      closure_excluded: [
+        ...priorExcluded,
+        { operation_id: operationId, method: target.method, path: target.path, reason, at },
+      ],
+    } as object),
+  } as CoverageSummary;
+}
+
 /** A synthetic achieved happy dimension for an endpoint that had none. */
 function achievedHappyDimension(captureId: string): CoverageDimensionResult {
   return {
