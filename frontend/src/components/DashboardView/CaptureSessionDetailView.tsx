@@ -84,7 +84,13 @@ import { CoverageSummaryPanel, CoverageGateBanner } from './CoverageSummaryPanel
 import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
 import { RetryUncoveredModal } from './RetryUncoveredModal';
 import type { EndpointRetryConfig } from './RetryUncoveredModal';
-import { retryUncoveredApis } from '../../api/apiBehaviourClient';
+import { computeHappyPathGate, parseCoverageSummary } from './CoverageSummaryPanel';
+import {
+  resolvePostmanSources,
+  buildPostmanCollection,
+  type ExportCapture,
+} from './postmanExport';
+import { retryUncoveredApis, listCaptures, excludeEndpoint } from '../../api/apiBehaviourClient';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
@@ -282,6 +288,85 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
     },
     [projectId, architectureId, sessionId, fetchOnce],
   );
+
+  // Coverage Closure Pass C: exclude-with-reason for a genuinely uncapturable
+  // endpoint. Drops it from the gate denominator (accounted, not unresolved)
+  // with an audited reason, then refreshes the modal's remaining list.
+  const handleExclude = useCallback(
+    async (operationId: string, reason: string) => {
+      setClosureBusy(true);
+      setClosureNote(null);
+      try {
+        const result = await excludeEndpoint(projectId, architectureId, sessionId, operationId, reason);
+        await fetchOnce();
+        if (result.gate.complete) {
+          setRetryModalEndpoints(null);
+        } else {
+          setRetryModalEndpoints(
+            result.gate.unresolved.map((u) => ({
+              operation_id: u.operation_id,
+              method: u.method,
+              path: u.path,
+              reason: u.reason,
+            })),
+          );
+        }
+      } catch (err) {
+        setClosureNote(err instanceof Error ? err.message : 'Exclude failed');
+      } finally {
+        setClosureBusy(false);
+      }
+    },
+    [projectId, architectureId, sessionId, fetchOnce],
+  );
+
+  // Coverage Closure Pass C: download EVERY endpoint as a Postman collection
+  // (covered = proven request as a reference example; uncovered = last attempt
+  // pre-filled + diagnosis; auth as a placeholder, never a secret). The user
+  // fixes the uncovered ones in Postman and re-uploads via the existing Postman
+  // import, which re-attempts only the uncovered endpoints (delta subtraction).
+  const handleDownloadPostman = useCallback(async () => {
+    if (!session) return;
+    const summary = parseCoverageSummary(session.coverage_summary_json);
+    if (!summary) return;
+    const gate = computeHappyPathGate(session.coverage_summary_json);
+    const included = summary.per_endpoint.map((e) => ({
+      operation_id: e.operation_id,
+      method: e.method,
+      path: e.path,
+    }));
+    let captures: ExportCapture[] = [];
+    try {
+      const rows = await listCaptures(projectId, architectureId, sessionId);
+      captures = rows.map((r) => ({
+        operation_id: r.operation_id,
+        request_method: r.request_method,
+        request_path: r.request_path,
+        request_query_json: r.request_query_json,
+        request_headers_redacted_json: r.request_headers_redacted_json,
+        request_body_json: r.request_body_json,
+        response_status: r.response_status,
+        captured_at: r.captured_at,
+      }));
+    } catch {
+      captures = [];
+    }
+    const sources = resolvePostmanSources(included, captures, gate);
+    const collection = buildPostmanCollection(
+      `API baseline — ${session.environment_name ?? sessionId}`,
+      session.api_base_url ?? '{{baseUrl}}',
+      sources,
+    );
+    const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `capture-${sessionId}.postman_collection.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [session, projectId, architectureId, sessionId]);
 
   // Initial load.
   useEffect(() => {
@@ -733,6 +818,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
             setClosureNote(null);
           }}
           onLaunch={handleRunClosure}
+          onDownloadPostman={handleDownloadPostman}
+          onExclude={handleExclude}
           busy={closureBusy}
           note={closureNote}
           classes={{

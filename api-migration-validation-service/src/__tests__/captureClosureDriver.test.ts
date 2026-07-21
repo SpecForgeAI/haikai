@@ -10,6 +10,7 @@
 import {
   runClosureOrchestration,
   applyClosureToSummary,
+  removeEndpointFromSummary,
   isHappyStatus,
   type ClosureFirer,
   type ClosureRepairer,
@@ -77,6 +78,25 @@ describe('applyClosureToSummary', () => {
     const out = applyClosureToSummary(s, new Map([['op3', 'cap-x']]));
     expect(out.per_endpoint[0].dimensions[0].achieved).toBe(true);
     expect(out.dimensions_total).toBe(s.dimensions_total + 1);
+  });
+});
+
+describe('removeEndpointFromSummary (exclude-with-reason)', () => {
+  it('drops the endpoint from the gate denominator and records the audit entry', () => {
+    const s = summaryOf([ep('op1', 'GET', '/a/{id}', false), ep('op2', 'GET', '/b', true)]);
+    const out = removeEndpointFromSummary(s, 'op1', 'endpoint 500s on all input', '2026-07-21T00:00:00Z');
+    expect(out.per_endpoint.map((e) => e.operation_id)).toEqual(['op2']);
+    // op1 is gone → the remaining endpoint is complete.
+    const excluded = (out as unknown as { closure_excluded: Array<{ operation_id: string; reason: string }> }).closure_excluded;
+    expect(excluded).toEqual([
+      { operation_id: 'op1', method: 'GET', path: '/a/{id}', reason: 'endpoint 500s on all input', at: '2026-07-21T00:00:00Z' },
+    ]);
+    expect(out.dimensions_total).toBe(s.dimensions_total - 1);
+  });
+
+  it('is a no-op for an unknown endpoint', () => {
+    const s = summaryOf([ep('op2', 'GET', '/b', true)]);
+    expect(removeEndpointFromSummary(s, 'nope', 'x', 't')).toBe(s);
   });
 });
 
