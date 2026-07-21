@@ -1813,6 +1813,51 @@ export async function reconcileInventory(
   );
 }
 
+/** Per-endpoint Pass B config for the `retry-uncovered` action (CC3). */
+export interface RetryUncoveredConfigEntry {
+  operationId: string;
+  attempts?: number;
+  notes?: string;
+}
+
+/** Response from the `retry-uncovered` Coverage Closure action. */
+export interface RetryUncoveredResponse {
+  sessionId: string;
+  passA: { fired: number; closed: string[] };
+  passB: { attempted: number; closed: string[]; available: boolean };
+  gate: {
+    complete: boolean;
+    included_total: number;
+    happy_achieved: number;
+    unresolved: Array<{ operation_id: string; method: string; path: string; reason: string }>;
+  };
+  note?: string;
+}
+
+/**
+ * Kick off Coverage Closure over a completed session's uncovered endpoints
+ * (Spec 2026-07-20). Proxied by the gateway to the validation service's
+ * `retry-uncovered` action, which runs Pass A (deterministic id replay) then
+ * Pass B (per-endpoint LLM repair with the supplied attempts/notes), patches
+ * the coverage summary, and returns the fresh happy-path gate. Mirrors
+ * `reconcileInventory`: `actionUrl(..., 'retry-uncovered')` + a JSON POST.
+ */
+export async function retryUncoveredApis(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  config: RetryUncoveredConfigEntry[],
+): Promise<RetryUncoveredResponse> {
+  return jsonRequest<RetryUncoveredResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'retry-uncovered'),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    },
+  );
+}
+
 /**
  * Compute the wizard Step 5 "Data-type formats" preview (Spec 2026-06-20
  * Capture data-type format defaults). Proxied by the gateway to the amvs

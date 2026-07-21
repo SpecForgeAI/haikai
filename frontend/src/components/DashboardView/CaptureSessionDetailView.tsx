@@ -83,6 +83,8 @@ import { PostmanImportAppendModal } from '../ApiBehaviour/PostmanImportAppendMod
 import { CoverageSummaryPanel, CoverageGateBanner } from './CoverageSummaryPanel';
 import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
 import { RetryUncoveredModal } from './RetryUncoveredModal';
+import type { EndpointRetryConfig } from './RetryUncoveredModal';
+import { retryUncoveredApis } from '../../api/apiBehaviourClient';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
@@ -184,6 +186,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   const [retryModalEndpoints, setRetryModalEndpoints] = useState<
     UnresolvedEndpoint[] | null
   >(null);
+  const [closureBusy, setClosureBusy] = useState(false);
+  const [closureNote, setClosureNote] = useState<string | null>(null);
 
   // Re-enter secrets prompt visible/hidden + transient form state.
   //
@@ -231,6 +235,53 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       return null;
     }
   }, [projectId, architectureId, sessionId]);
+
+  // Coverage Closure: run the "Retry uncovered APIs" pass, then refresh the
+  // session so the patched coverage summary + gate re-render. Closes the modal
+  // when the gate is complete; otherwise leaves it open with a progress note so
+  // the user can adjust attempts/notes and retry the remainder (or move to the
+  // Postman/exclude wizard, CC4).
+  const handleRunClosure = useCallback(
+    async (config: EndpointRetryConfig[]) => {
+      setClosureBusy(true);
+      setClosureNote(null);
+      try {
+        const result = await retryUncoveredApis(
+          projectId,
+          architectureId,
+          sessionId,
+          config.map((c) => ({ operationId: c.operation_id, attempts: c.attempts, notes: c.notes })),
+        );
+        const fresh = await fetchOnce();
+        const closed = result.passA.closed.length + result.passB.closed.length;
+        if (result.gate.complete) {
+          setRetryModalEndpoints(null);
+          setClosureNote(null);
+        } else {
+          setRetryModalEndpoints(
+            result.gate.unresolved.map((u) => ({
+              operation_id: u.operation_id,
+              method: u.method,
+              path: u.path,
+              reason: u.reason,
+            })),
+          );
+          const passBNote = result.passB.available
+            ? ''
+            : ' (Pass B unavailable — re-parse the OAS to enable LLM repair)';
+          setClosureNote(
+            `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.`,
+          );
+        }
+        void fresh;
+      } catch (err) {
+        setClosureNote(err instanceof Error ? err.message : 'Coverage closure failed');
+      } finally {
+        setClosureBusy(false);
+      }
+    },
+    [projectId, architectureId, sessionId, fetchOnce],
+  );
 
   // Initial load.
   useEffect(() => {
@@ -677,7 +728,13 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       {retryModalEndpoints && (
         <RetryUncoveredModal
           unresolved={retryModalEndpoints}
-          onClose={() => setRetryModalEndpoints(null)}
+          onClose={() => {
+            setRetryModalEndpoints(null);
+            setClosureNote(null);
+          }}
+          onLaunch={handleRunClosure}
+          busy={closureBusy}
+          note={closureNote}
           classes={{
             backdrop: styles.diffModalBackdrop,
             panel: styles.diffModalPanel,

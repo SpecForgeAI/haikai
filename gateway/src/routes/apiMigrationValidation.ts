@@ -534,6 +534,7 @@ export const API_BEHAVIOUR_ACTION_PATHS = [
   'manual-capture',
   'add-operation',
   'data-type-defaults-preview',
+  'retry-uncovered',
 ] as const;
 
 type ApiBehaviourAction = (typeof API_BEHAVIOUR_ACTION_PATHS)[number];

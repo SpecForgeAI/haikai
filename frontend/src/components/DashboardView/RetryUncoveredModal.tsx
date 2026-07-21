@@ -50,6 +50,8 @@ export interface RetryUncoveredModalProps {
   onLaunch?: (config: EndpointRetryConfig[]) => void;
   /** Disables inputs + buttons while a launch is in flight. */
   busy?: boolean;
+  /** Progress / error note shown after a closure run (e.g. "closed 3; 2 left"). */
+  note?: string | null;
   testId?: string;
 }
 
@@ -59,6 +61,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
   onClose,
   onLaunch,
   busy = false,
+  note = null,
   testId = 'retry-uncovered-modal',
 }) => {
   const [config, setConfig] = useState<Record<string, { attempts: number; notes: string }>>(() =>
@@ -151,6 +154,11 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               </li>
             ))}
           </ul>
+          {note && (
+            <p data-testid={`${testId}-note`} role="status">
+              {note}
+            </p>
+          )}
           <div>
             <button
               type="button"
