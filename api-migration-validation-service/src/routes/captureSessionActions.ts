@@ -56,6 +56,27 @@ import {
   toInventoryOperation,
   type AddOperationBody,
 } from './addOperationSupport';
+// Coverage Closure (Spec 2026-07-20): the "Retry uncovered APIs" run.
+import {
+  buildScenarioPrompt,
+  type CoverageSummary,
+} from '../services/captureSessionOrchestrator';
+import { computeHappyPathGate } from '../services/captureCoverageGate';
+import {
+  runClosureOrchestration,
+  type ClosureFirer,
+  type ClosureRepairer,
+  type ClosureDbSampler,
+  type ClosureConfigEntry,
+} from '../services/captureClosureDriver';
+import type { EndpointDiagnosis } from '../services/captureClosurePassB';
+import { fetchEffectScopeIndex, effectTablesFor } from '../services/stateDelta';
+import { runScenarioLoop } from '../services/captureLoopRunner';
+import { ALL_TOOLS } from '../services/tools';
+import type {
+  ToolExecutionContext,
+  ArchModelToolWriteSurface,
+} from '../services/tools';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
 // is set). See docs/trace-logging.md. The /start orchestration writes the
@@ -1899,6 +1920,336 @@ export function buildCaptureSessionActionsRouter(
     } catch (err) {
       const message = err instanceof Error ? err.message : 'manual-capture failed';
       return fail(res, 500, message);
+    }
+  });
+
+  // ----------------------------------------------------------------------
+  // POST /api/capture-sessions/:id/retry-uncovered
+  // ----------------------------------------------------------------------
+  // Coverage Closure (Spec 2026-07-20). Runs the "Retry uncovered APIs" pass
+  // over a COMPLETED session: Pass A deterministically re-fires candidate
+  // requests (session id pool + DB-mined ids) for uncovered path-param
+  // endpoints; Pass B runs a per-endpoint LLM repair loop (elevated budget +
+  // failure-mode directive + operator notes) for whatever survives; then the
+  // coverage summary is patched so the happy-path GATE reflects the newly
+  // closed endpoints. Secrets must be loaded (409 otherwise), exactly like
+  // manual-capture. Fail-soft per endpoint — one bad endpoint never aborts the
+  // run. Pass B degrades to unavailable when the parsed OAS inventory is no
+  // longer cached for the session (process restart); Pass A still runs.
+  //
+  // Body: { config?: [{ operationId, attempts?, notes? }] } (Pass B controls).
+  router.post('/api/capture-sessions/:id/retry-uncovered', async (req: Request, res: Response) => {
+    const sessionId = req.params.id;
+    const projectId = extractProjectId(req);
+    if (!projectId) return fail(res, 400, 'projectId is required (query param or body field)');
+
+    let httpExec: ReturnType<typeof createSessionHttpExecutor> | null = null;
+    let dbAdapter: ReturnType<typeof createDbAdapter> | null = null;
+    let runManagerStarted = false;
+    try {
+      const sessionDto = await archModelClient.getCaptureSession(projectId, sessionId);
+      const session = toCaptureSession(sessionDto);
+
+      const secrets = secretsStore.get(sessionId);
+      if (!secrets) {
+        return fail(res, 409, 'Secrets not loaded for this session. Submit /secrets before retrying.', {
+          code: 'SECRETS_NOT_LOADED',
+        });
+      }
+      if (!session.apiBaseUrl) return fail(res, 400, 'Session has no api_base_url configured.');
+
+      const rawSummary = sessionDto.coverage_summary_json as Record<string, unknown> | null;
+      const summary =
+        rawSummary && Array.isArray((rawSummary as { per_endpoint?: unknown }).per_endpoint)
+          ? (rawSummary as unknown as CoverageSummary)
+          : null;
+      if (!summary) {
+        return fail(res, 400, 'No coverage summary recorded for this session; run a capture first.');
+      }
+
+      const gate0 = computeHappyPathGate(summary);
+      if (gate0.complete) {
+        return res.json({
+          sessionId,
+          passA: { fired: 0, closed: [] },
+          passB: { attempted: 0, closed: [], available: true },
+          gate: gate0,
+          note: 'baseline already complete',
+        });
+      }
+
+      // ---- Operation rows (AMS row id + method/path) for scenario creation.
+      const operations = await archModelClient.listOperationsBySession(projectId, sessionId);
+      const opRowByOasId = new Map(operations.map((o) => [o.operation_id, o]));
+
+      // ---- Endpoint→table mapping (one committed-model read) for DB mining.
+      const effectIndex = await fetchEffectScopeIndex(session.projectId, session.architectureId);
+      const tablesByOperationId = new Map<string, string[]>();
+      for (const u of gate0.unresolved) {
+        const tables = effectIndex ? effectTablesFor(effectIndex, u.method, u.path) : [];
+        if (tables.length > 0) tablesByOperationId.set(u.operation_id, tables);
+      }
+
+      // ---- Per-endpoint Pass B config (from the retry modal).
+      const cfgBody = Array.isArray((req.body || {}).config) ? (req.body.config as unknown[]) : [];
+      const configByOperationId = new Map<string, ClosureConfigEntry>();
+      for (const raw of cfgBody) {
+        const c = raw as { operationId?: unknown; attempts?: unknown; notes?: unknown };
+        if (typeof c.operationId === 'string') {
+          configByOperationId.set(c.operationId, {
+            operation_id: c.operationId,
+            attempts: typeof c.attempts === 'number' ? c.attempts : null,
+            notes: typeof c.notes === 'string' ? c.notes : null,
+          });
+        }
+      }
+
+      // ---- Last-attempt diagnosis per uncovered endpoint (drives Pass B).
+      const diagnosisByOperationId = new Map<string, EndpointDiagnosis>();
+      for (const u of gate0.unresolved) {
+        diagnosisByOperationId.set(u.operation_id, {
+          operation_id: u.operation_id,
+          method: u.method,
+          path: u.path,
+          last_status: null,
+          last_error_summary: u.reason ?? null,
+          last_request_summary: null,
+        });
+      }
+
+      // ---- Shared HTTP executor (auth re-injected from the in-memory secret).
+      httpExec = createSessionHttpExecutor({
+        auth: secrets.api,
+        baseURL: session.apiBaseUrl,
+        defaultHeaders: session.defaultHeadersRedactedJson ?? {},
+        timeoutMs: LLM_TOOL_CALL_TIMEOUT_MS,
+      });
+
+      // ---- Optional DB adapter (Pass A mining + Pass B sampling tool).
+      const dbCfg = session.dbConfigRedactedJson;
+      if (
+        dbCfg &&
+        dbCfg.host &&
+        dbCfg.port &&
+        dbCfg.database &&
+        dbCfg.username &&
+        secrets.db?.password &&
+        (dbCfg.dbType === 'postgres' || dbCfg.dbType === 'sybase')
+      ) {
+        dbAdapter = createDbAdapter({
+          dbType: dbCfg.dbType,
+          host: dbCfg.host,
+          port: dbCfg.port,
+          database: dbCfg.database,
+          schema: dbCfg.schema,
+          username: dbCfg.username,
+          password: secrets.db.password,
+        });
+      }
+
+      // ---- Pass A firer: fire ONE concrete candidate + persist its capture.
+      const urlBase = (session.apiBaseUrl ?? '').replace(/\/+$/, '');
+      const firer: ClosureFirer = {
+        fireCandidate: async (cand) => {
+          const opRow = opRowByOasId.get(cand.operation_id);
+          if (!opRow || !httpExec) return { status: null, captureId: null };
+          let response: AxiosResponse<unknown> | null = null;
+          let errorType: string | null = null;
+          let errorMessage: string | null = null;
+          const start = Date.now();
+          try {
+            response = await httpExec.request({
+              url: cand.path,
+              method: cand.method.toLowerCase() as HttpMethod,
+            });
+          } catch (err) {
+            const ae = err as AxiosError;
+            if (ae && ae.response) response = ae.response as AxiosResponse<unknown>;
+            else {
+              errorType = ae?.code ?? ae?.name ?? 'UnknownError';
+              errorMessage = ae?.message ?? String(err);
+            }
+          }
+          const durationMs = Date.now() - start;
+          const safeResponseHeaders = response
+            ? redactHeaders(
+                response.headers as unknown as Record<string, string | string[] | undefined>,
+              )
+            : null;
+          const safeResponseBody = response ? redactJson(response.data) : null;
+          const requestUrlRedacted = redactUrl(
+            cand.path.startsWith('/') ? `${urlBase}${cand.path}` : `${urlBase}/${cand.path}`,
+          );
+          const timestamp = new Date().toISOString();
+          const scenario = await archModelClient.createScenario(projectId, {
+            session_id: sessionId,
+            operation_id: opRow.id,
+            scenario_name: `Closure A: ${cand.method} ${cand.path} ${timestamp}`,
+            scenario_type: 'manual',
+            generation_source: 'manual',
+            request_method: cand.method,
+            request_path: cand.path,
+          });
+          const capture = await archModelClient.createCapture(projectId, {
+            session_id: sessionId,
+            scenario_id: scenario.id,
+            operation_id: opRow.id,
+            request_method: cand.method,
+            request_path: cand.path,
+            request_url_redacted: requestUrlRedacted,
+            response_status: response ? response.status : null,
+            response_headers_redacted_json: response
+              ? (safeResponseHeaders as unknown as Record<string, string> | null)
+              : null,
+            response_body_json: normaliseBodyForAms(safeResponseBody),
+            duration_ms: durationMs,
+            error_type: errorType,
+            error_message: errorMessage,
+            captured_at: timestamp,
+            volatile_paths_json: null,
+          });
+          return { status: response ? response.status : null, captureId: capture.id };
+        },
+      };
+
+      // ---- DB sampler: best-effort id harvest from the mapped tables.
+      const dbSampler: ClosureDbSampler = {
+        sampleIds: async (tables, paramNames) => {
+          const out = new Map<string, string[]>();
+          if (!dbAdapter) return out;
+          const columns = Array.from(
+            new Set([...paramNames, ...paramNames.map((p) => p.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()), 'id']),
+          );
+          const limits = { maxRows: 50, timeoutSeconds: 5 };
+          for (const table of tables) {
+            const values: string[] = [];
+            for (const column of columns) {
+              try {
+                const result = await dbAdapter.sampleValues({
+                  schema: dbCfg?.schema ?? null,
+                  table,
+                  column,
+                  limits,
+                });
+                for (const row of result.rows) {
+                  const v = Object.values(row)[0];
+                  if (v !== null && v !== undefined) values.push(String(v));
+                }
+                if (values.length > 0) break;
+              } catch {
+                // column absent / not sampleable — try the next candidate column.
+              }
+            }
+            if (values.length > 0) out.set(table, Array.from(new Set(values)));
+          }
+          return out;
+        },
+      };
+
+      // ---- Pass B repairer: per-endpoint LLM repair loop (needs the cached OAS
+      // inventory; degrades to unavailable when it is no longer in memory).
+      const oasInventory = oasInventoryStore.get(sessionId) ?? null;
+      const passBAvailable = oasInventory !== null;
+      if (passBAvailable) {
+        runManager.start({
+          sessionId: session.id,
+          projectId: session.projectId,
+          architectureId: session.architectureId,
+        });
+        runManagerStarted = true;
+      }
+      const operationsByOasId = new Map(operations.map((o) => [o.operation_id, o]));
+      const archWriteSurface: ArchModelToolWriteSurface = {
+        createScenario: archModelClient.createScenario.bind(archModelClient),
+        createDiagnostic: archModelClient.createDiagnostic.bind(archModelClient),
+        createCapture: archModelClient.createCapture.bind(archModelClient),
+      };
+      const repairer: ClosureRepairer = {
+        repair: async (diagnosis, directive, attempts) => {
+          if (!passBAvailable || !oasInventory || !httpExec) {
+            return { closed: false, captureId: null };
+          }
+          const opRow = opRowByOasId.get(diagnosis.operation_id);
+          if (!opRow) return { closed: false, captureId: null };
+          const scenarioName = `Closure B: ${diagnosis.method} ${diagnosis.path}`;
+          const scenarioRow = await archModelClient.createScenario(projectId, {
+            session_id: sessionId,
+            operation_id: opRow.id,
+            scenario_name: scenarioName,
+            scenario_type: 'manual',
+            status: 'draft',
+            generation_source: 'llm_generated',
+            request_method: diagnosis.method,
+            request_path: diagnosis.path,
+          });
+          const ctx: ToolExecutionContext = {
+            session,
+            oasInventory,
+            operationsByOasId,
+            secrets,
+            httpExecutor: httpExec,
+            dbAdapter,
+            archModelClient: archWriteSurface,
+            discoveryServiceClient: defaultDiscoveryServiceClient,
+            discoveryRunId: null,
+            currentScenarioId: scenarioRow.id,
+          };
+          runManager.beginScenario(session.id);
+          await runScenarioLoop({
+            context: ctx,
+            initialMessages: buildScenarioPrompt(
+              session,
+              diagnosis.operation_id,
+              scenarioName,
+              diagnosis.method,
+              diagnosis.path,
+              undefined,
+              undefined,
+              runManager.getLearnedFacts(session.id),
+              directive,
+              session.dataTypeDefaultsJson,
+            ),
+            roundLimit: attempts,
+          });
+          const caps = runManager.getScenarioCaptures(session.id);
+          const happy = caps.find((c) => c.status !== null && c.status >= 200 && c.status < 300);
+          return happy
+            ? { closed: true, captureId: happy.captureId }
+            : { closed: false, captureId: null };
+        },
+      };
+
+      const result = await runClosureOrchestration(
+        { summary, tablesByOperationId, configByOperationId, diagnosisByOperationId },
+        firer,
+        repairer,
+        dbSampler,
+      );
+
+      // ---- Persist the patched coverage summary so the gate reflects closure.
+      await archModelClient.patchCaptureSession(projectId, sessionId, {
+        coverage_summary_json: result.updatedSummary as unknown as Record<string, unknown>,
+      });
+
+      return res.json({
+        sessionId,
+        passA: result.passA,
+        passB: { ...result.passB, available: passBAvailable },
+        gate: result.gate,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'retry-uncovered failed';
+      return fail(res, 500, message);
+    } finally {
+      if (httpExec) httpExec.dispose();
+      if (dbAdapter) {
+        try {
+          await dbAdapter.dispose();
+        } catch {
+          /* best-effort */
+        }
+      }
+      if (runManagerStarted) runManager.end(sessionId);
     }
   });
 
