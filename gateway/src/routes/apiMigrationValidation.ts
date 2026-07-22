@@ -464,6 +464,20 @@ apiMigrationValidationRouter.post('/api-migration-validation/llm-tool-loop', asy
       providerStatus: status,
     });
 
+    // Per-DAY quota (Spec 2026-07-22): a distinct, non-retryable signal so the
+    // capture orchestrator STOPS the whole run (vs a per-minute 429, which the
+    // Azure client already waited out and here surfaces as a plain rate-limit).
+    if ((error as { isDailyLimit?: boolean })?.isDailyLimit === true) {
+      return res.status(429).json({
+        error: {
+          code: 429,
+          reason: 'llm_daily_limit',
+          message: errorMessage,
+          provider: errorName,
+        },
+      });
+    }
+
     if (typeof status === 'number' && status >= 400 && status < 600) {
       return res.status(status).json({
         error: {

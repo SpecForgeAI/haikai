@@ -14,6 +14,14 @@ import { logger } from './logger';
 import { assertNotLlmTestSentinel } from './llmTestGuard';
 import { OpenAIMessage, OpenAIResponse, ChatRequestOptions } from './openaiClient';
 import { ToolCall } from '../types';
+import {
+  classifyRateLimit,
+  openCooldown,
+  getCooldownRemainingMs,
+  sleep,
+  LlmDailyLimitError,
+  LLM_RATE_LIMIT_MAX_WAITS,
+} from './llmRateLimit';
 
 // ============================================================================
 // Token Cache (module-level)
@@ -212,25 +220,62 @@ async function sendChatRequestInternal(
     hasCustomToolChoice: !!options?.toolChoice,
   });
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  // Rate-limit-aware send (Spec 2026-07-22). Before every attempt, honour the
+  // shared cool-down (a per-minute 429 anywhere freezes ALL LLM traffic). On a
+  // per-minute 429, open the cool-down and retry after the freeze (bounded); on
+  // a per-DAY 429, throw LlmDailyLimitError so the caller STOPS the run.
+  let response: Response;
+  let waits = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const remaining = getCooldownRemainingMs();
+    if (remaining > 0) {
+      logger.warn(
+        `Azure OpenAI: waiting ${Math.round(remaining / 1000)}s for the shared rate-limit cool-down before sending (requestId: ${requestId})`,
+      );
+      await sleep(remaining);
+    }
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) break;
 
-  const durationMs = Date.now() - startTime;
-
-  if (!response.ok) {
     const bodySnippet = await response.text();
+    const kind = classifyRateLimit(response.status, bodySnippet);
+    if (kind === 'per_day') {
+      throw new LlmDailyLimitError(
+        `Azure OpenAI daily token limit reached: ${bodySnippet.substring(0, 200)} (requestId: ${requestId})`,
+      );
+    }
+    if (kind === 'per_minute') {
+      openCooldown();
+      if (waits < LLM_RATE_LIMIT_MAX_WAITS) {
+        waits += 1;
+        logger.warn(
+          `Azure OpenAI: per-minute token limit hit — pausing before retry ${waits}/${LLM_RATE_LIMIT_MAX_WAITS} (requestId: ${requestId})`,
+        );
+        await sleep(getCooldownRemainingMs());
+        continue;
+      }
+      // Waits exhausted — surface the 429 so the caller can move on (the
+      // capture loop's round budget will re-attempt against the cool-down).
+    }
     const error = new Error(
       `Azure OpenAI chat request failed: HTTP ${response.status} - ${bodySnippet.substring(0, 200)} (requestId: ${requestId})`
     );
     error.name = 'AzureOpenAIError';
+    // Carry the provider status so the relay route forwards it verbatim (a 429
+    // stays a 429) instead of collapsing every provider error to 502.
+    (error as Error & { status?: number }).status = response.status;
     throw error;
   }
+
+  const durationMs = Date.now() - startTime;
 
   const data = await response.json();
 

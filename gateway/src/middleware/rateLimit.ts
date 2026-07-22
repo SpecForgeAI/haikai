@@ -38,6 +38,14 @@ export function createRateLimitMiddleware() {
       // Key by IP address
       return req.ip || req.socket.remoteAddress || 'unknown';
     },
+    // Exempt the internal LLM tool-loop relay (Spec 2026-07-22). It is
+    // server-to-server traffic from the capture microservice, not a public
+    // client, and a capture legitimately issues many LLM rounds in a minute.
+    // Throttling it here defeated the Azure-429 cool-down and self-inflicted a
+    // second 429 (`reason=rate_limited`) for the rest of a capture run. The
+    // provider's own per-minute/per-day quota is the real ceiling, handled in
+    // the Azure client's shared cool-down.
+    skip: (req) => req.path.endsWith('/api-migration-validation/llm-tool-loop'),
   });
 }
 
