@@ -16,6 +16,10 @@ export type CaptureSessionStatus =
   | 'running'
   | 'completed'
   | 'failed'
+  // Terminal: the LLM provider's per-DAY token quota was reached mid-capture
+  // (Spec 2026-07-22). Not a failure — captured data is intact; resume after
+  // reset via "Retry uncovered APIs".
+  | 'paused_rate_limited'
   | 'cancelled';
 
 export type AuthType =

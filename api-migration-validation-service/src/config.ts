@@ -84,10 +84,15 @@ export const LLM_SCENARIO_ROUND_LIMIT: number =
  * Hard timeout (ms) for any single tool-call execution. Breaching this limit
  * emits an `llm_generation_failure` diagnostic and marks the scenario
  * `executed_error`. Spec-fixed limit.
- * Default: 30000 (30 seconds).
+ *
+ * Default: 180000 (3 minutes). Raised from 30s for Spec 2026-07-22: on a
+ * provider per-minute 429 the gateway now HOLDS the request through a shared
+ * 60s cool-down (up to LLM_RATE_LIMIT_MAX_WAITS times) before responding, so
+ * the client timeout must comfortably exceed the max in-gateway wait or it
+ * would abort a request that is legitimately waiting out the rate limit.
  */
 export const LLM_TOOL_CALL_TIMEOUT_MS: number =
-  parseInt(process.env.LLM_TOOL_CALL_TIMEOUT_MS || '30000', 10);
+  parseInt(process.env.LLM_TOOL_CALL_TIMEOUT_MS || '180000', 10);
 
 /**
  * Hard wall-clock cap (ms) for a single scenario's full LLM loop. Breaching

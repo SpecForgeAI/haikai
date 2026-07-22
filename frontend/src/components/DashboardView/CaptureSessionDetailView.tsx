@@ -144,11 +144,22 @@ function statusClass(status: string | null | undefined): string {
       return styles.statusCompleted;
     case 'failed':
       return styles.statusFailed;
+    case 'paused_rate_limited':
+      // A resumable pause, not a failure — reuse the neutral "running" badge.
+      return styles.statusRunning;
     case 'cancelled':
       return styles.statusCancelled;
     default:
       return styles.statusDraft;
   }
+}
+
+/** Human label for a status (paused_rate_limited needs a friendly one). */
+function statusLabel(status: string | null | undefined): string {
+  if ((status ?? '').toLowerCase() === 'paused_rate_limited') {
+    return 'Paused — LLM daily limit';
+  }
+  return status ?? '';
 }
 
 export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> = ({
@@ -714,7 +725,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
         <h2>
           Capture Session{' '}
           <span className={`${styles.statusBadge} ${statusClass(session.status)}`}>
-            {session.status}
+            {statusLabel(session.status)}
           </span>
           {/* Scenario outcome tally (misleading-COMPLETED fix): `completed`
               only means "no infrastructure error" — every scenario can have
@@ -782,7 +793,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           as "coverage not recorded" -- never an error. Reuses the existing
           banner/badge styling (secretsPrompt + statusBadge) -- no charting
           widget. */}
-      {session.status === 'completed' && (
+      {(session.status === 'completed' || session.status === 'paused_rate_limited') && (
         <CoverageSummaryPanel
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-summary"
@@ -793,11 +804,31 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
         />
       )}
 
+      {/* Rate-limit pause banner (Spec 2026-07-22): the run stopped on the LLM
+          provider's per-DAY quota. Not a failure — captured data is intact;
+          the gate banner below offers "Retry uncovered APIs" to resume after
+          the quota resets. */}
+      {session.status === 'paused_rate_limited' && (
+        <div
+          className={styles.secretsPrompt}
+          role="status"
+          data-testid="capture-session-rate-limit-banner"
+        >
+          <strong>Paused — LLM daily token limit reached.</strong>
+          <span>
+            The capture stopped because the LLM provider&apos;s per-day token
+            quota was reached. Everything captured so far is saved. After the
+            quota resets, use “Retry uncovered APIs” below to finish the
+            remaining endpoints — no need to re-run from scratch.
+          </span>
+        </div>
+      )}
+
       {/* Happy-path coverage GATE banner (Spec 2026-07-20 Coverage Closure --
           CC1). The user must not leave the capture screen until every included
           endpoint has its happy-path baseline. "Retry uncovered APIs" opens the
           closure modal; the deterministic + LLM run is wired in CC3. */}
-      {session.status === 'completed' && (
+      {(session.status === 'completed' || session.status === 'paused_rate_limited') && (
         <CoverageGateBanner
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-gate"

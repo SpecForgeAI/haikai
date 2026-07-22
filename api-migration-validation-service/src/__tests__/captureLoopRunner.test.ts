@@ -24,6 +24,7 @@
  */
 
 import { runScenarioLoop } from '../services/captureLoopRunner';
+import { LlmRelayError } from '../services/gatewayClient';
 import {
   ALL_TOOLS,
   ToolValidationError,
@@ -427,6 +428,8 @@ describe('run_readonly_sql -- statement parser', () => {
         listMetadata: jest.fn(),
         runReadonlySelect: jest.fn(),
         sampleValues: jest.fn(),
+        countRows: jest.fn(),
+        fetchOrderedRows: jest.fn(),
         dispose: jest.fn(),
       },
     });
@@ -539,5 +542,59 @@ describe('captureLoopRunner -- cancellation', () => {
       (call: unknown[]) => (call[1] as { detail_json?: { reason?: string } }).detail_json?.reason === 'cancelled',
     );
     expect(diagCall).toBeDefined();
+  });
+});
+
+describe('captureLoopRunner -- LLM per-day quota (Spec 2026-07-22)', () => {
+  it('returns reason=llm_daily_limit (terminal, non-retryable) when the relay reports the daily limit', async () => {
+    const ctx = buildContext();
+    const stubGateway = buildStubGateway([]);
+    stubGateway.callLlmToolLoop.mockRejectedValueOnce(
+      new LlmRelayError(
+        'LLM tool-loop relay failed (HTTP 429, reason=llm_daily_limit): per day quota',
+        'llm_daily_limit',
+        429,
+        null,
+      ),
+    );
+
+    const outcome = await runScenarioLoop({
+      context: ctx,
+      initialMessages: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'user' },
+      ],
+      tools: ALL_TOOLS,
+      gatewayClient: stubGateway,
+      archModelClient: ctx.archModelClient as unknown as { createDiagnostic: typeof ctx.archModelClient.createDiagnostic },
+    });
+
+    expect(outcome.reason).toBe('llm_daily_limit');
+    const archMock = ctx.archModelClient as unknown as MockArchClient;
+    const dailyDiag = (archMock.createDiagnostic.mock.calls as unknown[][]).find(
+      (call) => (call[1] as { detail_json?: { reason?: string } }).detail_json?.reason === 'llm_daily_limit',
+    );
+    expect(dailyDiag).toBeDefined();
+  });
+
+  it('a plain per-minute rate_limited relay error stays llm_relay_error (retryable), not terminal', async () => {
+    const ctx = buildContext();
+    const stubGateway = buildStubGateway([]);
+    stubGateway.callLlmToolLoop.mockRejectedValueOnce(
+      new LlmRelayError('rate limited', 'rate_limited', 429, null),
+    );
+
+    const outcome = await runScenarioLoop({
+      context: ctx,
+      initialMessages: [
+        { role: 'system', content: 'sys' },
+        { role: 'user', content: 'user' },
+      ],
+      tools: ALL_TOOLS,
+      gatewayClient: stubGateway,
+      archModelClient: ctx.archModelClient as unknown as { createDiagnostic: typeof ctx.archModelClient.createDiagnostic },
+    });
+
+    expect(outcome.reason).toBe('llm_relay_error');
   });
 });

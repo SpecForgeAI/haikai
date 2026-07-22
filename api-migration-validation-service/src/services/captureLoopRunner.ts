@@ -3,7 +3,7 @@ import {
   LLM_SCENARIO_WALL_CLOCK_MS,
   LLM_TOOL_CALL_TIMEOUT_MS,
 } from '../config';
-import { gatewayClient as defaultGatewayClient, GatewayClient } from './gatewayClient';
+import { gatewayClient as defaultGatewayClient, GatewayClient, LlmRelayError } from './gatewayClient';
 import { archModelClient as defaultArchModelClient } from './archModelClient';
 import { redactJson } from './redactor';
 import {
@@ -48,6 +48,9 @@ export type LoopOutcomeReason =
   | 'wall_clock_exceeded'
   | 'tool_call_timeout'
   | 'llm_relay_error'
+  // The provider's per-DAY token quota is exhausted (Spec 2026-07-22). Terminal
+  // and non-retryable: the orchestrator stops the whole capture on this.
+  | 'llm_daily_limit'
   | 'cancelled';
 
 export interface LoopOutcome {
@@ -205,13 +208,23 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       assistant = relayResult.message;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      // Per-DAY provider quota (Spec 2026-07-22): terminal + non-retryable.
+      // Return a distinct outcome so the orchestrator STOPS the whole capture
+      // (the operator resumes after reset via "Retry uncovered APIs").
+      const isDailyLimit =
+        err instanceof LlmRelayError && err.reason === 'llm_daily_limit';
       const diagnosticId = await safeRecordDiagnostic(archModelClient, context, {
         diagnostic_type: 'llm_generation_failure',
-        message: `LLM relay call failed in round ${roundsUsed + 1}: ${message}`,
-        detail_json: { reason: 'llm_relay_error', roundsUsed: roundsUsed + 1 },
+        message: isDailyLimit
+          ? `LLM per-day token quota reached in round ${roundsUsed + 1}: ${message}`
+          : `LLM relay call failed in round ${roundsUsed + 1}: ${message}`,
+        detail_json: {
+          reason: isDailyLimit ? 'llm_daily_limit' : 'llm_relay_error',
+          roundsUsed: roundsUsed + 1,
+        },
       });
       return {
-        reason: 'llm_relay_error',
+        reason: isDailyLimit ? 'llm_daily_limit' : 'llm_relay_error',
         roundsUsed: roundsUsed + 1,
         durationMs: Date.now() - startedAt,
         finalMessage,

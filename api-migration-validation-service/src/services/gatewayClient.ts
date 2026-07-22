@@ -27,6 +27,10 @@ export type LlmRelayErrorReason =
   | 'network_error'
   | 'llm_malformed'
   | 'rate_limited'
+  // The provider's per-DAY token quota is exhausted (Spec 2026-07-22). Unlike
+  // `rate_limited` (per-minute, already waited out in the gateway), this is
+  // non-retryable and the orchestrator STOPS the whole capture on it.
+  | 'llm_daily_limit'
   | 'provider_error';
 
 /**
@@ -137,8 +141,15 @@ class GatewayClient {
       const baseMessage = err instanceof Error ? err.message : 'unknown LLM relay error';
       const code = (axiosErr as { code?: string }).code;
       let reason: LlmRelayErrorReason;
+      // Per-DAY quota carries a distinct body marker from the relay route; it
+      // must map to the non-retryable `llm_daily_limit`, not plain rate_limited.
+      const relayReason = (
+        axiosErr.response?.data as { error?: { reason?: string } } | undefined
+      )?.error?.reason;
       if (code === 'ECONNABORTED' || /timeout/i.test(baseMessage)) {
         reason = 'llm_timeout';
+      } else if (status === 429 && relayReason === 'llm_daily_limit') {
+        reason = 'llm_daily_limit';
       } else if (status === 429) {
         reason = 'rate_limited';
       } else if (status !== null && status >= 500) {

@@ -176,7 +176,7 @@ export interface OrchestratorOutcome {
   scenariosAttempted: number;
   scenariosCompleted: number;
   scenariosErrored: number;
-  finalStatus: 'completed' | 'failed';
+  finalStatus: 'completed' | 'failed' | 'paused_rate_limited';
   errorMessage: string | null;
 }
 
@@ -1472,6 +1472,10 @@ export async function orchestrateCaptureSession(
   // `selectAuthProbeEndpoint` filters out templated paths).
   const authProbeCandidates: AuthProbeCandidate[] = [];
   let coverageSummary: CoverageSummary | null = null;
+  // Set when a scenario's LLM loop returns `llm_daily_limit` (Spec 2026-07-22):
+  // the provider's per-day token quota is exhausted, so the capture stops early
+  // and finalises as `paused_rate_limited` instead of `completed`.
+  let dailyLimitHit = false;
   // Per-API response-semantics config (Spec 2026-06-23). null === built-in
   // default vocabulary (the valid empty state). TG4 threads the operator-
   // confirmed per-session config here (mirroring `session.dataTypeDefaultsJson`).
@@ -1668,6 +1672,16 @@ export async function orchestrateCaptureSession(
           abortSignal: runManager.get(session.id)?.abortController.signal,
         });
 
+        // Per-DAY provider quota (Spec 2026-07-22): stop the WHOLE capture --
+        // waiting is pointless (hours away) and every further scenario would
+        // just re-hit it. Preserve everything captured so far; the finaliser
+        // marks the session `paused_rate_limited` so the operator resumes after
+        // reset via "Retry uncovered APIs". Break both loops.
+        if (outcome.reason === 'llm_daily_limit') {
+          dailyLimitHit = true;
+          break;
+        }
+
         // Intent-driven canonical capture (replaces the misleading-COMPLETED
         // captured/errored decision): the loop typically produces MULTIPLE
         // capture rows for one scenario -- the LLM's intermediate fumbles plus
@@ -1847,6 +1861,10 @@ export async function orchestrateCaptureSession(
           path: op.path,
         });
       }
+
+      // Per-day quota hit mid-run: stop processing further operations. What was
+      // scored so far is preserved; the finaliser marks `paused_rate_limited`.
+      if (dailyLimitHit) break;
     }
 
     // ---- Session-level auth-negative coverage (ONE project dimension). Run
@@ -1871,7 +1889,19 @@ export async function orchestrateCaptureSession(
     secretsStore.purge(session.id);
   }
 
-  const finalStatus: 'completed' | 'failed' = infraError ? 'failed' : 'completed';
+  // `paused_rate_limited` (Spec 2026-07-22): the provider's per-day token quota
+  // was reached mid-run. NOT a failure — everything captured so far is kept and
+  // the operator resumes after reset via "Retry uncovered APIs".
+  const finalStatus: 'completed' | 'failed' | 'paused_rate_limited' = infraError
+    ? 'failed'
+    : dailyLimitHit
+      ? 'paused_rate_limited'
+      : 'completed';
+  const finalMessage: string | null =
+    infraError ??
+    (dailyLimitHit
+      ? 'stopped: LLM daily token quota reached — resume with "Retry uncovered APIs" after the quota resets'
+      : null);
   // Persist the per-run scenario tallies alongside the terminal status
   // (misleading-COMPLETED fix): `completed` only means "no INFRASTRUCTURE
   // error" — every scenario can have errored. `scenarios_completed` now
@@ -1882,7 +1912,7 @@ export async function orchestrateCaptureSession(
   await archClient.patchCaptureSession(session.projectId, session.id, {
     status: finalStatus,
     completed_at: new Date().toISOString(),
-    error_message: infraError,
+    error_message: finalMessage,
     scenarios_attempted: scenariosAttempted,
     scenarios_completed: scenariosCompleted,
     scenarios_errored: scenariosErrored,
