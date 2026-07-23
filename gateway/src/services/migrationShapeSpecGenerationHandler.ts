@@ -184,6 +184,7 @@ import {
   isSeedBuildFilesStory,
   resolveSeedBuildFilesEnrichment,
 } from './migrationSeedBuildFilesEnrichment';
+import { isDbPackReviewStory } from './migrationDbPackReviewRoute';
 import {
   fetchProjectConfigWithDefaults as defaultFetchProjectConfigWithDefaults,
   DEFAULT_PER_STORY_TOKEN_CAP,
@@ -2284,9 +2285,18 @@ async function runSinglePassBatch(
     // verbatim manifest write-block(s) are appended to its spec text at the
     // enrichment anchor below (Group 3.2).
     const seedBuildFilesStory = isSeedBuildFilesStory(story);
-    const manualAdd = isManualAdd(story) || seedBuildFilesStory;
+    // DB-pack human-procedure stories (Spec 2026-07-23): pack-provenance
+    // tagged, no verbatim file payload (review gates / jobs re-homing). The
+    // planner-authored description + acceptance criteria ARE the procedure, so
+    // they generate DESCRIPTION-GROUNDED — pre-fix they fell through to the
+    // discovered-context resolver and short-circuited `insufficient_context`
+    // on API-plane inputs (SOAP/IaC/capability) a DB story never has.
+    const dbPackReviewStory = isDbPackReviewStory(story);
+    const manualAdd = isManualAdd(story) || seedBuildFilesStory || dbPackReviewStory;
     const manualAddFlavour: ManualAddFlavour | undefined = manualAdd
-      ? resolveManualAddFlavour(story)
+      ? dbPackReviewStory
+        ? 'operational' // procedure/effect-oriented prompt, never endpoint-oriented
+        : resolveManualAddFlavour(story)
       : undefined;
 
     let ctx: MigrationSpecContextDto | null = null;
