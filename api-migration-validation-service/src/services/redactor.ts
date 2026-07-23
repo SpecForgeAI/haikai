@@ -135,6 +135,14 @@ export function redactJson(
   const maxDepth = options.maxDepth ?? 12;
   if (depth > maxDepth) return REDACTED_PLACEHOLDER;
   if (value === null || value === undefined) return value;
+  // XML/markup-bearing strings (Spec 2026-07-23): a REST-XML or SOAP body is a
+  // STRING, so the object walk below never sees its fields — pre-fix, a
+  // <password>...</password> element landed in the persisted capture in the
+  // CLEAR. Route any markup-looking string through the element/attribute
+  // redactor (non-markup strings pass through untouched, as before).
+  if (typeof value === 'string') {
+    return looksLikeMarkup(value) ? redactXmlString(value, options) : value;
+  }
   if (typeof value !== 'object') return value;
 
   const sensitive = lowerSet([
@@ -153,6 +161,55 @@ export function redactJson(
     } else {
       out[k] = redactJson(v, options, depth + 1);
     }
+  }
+  return out;
+}
+
+/** Cheap markup sniff: leading `<` after whitespace plus a closing `>`. */
+function looksLikeMarkup(s: string): boolean {
+  return s.trimStart().startsWith('<') && s.includes('>');
+}
+
+/**
+ * Redact sensitive material inside an XML/markup STRING (Spec 2026-07-23).
+ * Masks, for every sensitive field name (default set + `extraFieldNames`):
+ *
+ *   - element text content: `<password>hunter2</password>` (namespace-prefix
+ *     tolerant on both tags, attributes on the open tag preserved, multiline
+ *     content, case-insensitive) -> `<password>[REDACTED]</password>`;
+ *   - attribute values, double- and single-quoted:
+ *     `token="abc"` / `wsse:Password='x'` -> `token="[REDACTED]"`.
+ *
+ * Regex-based BY DESIGN (no XML parse): the input may be a fragment, an
+ * HTML-ish error page, or a malformed body — a parser would throw exactly when
+ * redaction matters most. Name matches are bounded (an `auth` rule does not
+ * touch `<author>` / `coauth="..."`). Non-matching text is preserved verbatim.
+ */
+export function redactXmlString(input: string, options: RedactOptions = {}): string {
+  const names = [...DEFAULT_SENSITIVE_FIELDS, ...(options.extraFieldNames ?? [])];
+  let out = input;
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Element content. The open tag's name is inherently left-bounded by `<`
+    // or a namespace colon; requiring whitespace-or-`>` after the name bounds
+    // it on the right (so `auth` never matches `<author>`).
+    const element = new RegExp(
+      `(<(?:[\\w.-]+:)?${escaped}(?:\\s[^>]*)?>)([\\s\\S]*?)(</(?:[\\w.-]+:)?${escaped}\\s*>)`,
+      'gi',
+    );
+    out = out.replace(element, `$1${REDACTED_PLACEHOLDER}$3`);
+    // Attribute values -- lookbehind left-bounds the bare name so `auth=`
+    // never matches inside `coauth=`.
+    const attrDouble = new RegExp(
+      `(?<![\\w.-])((?:[\\w.-]+:)?${escaped}\\s*=\\s*")[^"]*(")`,
+      'gi',
+    );
+    out = out.replace(attrDouble, `$1${REDACTED_PLACEHOLDER}$2`);
+    const attrSingle = new RegExp(
+      `(?<![\\w.-])((?:[\\w.-]+:)?${escaped}\\s*=\\s*')[^']*(')`,
+      'gi',
+    );
+    out = out.replace(attrSingle, `$1${REDACTED_PLACEHOLDER}$2`);
   }
   return out;
 }
