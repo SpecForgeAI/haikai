@@ -82,6 +82,14 @@ export interface MigrationExecutionRailProps {
   runStatus: string | null;
   /** Orchestration scope (company/project) resolved — Start usable. */
   scopeReady: boolean;
+  /**
+   * WHY the scope is not ready (Spec 2026-07-23) — e.g. the project has no
+   * organisation link, or the organisation lookup failed. Rendered as a
+   * visible note under the (visibly disabled) Start button; pre-fix the
+   * button rendered identical solid blue while disabled and clicking it
+   * silently did nothing.
+   */
+  scopeHint?: string | null;
   busy: boolean;
   error: string | null;
   /** Reasons from a `blocked` resume — renders the break-glass panel. */
@@ -114,6 +122,7 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
   planes,
   runStatus,
   scopeReady,
+  scopeHint,
   busy,
   error,
   pausedBlockers,
@@ -301,6 +310,16 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                 >
                   {busy ? 'Starting…' : `▶ Start stage ${stageNo}`}
                 </button>
+              )}
+              {isFirst && !runActive && !scopeReady && (
+                <div
+                  className={styles.coveragePanelNote}
+                  role="status"
+                  data-testid="execution-rail-scope-note"
+                >
+                  {scopeHint ??
+                    'Resolving the run scope (organisation + project name)…'}
+                </div>
               )}
               {!isFirst && !runActive && (
                 <div

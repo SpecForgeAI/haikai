@@ -158,6 +158,44 @@ describe('runSpecPreflight — routing + readiness', () => {
     expect(fetchPackTranslations).toHaveBeenCalledTimes(1);
   });
 
+  it('FOUNDATION story (code tag, ZERO endpoints — Spec 2026-07-23) → description route, resolver never called', async () => {
+    const items = [
+      story({
+        id: 'S-foundation',
+        title: 'Security & auth parity foundations',
+        tags: ['provenance:plan-deterministic', 'stream:api_migration'],
+      } as never),
+    ];
+    const fetchSpecContext = jest.fn();
+    const rows = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchSpecContext })
+    );
+    expect(rows[0]).toMatchObject({ route: 'description', ready: true });
+    expect(fetchSpecContext).not.toHaveBeenCalled();
+  });
+
+  it('PREREQUISITE story (Spec 2026-07-23) → blocked with the planner\'s OWN reason, not the resolver trio', async () => {
+    const items = [
+      story({
+        id: 'S-prereq',
+        title: 'Resolve code-discovery prerequisites',
+        tags: ['provenance:prerequisite', 'stream:internal_processing_implementation'],
+        plannerMissingInputs: ['Code discovery has not run for this stream.'],
+      } as never),
+    ];
+    const fetchSpecContext = jest.fn();
+    const rows = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchSpecContext })
+    );
+    expect(rows[0]).toMatchObject({ route: 'prerequisite', ready: false });
+    expect(rows[0].missing_inputs).toEqual([
+      { input: 'prerequisite', reason: 'Code discovery has not run for this stream.' },
+    ]);
+    expect(fetchSpecContext).not.toHaveBeenCalled();
+  });
+
   it('resolver story with clean focused context → ready; with missing inputs → not ready (same detector as generation)', async () => {
     const items = [
       story({ id: 'S-ok', workItemId: 'wi-ok' }),

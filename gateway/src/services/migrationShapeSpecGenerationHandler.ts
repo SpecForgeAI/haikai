@@ -116,6 +116,7 @@ import {
   codeCarriageMarkersFromBlob,
   defaultFetchCodeSpecFacts,
   isCodeCarriageStory,
+  isCodeFoundationStory,
   runCodeSpecCarriage,
 } from './migrationCodeSpecCarriage';
 import {
@@ -184,7 +185,12 @@ import {
   isSeedBuildFilesStory,
   resolveSeedBuildFilesEnrichment,
 } from './migrationSeedBuildFilesEnrichment';
-import { isDbPackReviewStory } from './migrationDbPackReviewRoute';
+import {
+  isDbPackReviewStory,
+  buildDbPackReviewSpecText,
+  plannerDeclaredMissing,
+} from './migrationDbPackReviewRoute';
+import { CODE_PREREQUISITE_TAG } from './migrationCodeStreamPlanner';
 import {
   fetchProjectConfigWithDefaults as defaultFetchProjectConfigWithDefaults,
   DEFAULT_PER_STORY_TOKEN_CAP,
@@ -360,6 +366,18 @@ export interface LoadedBookOfWorkItem {
    * `ALLOWED_KINDS`), so the verbatim-manifest carriage recognises it by tag.
    */
   tags?: string[] | null;
+  /**
+   * Spec 2026-07-23: planner-authored acceptance criteria off the blob item —
+   * feed the DETERMINISTIC spec text for pack human-procedure stories.
+   */
+  acceptanceCriteria?: string[] | null;
+  /**
+   * Spec 2026-07-23: the planner-declared missing inputs off the blob item
+   * (prerequisite stories bake their OWN gap reason, e.g. "code discovery has
+   * not run"). The prerequisite route reports THESE instead of the generic
+   * resolver's irrelevant trio.
+   */
+  plannerMissingInputs?: Array<string | Record<string, unknown>> | null;
   /**
    * Spec 2026-07-02-c (Persistence-Tier Oracle Program): DB-pack verbatim
    * carriage markers stamped on the blob item by the deterministic DB
@@ -929,6 +947,20 @@ export const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfW
       tags: Array.isArray(obj.tags)
         ? (obj.tags as unknown[]).map((t) => String(t))
         : null,
+      // Spec 2026-07-23: planner-authored acceptance criteria + declared
+      // missing inputs (tolerate snake_case + camelCase). Feed the
+      // deterministic pack-review spec text and the prerequisite route's
+      // own-reasons reporting respectively.
+      acceptanceCriteria: Array.isArray(obj.acceptanceCriteria)
+        ? (obj.acceptanceCriteria as unknown[]).map((c) => String(c))
+        : Array.isArray(obj.acceptance_criteria)
+          ? (obj.acceptance_criteria as unknown[]).map((c) => String(c))
+          : null,
+      plannerMissingInputs: Array.isArray(obj.missingInputs)
+        ? (obj.missingInputs as Array<string | Record<string, unknown>>)
+        : Array.isArray(obj.missing_inputs)
+          ? (obj.missing_inputs as Array<string | Record<string, unknown>>)
+          : null,
       // Spec 2026-07-02-c: DB-pack carriage markers (stamped by Spec -b's
       // deterministic DB expansion). Tolerate snake_case + camelCase.
       packId:
@@ -1532,6 +1564,13 @@ function buildStoryUserPrompt(
         'NOT return insufficient_context merely because discovered context is ' +
         'absent — for a manually-added item that absence is expected and the ' +
         'description is authoritative.'
+    );
+    lines.push(
+      'The captured-decisions context is ALSO intentionally absent for this ' +
+        'item. Do NOT emit NO_CAPTURED_DECISIONS, do NOT invent warning codes ' +
+        'about missing or description-only context, and do NOT lower your ' +
+        'confidence for the absence of discovered/decision context — warn only ' +
+        'about genuine ambiguities INSIDE the description itself.'
     );
     if (manualAddFlavour === 'operational') {
       lines.push(
@@ -2269,6 +2308,46 @@ async function runSinglePassBatch(
       continue;
     }
 
+    // DB-pack HUMAN-PROCEDURE stories (Spec 2026-07-23): fully DETERMINISTIC,
+    // no LLM — mirroring the manual-gate carriage. Description-grounded LLM
+    // generation produced warnings the operator could not address
+    // (missing_decision_citation demanding api.* codes of a DB review story;
+    // NO_CAPTURED_DECISIONS / invented codes for deliberately-absent context)
+    // and a meaningless `low` confidence. The planner-authored description +
+    // acceptance criteria ARE the procedure. missingInputsJson is [] (non-null)
+    // so the AMS upsert null-guard OVERWRITES any stale resolver trio persisted
+    // by a pre-fix insufficient_context row.
+    if (isDbPackReviewStory(story)) {
+      const row: MigrationStorySpecGenerationDto = {
+        ...baseRow,
+        status: 'generated',
+        confidence: 'high',
+        generatedSpecText: buildDbPackReviewSpecText(story),
+        warningsJson: null,
+        missingInputsJson: [],
+        generatedAt: new Date().toISOString(),
+      };
+      perStoryResults.push(row);
+      logStoryResult(row);
+      continue;
+    }
+
+    // Prerequisite stories (Spec 2026-07-23): planner-declared blocked gates
+    // (`provenance:prerequisite`, e.g. "Resolve code-discovery prerequisites").
+    // They are MEANT to be blocked — but pre-fix they fell into the resolver
+    // and reported ITS irrelevant trio instead of the planner's OWN gap. Emit
+    // insufficient_context with the planner-declared reasons; no LLM.
+    if ((story.tags ?? []).includes(CODE_PREREQUISITE_TAG)) {
+      const row: MigrationStorySpecGenerationDto = {
+        ...baseRow,
+        status: 'insufficient_context',
+        missingInputsJson: plannerDeclaredMissing(story),
+      };
+      perStoryResults.push(row);
+      logStoryResult(row);
+      continue;
+    }
+
     // D5 (2026-06-14): description-grounded MODE for a MANUAL ADD. A manual add
     // carries a `provenance` marker and NO `sourceCapabilityId`, so the
     // discovered-context resolver would return nothing -> insufficient_context.
@@ -2285,18 +2364,17 @@ async function runSinglePassBatch(
     // verbatim manifest write-block(s) are appended to its spec text at the
     // enrichment anchor below (Group 3.2).
     const seedBuildFilesStory = isSeedBuildFilesStory(story);
-    // DB-pack human-procedure stories (Spec 2026-07-23): pack-provenance
-    // tagged, no verbatim file payload (review gates / jobs re-homing). The
-    // planner-authored description + acceptance criteria ARE the procedure, so
-    // they generate DESCRIPTION-GROUNDED — pre-fix they fell through to the
-    // discovered-context resolver and short-circuited `insufficient_context`
-    // on API-plane inputs (SOAP/IaC/capability) a DB story never has.
-    const dbPackReviewStory = isDbPackReviewStory(story);
-    const manualAdd = isManualAdd(story) || seedBuildFilesStory || dbPackReviewStory;
+    // FOUNDATION stories (Spec 2026-07-23): code-provenance tagged with ZERO
+    // endpoints ("Security & auth parity foundations" etc.) — cross-cutting
+    // planner-authored intent, so they generate DESCRIPTION-GROUNDED. Pre-fix
+    // they fell into the discovered-context resolver and short-circuited
+    // `insufficient_context` on inputs a cross-cutting story never has.
+    // (DB-pack review stories short-circuit DETERMINISTICALLY above and never
+    // reach this path.)
+    const foundationStory = isCodeFoundationStory(story);
+    const manualAdd = isManualAdd(story) || seedBuildFilesStory || foundationStory;
     const manualAddFlavour: ManualAddFlavour | undefined = manualAdd
-      ? dbPackReviewStory
-        ? 'operational' // procedure/effect-oriented prompt, never endpoint-oriented
-        : resolveManualAddFlavour(story)
+      ? resolveManualAddFlavour(story)
       : undefined;
 
     let ctx: MigrationSpecContextDto | null = null;
@@ -2504,10 +2582,14 @@ async function runSinglePassBatch(
     //       each fires for a different reason.
     // Per-story: a story whose evidenceRefs[] already contains a captured_decision entry is
     // untouched by the extension; only stories missing that citation are warned + downgraded.
-    const citationExtension = computeMissingCitationWarning(
-      generated,
-      enrichedCapturedDecisionsForCitation
-    );
+    // Spec 2026-07-23: SKIPPED for description-grounded stories (manual adds,
+    // seed-build-files, foundations) — they were never shown the captured-
+    // decisions context, so demanding a captured_decision citation penalises
+    // them for an absence that is BY DESIGN (the same rationale as the R-7
+    // exemption below). Discovered-context stories are unchanged.
+    const citationExtension = manualAdd
+      ? { response: generated, applied: false as const }
+      : computeMissingCitationWarning(generated, enrichedCapturedDecisionsForCitation);
     const generatedAfterCitation = citationExtension.response;
     if (citationExtension.applied) {
       console.log(
@@ -2635,6 +2717,10 @@ async function runSinglePassBatch(
       confidence: finalConfidence,
       generatedSpecText: enrichedSpecText,
       warningsJson: warnings,
+      // Spec 2026-07-23: NON-NULL empty array so the AMS upsert null-guard
+      // OVERWRITES a stale insufficient_context row's missing-inputs list —
+      // pre-fix a successful regenerate kept displaying the old resolver trio.
+      missingInputsJson: [],
       evidenceRefsJson: (generated.evidenceRefs as unknown[]) ?? null,
       focusedContextRefsJson: ctxToRefsBlob(ctx),
       generatedAt: new Date().toISOString(),

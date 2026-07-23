@@ -138,6 +138,24 @@ export function isCodeCarriageStory(story: CarriedStory): boolean {
   return isCodeFactCarriageStory(story) || isManualGateCarriageStory(story);
 }
 
+/**
+ * Planner-authored FOUNDATION stories (Spec 2026-07-23): code-provenance
+ * tagged, not a manual gate, and carrying ZERO endpoint ids (cross-cutting
+ * work — "Security & auth parity foundations" etc.). Pre-fix these matched no
+ * route (isCodeFactCarriageStory fails on the endpoints condition) and fell
+ * into the generic focused-context resolver, which blocked them on API-plane
+ * inputs (SOAP findings / IaC refs / source capability) that do not exist for
+ * a cross-cutting story. They generate DESCRIPTION-GROUNDED: the planner's
+ * authored intent is the whole story.
+ */
+export function isCodeFoundationStory(story: CarriedStory): boolean {
+  return (
+    (story.tags ?? []).includes(CODE_PROVENANCE_TAG) &&
+    !(story.tags ?? []).includes(MANUAL_GATE_TAG) &&
+    (story.apiEndpointIds?.length ?? 0) === 0
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Canonical JSON (content fidelity without byte-order ambiguity)
 // ---------------------------------------------------------------------------
