@@ -247,11 +247,16 @@ describe('INTERNAL PIN', () => {
     expect(JSON.stringify(internalSkel.items)).toContain('j-1');
   });
 
-  it('degrades to an explicit prerequisite when no internal entry points are distinguishable', () => {
+  it('degrades to an explicit prerequisite when no internal entry points exist on the model', () => {
     const v = view([rest]);
     const skeleton = buildCodeStreamSkeleton({ stream: INTERNAL_STREAM, view: v, clusterCap: 15 });
     expect(skeleton.items[0].readiness).toBe('blocked');
-    expect(JSON.stringify(skeleton.items)).toContain('endpoint_subtype');
+    // Spec 2026-07-23: the wording no longer blames the (now-fixed)
+    // endpoint_subtype commit drop — it gives the REAL remedy (commit the
+    // internal candidates; they land under the synthesized interface).
+    const text = JSON.stringify(skeleton.items);
+    expect(text).toContain('COMMIT the internal endpoint candidates');
+    expect(text).toContain('Internal Processing');
   });
 
   it('excludes outbound endpoints everywhere and counts them', () => {

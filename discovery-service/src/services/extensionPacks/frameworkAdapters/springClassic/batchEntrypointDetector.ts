@@ -278,6 +278,32 @@ export function detectBatchEntrypoint(
   const classCandidate = makeCandidate('class', cls.name, file.filePath, classData, runId);
   out.push(classCandidate);
 
+  // Spec 2026-07-23: ALSO emit an `endpoints` candidate for the batch main.
+  // Pre-fix batch entrypoints existed only as `class` candidates, so they
+  // could never reach the committed endpoint surface the migration planner
+  // partitions — the internal-processing stream stayed unplannable for
+  // batch-main apps even after the internal-endpoint commit fix. The subtype
+  // marker (`endpoint_subtype`) is what the save-back's internal-entry-point
+  // rescue keys on; `httpMethod: 'BATCH_MAIN'` is a NON-HTTP verb token, so
+  // the planner's `verb === null` heuristic classifies the committed row as
+  // internal.
+  out.push(
+    makeCandidate(
+      'endpoints',
+      `BATCH_MAIN ${fqcn}`,
+      file.filePath,
+      {
+        endpoint_subtype: 'batch-main',
+        httpMethod: 'BATCH_MAIN',
+        fullPath: fqcn,
+        className: cls.name,
+        methodName: 'main',
+        batchSignalSource: shellInvoked ? 'shell-invoked' : 'package-or-name',
+      },
+      runId,
+    ),
+  );
+
   // Child `method` candidates for the entrypoint methods (main + execute/run/
   // process), de-duplicated on method name (the meta-model `method` is
   // signature-less).
