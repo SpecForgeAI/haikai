@@ -8,9 +8,11 @@
  */
 import {
   restDiscriminator,
+  parseContentDiscriminator,
   findExistingOperationRow,
   type NormalisedAddOperation,
 } from '../routes/addOperationSupport';
+import { synthesiseOperationFromEndpoint } from '../routes/captureSessionActions';
 
 function target(partial: Partial<NormalisedAddOperation>): NormalisedAddOperation {
   return {
@@ -83,5 +85,59 @@ describe('findExistingOperationRow twin guard', () => {
     expect(
       findExistingOperationRow([harnessRow], target({ method: 'get', path: '/things' })),
     ).toBe(harnessRow);
+  });
+});
+
+describe('parseContentDiscriminator (XML3)', () => {
+  it('parses consumes + produces member lists', () => {
+    expect(
+      parseContentDiscriminator(
+        'consumes=application/xml;produces=application/json,application/xml',
+      ),
+    ).toEqual({
+      consumes: ['application/xml'],
+      produces: ['application/json', 'application/xml'],
+    });
+  });
+
+  it('ignores headers/params keys; empty for null', () => {
+    expect(parseContentDiscriminator('headers=X-Api-Version=2;params=type=Core')).toEqual({
+      consumes: [],
+      produces: [],
+    });
+    expect(parseContentDiscriminator(null)).toEqual({ consumes: [], produces: [] });
+  });
+});
+
+describe('synthesiseOperationFromEndpoint content stamping (XML3)', () => {
+  it('XML twin: requestBody.content keyed by consumes + x-amvs-content block', () => {
+    const op = synthesiseOperationFromEndpoint(
+      {
+        name: 'POST /h/{id} [consumes=application/xml;produces=application/xml]',
+        operation_verb: 'POST',
+        path_or_address: '/h/{id}',
+      },
+      { isSoap: false },
+    );
+    const oas = op.oasOperation as Record<string, unknown>;
+    expect(oas.requestBody).toEqual({ content: { 'application/xml': {} } });
+    expect(oas['x-amvs-content']).toEqual({
+      consumes: ['application/xml'],
+      produces: ['application/xml'],
+    });
+    // operation_id carries the suffixed name (the reconciliation key rides on it).
+    expect(op.operationId).toBe(
+      'POST /h/{id} [consumes=application/xml;produces=application/xml]',
+    );
+  });
+
+  it('plain endpoint: stub unchanged — no requestBody, no x-amvs-content', () => {
+    const op = synthesiseOperationFromEndpoint(
+      { name: 'GET /things', operation_verb: 'GET', path_or_address: '/things' },
+      { isSoap: false },
+    );
+    const oas = op.oasOperation as Record<string, unknown>;
+    expect(oas.requestBody).toBeUndefined();
+    expect(oas['x-amvs-content']).toBeUndefined();
   });
 });

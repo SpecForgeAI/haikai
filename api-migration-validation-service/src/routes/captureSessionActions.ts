@@ -54,6 +54,8 @@ import {
   findExistingOperationRow,
   buildSynthesisedCreateBody,
   toInventoryOperation,
+  restDiscriminator,
+  parseContentDiscriminator,
   type AddOperationBody,
 } from './addOperationSupport';
 // Coverage Closure (Spec 2026-07-20): the "Retry uncovered APIs" run.
@@ -467,7 +469,9 @@ function readSoapMetadata(
  * discovery-endpoint-candidate markers apply -- byte-identical to the
  * pre-refactor behaviour.
  */
-function synthesiseOperationFromEndpoint(
+// Exported additively for unit testing of the content-negotiation stamping
+// (Spec 2026-07-23, XML3) alongside the SOAP mapping.
+export function synthesiseOperationFromEndpoint(
   e: Record<string, unknown>,
   opts: { isSoap: boolean; sourceMarker?: string },
 ): ParsedOasOperation {
@@ -531,6 +535,25 @@ function synthesiseOperationFromEndpoint(
       soapBlock[k] = soap[k];
     }
     oasOperation['x-amvs-soap'] = soapBlock;
+  }
+
+  // Content-negotiation stamping (Spec 2026-07-23, XML3): a REST content-type
+  // twin carries its mapping discriminator in the endpoint name. Project it
+  // into the OAS stub so (a) `resolveOperationContentType` defaults the twin's
+  // OWN request media type (an XML twin sends Content-Type: application/xml,
+  // not the json fallback) and (b) the executor can default an Accept header
+  // from `produces` to actually elicit the XML response variant. Plain names
+  // yield no discriminator -> stub unchanged byte-for-byte.
+  if (!isSoap) {
+    const content = parseContentDiscriminator(restDiscriminator(entityName));
+    if (content.consumes.length > 0) {
+      oasOperation.requestBody = {
+        content: Object.fromEntries(content.consumes.map((m) => [m, {}])),
+      };
+    }
+    if (content.consumes.length > 0 || content.produces.length > 0) {
+      oasOperation['x-amvs-content'] = content;
+    }
   }
 
   // SOAP rows have no real JSON schema, but we can project a minimal
