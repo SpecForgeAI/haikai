@@ -136,9 +136,6 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
 }) => {
   if (planes.length === 0) return null;
 
-  const allSatisfied = planes.every(
-    (p) => p.satisfiedStories >= p.totalStories,
-  );
   const runActive =
     runStatus !== null &&
     ['dispatching', 'awaiting_approval', 'implementing', 'submitted'].includes(
@@ -297,11 +294,17 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                   type="button"
                   className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
                   style={{ marginTop: 8 }}
-                  disabled={!allSatisfied || !scopeReady || busy}
+                  // Spec 2026-07-23 (user decision): the spec gate is
+                  // PER-PLANE — "no story enters a plane without a spec"
+                  // means stage N gates on stage N's OWN stories. The old
+                  // whole-plan gate let a deliberately-blocked prerequisite
+                  // story in a LATER stage disable stage 1 at 15/15. Later
+                  // stages remain locked behind stage-(N-1) approval anyway.
+                  disabled={!satisfied || !scopeReady || busy}
                   onClick={onStart}
                   title={
-                    !allSatisfied
-                      ? 'Every story needs a spec (generated or manual-ready) before a stage can start'
+                    !satisfied
+                      ? 'Every story in THIS stage needs a spec (generated or manual-ready) before it can start'
                       : !scopeReady
                         ? 'Resolving the orchestration scope…'
                         : 'Runs the plane end-to-end (build → verify → reconcile), then pauses for your review'
