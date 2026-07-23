@@ -22,7 +22,21 @@ import java.util.Set;
  *
  * <ul>
  *   <li>REST endpoint / harness operation &rarr; {@code <METHOD> <path>}
- *       (method trimmed + upper-cased, path trimmed).</li>
+ *       (method trimmed + upper-cased, path trimmed). When the endpoint
+ *       {@code name} (resp. the operation {@code operation_id}) carries a
+ *       discovery mapping-discriminator suffix — the
+ *       {@code  [consumes=...;produces=...;headers=...;params=...]} block the
+ *       Spring adapters fold into the candidate name so same-path+verb handler
+ *       variants stay distinct — the key becomes
+ *       {@code <METHOD> <path>::<suffix>} (Spec 2026-07-23, content-type twin
+ *       fix). Two committed endpoints sharing a verb+path but differing by
+ *       content-type (a JSON handler and an XML handler) previously collapsed
+ *       to ONE key, so the XML twin was auto-counted as "accounted" and never
+ *       became a capture operation — silently shrinking a 45-endpoint
+ *       architecture to 43 scored endpoints while coverage read 100%. Plain
+ *       endpoints (no suffix) and harness-captured operations (OAS
+ *       operationIds, never suffixed) keep the bare key byte-identically, so
+ *       harness&harr;endpoint matching is unchanged.</li>
  *   <li>SOAP endpoint &rarr; {@code soap::<soap_action|request_root_element>}
  *       read from {@code protocol_metadata_json}, falling back to
  *       {@code soap::<endpoint id>} when no discriminator exists (so a SOAP
@@ -173,7 +187,14 @@ public final class InventoryReconciliationCalculator {
         }
         String method = op.getMethod() == null ? "" : op.getMethod().trim().toUpperCase();
         String path = op.getPath() == null ? "" : op.getPath().trim();
-        return method + " " + path;
+        // Model-synthesised rows carry operation_id = endpoint name, so a
+        // mapping-discriminator suffix on the source endpoint rides along and
+        // reproduces the endpoint-side key exactly. Harness-captured rows use
+        // OAS operationIds (never suffixed) -> null -> bare key, unchanged.
+        String discriminator = restDiscriminator(op.getOperationId());
+        return discriminator != null
+            ? method + " " + path + "::" + discriminator
+            : method + " " + path;
     }
 
     /**
@@ -223,7 +244,44 @@ public final class InventoryReconciliationCalculator {
         }
         String method = ep.getOperationVerb() == null ? "" : ep.getOperationVerb().trim().toUpperCase();
         String path = ep.getPathOrAddress() == null ? "" : ep.getPathOrAddress().trim();
-        return method + " " + path;
+        // Same-path+verb handler variants (content-type twins) differ ONLY by
+        // the discovery mapping-discriminator suffix folded into `name`
+        // (e.g. "GET /report [produces=application/xml]"). Without it in the
+        // key, the XML twin collapses onto its JSON sibling and is silently
+        // dropped from capture. Plain names (no suffix) keep the bare key.
+        String discriminator = restDiscriminator(ep.getName());
+        return discriminator != null
+            ? method + " " + path + "::" + discriminator
+            : method + " " + path;
+    }
+
+    /**
+     * Strict pattern for the Spring-adapter mapping-discriminator suffix the
+     * discovery service folds into a candidate endpoint name (and which
+     * {@code synthesiseOperationFromEndpoint} copies verbatim into the
+     * synthesised row's {@code operation_id}):
+     * a trailing {@code [key=members;key=members]} block whose keys are drawn
+     * ONLY from {@code consumes|produces|headers|params} (fixed order, sorted
+     * members — see {@code discriminatorNameSuffix} in the springClassic
+     * adapter). Deliberately strict so an arbitrary bracketed name can never
+     * masquerade as a discriminator.
+     */
+    private static final java.util.regex.Pattern REST_DISCRIMINATOR_SUFFIX =
+        java.util.regex.Pattern.compile(
+            "\\[((?:consumes|produces|headers|params)=[^;\\]]+"
+                + "(?:;(?:consumes|produces|headers|params)=[^;\\]]+)*)\\]$");
+
+    /**
+     * Extract the mapping-discriminator suffix from an endpoint {@code name} /
+     * synthesised {@code operation_id}, or {@code null} when absent (plain
+     * endpoints, harness-captured operations). Package-private for tests.
+     */
+    static String restDiscriminator(String candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = REST_DISCRIMINATOR_SUFFIX.matcher(candidate.trim());
+        return m.find() ? m.group(1) : null;
     }
 
     /** Read {@code soap_action} (preferred) or {@code request_root_element} from the SOAP metadata. */

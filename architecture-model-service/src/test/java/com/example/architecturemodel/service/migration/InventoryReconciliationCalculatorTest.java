@@ -234,4 +234,101 @@ class InventoryReconciliationCalculatorTest {
             .oasOperationJson(new HashMap<>())
             .build();
     }
+
+    /** Endpoint with an EXPLICIT name (the twins differ only by name suffix). */
+    private static EndpointEntity namedEndpoint(
+            String id, String name, String verb, String path) {
+        return EndpointEntity.builder()
+            .id(id)
+            .modelFileId("mf-1")
+            .interfaceId("iface-rest")
+            .name(name)
+            .protocol("REST")
+            .endpointType("REST")
+            .operationVerb(verb)
+            .pathOrAddress(path)
+            .build();
+    }
+
+    // ------------------------------------------------------------------
+    // Content-type twin fix (Spec 2026-07-23): same-verb+path endpoints that
+    // differ ONLY by the discovery mapping-discriminator suffix in `name`
+    // must reconcile as DISTINCT endpoints — previously the XML twin
+    // collapsed onto its JSON sibling's key, was auto-counted "accounted",
+    // and silently never became a capture operation (45 -> 43 while the
+    // coverage gate read 100%).
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("content-type twins: same verb+path, name discriminator suffix -> DISTINCT keys; matching twin op accounts only its own twin")
+    void contentTypeTwinsStayDistinct() {
+        EndpointEntity jsonTwin = namedEndpoint("ep-json",
+            "GET /report [produces=application/json]", "GET", "/report");
+        EndpointEntity xmlTwin = namedEndpoint("ep-xml",
+            "GET /report [produces=application/xml]", "GET", "/report");
+
+        assertThat(InventoryReconciliationCalculator.endpointKey(jsonTwin))
+            .isEqualTo("GET /report::produces=application/json");
+        assertThat(InventoryReconciliationCalculator.endpointKey(xmlTwin))
+            .isEqualTo("GET /report::produces=application/xml");
+
+        // A synthesised operation row carries operation_id = endpoint name, so
+        // the JSON twin's op matches ONLY the JSON twin.
+        ApiBehaviourOperationEntity jsonOp =
+            op("GET /report [produces=application/json]", "GET", "/report");
+        assertThat(InventoryReconciliationCalculator.operationKey(jsonOp))
+            .isEqualTo("GET /report::produces=application/json");
+
+        InventoryReconciliationCalculator.Result result =
+            InventoryReconciliationCalculator.reconcile(
+                List.of(jsonTwin, xmlTwin), List.of(jsonOp));
+
+        // THE BUG: pre-fix the XML twin was counted matched here. Now it is
+        // honestly endpoint-without-operation.
+        assertThat(result.endpointsWithoutOperation()).containsExactly(xmlTwin);
+        assertThat(result.matchedEndpointCount()).isEqualTo(1);
+        assertThat(result.unmatchedEndpointKeys())
+            .containsExactly("GET /report::produces=application/xml");
+    }
+
+    @Test
+    @DisplayName("multi-discriminator suffix (consumes+produces) round-trips endpoint <-> synthesised op")
+    void multiDiscriminatorSuffixRoundTrips() {
+        String name = "POST /hierarchynodes/{grdOrgId} "
+            + "[consumes=application/json,application/xml;produces=application/json,application/xml]";
+        EndpointEntity ep = namedEndpoint("ep-multi", name, "POST", "/hierarchynodes/{grdOrgId}");
+        ApiBehaviourOperationEntity synthesised = op(name, "POST", "/hierarchynodes/{grdOrgId}");
+
+        assertThat(InventoryReconciliationCalculator.endpointKey(ep))
+            .isEqualTo(InventoryReconciliationCalculator.operationKey(synthesised))
+            .isEqualTo("POST /hierarchynodes/{grdOrgId}"
+                + "::consumes=application/json,application/xml"
+                + ";produces=application/json,application/xml");
+    }
+
+    @Test
+    @DisplayName("regression guard: plain names, harness operationIds, and non-discriminator brackets keep the bare key")
+    void bareKeysUnchanged() {
+        // Plain endpoint name (the discovery regression guard: no suffix).
+        EndpointEntity plain = namedEndpoint("ep-plain", "GET /things", "GET", "/things");
+        assertThat(InventoryReconciliationCalculator.endpointKey(plain))
+            .isEqualTo("GET /things");
+
+        // Harness-captured op: OAS operationId, never suffixed -> bare key,
+        // so harness <-> endpoint matching is byte-identical to pre-fix.
+        assertThat(InventoryReconciliationCalculator.operationKey(
+                op("getThings", "GET", "/things")))
+            .isEqualTo("GET /things");
+
+        // An arbitrary bracketed name is NOT a discriminator (strict grammar).
+        EndpointEntity bracketed = namedEndpoint("ep-bracket",
+            "GET /things [legacy endpoint]", "GET", "/things");
+        assertThat(InventoryReconciliationCalculator.endpointKey(bracketed))
+            .isEqualTo("GET /things");
+
+        // Null / absent operation_id stays bare, never throws.
+        assertThat(InventoryReconciliationCalculator.operationKey(
+                op(null, "GET", "/things")))
+            .isEqualTo("GET /things");
+    }
 }

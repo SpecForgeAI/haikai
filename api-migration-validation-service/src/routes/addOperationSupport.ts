@@ -119,15 +119,44 @@ export function deriveOperationId(method: string, path: string, explicit: string
  * read only `id` / `operation_id` / `method` / `path` so the function stays
  * decoupled from the full DTO and trivially testable.
  */
+/**
+ * Mapping-discriminator suffix extractor (Spec 2026-07-23 content-type twin
+ * fix). Mirrors the AMS `InventoryReconciliationCalculator.restDiscriminator`
+ * grammar EXACTLY: a trailing `[key=members;key=members]` block whose keys are
+ * only `consumes|produces|headers|params` — the suffix the discovery adapters
+ * fold into an endpoint name (and which `synthesiseOperationFromEndpoint`
+ * copies into the synthesised row's operation_id) so same-verb+path
+ * content-type twins stay distinct. Null for plain names / OAS operationIds.
+ */
+export function restDiscriminator(candidate: string | null | undefined): string | null {
+  if (typeof candidate !== 'string') return null;
+  const m = candidate
+    .trim()
+    .match(/\[((?:consumes|produces|headers|params)=[^;\]]+(?:;(?:consumes|produces|headers|params)=[^;\]]+)*)\]$/);
+  return m ? m[1] : null;
+}
+
 export function findExistingOperationRow<
   T extends { operation_id?: string | null; method?: string | null; path?: string | null },
 >(operations: ReadonlyArray<T>, target: NormalisedAddOperation): T | null {
   const wantMethod = target.method.toUpperCase();
   const wantPath = target.path;
+  // Content-type twin guard (Spec 2026-07-23): two synthesised rows can share
+  // method+path while differing by the discriminator in operation_id (a JSON
+  // twin and an XML twin). The bare method+path fallback must only match rows
+  // whose discriminator EQUALS the target's (null === null for the plain
+  // case), or an add of one twin would silently reuse the other twin's row.
+  const wantDiscriminator = restDiscriminator(target.operationId);
   for (const op of operations) {
     if (target.operationId && op.operation_id === target.operationId) return op;
     const opMethod = typeof op.method === 'string' ? op.method.toUpperCase() : '';
-    if (opMethod === wantMethod && op.path === wantPath) return op;
+    if (
+      opMethod === wantMethod &&
+      op.path === wantPath &&
+      restDiscriminator(op.operation_id) === wantDiscriminator
+    ) {
+      return op;
+    }
   }
   return null;
 }
