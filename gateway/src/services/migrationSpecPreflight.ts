@@ -34,6 +34,12 @@ import {
 } from './migrationShapeSpecGenerationHandler';
 import { fetchMigrationSpecContext } from './migrationSpecContextClient';
 import {
+  isDbPackReviewStory,
+  runDbPackReviewPreflight,
+  defaultFetchPackTranslations,
+  type FetchPackTranslationsFn,
+} from './migrationDbPackReviewRoute';
+import {
   isDbPackCarriageStory,
   runDbPackSpecCarriage,
   defaultFetchPackFiles,
@@ -51,6 +57,7 @@ import { isSeedBuildFilesStory } from './migrationSeedBuildFilesEnrichment';
 /** How the story would generate — the batch loop's routing, named. */
 export type SpecPreflightRoute =
   | 'db_pack'
+  | 'db_pack_review'
   | 'manual_gate'
   | 'code_facts'
   | 'description'
@@ -72,6 +79,8 @@ export interface SpecPreflightDeps {
   fetchPackFiles?: FetchPackFilesFn;
   fetchCodeSpecFacts?: RunCodeSpecCarriageDeps['fetchCodeSpecFacts'];
   fetchSpecContext?: SpecContextFetcher;
+  /** Pack translation-queue read for the db_pack_review route (Spec 2026-07-23). */
+  fetchPackTranslations?: FetchPackTranslationsFn;
 }
 
 /** Minimal base row the carriage functions spread their result over. */
@@ -134,6 +143,21 @@ export async function runSpecPreflight(
     return hit;
   };
 
+  // Same memoisation for the translation-queue read (db_pack_review route):
+  // every per-kind review story of one pack shares a single AMS read.
+  const rawFetchPackTranslations =
+    deps.fetchPackTranslations ?? defaultFetchPackTranslations;
+  const packTranslationsCache = new Map<string, ReturnType<FetchPackTranslationsFn>>();
+  const memoFetchPackTranslations: FetchPackTranslationsFn = (pid, packId) => {
+    const key = `${pid}:${packId}`;
+    let hit = packTranslationsCache.get(key);
+    if (!hit) {
+      hit = rawFetchPackTranslations(pid, packId);
+      packTranslationsCache.set(key, hit);
+    }
+    return hit;
+  };
+
   const bow = await loadBook(projectId, bookOfWorkId);
   const stories = bow.items.filter((i) => i.type === 'story');
   const rows: SpecPreflightRow[] = [];
@@ -165,6 +189,23 @@ export async function runSpecPreflight(
         });
         const { ready, missing } = carriageOutcome(row);
         rows.push(mk('db_pack', ready, missing));
+        continue;
+      }
+
+      // 1b) DB-pack HUMAN-PROCEDURE stories (Spec 2026-07-23): pack-provenance
+      // tagged but carrying no verbatim file payload (review gates, jobs
+      // re-homing). Pre-fix these fell through to the generic resolver, which
+      // demanded API-plane inputs (SOAP findings / IaC refs / source
+      // capability) that do not exist for a DB review story — blocking a story
+      // whose translation queue was fully approved. Readiness here is the
+      // queue itself, with the planner's own predicate + vocabulary.
+      if (isDbPackReviewStory(story)) {
+        const verdict = await runDbPackReviewPreflight({
+          projectId,
+          story,
+          fetchPackTranslations: memoFetchPackTranslations,
+        });
+        rows.push(mk('db_pack_review', verdict.ready, verdict.missing, verdict.note));
         continue;
       }
 

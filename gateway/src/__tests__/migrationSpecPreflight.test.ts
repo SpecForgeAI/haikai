@@ -123,6 +123,41 @@ describe('runSpecPreflight — routing + readiness', () => {
     expect(fetchCodeSpecFacts).not.toHaveBeenCalled();
   });
 
+  it('db-pack REVIEW story (Spec 2026-07-23) → db_pack_review route from the translation queue; resolver NEVER called', async () => {
+    const items = [
+      story({
+        id: 'epic-1-s-stored_procedure-review',
+        title: 'Review & approve stored procedures translation drafts (0 of 29 outstanding)',
+        tags: ['provenance:pack', 'pack:p-1', 'stream:target_database_schema_implementation'],
+      } as never),
+      story({
+        id: 'epic-1-s-view-review',
+        title: 'Review & approve views translation drafts (2 of 4 outstanding)',
+        tags: ['provenance:pack', 'pack:p-1', 'stream:target_database_schema_implementation'],
+      } as never),
+    ];
+    const fetchSpecContext = jest.fn();
+    const fetchPackTranslations = jest.fn().mockResolvedValue([
+      // procs all approved; views carry 2 outstanding.
+      { translation_key: 'k1', object_ref: 'dbo.p1', kind: 'stored_procedure', disposition: 'translate', review_status: 'approved' },
+      { translation_key: 'k2', object_ref: 'dbo.v1', kind: 'view', disposition: 'translate', review_status: 'unreviewed' },
+      { translation_key: 'k3', object_ref: 'dbo.v2', kind: 'view', disposition: 'translate', review_status: 'needs_rework' },
+    ]);
+    const rows = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchSpecContext, fetchPackTranslations } as never)
+    );
+    // The bug case: fully-approved queue is READY — no SOAP/IaC/capability demands.
+    expect(rows[0]).toMatchObject({ route: 'db_pack_review', ready: true });
+    // Sibling with outstanding drafts blocks for the RIGHT reason.
+    expect(rows[1]).toMatchObject({ route: 'db_pack_review', ready: false });
+    expect(JSON.stringify(rows[1].missing_inputs)).toContain('2 unapproved translation draft(s)');
+    // The generic focused-context resolver is never consulted...
+    expect(fetchSpecContext).not.toHaveBeenCalled();
+    // ...and the queue read is memoised: two stories, ONE fetch.
+    expect(fetchPackTranslations).toHaveBeenCalledTimes(1);
+  });
+
   it('resolver story with clean focused context → ready; with missing inputs → not ready (same detector as generation)', async () => {
     const items = [
       story({ id: 'S-ok', workItemId: 'wi-ok' }),
