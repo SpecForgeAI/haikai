@@ -987,6 +987,95 @@ function buildSoapProtocolMetadata(
   return anyPresent ? blob : null;
 }
 
+/**
+ * Internal (non-HTTP) entry-point protocol metadata (Spec 2026-07-23). The
+ * Spring adapters / XML scanner emit scheduled/listener/batch endpoint
+ * candidates carrying `endpoint_subtype` + job metadata — pre-fix ALL of it
+ * was dropped at commit ("endpoint_subtype is not persisted at commit"), so
+ * the committed model could not distinguish an internal entry point and the
+ * migration plan minted an unresolvable prerequisite. Bundle the discriminator
+ * + provenance into the SAME `protocol_metadata_json` JSONB the SOAP fields
+ * use (absent-key semantics, no DDL). Null for plain HTTP endpoints.
+ */
+const INTERNAL_PROTOCOL_METADATA_FIELDS = [
+  'endpoint_subtype',
+  'internal_process',
+  'listenerAnnotation',
+  'className',
+  'methodName',
+] as const;
+
+function buildInternalProtocolMetadata(
+  data: Record<string, unknown>
+): Record<string, unknown> | null {
+  if (
+    typeof data.endpoint_subtype !== 'string' ||
+    data.endpoint_subtype.trim().length === 0
+  ) {
+    return null;
+  }
+  const blob: Record<string, unknown> = {};
+  for (const key of INTERNAL_PROTOCOL_METADATA_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(data, key) && data[key] !== undefined) {
+      blob[key] = data[key];
+    }
+  }
+  return blob;
+}
+
+/** Name of the synthesized owner interface for internal entry points. */
+export const INTERNAL_PROCESSING_INTERFACE_NAME = 'Internal Processing';
+
+/**
+ * Find-or-create the synthesized "Internal Processing" interface that parents
+ * internal entry-point endpoints (Spec 2026-07-23). A scheduler / listener /
+ * batch owner class has no controller, so discovery never mints an interface
+ * candidate for it — pre-fix every internal endpoint candidate was therefore
+ * an ORPHAN and skipped wholesale at save-back ("Orphan: requires parent FK
+ * 'interface_id'"), which is the real reason the committed model had no
+ * internal entry points.
+ *
+ * `interfaces.service_id` is NOT NULL and the model PUT validates FKs, so the
+ * synthesized interface parents onto the model's FIRST service. Returns null
+ * (caller falls back to today's honest orphan-block) when the model has no
+ * service to parent onto. Idempotent by name across commits.
+ */
+// Exported additively for unit testing of the internal entry-point rescue.
+export function findOrCreateInternalProcessingInterface(
+  model: any,
+  modelFileId: string
+): { id: string } | null {
+  const entities = model?.metaModel?.entities;
+  if (!entities) return null;
+  if (!Array.isArray(entities.interfaces)) entities.interfaces = [];
+  const existing = entities.interfaces.find(
+    (i: any) => i?.name === INTERNAL_PROCESSING_INTERFACE_NAME
+  );
+  if (existing?.id) return existing;
+
+  const services: any[] = Array.isArray(entities.services) ? entities.services : [];
+  const parentService = services.find((s: any) => typeof s?.id === 'string');
+  if (!parentService) return null;
+
+  const iface = {
+    id: generateId('ifc-'),
+    model_file_id: modelFileId,
+    service_id: parentService.id,
+    name: INTERNAL_PROCESSING_INTERFACE_NAME,
+    description:
+      'Synthesized owner for internal (non-HTTP) entry points — scheduled ' +
+      'jobs, listeners, batch. Created at commit so internal endpoint ' +
+      'candidates are not dropped as orphans.',
+    interface_type: 'INTERNAL_PROCESS',
+    spec_link: null,
+    tags: '',
+    valid_from: null,
+    valid_to: null,
+  };
+  entities.interfaces.push(iface);
+  return iface;
+}
+
 // ============================================================================
 // convertCandidateToEntity
 // ============================================================================
@@ -1194,6 +1283,33 @@ export function convertCandidateToEntity(
         if (soapMetadata) {
           entity.protocol_metadata_json = soapMetadata;
         }
+        // Internal entry points (Spec 2026-07-23): persist the subtype +
+        // job/listener provenance into the SAME JSONB (SOAP idiom, no DDL).
+        // Pre-fix `endpoint_subtype` was dropped here, so even a committed
+        // internal endpoint was indistinguishable on the model.
+        const internalMetadata = buildInternalProtocolMetadata(
+          data as Record<string, unknown>
+        );
+        if (internalMetadata) {
+          entity.protocol_metadata_json = {
+            ...(entity.protocol_metadata_json ?? {}),
+            ...internalMetadata,
+          };
+        }
+      }
+      // Direction (Spec 2026-07-23, latent-bug fix): outbound-call endpoints
+      // (Feign / RestTemplate / WebClient) mark themselves ONLY via
+      // `endpoint_subtype: 'outbound-*'` — direction was never persisted, so
+      // the migration planner's outbound exclusion could never trigger on
+      // committed data and outbound rows polluted the REST partition. An
+      // explicit `data.direction` (if an adapter ever sets one) wins.
+      if (typeof data.direction === 'string' && data.direction.trim().length > 0) {
+        entity.direction = data.direction;
+      } else if (
+        typeof data.endpoint_subtype === 'string' &&
+        data.endpoint_subtype.trim().toLowerCase().startsWith('outbound')
+      ) {
+        entity.direction = 'outbound';
       }
       // Per-endpoint response-contract capture (Spec 2026-05-30, Task Group 3):
       // the deterministic response-contract scanner (+ optional LLM enrichment)
@@ -2706,6 +2822,38 @@ export async function saveDiscoveryCandidatesToModel(
               // downstream name-based idempotent matching compares correctly
               // against other attributes on the same parent.
               candidate.name = fieldName;
+              resolvedParent = true;
+            }
+          }
+        }
+        // Internal entry-point rescue (Spec 2026-07-23): scheduled / listener
+        // / batch endpoint candidates have no controller class, hence no
+        // parent interface candidate — they arrived here as orphans and were
+        // skipped WHOLESALE, which is why the committed model never carried
+        // internal entry points and the migration plan's "re-scan and commit"
+        // advice was a dead end. Parent them onto the synthesized
+        // "Internal Processing" interface instead (subtype presence on
+        // `data.endpoint_subtype` is the marker — only internal emissions set
+        // it). Falls through to the honest orphan-block when the model has no
+        // service to parent the interface onto.
+        if (!resolvedParent && candidate.candidate_type === 'endpoints') {
+          const subtype = (candidate.data as Record<string, unknown> | undefined)
+            ?.endpoint_subtype;
+          // Outbound-call subtypes are NOT entry points — an orphaned
+          // outbound candidate stays honestly blocked.
+          if (
+            typeof subtype === 'string' &&
+            subtype.trim().length > 0 &&
+            !subtype.trim().toLowerCase().startsWith('outbound')
+          ) {
+            const internalIface = findOrCreateInternalProcessingInterface(
+              model,
+              filename
+            );
+            if (internalIface) {
+              const syntheticParentKey = `__internal_iface_fk__${candidate.id}`;
+              candidate.parent_candidate_id = syntheticParentKey;
+              candidateIdToEntityId[syntheticParentKey] = internalIface.id;
               resolvedParent = true;
             }
           }

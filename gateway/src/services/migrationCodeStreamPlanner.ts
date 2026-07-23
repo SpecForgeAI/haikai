@@ -647,14 +647,19 @@ export function buildCodeStreamSkeleton(
   const scope = scopeForStream(stream, view);
   if (scope.rows.length === 0) {
     if (stream === 'internal_processing_implementation' && view.endpoints.length > 0) {
-      // Model HAS endpoints but none classify internal. endpoint_subtype does
-      // not survive commit today, so "none found" may mean "not
-      // distinguishable" — say so explicitly (nothing silent).
+      // Model HAS endpoints but none classify internal. Since Spec 2026-07-23
+      // the save-back COMMITS internal entry-point candidates (previously
+      // dropped wholesale as orphans — a scheduler/listener class has no
+      // parent interface candidate) and persists their subtype into
+      // protocol_metadata_json — so re-scan + commit is a REAL remedy now,
+      // not the dead end the old wording papered over.
       return prerequisiteSkeleton(
         stream,
-        'No internal (non-HTTP) entry points are distinguishable on the committed model ' +
-          '(endpoint_subtype is not persisted at commit; Spec M enriches internal capture). ' +
-          'If this app has scheduled jobs / listeners / batch entrypoints, re-scan and commit them, then regenerate.'
+        'No internal (non-HTTP) entry points exist on the committed model. ' +
+          'If this app has scheduled jobs / listeners / batch entrypoints: re-run code ' +
+          'discovery, COMMIT the internal endpoint candidates at save-back (they land ' +
+          'under the synthesized "Internal Processing" interface), then regenerate this ' +
+          'plan. If the app genuinely has none, delete this story.'
       );
     }
     return prerequisiteSkeleton(
