@@ -136,6 +136,32 @@ export function restDiscriminator(candidate: string | null | undefined): string 
   return m ? m[1] : null;
 }
 
+/**
+ * Parse a mapping-discriminator suffix into its content-negotiation parts
+ * (Spec 2026-07-23, XML3). `"consumes=application/xml;produces=application/json,application/xml"`
+ * -> `{ consumes: ['application/xml'], produces: ['application/json','application/xml'] }`.
+ * `headers`/`params` keys are ignored here (not content types). Empty arrays
+ * when the suffix is null / carries no content keys.
+ */
+export function parseContentDiscriminator(
+  suffix: string | null,
+): { consumes: string[]; produces: string[] } {
+  const out: { consumes: string[]; produces: string[] } = { consumes: [], produces: [] };
+  if (!suffix) return out;
+  for (const part of suffix.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq <= 0) continue;
+    const key = part.slice(0, eq).trim();
+    if (key !== 'consumes' && key !== 'produces') continue;
+    out[key] = part
+      .slice(eq + 1)
+      .split(',')
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
+  }
+  return out;
+}
+
 export function findExistingOperationRow<
   T extends { operation_id?: string | null; method?: string | null; path?: string | null },
 >(operations: ReadonlyArray<T>, target: NormalisedAddOperation): T | null {

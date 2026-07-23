@@ -175,6 +175,35 @@ function resolveOperationContentType(
 }
 
 /**
+ * Resolve the preferred `Accept` media type for a content-negotiated twin
+ * operation (Spec 2026-07-23, XML3): the FIRST `produces` member of the
+ * `x-amvs-content` block `synthesiseOperationFromEndpoint` stamps onto rows
+ * synthesised from a discriminator-suffixed endpoint. Returns null for every
+ * other operation (no block -> no Accept defaulting -> wire behaviour
+ * unchanged). Pure + total: never throws; malformed shapes yield null.
+ */
+function resolveOperationProduces(
+  ctx: Parameters<ToolHandler>[1],
+  operationId: string,
+): string | null {
+  try {
+    const ops = ctx.oasInventory?.operations;
+    if (!Array.isArray(ops)) return null;
+    const op = ops.find((o) => o.operationId === operationId);
+    const block = (op?.oasOperation as { 'x-amvs-content'?: unknown } | undefined)?.[
+      'x-amvs-content'
+    ];
+    if (!block || typeof block !== 'object') return null;
+    const produces = (block as { produces?: unknown }).produces;
+    if (!Array.isArray(produces)) return null;
+    const first = produces.find((m) => typeof m === 'string' && m.trim().length > 0);
+    return typeof first === 'string' ? first.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Tool: `execute_http_request`
  *
  * The only path the LLM has into a real HTTP call. Hard gates:
@@ -467,6 +496,24 @@ const handler: ToolHandler = async (args, ctx) => {
     const mediaType =
       resolveOperationContentType(ctx, operationId) ?? 'application/json';
     effectiveHeaders = { ...(effectiveHeaders ?? {}), 'Content-Type': mediaType };
+  }
+
+  // ---- Accept defaulting for content-negotiated twins (Spec 2026-07-23,
+  // XML3). ONLY operations synthesised from a discriminator-suffixed endpoint
+  // carry an `x-amvs-content` block; for those, defaulting Accept from
+  // `produces` is what actually elicits the twin's response variant (an XML
+  // twin without Accept: application/xml just gets JSON back — capturing the
+  // WRONG behaviour under the twin's identity). Ordinary OAS-parsed
+  // operations have no block, so their wire behaviour is byte-identical to
+  // before. A caller-set Accept always wins.
+  const callerSetAccept = effectiveHeaders
+    ? Object.keys(effectiveHeaders).some((k) => k.toLowerCase() === 'accept')
+    : false;
+  if (!callerSetAccept) {
+    const produces = resolveOperationProduces(ctx, operationId);
+    if (produces) {
+      effectiveHeaders = { ...(effectiveHeaders ?? {}), Accept: produces };
+    }
   }
 
   // ---- Spec 2026-07-06-n: PRE-call state snapshot for a MUTATING call.
@@ -995,7 +1042,13 @@ export const executeHttpRequestTool: ToolRegistryEntry = {
         description:
           'Optional ad-hoc headers (do NOT include auth headers). For Content-Type, pass the media-type value (e.g. application/json), not a constant name like APPLICATION_JSON.',
       },
-      body: { description: 'Optional JSON body.' },
+      body: {
+        description:
+          'Optional request body. A JSON object for JSON operations. When the ' +
+          "operation's request content-type is XML (see get_oas_operation_detail " +
+          'requestBody.content), pass the body as ONE raw XML string instead — ' +
+          'it is sent verbatim with the XML Content-Type.',
+      },
       authMode: {
         type: 'string',
         enum: ['session', 'none', 'bad_token'],

@@ -252,6 +252,9 @@ test('test-api-connection returns success when probe returns 2xx', async () => {
     success: true,
     status: 200,
     durationMs: 12,
+    // Baseline repair (2026-07-23): the route gained `authRejected` (2xx ->
+    // false) without this assertion being updated — pre-existing red.
+    authRejected: false,
   });
   expect(probe).toHaveBeenCalledTimes(1);
   expect(probeArgs[0].baseUrl).toBe(session.api_base_url);
