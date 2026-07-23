@@ -475,6 +475,16 @@
   color: #ffffff;
 }
 
+/* Spec 2026-07-23: a disabled action button must LOOK disabled. The Start
+ * stage button rendered identical solid blue while disabled (unresolved run
+ * scope), so clicking it silently did nothing — no dialog, no network, no
+ * error — and read as a dead button. */
+.selectButton:disabled,
+.selectButtonPrimary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .modalOverlay {
   position: fixed;
   inset: 0;

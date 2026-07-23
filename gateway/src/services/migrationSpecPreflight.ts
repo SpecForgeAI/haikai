@@ -37,8 +37,10 @@ import {
   isDbPackReviewStory,
   runDbPackReviewPreflight,
   defaultFetchPackTranslations,
+  plannerDeclaredMissing,
   type FetchPackTranslationsFn,
 } from './migrationDbPackReviewRoute';
+import { CODE_PREREQUISITE_TAG } from './migrationCodeStreamPlanner';
 import {
   isDbPackCarriageStory,
   runDbPackSpecCarriage,
@@ -47,6 +49,7 @@ import {
 } from './migrationDbPackSpecCarriage';
 import {
   isCodeCarriageStory,
+  isCodeFoundationStory,
   isManualGateCarriageStory,
   runCodeSpecCarriage,
   defaultFetchCodeSpecFacts,
@@ -61,6 +64,7 @@ export type SpecPreflightRoute =
   | 'manual_gate'
   | 'code_facts'
   | 'description'
+  | 'prerequisite'
   | 'resolver';
 
 export interface SpecPreflightRow {
@@ -224,6 +228,32 @@ export async function runSpecPreflight(
         });
         const { ready, missing } = carriageOutcome(row);
         rows.push(mk('code_facts', ready, missing));
+        continue;
+      }
+
+      // 2b) FOUNDATION stories (Spec 2026-07-23): code-provenance tagged with
+      // ZERO endpoints — cross-cutting planner-authored intent. Pre-fix they
+      // fell to the resolver and blocked on API-plane inputs (SOAP/IaC/
+      // capability) a cross-cutting story never has. Description-grounded.
+      if (isCodeFoundationStory(story)) {
+        rows.push(
+          mk('description', true, [], 'planner-authored foundation — description-grounded generation')
+        );
+        continue;
+      }
+
+      // 2c) Prerequisite stories (Spec 2026-07-23): planner-declared blocked
+      // gates. They stay blocked — but with the planner's OWN reasons, not the
+      // resolver's irrelevant trio. No resolver call.
+      if ((story.tags ?? []).includes(CODE_PREREQUISITE_TAG)) {
+        rows.push(
+          mk(
+            'prerequisite',
+            false,
+            plannerDeclaredMissing(story),
+            'planner-declared prerequisite — resolve the gap, then re-check'
+          )
+        );
         continue;
       }
 

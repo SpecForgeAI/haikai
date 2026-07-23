@@ -58,23 +58,62 @@ export function MigrationBookOfWorkReviewRoute() {
 
   const [company, setCompany] = useState<string>('');
   const [project, setProject] = useState<string>('');
+  // Spec 2026-07-23: WHY the scope failed — surfaced under the (visibly
+  // disabled) Start button. Pre-fix a failed organisation resolution left the
+  // button silently disabled while it rendered fully active: clicking it did
+  // nothing, with no dialog, no network call and no console error.
+  const [scopeHint, setScopeHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const derive = async () => {
       const projectName = activeProject?.name || projectId || '';
       if (!cancelled) setProject(projectName);
-      if (!activeProject?.organisationId) {
-        if (!cancelled) setCompany('');
+      if (!activeProject) {
+        if (!cancelled) {
+          setCompany('');
+          setScopeHint(
+            'Project context is not loaded — the run scope (organisation + ' +
+              'project name) cannot be resolved. Reload the page; if this ' +
+              'persists, re-open the project from the projects list.',
+          );
+        }
+        return;
+      }
+      if (!activeProject.organisationId) {
+        if (!cancelled) {
+          setCompany('');
+          setScopeHint(
+            'This project has no organisation link, so the run scope ' +
+              '(organisation + project name) cannot be resolved. Set the ' +
+              "project's organisation, then reload.",
+          );
+        }
         return;
       }
       try {
         const organisation = await getOrganisationById(
           activeProject.organisationId,
         );
-        if (!cancelled) setCompany(organisation?.name ?? '');
+        if (!cancelled) {
+          const name = organisation?.name ?? '';
+          setCompany(name);
+          setScopeHint(
+            name
+              ? null
+              : `Organisation ${activeProject.organisationId} has no name — ` +
+                  'the run scope needs it. Fix the organisation record, then reload.',
+          );
+        }
       } catch {
-        if (!cancelled) setCompany('');
+        if (!cancelled) {
+          setCompany('');
+          setScopeHint(
+            `Organisation lookup failed (id ${activeProject.organisationId}) — ` +
+              'the run scope needs the organisation name. Check the ' +
+              'organisations service, then reload.',
+          );
+        }
       }
     };
     void derive();
@@ -100,6 +139,7 @@ export function MigrationBookOfWorkReviewRoute() {
       initialSelectedWorkItemId={initialSelectedWorkItemId}
       companyName={company || undefined}
       projectName={project || undefined}
+      scopeHint={scopeHint}
       activeArchitectureId={architectureId}
       onOpenDelivery={() =>
         navigate(

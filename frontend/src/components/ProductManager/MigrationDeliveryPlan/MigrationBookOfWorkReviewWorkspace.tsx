@@ -142,6 +142,11 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
    */
   companyName?: string;
   projectName?: string;
+  /**
+   * WHY the scope failed to resolve (Spec 2026-07-23) — surfaced under the
+   * visibly-disabled Start button instead of a silent no-op.
+   */
+  scopeHint?: string | null;
   /** Deep link to the delivery dashboard (run forensics). */
   onOpenDelivery?: () => void;
   /**
@@ -322,6 +327,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   initialSelectedWorkItemId,
   companyName,
   projectName,
+  scopeHint,
   onOpenDelivery,
   activeArchitectureId,
 }) => {
@@ -1875,6 +1881,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           planes={railPlanes}
           runStatus={run?.status ?? null}
           scopeReady={railScopeReady}
+          scopeHint={scopeHint}
           busy={railBusy}
           error={railError}
           pausedBlockers={railBlockers}

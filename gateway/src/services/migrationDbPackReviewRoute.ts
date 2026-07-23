@@ -106,6 +106,83 @@ export const defaultFetchPackTranslations: FetchPackTranslationsFn = async (
   return Array.isArray(rows) ? rows : [];
 };
 
+/**
+ * Deterministic spec text for a pack human-procedure story (Spec 2026-07-23,
+ * follow-up). These stories NEVER go to the LLM: generating them
+ * description-grounded produced warnings the operator could not address
+ * (missing_decision_citation demanding api.* codes of a DB review story;
+ * NO_CAPTURED_DECISIONS / invented codes for deliberately-absent context) and
+ * a meaningless `low` confidence. The planner-authored description +
+ * acceptance criteria ARE the procedure — mirror the manual-gate carriage:
+ * deterministic text, status `generated`, confidence `high`, no warnings.
+ */
+export function buildDbPackReviewSpecText(story: {
+  title: string;
+  description?: string | null;
+  acceptanceCriteria?: string[] | null;
+}): string {
+  const lines: string[] = [];
+  lines.push(`/agent-os:shape-spec ${story.title}`);
+  lines.push('');
+  lines.push('## Pack review work item');
+  lines.push('');
+  lines.push(
+    'This story is HUMAN review work over the DB migration pack — the ' +
+      'execution driver never dispatches it to the implement-verify service. ' +
+      'It completes when its gate condition holds.'
+  );
+  lines.push('');
+  lines.push('## Procedure');
+  lines.push('');
+  lines.push(story.description || 'Work the pack translation queue for this story.');
+  lines.push('');
+  lines.push('## Gate condition');
+  lines.push('');
+  if (story.acceptanceCriteria && story.acceptanceCriteria.length > 0) {
+    for (const criterion of story.acceptanceCriteria) {
+      lines.push(`- ${criterion}`);
+    }
+  } else {
+    lines.push(
+      '- Every item in this story\'s pack queue is approved, rejected with a ' +
+        'disposition, or re-dispositioned.'
+    );
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * The planner-declared gaps for a `provenance:prerequisite` story, in the
+ * missing-inputs shape the preflight/spec rows carry. These stories are MEANT
+ * to be blocked — but pre-fix they fell into the generic resolver and showed
+ * ITS irrelevant trio (SOAP/IaC/capability) instead of the planner's own
+ * reason (e.g. "code discovery has not run"). Falls back to an honest generic
+ * line when the blob carries no planner reasons.
+ */
+export function plannerDeclaredMissing(story: {
+  plannerMissingInputs?: Array<string | Record<string, unknown>> | null;
+}): Array<Record<string, unknown>> {
+  const raw = story.plannerMissingInputs ?? [];
+  const out: Array<Record<string, unknown>> = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string' && entry.trim().length > 0) {
+      out.push({ input: 'prerequisite', reason: entry.trim() });
+    } else if (entry && typeof entry === 'object') {
+      out.push({ input: 'prerequisite', ...entry });
+    }
+  }
+  if (out.length === 0) {
+    out.push({
+      input: 'prerequisite',
+      reason:
+        'Planner-declared prerequisite gap — resolve the upstream input this ' +
+        'story names, then re-check readiness.',
+    });
+  }
+  return out;
+}
+
 export interface DbPackReviewVerdict {
   ready: boolean;
   missing: Array<Record<string, unknown>>;
