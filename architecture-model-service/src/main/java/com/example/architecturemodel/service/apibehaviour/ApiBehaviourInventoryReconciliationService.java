@@ -15,6 +15,7 @@ import com.example.architecturemodel.repository.ModelFileRepository;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourCaptureSessionRepository;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourOperationRepository;
 import com.example.architecturemodel.repository.entity.EndpointRepository;
+import com.example.architecturemodel.repository.entity.InterfaceRepository;
 import com.example.architecturemodel.service.discovery.DiscoveryFindingService;
 import com.example.architecturemodel.service.migration.InventoryReconciliationCalculator;
 import lombok.RequiredArgsConstructor;
@@ -78,7 +79,17 @@ public class ApiBehaviourInventoryReconciliationService {
     private final ApiBehaviourOperationRepository operationRepository;
     private final ModelFileRepository modelFileRepository;
     private final EndpointRepository endpointRepository;
+    private final InterfaceRepository interfaceRepository;
     private final DiscoveryFindingService discoveryFindingService;
+
+    /**
+     * Interface types whose endpoints are internal (non-HTTP) entry points
+     * (Spec 2026-07-24) — never HTTP-capturable, auto-classified OUT of
+     * capture scope. Both spellings tolerated: the save-back originally wrote
+     * INTERNAL_PROCESS; the formalised value is INTERNAL_PROCESSING.
+     */
+    private static final Set<String> INTERNAL_INTERFACE_TYPES =
+        Set.of("INTERNAL_PROCESSING", "INTERNAL_PROCESS");
 
     @Transactional
     public InventoryReconciliationResponse reconcile(
@@ -117,13 +128,42 @@ public class ApiBehaviourInventoryReconciliationService {
             unmatchedEndpointIds.add(ep.getId());
         }
 
+        // --- Internal (non-HTTP) entry points (Spec 2026-07-24): endpoints
+        // whose owning interface is typed Internal Processing can NEVER be
+        // exercised over HTTP. They are auto-classified out of capture scope —
+        // a visible bucket, excluded from EVERY denominator and never
+        // demanding accounting (they used to flood the unaccounted list and
+        // block /start until manually excluded 1-by-1).
+        Set<String> internalInterfaceIds = new HashSet<>();
+        if (modelFileId != null) {
+            for (var iface : interfaceRepository.findByModelFileId(modelFileId)) {
+                String type = iface.getInterfaceType() == null
+                    ? ""
+                    : iface.getInterfaceType().trim().toUpperCase();
+                if (INTERNAL_INTERFACE_TYPES.contains(type)) {
+                    internalInterfaceIds.add(iface.getId());
+                }
+            }
+        }
+
         // --- Scope partition + coverage tallies. ---
         List<UnaccountedEndpointRef> inScopeUnaccounted = new ArrayList<>();
         List<ExcludedByScopeEndpointRef> excludedByScope = new ArrayList<>();
+        List<ExcludedByScopeEndpointRef> internalExcluded = new ArrayList<>();
         int inScopeTotal = 0;
         int inScopeAccounted = 0;
         int architectureAccounted = 0;
+        int architectureTotal = 0;
         for (EndpointEntity ep : endpoints) {
+            if (internalInterfaceIds.contains(ep.getInterfaceId())) {
+                internalExcluded.add(new ExcludedByScopeEndpointRef(
+                    ep.getId(),
+                    ep.getInterfaceId(),
+                    InventoryReconciliationCalculator.endpointKey(ep),
+                    ep.getName()));
+                continue;
+            }
+            architectureTotal++;
             boolean accounted = !unmatchedEndpointIds.contains(ep.getId());
             if (accounted) {
                 architectureAccounted++;
@@ -177,12 +217,13 @@ public class ApiBehaviourInventoryReconciliationService {
             inScopeUnaccounted,
             operationsWithoutEndpoint,
             excludedByScope,
+            internalExcluded,
             pct(inScopeAccounted, inScopeTotal),
             inScopeAccounted,
             inScopeTotal,
-            pct(architectureAccounted, endpoints.size()),
+            pct(architectureAccounted, architectureTotal),
             architectureAccounted,
-            endpoints.size());
+            architectureTotal);
     }
 
     // ------------------------------------------------------------------

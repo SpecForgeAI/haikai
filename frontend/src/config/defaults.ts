@@ -549,6 +549,8 @@ export const interfaceTypeOptions: InterfaceType[] = [
   'FILE_TRANSFER',
   'SOAP_API',
   'RPC',
+  // Internal Processing (Spec 2026-07-24): scheduled jobs / listeners / batch.
+  'INTERNAL_PROCESSING',
   'OTHER',
 ];
 
@@ -565,6 +567,7 @@ export const endpointTypeOptions: Array<{ value: EndpointType; label: string }> 
   { value: EndpointType.MESSAGE_QUEUE, label: 'Message Queue' },
   { value: EndpointType.MESSAGE_TOPIC, label: 'Message Topic' },
   { value: EndpointType.FILE_TRANSFER, label: 'File Transfer' },
+  { value: EndpointType.INTERNAL_PROCESS, label: 'Internal Process' },
   { value: EndpointType.OTHER, label: 'Other' },
 ];
 

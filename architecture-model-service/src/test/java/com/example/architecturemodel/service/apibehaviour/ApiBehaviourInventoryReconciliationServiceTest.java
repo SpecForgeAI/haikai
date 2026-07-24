@@ -10,7 +10,9 @@ import com.example.architecturemodel.model.entity.apibehaviour.ApiBehaviourOpera
 import com.example.architecturemodel.repository.ModelFileRepository;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourCaptureSessionRepository;
 import com.example.architecturemodel.repository.apibehaviour.ApiBehaviourOperationRepository;
+import com.example.architecturemodel.model.entity.InterfaceEntity;
 import com.example.architecturemodel.repository.entity.EndpointRepository;
+import com.example.architecturemodel.repository.entity.InterfaceRepository;
 import com.example.architecturemodel.service.discovery.DiscoveryFindingService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,6 +68,8 @@ class ApiBehaviourInventoryReconciliationServiceTest {
     @Mock
     private EndpointRepository endpointRepository;
     @Mock
+    private InterfaceRepository interfaceRepository;
+    @Mock
     private DiscoveryFindingService discoveryFindingService;
 
     private ApiBehaviourInventoryReconciliationService service;
@@ -78,7 +82,9 @@ class ApiBehaviourInventoryReconciliationServiceTest {
     void setUp() {
         service = new ApiBehaviourInventoryReconciliationService(
             sessionRepository, operationRepository, modelFileRepository,
-            endpointRepository, discoveryFindingService);
+            endpointRepository, interfaceRepository, discoveryFindingService);
+        // Default: no interfaces typed internal (individual tests override).
+        when(interfaceRepository.findByModelFileId("mf-1")).thenReturn(List.of());
 
         session = ApiBehaviourCaptureSessionEntity.builder()
             .id(SESSION_ID)
@@ -142,6 +148,39 @@ class ApiBehaviourInventoryReconciliationServiceTest {
         // 2 of 3 in scope accounted (the excluded-with-reason row counts).
         assertThat(out.inScopeAccountedCount()).isEqualTo(2);
         assertThat(out.inScopeTotalCount()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("internal entry points (Spec 2026-07-24): auto-classified out of capture scope — visible bucket, no accounting demanded, no denominator, no /start block")
+    void internalInterfacesAutoExcludedFromCaptureScope() {
+        EndpointEntity api = endpoint("ep-api", "iface-a", "GET", "/a");
+        EndpointEntity batch1 = endpoint("ep-b1", "iface-int", "BATCH_MAIN", "com.x.JobA");
+        EndpointEntity batch2 = endpoint("ep-b2", "iface-int", "SCHEDULED", "0 0 * * * *");
+        when(endpointRepository.findByModelFileId("mf-1"))
+            .thenReturn(List.of(api, batch1, batch2));
+        // Both spellings tolerated: formal INTERNAL_PROCESSING + legacy rows.
+        when(interfaceRepository.findByModelFileId("mf-1")).thenReturn(List.of(
+            InterfaceEntity.builder().id("iface-int")
+                .interfaceType("INTERNAL_PROCESSING").build(),
+            InterfaceEntity.builder().id("iface-a")
+                .interfaceType("REST_API").build()));
+        when(operationRepository.findBySessionIdOrderByCreatedAtAsc(SESSION_ID))
+            .thenReturn(List.of(op("a", "GET", "/a", Boolean.TRUE, null)));
+
+        // WHOLE-architecture scope (null) — the case with no way to deselect.
+        InventoryReconciliationResponse out = service.reconcile(PROJECT_ID, SESSION_ID,
+            new InventoryReconciliationRequest(null, false, false));
+
+        // The internal endpoints are VISIBLE in their own bucket...
+        assertThat(out.internalExcludedEndpoints())
+            .extracting(InventoryReconciliationResponse.ExcludedByScopeEndpointRef::endpointId)
+            .containsExactlyInAnyOrder("ep-b1", "ep-b2");
+        // ...never unaccounted (pre-fix they flooded this list + blocked /start)...
+        assertThat(out.inScopeUnaccountedEndpoints()).isEmpty();
+        // ...and out of EVERY denominator: 1/1, not 1/3.
+        assertThat(out.inScopeTotalCount()).isEqualTo(1);
+        assertThat(out.architectureTotalCount()).isEqualTo(1);
+        assertThat(out.architectureAccountedCount()).isEqualTo(1);
     }
 
     @Test

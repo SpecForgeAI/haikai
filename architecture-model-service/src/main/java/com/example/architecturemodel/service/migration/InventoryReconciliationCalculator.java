@@ -108,16 +108,31 @@ public final class InventoryReconciliationCalculator {
     public static Result reconcile(
             List<EndpointEntity> endpoints,
             List<ApiBehaviourOperationEntity> harnessOperations) {
+        // Collision-aware matching (Spec 2026-07-24). Two "too strict" defects
+        // flooded the reconciliation with false gaps:
+        //   1. The content-type-twin discriminator (Spec 2026-07-23) rode the
+        //      key UNCONDITIONALLY whenever the discovered endpoint NAME
+        //      carried a mapping suffix — but a bare-keyed OAS/harness
+        //      operation can never produce that suffix, so every lone
+        //      suffix-named endpoint became unmatchable. The discriminator
+        //      must participate ONLY when it is actually needed — i.e. when
+        //      two endpoints collide on the bare verb+path.
+        //   2. Exact-string template params: `{grdOrgId}` (hand-authored OAS)
+        //      vs `{grd_org_id}` (code-discovered path) can never match, yet
+        //      they are the same route. Params are POSITIONAL for identity —
+        //      names are normalised away in the bare key.
+        Set<String> collidingBare = collidingBareEndpointKeys(endpoints);
+
         Set<String> discoveredKeys = new LinkedHashSet<>();
         if (endpoints != null) {
             for (EndpointEntity ep : endpoints) {
-                discoveredKeys.add(endpointKey(ep));
+                discoveredKeys.add(endpointMatchKey(ep, collidingBare));
             }
         }
         Set<String> harnessKeys = new LinkedHashSet<>();
         if (harnessOperations != null) {
             for (ApiBehaviourOperationEntity op : harnessOperations) {
-                harnessKeys.add(operationKey(op));
+                harnessKeys.add(operationMatchKey(op, collidingBare));
             }
         }
 
@@ -126,7 +141,7 @@ public final class InventoryReconciliationCalculator {
         int matchedEndpointCount = 0;
         if (endpoints != null) {
             for (EndpointEntity ep : endpoints) {
-                String key = endpointKey(ep);
+                String key = endpointMatchKey(ep, collidingBare);
                 if (harnessKeys.contains(key)) {
                     matchedEndpointCount++;
                 } else {
@@ -141,7 +156,7 @@ public final class InventoryReconciliationCalculator {
         int matchedOperationCount = 0;
         if (harnessOperations != null) {
             for (ApiBehaviourOperationEntity op : harnessOperations) {
-                String key = operationKey(op);
+                String key = operationMatchKey(op, collidingBare);
                 if (discoveredKeys.contains(key)) {
                     matchedOperationCount++;
                 } else {
@@ -158,6 +173,92 @@ public final class InventoryReconciliationCalculator {
             unmatchedOperationKeys,
             matchedEndpointCount,
             matchedOperationCount);
+    }
+
+    /**
+     * Template params are POSITIONAL for identity: `/a/{grdOrgId}` and
+     * `/a/{grd_org_id}` are the same route. Normalise every `{...}` segment to
+     * `{}` so param NAMES never break matching (Spec 2026-07-24).
+     */
+    public static String normaliseTemplateParams(String path) {
+        return path.replaceAll("\\{[^}]*\\}", "{}");
+    }
+
+    /** Bare REST identity: verb + param-normalised path — no discriminator. */
+    private static String bareRestKey(String method, String path) {
+        String m = method == null ? "" : method.trim().toUpperCase();
+        String p = path == null ? "" : normaliseTemplateParams(path.trim());
+        return m + " " + p;
+    }
+
+    /**
+     * The bare REST keys shared by MORE THAN ONE endpoint — the only case
+     * where the mapping discriminator is needed (and used) to keep
+     * same-verb+path content-type twins distinct.
+     */
+    public static Set<String> collidingBareEndpointKeys(List<EndpointEntity> endpoints) {
+        Map<String, Integer> counts = new java.util.HashMap<>();
+        if (endpoints != null) {
+            for (EndpointEntity ep : endpoints) {
+                if (isSoapEndpoint(ep)) {
+                    continue;
+                }
+                String bare = bareRestKey(ep.getOperationVerb(), ep.getPathOrAddress());
+                counts.merge(bare, 1, Integer::sum);
+            }
+        }
+        Set<String> colliding = new LinkedHashSet<>();
+        for (Map.Entry<String, Integer> e : counts.entrySet()) {
+            if (e.getValue() > 1) {
+                colliding.add(e.getKey());
+            }
+        }
+        return colliding;
+    }
+
+    /**
+     * Collision-aware endpoint matching key: SOAP keys unchanged; REST keys are
+     * bare (param-normalised) unless the bare key COLLIDES among the model's
+     * endpoints, in which case the name discriminator disambiguates. A lone
+     * endpoint whose discovered name carries a suffix therefore still matches a
+     * bare harness operation.
+     */
+    public static String endpointMatchKey(EndpointEntity ep, Set<String> collidingBare) {
+        if (isSoapEndpoint(ep)) {
+            return endpointKey(ep);
+        }
+        String bare = bareRestKey(ep.getOperationVerb(), ep.getPathOrAddress());
+        if (collidingBare.contains(bare)) {
+            String discriminator = restDiscriminator(ep.getName());
+            if (discriminator != null) {
+                return bare + "::" + discriminator;
+            }
+        }
+        return bare;
+    }
+
+    /**
+     * Collision-aware operation matching key — the operation-side mirror of
+     * {@link #endpointMatchKey}: the discriminator (riding a synthesised row's
+     * {@code operation_id} = endpoint name) participates ONLY when the bare
+     * verb+path collides among the model's endpoints. A bare harness op whose
+     * route IS a collision stays bare — honestly ambiguous, matching neither
+     * twin, rather than silently matching the wrong one.
+     */
+    public static String operationMatchKey(
+            ApiBehaviourOperationEntity op, Set<String> collidingBare) {
+        String soapKey = operationSoapDiscriminator(op);
+        if (soapKey != null) {
+            return "soap::" + soapKey;
+        }
+        String bare = bareRestKey(op.getMethod(), op.getPath());
+        if (collidingBare.contains(bare)) {
+            String discriminator = restDiscriminator(op.getOperationId());
+            if (discriminator != null) {
+                return bare + "::" + discriminator;
+            }
+        }
+        return bare;
     }
 
     /**

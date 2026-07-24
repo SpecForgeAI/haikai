@@ -297,6 +297,8 @@ describe('Task Group 2: Configuration Layer', () => {
         'FILE_TRANSFER',
         'SOAP_API',
         'RPC',
+        // Internal Processing (Spec 2026-07-24).
+        'INTERNAL_PROCESSING',
         'OTHER',
       ]);
     });

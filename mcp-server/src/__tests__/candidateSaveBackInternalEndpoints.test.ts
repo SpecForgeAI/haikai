@@ -63,6 +63,8 @@ describe('internal endpoint subtype persistence', () => {
       className: 'NightlyRollupJob',
       methodName: 'run',
     });
+    // Formal endpoint Type (user decision 2026-07-24).
+    expect(entity.endpoint_type).toBe('INTERNAL_PROCESS');
     expect(entity.direction).toBeUndefined(); // internal, not outbound
   });
 
@@ -82,6 +84,8 @@ describe('internal endpoint subtype persistence', () => {
     );
     expect(entity.direction).toBe('outbound');
     expect(entity.protocol_metadata_json).toEqual({ endpoint_subtype: 'outbound-rest' });
+    // Outbound calls are NOT internal processes — no endpoint_type override.
+    expect(entity.endpoint_type).toBeUndefined();
   });
 
   it('plain REST endpoint (no subtype) is byte-identical to before: no blob, no direction', () => {
@@ -111,7 +115,7 @@ describe('findOrCreateInternalProcessingInterface', () => {
     expect(created.name).toBe(INTERNAL_PROCESSING_INTERFACE_NAME);
     expect(created.service_id).toBe('svc-1');
     expect(created.model_file_id).toBe('TestProject');
-    expect(created.interface_type).toBe('INTERNAL_PROCESS');
+    expect(created.interface_type).toBe('INTERNAL_PROCESSING');
     expect(created.id).toMatch(/^ifc-/);
   });
 

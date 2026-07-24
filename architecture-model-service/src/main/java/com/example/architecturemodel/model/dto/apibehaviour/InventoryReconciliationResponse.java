@@ -44,6 +44,14 @@ public record InventoryReconciliationResponse(
     List<UnaccountedEndpointRef> inScopeUnaccountedEndpoints,
     List<OperationWithoutModelEndpointRef> operationsWithoutModelEndpoint,
     List<ExcludedByScopeEndpointRef> excludedByScopeEndpoints,
+    /**
+     * Internal (non-HTTP) entry points (Spec 2026-07-24): endpoints whose
+     * owning interface is typed Internal Processing. They can NEVER be
+     * exercised over HTTP, so they are auto-classified OUT of capture scope —
+     * visible here (never silent), never in the unaccounted list, never in
+     * any coverage denominator, never blocking /start.
+     */
+    List<ExcludedByScopeEndpointRef> internalExcludedEndpoints,
     Double inScopeCoveragePct,
     Integer inScopeAccountedCount,
     Integer inScopeTotalCount,

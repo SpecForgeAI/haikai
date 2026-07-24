@@ -497,7 +497,20 @@ export function StartCaptureSessionWizard({
   //      architecture context, so the in-memory model already holds the
   //      Interface rows for the bound architecture.
   const interfaces: InterfaceModel[] = useMemo(
-    () => (model?.metaModel?.entities?.interfaces ?? []) as InterfaceModel[],
+    () =>
+      ((model?.metaModel?.entities?.interfaces ?? []) as InterfaceModel[])
+        // Internal Processing interfaces (Spec 2026-07-24) hold non-HTTP entry
+        // points (scheduled jobs / listeners / batch) — they can NEVER be
+        // captured over HTTP, so they are not selectable capture sources. The
+        // reconciliation auto-excludes their endpoints server-side too.
+        .filter((iface) => {
+          const t = String(
+            (iface as { interface_type?: unknown }).interface_type ?? '',
+          )
+            .trim()
+            .toUpperCase();
+          return t !== 'INTERNAL_PROCESSING' && t !== 'INTERNAL_PROCESS';
+        }),
     [model],
   );
 
@@ -705,8 +718,13 @@ export function StartCaptureSessionWizard({
       // configure-time reconciliation is advisory UX (a visible warning
       // renders instead); the fail-CLOSED gate runs server-side at /start.
       try {
+        // Spec 2026-07-24 fix: the scope derives from the INTERFACE SELECTION
+        // alone. Previously any staged OAS file forced scope = null (whole
+        // architecture) even when interfaces were also selected — and a file
+        // staged earlier in the same wizard open silently survived Back, so
+        // Step 4 appeared to ignore Step 1's deselection entirely.
         const scopeIds =
-          oasFiles.length > 0 || selectedInterfaceIds.size === 0
+          selectedInterfaceIds.size === 0
             ? null
             : Array.from(selectedInterfaceIds);
         const rec = await reconcileInventory(projectId, architectureId, created.id, {
@@ -2244,6 +2262,28 @@ export function StartCaptureSessionWizard({
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Internal (non-HTTP) entry points (Spec 2026-07-24):
+                      auto-classified out of capture scope server-side —
+                      visible as one advisory line, never demanding
+                      accounting, never blocking Start. */}
+                  {(reconciliation.internal_excluded_endpoints?.length ?? 0) > 0 && (
+                    <div
+                      className={styles.discoverySection}
+                      data-testid="start-capture-session-wizard-internal-excluded"
+                    >
+                      <span className={styles.helperText}>
+                        {reconciliation.internal_excluded_endpoints!.length} internal
+                        (non-HTTP) entry point
+                        {reconciliation.internal_excluded_endpoints!.length === 1
+                          ? ''
+                          : 's'}{' '}
+                        (scheduled jobs / listeners / batch) are out of capture
+                        scope — they cannot be exercised over HTTP and never
+                        need accounting here.
+                      </span>
                     </div>
                   )}
                 </>

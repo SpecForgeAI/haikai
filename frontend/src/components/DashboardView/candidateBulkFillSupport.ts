@@ -40,6 +40,7 @@ export const ENUM_FIELD_OPTIONS: Record<string, string[]> = {
     'EVENT_STREAM',
     'FILE_TRANSFER',
     'DATABASE',
+    'INTERNAL_PROCESSING',
   ],
   operation_verb: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'],
 };
