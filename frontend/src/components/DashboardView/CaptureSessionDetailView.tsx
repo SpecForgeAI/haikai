@@ -205,6 +205,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   >(null);
   const [closureBusy, setClosureBusy] = useState(false);
   const [closureNote, setClosureNote] = useState<string | null>(null);
+  // On-demand "Refresh run details" (2026-07-24).
+  const [refreshingDetails, setRefreshingDetails] = useState(false);
 
   // Re-enter secrets prompt visible/hidden + transient form state.
   //
@@ -1150,6 +1152,21 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                 {actionInFlight === 'start' ? 'Starting...' : 'Start'}
               </button>
             )}
+            {/* On-demand session re-fetch (2026-07-24): the run view polls on
+                a cadence, but an operator watching a long capture wants an
+                immediate refresh. Reuses the existing fetchOnce loader. */}
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={() => {
+                setRefreshingDetails(true);
+                void fetchOnce().finally(() => setRefreshingDetails(false));
+              }}
+              disabled={refreshingDetails}
+              data-testid="capture-session-detail-refresh"
+            >
+              {refreshingDetails ? 'Refreshing...' : 'Refresh run details'}
+            </button>
             {session.status === 'running' && (
               <button
                 type="button"
