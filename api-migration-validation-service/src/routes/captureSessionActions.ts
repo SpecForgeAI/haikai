@@ -74,6 +74,10 @@ import {
 } from '../services/captureClosureDriver';
 import type { EndpointDiagnosis } from '../services/captureClosurePassB';
 import { fetchEffectScopeIndex, effectTablesFor } from '../services/stateDelta';
+import {
+  expandInventoryOperationsForFormats,
+  endpointDeclaredFormats,
+} from '../services/captureFormatExpansion';
 import { runScenarioLoop } from '../services/captureLoopRunner';
 import { ALL_TOOLS } from '../services/tools';
 import type {
@@ -545,7 +549,11 @@ export function synthesiseOperationFromEndpoint(
   // from `produces` to actually elicit the XML response variant. Plain names
   // yield no discriminator -> stub unchanged byte-for-byte.
   if (!isSoap) {
-    const content = parseContentDiscriminator(restDiscriminator(entityName));
+    // Spec 2026-07-24 fix: NORMALISE to real media types — the discovered
+    // suffix carries Java MediaType CONSTANTS (APPLICATION_JSON), which are
+    // not valid wire values; pre-fix they were stamped verbatim and reached
+    // the Content-Type default.
+    const content = endpointDeclaredFormats(entityName);
     if (content.consumes.length > 0) {
       oasOperation.requestBody = {
         content: Object.fromEntries(content.consumes.map((m) => [m, {}])),
@@ -1292,7 +1300,29 @@ export function buildCaptureSessionActionsRouter(
           });
         }
 
-        const merged = mergeInventories(inventories);
+        let merged = mergeInventories(inventories);
+
+        // Per-format capture expansion (Spec 2026-07-24): a dual-format route
+        // is ONE committed endpoint (its name declares consumes/produces); the
+        // capture must baseline BOTH wire formats. Expand the single parsed
+        // operation into one steered variant per format BEFORE persistence, so
+        // every downstream per-operation surface (scenarios, coverage, the
+        // happy-path gate — which therefore demands both formats — closure,
+        // baseline items) works per-format unchanged. Fail-SOFT: an endpoint
+        // read failure just skips expansion (single-format capture as before).
+        try {
+          const committedEndpoints = await archModelClient.listEndpointsForArchitecture(
+            projectId,
+            session.architecture_id,
+          );
+          merged = expandInventoryOperationsForFormats(merged, committedEndpoints);
+        } catch (expandErr) {
+          console.warn(
+            `[parse-oas] format expansion skipped (endpoint read failed): ` +
+              `${expandErr instanceof Error ? expandErr.message : String(expandErr)}`,
+          );
+        }
+
         const persisted = await persistInventory(archModelClient, projectId, session, merged);
 
         // Cache the parsed inventory keyed by sessionId so /start can hand it
