@@ -1066,7 +1066,11 @@ export function findOrCreateInternalProcessingInterface(
       'Synthesized owner for internal (non-HTTP) entry points — scheduled ' +
       'jobs, listeners, batch. Created at commit so internal endpoint ' +
       'candidates are not dropped as orphans.',
-    interface_type: 'INTERNAL_PROCESS',
+    // Formal type value (user decision 2026-07-24): "Internal Processing" is a
+    // first-class interface type alongside REST_API / SOAP_API / MESSAGE_TOPIC.
+    // The capture reconciliation keys its auto-exclusion on it (the legacy
+    // INTERNAL_PROCESS spelling is tolerated there for rows committed earlier).
+    interface_type: 'INTERNAL_PROCESSING',
     spec_link: null,
     tags: '',
     valid_from: null,
@@ -1295,6 +1299,17 @@ export function convertCandidateToEntity(
             ...(entity.protocol_metadata_json ?? {}),
             ...internalMetadata,
           };
+          // Formal type value (user decision 2026-07-24): internal entry
+          // points carry endpoint Type "Internal Process" — but NEVER for
+          // outbound-* subtypes (those are calls, typed by their protocol).
+          const subtypeValue = String(
+            (data as Record<string, unknown>).endpoint_subtype ?? ''
+          )
+            .trim()
+            .toLowerCase();
+          if (subtypeValue && !subtypeValue.startsWith('outbound')) {
+            entity.endpoint_type = 'INTERNAL_PROCESS';
+          }
         }
       }
       // Direction (Spec 2026-07-23, latent-bug fix): outbound-call endpoints

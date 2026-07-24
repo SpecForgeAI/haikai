@@ -91,6 +91,15 @@ public class ApiBehaviourEndpointBaselineCoverageService {
             return List.of();
         }
 
+        // Collision-aware keys (Spec 2026-07-24): the twin discriminator
+        // participates only where the bare verb+path actually collides, and
+        // template-param NAMES are normalised away — otherwise a lone
+        // suffix-named endpoint (or a spec-vs-code param-name drift) could
+        // never join to its baseline and would be falsely flagged
+        // "missing baseline" on the migration plan.
+        Set<String> collidingBare =
+            InventoryReconciliationCalculator.collidingBareEndpointKeys(endpoints);
+
         // Build canonical-key → baselineId over ACTIVE baselines, newest first.
         Map<String, UUID> keyToBaseline = new HashMap<>();
         List<ApiBehaviourBaselineEntity> baselines =
@@ -106,7 +115,7 @@ public class ApiBehaviourEndpointBaselineCoverageService {
             }
             Map<UUID, ApiBehaviourOperationEntity> opsById = resolveOperations(items);
             for (ApiBehaviourBaselineItemEntity item : items) {
-                String key = canonicalItemKey(item, opsById);
+                String key = canonicalItemKey(item, opsById, collidingBare);
                 if (key != null) {
                     // Newest-first iteration → first writer (newest baseline) wins.
                     keyToBaseline.putIfAbsent(key, baseline.getId());
@@ -119,7 +128,8 @@ public class ApiBehaviourEndpointBaselineCoverageService {
 
         List<EndpointBaselineCoverageDto> coverage = new ArrayList<>();
         for (EndpointEntity endpoint : endpoints) {
-            UUID baselineId = keyToBaseline.get(InventoryReconciliationCalculator.endpointKey(endpoint));
+            UUID baselineId = keyToBaseline.get(
+                InventoryReconciliationCalculator.endpointMatchKey(endpoint, collidingBare));
             if (baselineId != null) {
                 coverage.add(new EndpointBaselineCoverageDto(
                     endpoint.getId(),
@@ -158,19 +168,22 @@ public class ApiBehaviourEndpointBaselineCoverageService {
      */
     private static String canonicalItemKey(
             ApiBehaviourBaselineItemEntity item,
-            Map<UUID, ApiBehaviourOperationEntity> opsById) {
+            Map<UUID, ApiBehaviourOperationEntity> opsById,
+            Set<String> collidingBare) {
         UUID operationId = item.getOperationId();
         if (operationId != null) {
             ApiBehaviourOperationEntity op = opsById.get(operationId);
             if (op != null) {
-                return InventoryReconciliationCalculator.operationKey(op);
+                return InventoryReconciliationCalculator.operationMatchKey(op, collidingBare);
             }
         }
         if (item.getMethod() == null && item.getPath() == null) {
             return null;
         }
         String method = item.getMethod() == null ? "" : item.getMethod().trim().toUpperCase();
-        String path = item.getPath() == null ? "" : item.getPath().trim();
+        String path = item.getPath() == null
+            ? ""
+            : InventoryReconciliationCalculator.normaliseTemplateParams(item.getPath().trim());
         return method + " " + path;
     }
 }

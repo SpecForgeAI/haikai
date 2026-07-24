@@ -713,6 +713,12 @@ export interface InventoryReconciliationResponse {
   in_scope_unaccounted_endpoints: InventoryUnaccountedEndpointRef[];
   operations_without_model_endpoint: InventoryOperationWithoutModelEndpointRef[];
   excluded_by_scope_endpoints: InventoryExcludedByScopeEndpointRef[];
+  /**
+   * Internal (non-HTTP) entry points auto-classified out of capture scope
+   * (Spec 2026-07-24) — visible, never demanding accounting, never in any
+   * coverage denominator. Optional: absent from pre-fix AMS responses.
+   */
+  internal_excluded_endpoints?: InventoryExcludedByScopeEndpointRef[];
   in_scope_coverage_pct: number | null;
   in_scope_accounted_count: number | null;
   in_scope_total_count: number | null;

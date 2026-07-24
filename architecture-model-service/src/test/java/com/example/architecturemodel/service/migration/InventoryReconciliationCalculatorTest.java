@@ -307,6 +307,62 @@ class InventoryReconciliationCalculatorTest {
     }
 
     @Test
+    @DisplayName("collision-aware matching (Spec 2026-07-24): a LONE suffix-named endpoint matches a bare harness op")
+    void loneSuffixNamedEndpointMatchesBareOp() {
+        // The endpoint's discovered name carries a produces suffix, but there
+        // is NO sibling on the same verb+path — the discriminator must NOT
+        // participate, or every such endpoint floods the gaps panel.
+        EndpointEntity lone = namedEndpoint("ep-lone",
+            "GET /filters/{filterId} [produces=application/json]", "GET", "/filters/{filterId}");
+        ApiBehaviourOperationEntity bareOp = op("getFilter", "GET", "/filters/{filterId}");
+
+        InventoryReconciliationCalculator.Result result =
+            InventoryReconciliationCalculator.reconcile(List.of(lone), List.of(bareOp));
+        assertThat(result.matchedEndpointCount()).isEqualTo(1);
+        assertThat(result.operationsWithoutEndpoint()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("collision-aware matching: template-param NAMES are positional — {grdOrgId} matches {grd_org_id}")
+    void templateParamNamesAreNormalised() {
+        EndpointEntity ep = namedEndpoint("ep-p",
+            "POST /hierarchynodes/{grd_org_id}", "POST", "/hierarchynodes/{grd_org_id}");
+        ApiBehaviourOperationEntity opRow =
+            op("getHierarchyForOrgId", "POST", "/hierarchynodes/{grdOrgId}");
+
+        InventoryReconciliationCalculator.Result result =
+            InventoryReconciliationCalculator.reconcile(List.of(ep), List.of(opRow));
+        assertThat(result.matchedEndpointCount()).isEqualTo(1);
+        assertThat(result.operationsWithoutEndpoint()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("collision-aware matching: TWINS stay distinct (suffixed op matches its twin; a bare op is honestly ambiguous)")
+    void twinsStayDistinctUnderCollisionAwareMatching() {
+        EndpointEntity jsonTwin = namedEndpoint("ep-json",
+            "GET /report [produces=application/json]", "GET", "/report");
+        EndpointEntity xmlTwin = namedEndpoint("ep-xml",
+            "GET /report [produces=application/xml]", "GET", "/report");
+        // Synthesised op (operation_id = twin name) matches ITS twin only.
+        ApiBehaviourOperationEntity jsonOp =
+            op("GET /report [produces=application/json]", "GET", "/report");
+
+        InventoryReconciliationCalculator.Result result =
+            InventoryReconciliationCalculator.reconcile(
+                List.of(jsonTwin, xmlTwin), List.of(jsonOp));
+        assertThat(result.endpointsWithoutOperation()).containsExactly(xmlTwin);
+
+        // A BARE op on a colliding route matches NEITHER twin (ambiguous —
+        // never silently the wrong one).
+        ApiBehaviourOperationEntity bareOp = op('r' + "eport", "GET", "/report");
+        InventoryReconciliationCalculator.Result bareResult =
+            InventoryReconciliationCalculator.reconcile(
+                List.of(jsonTwin, xmlTwin), List.of(bareOp));
+        assertThat(bareResult.matchedEndpointCount()).isEqualTo(0);
+        assertThat(bareResult.operationsWithoutEndpoint()).containsExactly(bareOp);
+    }
+
+    @Test
     @DisplayName("regression guard: plain names, harness operationIds, and non-discriminator brackets keep the bare key")
     void bareKeysUnchanged() {
         // Plain endpoint name (the discovery regression guard: no suffix).

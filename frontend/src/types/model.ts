@@ -79,6 +79,10 @@ export type InterfaceType =
   | 'FILE_TRANSFER'
   | 'SOAP_API'
   | 'RPC'
+  // Internal (non-HTTP) entry points — scheduled jobs / listeners / batch
+  // (Spec 2026-07-24). Endpoints under this type are auto-classified out of
+  // API-behaviour capture scope.
+  | 'INTERNAL_PROCESSING'
   | 'OTHER';
 
 // ============================================================================
@@ -99,6 +103,9 @@ export enum EndpointType {
   MESSAGE_QUEUE = 'MESSAGE_QUEUE',
   MESSAGE_TOPIC = 'MESSAGE_TOPIC',
   FILE_TRANSFER = 'FILE_TRANSFER',
+  /** Internal (non-HTTP) entry point — scheduled job / listener / batch main
+   *  (Spec 2026-07-24). */
+  INTERNAL_PROCESS = 'INTERNAL_PROCESS',
   OTHER = 'OTHER',
 }
 
