@@ -983,7 +983,7 @@ export function selectAuthProbeEndpoint(
  * Defensive: a transport failure or unexpected throw on a probe is recorded as
  * that probe MISSING with an honest reason rather than aborting the run.
  */
-async function runAuthNegativeProbes(
+export async function runAuthNegativeProbes(
   executor: SessionHttpExecutor,
   candidates: ReadonlyArray<AuthProbeCandidate>,
 ): Promise<AuthCoverageResult> {

@@ -1844,6 +1844,8 @@ export interface RetryUncoveredResponse {
     attempted: number;
     closed: Array<{ operation_id: string; name: string; capture_id: string }>;
   };
+  /** Auth-negative re-probe outcome (null when not needed / not requested). */
+  authReprobe?: { attempted: boolean; achieved: boolean } | null;
   gate: {
     complete: boolean;
     included_total: number;

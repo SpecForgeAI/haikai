@@ -92,6 +92,10 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
     ),
   );
   const [includeOtherDimensions, setIncludeOtherDimensions] = useState(false);
+  // Dimensional-only mode (2026-07-25): every happy-path baseline is complete,
+  // so there are no unresolved endpoints to configure — the run exists purely
+  // to re-attempt the failed coverage scenarios, and the flag is implied.
+  const dimensionalOnly = unresolved.length === 0 && failedDimensionsCount > 0;
 
   const setAttempts = (id: string, raw: string) => {
     const n = Number.parseInt(raw, 10);
@@ -114,7 +118,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
         attempts: config[u.operation_id]?.attempts ?? DEFAULT_ATTEMPTS,
         notes: (config[u.operation_id]?.notes ?? '').trim(),
       })),
-      includeOtherDimensions && failedDimensionsCount > 0,
+      dimensionalOnly || (includeOtherDimensions && failedDimensionsCount > 0),
     );
   };
 
@@ -128,19 +132,32 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
         data-testid={testId}
       >
         <div className={classes.header}>
-          <strong>Retry uncovered APIs</strong>
+          <strong>{dimensionalOnly ? 'Re-attempt failed scenarios' : 'Retry uncovered APIs'}</strong>
           <span data-testid={`${testId}-count`}>
-            {unresolved.length} endpoint{unresolved.length === 1 ? '' : 's'} without a
-            happy-path baseline
+            {dimensionalOnly
+              ? `${failedDimensionsCount} failed coverage scenario${
+                  failedDimensionsCount === 1 ? '' : 's'
+                } — all happy-path baselines are complete`
+              : `${unresolved.length} endpoint${unresolved.length === 1 ? '' : 's'} without a
+            happy-path baseline`}
           </span>
         </div>
         <div className={classes.body}>
+          {dimensionalOnly ? (
+            <p>
+              Every included endpoint already has its happy-path baseline. This run
+              re-attempts the remaining failed coverage scenarios — error paths,
+              auth-negative and similar — each judged against its own intended
+              behaviour class. Existing baselines are untouched.
+            </p>
+          ) : (
           <p>
             Coverage Closure first runs a free, deterministic pass (replays real IDs
             harvested anywhere in the session and mines the source database for missing
             path-param values). Whatever remains goes to an LLM repair pass — set its
             attempt budget and add any hints per endpoint below.
           </p>
+          )}
           <ul data-testid={`${testId}-list`}>
             {unresolved.map((u) => (
               <li
@@ -192,7 +209,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               </li>
             ))}
           </ul>
-          {failedDimensionsCount > 0 && (
+          {failedDimensionsCount > 0 && !dimensionalOnly && (
             <label data-testid={`${testId}-dimensions-toggle`}>
               <input
                 type="checkbox"
@@ -201,7 +218,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
                 data-testid={`${testId}-dimensions-checkbox`}
                 onChange={(e) => setIncludeOtherDimensions(e.target.checked)}
               />
-              Also retry other failed coverage dimensions ({failedDimensionsCount}) —
+              Also re-attempt other failed coverage scenarios ({failedDimensionsCount}) —
               error paths, auth-negative and similar scenarios that never captured
               their intended behaviour. The gate stays happy-path-only; this drives
               the full request/response coverage toward 100%.
@@ -225,7 +242,11 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
                   : 'Closure run is wired in the next step'
               }
             >
-              {busy ? 'Running closure…' : 'Run closure'}
+              {busy
+                ? 'Running closure…'
+                : dimensionalOnly
+                  ? 'Re-attempt failed scenarios'
+                  : 'Run closure'}
             </button>
             {onDownloadPostman && (
               <button

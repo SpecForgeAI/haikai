@@ -78,6 +78,28 @@ describe('RetryUncoveredModal', () => {
     expect(screen.queryByTestId('retry-uncovered-modal-dimensions-toggle')).toBeNull();
   });
 
+  it('dimensional-only mode (2026-07-25): no unresolved endpoints -> adjusted copy, no checkbox, launch implies the flag', () => {
+    const onLaunch = vi.fn();
+    render(
+      <RetryUncoveredModal
+        unresolved={[]}
+        classes={classes}
+        onClose={() => {}}
+        onLaunch={onLaunch}
+        failedDimensionsCount={4}
+      />,
+    );
+    expect(screen.getByTestId('retry-uncovered-modal-count')).toHaveTextContent(
+      '4 failed coverage scenarios — all happy-path baselines are complete',
+    );
+    // The checkbox is meaningless here (nothing else to run) — hidden.
+    expect(screen.queryByTestId('retry-uncovered-modal-dimensions-toggle')).toBeNull();
+    const launch = screen.getByTestId('retry-uncovered-modal-launch');
+    expect(launch).toHaveTextContent('Re-attempt failed scenarios');
+    fireEvent.click(launch);
+    expect(onLaunch).toHaveBeenCalledWith([], true);
+  });
+
   it('dimensional-retry checkbox (2026-07-25): shows the count and passes the flag to onLaunch when checked', () => {
     const onLaunch = vi.fn();
     render(
@@ -90,7 +112,7 @@ describe('RetryUncoveredModal', () => {
       />,
     );
     const toggle = screen.getByTestId('retry-uncovered-modal-dimensions-toggle');
-    expect(toggle.textContent).toContain('Also retry other failed coverage dimensions (7)');
+    expect(toggle.textContent).toContain('Also re-attempt other failed coverage scenarios (7)');
     fireEvent.click(screen.getByTestId('retry-uncovered-modal-dimensions-checkbox'));
     fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
     expect(onLaunch.mock.calls[0][1]).toBe(true);
