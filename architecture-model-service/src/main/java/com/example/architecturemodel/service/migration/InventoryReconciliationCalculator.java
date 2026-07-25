@@ -116,7 +116,9 @@ public final class InventoryReconciliationCalculator {
         //      operation can never produce that suffix, so every lone
         //      suffix-named endpoint became unmatchable. The discriminator
         //      must participate ONLY when it is actually needed — i.e. when
-        //      two endpoints collide on the bare verb+path.
+        //      two endpoints collide on the RAW verb+path (param names kept:
+        //      true twins share an identical mapping path by construction;
+        //      positional lookalikes are NOT collisions — see rawRestKey).
         //   2. Exact-string template params: `{grdOrgId}` (hand-authored OAS)
         //      vs `{grd_org_id}` (code-discovered path) can never match, yet
         //      they are the same route. Params are POSITIONAL for identity —
@@ -192,9 +194,31 @@ public final class InventoryReconciliationCalculator {
     }
 
     /**
-     * The bare REST keys shared by MORE THAN ONE endpoint — the only case
+     * RAW REST identity: verb + trimmed path with template-param names KEPT.
+     * Used ONLY for collision detection: true content-type twins share an
+     * IDENTICAL mapping path by construction (two handlers on one Spring
+     * mapping; synthesised ops copy the endpoint path verbatim), so raw
+     * equality is the honest twin test. Positionally-equal-but-differently-
+     * named routes (`/a/{x}` vs `/a/{y}`) are lookalikes from independent
+     * sources, not twins — treating them as collisions made the discriminator
+     * ride the match key one-sidedly (baseline items always key bare) and the
+     * ONLY suffix-named endpoints (the dual-format pair) dropped out of the
+     * baseline-coverage join. If a discovery adapter ever emitted true twins
+     * with drifted param names, both would key bare and the newest baseline
+     * would attribute to both — accepted, documented trade-off.
+     */
+    private static String rawRestKey(String method, String path) {
+        String m = method == null ? "" : method.trim().toUpperCase();
+        String p = path == null ? "" : path.trim();
+        return m + " " + p;
+    }
+
+    /**
+     * The RAW REST keys shared by MORE THAN ONE endpoint — the only case
      * where the mapping discriminator is needed (and used) to keep
-     * same-verb+path content-type twins distinct.
+     * same-verb+path content-type twins distinct. Detection is RAW
+     * (param names kept) while matching stays param-normalised — see
+     * {@link #rawRestKey}.
      */
     public static Set<String> collidingBareEndpointKeys(List<EndpointEntity> endpoints) {
         Map<String, Integer> counts = new java.util.HashMap<>();
@@ -203,8 +227,8 @@ public final class InventoryReconciliationCalculator {
                 if (isSoapEndpoint(ep)) {
                     continue;
                 }
-                String bare = bareRestKey(ep.getOperationVerb(), ep.getPathOrAddress());
-                counts.merge(bare, 1, Integer::sum);
+                String raw = rawRestKey(ep.getOperationVerb(), ep.getPathOrAddress());
+                counts.merge(raw, 1, Integer::sum);
             }
         }
         Set<String> colliding = new LinkedHashSet<>();
@@ -228,7 +252,9 @@ public final class InventoryReconciliationCalculator {
             return endpointKey(ep);
         }
         String bare = bareRestKey(ep.getOperationVerb(), ep.getPathOrAddress());
-        if (collidingBare.contains(bare)) {
+        // Collision membership is tested with the endpoint's own RAW key
+        // (param names kept) — the returned MATCH key stays param-normalised.
+        if (collidingBare.contains(rawRestKey(ep.getOperationVerb(), ep.getPathOrAddress()))) {
             String discriminator = restDiscriminator(ep.getName());
             if (discriminator != null) {
                 return bare + "::" + discriminator;
@@ -252,7 +278,9 @@ public final class InventoryReconciliationCalculator {
             return "soap::" + soapKey;
         }
         String bare = bareRestKey(op.getMethod(), op.getPath());
-        if (collidingBare.contains(bare)) {
+        // Collision membership is tested with the operation's own RAW key
+        // (param names kept) — the returned MATCH key stays param-normalised.
+        if (collidingBare.contains(rawRestKey(op.getMethod(), op.getPath()))) {
             String discriminator = restDiscriminator(op.getOperationId());
             if (discriminator != null) {
                 return bare + "::" + discriminator;
