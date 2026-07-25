@@ -363,6 +363,60 @@ class InventoryReconciliationCalculatorTest {
     }
 
     @Test
+    @DisplayName("raw collision detection (2026-07-25): a positional param-name LOOKALIKE is NOT a collision — the suffix-named endpoint still matches a bare op")
+    void positionalLookalikeDoesNotTriggerDiscriminator() {
+        // THE BUG: the dual-format endpoint (suffix-named, ONE row) shared a
+        // positionally-normalised shape with an independently-sourced row
+        // whose param name differs. Normalised collision detection marked the
+        // route "colliding", the suffix endpoint keyed bare::consumes=... —
+        // but baseline items ALWAYS key bare, so the join missed and the plan
+        // flagged missing_baseline despite 100% capture. True twins share an
+        // IDENTICAL raw mapping path; lookalikes must not collide.
+        EndpointEntity dualFormat = namedEndpoint("ep-dual",
+            "POST /hierarchynodes/{grdOrgId} "
+                + "[consumes=application/json,application/xml"
+                + ";produces=application/json,application/xml]",
+            "POST", "/hierarchynodes/{grdOrgId}");
+        EndpointEntity lookalike = namedEndpoint("ep-lookalike",
+            "POST /hierarchynodes/{grd_org_id}", "POST", "/hierarchynodes/{grd_org_id}");
+        // Baseline-side rows key bare (per-format variant op ids like
+        // "createNode [format=application/xml]" deliberately fail the
+        // discriminator grammar).
+        ApiBehaviourOperationEntity variantOp =
+            op("createNode [format=application/xml]", "POST", "/hierarchynodes/{grdOrgId}");
+
+        java.util.Set<String> colliding =
+            InventoryReconciliationCalculator.collidingBareEndpointKeys(
+                List.of(dualFormat, lookalike));
+        assertThat(colliding).isEmpty();
+        assertThat(InventoryReconciliationCalculator.endpointMatchKey(dualFormat, colliding))
+            .isEqualTo("POST /hierarchynodes/{}");
+
+        InventoryReconciliationCalculator.Result result =
+            InventoryReconciliationCalculator.reconcile(
+                List.of(dualFormat, lookalike), List.of(variantOp));
+        // Both lookalikes normalise to the same bare key and the variant op
+        // matches it — no false gap, no false missing_baseline.
+        assertThat(result.matchedEndpointCount()).isEqualTo(2);
+        assertThat(result.operationsWithoutEndpoint()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("raw collision detection: IDENTICAL raw paths still collide — twins keep their discriminators")
+    void identicalRawPathsStillCollide() {
+        EndpointEntity jsonTwin = namedEndpoint("ep-json",
+            "GET /report [produces=application/json]", "GET", "/report");
+        EndpointEntity xmlTwin = namedEndpoint("ep-xml",
+            "GET /report [produces=application/xml]", "GET", "/report");
+        java.util.Set<String> colliding =
+            InventoryReconciliationCalculator.collidingBareEndpointKeys(
+                List.of(jsonTwin, xmlTwin));
+        assertThat(colliding).containsExactly("GET /report");
+        assertThat(InventoryReconciliationCalculator.endpointMatchKey(jsonTwin, colliding))
+            .isEqualTo("GET /report::produces=application/json");
+    }
+
+    @Test
     @DisplayName("regression guard: plain names, harness operationIds, and non-discriminator brackets keep the bare key")
     void bareKeysUnchanged() {
         // Plain endpoint name (the discovery regression guard: no suffix).
