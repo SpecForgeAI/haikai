@@ -77,8 +77,8 @@ describe('computeHappyPathGate', () => {
   });
 });
 
-describe('countFailedDimensions (2026-07-25 dimensional retry set)', () => {
-  it('counts failed non-happy, non-reported-only dimensions; null summary is 0', () => {
+describe('countFailedDimensions (2026-07-25 retry set)', () => {
+  it('counts failed non-happy, non-reported-only scenarios PLUS the unachieved auth dimension; null summary is 0', () => {
     const dims = [
       { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: false, canonical_capture_id: null, reason: 'missing', observation: null },
       { name: 'not_found', type: 'not_found', expected_status: 'not_found', achieved: false, canonical_capture_id: null, reason: 'no 404 seen', observation: null },
@@ -86,10 +86,49 @@ describe('countFailedDimensions (2026-07-25 dimensional retry set)', () => {
       { name: 'volatility', type: 'volatility', expected_status: 'success', reported_only: true, achieved: false, canonical_capture_id: null, reason: 'n/a', observation: null },
     ];
     const raw = rawWith([{ operation_id: 'a', method: 'GET', path: '/a', score: 0.25, dimensions: dims }]);
-    // Only the failed not_found counts: the failed happy dim is Pass A/B
-    // territory, the achieved dim and the reported-only dim are excluded.
-    expect(countFailedDimensions(raw)).toBe(1);
+    // The failed not_found + the unachieved session auth dimension: the
+    // failed happy dim is Pass A/B territory, the achieved dim and the
+    // reported-only dim are excluded.
+    expect(countFailedDimensions(raw)).toBe(2);
+    const authOk = { ...raw, auth_coverage: { achieved: true, representative_operation_id: null, probes: [] } };
+    expect(countFailedDimensions(authOk)).toBe(1);
     expect(countFailedDimensions(null)).toBe(0);
+  });
+});
+
+describe('CoverageGateBanner — complete-state retry entry point (2026-07-25)', () => {
+  it('baseline complete + failed scenarios remain -> renders the re-attempt button with the count', () => {
+    const onRetryUncovered = vi.fn();
+    // Both endpoints happy BUT one failed not_found dim + auth unachieved = 2.
+    const raw = rawWith([
+      {
+        operation_id: 'a',
+        method: 'GET',
+        path: '/a',
+        score: 0.5,
+        dimensions: [
+          { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c', reason: null, observation: null },
+          { name: 'not_found', type: 'not_found', expected_status: 'not_found', achieved: false, canonical_capture_id: null, reason: 'no 404 seen', observation: null },
+        ],
+      },
+    ]);
+    render(<CoverageGateBanner raw={raw} classes={classes} onRetryUncovered={onRetryUncovered} />);
+    expect(screen.getByTestId('coverage-gate-complete')).toBeInTheDocument();
+    const btn = screen.getByTestId('coverage-gate-retry-dimensions');
+    expect(btn).toHaveTextContent('Re-attempt failed scenarios (2)');
+    fireEvent.click(btn);
+    // Opens the modal in dimensional-only mode: NO unresolved endpoints.
+    expect(onRetryUncovered).toHaveBeenCalledWith([]);
+  });
+
+  it('baseline complete + nothing failed -> no re-attempt button', () => {
+    const raw = {
+      ...rawWith([ep('a', 'GET', '/a', true)]),
+      auth_coverage: { achieved: true, representative_operation_id: 'a', probes: [] },
+    };
+    render(<CoverageGateBanner raw={raw} classes={classes} onRetryUncovered={vi.fn()} />);
+    expect(screen.getByTestId('coverage-gate-complete')).toBeInTheDocument();
+    expect(screen.queryByTestId('coverage-gate-retry-dimensions')).toBeNull();
   });
 });
 

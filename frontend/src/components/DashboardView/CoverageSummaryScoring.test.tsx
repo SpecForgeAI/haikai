@@ -256,7 +256,13 @@ describe('coverage summary helpers (pure)', () => {
 describe('CaptureSessionDetailView -- coverage surfacing (Task 3.3 / 3.5)', () => {
   it('renders overall + per-endpoint score, missed reasons, and a thin-coverage flag beside the tally', async () => {
     vi.mocked(getCaptureSession).mockResolvedValue(
-      buildSession({ coverage_summary_json: buildCoverageSummary() }),
+      buildSession({
+        coverage_summary_json: buildCoverageSummary(),
+        // Deliberately DIFFERENT loop tallies: the header must show the ONE
+        // coverage-based scenario metric (3 of 6), not "5 of 99" (2026-07-25).
+        scenarios_attempted: 99,
+        scenarios_completed: 5,
+      }),
     );
 
     render(
@@ -269,6 +275,10 @@ describe('CaptureSessionDetailView -- coverage surfacing (Task 3.3 / 3.5)', () =
       </MemoryRouter>,
     );
 
+    expect(
+      await screen.findByTestId('capture-session-scenario-tally'),
+    ).toHaveTextContent('3 of 6 scenarios captured');
+
     const panel = await screen.findByTestId('capture-session-coverage-summary');
     // Collapsible on the session screen (2026-07-25): DEFAULT COLLAPSED — the
     // one-line summary is visible, the per-endpoint detail is not, so the
@@ -276,7 +286,7 @@ describe('CaptureSessionDetailView -- coverage surfacing (Task 3.3 / 3.5)', () =
     expect(panel).toHaveAttribute('data-collapsed', 'true');
     expect(
       within(panel).getByTestId('capture-session-coverage-summary-overall'),
-    ).toHaveTextContent('Behaviour observed/captured: 50% (3 of 6 dimensions captured)');
+    ).toHaveTextContent('Behaviour observed/captured: 50% (3 of 6 scenarios captured)');
     expect(
       within(panel).getByTestId('capture-session-coverage-summary-overall'),
     ).toHaveTextContent('expand for per-endpoint detail');

@@ -333,10 +333,12 @@ export function computeHappyPathGate(
 }
 
 /**
- * Count the failed NON-happy, non-reported-only dimensions across the summary
- * — the dimensional retry set (2026-07-25). Mirrors the validation-service
- * `collectFailedDimensions` so the retry modal's checkbox count and the
- * server-side pass can never disagree. Pure; a null/unrecorded summary is 0.
+ * Count the failed NON-happy, non-reported-only scenarios across the summary
+ * — the retry set (2026-07-25). Matches what the server-side pass will
+ * re-attempt: the per-endpoint set mirrors `collectFailedDimensions`, PLUS
+ * the session-level auth-negative dimension (which lives outside
+ * `per_endpoint`; the route re-runs its deterministic probes). Pure; a
+ * null/unrecorded summary is 0.
  */
 export function countFailedDimensions(
   raw: Record<string, unknown> | null | undefined,
@@ -349,6 +351,7 @@ export function countFailedDimensions(
       if (!d.achieved && !d.reported_only && !isHappyDimension(d)) n += 1;
     }
   }
+  if (!summary.auth_coverage.achieved) n += 1;
   return n;
 }
 
@@ -390,6 +393,7 @@ export const CoverageGateBanner: React.FC<CoverageGateBannerProps> = ({
   if (gate.included_total === 0) return null;
   const warnClass = classes.badgeWarning ?? classes.badge;
   const n = gate.unresolved.length;
+  const failedScenarios = countFailedDimensions(raw);
 
   return (
     <div
@@ -399,10 +403,32 @@ export const CoverageGateBanner: React.FC<CoverageGateBannerProps> = ({
       role="status"
     >
       {gate.complete ? (
-        <strong data-testid={`${testId}-complete`}>
-          ✓ Baseline complete — all {gate.included_total} included endpoints have
-          a happy-path baseline.
-        </strong>
+        <>
+          <strong data-testid={`${testId}-complete`}>
+            ✓ Baseline complete — all {gate.included_total} included endpoints have
+            a happy-path baseline.
+          </strong>
+          {/* Dimensional retry entry point (2026-07-25 fix): the happy gate
+              being complete used to hide the ONLY retry entry point, making
+              the failed non-happy scenarios unreachable. */}
+          {onRetryUncovered && failedScenarios > 0 && (
+            <>
+              <span className={classes.badge} data-testid={`${testId}-failed-scenarios-note`}>
+                {failedScenarios} coverage scenario{failedScenarios === 1 ? '' : 's'} beyond
+                the happy path still failed (error paths, auth-negative and similar) —
+                re-attempt them to push full coverage to 100%.
+              </span>
+              <button
+                type="button"
+                className={classes.button}
+                data-testid={`${testId}-retry-dimensions`}
+                onClick={() => onRetryUncovered([])}
+              >
+                Re-attempt failed scenarios ({failedScenarios})
+              </button>
+            </>
+          )}
+        </>
       ) : (
         <>
           <strong data-testid={`${testId}-incomplete`}>
@@ -411,7 +437,7 @@ export const CoverageGateBanner: React.FC<CoverageGateBannerProps> = ({
           </strong>
           <span className={classes.badge}>
             You should not leave this screen until every included endpoint has its
-            happy-path baseline. Dimensional coverage above is informational.
+            happy-path baseline. The scenario coverage above is informational.
           </span>
           <ul data-testid={`${testId}-unresolved-list`}>
             {gate.unresolved.map((u) => (
@@ -518,7 +544,7 @@ export const CoverageSummaryPanel: React.FC<CoverageSummaryPanelProps> = ({
     >
       <strong data-testid={`${testId}-overall`}>
         Behaviour observed/captured: {formatScorePct(summary.overall_score)} (
-        {summary.dimensions_achieved} of {summary.dimensions_total} dimensions
+        {summary.dimensions_achieved} of {summary.dimensions_total} scenarios
         captured)
         {collapsible && collapsed ? ' — expand for per-endpoint detail' : ''}
       </strong>

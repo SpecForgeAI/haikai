@@ -286,13 +286,26 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
         const closed = result.passA.closed.length + result.passB.closed.length;
         const dimsClosed = result.dimensional?.closed.length ?? 0;
         const dimsAttempted = result.dimensional?.attempted ?? 0;
+        const authNote = result.authReprobe
+          ? result.authReprobe.attempted
+            ? ` Auth-negative probes: ${result.authReprobe.achieved ? 'now achieved' : 'still failing'}.`
+            : ' Auth-negative probes could not be re-run.'
+          : '';
         const dimsNote =
           dimsAttempted > 0
-            ? ` Dimensional retry: closed ${dimsClosed} of ${dimsAttempted} failed dimension${dimsAttempted === 1 ? '' : 's'}.`
+            ? ` Re-attempted ${dimsAttempted} failed scenario${dimsAttempted === 1 ? '' : 's'}: ${dimsClosed} captured.`
             : '';
-        if (result.gate.complete) {
+        const scenariosOutstanding =
+          dimsAttempted > dimsClosed ||
+          (result.authReprobe != null && !result.authReprobe.achieved);
+        if (result.gate.complete && !scenariosOutstanding) {
           setRetryModalEndpoints(null);
           setClosureNote(null);
+        } else if (result.gate.complete) {
+          // Happy gate fine but some re-attempted scenarios still failed —
+          // keep the modal open with the outcome instead of closing silently.
+          setRetryModalEndpoints([]);
+          setClosureNote(`${dimsNote}${authNote}`.trim() || 'Some scenarios are still failing.');
         } else {
           setRetryModalEndpoints(
             result.gate.unresolved.map((u) => ({
@@ -306,7 +319,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
             ? ''
             : ' (Pass B unavailable — re-parse the OAS to enable LLM repair)';
           setClosureNote(
-            `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.${dimsNote}`,
+            `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.${dimsNote}${authNote}`,
           );
         }
         void fresh;
@@ -746,21 +759,46 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           <span className={`${styles.statusBadge} ${statusClass(session.status)}`}>
             {statusLabel(session.status)}
           </span>
-          {/* Scenario outcome tally (misleading-COMPLETED fix): `completed`
-              only means "no infrastructure error" — every scenario can have
-              errored. Render the N-of-M tally whenever the runner recorded it
-              so an all-failed run is visibly distinct from a successful one. */}
-          {typeof session.scenarios_attempted === 'number' &&
-            session.scenarios_attempted > 0 && (
-              <span
-                className={styles.rowDate}
-                data-testid="capture-session-scenario-tally"
-              >
-                {' '}
-                · {session.scenarios_completed ?? 0} of {session.scenarios_attempted}{' '}
-                scenarios captured
-              </span>
-            )}
+          {/* ONE scenario metric (2026-07-25): once the coverage summary
+              exists, the header shows the SAME coverage-based figure as the
+              panel below (achieved of total scenarios, incl. the session
+              auth scenario) — the raw attempted/completed loop tally showed a
+              second, subtly different number ("411 of 416" vs "413 of 417")
+              that read as a contradiction. While no summary exists yet
+              (running / legacy sessions) the loop tally remains the only —
+              and still honest — live signal, and the misleading-COMPLETED
+              zero-captures warning below still reads the loop counters. */}
+          {(() => {
+            const cov = parseCoverageSummary(session.coverage_summary_json);
+            if (cov) {
+              return (
+                <span
+                  className={styles.rowDate}
+                  data-testid="capture-session-scenario-tally"
+                >
+                  {' '}
+                  · {cov.dimensions_achieved} of {cov.dimensions_total} scenarios
+                  captured
+                </span>
+              );
+            }
+            if (
+              typeof session.scenarios_attempted === 'number' &&
+              session.scenarios_attempted > 0
+            ) {
+              return (
+                <span
+                  className={styles.rowDate}
+                  data-testid="capture-session-scenario-tally"
+                >
+                  {' '}
+                  · {session.scenarios_completed ?? 0} of {session.scenarios_attempted}{' '}
+                  scenarios captured
+                </span>
+              );
+            }
+            return null;
+          })()}
         </h2>
         {onClose && (
           <button

@@ -11,6 +11,7 @@ import {
   runClosureOrchestration,
   applyClosureToSummary,
   applyDimensionClosuresToSummary,
+  applyAuthCoverageToSummary,
   removeEndpointFromSummary,
   isHappyStatus,
   selectDimensionClosingCapture,
@@ -170,6 +171,26 @@ describe('applyDimensionClosuresToSummary', () => {
   it('returns the input unchanged for an empty closure list', () => {
     const s = summaryOf([ep('op1', 'GET', '/a', true)]);
     expect(applyDimensionClosuresToSummary(s, [])).toBe(s);
+  });
+});
+
+describe('applyAuthCoverageToSummary', () => {
+  it('replaces the auth dimension and recomputes achieved/overall; totals unchanged', () => {
+    // 1 endpoint dim achieved + auth NOT achieved -> 1 of 2.
+    const s = summaryOf([ep('op1', 'GET', '/a', true)], false);
+    expect(s.dimensions_achieved).toBe(1);
+    const out = applyAuthCoverageToSummary(s, {
+      achieved: true,
+      representative_operation_id: 'op1',
+      probes: [
+        { name: 'no_token', expected: '401', achieved: true, observed_status: 401, reason: null },
+        { name: 'bad_token', expected: '401/403', achieved: true, observed_status: 403, reason: null },
+      ],
+    });
+    expect(out.auth_coverage.achieved).toBe(true);
+    expect(out.dimensions_total).toBe(s.dimensions_total);
+    expect(out.dimensions_achieved).toBe(2);
+    expect(out.overall_score).toBe(1);
   });
 });
 

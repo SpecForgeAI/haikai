@@ -416,6 +416,33 @@ export function applyClosureToSummary(
 }
 
 /**
+ * Replace the session-level auth-negative coverage with a fresh probe result
+ * and recompute the aggregate counts/score. PURE. The auth dimension
+ * contributes exactly ONE dimension to the totals (already counted in
+ * `dimensions_total`), so only `dimensions_achieved`/`overall_score` move.
+ * Used by the dimensional retry (2026-07-25): the auth dimension lives
+ * OUTSIDE `per_endpoint`, so `collectFailedDimensions` never sees it — the
+ * route re-runs the deterministic probes and patches the result in here.
+ */
+export function applyAuthCoverageToSummary(
+  summary: CoverageSummary,
+  authCoverage: CoverageSummary['auth_coverage'],
+): CoverageSummary {
+  const endpointAchieved = summary.per_endpoint.reduce(
+    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
+    0,
+  );
+  const dimensionsAchieved = endpointAchieved + (authCoverage.achieved ? 1 : 0);
+  return {
+    ...summary,
+    auth_coverage: authCoverage,
+    dimensions_achieved: dimensionsAchieved,
+    overall_score:
+      summary.dimensions_total > 0 ? dimensionsAchieved / summary.dimensions_total : 0,
+  };
+}
+
+/**
  * Patch a coverage summary so each closed NAMED dimension reads achieved (with
  * its closing capture id), then recompute the per-endpoint scores + aggregate
  * counts. PURE — the dimensional sibling of {@link applyClosureToSummary}.

@@ -61,7 +61,9 @@ import {
 // Coverage Closure (Spec 2026-07-20): the "Retry uncovered APIs" run.
 import {
   buildScenarioPrompt,
+  runAuthNegativeProbes,
   type CoverageSummary,
+  type AuthProbeCandidate,
 } from '../services/captureSessionOrchestrator';
 import {
   computeHappyPathGate,
@@ -72,6 +74,7 @@ import {
   runClosureOrchestration,
   removeEndpointFromSummary,
   selectDimensionClosingCapture,
+  applyAuthCoverageToSummary,
   type ClosureFirer,
   type ClosureRepairer,
   type ClosureDimensionRepairer,
@@ -2028,23 +2031,29 @@ export function buildCaptureSessionActionsRouter(
       }
 
       // Optional dimensional retry (2026-07-25): also repair the OTHER failed
-      // coverage dimensions (error paths, auth-negative, …) so dimensional
+      // coverage scenarios (error paths, auth-negative, …) so dimensional
       // coverage climbs toward 100%. The GATE stays happy-path-only.
       const includeOtherDimensions = (req.body || {}).includeOtherDimensions === true;
       const failedDimensions: FailedDimensionRef[] = includeOtherDimensions
         ? collectFailedDimensions(summary)
         : [];
+      // The session-level auth dimension lives OUTSIDE per_endpoint, so the
+      // collector never sees it — re-run the deterministic probes when it is
+      // unachieved (both probes, same rigor as the original run).
+      const authRetryNeeded =
+        includeOtherDimensions && summary.auth_coverage?.achieved !== true;
 
       const gate0 = computeHappyPathGate(summary);
-      if (gate0.complete && failedDimensions.length === 0) {
+      if (gate0.complete && failedDimensions.length === 0 && !authRetryNeeded) {
         return res.json({
           sessionId,
           passA: { fired: 0, closed: [] },
           passB: { attempted: 0, closed: [], available: true },
           dimensional: { attempted: 0, closed: [] },
+          authReprobe: null,
           gate: gate0,
           note: includeOtherDimensions
-            ? 'baseline complete and no retryable failed dimensions'
+            ? 'baseline complete and no retryable failed coverage scenarios'
             : 'baseline already complete',
         });
       }
@@ -2367,9 +2376,38 @@ export function buildCaptureSessionActionsRouter(
         dimensionRepairer,
       );
 
+      // ---- Auth-negative re-probe (2026-07-25): deterministic, free — reuse
+      // the orchestrator's probe runner (both probes, scoped auth-override
+      // seam) against a safe representative endpoint: included, happy
+      // achieved (post-closure), safe_to_execute on its AMS row. Fail-soft.
+      let finalSummary = result.updatedSummary;
+      let authReprobe: { attempted: boolean; achieved: boolean } | null = null;
+      if (authRetryNeeded && httpExec) {
+        try {
+          const candidates: AuthProbeCandidate[] = finalSummary.per_endpoint
+            .filter((ep) =>
+              ep.dimensions.some(
+                (d) => (d.type === 'happy_path' || d.name === 'happy_path') && d.achieved,
+              ),
+            )
+            .filter((ep) => opRowByOasId.get(ep.operation_id)?.safe_to_execute === true)
+            .map((ep) => ({
+              operationId: ep.operation_id,
+              method: ep.method,
+              path: ep.path,
+            }));
+          const authCoverage = await runAuthNegativeProbes(httpExec, candidates);
+          finalSummary = applyAuthCoverageToSummary(finalSummary, authCoverage);
+          authReprobe = { attempted: true, achieved: authCoverage.achieved };
+        } catch {
+          // fail-soft: the auth dimension keeps its prior state.
+          authReprobe = { attempted: false, achieved: false };
+        }
+      }
+
       // ---- Persist the patched coverage summary so the gate reflects closure.
       await archModelClient.patchCaptureSession(projectId, sessionId, {
-        coverage_summary_json: result.updatedSummary as unknown as Record<string, unknown>,
+        coverage_summary_json: finalSummary as unknown as Record<string, unknown>,
       });
 
       return res.json({
@@ -2377,6 +2415,7 @@ export function buildCaptureSessionActionsRouter(
         passA: result.passA,
         passB: { ...result.passB, available: passBAvailable },
         dimensional: result.dimensional,
+        authReprobe,
         gate: result.gate,
       });
     } catch (err) {
