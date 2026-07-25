@@ -458,6 +458,15 @@ export interface CoverageSummaryPanelProps {
   /** Raw JSONB blob off the session DTO (snake_case wire). */
   raw: Record<string, unknown> | null | undefined;
   classes: CoverageSummaryPanelClasses;
+  /**
+   * Render collapsible (2026-07-25): a one-line summary is always visible
+   * with an expand/collapse toggle; the per-endpoint detail renders only
+   * when expanded. The gate banner is a SEPARATE component and is never
+   * hidden by this. Default false so existing hosts are unchanged.
+   */
+  collapsible?: boolean;
+  /** Initial collapsed state when `collapsible` (default true = collapsed). */
+  defaultCollapsed?: boolean;
   /** Test id for the root element. */
   testId?: string;
 }
@@ -471,9 +480,12 @@ export interface CoverageSummaryPanelProps {
 export const CoverageSummaryPanel: React.FC<CoverageSummaryPanelProps> = ({
   raw,
   classes,
+  collapsible = false,
+  defaultCollapsed = true,
   testId = 'coverage-summary',
 }) => {
   const summary = parseCoverageSummary(raw);
+  const [collapsed, setCollapsed] = React.useState(collapsible && defaultCollapsed);
 
   if (!summary) {
     return (
@@ -496,13 +508,33 @@ export const CoverageSummaryPanel: React.FC<CoverageSummaryPanelProps> = ({
   const auth = summary.auth_coverage;
   const unachievedProbes = auth.probes.filter((p) => !p.achieved);
 
+  const showDetail = !(collapsible && collapsed);
   return (
-    <div className={classes.banner} data-testid={testId} role="status">
+    <div
+      className={classes.banner}
+      data-testid={testId}
+      data-collapsed={collapsible ? (collapsed ? 'true' : 'false') : undefined}
+      role="status"
+    >
       <strong data-testid={`${testId}-overall`}>
         Behaviour observed/captured: {formatScorePct(summary.overall_score)} (
         {summary.dimensions_achieved} of {summary.dimensions_total} dimensions
         captured)
+        {collapsible && collapsed ? ' — expand for per-endpoint detail' : ''}
       </strong>
+      {collapsible && (
+        <button
+          type="button"
+          className={classes.badge}
+          data-testid={`${testId}-toggle`}
+          aria-expanded={showDetail}
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          {collapsed ? 'Show per-endpoint detail' : 'Hide per-endpoint detail'}
+        </button>
+      )}
+      {showDetail && (
+        <>
       <span
         className={classes.badge}
         data-testid={`${testId}-metric-note`}
@@ -600,6 +632,8 @@ export const CoverageSummaryPanel: React.FC<CoverageSummaryPanelProps> = ({
             ))}
           </ul>
         </div>
+      )}
+        </>
       )}
     </div>
   );
