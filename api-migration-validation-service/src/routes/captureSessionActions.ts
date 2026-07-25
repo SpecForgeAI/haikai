@@ -87,6 +87,7 @@ import {
   expandInventoryOperationsForFormats,
   endpointDeclaredFormats,
 } from '../services/captureFormatExpansion';
+import { uniquifyOperationIds } from '../services/operationIdUniquifier';
 import { runScenarioLoop } from '../services/captureLoopRunner';
 import { ALL_TOOLS } from '../services/tools';
 import type {
@@ -1311,6 +1312,24 @@ export function buildCaptureSessionActionsRouter(
 
         let merged = mergeInventories(inventories);
 
+        // Duplicate-operationId disambiguation (2026-07-25): WADL ids come
+        // from Java method names, and overloads legally reuse a name across
+        // DIFFERENT routes. Every downstream map keyed by the id string would
+        // silently collapse those routes (scenarios/captures/closure filed
+        // under the same-named sibling; the shadowed route permanently
+        // missing_baseline). Rename every member of a cross-route duplicate
+        // group with a ` [route=...]` suffix — grammar-safe: reconciliation
+        // still keys bare on <METHOD> <path>. Runs BEFORE expansion so
+        // per-format variants inherit unique base ids.
+        const uniquified = uniquifyOperationIds(merged);
+        merged = uniquified.inventory;
+        for (const [originalId, mintedIds] of uniquified.renamed) {
+          console.warn(
+            `[parse-oas] duplicate operationId "${originalId}" spans multiple routes — ` +
+              `disambiguated to: ${mintedIds.join(' | ')}`,
+          );
+        }
+
         // Per-format capture expansion (Spec 2026-07-24): a dual-format route
         // is ONE committed endpoint (its name declares consumes/produces); the
         // capture must baseline BOTH wire formats. Expand the single parsed
@@ -2061,6 +2080,26 @@ export function buildCaptureSessionActionsRouter(
       // ---- Operation rows (AMS row id + method/path) for scenario creation.
       const operations = await archModelClient.listOperationsBySession(projectId, sessionId);
       const opRowByOasId = new Map(operations.map((o) => [o.operation_id, o]));
+      // Duplicate-id guard (2026-07-25): sessions parsed BEFORE operationId
+      // uniquification can carry the same operation_id string on DIFFERENT
+      // routes — this map then collapses them (last wins) and repairs would be
+      // filed under the wrong route. Warn loudly; the durable remedy is a
+      // re-parse (which now disambiguates ids at the source).
+      if (opRowByOasId.size < operations.length) {
+        const seen = new Map<string, string>();
+        for (const o of operations) {
+          const route = `${o.method} ${o.path}`;
+          const prior = seen.get(o.operation_id);
+          if (prior && prior !== route) {
+            console.warn(
+              `[retry-uncovered] duplicate operation_id "${o.operation_id}" spans ` +
+                `routes "${prior}" and "${route}" — repairs may target the wrong ` +
+                `route; re-parse the OAS to disambiguate (session ${sessionId})`,
+            );
+          }
+          if (!prior) seen.set(o.operation_id, route);
+        }
+      }
 
       // ---- Endpoint→table mapping (one committed-model read) for DB mining.
       const effectIndex = await fetchEffectScopeIndex(session.projectId, session.architectureId);
