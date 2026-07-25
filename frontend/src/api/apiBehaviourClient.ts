@@ -1030,7 +1030,11 @@ async function jsonRequest<T>(
   url: string,
   init: RequestInit,
 ): Promise<T> {
-  const res = await fetch(url, init);
+  // `no-store` (2026-07-25): every api-behaviour resource is live run state
+  // (session status, scenario tallies, captures). A cached GET here renders a
+  // stale run — the "Refresh run details" affordance must always hit the
+  // server. Callers may still override via their own `cache` in `init`.
+  const res = await fetch(url, { cache: 'no-store', ...init });
   if (!res.ok) {
     const body = await parseErrorBody(res);
     throw new ApiBehaviourApiError(res.status, body);

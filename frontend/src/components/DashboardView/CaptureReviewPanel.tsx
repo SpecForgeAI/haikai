@@ -75,6 +75,15 @@ export interface CaptureReviewPanelProps {
    */
   readOnly?: boolean;
   /**
+   * Plain re-render counter (NOT an auth token, NOT a run re-trigger): the
+   * parent increments it on "Refresh run details" to make this panel re-read
+   * its READ-ONLY lists (operations / scenarios / captures / diagnostics)
+   * from the server. The lists otherwise load ONCE on mount — which is why
+   * the button previously refreshed only the session row while the visible
+   * run details stayed stale (bug fix 2026-07-25).
+   */
+  refreshCounter?: number;
+  /**
    * Raw `coverage_summary_json` off the capture session (snake_case JSONB
    * wire), threaded down from `CaptureSessionDetailView` so the
    * Save-as-Baseline modal can surface oracle coverage (display-only).
@@ -328,6 +337,7 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
   architectureId,
   sessionId,
   readOnly = false,
+  refreshCounter,
   coverageSummaryJson,
   mutatingCallsConfirmed = null,
   secretsLoaded = false,
@@ -467,7 +477,9 @@ export const CaptureReviewPanel: React.FC<CaptureReviewPanelProps> = ({
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    // `refreshCounter` is a deliberate extra dependency: the parent bumps it
+    // on "Refresh run details" to force an on-demand re-read of the lists.
+  }, [refresh, refreshCounter]);
 
   // ---- Derived state ---------------------------------------------------
   // Intent-driven canonical capture: the orchestrator persists EVERY HTTP
