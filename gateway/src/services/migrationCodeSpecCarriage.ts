@@ -198,6 +198,35 @@ export interface CarriageEndpointFacts {
   protocolMetadata: unknown | null;
 }
 
+const HTTP_VERBS = new Set([
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+  'HEAD',
+  'OPTIONS',
+  'TRACE',
+]);
+
+/**
+ * INTERNAL (non-HTTP) endpoint fact — batch mains, scheduled jobs, message
+ * listeners. These NEVER carry committed HTTP contracts or baseline captures,
+ * so the code-facts contract/baseline gates must not dead-end on them
+ * (2026-07-25 fix: the "Internal Processing" cluster story persisted
+ * protocol 'rest' — interfaceKind() only knows rest|soap — and hit
+ * no_committed_contracts, a remedy that cannot exist for batch mains).
+ * Signals, any of: the formal endpoint type; a non-HTTP verb token
+ * (e.g. BATCH_MAIN); the internal-block subtype in protocol metadata.
+ */
+export function isInternalEndpointFact(e: CarriageEndpointFacts): boolean {
+  if ((e.endpointType ?? '').trim().toUpperCase() === 'INTERNAL_PROCESS') return true;
+  const verb = (e.verb ?? '').trim().toUpperCase();
+  if (verb.length > 0 && !HTTP_VERBS.has(verb)) return true;
+  const meta = e.protocolMetadata as { endpoint_subtype?: unknown } | null;
+  return meta != null && typeof meta === 'object' && meta.endpoint_subtype != null;
+}
+
 export interface CarriageDataEffect {
   endpointId: string;
   accessMode: string | null;
@@ -489,29 +518,48 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
         `${endpoint.endpointType || 'n/a'} · protocol: ${endpoint.protocol || 'n/a'}`
     );
 
-    lines.push('');
-    lines.push('### Request contract (committed, verbatim)');
-    lines.push('');
-    if (endpoint.requestContract != null) {
-      fencedJson(lines, endpoint.requestContract);
-    } else {
-      lines.push('_No committed request contract._');
-    }
-
-    lines.push('');
-    lines.push('### Response contract (committed, verbatim)');
-    lines.push('');
-    if (endpoint.responseContract != null) {
-      fencedJson(lines, endpoint.responseContract);
-    } else {
-      lines.push('_No committed response contract._');
-    }
-
-    if (endpoint.protocolMetadata != null) {
+    const internal = isInternalEndpointFact(endpoint);
+    if (internal) {
+      // Non-HTTP endpoint in a mixed story: no contract sections apply — the
+      // grounding is the committed process metadata (class, method, schedule
+      // or destination, subtype) and the DB-delta parity goal.
       lines.push('');
-      lines.push('### SOAP protocol metadata (committed, verbatim)');
+      lines.push(
+        '_Internal (non-HTTP) process — no request/response contract applies. ' +
+          'Parity oracle: same inputs produce the SAME database delta and the ' +
+          'same emitted outputs as the current system._'
+      );
+      if (endpoint.protocolMetadata != null) {
+        lines.push('');
+        lines.push('### Internal process metadata (committed, verbatim)');
+        lines.push('');
+        fencedJson(lines, endpoint.protocolMetadata);
+      }
+    } else {
       lines.push('');
-      fencedJson(lines, endpoint.protocolMetadata);
+      lines.push('### Request contract (committed, verbatim)');
+      lines.push('');
+      if (endpoint.requestContract != null) {
+        fencedJson(lines, endpoint.requestContract);
+      } else {
+        lines.push('_No committed request contract._');
+      }
+
+      lines.push('');
+      lines.push('### Response contract (committed, verbatim)');
+      lines.push('');
+      if (endpoint.responseContract != null) {
+        fencedJson(lines, endpoint.responseContract);
+      } else {
+        lines.push('_No committed response contract._');
+      }
+
+      if (endpoint.protocolMetadata != null) {
+        lines.push('');
+        lines.push('### SOAP protocol metadata (committed, verbatim)');
+        lines.push('');
+        fencedJson(lines, endpoint.protocolMetadata);
+      }
     }
 
     const effects = facts.dataEffects.filter((e) => e.endpointId === endpoint.id);
@@ -849,7 +897,13 @@ export async function runCodeSpecCarriage(args: {
   // baseline examples — the verification oracle is the DB-delta recipe. The
   // spec embeds the verbatim process metadata + data effects + the four-step
   // recipe (user decision: same DB delta + same emitted outputs = parity).
-  if ((story.protocol ?? '') === 'internal') {
+  // Routed by persisted protocol OR by the facts themselves (2026-07-25):
+  // interface-cluster stories over the synthesized "Internal Processing"
+  // interface persist protocol 'rest', so an all-internal endpoint set must
+  // route here too — otherwise the story dead-ends on the HTTP contract gate.
+  const allEndpointsInternal =
+    facts.endpoints.length > 0 && facts.endpoints.every(isInternalEndpointFact);
+  if ((story.protocol ?? '') === 'internal' || allEndpointsInternal) {
     const foundInternal = new Set(facts.endpoints.map((e) => e.id));
     const missingInternal = endpointIds.filter((id) => !foundInternal.has(id));
     if (missingInternal.length > 0) {
@@ -898,8 +952,14 @@ export async function runCodeSpecCarriage(args: {
     };
   }
 
+  // Internal endpoints ground on their committed process metadata instead of
+  // HTTP contracts (they can never have contracts — the re-run-contract-
+  // capture remedy would be a dead end for a mixed HTTP+internal story).
   const anyContract = facts.endpoints.some(
-    (e) => e.requestContract != null || e.responseContract != null
+    (e) =>
+      e.requestContract != null ||
+      e.responseContract != null ||
+      (isInternalEndpointFact(e) && e.protocolMetadata != null)
   );
   if (!anyContract) {
     return {
@@ -924,7 +984,11 @@ export async function runCodeSpecCarriage(args: {
   }
   const totalExamples = [...canonicalByEndpoint.values()].reduce((n, v) => n + v.length, 0);
   const isFlaggedMissingBaseline = (story.flagReason ?? '').includes('missing_baseline');
-  if (totalExamples === 0 && !isFlaggedMissingBaseline) {
+  // No HTTP baseline can exist when every endpoint is internal — the
+  // all-internal case routes to the internal carriage above, but guard here
+  // too so a future routing change can never resurrect the dead end.
+  const anyHttpEndpoint = facts.endpoints.some((e) => !isInternalEndpointFact(e));
+  if (totalExamples === 0 && !isFlaggedMissingBaseline && anyHttpEndpoint) {
     return {
       ...baseRow,
       status: 'insufficient_context',

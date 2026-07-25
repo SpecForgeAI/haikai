@@ -427,6 +427,100 @@ describe('INTERNAL RECIPE PIN (Spec 2026-07-06-m)', () => {
   });
 });
 
+describe('INTERNAL-AWARE CARRIAGE (2026-07-25 fix)', () => {
+  const batchEndpoint = {
+    id: 'e-b1',
+    name: 'BATCH_MAIN com.x.OrderSyncMain',
+    verb: 'BATCH_MAIN',
+    path: null,
+    endpointType: 'INTERNAL_PROCESS',
+    protocol: 'internal',
+    interfaceName: 'Internal Processing',
+    requestContract: null,
+    responseContract: null,
+    protocolMetadata: {
+      endpoint_subtype: 'batch-main',
+      class_name: 'com.x.OrderSyncMain',
+      method_name: 'main',
+    },
+  };
+
+  it('an all-internal story persisted with protocol "rest" (interface-cluster bug) routes to the internal recipe, never no_committed_contracts', async () => {
+    const internalFacts: CodeSpecFacts = {
+      endpoints: [batchEndpoint],
+      dataEffects: [
+        {
+          endpointId: 'e-b1',
+          accessMode: 'read-write',
+          pathMetadata: { query_text: 'UPDATE orders SET synced = 1' },
+          dataEntityPointId: 'dep_phy_orders',
+        },
+      ],
+      behaviours: [],
+      examples: [],
+    };
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story({
+        protocol: 'rest', // exactly what the cluster story persisted
+        title: 'Implement Internal Processing (1 endpoints)',
+        apiEndpointIds: ['e-b1'],
+        baselineByEndpointId: null,
+      }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(internalFacts) },
+    });
+    expect(row.status).toBe('generated');
+    expect(row.missingInputsJson).toBeNull();
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('## Verification recipe (DB-delta oracle');
+    expect(text).toContain('com.x.OrderSyncMain');
+    expect(text).not.toContain('no_committed_contracts');
+  });
+
+  it('a MIXED story grounds on the internal metadata and renders job facts for the internal endpoint, HTTP endpoint unchanged', async () => {
+    const mixedFacts = facts({
+      endpoints: [facts().endpoints[0], batchEndpoint],
+    });
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story({ apiEndpointIds: ['e-1', 'e-b1'] }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(mixedFacts) },
+    });
+    expect(row.status).toBe('generated');
+    const text = row.generatedSpecText as string;
+    // HTTP endpoint keeps its contract sections.
+    expect(text).toContain('### Request contract (committed, verbatim)');
+    // Internal endpoint carries its job facts, not contract placeholders.
+    expect(text).toContain('### Internal process metadata (committed, verbatim)');
+    expect(text).toContain('batch-main');
+    expect(text).toContain('no request/response contract applies');
+  });
+
+  it('a MIXED story whose only grounding is internal metadata passes the contract gate', async () => {
+    const contractlessHttp = {
+      ...facts().endpoints[0],
+      requestContract: null,
+      responseContract: null,
+    };
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story({ apiEndpointIds: ['e-1', 'e-b1'] }),
+      baseRow: baseRow(),
+      deps: {
+        fetchCodeSpecFacts: jest
+          .fn()
+          .mockResolvedValue(facts({ endpoints: [contractlessHttp, batchEndpoint] })),
+      },
+    });
+    expect(row.status).toBe('generated');
+  });
+});
+
 describe('spec text structure', () => {
   it('starts with the required shape-spec prefix and titles every section', () => {
     const canonical = new Map([['e-1', selectCanonicalExamples(facts().examples, 'e-1')]]);
