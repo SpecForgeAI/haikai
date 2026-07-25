@@ -205,8 +205,14 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   >(null);
   const [closureBusy, setClosureBusy] = useState(false);
   const [closureNote, setClosureNote] = useState<string | null>(null);
-  // On-demand "Refresh run details" (2026-07-24).
+  // On-demand "Refresh run details" (2026-07-24). The counter (a plain
+  // number, nothing more) forces the review panel's READ-ONLY lists
+  // (operations/scenarios/captures/diagnostics) to re-read from the server —
+  // they otherwise load once on mount, so the button previously refreshed
+  // only the session row while the visible run details stayed stale
+  // (bug fix 2026-07-25). Display refresh ONLY — never re-runs anything.
   const [refreshingDetails, setRefreshingDetails] = useState(false);
+  const [detailsRefreshCounter, setDetailsRefreshCounter] = useState(0);
 
   // Re-enter secrets prompt visible/hidden + transient form state.
   //
@@ -1160,6 +1166,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
               className={styles.secondaryButton}
               onClick={() => {
                 setRefreshingDetails(true);
+                setDetailsRefreshCounter((c) => c + 1); // re-read the review panel lists
                 void fetchOnce().finally(() => setRefreshingDetails(false));
               }}
               disabled={refreshingDetails}
@@ -1283,6 +1290,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           architectureId={architectureId}
           sessionId={sessionId}
           readOnly={reviewPanelReadOnly}
+          refreshCounter={detailsRefreshCounter}
           coverageSummaryJson={session.coverage_summary_json}
           mutatingCallsConfirmed={session.mutating_calls_confirmed}
           secretsLoaded={secretsLoadedLocal}
