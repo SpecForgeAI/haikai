@@ -23,7 +23,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../api/apiBehaviourClient', async () => {
@@ -75,6 +75,7 @@ import {
 import { CaptureSessionDetailView } from './CaptureSessionDetailView';
 import { SaveAsBaselineModal } from './SaveAsBaselineModal';
 import {
+  CoverageSummaryPanel,
   parseCoverageSummary,
   isThinEndpoint,
   type EndpointCoverage,
@@ -240,8 +241,8 @@ describe('coverage summary helpers (pure)', () => {
       path: '/x',
       score: 0.5,
       dimensions: [
-        { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: true, canonical_capture_id: 'c', reason: null, observation: null },
-        { name: 'not_found_id', type: 'not_found', expected_status: 'not_found', achieved: false, canonical_capture_id: null, reason: 'r', observation: null },
+        { name: 'happy_path', type: 'happy_path', expected_status: 'success', reported_only: false, achieved: true, canonical_capture_id: 'c', reason: null, observation: null },
+        { name: 'not_found_id', type: 'not_found', expected_status: 'not_found', reported_only: false, achieved: false, canonical_capture_id: null, reason: 'r', observation: null },
       ],
     };
     expect(isThinEndpoint(allNegMissing)).toBe(true);
@@ -269,10 +270,25 @@ describe('CaptureSessionDetailView -- coverage surfacing (Task 3.3 / 3.5)', () =
     );
 
     const panel = await screen.findByTestId('capture-session-coverage-summary');
-    // Overall score + dimensions tally.
+    // Collapsible on the session screen (2026-07-25): DEFAULT COLLAPSED — the
+    // one-line summary is visible, the per-endpoint detail is not, so the
+    // review table below is reachable without scrolling past the panel.
+    expect(panel).toHaveAttribute('data-collapsed', 'true');
     expect(
       within(panel).getByTestId('capture-session-coverage-summary-overall'),
     ).toHaveTextContent('Behaviour observed/captured: 50% (3 of 6 dimensions captured)');
+    expect(
+      within(panel).getByTestId('capture-session-coverage-summary-overall'),
+    ).toHaveTextContent('expand for per-endpoint detail');
+    expect(
+      within(panel).queryByTestId('capture-session-coverage-summary-endpoint'),
+    ).not.toBeInTheDocument();
+
+    // Expand → the full detail renders.
+    fireEvent.click(
+      within(panel).getByTestId('capture-session-coverage-summary-toggle'),
+    );
+    expect(panel).toHaveAttribute('data-collapsed', 'false');
 
     // Per-endpoint badges (both endpoints rendered).
     const endpoints = within(panel).getAllByTestId(
@@ -321,6 +337,39 @@ describe('CaptureSessionDetailView -- coverage surfacing (Task 3.3 / 3.5)', () =
     expect(
       screen.queryByTestId('capture-session-coverage-summary'),
     ).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Collapsible panel props (2026-07-25)
+// ---------------------------------------------------------------------------
+
+describe('CoverageSummaryPanel -- collapsible props', () => {
+  const classes = { banner: 'banner', badge: 'badge' };
+
+  it('non-collapsible hosts are unchanged: no toggle, detail always rendered', () => {
+    render(<CoverageSummaryPanel raw={buildCoverageSummary()} classes={classes} />);
+    const panel = screen.getByTestId('coverage-summary');
+    expect(panel).not.toHaveAttribute('data-collapsed');
+    expect(within(panel).queryByTestId('coverage-summary-toggle')).not.toBeInTheDocument();
+    expect(within(panel).getAllByTestId('coverage-summary-endpoint')).toHaveLength(2);
+  });
+
+  it('collapsible + defaultCollapsed=false starts expanded and collapses on toggle', () => {
+    render(
+      <CoverageSummaryPanel
+        raw={buildCoverageSummary()}
+        classes={classes}
+        collapsible
+        defaultCollapsed={false}
+      />,
+    );
+    const panel = screen.getByTestId('coverage-summary');
+    expect(panel).toHaveAttribute('data-collapsed', 'false');
+    expect(within(panel).getAllByTestId('coverage-summary-endpoint')).toHaveLength(2);
+    fireEvent.click(within(panel).getByTestId('coverage-summary-toggle'));
+    expect(panel).toHaveAttribute('data-collapsed', 'true');
+    expect(within(panel).queryByTestId('coverage-summary-endpoint')).not.toBeInTheDocument();
   });
 });
 

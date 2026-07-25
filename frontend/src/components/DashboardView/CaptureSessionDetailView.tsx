@@ -816,6 +816,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
         <CoverageSummaryPanel
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-summary"
+          collapsible
+          defaultCollapsed
           classes={{
             banner: styles.secretsPrompt,
             badge: styles.statusBadge,
