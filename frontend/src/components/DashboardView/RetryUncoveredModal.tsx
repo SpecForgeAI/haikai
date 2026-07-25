@@ -46,8 +46,16 @@ export interface RetryUncoveredModalProps {
   /**
    * Launch closure with the per-endpoint Pass B config. Wired by the host once
    * the server-side run exists; absent → the launch control is disabled.
+   * `includeOtherDimensions` reflects the dimensional-retry checkbox
+   * (2026-07-25): also repair the other failed coverage dimensions so the
+   * full request/response rubric climbs to 100%, not just the happy path.
    */
-  onLaunch?: (config: EndpointRetryConfig[]) => void;
+  onLaunch?: (config: EndpointRetryConfig[], includeOtherDimensions: boolean) => void;
+  /**
+   * How many failed NON-happy coverage dimensions exist across the session
+   * (from the coverage summary). > 0 renders the dimensional-retry checkbox.
+   */
+  failedDimensionsCount?: number;
   /** Disables inputs + buttons while a launch is in flight. */
   busy?: boolean;
   /** Progress / error note shown after a closure run (e.g. "closed 3; 2 left"). */
@@ -71,6 +79,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
   classes,
   onClose,
   onLaunch,
+  failedDimensionsCount = 0,
   busy = false,
   note = null,
   onDownloadPostman,
@@ -82,6 +91,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
       unresolved.map((u) => [u.operation_id, { attempts: DEFAULT_ATTEMPTS, notes: '' }]),
     ),
   );
+  const [includeOtherDimensions, setIncludeOtherDimensions] = useState(false);
 
   const setAttempts = (id: string, raw: string) => {
     const n = Number.parseInt(raw, 10);
@@ -104,6 +114,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
         attempts: config[u.operation_id]?.attempts ?? DEFAULT_ATTEMPTS,
         notes: (config[u.operation_id]?.notes ?? '').trim(),
       })),
+      includeOtherDimensions && failedDimensionsCount > 0,
     );
   };
 
@@ -181,6 +192,21 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               </li>
             ))}
           </ul>
+          {failedDimensionsCount > 0 && (
+            <label data-testid={`${testId}-dimensions-toggle`}>
+              <input
+                type="checkbox"
+                checked={includeOtherDimensions}
+                disabled={busy}
+                data-testid={`${testId}-dimensions-checkbox`}
+                onChange={(e) => setIncludeOtherDimensions(e.target.checked)}
+              />
+              Also retry other failed coverage dimensions ({failedDimensionsCount}) —
+              error paths, auth-negative and similar scenarios that never captured
+              their intended behaviour. The gate stays happy-path-only; this drives
+              the full request/response coverage toward 100%.
+            </label>
+          )}
           {note && (
             <p data-testid={`${testId}-note`} role="status">
               {note}

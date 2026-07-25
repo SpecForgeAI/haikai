@@ -63,12 +63,18 @@ import {
   buildScenarioPrompt,
   type CoverageSummary,
 } from '../services/captureSessionOrchestrator';
-import { computeHappyPathGate } from '../services/captureCoverageGate';
+import {
+  computeHappyPathGate,
+  collectFailedDimensions,
+  type FailedDimensionRef,
+} from '../services/captureCoverageGate';
 import {
   runClosureOrchestration,
   removeEndpointFromSummary,
+  selectDimensionClosingCapture,
   type ClosureFirer,
   type ClosureRepairer,
+  type ClosureDimensionRepairer,
   type ClosureDbSampler,
   type ClosureConfigEntry,
 } from '../services/captureClosureDriver';
@@ -2021,14 +2027,25 @@ export function buildCaptureSessionActionsRouter(
         return fail(res, 400, 'No coverage summary recorded for this session; run a capture first.');
       }
 
+      // Optional dimensional retry (2026-07-25): also repair the OTHER failed
+      // coverage dimensions (error paths, auth-negative, …) so dimensional
+      // coverage climbs toward 100%. The GATE stays happy-path-only.
+      const includeOtherDimensions = (req.body || {}).includeOtherDimensions === true;
+      const failedDimensions: FailedDimensionRef[] = includeOtherDimensions
+        ? collectFailedDimensions(summary)
+        : [];
+
       const gate0 = computeHappyPathGate(summary);
-      if (gate0.complete) {
+      if (gate0.complete && failedDimensions.length === 0) {
         return res.json({
           sessionId,
           passA: { fired: 0, closed: [] },
           passB: { attempted: 0, closed: [], available: true },
+          dimensional: { attempted: 0, closed: [] },
           gate: gate0,
-          note: 'baseline already complete',
+          note: includeOtherDimensions
+            ? 'baseline complete and no retryable failed dimensions'
+            : 'baseline already complete',
         });
       }
 
@@ -2273,11 +2290,81 @@ export function buildCaptureSessionActionsRouter(
         },
       };
 
+      // ---- Dimensional repairer (2026-07-25): same repair loop machinery as
+      // Pass B, but the scenario is named after the failed dimension and the
+      // closing capture is judged against the dimension's expected_status
+      // class (a not_found dimension closes on not-found behaviour, never on a
+      // stray 2xx). Unavailable exactly when Pass B is (needs the cached OAS).
+      const dimensionRepairer: ClosureDimensionRepairer = {
+        repairDimension: async (dim, directive, attempts) => {
+          if (!passBAvailable || !oasInventory || !httpExec) {
+            return { closed: false, captureId: null };
+          }
+          const opRow = opRowByOasId.get(dim.operation_id);
+          if (!opRow) return { closed: false, captureId: null };
+          const scenarioName = `Closure D: ${dim.name} — ${dim.method} ${dim.path}`;
+          const scenarioRow = await archModelClient.createScenario(projectId, {
+            session_id: sessionId,
+            operation_id: opRow.id,
+            scenario_name: scenarioName,
+            scenario_type: 'manual',
+            status: 'draft',
+            generation_source: 'llm_generated',
+            request_method: dim.method,
+            request_path: dim.path,
+          });
+          const ctx: ToolExecutionContext = {
+            session,
+            oasInventory,
+            operationsByOasId,
+            secrets,
+            httpExecutor: httpExec,
+            dbAdapter,
+            archModelClient: archWriteSurface,
+            discoveryServiceClient: defaultDiscoveryServiceClient,
+            discoveryRunId: null,
+            currentScenarioId: scenarioRow.id,
+          };
+          runManager.beginScenario(session.id);
+          await runScenarioLoop({
+            context: ctx,
+            initialMessages: buildScenarioPrompt(
+              session,
+              dim.operation_id,
+              scenarioName,
+              dim.method,
+              dim.path,
+              undefined,
+              undefined,
+              runManager.getLearnedFacts(session.id),
+              directive,
+              session.dataTypeDefaultsJson,
+            ),
+            roundLimit: attempts,
+          });
+          const caps = runManager.getScenarioCaptures(session.id);
+          const closing = selectDimensionClosingCapture(
+            caps.map((c) => ({ captureId: c.captureId, status: c.status, body: c.data?.body })),
+            dim.expected_status,
+          );
+          return closing
+            ? { closed: true, captureId: closing.captureId }
+            : { closed: false, captureId: null };
+        },
+      };
+
       const result = await runClosureOrchestration(
-        { summary, tablesByOperationId, configByOperationId, diagnosisByOperationId },
+        {
+          summary,
+          tablesByOperationId,
+          configByOperationId,
+          diagnosisByOperationId,
+          failedDimensions,
+        },
         firer,
         repairer,
         dbSampler,
+        dimensionRepairer,
       );
 
       // ---- Persist the patched coverage summary so the gate reflects closure.
@@ -2289,6 +2376,7 @@ export function buildCaptureSessionActionsRouter(
         sessionId,
         passA: result.passA,
         passB: { ...result.passB, available: passBAvailable },
+        dimensional: result.dimensional,
         gate: result.gate,
       });
     } catch (err) {

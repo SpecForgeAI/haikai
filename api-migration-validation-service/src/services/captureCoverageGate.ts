@@ -32,6 +32,7 @@ import type {
   CoverageSummary,
   EndpointCoverageResult,
   CoverageDimensionResult,
+  ScenarioExpectedStatus,
 } from './captureSessionOrchestrator';
 
 /** One included endpoint still missing its happy-path baseline. */
@@ -113,4 +114,55 @@ export function computeHappyPathGate(
     happy_achieved: happyAchieved,
     unresolved,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Dimensional retry set (2026-07-25 — closure retry for ALL failed coverage
+// dimensions). The GATE stays happy-path-only; this collector feeds the
+// OPTIONAL "also retry other failed coverage dimensions" pass, which drives
+// dimensional coverage toward 100% without changing what gates.
+// ---------------------------------------------------------------------------
+
+/** One failed, retryable coverage dimension of an included endpoint. */
+export interface FailedDimensionRef {
+  operation_id: string;
+  method: string;
+  path: string;
+  /** Scenario/dimension name (the summary's identity for the flip-on-close). */
+  name: string;
+  type: string;
+  expected_status: ScenarioExpectedStatus;
+  reason: string | null;
+}
+
+/** The happy-path dimension identity (Pass A/B territory, never in this set). */
+function isHappyDimension(d: CoverageDimensionResult): boolean {
+  return d.type === 'happy_path' || d.name === 'happy_path';
+}
+
+/**
+ * Collect every retryable failed dimension: `achieved === false`, NOT
+ * reported-only (those never block and are informational by design), and NOT
+ * the happy-path dimension (the main closure passes own that). Pure.
+ */
+export function collectFailedDimensions(
+  summary: CoverageSummary | null | undefined,
+): FailedDimensionRef[] {
+  if (!summary || !Array.isArray(summary.per_endpoint)) return [];
+  const failed: FailedDimensionRef[] = [];
+  for (const ep of summary.per_endpoint) {
+    for (const d of ep.dimensions) {
+      if (d.achieved || d.reported_only || isHappyDimension(d)) continue;
+      failed.push({
+        operation_id: ep.operation_id,
+        method: ep.method,
+        path: ep.path,
+        name: d.name,
+        type: d.type,
+        expected_status: d.expected_status,
+        reason: d.reason ?? null,
+      });
+    }
+  }
+  return failed;
 }

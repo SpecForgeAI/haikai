@@ -5,7 +5,7 @@
  * happy-path baseline; excluded endpoints (absent from per_endpoint) are OUT of
  * the denominator; a null / empty summary is never "complete".
  */
-import { computeHappyPathGate } from '../services/captureCoverageGate';
+import { computeHappyPathGate, collectFailedDimensions } from '../services/captureCoverageGate';
 import type {
   CoverageSummary,
   EndpointCoverageResult,
@@ -117,5 +117,35 @@ describe('computeHappyPathGate', () => {
     const gate = computeHappyPathGate(summaryOf([]));
     expect(gate.complete).toBe(false);
     expect(gate.included_total).toBe(0);
+  });
+});
+
+describe('collectFailedDimensions (2026-07-25 dimensional retry set)', () => {
+  it('collects failed non-happy, non-reported-only dimensions with their endpoint identity', () => {
+    const reported: CoverageDimensionResult = { ...negDim(false), name: 'volatility', type: 'volatility', reported_only: true };
+    const failed = collectFailedDimensions(
+      summaryOf([
+        ep('op1', 'GET', '/orders/{id}', [happyDim(false, 'missing'), negDim(false), reported]),
+        ep('op2', 'GET', '/orders', [happyDim(true), negDim(true)]),
+      ]),
+    );
+    // The failed happy dim (Pass A/B territory), the reported-only dim, and
+    // every achieved dim are all excluded — only op1's not_found remains.
+    expect(failed).toEqual([
+      {
+        operation_id: 'op1',
+        method: 'GET',
+        path: '/orders/{id}',
+        name: 'not_found',
+        type: 'not_found',
+        expected_status: 'not_found',
+        reason: 'no not_found capture',
+      },
+    ]);
+  });
+
+  it('null summary -> empty set', () => {
+    expect(collectFailedDimensions(null)).toEqual([]);
+    expect(collectFailedDimensions(undefined)).toEqual([]);
   });
 });

@@ -40,6 +40,12 @@ export interface CoverageDimension {
   name: string;
   type: string;
   expected_status: string;
+  /**
+   * REPORTED-only dimensions are informational by design and never enter the
+   * dimensional-retry set (mirrors the service field; legacy summaries lacking
+   * it parse as false). Spec 2026-07-06-k / 2026-07-25 dimensional retry.
+   */
+  reported_only: boolean;
   achieved: boolean;
   /** The canonical capture id when achieved; null on a MISS. */
   canonical_capture_id: string | null;
@@ -147,6 +153,7 @@ function parseDimension(raw: unknown): CoverageDimension {
     name: toStr(o.name),
     type: toStr(o.type),
     expected_status: toStr(o.expected_status),
+    reported_only: toBool(o.reported_only),
     achieved: toBool(o.achieved),
     canonical_capture_id: toNullableStr(o.canonical_capture_id),
     reason: toNullableStr(o.reason),
@@ -323,6 +330,26 @@ export function computeHappyPathGate(
     happy_achieved: happyAchieved,
     unresolved,
   };
+}
+
+/**
+ * Count the failed NON-happy, non-reported-only dimensions across the summary
+ * — the dimensional retry set (2026-07-25). Mirrors the validation-service
+ * `collectFailedDimensions` so the retry modal's checkbox count and the
+ * server-side pass can never disagree. Pure; a null/unrecorded summary is 0.
+ */
+export function countFailedDimensions(
+  raw: Record<string, unknown> | null | undefined,
+): number {
+  const summary = parseCoverageSummary(raw);
+  if (!summary) return 0;
+  let n = 0;
+  for (const ep of summary.per_endpoint) {
+    for (const d of ep.dimensions) {
+      if (!d.achieved && !d.reported_only && !isHappyDimension(d)) n += 1;
+    }
+  }
+  return n;
 }
 
 export interface CoverageGateBannerClasses {

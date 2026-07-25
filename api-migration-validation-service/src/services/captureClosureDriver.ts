@@ -38,11 +38,40 @@ import {
   type EndpointDiagnosis,
   type RepairConfig,
 } from './captureClosurePassB';
-import { computeHappyPathGate, type HappyPathGate } from './captureCoverageGate';
+import {
+  computeHappyPathGate,
+  type HappyPathGate,
+  type FailedDimensionRef,
+} from './captureCoverageGate';
+import {
+  classifyObservedBehaviour,
+  type ResponseSemanticsConfig,
+} from './responseSemantics';
 
 /** A 2xx is the happy-path oracle; everything else is not a baseline. */
 export function isHappyStatus(status: number | null): boolean {
   return status !== null && status >= 200 && status < 300;
+}
+
+/**
+ * The closing capture for a NAMED dimension: the LAST capture whose OBSERVED
+ * behaviour matches the dimension's intended class (a not_found dimension
+ * closes on its intended not-found behaviour, never on a stray 2xx). This is
+ * deliberately STRICTER than `selectCanonicalCapture`, whose "last usable
+ * oracle" fallback would close a dimension on the wrong behaviour class.
+ */
+export function selectDimensionClosingCapture(
+  captures: ReadonlyArray<{ captureId: string; status: number | null; body?: unknown }>,
+  expectedStatus: FailedDimensionRef['expected_status'],
+  config?: ResponseSemanticsConfig | null,
+): { captureId: string; status: number | null } | null {
+  for (let i = captures.length - 1; i >= 0; i -= 1) {
+    const ob = classifyObservedBehaviour(captures[i].status, captures[i].body, config);
+    if (ob.observed && ob.bucket === expectedStatus) {
+      return { captureId: captures[i].captureId, status: captures[i].status };
+    }
+  }
+  return null;
 }
 
 /** Fire ONE concrete candidate request live and persist its capture. */
@@ -56,6 +85,20 @@ export interface ClosureFirer {
 export interface ClosureRepairer {
   repair(
     diagnosis: EndpointDiagnosis,
+    directive: string,
+    attempts: number,
+  ): Promise<{ closed: boolean; captureId: string | null }>;
+}
+
+/**
+ * Run one repair loop for a NAMED failed dimension (2026-07-25 — dimensional
+ * closure). The implementation judges closure per the dimension's
+ * expected_status class (via {@link selectDimensionClosingCapture}), NOT the
+ * happy 2xx oracle.
+ */
+export interface ClosureDimensionRepairer {
+  repairDimension(
+    dimension: FailedDimensionRef,
     directive: string,
     attempts: number,
   ): Promise<{ closed: boolean; captureId: string | null }>;
@@ -83,11 +126,25 @@ export interface ClosureOrchestrationInput {
   configByOperationId: ReadonlyMap<string, ClosureConfigEntry>;
   /** Last-attempt diagnosis per uncovered endpoint (for Pass B directives). */
   diagnosisByOperationId: ReadonlyMap<string, EndpointDiagnosis>;
+  /**
+   * OPTIONAL dimensional retry set (2026-07-25): the failed non-happy
+   * dimensions to repair after Pass A/B (from `collectFailedDimensions`).
+   * Empty/absent -> the dimensional pass is skipped entirely.
+   */
+  failedDimensions?: ReadonlyArray<FailedDimensionRef>;
+}
+
+export interface ClosedDimensionRef {
+  operation_id: string;
+  name: string;
+  capture_id: string;
 }
 
 export interface ClosureOrchestrationResult {
   passA: { fired: number; closed: string[] };
   passB: { attempted: number; closed: string[] };
+  /** Dimensional pass (only runs when failedDimensions were supplied). */
+  dimensional: { attempted: number; closed: ClosedDimensionRef[] };
   /** operation_id → the capture id that closed it (Pass A or B). */
   captureIdByOperationId: Map<string, string>;
   updatedSummary: CoverageSummary;
@@ -104,6 +161,7 @@ export async function runClosureOrchestration(
   firer: ClosureFirer,
   repairer: ClosureRepairer,
   dbSampler: ClosureDbSampler,
+  dimensionRepairer?: ClosureDimensionRepairer,
 ): Promise<ClosureOrchestrationResult> {
   const gate0 = computeHappyPathGate(input.summary);
   const uncovered: UncoveredEndpointInput[] = gate0.unresolved.map((u) => ({
@@ -183,10 +241,66 @@ export async function runClosureOrchestration(
     }
   }
 
-  const updatedSummary = applyClosureToSummary(input.summary, closedBy);
+  // ---- Dimensional pass (2026-07-25): repair the OTHER failed dimensions ---
+  // Runs after Pass A/B so a freshly-closed endpoint's remaining dimensions
+  // are retried in the same run. Fail-soft per dimension, like the passes
+  // above. Skipped entirely when no dimensions (or no repairer) were supplied.
+  const dimensionalClosed: ClosedDimensionRef[] = [];
+  let dimensionalAttempted = 0;
+  const failedDimensions = input.failedDimensions ?? [];
+  if (dimensionRepairer && failedDimensions.length > 0) {
+    for (const dim of failedDimensions) {
+      const cfg = input.configByOperationId.get(dim.operation_id);
+      const repairConfig: RepairConfig = {
+        attempts: cfg?.attempts ?? null,
+        notes: cfg?.notes ?? null,
+      };
+      // Reuse the failure-mode playbook seeded from the dimension's recorded
+      // miss reason, then bolt the dimension intent on top — the repair goal
+      // is the dimension's expected behaviour class, not a 2xx.
+      const base = buildRepairDirective(
+        {
+          operation_id: dim.operation_id,
+          method: dim.method,
+          path: dim.path,
+          last_status: null,
+          last_error_summary: dim.reason,
+          last_request_summary: null,
+        },
+        repairConfig,
+      );
+      const directive =
+        `Coverage dimension repair — scenario "${dim.name}" (type ${dim.type}) for ` +
+        `${dim.method.toUpperCase()} ${dim.path}. The goal is to elicit the ` +
+        `"${dim.expected_status}" behaviour class for this scenario (NOT the happy path). ` +
+        (dim.reason ? `Recorded miss reason: ${dim.reason}. ` : '') +
+        `\n${base.directive}`;
+      dimensionalAttempted += 1;
+      try {
+        const { closed, captureId } = await dimensionRepairer.repairDimension(
+          dim,
+          directive,
+          base.attempts,
+        );
+        if (closed && captureId) {
+          dimensionalClosed.push({
+            operation_id: dim.operation_id,
+            name: dim.name,
+            capture_id: captureId,
+          });
+        }
+      } catch {
+        // fail-soft: the dimension stays unachieved.
+      }
+    }
+  }
+
+  let updatedSummary = applyClosureToSummary(input.summary, closedBy);
+  updatedSummary = applyDimensionClosuresToSummary(updatedSummary, dimensionalClosed);
   return {
     passA: { fired: passAFired, closed: passAClosed },
     passB: { attempted: passBAttempted, closed: passBClosed },
+    dimensional: { attempted: dimensionalAttempted, closed: dimensionalClosed },
     captureIdByOperationId: closedBy,
     updatedSummary,
     gate: computeHappyPathGate(updatedSummary),
@@ -298,5 +412,51 @@ export function applyClosureToSummary(
     dimensions_total: dimensionsTotal,
     dimensions_achieved: dimensionsAchieved,
     overall_score: dimensionsTotal > 0 ? dimensionsAchieved / dimensionsTotal : 0,
+  };
+}
+
+/**
+ * Patch a coverage summary so each closed NAMED dimension reads achieved (with
+ * its closing capture id), then recompute the per-endpoint scores + aggregate
+ * counts. PURE — the dimensional sibling of {@link applyClosureToSummary}.
+ * Unknown operation/dimension names are ignored (never throws); the total
+ * dimension count is unchanged (a named dimension exists by definition).
+ */
+export function applyDimensionClosuresToSummary(
+  summary: CoverageSummary,
+  closed: ReadonlyArray<ClosedDimensionRef>,
+): CoverageSummary {
+  if (closed.length === 0) return summary;
+  const byOperation = new Map<string, Map<string, string>>();
+  for (const c of closed) {
+    const dims = byOperation.get(c.operation_id) ?? new Map<string, string>();
+    dims.set(c.name, c.capture_id);
+    byOperation.set(c.operation_id, dims);
+  }
+  const perEndpoint = summary.per_endpoint.map((ep) => {
+    const dims = byOperation.get(ep.operation_id);
+    if (!dims) return ep;
+    let changed = false;
+    const dimensions = ep.dimensions.map((d) => {
+      const captureId = dims.get(d.name);
+      if (!captureId || d.achieved) return d;
+      changed = true;
+      return { ...d, achieved: true, canonical_capture_id: captureId, reason: null };
+    });
+    if (!changed) return ep;
+    const achieved = dimensions.filter((d) => d.achieved).length;
+    return { ...ep, dimensions, score: dimensions.length ? achieved / dimensions.length : 0 };
+  });
+  const endpointAchieved = perEndpoint.reduce(
+    (acc, e) => acc + e.dimensions.filter((d) => d.achieved).length,
+    0,
+  );
+  const dimensionsAchieved = endpointAchieved + (summary.auth_coverage.achieved ? 1 : 0);
+  return {
+    ...summary,
+    per_endpoint: perEndpoint,
+    dimensions_achieved: dimensionsAchieved,
+    overall_score:
+      summary.dimensions_total > 0 ? dimensionsAchieved / summary.dimensions_total : 0,
   };
 }
