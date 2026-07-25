@@ -1839,6 +1839,11 @@ export interface RetryUncoveredResponse {
   sessionId: string;
   passA: { fired: number; closed: string[] };
   passB: { attempted: number; closed: string[]; available: boolean };
+  /** Dimensional retry results (2026-07-25; zeros unless the flag was sent). */
+  dimensional?: {
+    attempted: number;
+    closed: Array<{ operation_id: string; name: string; capture_id: string }>;
+  };
   gate: {
     complete: boolean;
     included_total: number;
@@ -1861,13 +1866,14 @@ export async function retryUncoveredApis(
   architectureId: string,
   sessionId: string,
   config: RetryUncoveredConfigEntry[],
+  includeOtherDimensions = false,
 ): Promise<RetryUncoveredResponse> {
   return jsonRequest<RetryUncoveredResponse>(
     actionUrl(projectId, architectureId, sessionId, 'retry-uncovered'),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config }),
+      body: JSON.stringify({ config, includeOtherDimensions }),
     },
   );
 }

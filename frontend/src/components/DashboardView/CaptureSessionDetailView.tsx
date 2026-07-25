@@ -84,7 +84,11 @@ import { CoverageSummaryPanel, CoverageGateBanner } from './CoverageSummaryPanel
 import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
 import { RetryUncoveredModal } from './RetryUncoveredModal';
 import type { EndpointRetryConfig } from './RetryUncoveredModal';
-import { computeHappyPathGate, parseCoverageSummary } from './CoverageSummaryPanel';
+import {
+  computeHappyPathGate,
+  parseCoverageSummary,
+  countFailedDimensions,
+} from './CoverageSummaryPanel';
 import {
   resolvePostmanSources,
   buildPostmanCollection,
@@ -267,7 +271,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   // the user can adjust attempts/notes and retry the remainder (or move to the
   // Postman/exclude wizard, CC4).
   const handleRunClosure = useCallback(
-    async (config: EndpointRetryConfig[]) => {
+    async (config: EndpointRetryConfig[], includeOtherDimensions = false) => {
       setClosureBusy(true);
       setClosureNote(null);
       try {
@@ -276,9 +280,16 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           architectureId,
           sessionId,
           config.map((c) => ({ operationId: c.operation_id, attempts: c.attempts, notes: c.notes })),
+          includeOtherDimensions,
         );
         const fresh = await fetchOnce();
         const closed = result.passA.closed.length + result.passB.closed.length;
+        const dimsClosed = result.dimensional?.closed.length ?? 0;
+        const dimsAttempted = result.dimensional?.attempted ?? 0;
+        const dimsNote =
+          dimsAttempted > 0
+            ? ` Dimensional retry: closed ${dimsClosed} of ${dimsAttempted} failed dimension${dimsAttempted === 1 ? '' : 's'}.`
+            : '';
         if (result.gate.complete) {
           setRetryModalEndpoints(null);
           setClosureNote(null);
@@ -295,7 +306,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
             ? ''
             : ' (Pass B unavailable — re-parse the OAS to enable LLM repair)';
           setClosureNote(
-            `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.`,
+            `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.${dimsNote}`,
           );
         }
         void fresh;
@@ -857,6 +868,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
             setClosureNote(null);
           }}
           onLaunch={handleRunClosure}
+          failedDimensionsCount={countFailedDimensions(session.coverage_summary_json)}
           onDownloadPostman={handleDownloadPostman}
           onExclude={handleExclude}
           busy={closureBusy}

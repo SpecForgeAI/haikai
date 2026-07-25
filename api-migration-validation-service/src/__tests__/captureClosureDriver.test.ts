@@ -10,12 +10,16 @@
 import {
   runClosureOrchestration,
   applyClosureToSummary,
+  applyDimensionClosuresToSummary,
   removeEndpointFromSummary,
   isHappyStatus,
+  selectDimensionClosingCapture,
   type ClosureFirer,
   type ClosureRepairer,
+  type ClosureDimensionRepairer,
   type ClosureDbSampler,
 } from '../services/captureClosureDriver';
+import { collectFailedDimensions } from '../services/captureCoverageGate';
 import type { CoverageSummary, EndpointCoverageResult, CoverageDimensionResult } from '../services/captureSessionOrchestrator';
 import type { EndpointDiagnosis } from '../services/captureClosurePassB';
 
@@ -35,6 +39,25 @@ function happy(achieved: boolean): CoverageDimensionResult {
 
 function ep(operation_id: string, method: string, path: string, achieved: boolean): EndpointCoverageResult {
   return { operation_id, method, path, score: achieved ? 1 : 0, dimensions: [happy(achieved)] };
+}
+
+function dim(
+  name: string,
+  expected: CoverageDimensionResult['expected_status'],
+  achieved: boolean,
+  reportedOnly = false,
+): CoverageDimensionResult {
+  return {
+    name,
+    type: name.replace(/ .*/, ''),
+    expected_status: expected,
+    dimension_kind: 'error_status',
+    reported_only: reportedOnly,
+    achieved,
+    canonical_capture_id: achieved ? 'existing' : null,
+    reason: achieved ? null : 'no matching behaviour observed',
+    observation: null,
+  };
 }
 
 function summaryOf(per_endpoint: EndpointCoverageResult[], authAchieved = false): CoverageSummary {
@@ -100,6 +123,56 @@ describe('removeEndpointFromSummary (exclude-with-reason)', () => {
   });
 });
 
+describe('selectDimensionClosingCapture', () => {
+  it('closes on the LAST capture matching the intended class only — never the wrong class', () => {
+    const caps = [
+      { captureId: 'c1', status: 200, body: { id: 1 } },
+      { captureId: 'c2', status: 404, body: { error: 'no such order' } },
+      { captureId: 'c3', status: 200, body: { id: 2 } },
+    ];
+    expect(selectDimensionClosingCapture(caps, 'not_found')!.captureId).toBe('c2');
+    expect(selectDimensionClosingCapture(caps, 'success')!.captureId).toBe('c3');
+    // No auth-class behaviour observed → null (a stray 2xx must NOT close it).
+    expect(selectDimensionClosingCapture(caps, 'auth')).toBeNull();
+  });
+
+  it('a 200 with an EMPTY body IS the not_found behaviour (semantics-aware, not raw status)', () => {
+    const caps = [{ captureId: 'c1', status: 200, body: null }];
+    expect(selectDimensionClosingCapture(caps, 'not_found')!.captureId).toBe('c1');
+    expect(selectDimensionClosingCapture(caps, 'success')).toBeNull();
+  });
+});
+
+describe('applyDimensionClosuresToSummary', () => {
+  it('flips only the named dimension, recomputes the endpoint score, ignores unknown names', () => {
+    const s = summaryOf([
+      {
+        operation_id: 'op1',
+        method: 'GET',
+        path: '/a',
+        score: 1 / 3,
+        dimensions: [happy(true), dim('not_found probe', 'not_found', false), dim('client_error probe', 'client_error', false)],
+      },
+    ]);
+    const out = applyDimensionClosuresToSummary(s, [
+      { operation_id: 'op1', name: 'not_found probe', capture_id: 'cap-nf' },
+      { operation_id: 'op1', name: 'no-such-dimension', capture_id: 'cap-x' },
+      { operation_id: 'ghost', name: 'not_found probe', capture_id: 'cap-y' },
+    ]);
+    const dims = out.per_endpoint[0].dimensions;
+    expect(dims.find((d) => d.name === 'not_found probe')!.achieved).toBe(true);
+    expect(dims.find((d) => d.name === 'not_found probe')!.canonical_capture_id).toBe('cap-nf');
+    expect(dims.find((d) => d.name === 'client_error probe')!.achieved).toBe(false);
+    expect(out.per_endpoint[0].score).toBeCloseTo(2 / 3);
+    expect(out.dimensions_total).toBe(s.dimensions_total);
+  });
+
+  it('returns the input unchanged for an empty closure list', () => {
+    const s = summaryOf([ep('op1', 'GET', '/a', true)]);
+    expect(applyDimensionClosuresToSummary(s, [])).toBe(s);
+  });
+});
+
 describe('runClosureOrchestration', () => {
   it('Pass A closes a path-param endpoint on its first 2xx and stops firing it', async () => {
     const s = summaryOf([ep('op1', 'GET', '/orders/{id}', false)]);
@@ -159,6 +232,72 @@ describe('runClosureOrchestration', () => {
     expect(seen[0].attempts).toBe(5);
     expect(seen[0].directive).toMatch(/use Core/);
     expect(res.gate.complete).toBe(true);
+  });
+
+  it('dimensional pass (2026-07-25): failed non-happy dimensions repair per expected_status and flip in the summary; the gate stays happy-only', async () => {
+    // Endpoint op1: happy achieved, not_found dimension FAILED.
+    const withDims: EndpointCoverageResult = {
+      operation_id: 'op1',
+      method: 'GET',
+      path: '/orders/{id}',
+      score: 0.5,
+      dimensions: [happy(true), dim('not_found probe', 'not_found', false)],
+    };
+    const s = summaryOf([withDims]);
+    const failed = collectFailedDimensions(s);
+    expect(failed).toEqual([
+      expect.objectContaining({ operation_id: 'op1', name: 'not_found probe', expected_status: 'not_found' }),
+    ]);
+
+    const seen: { name: string; directive: string }[] = [];
+    const dimensionRepairer: ClosureDimensionRepairer = {
+      repairDimension: async (d, directive) => {
+        seen.push({ name: d.name, directive });
+        return { closed: true, captureId: 'cap-dim' };
+      },
+    };
+    const res = await runClosureOrchestration(
+      {
+        summary: s,
+        tablesByOperationId: new Map(),
+        configByOperationId: new Map(),
+        diagnosisByOperationId: new Map(),
+        failedDimensions: failed,
+      },
+      { fireCandidate: async () => ({ status: 404, captureId: null }) },
+      noopRepairer,
+      noopSampler,
+      dimensionRepairer,
+    );
+    expect(res.dimensional.attempted).toBe(1);
+    expect(res.dimensional.closed).toEqual([
+      { operation_id: 'op1', name: 'not_found probe', capture_id: 'cap-dim' },
+    ]);
+    // Directive names the dimension and its intended behaviour class.
+    expect(seen[0].directive).toMatch(/not_found probe/);
+    expect(seen[0].directive).toMatch(/"not_found" behaviour class/);
+    // Summary flipped the NAMED dimension; totals unchanged, achieved +1.
+    const patched = res.updatedSummary.per_endpoint[0];
+    expect(patched.dimensions.find((d) => d.name === 'not_found probe')!.achieved).toBe(true);
+    expect(res.updatedSummary.dimensions_total).toBe(s.dimensions_total);
+    expect(res.updatedSummary.dimensions_achieved).toBe(s.dimensions_achieved + 1);
+    expect(res.gate.complete).toBe(true); // happy was already achieved
+  });
+
+  it('dimensional pass is skipped when no failedDimensions are supplied (result reports 0)', async () => {
+    const s = summaryOf([ep('op2', 'GET', '/b', true)]);
+    const res = await runClosureOrchestration(
+      {
+        summary: s,
+        tablesByOperationId: new Map(),
+        configByOperationId: new Map(),
+        diagnosisByOperationId: new Map(),
+      },
+      { fireCandidate: async () => ({ status: 404, captureId: null }) },
+      noopRepairer,
+      noopSampler,
+    );
+    expect(res.dimensional).toEqual({ attempted: 0, closed: [] });
   });
 
   it('fail-soft: a throwing firer leaves the endpoint unresolved, not the whole run', async () => {

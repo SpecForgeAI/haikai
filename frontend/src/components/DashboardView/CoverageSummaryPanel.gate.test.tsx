@@ -14,6 +14,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import {
   CoverageGateBanner,
   computeHappyPathGate,
+  countFailedDimensions,
 } from './CoverageSummaryPanel';
 
 const classes = {
@@ -73,6 +74,22 @@ describe('computeHappyPathGate', () => {
     expect(gate.unresolved).toEqual([
       { operation_id: 'b', method: 'GET', path: '/b/{id}', reason: 'id 999 not found' },
     ]);
+  });
+});
+
+describe('countFailedDimensions (2026-07-25 dimensional retry set)', () => {
+  it('counts failed non-happy, non-reported-only dimensions; null summary is 0', () => {
+    const dims = [
+      { name: 'happy_path', type: 'happy_path', expected_status: 'success', achieved: false, canonical_capture_id: null, reason: 'missing', observation: null },
+      { name: 'not_found', type: 'not_found', expected_status: 'not_found', achieved: false, canonical_capture_id: null, reason: 'no 404 seen', observation: null },
+      { name: 'client_error', type: 'client_error', expected_status: 'client_error', achieved: true, canonical_capture_id: 'c2', reason: null, observation: null },
+      { name: 'volatility', type: 'volatility', expected_status: 'success', reported_only: true, achieved: false, canonical_capture_id: null, reason: 'n/a', observation: null },
+    ];
+    const raw = rawWith([{ operation_id: 'a', method: 'GET', path: '/a', score: 0.25, dimensions: dims }]);
+    // Only the failed not_found counts: the failed happy dim is Pass A/B
+    // territory, the achieved dim and the reported-only dim are excluded.
+    expect(countFailedDimensions(raw)).toBe(1);
+    expect(countFailedDimensions(null)).toBe(0);
   });
 });
 

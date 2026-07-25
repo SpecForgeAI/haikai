@@ -51,16 +51,49 @@ describe('RetryUncoveredModal', () => {
       target: { value: "try ID=3275, use 'Core' for type" },
     });
     fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
-    expect(onLaunch).toHaveBeenCalledWith([
-      {
-        operation_id: 'op1',
-        method: 'GET',
-        path: '/orders/{id}',
-        attempts: 25,
-        notes: "try ID=3275, use 'Core' for type",
-      },
-      { operation_id: 'op2', method: 'POST', path: '/orders', attempts: DEFAULT_ATTEMPTS, notes: '' },
-    ]);
+    expect(onLaunch).toHaveBeenCalledWith(
+      [
+        {
+          operation_id: 'op1',
+          method: 'GET',
+          path: '/orders/{id}',
+          attempts: 25,
+          notes: "try ID=3275, use 'Core' for type",
+        },
+        { operation_id: 'op2', method: 'POST', path: '/orders', attempts: DEFAULT_ATTEMPTS, notes: '' },
+      ],
+      false,
+    );
+  });
+
+  it('hides the dimensional-retry checkbox when there are no failed dimensions', () => {
+    render(
+      <RetryUncoveredModal
+        unresolved={unresolved}
+        classes={classes}
+        onClose={() => {}}
+        onLaunch={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('retry-uncovered-modal-dimensions-toggle')).toBeNull();
+  });
+
+  it('dimensional-retry checkbox (2026-07-25): shows the count and passes the flag to onLaunch when checked', () => {
+    const onLaunch = vi.fn();
+    render(
+      <RetryUncoveredModal
+        unresolved={unresolved}
+        classes={classes}
+        onClose={() => {}}
+        onLaunch={onLaunch}
+        failedDimensionsCount={7}
+      />,
+    );
+    const toggle = screen.getByTestId('retry-uncovered-modal-dimensions-toggle');
+    expect(toggle.textContent).toContain('Also retry other failed coverage dimensions (7)');
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-dimensions-checkbox'));
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
+    expect(onLaunch.mock.calls[0][1]).toBe(true);
   });
 
   it('invalid attempts fall back to the default', () => {
