@@ -72,6 +72,15 @@ import {
   createStoryForFinding,
 } from '../services/migrationCarryOverActions';
 import {
+  runCarryOverTriage,
+  draftSingleSuggestion,
+  applyTriageSuggestions,
+  TriageItemInput,
+  TriageStoryIndexEntry,
+  TriageDisposition,
+  ApprovedSuggestion,
+} from '../services/migrationCarryOverTriage';
+import {
   computeRunParityStatus,
   defaultRunParityStatusDeps,
 } from '../services/migrationRunParityStatus';
@@ -1209,6 +1218,224 @@ migrationExecutionRouter.post(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Failed to generate capability stories' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Carry-over TRIAGE (2026-07-26): LLM-drafted dispositions, human-approved.
+// The bookkeeping (coverage maths, validation, application) is deterministic;
+// only the CONTENT (which disposition, what to draft) is LLM-drafted, and
+// NOTHING is applied until the reviewer approves it (apply-triage below).
+// ---------------------------------------------------------------------------
+
+/**
+ * Assemble the triage inputs server-side: the un-accounted items (with their
+ * content) + the compact story index (cite/amend targets). Shared by the
+ * batch, the re-draft, and the apply routes so all three see the same truth.
+ */
+async function assembleTriageContext(projectId: string, bookId: string) {
+  const book = await fetchBookOfWork(projectId, bookId);
+  if (!book) return null;
+  const architectureId = book.current_architecture_id ?? null;
+  if (!architectureId) return null;
+  const workItems = await fetchWorkItems(projectId);
+  const inputs = await gatherCarryOverCoverageInputs({
+    projectId,
+    architectureId,
+    book,
+    workItems,
+  });
+  const coverage = computeCarryOverCoverage(inputs);
+  const items: TriageItemInput[] = coverage.unaccounted.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    detail: inputs.itemDetailById.get(item.id) ?? null,
+  }));
+  const storyIndex: TriageStoryIndexEntry[] = (book.book_of_work_json?.items ?? [])
+    .filter((it) => (it.type ?? '').toLowerCase() === 'story' && typeof it.id === 'string')
+    .map((it) => ({
+      bookItemId: it.id as string,
+      title: it.title ?? it.id as string,
+      description: it.description ?? '',
+      workstream: it.workstream ?? null,
+    }));
+  return { book, architectureId, inputs, coverage, items, storyIndex };
+}
+
+/**
+ * POST .../migration-books-of-work/:bookId/carry-over/triage — draft ONE
+ * suggestion per un-accounted item (batch, sequential LLM calls). Returns
+ * `{ suggestions }` — the review table renders them for editing/approval;
+ * NOTHING is applied here.
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/carry-over/triage',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    try {
+      const ctx = await assembleTriageContext(projectId, bookId);
+      if (!ctx) {
+        return res.status(404).json({ error: 'Book of work (or its architecture) not found' });
+      }
+      if (ctx.items.length === 0) {
+        return res.status(200).json({ suggestions: [] });
+      }
+      const suggestions = await runCarryOverTriage({
+        projectId,
+        bookId,
+        items: ctx.items,
+        storyIndex: ctx.storyIndex,
+      });
+      return res.status(200).json({ suggestions });
+    } catch (error) {
+      logger.error('[diag-gateway] carry_over_triage batch_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Carry-over triage failed' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-books-of-work/:bookId/carry-over/triage/redraft — re-draft
+ * ONE item with the reviewer's steering (the user's requirement: a free-text
+ * guidance field feeding the LLM when they choose/redirect a disposition).
+ * Body: { item_id, forced_disposition?, guidance?, target_book_item_id? }.
+ * When a target story is supplied for cite/amend, the story index is narrowed
+ * to it so the draft is FOR that story.
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/carry-over/triage/redraft',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as {
+      item_id?: string;
+      forced_disposition?: string;
+      guidance?: string;
+      target_book_item_id?: string;
+    };
+    if (!body.item_id || typeof body.item_id !== 'string') {
+      return res.status(400).json({ error: 'item_id is required' });
+    }
+    const forced =
+      typeof body.forced_disposition === 'string' &&
+      ['cite', 'amend_story', 'new_story', 'dismiss'].includes(body.forced_disposition)
+        ? (body.forced_disposition as TriageDisposition)
+        : null;
+    try {
+      const ctx = await assembleTriageContext(projectId, bookId);
+      if (!ctx) {
+        return res.status(404).json({ error: 'Book of work (or its architecture) not found' });
+      }
+      const item = ctx.items.find((i) => i.id === body.item_id);
+      if (!item) {
+        return res
+          .status(400)
+          .json({ error: `item '${body.item_id}' is not an un-accounted carry-over item` });
+      }
+      let storyIndex = ctx.storyIndex;
+      if (
+        body.target_book_item_id &&
+        (forced === 'cite' || forced === 'amend_story')
+      ) {
+        const target = ctx.storyIndex.filter(
+          (s) => s.bookItemId === body.target_book_item_id
+        );
+        if (target.length === 0) {
+          return res
+            .status(400)
+            .json({ error: `target story '${body.target_book_item_id}' not found` });
+        }
+        storyIndex = target;
+      }
+      const suggestion = await draftSingleSuggestion({
+        projectId,
+        item,
+        storyIndex,
+        forcedDisposition: forced,
+        guidance: body.guidance ?? null,
+      });
+      return res.status(200).json({ suggestion });
+    } catch (error) {
+      logger.error('[diag-gateway] carry_over_triage redraft_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Carry-over re-draft failed' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-books-of-work/:bookId/carry-over/apply-triage — apply the
+ * APPROVED suggestions (post-editing) sequentially, fail-soft per item,
+ * through the SAME action functions the manual buttons use. Body:
+ * `{ suggestions: [...] }` — the camelCase suggestion objects this API
+ * returned, as edited/approved by the reviewer. Responds with per-item
+ * results + the REFRESHED coverage so the panel and Stage-2 card update in
+ * one round trip.
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/carry-over/apply-triage',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as { suggestions?: unknown };
+    if (!Array.isArray(body.suggestions) || body.suggestions.length === 0) {
+      return res.status(400).json({ error: 'suggestions[] is required' });
+    }
+    const approved: ApprovedSuggestion[] = [];
+    for (const raw of body.suggestions) {
+      const s = raw as Record<string, unknown>;
+      if (
+        typeof s.itemId !== 'string' ||
+        (s.kind !== 'capability' && s.kind !== 'finding') ||
+        typeof s.disposition !== 'string' ||
+        !['cite', 'amend_story', 'new_story', 'dismiss'].includes(s.disposition)
+      ) {
+        return res.status(400).json({
+          error:
+            'each suggestion needs itemId, kind (capability|finding) and a valid disposition',
+        });
+      }
+      approved.push(s as unknown as ApprovedSuggestion);
+    }
+    try {
+      const ctx = await assembleTriageContext(projectId, bookId);
+      if (!ctx) {
+        return res.status(404).json({ error: 'Book of work (or its architecture) not found' });
+      }
+      const results = await applyTriageSuggestions({
+        projectId,
+        bookId,
+        architectureId: ctx.architectureId,
+        suggestions: approved,
+        itemDetailById: ctx.inputs.itemDetailById,
+      });
+      // Refresh the coverage AFTER the writes so the response carries truth.
+      const after = await assembleTriageContext(projectId, bookId);
+      const coverage = after
+        ? {
+            ...after.coverage,
+            architectureId: after.architectureId,
+            itemDetails: Object.fromEntries(
+              after.coverage.items
+                .map((i) => [i.id, after.inputs.itemDetailById.get(i.id)])
+                .filter(([, d]) => d !== undefined)
+            ),
+          }
+        : null;
+      return res.status(200).json({ results, coverage });
+    } catch (error) {
+      logger.error('[diag-gateway] carry_over_triage apply_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Carry-over apply-triage failed' });
     }
   }
 );

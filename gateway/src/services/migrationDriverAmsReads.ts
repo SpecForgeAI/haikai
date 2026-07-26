@@ -35,6 +35,8 @@ export interface BookOfWorkItem {
   type?: string | null;
   /** Display title. */
   title?: string | null;
+  /** Story description (the triage story index + amend prefill read it). */
+  description?: string | null;
   /** Sort key within siblings. */
   sequenceOrder?: number | null;
   /** Stored WorkItem UUID (presence = saved-to-backlog). */
