@@ -94,7 +94,13 @@ export interface MigrationExecutionRailProps {
   error: string | null;
   /** Reasons from a `blocked` resume — renders the break-glass panel. */
   pausedBlockers: Array<Record<string, unknown>> | null;
-  onStart: () => void;
+  /**
+   * Start the given plane (2026-07-26 per-plane runs): every stage card has
+   * its own Start button — "Start stage N" starts stage N ONLY. The server
+   * enforces plane precedence (previous stage deployed + parity), so a later
+   * stage's button is enabled once the latest run reads deployed.
+   */
+  onStart: (plane: RailPlaneId) => void;
   onApprove: () => void;
   onBreakGlass: () => void;
   onSelectStory: (bookItemId: string) => void;
@@ -289,49 +295,66 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                   )}
                 </div>
               )}
-              {isFirst && !runActive && (
-                <button
-                  type="button"
-                  className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
-                  style={{ marginTop: 8 }}
-                  // Spec 2026-07-23 (user decision): the spec gate is
-                  // PER-PLANE — "no story enters a plane without a spec"
-                  // means stage N gates on stage N's OWN stories. The old
-                  // whole-plan gate let a deliberately-blocked prerequisite
-                  // story in a LATER stage disable stage 1 at 15/15. Later
-                  // stages remain locked behind stage-(N-1) approval anyway.
-                  disabled={!satisfied || !scopeReady || busy}
-                  onClick={onStart}
-                  title={
-                    !satisfied
-                      ? 'Every story in THIS stage needs a spec (generated or manual-ready) before it can start'
-                      : !scopeReady
-                        ? 'Resolving the orchestration scope…'
-                        : 'Runs the plane end-to-end (build → verify → reconcile), then pauses for your review'
-                  }
-                  data-testid="execution-rail-start"
-                >
-                  {busy ? 'Starting…' : `▶ Start stage ${stageNo}`}
-                </button>
-              )}
-              {isFirst && !runActive && !scopeReady && (
-                <div
-                  className={styles.coveragePanelNote}
-                  role="status"
-                  data-testid="execution-rail-scope-note"
-                >
-                  {scopeHint ??
-                    'Resolving the run scope (organisation + project name)…'}
-                </div>
-              )}
-              {!isFirst && !runActive && (
-                <div
-                  className={styles.coveragePanelNote}
-                  data-testid={`execution-rail-locked-${p.plane}`}
-                >
-                  {'🔒'} starts after stage {stageNo - 1} approval
-                </div>
-              )}
+              {/* Per-plane runs (2026-07-26, user ruling): EVERY stage card
+                  has its own Start — "Start stage N" starts stage N ONLY.
+                  Stage N>1 unlocks when the latest run reads deployed (the
+                  previous stage completed build → verify → reconcile); the
+                  server's plane-precedence gate re-verifies + adds the DB
+                  data-parity check, so this enablement can never overpromise
+                  more than a parity result the dialog will then surface. */}
+              {(() => {
+                const prevDeployed = isFirst || runStatus === 'deployed';
+                const startable = !runActive && prevDeployed;
+                if (!startable) {
+                  return !runActive ? (
+                    <div
+                      className={styles.coveragePanelNote}
+                      data-testid={`execution-rail-locked-${p.plane}`}
+                    >
+                      {'🔒'} starts after stage {stageNo - 1} completes (deployed
+                      + reconciled)
+                    </div>
+                  ) : null;
+                }
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className={`${styles.selectButton} ${styles.selectButtonPrimary}`}
+                      style={{ marginTop: 8 }}
+                      // Spec 2026-07-23 (user decision): the spec gate is
+                      // PER-PLANE — "no story enters a plane without a spec"
+                      // means stage N gates on stage N's OWN stories.
+                      disabled={!satisfied || !scopeReady || busy}
+                      onClick={() => onStart(p.plane)}
+                      title={
+                        !satisfied
+                          ? 'Every story in THIS stage needs a spec (generated or manual-ready) before it can start'
+                          : !scopeReady
+                            ? 'Resolving the orchestration scope…'
+                            : 'Runs THIS plane end-to-end (build → verify → reconcile); the next stage unlocks when it completes'
+                      }
+                      data-testid={
+                        isFirst
+                          ? 'execution-rail-start'
+                          : `execution-rail-start-${p.plane}`
+                      }
+                    >
+                      {busy ? 'Starting…' : `▶ Start stage ${stageNo}`}
+                    </button>
+                    {!scopeReady && (
+                      <div
+                        className={styles.coveragePanelNote}
+                        role="status"
+                        data-testid="execution-rail-scope-note"
+                      >
+                        {scopeHint ??
+                          'Resolving the run scope (organisation + project name)…'}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           );
         })}

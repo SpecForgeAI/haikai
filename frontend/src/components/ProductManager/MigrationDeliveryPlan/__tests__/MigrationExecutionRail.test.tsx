@@ -256,9 +256,13 @@ describe('execution rail (Phase 1b)', () => {
     fireEvent.click(within(dialog).getByTestId('start-stage-confirm'));
 
     await waitFor(() =>
+      // Per-plane runs (2026-07-26): the DB card's Start scopes the run to
+      // the db plane — "Start stage 1" starts stage 1 ONLY.
       expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
         company: 'acme',
         project: 'hifi',
+        plane: 'db',
+        parityOverride: false,
       }),
     );
     await waitFor(() =>
@@ -269,6 +273,99 @@ describe('execution rail (Phase 1b)', () => {
         schema: 'public',
         username: 'postgres',
         password: 's3cret',
+      }),
+    );
+  });
+
+  it('PER-PLANE starts (2026-07-26): stage 2 is locked until the latest run is deployed, then gets its OWN Start scoped to its plane', async () => {
+    const twoPlane = [
+      makeItem({ id: 's-db', title: 'Schema', workItemId: 'wi-db' } as never),
+      makeItem({
+        id: 's-svc',
+        title: 'API',
+        workItemId: 'wi-svc',
+        workstream: 'api_migration',
+      } as never),
+    ];
+    mockFetchRows.mockResolvedValue([
+      generatedRow('wi-db', 's-db'),
+      generatedRow('wi-svc', 's-svc'),
+    ]);
+
+    // No run yet -> stage 2 locked, stage 1 startable.
+    const first = renderWorkspace(draftWith(twoPlane));
+    await waitFor(() =>
+      expect(screen.getByTestId('execution-rail-start')).toBeEnabled(),
+    );
+    expect(screen.getByTestId('execution-rail-locked-service')).toHaveTextContent(
+      'starts after stage 1 completes',
+    );
+    expect(screen.queryByTestId('execution-rail-start-service')).toBeNull();
+    first.unmount();
+
+    // Latest run deployed (stage 1 done) -> stage 2 has its own Start.
+    mockGetRun.mockResolvedValue({
+      id: 'run-db',
+      status: 'deployed',
+      items: [{ work_item_id: 'wi-db', status: 'deployed' }],
+    });
+    renderWorkspace(draftWith(twoPlane));
+    const stage2 = await screen.findByTestId('execution-rail-start-service');
+    expect(stage2).toBeEnabled();
+    fireEvent.click(stage2);
+    const dialog = await screen.findByTestId('start-stage-dialog');
+    expect(dialog).toHaveTextContent('Start stage 2');
+    fireEvent.click(within(dialog).getByTestId('start-stage-confirm'));
+    await waitFor(() =>
+      expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
+        company: 'acme',
+        project: 'hifi',
+        plane: 'service',
+        parityOverride: false,
+      }),
+    );
+  });
+
+  it('a parity-only refusal of a stage-2 start surfaces the recorded break-glass in the dialog', async () => {
+    const twoPlane = [
+      makeItem({ id: 's-db', title: 'Schema', workItemId: 'wi-db' } as never),
+      makeItem({
+        id: 's-svc',
+        title: 'API',
+        workItemId: 'wi-svc',
+        workstream: 'api_migration',
+      } as never),
+    ];
+    mockFetchRows.mockResolvedValue([
+      generatedRow('wi-db', 's-db'),
+      generatedRow('wi-svc', 's-svc'),
+    ]);
+    mockGetRun.mockResolvedValue({ id: 'run-db', status: 'deployed', items: [] });
+    mockTriggerMigrate.mockResolvedValueOnce({
+      status: 'blocked',
+      reasons: [
+        { code: 'data_parity_unverified', message: 'no parity report exists yet' },
+      ],
+    });
+    renderWorkspace(draftWith(twoPlane));
+
+    fireEvent.click(await screen.findByTestId('execution-rail-start-service'));
+    const dialog = await screen.findByTestId('start-stage-dialog');
+    fireEvent.click(within(dialog).getByTestId('start-stage-confirm'));
+
+    const breakGlass = await screen.findByTestId('start-stage-break-glass');
+    mockTriggerMigrate.mockResolvedValueOnce({
+      status: 'started',
+      runId: 'run-svc',
+      itemCount: 1,
+    });
+    fireEvent.click(breakGlass);
+    await waitFor(() =>
+      expect(mockTriggerMigrate).toHaveBeenLastCalledWith(PROJECT_ID, BOOK_ID, {
+        company: 'acme',
+        project: 'hifi',
+        plane: 'service',
+        parityOverride: true,
       }),
     );
   });

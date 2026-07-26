@@ -926,12 +926,22 @@ export interface MigrationExecutionRunDto {
  *
  * @param projectId Project owning the book of work.
  * @param bookId    GeneratedMigrationBookOfWork id.
- * @param body      The orchestration `{ company, project }` scope.
+ * @param body      The orchestration `{ company, project }` scope, plus the
+ *                  per-plane scope (2026-07-26): `plane` restricts the run —
+ *                  and every gate dimension — to that plane's stories
+ *                  ("Start stage N" starts stage N only); `parityOverride`
+ *                  is the break-glass past the DB data-parity precedence gate
+ *                  when starting the service plane (recorded on the run).
  */
 export async function triggerMigrate(
   projectId: string,
   bookId: string,
-  body: { company: string; project: string },
+  body: {
+    company: string;
+    project: string;
+    plane?: 'db' | 'service' | 'ui';
+    parityOverride?: boolean;
+  },
 ): Promise<TriggerMigrateResult> {
   const url =
     `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
