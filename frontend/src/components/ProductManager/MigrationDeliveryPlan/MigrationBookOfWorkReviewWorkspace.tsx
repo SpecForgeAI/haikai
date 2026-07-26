@@ -103,6 +103,7 @@ import {
   fetchMigrationCredentialsStatus,
   registerRunTargetDbCredentials,
   MigrationCredentialsStatus,
+  type MigrateBlockReason,
 } from '../../../api/migrationDeliveryDashboardApi';
 import MigrationBookOfWorkSelectionControls from './MigrationBookOfWorkSelectionControls';
 import MigrationBookOfWorkSaveToBacklogDialog, {
@@ -113,6 +114,51 @@ import { computeFindingsCoverage } from '../../../utils/findingsCoverage';
 import { buildUnaddressedFindingEntry } from '../../../config/gapWayfindingRegistry';
 import { useToast } from '../../../contexts/ToastContext';
 import styles from './MigrationBookOfWork.module.css';
+
+/**
+ * Group the server gate's blocking reasons by machine code with a friendly
+ * title + remedy per dimension (2026-07-26). Pure; exported for tests. The
+ * gate has THREE dimensions — spec readiness, the active current-state
+ * baseline, and carry-over accounting — and only the first is visible on the
+ * plane cards, so the dialog must spell out the other two itself.
+ */
+export function groupBlockReasons(
+  reasons: MigrateBlockReason[],
+): Array<{ code: string; title: string; remedy: string | null; messages: string[] }> {
+  const META: Record<string, { title: string; remedy: string | null }> = {
+    story_not_spec_ready: {
+      title: 'Stories not spec-ready',
+      remedy:
+        'Each listed story needs a generated spec saved to the backlog ' +
+        '(or defer the story to drop it from the run).',
+    },
+    missing_current_baseline: {
+      title: 'No active current-state baseline',
+      remedy:
+        'Capture and save an API behaviour baseline — reconciliation has no ' +
+        'oracle without one.',
+    },
+    carry_over_not_accounted: {
+      title: 'Carry-over items not accounted',
+      remedy:
+        'Each behaviour-bearing carry-over finding/capability must be CITED ' +
+        'by a story or DISMISSED with a reason (use "View findings" on this ' +
+        'screen) — non-API work has no reconciliation backstop.',
+    },
+  };
+  const byCode = new Map<string, string[]>();
+  for (const r of reasons) {
+    const list = byCode.get(r.code) ?? [];
+    list.push(r.message);
+    byCode.set(r.code, list);
+  }
+  return [...byCode.entries()].map(([code, messages]) => ({
+    code,
+    title: META[code]?.title ?? code,
+    remedy: META[code]?.remedy ?? null,
+    messages,
+  }));
+}
 
 export interface MigrationBookOfWorkReviewWorkspaceProps {
   projectId: string;
@@ -850,6 +896,14 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   const [targetDbPassword, setTargetDbPassword] = useState('');
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  // The server gate's verbatim blocking reasons (2026-07-26): the plane cards
+  // only visualise SPEC readiness, but the gate also blocks on the current
+  // baseline and unaccounted carry-over findings/capabilities — pointing the
+  // user at all-green cards for those was a dead end. Rendered grouped under
+  // the dialog error.
+  const [dialogBlockReasons, setDialogBlockReasons] = useState<
+    MigrateBlockReason[] | null
+  >(null);
 
   const refreshCredsStatus = useCallback(async () => {
     try {
@@ -873,6 +927,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   const openStartDialog = useCallback(
     async (mode: 'start' | 'register') => {
       setDialogError(null);
+      setDialogBlockReasons(null);
       setTargetDbPassword('');
       const status = await refreshCredsStatus();
       const b = status?.targetBinding;
@@ -894,6 +949,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     if (!companyName || !projectName) return;
     setDialogBusy(true);
     setDialogError(null);
+    setDialogBlockReasons(null);
     setRailBlockers(null);
     try {
       let runId: string | null = null;
@@ -904,8 +960,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         });
         if (result.status === 'blocked') {
           setDialogError(
-            `Start refused by the server gate: ${result.reasons.length} reason(s) — see the plane cards.`,
+            `Start refused by the server gate — ${result.reasons.length} blocking reason(s):`,
           );
+          setDialogBlockReasons(result.reasons);
           return;
         }
         if (result.status === 'error') {
@@ -2093,6 +2150,26 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   data-testid="start-stage-error"
                 >
                   {dialogError}
+                  {dialogBlockReasons && dialogBlockReasons.length > 0 && (
+                    <div data-testid="start-stage-block-reasons">
+                      {groupBlockReasons(dialogBlockReasons).map((group) => (
+                        <div key={group.code}>
+                          <strong>
+                            {group.title} ({group.messages.length})
+                          </strong>
+                          {group.remedy && <p>{group.remedy}</p>}
+                          <ul>
+                            {group.messages.slice(0, 8).map((m, i) => (
+                              <li key={`${group.code}-${i}`}>{m}</li>
+                            ))}
+                            {group.messages.length > 8 && (
+                              <li>…and {group.messages.length - 8} more.</li>
+                            )}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
