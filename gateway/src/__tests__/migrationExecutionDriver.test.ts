@@ -289,6 +289,119 @@ describe('startMigration', () => {
     }
   });
 
+  // -------------------------------------------------------------------------
+  // Per-plane starts (2026-07-26, user ruling: "Start stage 1 starts the DB
+  // plane ONLY"). Plane scope resolves onto the subset machinery; the baseline
+  // + carry-over dimensions apply only to service-containing scopes; a
+  // non-first plane requires the preceding plane's run DEPLOYED + clean DB
+  // data parity (break-glass recorded).
+  // -------------------------------------------------------------------------
+
+  function planedBook(): BookOfWork {
+    return {
+      id: BOOK_ID,
+      project_id: PROJECT_ID,
+      current_architecture_id: 'arch-1',
+      status: 'draft',
+      book_of_work_json: {
+        items: [
+          { id: 'b-db', parentId: null, type: 'story', title: 'Schema', sequenceOrder: 0, workItemId: 'wi-db', workstream: 'target_database_schema_implementation' },
+          { id: 'b-svc', parentId: null, type: 'story', title: 'API', sequenceOrder: 1, workItemId: 'wi-svc', workstream: 'api_migration' },
+        ],
+      },
+    };
+  }
+  const planedWorkItems = [
+    { id: 'wi-db', type: 'STORY', deferred: false },
+    { id: 'wi-svc', type: 'STORY', deferred: false },
+  ];
+
+  it('plane=db starts with ONLY the db stories — an unspecced service story and a missing baseline do NOT block', async () => {
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(planedBook()),
+      // ONLY the db story is specced; the service story would block a
+      // whole-book start.
+      fetchSpecGenerationsForBook: jest.fn().mockResolvedValue([readySpec('wi-db', 'db spec', 'sg-db')]),
+      fetchWorkItems: jest.fn().mockResolvedValue(planedWorkItems),
+      // No API baseline — irrelevant to a DB-plane run (no API reconcile).
+      fetchActiveCurrentBaseline: jest.fn().mockResolvedValue(null),
+    });
+    const result = await startMigration({ ...scope, plane: 'db' }, deps);
+    expect(result.status).toBe('started');
+    const createArg = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
+    expect(createArg.items.map((i: MigrationExecutionRunItem) => i.work_item_id)).toEqual(['wi-db']);
+  });
+
+  it('plane=service is BLOCKED with preceding_plane_not_deployed until the db plane run is deployed', async () => {
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(planedBook()),
+      fetchSpecGenerationsForBook: jest.fn().mockResolvedValue([
+        readySpec('wi-db', 'db spec', 'sg-db'),
+        readySpec('wi-svc', 'svc spec', 'sg-svc'),
+      ]),
+      fetchWorkItems: jest.fn().mockResolvedValue(planedWorkItems),
+      fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
+    });
+    const result = await startMigration({ ...scope, plane: 'service' }, deps);
+    expect(result.status).toBe('blocked');
+    if (result.status === 'blocked') {
+      expect(result.reasons.some((r) => r.code === 'preceding_plane_not_deployed')).toBe(true);
+    }
+    expect(deps.createMigrationExecutionRun).not.toHaveBeenCalled();
+  });
+
+  it('plane=service with the db run deployed is BLOCKED by unclean data parity; parityOverride starts + RECORDS the override', async () => {
+    const base = {
+      fetchBookOfWork: jest.fn().mockResolvedValue(planedBook()),
+      fetchSpecGenerationsForBook: jest.fn().mockResolvedValue([
+        readySpec('wi-db', 'db spec', 'sg-db'),
+        readySpec('wi-svc', 'svc spec', 'sg-svc'),
+      ]),
+      fetchWorkItems: jest.fn().mockResolvedValue(planedWorkItems),
+      fetchLatestMigrationExecutionRunForBook: jest
+        .fn()
+        .mockResolvedValue({ id: 'run-db', status: 'deployed' }),
+      // No parity report exists -> data_parity_unverified (fail-closed).
+      dataParityGateReads: {
+        fetchLatestDataParityReport: jest.fn().mockResolvedValue(null),
+        fetchWaivers: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    const blockedDeps = mockDeps(base as Partial<MigrationDriverDeps>);
+    const blocked = await startMigration({ ...scope, plane: 'service' }, blockedDeps);
+    expect(blocked.status).toBe('blocked');
+    if (blocked.status === 'blocked') {
+      expect(blocked.reasons.every((r) => r.code.startsWith('data_parity_'))).toBe(true);
+    }
+
+    const overrideDeps = mockDeps(base as Partial<MigrationDriverDeps>);
+    const started = await startMigration(
+      { ...scope, plane: 'service', parityOverride: true },
+      overrideDeps,
+    );
+    expect(started.status).toBe('started');
+    // The break-glass is frozen onto the NEW run's decision log.
+    const recorded = (overrideDeps.patchMigrationExecutionRun as jest.Mock).mock.calls.find(
+      (c) =>
+        Array.isArray(c[2]?.decision_log_json) &&
+        c[2].decision_log_json.some(
+          (e: { type?: string }) => e.type === 'data_parity_override',
+        ),
+    );
+    expect(recorded).toBeTruthy();
+  });
+
+  it('plane with no stories -> honest error, no run', async () => {
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(planedBook()),
+      fetchWorkItems: jest.fn().mockResolvedValue(planedWorkItems),
+    });
+    const result = await startMigration({ ...scope, plane: 'ui' }, deps);
+    expect(result.status).toBe('error');
+    expect(deps.createMigrationExecutionRun).not.toHaveBeenCalled();
+  });
+
   it('per-spec dispatch posts the spec text via the auto-answerer + submits with callback_url and deploy_on_complete=false on the first spec', async () => {
     const deps = mockDeps();
     await startMigration(scope, deps);

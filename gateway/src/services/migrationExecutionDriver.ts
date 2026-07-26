@@ -50,6 +50,7 @@ const trace = createTracer('gateway');
 import {
   createMigrationExecutionRun,
   getMigrationExecutionRun,
+  getLatestMigrationExecutionRunForBook,
   patchMigrationExecutionRun,
   patchMigrationExecutionRunItem,
   findMigrationRunItemByJobId,
@@ -178,6 +179,25 @@ export interface MigrateScope {
    * of the sequential one-job-per-spec dispatch).
    */
   batchName?: string | null;
+  /**
+   * Per-plane start (2026-07-26, user ruling: "Start stage 1 should start the
+   * DB plane only"). When set, the run is scoped to THIS plane's non-deferred
+   * stories (resolved onto the existing subset machinery, so the spec gate,
+   * the conditional db-pack/code gates and the dispatch set are all
+   * plane-scoped), gate dimensions apply per plane (baseline + carry-over
+   * only when the service plane is in scope), and a plane-precedence gate
+   * requires the preceding plane's run to be DEPLOYED — with the DB data-
+   * parity gate enforced at the service-plane START (the per-plane analogue
+   * of the resume-time gate). Ignored when `selectedWorkItemIds` is supplied.
+   */
+  plane?: MigrationPlane | null;
+  /**
+   * Break-glass for the plane-precedence data-parity gate: start the service
+   * plane despite unclean DB parity. The override (with the divergent tables
+   * at this moment) is recorded on the NEW run's decision log for data-echo
+   * attribution — mirrors the resume-time break-glass.
+   */
+  parityOverride?: boolean;
 }
 
 /** The injectable dependency surface (the DI seam for tests). */
@@ -186,6 +206,12 @@ export interface MigrationDriverDeps {
   fetchSpecGenerationsForBook: typeof fetchSpecGenerationsForBook;
   fetchWorkItems: typeof fetchWorkItems;
   fetchActiveCurrentBaseline: typeof fetchActiveCurrentBaseline;
+  /**
+   * Latest run for the book — the plane-precedence gate's read (2026-07-26).
+   * Optional + lazily defaulted so pre-existing deps mocks keep compiling;
+   * only consulted for per-plane starts of a NON-first plane.
+   */
+  fetchLatestMigrationExecutionRunForBook?: typeof getLatestMigrationExecutionRunForBook;
   createMigrationExecutionRun: typeof createMigrationExecutionRun;
   getMigrationExecutionRun: typeof getMigrationExecutionRun;
   patchMigrationExecutionRun: typeof patchMigrationExecutionRun;
@@ -438,6 +464,13 @@ export function evaluateHardBlock(params: {
   deferredWorkItemIds: Set<string>;
   hasActiveCurrentBaseline: boolean;
   /**
+   * Whether the missing-baseline dimension applies (default true). A per-plane
+   * DB/UI start (2026-07-26) has no API reconcile, so the API-behaviour
+   * baseline is not a precondition for it — only service-containing scopes
+   * require the oracle.
+   */
+  requireCurrentBaseline?: boolean;
+  /**
    * Subset migrate: when non-empty, only the SELECTED stories are gated for
    * spec-readiness (unselected stories are out of this run's scope and must not
    * block it). The baseline + carry_over dimensions are unaffected.
@@ -476,7 +509,7 @@ export function evaluateHardBlock(params: {
     }
   }
 
-  if (!params.hasActiveCurrentBaseline) {
+  if (!params.hasActiveCurrentBaseline && params.requireCurrentBaseline !== false) {
     reasons.push({
       code: 'missing_current_baseline',
       message:
@@ -673,6 +706,7 @@ export function defaultMigrationDriverDeps(
     fetchSpecGenerationsForBook,
     fetchWorkItems,
     fetchActiveCurrentBaseline,
+    fetchLatestMigrationExecutionRunForBook: getLatestMigrationExecutionRunForBook,
     createMigrationExecutionRun,
     getMigrationExecutionRun,
     patchMigrationExecutionRun,
@@ -729,8 +763,31 @@ export async function startMigration(
   // those work items; a non-empty batchName makes it a BATCH (all selected specs
   // submitted as ONE job -> one `feature/<batchName>` branch).
   const selectedSet = new Set((scope.selectedWorkItemIds ?? []).filter((id) => !!id));
+  const bookItems = book.book_of_work_json?.items ?? [];
+
+  // Per-plane start (2026-07-26): resolve "Start stage N" onto the subset
+  // machinery — the selection becomes the plane's non-deferred stories, so
+  // every scope-conditional gate + the dispatch set are plane-scoped for free.
+  // An explicit selection wins over the plane (the batch flow predates planes).
+  const plane = selectedSet.size === 0 ? (scope.plane ?? null) : null;
+  if (plane) {
+    for (const item of bookItems) {
+      if (!item.workItemId) continue;
+      if (isDeferred(item, deferredWorkItemIds)) continue;
+      if (planeForItem(item) === plane) selectedSet.add(item.workItemId);
+    }
+    if (selectedSet.size === 0) {
+      return {
+        status: 'error',
+        message: `The book of work has no dispatchable stories in the '${plane}' plane`,
+      };
+    }
+  }
   const isSubset = selectedSet.size > 0;
   const isBatch = !!(scope.batchName && scope.batchName.trim());
+  // The service plane owns the API build + reconcile: only scopes containing it
+  // need the API-behaviour baseline (the oracle) and the carry-over accounting.
+  const serviceInScope = plane === null || plane === 'service';
 
   // 2. Pin the active current-state baseline (the oracle). Its absence is a
   //    hard-block reason.
@@ -749,9 +806,11 @@ export async function startMigration(
   //    baseline dimensions still gate).
   // The carry_over completeness gate is a WHOLE-BOOK concern (is every
   // behaviour-bearing item accounted for?). It does not apply to a subset
-  // migrate, so it is skipped when a selection is active.
+  // migrate — EXCEPT a per-plane SERVICE start (2026-07-26): the service
+  // plane's API build + reconcile is exactly what the accounting backstops,
+  // so it gates there (and only there).
   let carryOverCoverage: CarryOverCoverageResult | undefined;
-  if (architectureId && !isSubset) {
+  if (architectureId && (!isSubset || plane === 'service')) {
     try {
       const coverageInputs = await gatherCarryOverCoverageInputs({
         projectId,
@@ -779,13 +838,14 @@ export async function startMigration(
 
   // 4. Validate the hard-block gate (server-side; never trust the UI). The
   //    carry_over dimension STACKS with the spec-ready + baseline reasons.
-  const items = book.book_of_work_json?.items ?? [];
+  const items = bookItems;
   const gate = evaluateHardBlock({
     items,
     specGens,
     deferredWorkItemIds,
     selectedWorkItemIds: selectedSet,
     hasActiveCurrentBaseline: !!baseline,
+    requireCurrentBaseline: serviceInScope,
     carryOverCoverage,
   });
 
@@ -845,10 +905,72 @@ export async function startMigration(
   //     loaded DURING the migration, so parity can only be judged after the DB
   //     plane deploys.
 
+  // 4e. Plane-precedence gate (2026-07-26): starting a NON-first plane
+  //     requires the preceding plane's run to be DEPLOYED (built + reconciled),
+  //     and — when the preceding plane is DB — clean data parity, unless
+  //     break-glass overridden. This is the per-plane analogue of the
+  //     resume-time gate: with per-plane runs the pause between planes IS the
+  //     gap between two Start buttons.
+  //     v1 checks the LATEST run only (sequential per-plane execution); a
+  //     multi-run history walk is deliberately out of scope.
+  let planePrecedenceReasons: HardBlockResult['reasons'] = [];
+  if (plane) {
+    const planesWithStories = new Set<MigrationPlane>();
+    for (const item of items) {
+      if (!item.workItemId) continue;
+      if (isDeferred(item, deferredWorkItemIds)) continue;
+      planesWithStories.add(planeForItem(item));
+    }
+    const earlier = PLANE_ORDER.filter(
+      (p) =>
+        planesWithStories.has(p) &&
+        PLANE_ORDER.indexOf(p) < PLANE_ORDER.indexOf(plane),
+    );
+    if (earlier.length > 0) {
+      const preceding = earlier[earlier.length - 1];
+      const fetchLatest =
+        deps.fetchLatestMigrationExecutionRunForBook ??
+        getLatestMigrationExecutionRunForBook;
+      let latestRun: MigrationExecutionRun | null = null;
+      try {
+        latestRun = await fetchLatest(projectId, bookId);
+      } catch {
+        latestRun = null;
+      }
+      if (!latestRun || latestRun.status !== RUN_STATUS.DEPLOYED) {
+        planePrecedenceReasons.push({
+          code: 'preceding_plane_not_deployed',
+          message:
+            `The '${preceding}' plane must complete first (its run deployed + ` +
+            `reconciled) before the '${plane}' plane can start` +
+            (latestRun
+              ? ` — the latest run is '${latestRun.status ?? 'unknown'}'.`
+              : ' — no run exists yet.'),
+        });
+      } else if (preceding === 'db' && !scope.parityOverride) {
+        const parity = await evaluateDataParityReadiness({
+          projectId,
+          architectureId: book.current_architecture_id ?? null,
+          reads: deps.dataParityGateReads,
+        });
+        if (!parity.ok) {
+          planePrecedenceReasons.push(
+            ...parity.reasons.map((r) => ({
+              code: r.code,
+              message: r.message,
+              workItemId: r.workItemId ?? null,
+            })),
+          );
+        }
+      }
+    }
+  }
+
   const allBlockReasons = [
     ...gate.reasons,
     ...dbGateReasons,
     ...codeGateReasons,
+    ...planePrecedenceReasons,
   ];
   if (allBlockReasons.length > 0) {
     logger.warn('[diag-gateway] migration_execution_driver start_blocked', {
@@ -924,6 +1046,52 @@ export async function startMigration(
     itemCount: dispatchSet.length,
     pinnedBaselineId: baseline?.id ?? null,
   });
+
+  // Break-glass RECORDING for a plane-precedence parity override (2026-07-26):
+  // the service plane was started despite (potentially) unclean DB parity —
+  // freeze the divergent tables onto the NEW run's decision log so the API
+  // reconcile can echo-classify its breaks. Mirrors the resume-time recording;
+  // best-effort — a recording failure never blocks the start.
+  if (plane === 'service' && scope.parityOverride) {
+    try {
+      const parity = await evaluateDataParityReadiness({
+        projectId,
+        architectureId: book.current_architecture_id ?? null,
+        reads: deps.dataParityGateReads,
+      });
+      if (!parity.ok) {
+        const divergentTables = [
+          ...new Set(parity.reasons.flatMap((r) => r.tables ?? [])),
+        ];
+        await deps.patchMigrationExecutionRun(projectId, runId, {
+          decision_log_json: [
+            ...(run.decision_log_json ?? []),
+            {
+              type: 'data_parity_override',
+              at: new Date().toISOString(),
+              parity_codes: parity.reasons.map((r) => r.code),
+              divergent_tables: divergentTables,
+              note:
+                'Break-glass: started the service plane past the DB-plane ' +
+                "data-parity gate. The plane's API reconcile runs under KNOWN " +
+                'data divergence — its breaks are echo-classified against ' +
+                'these tables.',
+            },
+          ],
+        });
+        trace.warn(
+          `data-parity override RECORDED — ${divergentTables.length} divergent table(s) frozen for echo attribution`,
+          { run: runId, project: scope.project },
+        );
+      }
+    } catch (err) {
+      logger.warn('[diag-gateway] migration_execution_driver start_override_record_failed', {
+        projectId,
+        runId,
+        error: err instanceof Error ? err.message : 'unknown',
+      });
+    }
+  }
 
   trace.runHeader(runId, scope.project, architectureId);
   trace.step(

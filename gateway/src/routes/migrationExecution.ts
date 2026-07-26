@@ -117,7 +117,12 @@ migrationExecutionRouter.post(
   async (req: Request, res: Response) => {
     const requestId = (req as { requestId?: string }).requestId ?? 'unknown';
     const { projectId, bookId } = req.params;
-    const body = (req.body ?? {}) as { company?: string; project?: string };
+    const body = (req.body ?? {}) as {
+      company?: string;
+      project?: string;
+      plane?: string;
+      parityOverride?: boolean;
+    };
 
     if (!body.company || typeof body.company !== 'string' || body.company.trim() === '') {
       return res.status(400).json({ status: 'error', message: 'company is required' });
@@ -125,12 +130,22 @@ migrationExecutionRouter.post(
     if (!body.project || typeof body.project !== 'string' || body.project.trim() === '') {
       return res.status(400).json({ status: 'error', message: 'project is required' });
     }
+    // Per-plane start (2026-07-26): "Start stage N" scopes the run to one
+    // plane. Absent = whole-book (legacy behaviour, batch flow).
+    const VALID_PLANES = new Set(['db', 'service', 'ui']);
+    if (body.plane !== undefined && !VALID_PLANES.has(body.plane as string)) {
+      return res
+        .status(400)
+        .json({ status: 'error', message: `plane must be one of db|service|ui` });
+    }
 
     const scope: MigrateScope = {
       projectId,
       bookId,
       company: body.company,
       project: body.project,
+      plane: (body.plane as MigrateScope['plane']) ?? null,
+      parityOverride: body.parityOverride === true,
     };
 
     logger.info('[diag-gateway] migration_execution_driver migrate_trigger', {
@@ -139,6 +154,8 @@ migrationExecutionRouter.post(
       bookId,
       company: body.company,
       project: body.project,
+      plane: body.plane ?? null,
+      parityOverride: body.parityOverride === true,
     });
 
     try {

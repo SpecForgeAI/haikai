@@ -94,6 +94,7 @@ import {
   RailPlane,
   PLANE_ORDER,
   planeForStory,
+  type RailPlaneId,
 } from './MigrationExecutionRail';
 import {
   triggerMigrate,
@@ -883,7 +884,14 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   const [startDialog, setStartDialog] = useState<{
     open: boolean;
     mode: 'start' | 'register';
+    /** The plane this start targets (per-plane runs, 2026-07-26). */
+    plane?: RailPlaneId;
+    /** Stage number for the dialog title (derived from the rail card). */
+    stageNo?: number;
   }>({ open: false, mode: 'start' });
+  // Parity-only refusal of a service start renders the break-glass option
+  // (mirrors the resume-time break-glass; the override is recorded).
+  const [showParityBreakGlass, setShowParityBreakGlass] = useState(false);
   const [credsStatus, setCredsStatus] =
     useState<MigrationCredentialsStatus | null>(null);
   const [targetDbFields, setTargetDbFields] = useState({
@@ -925,9 +933,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   }, [run?.id, refreshCredsStatus]);
 
   const openStartDialog = useCallback(
-    async (mode: 'start' | 'register') => {
+    async (mode: 'start' | 'register', plane?: RailPlaneId, stageNo?: number) => {
       setDialogError(null);
       setDialogBlockReasons(null);
+      setShowParityBreakGlass(false);
       setTargetDbPassword('');
       const status = await refreshCredsStatus();
       const b = status?.targetBinding;
@@ -940,16 +949,17 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           username: b.username,
         });
       }
-      setStartDialog({ open: true, mode });
+      setStartDialog({ open: true, mode, plane, stageNo });
     },
     [refreshCredsStatus],
   );
 
-  const confirmStartDialog = useCallback(async () => {
+  const confirmStartDialog = useCallback(async (parityOverride = false) => {
     if (!companyName || !projectName) return;
     setDialogBusy(true);
     setDialogError(null);
     setDialogBlockReasons(null);
+    setShowParityBreakGlass(false);
     setRailBlockers(null);
     try {
       let runId: string | null = null;
@@ -957,12 +967,20 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         const result = await triggerMigrate(projectId, bookId, {
           company: companyName,
           project: projectName,
+          plane: startDialog.plane,
+          parityOverride,
         });
         if (result.status === 'blocked') {
           setDialogError(
             `Start refused by the server gate — ${result.reasons.length} blocking reason(s):`,
           );
           setDialogBlockReasons(result.reasons);
+          // Parity-only refusal (the preceding DB plane's data parity is not
+          // clean) → offer the recorded break-glass, mirroring the resume path.
+          setShowParityBreakGlass(
+            result.reasons.length > 0 &&
+              result.reasons.every((r) => r.code.startsWith('data_parity_')),
+          );
           return;
         }
         if (result.status === 'error') {
@@ -1003,6 +1021,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     projectId,
     bookId,
     startDialog.mode,
+    startDialog.plane,
     run?.id,
     targetDbFields,
     targetDbPassword,
@@ -1942,7 +1961,13 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           busy={railBusy}
           error={railError}
           pausedBlockers={railBlockers}
-          onStart={() => void openStartDialog('start')}
+          onStart={(plane) =>
+            void openStartDialog(
+              'start',
+              plane,
+              railPlanes.findIndex((rp) => rp.plane === plane) + 1,
+            )
+          }
           onApprove={() => void handleRailApprove(false)}
           onBreakGlass={() => void handleRailApprove(true)}
           onSelectStory={(id) => setSelectedItemId(id)}
@@ -2051,15 +2076,15 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             <div className={styles.modalHeader}>
               <h2 className={styles.modalTitle}>
                 {startDialog.mode === 'start'
-                  ? 'Start stage 1'
+                  ? `Start stage ${startDialog.stageNo ?? 1}`
                   : 'Provide target-DB credentials'}
               </h2>
             </div>
             <div className={styles.modalBody}>
               {startDialog.mode === 'start' && (
                 <p className={styles.coveragePanelNote}>
-                  Runs the plane end-to-end (build {'→'} verify {'→'}{' '}
-                  reconcile), then pauses for your review.
+                  Runs THIS plane end-to-end (build {'→'} verify {'→'}{' '}
+                  reconcile). The next stage unlocks when it completes.
                 </p>
               )}
               <p data-testid="start-stage-binding-note">
@@ -2168,6 +2193,27 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                           </ul>
                         </div>
                       ))}
+                      {showParityBreakGlass && (
+                        <div>
+                          Recommended: fix parity first. Continuing means this
+                          plane&apos;s API reconcile runs under KNOWN data
+                          divergence — its breaks will be ambiguous where they
+                          touch the divergent data. The override is recorded on
+                          the run.
+                          <div style={{ marginTop: 8 }}>
+                            <button
+                              type="button"
+                              className={styles.selectButton}
+                              style={{ borderColor: '#b45309', color: '#b45309' }}
+                              disabled={dialogBusy}
+                              onClick={() => void confirmStartDialog(true)}
+                              data-testid="start-stage-break-glass"
+                            >
+                              {'⚠'} Break glass: start with unclean parity
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
