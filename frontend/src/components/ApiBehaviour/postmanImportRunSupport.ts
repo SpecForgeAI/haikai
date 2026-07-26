@@ -117,7 +117,13 @@ export function buildManualCaptureRequest(
   operation: ApiBehaviourOperationDto,
   options?: { mutatingCallsConfirmed?: boolean },
 ): ManualCaptureRequest {
-  const operationId = operation.operation_id ?? operation.id;
+  // The manual-capture route validates by the AMS operation ROW UUID
+  // (`op.id`), like every other caller (AddNewBehaviourModal sends
+  // `selectedOperation.id`). Sending `operation_id` — the OAS id STRING,
+  // always present on the DTO — made every live Postman replay 404 with
+  // "Operation '<oas id>' was not found for this session" (2026-07-26 fix;
+  // both layers were tested against mocks, so the mismatch never surfaced).
+  const operationId = operation.id;
   return {
     operationId,
     method: item.request.method,

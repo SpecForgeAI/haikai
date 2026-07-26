@@ -1889,8 +1889,29 @@ export function buildCaptureSessionActionsRouter(
 
       // ---- Validate the target operation: it must exist for this session AND
       // be included. Never mutates current-state architecture -- read-only.
+      // The canonical identifier is the AMS row UUID; a caller passing the OAS
+      // operation_id STRING is tolerated when it resolves UNAMBIGUOUSLY to one
+      // row (2026-07-26 hardening — the Postman replay sent the string and
+      // 404'd). An ambiguous string (legacy pre-uniquifier duplicate spanning
+      // routes) is REJECTED honestly rather than resolved last-wins: silent
+      // wrong-route filing is exactly the bug class the uniquifier removed.
       const operations = await archModelClient.listOperationsBySession(projectId, sessionId);
-      const operation = operations.find((op) => op.id === operationId);
+      let operation = operations.find((op) => op.id === operationId);
+      if (!operation) {
+        const byOasId = operations.filter((op) => op.operation_id === operationId);
+        if (byOasId.length === 1) {
+          operation = byOasId[0];
+        } else if (byOasId.length > 1) {
+          return fail(
+            res,
+            400,
+            `Operation id '${operationId}' is ambiguous for this session ` +
+              `(${byOasId.length} rows share it across routes) — re-parse the OAS ` +
+              `to disambiguate, or address the operation by its row id.`,
+            { code: 'OPERATION_ID_AMBIGUOUS' },
+          );
+        }
+      }
       if (!operation) {
         return fail(res, 404, `Operation '${operationId}' was not found for this session.`, {
           code: 'OPERATION_NOT_FOUND',
@@ -1961,7 +1982,9 @@ export function buildCaptureSessionActionsRouter(
       const timestamp = new Date().toISOString();
       const scenario = await archModelClient.createScenario(projectId, {
         session_id: sessionId,
-        operation_id: operationId,
+        // The RESOLVED row's UUID — never the raw request value, which may
+        // have been the tolerated OAS operation_id string.
+        operation_id: operation.id,
         scenario_name: `Manual: ${method} ${path} ${timestamp}`,
         scenario_type: 'manual',
         generation_source: 'manual',
@@ -1976,7 +1999,7 @@ export function buildCaptureSessionActionsRouter(
       const capture = await archModelClient.createCapture(projectId, {
         session_id: sessionId,
         scenario_id: scenario.id,
-        operation_id: operationId,
+        operation_id: operation.id,
         request_method: method,
         request_path: path,
         request_url_redacted: requestUrlRedacted,

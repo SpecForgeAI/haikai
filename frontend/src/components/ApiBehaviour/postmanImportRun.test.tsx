@@ -178,7 +178,7 @@ describe('send selection rules (8.1 b)', () => {
 });
 
 describe('manual-capture body mapping (8.1 c)', () => {
-  it('maps an item -> the camelCase ManualCaptureRequest', () => {
+  it('maps an item -> the camelCase ManualCaptureRequest addressed by the operation ROW UUID', () => {
     const op = operation({
       id: 'row-1',
       operation_id: 'getWidget',
@@ -201,7 +201,10 @@ describe('manual-capture body mapping (8.1 c)', () => {
       mutatingCallsConfirmed: true,
     });
     expect(body).toEqual({
-      operationId: 'getWidget',
+      // The ROW UUID — the manual-capture route's canonical identifier
+      // (2026-07-26 fix: sending the OAS operation_id string 404'd every
+      // live Postman replay with "Operation ... was not found").
+      operationId: 'row-1',
       method: 'GET',
       path: '/widgets/42',
       query: { verbose: 'true' },
