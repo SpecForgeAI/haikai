@@ -226,6 +226,43 @@ test('operation present but included=false -> 400 OPERATION_NOT_INCLUDED', async
   expect(arch.createCapture).not.toHaveBeenCalled();
 });
 
+test('OAS operation_id string resolves UNIQUELY -> tolerated; scenario + capture persist under the row UUID (2026-07-26 hardening)', async () => {
+  seedSecret();
+  const arch = buildArchClient(buildSession(), [buildOperation()]);
+  const app = buildApp(arch);
+  mockRequest.mockResolvedValue({ status: 200, headers: {}, data: { ok: true } });
+
+  const res = await request(app)
+    .post(`/api/capture-sessions/${SESSION_ID}/manual-capture?projectId=${PROJECT_ID}`)
+    .send({ operationId: 'getWidget', method: 'GET', path: '/widgets/42' });
+
+  expect(res.status).toBe(201);
+  const [, scenarioBody] = arch.createScenario.mock.calls[0];
+  expect(scenarioBody.operation_id).toBe(OP_ROW_ID);
+  const [, captureBody] = arch.createCapture.mock.calls[0];
+  expect(captureBody.operation_id).toBe(OP_ROW_ID);
+});
+
+test('AMBIGUOUS OAS operation_id string (legacy cross-route duplicate) -> 400 OPERATION_ID_AMBIGUOUS, no send', async () => {
+  seedSecret();
+  const twinA = buildOperation();
+  const twinB = buildOperation({
+    id: '00000000-0000-0000-0000-0000000000d2',
+    path: '/widgets/{businessDate}/{id}',
+  });
+  const arch = buildArchClient(buildSession(), [twinA, twinB]);
+  const app = buildApp(arch);
+
+  const res = await request(app)
+    .post(`/api/capture-sessions/${SESSION_ID}/manual-capture?projectId=${PROJECT_ID}`)
+    .send({ operationId: 'getWidget', method: 'GET', path: '/widgets/42' });
+
+  expect(res.status).toBe(400);
+  expect(JSON.stringify(res.body)).toContain('OPERATION_ID_AMBIGUOUS');
+  expect(mockRequest).not.toHaveBeenCalled();
+  expect(arch.createScenario).not.toHaveBeenCalled();
+});
+
 test('happy path: 2xx send -> createScenario then createCapture with expected snake_case shapes; accepted OMITTED; volatile_paths_json null', async () => {
   seedSecret();
   const arch = buildArchClient(buildSession(), [buildOperation()]);
