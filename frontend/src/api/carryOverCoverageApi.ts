@@ -348,3 +348,127 @@ export async function createStoryForFinding(
     body: JSON.stringify(body),
   });
 }
+
+// ============================================================================
+// LLM triage (2026-07-26): batch suggestions + guided re-draft + apply
+// ============================================================================
+
+/** The four dispositions (all LLM-drafted, ALL human-approved). */
+export type TriageDisposition = 'cite' | 'amend_story' | 'new_story' | 'dismiss';
+
+/** The drafted amendment payload (amend_story). */
+export interface TriageDraftAmendment {
+  /** The FULL amended description (null = AC-only amendment). */
+  description: string | null;
+  appendAcceptanceCriteria: string[];
+}
+
+/** The drafted story payload (new_story). */
+export interface TriageDraftStory {
+  title: string;
+  description: string;
+  workstream: string;
+  acceptanceCriteria: string[];
+}
+
+/**
+ * One suggestion as the gateway drafts it (camelCase — the gateway builds it
+ * in TypeScript). `disposition: null` = the LLM's choice failed deterministic
+ * validation — the row needs a manual choice (`validationNote` says why).
+ */
+export interface TriageSuggestion {
+  itemId: string;
+  kind: 'capability' | 'finding';
+  disposition: TriageDisposition | null;
+  targetBookItemId: string | null;
+  rationale: string;
+  draftAmendment: TriageDraftAmendment | null;
+  draftStory: TriageDraftStory | null;
+  dismissReason: string | null;
+  validationNote: string | null;
+}
+
+/** Per-item outcome of an apply-triage call. */
+export interface ApplyTriageItemResult {
+  itemId: string;
+  disposition: TriageDisposition;
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * Run the LLM triage over ALL un-accounted items (one call per item,
+ * server-side). Returns suggestions only — NOTHING is applied.
+ */
+export async function runCarryOverTriage(
+  projectId: string,
+  bookId: string,
+): Promise<{ suggestions: TriageSuggestion[] }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/carry-over/triage`;
+  return jsonRequest<{ suggestions: TriageSuggestion[] }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/**
+ * Re-draft ONE item with the reviewer's steering — the free-text guidance
+ * field flows into the drafting prompt (the user's requirement), and a chosen
+ * disposition/target is honoured (a drifted draft comes back blanked).
+ */
+export async function redraftTriageSuggestion(
+  projectId: string,
+  bookId: string,
+  body: {
+    item_id: string;
+    forced_disposition?: TriageDisposition | null;
+    guidance?: string | null;
+    target_book_item_id?: string | null;
+  },
+): Promise<{ suggestion: TriageSuggestion }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/carry-over/triage/redraft`;
+  return jsonRequest<{ suggestion: TriageSuggestion }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Apply APPROVED suggestions (post-editing) — sequential, fail-soft per item,
+ * through the same actions the manual buttons use. The response carries the
+ * REFRESHED coverage so the panel + Stage-2 card update in one round trip.
+ */
+export async function applyTriageSuggestions(
+  projectId: string,
+  bookId: string,
+  suggestions: Array<{
+    itemId: string;
+    kind: 'capability' | 'finding';
+    disposition: TriageDisposition;
+    targetBookItemId?: string | null;
+    draftAmendment?: TriageDraftAmendment | null;
+    draftStory?: TriageDraftStory | null;
+    dismissReason?: string | null;
+  }>,
+): Promise<{ results: ApplyTriageItemResult[]; coverage: CarryOverCoverageResult | null }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/carry-over/apply-triage`;
+  return jsonRequest<{
+    results: ApplyTriageItemResult[];
+    coverage: CarryOverCoverageResult | null;
+  }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ suggestions }),
+  });
+}
