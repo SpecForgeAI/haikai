@@ -67,6 +67,9 @@ import {
   dismissCarryOverItem,
   generateAllCapabilityStories,
   BatchCapabilityCandidate,
+  citeFindingIntoStory,
+  amendStoryForFinding,
+  createStoryForFinding,
 } from '../services/migrationCarryOverActions';
 import {
   computeRunParityStatus,
@@ -911,6 +914,8 @@ migrationExecutionRouter.get(
           accountedCount: 0,
           totalMustAccount: 0,
           ok: true,
+          architectureId: null,
+          itemDetails: {},
         });
       }
       const workItems = await fetchWorkItems(projectId);
@@ -921,7 +926,17 @@ migrationExecutionRouter.get(
         workItems,
       });
       const coverage = computeCarryOverCoverage(inputs);
-      return res.status(200).json(coverage);
+      // 2026-07-26 accounting panel: join the coverage items with their human
+      // content (title/summary/severity + the finding's run id — dismissal is
+      // run-scoped) so the review screen lists REAL items, not bare UUIDs. The
+      // architecture id rides along for the dismiss action. Additive fields —
+      // existing consumers of the bare coverage shape are unaffected.
+      const itemDetails: Record<string, unknown> = {};
+      for (const item of coverage.items) {
+        const detail = inputs.itemDetailById.get(item.id);
+        if (detail) itemDetails[item.id] = detail;
+      }
+      return res.status(200).json({ ...coverage, architectureId, itemDetails });
     } catch (error) {
       logger.error('[diag-gateway] carry_over_coverage read_error', {
         projectId,
@@ -929,6 +944,169 @@ migrationExecutionRouter.get(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Failed to compute carry-over coverage' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-books-of-work/:bookId/carry-over/cite-finding — CITE one
+ * finding onto an EXISTING story (2026-07-26 triage plumbing). Body:
+ *   { book_item_id, finding_id }
+ * The AMS item patch adds the finding id to the story's
+ * `discoveryFindingReferences` (the D4 gate's citation array). Idempotent.
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/carry-over/cite-finding',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as { book_item_id?: string; finding_id?: string };
+    if (!body.book_item_id || typeof body.book_item_id !== 'string') {
+      return res.status(400).json({ error: 'book_item_id is required' });
+    }
+    if (!body.finding_id || typeof body.finding_id !== 'string') {
+      return res.status(400).json({ error: 'finding_id is required' });
+    }
+    try {
+      const result = await citeFindingIntoStory({
+        projectId,
+        bookId,
+        bookItemId: body.book_item_id,
+        findingId: body.finding_id,
+      });
+      if (result.ok) {
+        return res.status(200).json({ ok: true, alreadyCited: result.alreadyCited });
+      }
+      return res.status(400).json({ error: result.error });
+    } catch (error) {
+      logger.error('[diag-gateway] carry_over_action cite_finding_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to cite the finding' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-books-of-work/:bookId/carry-over/amend-story — AMEND an
+ * existing story so it actually deals with a finding (2026-07-26 triage
+ * plumbing). Body:
+ *   { book_item_id, finding_id, description?, append_acceptance_criteria?[] }
+ * One atomic AMS transaction: description replace + criteria append + cite +
+ * spec rows marked STALE (the story drops out of stage spec-readiness until
+ * its spec regenerates with the amendment folded in).
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/carry-over/amend-story',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as {
+      book_item_id?: string;
+      finding_id?: string;
+      description?: string;
+      append_acceptance_criteria?: string[];
+      stale_reason?: string;
+    };
+    if (!body.book_item_id || typeof body.book_item_id !== 'string') {
+      return res.status(400).json({ error: 'book_item_id is required' });
+    }
+    if (!body.finding_id || typeof body.finding_id !== 'string') {
+      return res.status(400).json({ error: 'finding_id is required' });
+    }
+    try {
+      const result = await amendStoryForFinding({
+        projectId,
+        bookId,
+        bookItemId: body.book_item_id,
+        findingId: body.finding_id,
+        description: body.description ?? null,
+        appendAcceptanceCriteria: Array.isArray(body.append_acceptance_criteria)
+          ? body.append_acceptance_criteria
+          : null,
+        staleReason: body.stale_reason ?? null,
+      });
+      if (result.ok) {
+        return res.status(200).json({
+          ok: true,
+          workItemId: result.workItemId,
+          specsMarkedStale: result.specsMarkedStale,
+        });
+      }
+      return res.status(400).json({ error: result.error });
+    } catch (error) {
+      logger.error('[diag-gateway] carry_over_action amend_story_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to amend the story' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-books-of-work/:bookId/carry-over/new-story — create a
+ * REAL story for a FINDING via D5's add-item, with the finding cited on the
+ * blob (2026-07-26 triage plumbing). Body:
+ *   { finding_id, title, description, workstream?, acceptance_criteria?[], kind? }
+ * The description must EMBED the finding's essence — it is the spec
+ * generator's sole grounding for a manual story. (A CAPABILITY's new story
+ * stays on the existing `append-capability-story` route.)
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/carry-over/new-story',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    const body = (req.body ?? {}) as {
+      finding_id?: string;
+      title?: string;
+      description?: string;
+      workstream?: string;
+      acceptance_criteria?: string[];
+      kind?: string;
+    };
+    if (!body.finding_id || typeof body.finding_id !== 'string') {
+      return res.status(400).json({ error: 'finding_id is required' });
+    }
+    if (!body.title || typeof body.title !== 'string' || body.title.trim() === '') {
+      return res.status(400).json({ error: 'title is required' });
+    }
+    if (
+      !body.description ||
+      typeof body.description !== 'string' ||
+      body.description.trim() === ''
+    ) {
+      return res.status(400).json({ error: 'description is required (it must embed the finding)' });
+    }
+    try {
+      const result = await createStoryForFinding({
+        projectId,
+        bookId,
+        findingId: body.finding_id,
+        title: body.title,
+        description: body.description,
+        workstream: body.workstream ?? null,
+        acceptanceCriteria: Array.isArray(body.acceptance_criteria)
+          ? body.acceptance_criteria
+          : null,
+        kind: body.kind ?? null,
+      });
+      if (result.ok) {
+        return res.status(200).json({
+          ok: true,
+          workItemId: result.workItemId,
+          bookItemId: result.bookItemId,
+        });
+      }
+      return res.status(400).json({ error: result.error });
+    } catch (error) {
+      logger.error('[diag-gateway] carry_over_action new_story_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to create the story' });
     }
   }
 );

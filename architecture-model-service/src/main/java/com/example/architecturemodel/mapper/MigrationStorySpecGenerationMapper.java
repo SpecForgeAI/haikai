@@ -80,7 +80,12 @@ public final class MigrationStorySpecGenerationMapper {
             entity.getCoveredEndpointIds(),
             entity.getManualReady() != null ? entity.getManualReady() : Boolean.FALSE,
             entity.getManualReadyAt() != null ? entity.getManualReadyAt().toString() : null,
-            entity.getManualReadyBy()
+            entity.getManualReadyBy(),
+            // Stale trio (2026-07-26): expose the long-existing columns on the
+            // wire so the gateway gate + plan screen can SEE staleness.
+            entity.getStale() != null ? entity.getStale() : Boolean.FALSE,
+            entity.getStaleReason(),
+            entity.getStaleMarkedAt() != null ? entity.getStaleMarkedAt().toString() : null
         );
     }
 

@@ -130,16 +130,116 @@ export async function patchFindingReview(
   return patchJson<unknown>(url, body, 'finding review');
 }
 
+// ============================================================================
+// Carry-over triage AMS callers (2026-07-26): cite-finding / amend / add-item
+// ============================================================================
+
+/** The `items/{bookItemId}/cite-finding` response body (AMS snake_case). */
+export interface CiteFindingWireResponse {
+  book_item_id?: string | null;
+  finding_id?: string | null;
+  already_cited?: boolean | null;
+  message?: string | null;
+}
+
+/** The `items/{bookItemId}/amend` request body (AMS snake_case). */
+export interface AmendBookItemWireRequest {
+  description?: string | null;
+  append_acceptance_criteria?: string[] | null;
+  cite_finding_id?: string | null;
+  stale_reason?: string | null;
+}
+
+/** The `items/{bookItemId}/amend` response body (AMS snake_case). */
+export interface AmendBookItemWireResponse {
+  book_item_id?: string | null;
+  work_item_id?: string | null;
+  finding_id?: string | null;
+  specs_marked_stale?: number | null;
+  message?: string | null;
+}
+
+/** The `items/add-item` request body subset the triage flow sends. */
+export interface AddWorkItemWireRequest {
+  provenance?: string | null;
+  kind?: string | null;
+  title: string;
+  description?: string | null;
+  sequence_order?: number | null;
+  workstream?: string | null;
+  acceptance_criteria?: string[] | null;
+  discovery_finding_references?: string[] | null;
+}
+
+/** The `items/add-item` response body (AMS snake_case). */
+export interface AddWorkItemWireResponse {
+  work_item_id?: string | null;
+  book_item_id?: string | null;
+  provenance?: string | null;
+  kind?: string | null;
+  message?: string | null;
+}
+
+/** POST the cite-finding item patch (adds to `discoveryFindingReferences`). */
+export async function citeFindingOnStory(
+  projectId: string,
+  bookId: string,
+  bookItemId: string,
+  findingId: string
+): Promise<CiteFindingWireResponse> {
+  const url =
+    `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/items/${encodeURIComponent(bookItemId)}/cite-finding`;
+  return postJson<CiteFindingWireResponse>(url, { finding_id: findingId }, 'cite-finding');
+}
+
+/** POST the amend item patch (description/criteria + cite + spec mark-stale). */
+export async function amendStoryItem(
+  projectId: string,
+  bookId: string,
+  bookItemId: string,
+  body: AmendBookItemWireRequest
+): Promise<AmendBookItemWireResponse> {
+  const url =
+    `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/items/${encodeURIComponent(bookItemId)}/amend`;
+  return postJson<AmendBookItemWireResponse>(url, body, 'amend-story');
+}
+
+/** POST D5's `items/add-item` (mints a MANUAL story + blob item in one tx). */
+export async function addManualStoryItem(
+  projectId: string,
+  bookId: string,
+  body: AddWorkItemWireRequest
+): Promise<AddWorkItemWireResponse> {
+  const url =
+    `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}/items/add-item`;
+  return postJson<AddWorkItemWireResponse>(url, body, 'add-item');
+}
+
 /** The injectable AMS-caller surface (the DI seam for tests). */
 export interface CarryOverActionDeps {
   appendCapabilityStory: typeof appendCapabilityStory;
   patchCapabilityReview: typeof patchCapabilityReview;
   patchFindingReview: typeof patchFindingReview;
+  citeFindingOnStory: typeof citeFindingOnStory;
+  amendStoryItem: typeof amendStoryItem;
+  addManualStoryItem: typeof addManualStoryItem;
 }
 
 /** The default (production) action deps. */
 export function defaultCarryOverActionDeps(): CarryOverActionDeps {
-  return { appendCapabilityStory, patchCapabilityReview, patchFindingReview };
+  return {
+    appendCapabilityStory,
+    patchCapabilityReview,
+    patchFindingReview,
+    citeFindingOnStory,
+    amendStoryItem,
+    addManualStoryItem,
+  };
 }
 
 // ============================================================================
@@ -358,4 +458,213 @@ export async function generateAllCapabilityStories(
     failureCount: failures.length,
   });
   return { citedCount, skippedCount, failures };
+}
+
+// ============================================================================
+// Carry-over triage actions (2026-07-26): cite-finding / amend / new-story
+// ============================================================================
+
+export interface CiteFindingInput {
+  projectId: string;
+  bookId: string;
+  /** The story blob item to cite the finding onto. */
+  bookItemId: string;
+  findingId: string;
+}
+
+export type CiteFindingResult =
+  | { ok: true; alreadyCited: boolean }
+  | { ok: false; error: string };
+
+/**
+ * CITE one finding onto an EXISTING story: the AMS item patch adds the finding
+ * id to the story's `discoveryFindingReferences` — the same citation array the
+ * D4 gate reads — so the finding flips to `cited-by-story`. Idempotent.
+ */
+export async function citeFindingIntoStory(
+  input: CiteFindingInput,
+  deps: CarryOverActionDeps = defaultCarryOverActionDeps()
+): Promise<CiteFindingResult> {
+  if (!input.bookItemId || input.bookItemId.trim() === '') {
+    return { ok: false, error: 'bookItemId is required' };
+  }
+  if (!input.findingId || input.findingId.trim() === '') {
+    return { ok: false, error: 'findingId is required' };
+  }
+  try {
+    const response = await deps.citeFindingOnStory(
+      input.projectId,
+      input.bookId,
+      input.bookItemId,
+      input.findingId
+    );
+    logger.info('[diag-gateway] carry_over_action cite_finding', {
+      projectId: input.projectId,
+      bookId: input.bookId,
+      bookItemId: input.bookItemId,
+      findingId: input.findingId,
+      alreadyCited: response.already_cited === true,
+    });
+    return { ok: true, alreadyCited: response.already_cited === true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn('[diag-gateway] carry_over_action cite_finding_failed', {
+      projectId: input.projectId,
+      bookItemId: input.bookItemId,
+      findingId: input.findingId,
+      error: message,
+    });
+    return { ok: false, error: message };
+  }
+}
+
+export interface AmendStoryInput {
+  projectId: string;
+  bookId: string;
+  /** The story blob item to amend. */
+  bookItemId: string;
+  /** The finding the amendment folds in (cited in the same transaction). */
+  findingId: string;
+  /** The FULL amended description (optional — an AC-only amendment omits it). */
+  description?: string | null;
+  /** Acceptance criteria to APPEND. */
+  appendAcceptanceCriteria?: string[] | null;
+  staleReason?: string | null;
+}
+
+export type AmendStoryResult =
+  | { ok: true; workItemId: string | null; specsMarkedStale: number }
+  | { ok: false; error: string };
+
+/**
+ * AMEND an existing story so it actually deals with a finding: replace the
+ * description / append acceptance criteria, cite the finding, and mark the
+ * story's spec-generation rows STALE — one atomic AMS transaction. The story
+ * drops out of stage spec-readiness until its spec regenerates.
+ */
+export async function amendStoryForFinding(
+  input: AmendStoryInput,
+  deps: CarryOverActionDeps = defaultCarryOverActionDeps()
+): Promise<AmendStoryResult> {
+  if (!input.bookItemId || input.bookItemId.trim() === '') {
+    return { ok: false, error: 'bookItemId is required' };
+  }
+  if (!input.findingId || input.findingId.trim() === '') {
+    return { ok: false, error: 'findingId is required' };
+  }
+  const description =
+    typeof input.description === 'string' && input.description.trim() !== ''
+      ? input.description
+      : null;
+  const criteria = (input.appendAcceptanceCriteria ?? []).filter(
+    (c) => typeof c === 'string' && c.trim() !== ''
+  );
+  if (description === null && criteria.length === 0) {
+    // An amendment that changes nothing is a cite, not an amend — reject so the
+    // caller (and the triage validator) keeps the dispositions honest.
+    return {
+      ok: false,
+      error: 'an amendment must supply a description update or acceptance criteria',
+    };
+  }
+  try {
+    const response = await deps.amendStoryItem(input.projectId, input.bookId, input.bookItemId, {
+      description,
+      append_acceptance_criteria: criteria,
+      cite_finding_id: input.findingId,
+      stale_reason: input.staleReason ?? null,
+    });
+    logger.info('[diag-gateway] carry_over_action amend_story', {
+      projectId: input.projectId,
+      bookId: input.bookId,
+      bookItemId: input.bookItemId,
+      findingId: input.findingId,
+      specsMarkedStale: response.specs_marked_stale ?? 0,
+    });
+    return {
+      ok: true,
+      workItemId: response.work_item_id ?? null,
+      specsMarkedStale: response.specs_marked_stale ?? 0,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn('[diag-gateway] carry_over_action amend_story_failed', {
+      projectId: input.projectId,
+      bookItemId: input.bookItemId,
+      findingId: input.findingId,
+      error: message,
+    });
+    return { ok: false, error: message };
+  }
+}
+
+export interface CreateStoryForFindingInput {
+  projectId: string;
+  bookId: string;
+  /** The finding this NEW story exists to cover (cited via the blob refs). */
+  findingId: string;
+  title: string;
+  /** Must EMBED the finding's essence (spec-gen grounds on it). */
+  description: string;
+  workstream?: string | null;
+  acceptanceCriteria?: string[] | null;
+  /** Spec-gen prompt flavour: api | operational (defaults operational). */
+  kind?: string | null;
+}
+
+export type CreateStoryForFindingResult =
+  | { ok: true; workItemId: string | null; bookItemId: string | null }
+  | { ok: false; error: string };
+
+/**
+ * NEW-STORY for a finding: mint a REAL carry_over story via D5's `add-item`
+ * (work_item + blob item in one tx) with the finding cited on the blob's
+ * `discoveryFindingReferences` — the finding flips to `cited-by-story` and the
+ * story flows through the normal LLM spec generation (description-grounded).
+ */
+export async function createStoryForFinding(
+  input: CreateStoryForFindingInput,
+  deps: CarryOverActionDeps = defaultCarryOverActionDeps()
+): Promise<CreateStoryForFindingResult> {
+  if (!input.findingId || input.findingId.trim() === '') {
+    return { ok: false, error: 'findingId is required' };
+  }
+  if (!input.title || input.title.trim() === '') {
+    return { ok: false, error: 'title is required' };
+  }
+  if (!input.description || input.description.trim() === '') {
+    // The description is the spec generator's SOLE grounding for a manual
+    // story — a finding-born story without one would generate an empty spec.
+    return { ok: false, error: 'description is required (it must embed the finding)' };
+  }
+  try {
+    const response = await deps.addManualStoryItem(input.projectId, input.bookId, {
+      provenance: 'carry_over',
+      kind: input.kind ?? 'operational',
+      title: input.title,
+      description: input.description,
+      workstream: input.workstream ?? null,
+      acceptance_criteria: input.acceptanceCriteria ?? null,
+      discovery_finding_references: [input.findingId],
+    });
+    logger.info('[diag-gateway] carry_over_action create_story_for_finding', {
+      projectId: input.projectId,
+      bookId: input.bookId,
+      findingId: input.findingId,
+      workItemId: response.work_item_id ?? null,
+    });
+    return {
+      ok: true,
+      workItemId: response.work_item_id ?? null,
+      bookItemId: response.book_item_id ?? null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.warn('[diag-gateway] carry_over_action create_story_for_finding_failed', {
+      projectId: input.projectId,
+      findingId: input.findingId,
+      error: message,
+    });
+    return { ok: false, error: message };
+  }
 }

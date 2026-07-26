@@ -52,6 +52,27 @@ vi.mock('../../../../api/migrationBookOfWorkApi', async () => {
   };
 });
 
+// Carry-over accounting (2026-07-26): the workspace mounts the coverage read
+// on render — pin a benign empty result so no test leaks a real fetch.
+vi.mock('../../../../api/carryOverCoverageApi', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../../api/carryOverCoverageApi')
+  >('../../../../api/carryOverCoverageApi');
+  return {
+    ...actual,
+    getCarryOverCoverage: vi.fn().mockResolvedValue({
+      items: [],
+      mustAccount: [],
+      unaccounted: [],
+      accountedCount: 0,
+      totalMustAccount: 0,
+      ok: true,
+      architectureId: null,
+      itemDetails: {},
+    }),
+  };
+});
+
 import MigrationBookOfWorkReviewWorkspace from '../MigrationBookOfWorkReviewWorkspace';
 
 const PROJECT_ID = 'proj-1';

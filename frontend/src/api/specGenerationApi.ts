@@ -205,6 +205,14 @@ export interface SpecGenerationRow {
    */
   manualReady?: boolean;
   manualReadyBy?: string | null;
+  /**
+   * Stale marker (carry-over triage, 2026-07-26): a story AMENDED for a
+   * finding keeps its generated spec but is marked stale server-side — it
+   * drops out of the stage gate (server `isStorySpecReady` refuses stale) and
+   * regenerates through the normal Generate-specs batch (which clears it).
+   */
+  stale?: boolean;
+  staleReason?: string | null;
   // ---- Cross-Story Context Injection (2026-05-20) ----------------------
   /** 1 = pass-1 row; 2 = pass-2 row. Null on legacy rows. */
   generationPass?: number | null;
@@ -358,6 +366,15 @@ function mapRowDtoToRow(dto: SpecGenerationRowDto): SpecGenerationRow {
     manualReadyBy: s(
       (dto as { manual_ready_by?: string | null }).manual_ready_by,
       'manualReadyBy',
+    ),
+    // Stale marker (2026-07-26): an amended story's spec must read as
+    // needing regeneration, not as satisfied.
+    stale:
+      ((dto as { stale?: boolean | null }).stale ??
+        (c.stale as boolean | null | undefined)) ?? false,
+    staleReason: s(
+      (dto as { stale_reason?: string | null }).stale_reason,
+      'staleReason',
     ),
   };
 }

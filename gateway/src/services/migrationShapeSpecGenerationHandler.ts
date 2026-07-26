@@ -303,6 +303,15 @@ export interface MigrationStorySpecGenerationDto {
    */
   storyTitle?: string | null;
   parentTitle?: string | null;
+  /**
+   * Stale trio (carry-over triage, 2026-07-26): a STALE generated row is
+   * treated as needing REgeneration — `selectEligibleStories` no longer skips
+   * it, and the driver's `isStorySpecReady` refuses it. Stamped server-side
+   * (story amend / resolution cascade), cleared on successful regeneration.
+   */
+  stale?: boolean | null;
+  staleReason?: string | null;
+  staleMarkedAt?: string | null;
 }
 
 /**
@@ -1078,6 +1087,10 @@ export function normaliseAmsRow(row: Record<string, unknown>): MigrationStorySpe
         | undefined) ?? null,
     coveredEndpointIds:
       (get('covered_endpoint_ids', 'coveredEndpointIds') as string[] | null | undefined) ?? null,
+    stale: (get('stale', 'stale') as boolean | null | undefined) ?? null,
+    staleReason: (get('stale_reason', 'staleReason') as string | null | undefined) ?? null,
+    staleMarkedAt:
+      (get('stale_marked_at', 'staleMarkedAt') as string | null | undefined) ?? null,
   };
 }
 
@@ -1322,7 +1335,17 @@ export function selectEligibleStories(
       continue;
     }
     const existingRow = storiesById.get(it.workItemId as string);
-    if (existingRow && existingRow.status === 'generated' && !regenerateAll) {
+    // R-8 skip-generated — EXCEPT stale rows (2026-07-26): a story amended for
+    // a carry-over finding keeps status='generated' but is marked stale, and
+    // MUST regenerate through this same batch flow (regeneration clears the
+    // stamp on success). Without this carve-out an amended story would stay
+    // stale forever unless the user found the per-story Regenerate.
+    if (
+      existingRow &&
+      existingRow.status === 'generated' &&
+      existingRow.stale !== true &&
+      !regenerateAll
+    ) {
       continue;
     }
     eligible.push(it);

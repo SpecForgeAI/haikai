@@ -49,6 +49,9 @@ import {
   citeCapability,
   dismissCarryOverItem,
   generateAllCapabilityStories,
+  citeFindingIntoStory,
+  amendStoryForFinding,
+  createStoryForFinding,
   CarryOverActionDeps,
 } from '../services/migrationCarryOverActions';
 
@@ -340,6 +343,26 @@ describe('carry_over actions', () => {
       }),
       patchCapabilityReview: jest.fn().mockResolvedValue({}),
       patchFindingReview: jest.fn().mockResolvedValue({}),
+      citeFindingOnStory: jest.fn().mockResolvedValue({
+        book_item_id: 'bi-1',
+        finding_id: 'fX',
+        already_cited: false,
+        message: 'ok',
+      }),
+      amendStoryItem: jest.fn().mockResolvedValue({
+        book_item_id: 'bi-1',
+        work_item_id: 'wi-1',
+        finding_id: 'fX',
+        specs_marked_stale: 1,
+        message: 'ok',
+      }),
+      addManualStoryItem: jest.fn().mockResolvedValue({
+        work_item_id: 'wi-new',
+        book_item_id: 'manual-new',
+        provenance: 'carry_over',
+        kind: 'operational',
+        message: 'ok',
+      }),
       ...over,
     };
   }
@@ -425,5 +448,123 @@ describe('carry_over actions', () => {
       BOOK_ID,
       expect.objectContaining({ source_capability_id: 'capA' })
     );
+  });
+});
+
+// ===========================================================================
+// Triage-plumbing actions (2026-07-26): cite-finding / amend / new-story
+// ===========================================================================
+
+describe('carry_over triage-plumbing actions', () => {
+  function actionDeps(over: Partial<CarryOverActionDeps> = {}): CarryOverActionDeps {
+    return {
+      appendCapabilityStory: jest.fn().mockResolvedValue({}),
+      patchCapabilityReview: jest.fn().mockResolvedValue({}),
+      patchFindingReview: jest.fn().mockResolvedValue({}),
+      citeFindingOnStory: jest.fn().mockResolvedValue({
+        book_item_id: 'bi-1',
+        finding_id: 'fX',
+        already_cited: false,
+        message: 'ok',
+      }),
+      amendStoryItem: jest.fn().mockResolvedValue({
+        book_item_id: 'bi-1',
+        work_item_id: 'wi-1',
+        finding_id: 'fX',
+        specs_marked_stale: 1,
+        message: 'ok',
+      }),
+      addManualStoryItem: jest.fn().mockResolvedValue({
+        work_item_id: 'wi-new',
+        book_item_id: 'manual-new',
+        provenance: 'carry_over',
+        kind: 'operational',
+        message: 'ok',
+      }),
+      ...over,
+    };
+  }
+
+  it('citeFindingIntoStory posts the item patch and surfaces the idempotent already-cited flag', async () => {
+    const deps = actionDeps({
+      citeFindingOnStory: jest
+        .fn()
+        .mockResolvedValue({ book_item_id: 'bi-1', finding_id: 'fX', already_cited: true }),
+    });
+    const result = await citeFindingIntoStory(
+      { projectId: PROJECT_ID, bookId: BOOK_ID, bookItemId: 'bi-1', findingId: 'fX' },
+      deps
+    );
+    expect(result).toEqual({ ok: true, alreadyCited: true });
+    expect(deps.citeFindingOnStory).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, 'bi-1', 'fX');
+  });
+
+  it('amendStoryForFinding sends description + APPEND criteria + the finding cite in ONE patch (and reports specs marked stale)', async () => {
+    const deps = actionDeps();
+    const result = await amendStoryForFinding(
+      {
+        projectId: PROJECT_ID,
+        bookId: BOOK_ID,
+        bookItemId: 'bi-1',
+        findingId: 'fX',
+        description: 'Amended description folding the finding in.',
+        appendAcceptanceCriteria: ['New criterion covering the finding.', '  '],
+      },
+      deps
+    );
+    expect(result).toEqual({ ok: true, workItemId: 'wi-1', specsMarkedStale: 1 });
+    expect(deps.amendStoryItem).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, 'bi-1', {
+      description: 'Amended description folding the finding in.',
+      append_acceptance_criteria: ['New criterion covering the finding.'],
+      cite_finding_id: 'fX',
+      stale_reason: null,
+    });
+  });
+
+  it('amendStoryForFinding REJECTS an amendment that changes nothing (that would be a cite, not an amend)', async () => {
+    const deps = actionDeps();
+    const result = await amendStoryForFinding(
+      { projectId: PROJECT_ID, bookId: BOOK_ID, bookItemId: 'bi-1', findingId: 'fX' },
+      deps
+    );
+    expect(result.ok).toBe(false);
+    expect(deps.amendStoryItem).not.toHaveBeenCalled();
+  });
+
+  it('createStoryForFinding mints a carry_over add-item WITH the finding cited on discoveryFindingReferences', async () => {
+    const deps = actionDeps();
+    const result = await createStoryForFinding(
+      {
+        projectId: PROJECT_ID,
+        bookId: BOOK_ID,
+        findingId: 'fX',
+        title: 'Recreate the archive purge job',
+        description: 'The current system purges archived rows weekly; the target must too.',
+        workstream: 'internal_processing_implementation',
+        acceptanceCriteria: ['Purge runs weekly.'],
+      },
+      deps
+    );
+    expect(result.ok).toBe(true);
+    expect(deps.addManualStoryItem).toHaveBeenCalledWith(
+      PROJECT_ID,
+      BOOK_ID,
+      expect.objectContaining({
+        provenance: 'carry_over',
+        title: 'Recreate the archive purge job',
+        workstream: 'internal_processing_implementation',
+        discovery_finding_references: ['fX'],
+      })
+    );
+  });
+
+  it('createStoryForFinding REJECTS a blank description (the sole spec-gen grounding for a manual story)', async () => {
+    const deps = actionDeps();
+    const result = await createStoryForFinding(
+      { projectId: PROJECT_ID, bookId: BOOK_ID, findingId: 'fX', title: 'T', description: '   ' },
+      deps
+    );
+    expect(result.ok).toBe(false);
+    expect(deps.addManualStoryItem).not.toHaveBeenCalled();
   });
 });

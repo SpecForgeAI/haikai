@@ -157,7 +157,25 @@ public record MigrationStorySpecGenerationDto(
     String manualReadyAt,
 
     @JsonProperty("manual_ready_by")
-    String manualReadyBy
+    String manualReadyBy,
+
+    /**
+     * Stale trio (carry-over triage, 2026-07-26). The columns have existed
+     * since the Target Architecture Authoring Flow but were never exposed on
+     * this wire shape — so the gateway's {@code isStorySpecReady} stale check
+     * and the plan screen's stale chip could never see them. READ-ONLY on the
+     * wire: {@code updateEntityFromDto} deliberately ignores them (stale is
+     * stamped server-side by the mark-stale paths and cleared on successful
+     * regeneration — clients cannot set or clear it via PATCH).
+     */
+    @JsonProperty("stale")
+    Boolean stale,
+
+    @JsonProperty("stale_reason")
+    String staleReason,
+
+    @JsonProperty("stale_marked_at")
+    String staleMarkedAt
 ) {
 
     /**
@@ -200,6 +218,52 @@ public record MigrationStorySpecGenerationDto(
             createdAt, updatedAt,
             Boolean.FALSE, null, null, null,
             null, null,
+            Boolean.FALSE, null, null);
+    }
+
+    /**
+     * Backward-compatible 28-arg constructor preserving the pre-2026-07-26
+     * (pre-stale-exposure) canonical signature. Delegates to the canonical
+     * 31-arg constructor with the stale trio defaulted ({@code stale} mirrors
+     * the DB default of {@code false}).
+     */
+    public MigrationStorySpecGenerationDto(
+            UUID id,
+            UUID projectId,
+            UUID workItemId,
+            UUID bookOfWorkId,
+            String bookItemId,
+            String status,
+            String confidence,
+            String predictedReadiness,
+            String generatedSpecText,
+            List<Map<String, Object>> warningsJson,
+            List<Map<String, Object>> missingInputsJson,
+            Map<String, Object> focusedContextRefsJson,
+            List<String> evidenceRefsJson,
+            String generatedAt,
+            String errorMessage,
+            Integer generationAttemptNumber,
+            String createdByTask,
+            String createdAt,
+            String updatedAt,
+            Boolean manuallyEdited,
+            String lastManuallyEditedAt,
+            String lastManuallyEditedBy,
+            String previousSpecText,
+            List<Map<String, Object>> structuredTestsJson,
+            List<String> coveredEndpointIds,
+            Boolean manualReady,
+            String manualReadyAt,
+            String manualReadyBy) {
+        this(id, projectId, workItemId, bookOfWorkId, bookItemId, status,
+            confidence, predictedReadiness, generatedSpecText, warningsJson,
+            missingInputsJson, focusedContextRefsJson, evidenceRefsJson,
+            generatedAt, errorMessage, generationAttemptNumber, createdByTask,
+            createdAt, updatedAt,
+            manuallyEdited, lastManuallyEditedAt, lastManuallyEditedBy,
+            previousSpecText, structuredTestsJson, coveredEndpointIds,
+            manualReady, manualReadyAt, manualReadyBy,
             Boolean.FALSE, null, null);
     }
 

@@ -52,6 +52,8 @@ export interface DiscoveryCapabilityWire {
   id?: string;
   run_id?: string | null;
   name?: string | null;
+  kind?: string | null;
+  summary?: string | null;
   review_status?: string | null;
   detail_json?: Record<string, unknown> | null;
   members?: CapabilityMemberWire[] | null;
@@ -60,6 +62,11 @@ export interface DiscoveryCapabilityWire {
 /** A `discovery_findings` row — the AMS DTO subset (snake_case at the wire). */
 export interface DiscoveryFindingWire {
   id?: string;
+  title?: string | null;
+  summary?: string | null;
+  severity?: string | null;
+  category?: string | null;
+  finding_type?: string | null;
   review_status?: string | null;
   reviewer_notes?: string | null;
   detail_json?: Record<string, unknown> | null;
@@ -166,6 +173,28 @@ export function defaultCarryOverCoverageReadsDeps(): CarryOverCoverageReadsDeps 
 // Assembly — gather the pure-module inputs for a book of work
 // ============================================================================
 
+/**
+ * Human-readable content for ONE coverage item (capability or finding) — the
+ * accounting panel + LLM triage side-output (2026-07-26). The pure coverage
+ * module never reads these; they ride ALONGSIDE its inputs so the coverage
+ * route / triage prompt can present items with real content instead of bare
+ * UUIDs, and so a finding dismissal has its run id to hand (the AMS finding
+ * review is run-scoped).
+ */
+export interface CarryOverItemDetail {
+  kind: 'capability' | 'finding';
+  title: string | null;
+  summary: string | null;
+  /** Findings only (null for capabilities). */
+  severity: string | null;
+  category: string | null;
+  /** The owning discovery run — REQUIRED to dismiss a finding. */
+  runId: string | null;
+  reviewStatus: string | null;
+  /** Capabilities only: how many member findings roll up under it. */
+  memberFindingCount: number | null;
+}
+
 /** The assembled inputs for {@link computeCarryOverCoverage}. */
 export interface CarryOverCoverageInputs {
   capabilities: CoverageCapabilityInput[];
@@ -178,6 +207,11 @@ export interface CarryOverCoverageInputs {
    * module never needs it.
    */
   capabilityTitleById: Map<string, string>;
+  /**
+   * Item id (capability OR finding) -> its human content (2026-07-26). Feeds
+   * the review-screen accounting panel and the triage LLM prompt.
+   */
+  itemDetailById: Map<string, CarryOverItemDetail>;
 }
 
 /**
@@ -261,7 +295,10 @@ export async function gatherCarryOverCoverageInputs(params: {
   }
 
   // Read each run's findings (run-scoped, paged) and keep only behaviour-bearing
-  // ones — the SOLE gating predicate. De-dupe by finding id across runs.
+  // ones — the SOLE gating predicate. De-dupe by finding id across runs. The
+  // owning run id is captured per finding (the AMS finding review — and
+  // therefore the DISMISS action — is run-scoped).
+  const itemDetailById = new Map<string, CarryOverItemDetail>();
   const findingsById = new Map<string, CoverageFindingInput>();
   for (const runId of runIds) {
     const rows = await deps.fetchFindingsForRun(
@@ -279,6 +316,16 @@ export async function gatherCarryOverCoverageInputs(params: {
         reviewStatus: f.review_status ?? null,
         reviewerNotes: f.reviewer_notes ?? null,
       });
+      itemDetailById.set(f.id, {
+        kind: 'finding',
+        title: f.title ?? null,
+        summary: f.summary ?? null,
+        severity: f.severity ?? null,
+        category: f.category ?? null,
+        runId,
+        reviewStatus: f.review_status ?? null,
+        memberFindingCount: null,
+      });
     }
   }
 
@@ -286,6 +333,18 @@ export async function gatherCarryOverCoverageInputs(params: {
   for (const c of capabilityRows) {
     if (typeof c.id === 'string' && c.id.length > 0) {
       capabilityTitleById.set(c.id, typeof c.name === 'string' && c.name.length > 0 ? c.name : c.id);
+      itemDetailById.set(c.id, {
+        kind: 'capability',
+        title: typeof c.name === 'string' && c.name.length > 0 ? c.name : null,
+        summary: c.summary ?? null,
+        severity: null,
+        category: c.kind ?? null,
+        runId: typeof c.run_id === 'string' && c.run_id.length > 0 ? c.run_id : null,
+        reviewStatus: c.review_status ?? null,
+        memberFindingCount: (c.members ?? []).filter(
+          (m) => m.member_type === 'discovery_finding'
+        ).length,
+      });
     }
   }
 
@@ -295,6 +354,7 @@ export async function gatherCarryOverCoverageInputs(params: {
     citedCapabilityIds: collectCitedCapabilityIds(params.workItems),
     citedFindingIds: collectCitedFindingIds(params.book),
     capabilityTitleById,
+    itemDetailById,
   };
 }
 

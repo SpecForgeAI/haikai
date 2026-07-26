@@ -108,7 +108,40 @@ public record AddWorkItemRequest(
      * Defaults to absent when null/empty.
      */
     @JsonProperty("net_new_operations")
-    List<String> netNewOperations
+    List<String> netNewOperations,
+
+    /**
+     * OPTIONAL, carry-over triage (2026-07-26): the plane workstream stamped
+     * onto the blob item (Spec V vocabulary, e.g.
+     * {@code internal_processing_implementation}). The execution rail's
+     * plane-grouping ({@code planeForStory}) reads it; absent means the story
+     * defaults to the service plane. Not validated against the 14-value enum
+     * here (the gateway triage validates before calling); stamped verbatim
+     * when non-blank.
+     */
+    @JsonProperty("workstream")
+    String workstream,
+
+    /**
+     * OPTIONAL, carry-over triage (2026-07-26): acceptance criteria stamped
+     * onto the blob item's {@code acceptanceCriteria} list (blank entries
+     * dropped). The spec generator grounds on them alongside the description.
+     */
+    @JsonProperty("acceptance_criteria")
+    List<String> acceptanceCriteria,
+
+    /**
+     * OPTIONAL, carry-over triage (2026-07-26): {@code discovery_findings} ids
+     * stamped onto the blob item's {@code discoveryFindingReferences} list.
+     * The original D5 rationale ("a manual add has no discovered finding, so
+     * it is never a D4 coverage obligation") still holds for a BARE add — but
+     * the triage NEW-STORY disposition creates a story BECAUSE of a finding,
+     * and the explicit reference here is what flips that finding to
+     * {@code cited-by-story} in the D4 gate. Absent/empty keeps the original
+     * out-of-gate behaviour unchanged.
+     */
+    @JsonProperty("discovery_finding_references")
+    List<String> discoveryFindingReferences
 ) {
 
     /** API-endpoint prompt flavour (the default). */
@@ -116,4 +149,23 @@ public record AddWorkItemRequest(
 
     /** Operational / non-API (effect-oriented) prompt flavour. */
     public static final String KIND_OPERATIONAL = "operational";
+
+    /**
+     * Backward-compatible 7-arg constructor preserving the pre-2026-07-26
+     * (D5/D6) canonical signature. Defaults the triage-era fields
+     * ({@code workstream} / {@code acceptance_criteria} /
+     * {@code discovery_finding_references}) to {@code null} so existing
+     * callers and tests compile and behave unchanged.
+     */
+    public AddWorkItemRequest(
+            String provenance,
+            String kind,
+            String title,
+            String description,
+            String parentBookItemId,
+            Integer sequenceOrder,
+            List<String> netNewOperations) {
+        this(provenance, kind, title, description, parentBookItemId,
+            sequenceOrder, netNewOperations, null, null, null);
+    }
 }

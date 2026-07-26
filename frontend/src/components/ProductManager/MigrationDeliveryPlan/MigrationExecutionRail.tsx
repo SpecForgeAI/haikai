@@ -74,6 +74,14 @@ export interface RailPlane {
   /** Run progress (0/0 when no run exists yet). */
   runDone: number;
   runTotal: number;
+  /**
+   * Carry-over accounting (2026-07-26) — SERVICE card only. The server gate
+   * blocks a service start while behaviour-bearing carry-over items are
+   * un-actioned, so the card shows `carry-over accounted M/N` and its Start
+   * disables until accounted == total ("enabled button ⇒ server says yes").
+   * Null/absent = not applicable (DB/UI cards) or not yet read.
+   */
+  carryOver?: { accounted: number; total: number } | null;
 }
 
 export interface MigrationExecutionRailProps {
@@ -226,6 +234,9 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
         {planes.map((p, idx) => {
           const meta = PLANE_META[p.plane];
           const satisfied = p.satisfiedStories >= p.totalStories;
+          // Carry-over accounting (service card): un-accounted items block the
+          // server's service-start gate, so the card gates its Start too.
+          const carryOverOk = !p.carryOver || p.carryOver.accounted >= p.carryOver.total;
           const isFirst = idx === 0;
           const stageNo = idx + 1;
           return (
@@ -249,6 +260,12 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                 specs {p.satisfiedStories}/{p.totalStories}{' '}
                 {satisfied ? '✓' : 'ready'}
               </div>
+              {p.carryOver && (
+                <div data-testid={`execution-rail-carry-over-${p.plane}`}>
+                  carry-over accounted {p.carryOver.accounted}/{p.carryOver.total}{' '}
+                  {carryOverOk ? '✓' : '— cite or dismiss the rest above'}
+                </div>
+              )}
               {!satisfied && (
                 <ul
                   className={styles.bulletList}
@@ -324,15 +341,20 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                       style={{ marginTop: 8 }}
                       // Spec 2026-07-23 (user decision): the spec gate is
                       // PER-PLANE — "no story enters a plane without a spec"
-                      // means stage N gates on stage N's OWN stories.
-                      disabled={!satisfied || !scopeReady || busy}
+                      // means stage N gates on stage N's OWN stories. The
+                      // service card ALSO gates on carry-over accounting
+                      // (2026-07-26): the server refuses a service start with
+                      // un-accounted items, so the button must not promise one.
+                      disabled={!satisfied || !carryOverOk || !scopeReady || busy}
                       onClick={() => onStart(p.plane)}
                       title={
                         !satisfied
                           ? 'Every story in THIS stage needs a spec (generated or manual-ready) before it can start'
-                          : !scopeReady
-                            ? 'Resolving the orchestration scope…'
-                            : 'Runs THIS plane end-to-end (build → verify → reconcile); the next stage unlocks when it completes'
+                          : !carryOverOk
+                            ? 'Behaviour-bearing carry-over items must be cited or dismissed first — see the carry-over panel above'
+                            : !scopeReady
+                              ? 'Resolving the orchestration scope…'
+                              : 'Runs THIS plane end-to-end (build → verify → reconcile); the next stage unlocks when it completes'
                       }
                       data-testid={
                         isFirst
