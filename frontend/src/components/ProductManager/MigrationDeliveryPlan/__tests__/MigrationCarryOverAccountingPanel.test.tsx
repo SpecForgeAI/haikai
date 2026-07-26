@@ -33,6 +33,9 @@ const mockCiteCapability = vi.fn();
 const mockCiteFindingIntoStory = vi.fn();
 const mockAmendStoryForFinding = vi.fn();
 const mockCreateStoryForFinding = vi.fn();
+const mockRunCarryOverTriage = vi.fn();
+const mockRedraftTriageSuggestion = vi.fn();
+const mockApplyTriageSuggestions = vi.fn();
 
 vi.mock('../../../../api/carryOverCoverageApi', async () => {
   const actual = await vi.importActual<
@@ -46,6 +49,9 @@ vi.mock('../../../../api/carryOverCoverageApi', async () => {
     citeFindingIntoStory: (...args: unknown[]) => mockCiteFindingIntoStory(...args),
     amendStoryForFinding: (...args: unknown[]) => mockAmendStoryForFinding(...args),
     createStoryForFinding: (...args: unknown[]) => mockCreateStoryForFinding(...args),
+    runCarryOverTriage: (...args: unknown[]) => mockRunCarryOverTriage(...args),
+    redraftTriageSuggestion: (...args: unknown[]) => mockRedraftTriageSuggestion(...args),
+    applyTriageSuggestions: (...args: unknown[]) => mockApplyTriageSuggestions(...args),
   };
 });
 
@@ -121,6 +127,39 @@ async function renderPanelExpanded(onCoverageChanged = vi.fn()) {
   return onCoverageChanged;
 }
 
+/** A drafted amend suggestion for f-1 + a validation-blanked one for cap-1. */
+function draftedSuggestions() {
+  return {
+    suggestions: [
+      {
+        itemId: 'f-1',
+        kind: 'finding',
+        disposition: 'amend_story',
+        targetBookItemId: 's-close',
+        rationale: 'In the close story’s scope but unaddressed.',
+        draftAmendment: {
+          description: 'Implements POST /ledger/close verbatim, halting on replication lag.',
+          appendAcceptanceCriteria: ['Halts when lag exceeds 5 minutes.'],
+        },
+        draftStory: null,
+        dismissReason: null,
+        validationNote: null,
+      },
+      {
+        itemId: 'cap-1',
+        kind: 'capability',
+        disposition: null,
+        targetBookItemId: null,
+        rationale: '',
+        draftAmendment: null,
+        draftStory: null,
+        dismissReason: null,
+        validationNote: "Unknown disposition 'defer' — pick one manually.",
+      },
+    ],
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetCarryOverCoverage.mockResolvedValue(blockingCoverage());
@@ -129,6 +168,35 @@ beforeEach(() => {
   mockCiteFindingIntoStory.mockResolvedValue({ ok: true, alreadyCited: false });
   mockAmendStoryForFinding.mockResolvedValue({ ok: true, workItemId: 'wi-1', specsMarkedStale: 1 });
   mockCreateStoryForFinding.mockResolvedValue({ ok: true, workItemId: 'wi-new', bookItemId: 'manual-x' });
+  mockRunCarryOverTriage.mockResolvedValue(draftedSuggestions());
+  mockRedraftTriageSuggestion.mockResolvedValue({
+    suggestion: {
+      itemId: 'f-1',
+      kind: 'finding',
+      disposition: 'amend_story',
+      targetBookItemId: 's-close',
+      rationale: 'Re-drafted with the guidance.',
+      draftAmendment: {
+        description: 'Re-drafted description honouring the retry semantics.',
+        appendAcceptanceCriteria: ['Retries twice before halting.'],
+      },
+      draftStory: null,
+      dismissReason: null,
+      validationNote: null,
+    },
+  });
+  mockApplyTriageSuggestions.mockResolvedValue({
+    results: [{ itemId: 'f-1', disposition: 'amend_story', ok: true, error: null }],
+    coverage: {
+      ...blockingCoverage(),
+      unaccounted: [
+        { kind: 'capability', id: 'cap-1', status: 'un-actioned', behaviourBearing: true, label: 'cap-1' },
+      ],
+      accountedCount: 1,
+      totalMustAccount: 2,
+      ok: false,
+    },
+  });
 });
 
 describe('MigrationCarryOverAccountingPanel actions', () => {
@@ -250,5 +318,154 @@ describe('MigrationCarryOverAccountingPanel actions', () => {
       );
     });
     expect(mockCreateStoryForFinding).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// LLM triage panel (Item 3): suggestions table + guided re-draft + approve-all
+// ============================================================================
+
+describe('MigrationCarryOverAccountingPanel triage', () => {
+  it('"Get suggestions" renders the editable suggestion per item; a validation-blanked row reads "needs manual choice"', async () => {
+    await renderPanelExpanded();
+    fireEvent.click(screen.getByTestId('carry-over-get-suggestions'));
+
+    // f-1: the drafted amend with target + rationale + editable drafts.
+    const disposition = (await screen.findByTestId(
+      'carry-over-suggestion-disposition-f-1',
+    )) as HTMLSelectElement;
+    expect(disposition.value).toBe('amend_story');
+    expect(
+      (screen.getByTestId('carry-over-suggestion-target-f-1') as HTMLSelectElement).value,
+    ).toBe('s-close');
+    expect(
+      screen.getByTestId('carry-over-suggestion-rationale-f-1'),
+    ).toHaveTextContent('In the close story’s scope but unaddressed.');
+    expect(
+      (screen.getByTestId('carry-over-suggestion-amend-description-f-1') as HTMLTextAreaElement)
+        .value,
+    ).toContain('halting on replication lag');
+
+    // cap-1: blanked by validation → "needs manual choice" + the note; its
+    // Apply stays disabled; the dropdown offers only new_story|dismiss.
+    const capDisposition = screen.getByTestId(
+      'carry-over-suggestion-disposition-cap-1',
+    ) as HTMLSelectElement;
+    expect(capDisposition.value).toBe('');
+    expect(screen.getByTestId('carry-over-suggestion-note-cap-1')).toHaveTextContent(
+      'pick one manually',
+    );
+    expect(screen.getByTestId('carry-over-suggestion-apply-cap-1')).toBeDisabled();
+    const capOptions = Array.from(capDisposition.options).map((o) => o.value);
+    expect(capOptions).toEqual(['', 'new_story', 'dismiss']);
+
+    // The manual action buttons are replaced while a suggestion is under review.
+    expect(screen.queryByTestId('carry-over-amend-f-1')).not.toBeInTheDocument();
+  });
+
+  it('per-item Apply sends the EDITED suggestion (criteria cleaned) and the applied row leaves the review set; coverage comes from the response', async () => {
+    const onCoverageChanged = await renderPanelExpanded();
+    fireEvent.click(screen.getByTestId('carry-over-get-suggestions'));
+    await screen.findByTestId('carry-over-suggestion-f-1');
+
+    // Edit the drafted criteria (raw lines, blanks allowed while typing).
+    fireEvent.change(screen.getByTestId('carry-over-suggestion-amend-criteria-f-1'), {
+      target: { value: 'Halts when lag exceeds 5 minutes.\n\nRecovers automatically.\n' },
+    });
+    fireEvent.click(screen.getByTestId('carry-over-suggestion-apply-f-1'));
+
+    await waitFor(() => {
+      expect(mockApplyTriageSuggestions).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, [
+        expect.objectContaining({
+          itemId: 'f-1',
+          kind: 'finding',
+          disposition: 'amend_story',
+          targetBookItemId: 's-close',
+          draftAmendment: {
+            description:
+              'Implements POST /ledger/close verbatim, halting on replication lag.',
+            // Blank lines cleaned at apply time.
+            appendAcceptanceCriteria: [
+              'Halts when lag exceeds 5 minutes.',
+              'Recovers automatically.',
+            ],
+          },
+        }),
+      ]);
+    });
+
+    // The applied row leaves the review set; cap-1 (unapplied) remains.
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId('carry-over-suggestion-f-1'),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId('carry-over-suggestion-cap-1')).toBeInTheDocument();
+    // The response's refreshed coverage reached the parent (no extra GET).
+    expect(onCoverageChanged).toHaveBeenLastCalledWith(
+      expect.objectContaining({ accountedCount: 1 }),
+    );
+  });
+
+  it('Re-draft folds the guidance + chosen disposition/target into the request and swaps in the fresh draft (guidance kept)', async () => {
+    await renderPanelExpanded();
+    fireEvent.click(screen.getByTestId('carry-over-get-suggestions'));
+    await screen.findByTestId('carry-over-suggestion-f-1');
+
+    fireEvent.change(screen.getByTestId('carry-over-suggestion-guidance-f-1'), {
+      target: { value: 'Focus the amendment on the retry semantics.' },
+    });
+    fireEvent.click(screen.getByTestId('carry-over-suggestion-redraft-f-1'));
+
+    await waitFor(() => {
+      expect(mockRedraftTriageSuggestion).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
+        item_id: 'f-1',
+        forced_disposition: 'amend_story',
+        guidance: 'Focus the amendment on the retry semantics.',
+        target_book_item_id: 's-close',
+      });
+    });
+    await waitFor(() => {
+      expect(
+        (screen.getByTestId('carry-over-suggestion-amend-description-f-1') as HTMLTextAreaElement)
+          .value,
+      ).toContain('honouring the retry semantics');
+    });
+    // The reviewer's guidance survives the swap so they can iterate.
+    expect(
+      (screen.getByTestId('carry-over-suggestion-guidance-f-1') as HTMLTextAreaElement).value,
+    ).toBe('Focus the amendment on the retry semantics.');
+  });
+
+  it('"Approve all suggestions (N)" counts + sends ONLY the ready rows (the blanked one is skipped)', async () => {
+    await renderPanelExpanded();
+    fireEvent.click(screen.getByTestId('carry-over-get-suggestions'));
+    await screen.findByTestId('carry-over-suggestion-f-1');
+
+    const approveAll = screen.getByTestId('carry-over-approve-all');
+    expect(approveAll).toHaveTextContent('Approve all suggestions (1)');
+    fireEvent.click(approveAll);
+
+    await waitFor(() => {
+      expect(mockApplyTriageSuggestions).toHaveBeenCalledTimes(1);
+    });
+    const sent = mockApplyTriageSuggestions.mock.calls[0][2] as Array<{ itemId: string }>;
+    expect(sent.map((s) => s.itemId)).toEqual(['f-1']);
+  });
+
+  it('choosing a disposition for a blanked row seeds prefilled drafts and enables Apply once complete', async () => {
+    await renderPanelExpanded();
+    fireEvent.click(screen.getByTestId('carry-over-get-suggestions'));
+    await screen.findByTestId('carry-over-suggestion-cap-1');
+
+    fireEvent.change(screen.getByTestId('carry-over-suggestion-disposition-cap-1'), {
+      target: { value: 'new_story' },
+    });
+    // Seeded from the capability's content.
+    expect(
+      (screen.getByTestId('carry-over-suggestion-story-title-cap-1') as HTMLInputElement).value,
+    ).toBe('Nightly batch spine');
+    // A capability new_story is ready (the mint falls back to the item title).
+    expect(screen.getByTestId('carry-over-suggestion-apply-cap-1')).not.toBeDisabled();
   });
 });
