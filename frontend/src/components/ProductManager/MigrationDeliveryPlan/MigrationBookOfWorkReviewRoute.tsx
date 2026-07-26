@@ -42,6 +42,7 @@ import { MigrationBookOfWorkReviewWorkspace } from './MigrationBookOfWorkReviewW
 // delivery-dashboard route does (fail-soft; missing scope only disables Start).
 import { useProject } from '../../../contexts/ProjectContext';
 import { getOrganisationById } from '../../../api/organisationsApi';
+import { getProjectById } from '../../../api/projectsApi';
 
 export function MigrationBookOfWorkReviewRoute() {
   const { projectId, architectureId, bookId } = useParams<{
@@ -67,20 +68,36 @@ export function MigrationBookOfWorkReviewRoute() {
   useEffect(() => {
     let cancelled = false;
     const derive = async () => {
-      const projectName = activeProject?.name || projectId || '';
+      // Scope source: the in-memory active-project context, FALLING BACK to a
+      // fetch by the URL's projectId (2026-07-26 fix). The context is only
+      // hydrated by opening the project from the projects list, so a reload /
+      // deep link onto this route used to dead-end on "Project context is not
+      // loaded" with a disabled Start button — despite the project id sitting
+      // right in the URL.
+      let scopeProject: { name?: string | null; organisationId?: string | null } | null =
+        activeProject;
+      if (!scopeProject && projectId) {
+        try {
+          scopeProject = await getProjectById(projectId);
+        } catch {
+          scopeProject = null;
+        }
+      }
+      const projectName = scopeProject?.name || projectId || '';
       if (!cancelled) setProject(projectName);
-      if (!activeProject) {
+      if (!scopeProject) {
         if (!cancelled) {
           setCompany('');
           setScopeHint(
-            'Project context is not loaded — the run scope (organisation + ' +
-              'project name) cannot be resolved. Reload the page; if this ' +
-              'persists, re-open the project from the projects list.',
+            'Project context could not be resolved — the active-project ' +
+              'context is empty and the project lookup by id failed, so the ' +
+              'run scope (organisation + project name) is unavailable. Check ' +
+              'the projects service, then reload.',
           );
         }
         return;
       }
-      if (!activeProject.organisationId) {
+      if (!scopeProject.organisationId) {
         if (!cancelled) {
           setCompany('');
           setScopeHint(
@@ -93,7 +110,7 @@ export function MigrationBookOfWorkReviewRoute() {
       }
       try {
         const organisation = await getOrganisationById(
-          activeProject.organisationId,
+          scopeProject.organisationId,
         );
         if (!cancelled) {
           const name = organisation?.name ?? '';
@@ -101,7 +118,7 @@ export function MigrationBookOfWorkReviewRoute() {
           setScopeHint(
             name
               ? null
-              : `Organisation ${activeProject.organisationId} has no name — ` +
+              : `Organisation ${scopeProject.organisationId} has no name — ` +
                   'the run scope needs it. Fix the organisation record, then reload.',
           );
         }
@@ -109,7 +126,7 @@ export function MigrationBookOfWorkReviewRoute() {
         if (!cancelled) {
           setCompany('');
           setScopeHint(
-            `Organisation lookup failed (id ${activeProject.organisationId}) — ` +
+            `Organisation lookup failed (id ${scopeProject.organisationId}) — ` +
               'the run scope needs the organisation name. Check the ' +
               'organisations service, then reload.',
           );
