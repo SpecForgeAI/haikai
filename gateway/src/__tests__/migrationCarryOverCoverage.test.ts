@@ -26,6 +26,15 @@ import {
   CoverageCapabilityInput,
   CoverageFindingInput,
 } from '../services/migrationCarryOverCoverage';
+jest.mock('../services/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+import {
+  gatherCarryOverCoverageInputs,
+  CarryOverCoverageReadsDeps,
+} from '../services/migrationCarryOverCoverageReads';
+import type { BookOfWork } from '../services/migrationDriverAmsReads';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -222,5 +231,92 @@ describe('computeCarryOverCoverage', () => {
     expect(result.mustAccount).toHaveLength(0);
     expect(result.unaccounted).toHaveLength(0);
     expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Item-detail side-output (2026-07-26 accounting panel + triage)
+// ---------------------------------------------------------------------------
+
+describe('gatherCarryOverCoverageInputs itemDetailById', () => {
+  const emptyBook: BookOfWork = {
+    id: 'book-1',
+    project_id: 'proj-1',
+    current_architecture_id: 'arch-1',
+    status: 'saved',
+    book_of_work_json: { items: [] },
+  };
+
+  it('captures finding content + the owning RUN ID (dismissal is run-scoped) and capability content', async () => {
+    const deps: CarryOverCoverageReadsDeps = {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([
+        {
+          id: 'capA',
+          run_id: 'run-1',
+          name: 'Nightly batch spine',
+          kind: 'batch',
+          summary: 'The JIL-driven overnight close chain.',
+          review_status: 'approved',
+          detail_json: { behaviourBearing: true },
+          members: [
+            { member_type: 'discovery_finding', member_id: 'fMember' },
+            { member_type: 'code_element', member_id: 'ceX' },
+          ],
+        },
+      ]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([
+        {
+          id: 'fLoose',
+          title: 'Ledger close halts on replication lag',
+          summary: 'The close job aborts when replication lag exceeds 5 minutes.',
+          severity: 'high',
+          category: 'operational_artifact',
+          review_status: 'approved',
+          reviewer_notes: null,
+          detail_json: { behaviourBearing: true },
+        },
+        // Non-behaviour-bearing rows stay OUT of the detail map too.
+        {
+          id: 'fNonBB',
+          title: 'Cosmetic note',
+          review_status: 'approved',
+          detail_json: { behaviourBearing: false },
+        },
+      ]),
+    };
+
+    const inputs = await gatherCarryOverCoverageInputs({
+      projectId: 'proj-1',
+      architectureId: 'arch-1',
+      book: emptyBook,
+      workItems: [],
+      deps,
+    });
+
+    const findingDetail = inputs.itemDetailById.get('fLoose');
+    expect(findingDetail).toEqual({
+      kind: 'finding',
+      title: 'Ledger close halts on replication lag',
+      summary: 'The close job aborts when replication lag exceeds 5 minutes.',
+      severity: 'high',
+      category: 'operational_artifact',
+      runId: 'run-1',
+      reviewStatus: 'approved',
+      memberFindingCount: null,
+    });
+    expect(inputs.itemDetailById.has('fNonBB')).toBe(false);
+
+    const capDetail = inputs.itemDetailById.get('capA');
+    expect(capDetail).toEqual({
+      kind: 'capability',
+      title: 'Nightly batch spine',
+      summary: 'The JIL-driven overnight close chain.',
+      severity: null,
+      category: 'batch',
+      runId: 'run-1',
+      reviewStatus: 'approved',
+      // Only discovery_finding members count (code elements etc. do not).
+      memberFindingCount: 1,
+    });
   });
 });

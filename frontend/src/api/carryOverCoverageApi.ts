@@ -116,6 +116,23 @@ export interface CarryOverCoverageItem {
   label: string;
 }
 
+/**
+ * Human-readable content for one coverage item (2026-07-26 accounting panel):
+ * the gateway joins each capability/finding with its title/summary/severity +
+ * the finding's owning RUN ID (the AMS finding review — and therefore the
+ * dismiss action — is run-scoped).
+ */
+export interface CarryOverItemDetail {
+  kind: 'capability' | 'finding';
+  title: string | null;
+  summary: string | null;
+  severity: string | null;
+  category: string | null;
+  runId: string | null;
+  reviewStatus: string | null;
+  memberFindingCount: number | null;
+}
+
 /** The full per-book carry_over coverage result. */
 export interface CarryOverCoverageResult {
   items: CarryOverCoverageItem[];
@@ -124,6 +141,10 @@ export interface CarryOverCoverageResult {
   accountedCount: number;
   totalMustAccount: number;
   ok: boolean;
+  /** The book's current architecture id (needed by the dismiss action). */
+  architectureId?: string | null;
+  /** Item id -> human content (2026-07-26; absent on older gateways). */
+  itemDetails?: Record<string, CarryOverItemDetail>;
 }
 
 // ============================================================================
@@ -243,5 +264,87 @@ export async function generateAllCapabilityStories(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({}),
+  });
+}
+
+// ============================================================================
+// Triage-plumbing actions (2026-07-26): cite-finding / amend-story / new-story
+// ============================================================================
+
+/**
+ * CITE one finding onto an EXISTING story: the finding id lands in the story's
+ * `discoveryFindingReferences` (the D4 gate's citation array) so it flips to
+ * `cited-by-story`. Idempotent — an already-cited finding is a no-op success.
+ */
+export async function citeFindingIntoStory(
+  projectId: string,
+  bookId: string,
+  body: { book_item_id: string; finding_id: string },
+): Promise<{ ok: true; alreadyCited: boolean }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/carry-over/cite-finding`;
+  return jsonRequest<{ ok: true; alreadyCited: boolean }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * AMEND an existing story so it actually deals with a finding — one atomic
+ * server transaction: description replace + acceptance-criteria append + cite
+ * + the story's spec rows marked STALE (the story drops out of stage
+ * spec-readiness until its spec regenerates with the amendment folded in).
+ */
+export async function amendStoryForFinding(
+  projectId: string,
+  bookId: string,
+  body: {
+    book_item_id: string;
+    finding_id: string;
+    description?: string | null;
+    append_acceptance_criteria?: string[];
+  },
+): Promise<{ ok: true; workItemId: string | null; specsMarkedStale: number }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/carry-over/amend-story`;
+  return jsonRequest<{ ok: true; workItemId: string | null; specsMarkedStale: number }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * NEW STORY for a FINDING: mint a REAL carry_over story (work item + blob item
+ * in one transaction) with the finding cited on the blob — it flows through the
+ * normal LLM spec generation. The description must EMBED the finding's essence
+ * (it is the spec generator's sole grounding for a manual story). A
+ * CAPABILITY's new story stays on {@link citeCapability}.
+ */
+export async function createStoryForFinding(
+  projectId: string,
+  bookId: string,
+  body: {
+    finding_id: string;
+    title: string;
+    description: string;
+    workstream?: string | null;
+    acceptance_criteria?: string[];
+    kind?: string | null;
+  },
+): Promise<{ ok: true; workItemId: string | null; bookItemId: string | null }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}` +
+    `/carry-over/new-story`;
+  return jsonRequest<{ ok: true; workItemId: string | null; bookItemId: string | null }>(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
   });
 }

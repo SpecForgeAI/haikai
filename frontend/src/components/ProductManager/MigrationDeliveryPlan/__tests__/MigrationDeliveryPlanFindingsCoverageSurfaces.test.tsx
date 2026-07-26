@@ -66,6 +66,20 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
   };
 });
 
+// Carry-over accounting panel (2026-07-26): the workspace now mounts the
+// server-driven coverage read — mocked per-test.
+const mockGetCarryOverCoverage = vi.fn();
+vi.mock('../../../../api/carryOverCoverageApi', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../../api/carryOverCoverageApi')
+  >('../../../../api/carryOverCoverageApi');
+  return {
+    ...actual,
+    getCarryOverCoverage: (...args: unknown[]) =>
+      mockGetCarryOverCoverage(...args),
+  };
+});
+
 import { MigrationDeliveryPlanWizard, ArchitectureOption } from '../MigrationDeliveryPlanWizard';
 import MigrationBookOfWorkReviewWorkspace from '../MigrationBookOfWorkReviewWorkspace';
 import MigrationBookOfWorkDraftListView from '../MigrationBookOfWorkDraftListView';
@@ -300,10 +314,12 @@ describe('MigrationDeliveryPlanWizard — gap wayfinding cards (4.2)', () => {
 });
 
 // ============================================================================
-// 3 + 4 — Review workspace unaddressed findings panel
+// 3 + 4 — Review workspace carry-over accounting panel (2026-07-26: the old
+// "advisory, doesn't block saving" findings banner is GONE — the server gate
+// refused Stage-2 starts on the same items, and the banner said otherwise)
 // ============================================================================
 
-describe('MigrationBookOfWorkReviewWorkspace — unaddressed findings panel (4.3)', () => {
+describe('MigrationBookOfWorkReviewWorkspace — carry-over accounting panel', () => {
   function renderWorkspace(draft: MigrationBookOfWorkDraft) {
     return render(
       <MemoryRouter>
@@ -316,108 +332,131 @@ describe('MigrationBookOfWorkReviewWorkspace — unaddressed findings panel (4.3
     );
   }
 
-  it('collapses to a one-line advisory summary + View button; the modal lists each unaddressed finding with title + severity + deep link', () => {
+  it('REPLACES the advisory banner: no doublespeak panel, and the accounting panel states the Stage-2 gate with item content', async () => {
+    mockGetCarryOverCoverage.mockResolvedValue({
+      items: [],
+      mustAccount: [
+        { kind: 'finding', id: 'f-2', status: 'un-actioned', behaviourBearing: true, label: 'f-2' },
+        { kind: 'capability', id: 'cap-1', status: 'un-actioned', behaviourBearing: true, label: 'cap-1' },
+      ],
+      unaccounted: [
+        { kind: 'finding', id: 'f-2', status: 'un-actioned', behaviourBearing: true, label: 'f-2' },
+        { kind: 'capability', id: 'cap-1', status: 'un-actioned', behaviourBearing: true, label: 'cap-1' },
+      ],
+      accountedCount: 0,
+      totalMustAccount: 2,
+      ok: false,
+      architectureId: CURRENT_ARCH_ID,
+      itemDetails: {
+        'f-2': {
+          kind: 'finding',
+          title: 'Trigger cascade on customer delete',
+          summary: 'Deleting a customer cascades through triggers.',
+          severity: 'high',
+          category: 'operational_artifact',
+          runId: 'run-1',
+          reviewStatus: 'approved',
+          memberFindingCount: null,
+        },
+        'cap-1': {
+          kind: 'capability',
+          title: 'Nightly batch spine',
+          summary: 'The overnight close chain.',
+          severity: null,
+          category: 'batch',
+          runId: 'run-1',
+          reviewStatus: 'approved',
+          memberFindingCount: 2,
+        },
+      },
+    });
+
     renderWorkspace(makeDraft());
 
-    // s-1 references ' F-1 ' → f-1 addressed (trim + case-insensitive);
-    // f-2 and f-3 remain unaddressed.
+    // The header chip's create-time findings metric is unchanged.
     expect(screen.getByTestId('review-coverage-summary')).toHaveTextContent(
       'Findings addressed: 1 / 3',
     );
 
-    // The panel is a COMPACT advisory summary — the full list is NOT inline.
-    const panel = screen.getByTestId('unaddressed-findings-panel');
-    expect(panel).toBeInTheDocument();
+    // The doublespeak advisory panel is GONE — no "doesn't block saving".
     expect(
-      within(panel).getByTestId('unaddressed-findings-summary'),
-    ).toHaveTextContent(
-      /2 of 3 accepted critical\/high findings aren.t linked to a work item/i,
-    );
-    // No rows and no modal before the user opens it.
-    expect(
-      screen.queryByTestId('unaddressed-finding-row-f-2'),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByTestId('unaddressed-findings-dialog'),
+      screen.queryByTestId('unaddressed-findings-panel'),
     ).not.toBeInTheDocument();
 
-    // Open the detail modal.
-    fireEvent.click(
-      within(panel).getByTestId('unaddressed-findings-view-button'),
+    // The accounting panel states the SERVER gate's truth.
+    const blocking = await screen.findByTestId('carry-over-accounting-blocking');
+    expect(blocking).toHaveTextContent(
+      '2 carry-over items need citing or dismissing before Stage 2 (Service) can start.',
     );
-    const dialog = screen.getByTestId('unaddressed-findings-dialog');
+    expect(blocking).toHaveTextContent('0 of 2 accounted');
 
-    // f-1 is addressed → never listed; f-2 + f-3 are, with their deep links.
+    // Expanding lists the items WITH CONTENT + the accounting actions.
+    fireEvent.click(screen.getByTestId('carry-over-accounting-toggle'));
+    const findingRow = screen.getByTestId('carry-over-item-row-f-2');
+    expect(findingRow).toHaveTextContent('Trigger cascade on customer delete');
+    expect(findingRow).toHaveTextContent('high');
     expect(
-      within(dialog).queryByTestId('unaddressed-finding-row-f-1'),
-    ).not.toBeInTheDocument();
-    const row2 = within(dialog).getByTestId('unaddressed-finding-row-f-2');
-    expect(row2).toHaveTextContent('Trigger cascade on customer delete');
+      within(findingRow).getByTestId('carry-over-cite-f-2'),
+    ).toBeInTheDocument();
     expect(
-      within(row2).getByTestId('unaddressed-finding-severity-f-2'),
-    ).toHaveTextContent('high');
+      within(findingRow).getByTestId('carry-over-amend-f-2'),
+    ).toBeInTheDocument();
     expect(
-      within(row2)
-        .getByTestId('unaddressed-finding-link-f-2')
-        .getAttribute('href'),
-    ).toBe(`${ARCH_BASE}/discovery/runs/run-1?tab=findings&findingId=f-2`);
-    // f-3 deep-links to ITS OWN run (run-2), not the sibling's.
+      within(findingRow).getByTestId('carry-over-new-story-f-2'),
+    ).toBeInTheDocument();
     expect(
-      within(dialog)
-        .getByTestId('unaddressed-finding-link-f-3')
-        .getAttribute('href'),
-    ).toBe(`${ARCH_BASE}/discovery/runs/run-2?tab=findings&findingId=f-3`);
+      within(findingRow).getByTestId('carry-over-dismiss-f-2'),
+    ).toBeInTheDocument();
 
-    // Close returns to the collapsed summary.
-    fireEvent.click(
-      within(dialog).getByTestId('unaddressed-findings-dialog-close'),
-    );
+    // A capability offers New story + Dismiss but NOT cite/amend (its
+    // citation is the source_capability_id story mint, not a finding ref).
+    const capRow = screen.getByTestId('carry-over-item-row-cap-1');
+    expect(capRow).toHaveTextContent('Nightly batch spine');
+    expect(capRow).toHaveTextContent('absorbs 2 findings');
     expect(
-      screen.queryByTestId('unaddressed-findings-dialog'),
+      within(capRow).queryByTestId('carry-over-cite-cap-1'),
     ).not.toBeInTheDocument();
+    expect(
+      within(capRow).queryByTestId('carry-over-amend-cap-1'),
+    ).not.toBeInTheDocument();
+    expect(
+      within(capRow).getByTestId('carry-over-new-story-cap-1'),
+    ).toBeInTheDocument();
+    expect(
+      within(capRow).getByTestId('carry-over-dismiss-cap-1'),
+    ).toBeInTheDocument();
   });
 
-  it('shows the positive all-addressed state, the empty-snapshot state, and hides the panel entirely for legacy drafts (D8)', () => {
-    // (a) All addressed → positive confirmation.
-    const allAddressed = makeDraft({
-      bookOfWork: {
-        items: [
-          makeItem({
-            id: 's-all',
-            discoveryFindingReferences: ['f-1', 'F-2', ' f-3 '],
-          }),
-        ],
-      },
+  it('shows the all-accounted clear state and renders even for legacy snapshot-less drafts (server-driven, not snapshot-driven)', async () => {
+    mockGetCarryOverCoverage.mockResolvedValue({
+      items: [],
+      mustAccount: [
+        { kind: 'capability', id: 'cap-1', status: 'cited-by-story', behaviourBearing: true, label: 'cap-1' },
+      ],
+      unaccounted: [],
+      accountedCount: 1,
+      totalMustAccount: 1,
+      ok: true,
+      architectureId: CURRENT_ARCH_ID,
+      itemDetails: {},
     });
-    const first = renderWorkspace(allAddressed);
-    expect(
-      screen.getByTestId('unaddressed-findings-all-addressed'),
-    ).toHaveTextContent(
-      'All 3 accepted critical/high findings are linked to a work item in this plan.',
-    );
-    first.unmount();
 
-    // (b) Empty snapshot (runs selected, zero accepted findings).
-    const emptySnapshot = makeDraft({
-      generationSummary: { findingsCoverage: { findings: [] } },
-    });
-    const second = renderWorkspace(emptySnapshot);
-    expect(screen.getByTestId('unaddressed-findings-empty')).toHaveTextContent(
-      'No accepted critical/high findings to cover.',
-    );
-    second.unmount();
-
-    // (c) Legacy draft (no snapshot) → panel AND summary line hidden;
-    // legacy LLM-asserted keys never render.
+    // Legacy draft (no create-time snapshot): the header chip hides, but the
+    // accounting panel STILL renders — the gate is server-computed.
     const legacy = makeDraft({
       generationSummary: { findingsAddressed: 5, findingsNotAddressed: 2 },
     });
     renderWorkspace(legacy);
     expect(
-      screen.queryByTestId('unaddressed-findings-panel'),
+      screen.queryByTestId('review-coverage-summary'),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByTestId('review-coverage-summary'),
+      await screen.findByTestId('carry-over-accounting-clear'),
+    ).toHaveTextContent(
+      'All 1 behaviour-bearing carry-over items are accounted for',
+    );
+    expect(
+      screen.queryByTestId('unaddressed-findings-panel'),
     ).not.toBeInTheDocument();
   });
 });

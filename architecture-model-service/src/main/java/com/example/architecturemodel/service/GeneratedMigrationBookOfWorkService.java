@@ -10,13 +10,19 @@ import com.example.architecturemodel.model.dto.AppendCapabilityStoryRequest;
 import com.example.architecturemodel.model.dto.AppendCapabilityStoryResponse;
 import com.example.architecturemodel.model.dto.AddWorkItemRequest;
 import com.example.architecturemodel.model.dto.AddWorkItemResponse;
+import com.example.architecturemodel.model.dto.AmendBookItemRequest;
+import com.example.architecturemodel.model.dto.AmendBookItemResponse;
+import com.example.architecturemodel.model.dto.CiteFindingRequest;
+import com.example.architecturemodel.model.dto.CiteFindingResponse;
 import com.example.architecturemodel.model.dto.RepairOrphanItemResponse;
 import com.example.architecturemodel.model.dto.SaveGeneratedMigrationBookOfWorkRequest;
 import com.example.architecturemodel.model.dto.SaveGeneratedMigrationBookOfWorkResponse;
 import com.example.architecturemodel.model.entity.GeneratedMigrationBookOfWorkEntity;
 import com.example.architecturemodel.model.entity.GeneratedMigrationBookOfWorkStatus;
+import com.example.architecturemodel.model.entity.MigrationStorySpecGenerationEntity;
 import com.example.architecturemodel.model.entity.WorkItemEntity;
 import com.example.architecturemodel.repository.entity.GeneratedMigrationBookOfWorkRepository;
+import com.example.architecturemodel.repository.entity.MigrationStorySpecGenerationRepository;
 import com.example.architecturemodel.repository.entity.WorkItemRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -146,6 +152,7 @@ public class GeneratedMigrationBookOfWorkService {
     private final GeneratedMigrationBookOfWorkRepository repository;
     private final WorkItemRepository workItemRepository;
     private final GeneratedMigrationBookOfWorkItemSaver itemSaver;
+    private final MigrationStorySpecGenerationRepository specGenerationRepository;
 
     /**
      * Default status applied to created {@code work_item} rows when the caller
@@ -1308,11 +1315,28 @@ public class GeneratedMigrationBookOfWorkService {
         // mirroring provenance/kind/source_capability_id. Scoped to net_new + api
         // only; a null/empty list, or a non-net_new / non-api add, leaves it
         // absent (the reconcile-time reader is the gate, but we never stamp noise).
-        List<String> netNewOperations = sanitiseNetNewOperations(request.netNewOperations());
+        List<String> netNewOperations = sanitiseStringList(request.netNewOperations());
         if (WorkItemEntity.PROVENANCE_NET_NEW.equals(provenance)
             && AddWorkItemRequest.KIND_API.equals(kind)
             && !netNewOperations.isEmpty()) {
             draftItem.put("net_new_operations", netNewOperations);
+        }
+        // Carry-over triage (2026-07-26): OPTIONAL workstream / acceptance
+        // criteria / discovery-finding references stamped onto the blob item.
+        // workstream drives the execution rail's plane grouping; the finding
+        // references are what flip a triage NEW-STORY's originating finding to
+        // cited-by-story in the D4 gate. Absent fields leave the original D5
+        // out-of-gate behaviour unchanged.
+        if (request.workstream() != null && !request.workstream().isBlank()) {
+            draftItem.put("workstream", request.workstream().trim());
+        }
+        List<String> acceptanceCriteria = sanitiseStringList(request.acceptanceCriteria());
+        if (!acceptanceCriteria.isEmpty()) {
+            draftItem.put("acceptanceCriteria", acceptanceCriteria);
+        }
+        List<String> findingRefs = sanitiseStringList(request.discoveryFindingReferences());
+        if (!findingRefs.isEmpty()) {
+            draftItem.put("discoveryFindingReferences", findingRefs);
         }
         items.add(draftItem);
         bookOfWork.put("items", items);
@@ -1329,15 +1353,16 @@ public class GeneratedMigrationBookOfWorkService {
     }
 
     /**
-     * Normalise the D6 {@code net_new_operations} list for stamping onto the blob:
-     * drop null entries, trim, drop blanks, and de-duplicate while preserving
-     * order. Returns an empty list (never null) when the input is null/empty so
-     * the caller can stamp defensively. The {@code <METHOD> <path>} key
-     * normalisation (method upper-cased) is the gateway reconcile reader's
-     * concern (it replicates {@code InventoryReconciliationCalculator.operationKey});
-     * here we only keep the human-entered strings clean and verbatim on the blob.
+     * Normalise a caller-supplied string list for stamping onto the blob: drop
+     * null entries, trim, drop blanks, and de-duplicate while preserving order.
+     * Returns an empty list (never null) when the input is null/empty so the
+     * caller can stamp defensively. Originally D6's {@code net_new_operations}
+     * sanitiser; reused verbatim for the triage-era {@code acceptance_criteria}
+     * and {@code discovery_finding_references} stamps (same clean-and-verbatim
+     * contract — any {@code <METHOD> <path>} key normalisation stays the
+     * gateway reconcile reader's concern).
      */
-    private static List<String> sanitiseNetNewOperations(List<String> raw) {
+    private static List<String> sanitiseStringList(List<String> raw) {
         if (raw == null || raw.isEmpty()) {
             return List.of();
         }
@@ -1352,6 +1377,239 @@ public class GeneratedMigrationBookOfWorkService {
             }
         }
         return new ArrayList<>(cleaned);
+    }
+
+    // -----------------------------------------------------------------
+    // items/{bookItemId}/cite-finding + items/{bookItemId}/amend --
+    // Carry-over triage (2026-07-26)
+    // -----------------------------------------------------------------
+
+    /**
+     * CITE one {@code discovery_finding} onto an EXISTING story blob item: add
+     * the finding id to the item's {@code discoveryFindingReferences} list —
+     * the same citation array the plan generator writes and the D4 carry-over
+     * gate's {@code collectCitedFindingIds} reads — so the finding flips to
+     * {@code cited-by-story}. Idempotent: an already-cited finding is a no-op
+     * success. Loads the row with the pessimistic WRITE lock so concurrent
+     * cites (e.g. the triage batch apply) serialise rather than
+     * last-write-wins on {@code book_of_work_json}. Story-type items only.
+     */
+    @Transactional
+    public CiteFindingResponse citeFindingOnItem(
+        UUID projectId, UUID bookId, String bookItemId, CiteFindingRequest request) {
+        if (request == null || request.findingId() == null || request.findingId().isBlank()) {
+            throw new IllegalArgumentException("finding_id is required");
+        }
+        String findingId = request.findingId().trim();
+
+        GeneratedMigrationBookOfWorkEntity draft = requireDraftForUpdate(projectId, bookId);
+        Map<String, Object> bookOfWork = workingCopyOfBookJson(draft);
+        List<Map<String, Object>> items = extractItems(bookOfWork);
+        if (items == null) {
+            items = new ArrayList<>();
+        }
+        Map<String, Object> item = requireStoryItem(bookItemId, items);
+
+        boolean alreadyCited = !addFindingReference(item, findingId);
+
+        if (!alreadyCited) {
+            bookOfWork.put("items", items);
+            draft.setBookOfWorkJson(bookOfWork);
+            draft.setUpdatedAt(Instant.now());
+            repository.save(draft);
+        }
+        log.info(
+            "[diag-ams] book_of_work stage=cite_finding bookId={} bookItemId={} findingId={} alreadyCited={}",
+            bookId, bookItemId, findingId, alreadyCited);
+        return new CiteFindingResponse(bookItemId, findingId, alreadyCited, "ok");
+    }
+
+    /**
+     * AMEND a story so it actually deals with a carry-over finding — one
+     * atomic transaction that:
+     * <ol>
+     *   <li>REPLACES the blob item {@code description} (when a non-blank one is
+     *       supplied) and best-effort mirrors it onto the linked
+     *       {@code work_item.description};</li>
+     *   <li>APPENDS the supplied acceptance criteria to the blob item's
+     *       {@code acceptanceCriteria} list;</li>
+     *   <li>CITES the finding onto {@code discoveryFindingReferences}
+     *       (idempotent — same mechanics as
+     *       {@link #citeFindingOnItem(UUID, UUID, String, CiteFindingRequest)});
+     *       AND</li>
+     *   <li>MARKS the linked work item's spec-generation rows STALE
+     *       ({@code stale=TRUE} + {@code stale_reason} + {@code stale_marked_at}
+     *       + {@code updated_at} — the
+     *       {@code MissingInputResolutionCascadeService} stamping precedent),
+     *       so the story drops out of stage spec-readiness
+     *       ({@code isStorySpecReady} fails on a non-null {@code stale_reason})
+     *       until its spec regenerates with the amendment folded in. The
+     *       existing persist-path contract clears the stamp on successful
+     *       regeneration.</li>
+     * </ol>
+     * The amendment must DO something: a request with no description AND no
+     * criteria AND no finding id is rejected 400.
+     */
+    @Transactional
+    public AmendBookItemResponse amendStoryItem(
+        UUID projectId, UUID bookId, String bookItemId, AmendBookItemRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request body is required");
+        }
+        String newDescription = (request.description() != null && !request.description().isBlank())
+            ? request.description().trim() : null;
+        List<String> appendCriteria = sanitiseStringList(request.appendAcceptanceCriteria());
+        String findingId = (request.citeFindingId() != null && !request.citeFindingId().isBlank())
+            ? request.citeFindingId().trim() : null;
+        if (newDescription == null && appendCriteria.isEmpty() && findingId == null) {
+            throw new IllegalArgumentException(
+                "an amendment must supply a description, acceptance criteria, or a finding to cite");
+        }
+
+        GeneratedMigrationBookOfWorkEntity draft = requireDraftForUpdate(projectId, bookId);
+        Map<String, Object> bookOfWork = workingCopyOfBookJson(draft);
+        List<Map<String, Object>> items = extractItems(bookOfWork);
+        if (items == null) {
+            items = new ArrayList<>();
+        }
+        Map<String, Object> item = requireStoryItem(bookItemId, items);
+
+        if (newDescription != null) {
+            item.put("description", newDescription);
+        }
+        if (!appendCriteria.isEmpty()) {
+            List<String> merged = new ArrayList<>(readStringList(item.get("acceptanceCriteria")));
+            for (String criterion : appendCriteria) {
+                if (!merged.contains(criterion)) {
+                    merged.add(criterion);
+                }
+            }
+            item.put("acceptanceCriteria", merged);
+        }
+        if (findingId != null) {
+            addFindingReference(item, findingId);
+        }
+
+        bookOfWork.put("items", items);
+        draft.setBookOfWorkJson(bookOfWork);
+        draft.setUpdatedAt(Instant.now());
+        repository.save(draft);
+
+        // Best-effort mirror of the amended description onto the linked
+        // work_item row (the backlog list renders it) — never blocks the amend.
+        String workItemIdRaw = stringField(item, "workItemId");
+        UUID workItemId = null;
+        if (workItemIdRaw != null) {
+            try {
+                workItemId = UUID.fromString(workItemIdRaw);
+            } catch (IllegalArgumentException ignore) {
+                workItemId = null;
+            }
+        }
+        if (workItemId != null && newDescription != null) {
+            final String descriptionFinal = newDescription;
+            try {
+                workItemRepository.findByIdAndProjectId(workItemId, projectId)
+                    .ifPresent(wi -> {
+                        wi.setDescription(descriptionFinal);
+                        workItemRepository.save(wi);
+                    });
+            } catch (RuntimeException ex) {
+                log.warn(
+                    "[diag-ams] book_of_work stage=amend_item work_item_mirror_failed "
+                        + "bookItemId={} reason={}",
+                    bookItemId, ex.getMessage());
+            }
+        }
+
+        // Mark the story's spec-generation rows stale so it drops out of stage
+        // spec-readiness until regenerated. Zero rows (spec never generated) is
+        // fine — "no spec" already reads as not-ready.
+        String staleReason = (request.staleReason() != null && !request.staleReason().isBlank())
+            ? request.staleReason().trim()
+            : (findingId != null ? "story_amended_for_finding:" + findingId : "story_amended");
+        int specsMarkedStale = 0;
+        if (workItemId != null) {
+            Instant now = Instant.now();
+            List<MigrationStorySpecGenerationEntity> specRows =
+                specGenerationRepository.findByWorkItemId(workItemId);
+            for (MigrationStorySpecGenerationEntity spec : specRows) {
+                if (!projectId.equals(spec.getProjectId())) {
+                    continue;
+                }
+                spec.setStale(Boolean.TRUE);
+                spec.setStaleReason(staleReason);
+                spec.setStaleMarkedAt(now);
+                spec.setUpdatedAt(now);
+                specGenerationRepository.save(spec);
+                specsMarkedStale++;
+            }
+        }
+
+        log.info(
+            "[diag-ams] book_of_work stage=amend_item bookId={} bookItemId={} findingId={} "
+                + "descriptionReplaced={} criteriaAppended={} specsMarkedStale={}",
+            bookId, bookItemId, findingId, newDescription != null, appendCriteria.size(),
+            specsMarkedStale);
+
+        return new AmendBookItemResponse(
+            bookItemId,
+            workItemId != null ? workItemId.toString() : null,
+            findingId,
+            specsMarkedStale,
+            "ok");
+    }
+
+    /** Defensive working copy of {@code book_of_work_json} (shared pattern). */
+    private static Map<String, Object> workingCopyOfBookJson(
+        GeneratedMigrationBookOfWorkEntity draft) {
+        Map<String, Object> bookOfWork = draft.getBookOfWorkJson();
+        return bookOfWork == null ? new LinkedHashMap<>() : new LinkedHashMap<>(bookOfWork);
+    }
+
+    /** Resolve a STORY blob item by id — 400 when unknown or not a story. */
+    private static Map<String, Object> requireStoryItem(
+        String bookItemId, List<Map<String, Object>> items) {
+        Map<String, Object> item = findById(bookItemId, items);
+        if (item == null) {
+            throw new IllegalArgumentException(
+                "Unknown item id '" + bookItemId + "' in book_of_work_json");
+        }
+        if (!"story".equalsIgnoreCase(stringField(item, "type"))) {
+            throw new IllegalArgumentException(
+                "Only STORY items can cite findings; '" + bookItemId + "' is a "
+                    + stringField(item, "type"));
+        }
+        return item;
+    }
+
+    /**
+     * Add {@code findingId} to the item's {@code discoveryFindingReferences}
+     * list. Returns {@code true} when the reference was ADDED, {@code false}
+     * when it was already present (idempotent no-op).
+     */
+    private static boolean addFindingReference(Map<String, Object> item, String findingId) {
+        List<String> refs = new ArrayList<>(readStringList(item.get("discoveryFindingReferences")));
+        if (refs.contains(findingId)) {
+            return false;
+        }
+        refs.add(findingId);
+        item.put("discoveryFindingReferences", refs);
+        return true;
+    }
+
+    /** Read a blob value as a clean string list ([] on null / non-list). */
+    private static List<String> readStringList(Object raw) {
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (Object o : list) {
+            if (o instanceof String s && !s.isBlank()) {
+                out.add(s);
+            }
+        }
+        return out;
     }
 
     // -----------------------------------------------------------------

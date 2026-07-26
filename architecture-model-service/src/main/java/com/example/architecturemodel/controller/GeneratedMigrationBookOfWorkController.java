@@ -8,6 +8,10 @@ import com.example.architecturemodel.model.dto.AppendCapabilityStoryRequest;
 import com.example.architecturemodel.model.dto.AppendCapabilityStoryResponse;
 import com.example.architecturemodel.model.dto.AddWorkItemRequest;
 import com.example.architecturemodel.model.dto.AddWorkItemResponse;
+import com.example.architecturemodel.model.dto.AmendBookItemRequest;
+import com.example.architecturemodel.model.dto.AmendBookItemResponse;
+import com.example.architecturemodel.model.dto.CiteFindingRequest;
+import com.example.architecturemodel.model.dto.CiteFindingResponse;
 import com.example.architecturemodel.model.dto.GeneratedMigrationBookOfWorkDto;
 import com.example.architecturemodel.model.dto.RepairOrphanItemResponse;
 import com.example.architecturemodel.model.dto.SaveGeneratedMigrationBookOfWorkRequest;
@@ -352,6 +356,70 @@ public class GeneratedMigrationBookOfWorkController {
             return ResponseEntity.notFound().build();
         } catch (IllegalArgumentException e) {
             log.warn("Bad append-capability-story request for book {}: {}", bookId, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/projects/{projectId}/migration-books-of-work/{bookId}/items/{bookItemId}/cite-finding
+     *
+     * <p>Carry-over triage (2026-07-26): CITE one {@code discovery_finding}
+     * onto an EXISTING story blob item — add its id to the item's
+     * {@code discoveryFindingReferences} list, the SAME citation array the D4
+     * carry-over completeness gate reads, so the finding flips to
+     * {@code cited-by-story}. Idempotent (an already-cited finding is a no-op
+     * success). See
+     * {@link GeneratedMigrationBookOfWorkService#citeFindingOnItem(UUID, UUID, String, CiteFindingRequest)}.</p>
+     */
+    @PostMapping("/{bookId}/items/{bookItemId}/cite-finding")
+    public ResponseEntity<?> citeFindingOnItem(
+            @PathVariable UUID projectId,
+            @PathVariable UUID bookId,
+            @PathVariable String bookItemId,
+            @RequestBody CiteFindingRequest request) {
+        log.debug("POST /api/projects/{}/migration-books-of-work/{}/items/{}/cite-finding",
+            projectId, bookId, bookItemId);
+        try {
+            CiteFindingResponse response =
+                service.citeFindingOnItem(projectId, bookId, bookItemId, request);
+            return ResponseEntity.ok(response);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("Bad cite-finding request for book {} item {}: {}",
+                bookId, bookItemId, e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/projects/{projectId}/migration-books-of-work/{bookId}/items/{bookItemId}/amend
+     *
+     * <p>Carry-over triage (2026-07-26): AMEND a story so it actually deals
+     * with a carry-over finding — one atomic transaction that replaces the
+     * description, appends acceptance criteria, cites the finding, and marks
+     * the linked work item's spec-generation rows STALE (dropping the story
+     * out of stage spec-readiness until its spec regenerates with the
+     * amendment folded in). See
+     * {@link GeneratedMigrationBookOfWorkService#amendStoryItem(UUID, UUID, String, AmendBookItemRequest)}.</p>
+     */
+    @PostMapping("/{bookId}/items/{bookItemId}/amend")
+    public ResponseEntity<?> amendStoryItem(
+            @PathVariable UUID projectId,
+            @PathVariable UUID bookId,
+            @PathVariable String bookItemId,
+            @RequestBody AmendBookItemRequest request) {
+        log.debug("POST /api/projects/{}/migration-books-of-work/{}/items/{}/amend",
+            projectId, bookId, bookItemId);
+        try {
+            AmendBookItemResponse response =
+                service.amendStoryItem(projectId, bookId, bookItemId, request);
+            return ResponseEntity.ok(response);
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.notFound().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("Bad amend request for book {} item {}: {}",
+                bookId, bookItemId, e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }

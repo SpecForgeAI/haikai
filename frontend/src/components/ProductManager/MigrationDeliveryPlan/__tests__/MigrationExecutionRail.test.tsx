@@ -53,6 +53,38 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
   >('../../../../api/dbMigrationPackApi');
   return { ...actual, listDbMigrationPacks: vi.fn().mockResolvedValue([]) };
 });
+// Carry-over accounting (2026-07-26): the workspace mounts the coverage read.
+const mockGetCarryOverCoverage = vi.fn();
+vi.mock('../../../../api/carryOverCoverageApi', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../../api/carryOverCoverageApi')
+  >('../../../../api/carryOverCoverageApi');
+  return {
+    ...actual,
+    getCarryOverCoverage: (...a: unknown[]) => mockGetCarryOverCoverage(...a),
+  };
+});
+
+/** A coverage read with the given accounted/total (blocking when short). */
+function coverageOf(accounted: number, total: number) {
+  const unaccounted = Array.from({ length: total - accounted }, (_v, i) => ({
+    kind: 'finding' as const,
+    id: `f-${i}`,
+    status: 'un-actioned' as const,
+    behaviourBearing: true,
+    label: `f-${i}`,
+  }));
+  return {
+    items: [],
+    mustAccount: [],
+    unaccounted,
+    accountedCount: accounted,
+    totalMustAccount: total,
+    ok: accounted >= total,
+    architectureId: 'arch-cur',
+    itemDetails: {},
+  };
+}
 
 import MigrationBookOfWorkReviewWorkspace from '../MigrationBookOfWorkReviewWorkspace';
 import { planeForStory } from '../MigrationExecutionRail';
@@ -181,6 +213,8 @@ beforeEach(() => {
     targetRegistered: false,
   });
   mockRegisterTargetDb.mockReset().mockResolvedValue(undefined);
+  // Benign default: nothing to account for (the carry-over gate stays clear).
+  mockGetCarryOverCoverage.mockReset().mockResolvedValue(coverageOf(0, 0));
 });
 
 describe('planeForStory — the display mirror of the gateway plane vocabulary', () => {
@@ -324,6 +358,76 @@ describe('execution rail (Phase 1b)', () => {
         parityOverride: false,
       }),
     );
+  });
+
+  it('CARRY-OVER gate (2026-07-26): the service card shows `carry-over accounted M/N` and its Start disables while items are un-accounted', async () => {
+    const twoPlane = [
+      makeItem({ id: 's-db', title: 'Schema', workItemId: 'wi-db' } as never),
+      makeItem({
+        id: 's-svc',
+        title: 'API',
+        workItemId: 'wi-svc',
+        workstream: 'api_migration',
+      } as never),
+    ];
+    mockFetchRows.mockResolvedValue([
+      generatedRow('wi-db', 's-db'),
+      generatedRow('wi-svc', 's-svc'),
+    ]);
+    // Stage 1 deployed, so stage 2 WOULD be startable — but 2 of 5 carry-over
+    // items are still un-accounted, and the server refuses service starts on
+    // that, so the button must not promise one.
+    mockGetRun.mockResolvedValue({
+      id: 'run-db',
+      status: 'deployed',
+      items: [{ work_item_id: 'wi-db', status: 'deployed' }],
+    });
+    mockGetCarryOverCoverage.mockResolvedValue(coverageOf(3, 5));
+
+    renderWorkspace(draftWith(twoPlane));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('execution-rail-carry-over-service'),
+      ).toHaveTextContent('carry-over accounted 3/5'),
+    );
+    // The DB card never carries the line (the gate is service-only).
+    expect(screen.queryByTestId('execution-rail-carry-over-db')).toBeNull();
+    const stage2 = screen.getByTestId('execution-rail-start-service');
+    expect(stage2).toBeDisabled();
+    expect(stage2).toHaveAttribute(
+      'title',
+      expect.stringContaining('cited or dismissed'),
+    );
+  });
+
+  it('CARRY-OVER gate: full accounting flips the line to ✓ and re-enables the service Start', async () => {
+    const twoPlane = [
+      makeItem({ id: 's-db', title: 'Schema', workItemId: 'wi-db' } as never),
+      makeItem({
+        id: 's-svc',
+        title: 'API',
+        workItemId: 'wi-svc',
+        workstream: 'api_migration',
+      } as never),
+    ];
+    mockFetchRows.mockResolvedValue([
+      generatedRow('wi-db', 's-db'),
+      generatedRow('wi-svc', 's-svc'),
+    ]);
+    mockGetRun.mockResolvedValue({
+      id: 'run-db',
+      status: 'deployed',
+      items: [{ work_item_id: 'wi-db', status: 'deployed' }],
+    });
+    mockGetCarryOverCoverage.mockResolvedValue(coverageOf(5, 5));
+
+    renderWorkspace(draftWith(twoPlane));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('execution-rail-carry-over-service'),
+      ).toHaveTextContent('carry-over accounted 5/5 ✓'),
+    );
+    expect(screen.getByTestId('execution-rail-start-service')).toBeEnabled();
   });
 
   it('a parity-only refusal of a stage-2 start surfaces the recorded break-glass in the dialog', async () => {

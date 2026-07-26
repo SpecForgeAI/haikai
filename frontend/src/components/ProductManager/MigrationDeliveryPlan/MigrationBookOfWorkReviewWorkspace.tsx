@@ -39,7 +39,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   getMigrationBookOfWork,
   saveMigrationBookOfWorkToBacklog,
@@ -112,7 +111,13 @@ import MigrationBookOfWorkSaveToBacklogDialog, {
 } from './MigrationBookOfWorkSaveToBacklogDialog';
 import MigrationBookOfWorkPostSaveView from './MigrationBookOfWorkPostSaveView';
 import { computeFindingsCoverage } from '../../../utils/findingsCoverage';
-import { buildUnaddressedFindingEntry } from '../../../config/gapWayfindingRegistry';
+// Carry-over accounting panel (2026-07-26): replaces the old advisory
+// findings banner with the SERVER gate's truth — behaviour-bearing carry-over
+// items must be cited or dismissed before Stage 2 (Service) can start.
+import MigrationCarryOverAccountingPanel, {
+  type CarryOverStoryOption,
+} from './MigrationCarryOverAccountingPanel';
+import { type CarryOverCoverageResult } from '../../../api/carryOverCoverageApi';
 import { useToast } from '../../../contexts/ToastContext';
 import styles from './MigrationBookOfWork.module.css';
 
@@ -345,19 +350,6 @@ function countsForAdmitted(
   return counts;
 }
 
-/**
- * Severity -> badge class for the unaddressed-findings panel (Spec
- * 2026-06-11 Findings Coverage + Gap Wayfinding, Task Group 4.3). Reuses
- * the existing confidence badge palette: critical = red, high = amber,
- * anything else = neutral.
- */
-function severityBadgeClass(severity: string): string {
-  const s = (severity || '').toLowerCase();
-  if (s === 'critical') return styles.badgeConfidenceLow;
-  if (s === 'high') return styles.badgeConfidenceMedium;
-  return styles.badge;
-}
-
 /** Drag-resizable detail-panel width bounds. */
 const RIGHT_PANEL_MIN_WIDTH = 280;
 const RIGHT_PANEL_MAX_WIDTH = 760;
@@ -550,12 +542,27 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   );
   const [dialogOpen, setDialogOpen] = useState<boolean>(false);
   const [dialogMode, setDialogMode] = useState<SaveToBacklogMode>('all');
-  // Findings-coverage detail modal (2026-07-19 UX): the advisory list opens on
-  // demand so it never dominates the review screen.
-  const [showFindingsDetail, setShowFindingsDetail] = useState<boolean>(false);
   const [saveResponse, setSaveResponse] = useState<SaveToBacklogResponse | null>(
     null,
   );
+
+  // ----- Carry-over accounting (2026-07-26) -----
+  // Server-computed coverage held here so the Stage-2 (Service) rail card can
+  // render `carry-over accounted M/N` and gate its Start — mirroring the
+  // server gate that ALREADY blocks service starts on it (3b162be). The panel
+  // owns the fetch; this is its latest read.
+  const [carryOverCoverage, setCarryOverCoverage] =
+    useState<CarryOverCoverageResult | null>(null);
+  const handleCarryOverCoverageChanged = useCallback(
+    (coverage: CarryOverCoverageResult | null) => setCarryOverCoverage(coverage),
+    [],
+  );
+  /** The plan's STORY items — the accounting panel's cite/amend picker. */
+  const carryOverStoryOptions = useMemo((): CarryOverStoryOption[] => {
+    return items
+      .filter((i) => i.type === 'story')
+      .map((i) => ({ id: i.id, title: i.title, description: i.description ?? '' }));
+  }, [items]);
 
   // ----- Phase-2 expansion state (Spec 2026-06-11, Task Group 5) -----
   // Seeded from the persisted draft (the `book_of_work_json` document is
@@ -659,7 +666,12 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       const wi = (item as { workItemId?: string | null }).workItemId;
       const row = wi ? specRowByWorkItem.get(wi) : undefined;
       if (!row) continue;
-      if (row.manualReady) {
+      if (row.stale) {
+        // Carry-over triage (2026-07-26): an amended story's spec is stale —
+        // it needs REgeneration (the batch picks it up) and the server gate
+        // refuses it, so the chip must not read as satisfied.
+        out[item.id] = { label: 'spec stale ↻', kind: 'warn' };
+      } else if (row.manualReady) {
         out[item.id] = { label: 'spec ✎ manual', kind: 'manual' };
       } else if (row.status === 'generated') {
         out[item.id] = {
@@ -682,15 +694,17 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     return out;
   }, [specRows, specRowByWorkItem, draft]);
 
-  /** Header rollup: generated / warnings / blocked / manual. */
+  /** Header rollup: generated / warnings / blocked / manual / stale. */
   const specCounts = useMemo(() => {
     if (!specRows) return null;
     let ok = 0;
     let warn = 0;
     let blocked = 0;
     let manual = 0;
+    let stale = 0;
     for (const r of specRowByWorkItem.values()) {
-      if (r.manualReady) manual++;
+      if (r.stale) stale++;
+      else if (r.manualReady) manual++;
       else if (r.status === 'generated') ok++;
       else if (r.status === 'generated_with_warnings') warn++;
       else if (
@@ -700,7 +714,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       )
         blocked++;
     }
-    return { ok, warn, blocked, manual };
+    return { ok, warn, blocked, manual, stale };
   }, [specRows, specRowByWorkItem]);
 
   /**
@@ -848,8 +862,12 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         for (const s of planeStories) {
           const wi = (s as { workItemId?: string | null }).workItemId;
           const row = wi ? specRowByWorkItem.get(wi) : undefined;
+          // A STALE row is NOT satisfied (2026-07-26): the story was amended
+          // (e.g. for a carry-over finding) and its spec must regenerate —
+          // the server gate refuses stale, so the card must too.
           const ok =
             !!row &&
+            row.stale !== true &&
             (row.manualReady === true ||
               row.status === 'generated' ||
               row.status === 'generated_with_warnings');
@@ -868,10 +886,20 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           blockers,
           runDone,
           runTotal,
+          // Carry-over accounting rides ONLY the service card (the server gate
+          // blocks service starts on it; DB/UI stages are unaffected —
+          // 3b162be). Null until the panel's first coverage read lands.
+          carryOver:
+            p === 'service' && carryOverCoverage
+              ? {
+                  accounted: carryOverCoverage.accountedCount,
+                  total: carryOverCoverage.totalMustAccount,
+                }
+              : null,
         };
       },
     );
-  }, [draft, specRowByWorkItem, run]);
+  }, [draft, specRowByWorkItem, run, carryOverCoverage]);
 
   const railScopeReady = Boolean(companyName && projectName);
 
@@ -1608,6 +1636,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 {' '}
                 &middot; Specs: {specCounts.ok} {'✓'} · {specCounts.warn} {'⚠'} ·{' '}
                 {specCounts.blocked} {'✕'} · {specCounts.manual} {'✎'}
+                {specCounts.stale > 0 && (
+                  <> · {specCounts.stale} stale {'↻'}</>
+                )}
               </span>
             )}
           </p>
@@ -1722,132 +1753,21 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         />
       )}
 
-      {/* Findings-coverage panel (Spec 2026-06-11, Task Group 4.3).
-          Advisory only -- coverage never gates Save Draft, Save to Backlog, or
-          expansion. Collapsed to a ONE-LINE summary (2026-07-19 UX); the full
-          list opens in a modal so it never dominates the review screen. Hidden
-          entirely when the draft has no snapshot. */}
-      {findingsCoverage && (
-        <section
-          className={styles.coveragePanel}
-          data-testid="unaddressed-findings-panel"
-        >
-          {findingsCoverage.total === 0 ? (
-            <p
-              className={styles.coveragePanelNote}
-              data-testid="unaddressed-findings-empty"
-            >
-              No accepted critical/high findings to cover.
-            </p>
-          ) : findingsCoverage.notAddressedCount === 0 ? (
-            <p
-              className={styles.coveragePanelNote}
-              data-testid="unaddressed-findings-all-addressed"
-            >
-              All {findingsCoverage.total} accepted critical/high findings are
-              linked to a work item in this plan.
-            </p>
-          ) : (
-            <p
-              className={styles.coveragePanelNote}
-              data-testid="unaddressed-findings-summary"
-            >
-              <span aria-hidden="true">{'ⓘ'} </span>
-              {findingsCoverage.notAddressedCount} of {findingsCoverage.total}{' '}
-              accepted critical/high findings aren{'’'}t linked to a work
-              item yet {'—'} advisory, this doesn{'’'}t block saving.{' '}
-              <button
-                type="button"
-                className={styles.coverageInlineLink}
-                onClick={() => setShowFindingsDetail(true)}
-                data-testid="unaddressed-findings-view-button"
-              >
-                View findings ({findingsCoverage.notAddressedCount})
-              </button>
-            </p>
-          )}
-        </section>
+      {/* Carry-over accounting panel (2026-07-26). REPLACES the old advisory
+          findings banner — that one said "doesn't block saving" while the
+          server gate refused Stage-2 starts on the SAME items (doublespeak the
+          user called out). This panel states the gate's truth ("N items need
+          citing or dismissing before Stage 2 (Service) can start"), lists the
+          items WITH content, and wires the four accounting actions (cite /
+          amend / new story / dismiss). Archived plans are read-only history. */}
+      {!archived && (
+        <MigrationCarryOverAccountingPanel
+          projectId={projectId}
+          bookId={bookId}
+          stories={carryOverStoryOptions}
+          onCoverageChanged={handleCarryOverCoverageChanged}
+        />
       )}
-
-      {/* Findings-coverage detail modal — the advisory list, on demand. */}
-      {findingsCoverage &&
-        showFindingsDetail &&
-        findingsCoverage.notAddressedCount > 0 && (
-          <div
-            className={styles.modalOverlay}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) setShowFindingsDetail(false);
-            }}
-            data-testid="unaddressed-findings-dialog"
-          >
-            <div
-              className={styles.modal}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Findings not linked to a work item"
-            >
-              <div className={styles.modalHeader}>
-                <h2 className={styles.modalTitle}>
-                  Findings not linked to a work item
-                </h2>
-              </div>
-              <div className={styles.modalBody}>
-                <p className={styles.coveragePanelNote}>
-                  These {findingsCoverage.notAddressedCount} accepted
-                  critical/high finding(s) aren{'’'}t referenced by any work
-                  item in this plan. Advisory only {'—'} it never blocks
-                  saving. To reduce this, bring the relevant tier into scope so
-                  the plan generates work that references them, or open a finding
-                  below to act on it.
-                </p>
-                <ul className={styles.coverageList}>
-                  {findingsCoverage.unaddressed.map((finding) => {
-                    const entry = buildUnaddressedFindingEntry(finding, {
-                      projectId,
-                      architectureId: draft.currentArchitectureId,
-                    });
-                    return (
-                      <li
-                        key={finding.id}
-                        className={styles.coverageRow}
-                        data-testid={`unaddressed-finding-row-${finding.id}`}
-                      >
-                        <span
-                          className={`${styles.badge} ${severityBadgeClass(finding.severity)}`}
-                          data-testid={`unaddressed-finding-severity-${finding.id}`}
-                        >
-                          {finding.severity || 'unknown'}
-                        </span>
-                        <span className={styles.coverageRowTitle}>
-                          {entry.title}
-                        </span>
-                        {entry.destination && (
-                          <Link
-                            to={entry.destination}
-                            className={styles.coverageRowLink}
-                            data-testid={`unaddressed-finding-link-${finding.id}`}
-                          >
-                            {entry.actionLabel}
-                          </Link>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-              <div className={styles.modalFooter}>
-                <button
-                  type="button"
-                  className={styles.selectButton}
-                  onClick={() => setShowFindingsDetail(false)}
-                  data-testid="unaddressed-findings-dialog-close"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
       <div
         className={styles.workspaceBody}
