@@ -199,6 +199,59 @@ beforeEach(() => {
   });
 });
 
+describe('MigrationCarryOverAccountingPanel empty-state diagnostics (2026-07-27)', () => {
+  it('an empty must-account set states WHAT was evaluated, and warns when NOTHING was', async () => {
+    mockGetCarryOverCoverage.mockResolvedValue({
+      items: [],
+      mustAccount: [],
+      unaccounted: [],
+      accountedCount: 0,
+      totalMustAccount: 0,
+      ok: true,
+      architectureId: ARCH_ID,
+      itemDetails: {},
+      scope: { capabilityCount: 0, runCount: 2, findingCount: 0, runScopeSource: 'architecture_runs' },
+    });
+    const first = render(
+      <MigrationCarryOverAccountingPanel
+        projectId={PROJECT_ID}
+        bookId={BOOK_ID}
+        stories={STORIES}
+      />,
+    );
+    const empty = await screen.findByTestId('carry-over-accounting-empty');
+    expect(empty).toHaveTextContent(
+      'Evaluated 2 discovery runs, 0 behaviour-bearing findings, 0 capabilities.',
+    );
+    expect(empty).not.toHaveTextContent('No discovery runs were evaluated');
+    first.unmount();
+
+    // runScopeSource 'none' = the coverage read saw NOTHING — warn loudly
+    // (this exact state hid the live fail-open: capabilities [] meant zero
+    // runs were ever evaluated while behaviour-bearing findings existed).
+    mockGetCarryOverCoverage.mockResolvedValue({
+      items: [],
+      mustAccount: [],
+      unaccounted: [],
+      accountedCount: 0,
+      totalMustAccount: 0,
+      ok: true,
+      architectureId: ARCH_ID,
+      itemDetails: {},
+      scope: { capabilityCount: 0, runCount: 0, findingCount: 0, runScopeSource: 'none' },
+    });
+    render(
+      <MigrationCarryOverAccountingPanel
+        projectId={PROJECT_ID}
+        bookId={BOOK_ID}
+        stories={STORIES}
+      />,
+    );
+    const warned = await screen.findByTestId('carry-over-accounting-empty');
+    expect(warned).toHaveTextContent('No discovery runs were evaluated');
+  });
+});
+
 describe('MigrationCarryOverAccountingPanel actions', () => {
   it('CITE: picking a story cites the finding onto it and the coverage refreshes', async () => {
     await renderPanelExpanded();

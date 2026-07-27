@@ -77,6 +77,12 @@ interface DiscoveryFindingSearchResponseWire {
   items?: DiscoveryFindingWire[];
 }
 
+/** A `discovery_runs` row — the AMS DTO subset (the run-scope FALLBACK list). */
+export interface DiscoveryRunWire {
+  id?: string;
+  status?: string | null;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -158,15 +164,46 @@ export async function fetchFindingsForRun(
   return out;
 }
 
+/**
+ * GET the architecture's discovery runs — the run-scope FALLBACK (2026-07-27).
+ * The canonical run scope derives from the synthesised capabilities' run ids
+ * (D5), but a project with NO capabilities left that set EMPTY — zero findings
+ * were ever evaluated and the gate read clear (fail-OPEN, live-confirmed on
+ * the user's estate: capabilities `[]`, gate ✓, ~37 behaviour-bearing findings
+ * invisible). When the derived set is empty, the architecture's own run list
+ * is the scope.
+ */
+export async function fetchDiscoveryRunsForArchitecture(
+  projectId: string,
+  architectureId: string
+): Promise<DiscoveryRunWire[]> {
+  const url =
+    `${baseUrl()}/api/model/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}/discovery/runs`;
+  const rows = await getJsonOrNull<DiscoveryRunWire[]>(url, 'fetch_runs');
+  return Array.isArray(rows) ? rows : [];
+}
+
 /** The injectable read surface (the DI seam the gate mocks in tests). */
 export interface CarryOverCoverageReadsDeps {
   fetchCapabilitiesForArchitecture: typeof fetchCapabilitiesForArchitecture;
   fetchFindingsForRun: typeof fetchFindingsForRun;
+  /**
+   * The run-scope fallback (2026-07-27). OPTIONAL so pre-existing test seams
+   * keep compiling; the production default always supplies it. When absent
+   * AND the capability-derived run set is empty, the gather logs and yields
+   * an empty scope (the diagnostics make that state visible).
+   */
+  fetchDiscoveryRunsForArchitecture?: typeof fetchDiscoveryRunsForArchitecture;
 }
 
 /** The default (production) reads surface. */
 export function defaultCarryOverCoverageReadsDeps(): CarryOverCoverageReadsDeps {
-  return { fetchCapabilitiesForArchitecture, fetchFindingsForRun };
+  return {
+    fetchCapabilitiesForArchitecture,
+    fetchFindingsForRun,
+    fetchDiscoveryRunsForArchitecture,
+  };
 }
 
 // ============================================================================
@@ -212,6 +249,29 @@ export interface CarryOverCoverageInputs {
    * the review-screen accounting panel and the triage LLM prompt.
    */
   itemDetailById: Map<string, CarryOverItemDetail>;
+  /**
+   * Scope diagnostics (2026-07-27): what the gather actually evaluated, so an
+   * empty coverage is EXPLAINABLE instead of a mystery zero ("No items to
+   * account for" once hid a fail-open where zero runs were evaluated).
+   */
+  scope: CarryOverScopeDiagnostics;
+}
+
+/** What the coverage gather actually evaluated. */
+export interface CarryOverScopeDiagnostics {
+  /** Capability rows read for the architecture. */
+  capabilityCount: number;
+  /** Discovery runs whose findings were evaluated. */
+  runCount: number;
+  /** Behaviour-bearing findings evaluated (post-filter). */
+  findingCount: number;
+  /**
+   * Where the run scope came from: the capabilities' run ids (canonical D5),
+   * the architecture's own run list (the 2026-07-27 fallback when no
+   * capabilities exist), or nowhere (no capabilities AND no runs — nothing to
+   * evaluate, honestly).
+   */
+  runScopeSource: 'capabilities' | 'architecture_runs' | 'none';
 }
 
 /**
@@ -294,6 +354,36 @@ export async function gatherCarryOverCoverageInputs(params: {
     if (typeof rid === 'string' && rid.length > 0) runIds.add(rid);
   }
 
+  // Run-scope FALLBACK (2026-07-27): a project with NO capabilities left the
+  // derived run set EMPTY — zero findings were ever evaluated, so the gate
+  // read clear while behaviour-bearing findings sat invisible (fail-OPEN,
+  // live-confirmed). When the canonical derivation yields nothing, the
+  // architecture's own discovery-run list IS the scope.
+  let runScopeSource: CarryOverScopeDiagnostics['runScopeSource'] =
+    runIds.size > 0 ? 'capabilities' : 'none';
+  if (runIds.size === 0) {
+    if (deps.fetchDiscoveryRunsForArchitecture) {
+      const runs = await deps.fetchDiscoveryRunsForArchitecture(
+        params.projectId,
+        params.architectureId
+      );
+      for (const run of runs) {
+        if (typeof run.id === 'string' && run.id.length > 0) runIds.add(run.id);
+      }
+      if (runIds.size > 0) runScopeSource = 'architecture_runs';
+      logger.info('[diag-gateway] carry_over_coverage run_scope_fallback', {
+        projectId: params.projectId,
+        architectureId: params.architectureId,
+        runCount: runIds.size,
+      });
+    } else {
+      logger.warn(
+        '[diag-gateway] carry_over_coverage run_scope_empty_no_fallback_dep',
+        { projectId: params.projectId, architectureId: params.architectureId }
+      );
+    }
+  }
+
   // Read each run's findings (run-scoped, paged) and keep only behaviour-bearing
   // ones — the SOLE gating predicate. De-dupe by finding id across runs. The
   // owning run id is captured per finding (the AMS finding review — and
@@ -355,6 +445,12 @@ export async function gatherCarryOverCoverageInputs(params: {
     citedFindingIds: collectCitedFindingIds(params.book),
     capabilityTitleById,
     itemDetailById,
+    scope: {
+      capabilityCount: capabilities.length,
+      runCount: runIds.size,
+      findingCount: findingsById.size,
+      runScopeSource,
+    },
   };
 }
 

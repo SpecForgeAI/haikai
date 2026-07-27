@@ -519,6 +519,24 @@ export const MigrationCarryOverAccountingPanel: React.FC<
           data-testid="carry-over-accounting-empty"
         >
           No behaviour-bearing carry-over items to account for.
+          {coverage.scope && (
+            <>
+              {' '}
+              (Evaluated {coverage.scope.runCount} discovery run
+              {coverage.scope.runCount === 1 ? '' : 's'},{' '}
+              {coverage.scope.findingCount} behaviour-bearing finding
+              {coverage.scope.findingCount === 1 ? '' : 's'},{' '}
+              {coverage.scope.capabilityCount} capabilit
+              {coverage.scope.capabilityCount === 1 ? 'y' : 'ies'}.)
+            </>
+          )}
+          {coverage.scope?.runScopeSource === 'none' && (
+            <strong>
+              {' '}
+              {'⚠'} No discovery runs were evaluated — if this project has
+              discovery findings, the coverage read is not seeing them.
+            </strong>
+          )}
         </p>
       )}
       {coverage && coverage.totalMustAccount > 0 && coverage.ok && (

@@ -925,6 +925,12 @@ migrationExecutionRouter.get(
           ok: true,
           architectureId: null,
           itemDetails: {},
+          scope: {
+            capabilityCount: 0,
+            runCount: 0,
+            findingCount: 0,
+            runScopeSource: 'none',
+          },
         });
       }
       const workItems = await fetchWorkItems(projectId);
@@ -938,14 +944,17 @@ migrationExecutionRouter.get(
       // 2026-07-26 accounting panel: join the coverage items with their human
       // content (title/summary/severity + the finding's run id — dismissal is
       // run-scoped) so the review screen lists REAL items, not bare UUIDs. The
-      // architecture id rides along for the dismiss action. Additive fields —
-      // existing consumers of the bare coverage shape are unaffected.
+      // architecture id rides along for the dismiss action; the scope
+      // diagnostics (2026-07-27) make an EMPTY coverage explainable. Additive
+      // fields — existing consumers of the bare coverage shape are unaffected.
       const itemDetails: Record<string, unknown> = {};
       for (const item of coverage.items) {
         const detail = inputs.itemDetailById.get(item.id);
         if (detail) itemDetails[item.id] = detail;
       }
-      return res.status(200).json({ ...coverage, architectureId, itemDetails });
+      return res
+        .status(200)
+        .json({ ...coverage, architectureId, itemDetails, scope: inputs.scope });
     } catch (error) {
       logger.error('[diag-gateway] carry_over_coverage read_error', {
         projectId,
@@ -1426,6 +1435,7 @@ migrationExecutionRouter.post(
                 .map((i) => [i.id, after.inputs.itemDetailById.get(i.id)])
                 .filter(([, d]) => d !== undefined)
             ),
+            scope: after.inputs.scope,
           }
         : null;
       return res.status(200).json({ results, coverage });
