@@ -6,6 +6,7 @@ import com.example.architecturemodel.model.dto.SaveGeneratedMigrationBookOfWorkR
 import com.example.architecturemodel.model.entity.GeneratedMigrationBookOfWorkStatus;
 import com.example.architecturemodel.model.entity.WorkItemEntity;
 import com.example.architecturemodel.repository.entity.GeneratedMigrationBookOfWorkRepository;
+import com.example.architecturemodel.repository.entity.MigrationStorySpecGenerationRepository;
 import com.example.architecturemodel.repository.entity.WorkItemRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,6 +77,9 @@ class GeneratedMigrationBookOfWorkSaveToBacklogTest {
     private WorkItemRepository workItemRepository;
 
     @Autowired
+    private MigrationStorySpecGenerationRepository specGenerationRepository;
+
+    @Autowired
     private TestEntityManager entityManager;
 
     /**
@@ -113,11 +117,21 @@ class GeneratedMigrationBookOfWorkSaveToBacklogTest {
     }
 
     private GeneratedMigrationBookOfWorkDto seedDraft(UUID projectId) {
+        return seedDraftForTuple(projectId, UUID.randomUUID(), UUID.randomUUID());
+    }
+
+    /**
+     * Seed a draft on an EXPLICIT (currentArch, targetArch) tuple — the
+     * superseded-cleanup tests create two generations on the SAME tuple so
+     * the Q-6 archive-on-regenerate flow fires.
+     */
+    private GeneratedMigrationBookOfWorkDto seedDraftForTuple(
+        UUID projectId, UUID currentArchitectureId, UUID targetArchitectureId) {
         Map<String, Object> bookOfWork = new LinkedHashMap<>();
         bookOfWork.put("items", sampleHierarchy());
         GeneratedMigrationBookOfWorkDto request = new GeneratedMigrationBookOfWorkDto(
             null, null,
-            UUID.randomUUID(), UUID.randomUUID(),
+            currentArchitectureId, targetArchitectureId,
             null,
             "Save-to-backlog test draft", null,
             null, null, null, bookOfWork,
@@ -480,5 +494,125 @@ class GeneratedMigrationBookOfWorkSaveToBacklogTest {
 
         // Total rows: 1 original + 4 from the save = 5.
         assertThat(workItemRepository.countByProjectId(projectId)).isEqualTo(5);
+    }
+
+    // -----------------------------------------------------------------
+    // Superseded-plan cleanup (2026-07-27): regenerating + saving must not
+    // accumulate every generation's work items on the Roadmap/Backlog.
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("regenerate + save DELETES the superseded book's work items (and their spec rows); manual items survive")
+    void supersededBookWorkItemsAreDeletedOnSave() {
+        UUID projectId = UUID.randomUUID();
+        UUID currentArch = UUID.randomUUID();
+        UUID targetArch = UUID.randomUUID();
+        SaveGeneratedMigrationBookOfWorkRequest saveAll =
+            new SaveGeneratedMigrationBookOfWorkRequest(
+                null, null,
+                SaveGeneratedMigrationBookOfWorkRequest.MODE_ALL,
+                "PLANNED", false, false, null);
+
+        // Generation 1: create + save -> 4 work items in the backlog.
+        GeneratedMigrationBookOfWorkDto gen1 =
+            seedDraftForTuple(projectId, currentArch, targetArch);
+        service.saveToBacklog(projectId, gen1.id(), saveAll);
+        entityManager.flush();
+        entityManager.clear();
+        List<UUID> gen1WorkItemIds = workItemRepository
+            .findByProjectIdOrderBySortOrderAscCreatedAtAscIdAsc(projectId)
+            .stream().map(WorkItemEntity::getId).toList();
+        assertThat(gen1WorkItemIds).hasSize(4);
+
+        // A manually-created backlog item (not referenced by ANY generated
+        // book) — the cleanup must never touch it.
+        WorkItemEntity manual = WorkItemEntity.builder()
+            .id(UUID.randomUUID())
+            .projectId(projectId)
+            .type("STORY")
+            .title("Manually added story")
+            .status("PLANNED")
+            .sortOrder(50)
+            .build();
+        workItemRepository.save(manual);
+
+        // A spec-generation row on one of gen-1's items — deleted with it so
+        // project-scoped surfaces (stale-count) never count phantom rows.
+        com.example.architecturemodel.model.entity.MigrationStorySpecGenerationEntity specRow =
+            com.example.architecturemodel.model.entity.MigrationStorySpecGenerationEntity.builder()
+                .id(UUID.randomUUID())
+                .projectId(projectId)
+                .workItemId(gen1WorkItemIds.get(0))
+                .bookOfWorkId(gen1.id())
+                .status("generated")
+                .generatedSpecText("gen-1 spec")
+                .build();
+        specGenerationRepository.save(specRow);
+        entityManager.flush();
+        entityManager.clear();
+
+        // Generation 2 on the SAME tuple: Q-6 archives gen 1 at create time…
+        GeneratedMigrationBookOfWorkDto gen2 =
+            seedDraftForTuple(projectId, currentArch, targetArch);
+        assertThat(repository.findById(gen1.id()).orElseThrow().getStatus())
+            .isEqualTo(GeneratedMigrationBookOfWorkStatus.ARCHIVED);
+
+        // …and SAVING gen 2 deletes gen 1's now-superseded work items.
+        SaveGeneratedMigrationBookOfWorkResponse response =
+            service.saveToBacklog(projectId, gen2.id(), saveAll);
+        entityManager.flush();
+        entityManager.clear();
+
+        List<WorkItemEntity> remaining = workItemRepository
+            .findByProjectIdOrderBySortOrderAscCreatedAtAscIdAsc(projectId);
+        // 4 fresh gen-2 items + the manual survivor; gen-1's 4 are GONE.
+        assertThat(remaining).hasSize(5);
+        assertThat(remaining).extracting(WorkItemEntity::getId)
+            .doesNotContainAnyElementsOf(gen1WorkItemIds)
+            .contains(manual.getId());
+
+        // The superseded item's spec row went with it.
+        assertThat(specGenerationRepository.findById(specRow.getId())).isEmpty();
+
+        // The response reports what was cleaned.
+        @SuppressWarnings("unchecked")
+        Map<String, Object> counts = (Map<String, Object>) response.counts();
+        assertThat(counts.get("superseded_work_items_deleted")).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("an entirely-failed save does NOT delete the superseded items (never empty the backlog on failure)")
+    void failedSaveLeavesSupersededItemsAlone() {
+        UUID projectId = UUID.randomUUID();
+        UUID currentArch = UUID.randomUUID();
+        UUID targetArch = UUID.randomUUID();
+        SaveGeneratedMigrationBookOfWorkRequest saveAll =
+            new SaveGeneratedMigrationBookOfWorkRequest(
+                null, null,
+                SaveGeneratedMigrationBookOfWorkRequest.MODE_ALL,
+                "PLANNED", false, false, null);
+
+        GeneratedMigrationBookOfWorkDto gen1 =
+            seedDraftForTuple(projectId, currentArch, targetArch);
+        service.saveToBacklog(projectId, gen1.id(), saveAll);
+        entityManager.flush();
+        entityManager.clear();
+        assertThat(workItemRepository.countByProjectId(projectId)).isEqualTo(4);
+
+        // Generation 2 with NOTHING admitted (everything excluded): savedCount
+        // and skippedAlreadySaved are both 0 -> the cleanup must not run.
+        GeneratedMigrationBookOfWorkDto gen2 =
+            seedDraftForTuple(projectId, currentArch, targetArch);
+        service.saveToBacklog(projectId, gen2.id(),
+            new SaveGeneratedMigrationBookOfWorkRequest(
+                null,
+                List.of("i-1", "e-1", "f-1", "s-1"),
+                SaveGeneratedMigrationBookOfWorkRequest.MODE_ALL,
+                "PLANNED", false, false, null));
+        entityManager.flush();
+        entityManager.clear();
+
+        // Gen-1's items are still there — the backlog was not emptied.
+        assertThat(workItemRepository.countByProjectId(projectId)).isEqualTo(4);
     }
 }
