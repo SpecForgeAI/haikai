@@ -275,6 +275,33 @@ async function consumeTurn(
 // ---------------------------------------------------------------------------
 
 /**
+ * Read a FAILED upstream response's body for the error message (2026-07-27).
+ * The IVS 4xx body carries the FastAPI `{"detail": "..."}` that names the
+ * exact precondition ("Project not initialized. Call POST /projects/init
+ * first." / "Git configuration error: ..."), but the drive used to discard it
+ * — the run halted with a bare "returned status 400" and the operator had to
+ * source-dive to learn why. Truncated, tolerant, never throws.
+ */
+async function readUpstreamErrorDetail(response: Response): Promise<string> {
+  try {
+    const text = (await response.text()).trim();
+    if (!text) return '';
+    // Prefer the bare FastAPI `detail` string when the body parses as JSON.
+    try {
+      const parsed = JSON.parse(text) as { detail?: unknown };
+      if (parsed && typeof parsed.detail === 'string' && parsed.detail.trim() !== '') {
+        return `: ${parsed.detail.trim()}`;
+      }
+    } catch {
+      // Not JSON — fall through to the raw text.
+    }
+    return `: ${text.length > 500 ? `${text.slice(0, 500)}…` : text}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Drive the headless shape-spec stream for one spec to conclusion, answering
  * every `questions` batch via {@link DriveShapeSpecStreamInput.answerBatch} and
  * re-POSTing each combined answer in RESUME mode (CD-1). Resolves with the
@@ -305,7 +332,9 @@ export async function driveShapeSpecStream(
         specName: null,
         sessionId: null,
         decisionLog: state.decisionLog,
-        error: `Shape-spec stream returned status ${response.status}`,
+        error:
+          `Shape-spec stream returned status ${response.status}` +
+          (await readUpstreamErrorDetail(response)),
       };
     }
     await consumeTurn(response, state);
@@ -358,7 +387,9 @@ export async function driveShapeSpecStream(
           specName: null,
           sessionId: state.sessionId,
           decisionLog: state.decisionLog,
-          error: `Shape-spec resume returned status ${response.status}`,
+          error:
+            `Shape-spec resume returned status ${response.status}` +
+            (await readUpstreamErrorDetail(response)),
         };
       }
       await consumeTurn(response, state);
