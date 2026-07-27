@@ -57,7 +57,7 @@ from ...haikai_crud_models import (
     WriteSpecResponse,
 )
 from ...api_auth import verify_api_key
-from ...git.config import GitConfigError, load_git_config
+from ...git.config import GitConfigError, load_git_config, load_git_config_with_project_fallback
 from ...git.git_manager import GitManagerError
 
 logger = logging.getLogger(__name__)
@@ -435,7 +435,8 @@ async def implement_tasks_v2(
 
     from ..git_workflow import apply_git_workflow
     try:
-        git_config = load_git_config()
+        # Saved-provider fallback (2026-07-27) — mirrors _require_git_manager.
+        git_config = load_git_config_with_project_fallback([gm.project_dir])
     except GitConfigError as e:
         error_msg = f"Git push/PR failed for implement {spec_id}: {e}"
         logger.error(error_msg)

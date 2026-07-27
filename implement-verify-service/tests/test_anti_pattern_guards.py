@@ -1046,3 +1046,43 @@ class TestWorktreeFreshWriteSpec:
             "the shape-spec session, which is anchored to the live tree and "
             "writes spec.md outside the worktree: " + ", ".join(offenders)
         )
+
+
+# ─── Guard: bare load_git_config() outside src/git/config.py ─────────────────
+
+
+class TestNoBareLoadGitConfigOutsideConfigModule:
+    """`POST /projects/init` persists the per-request git provider into each
+    repo's `.haikai/config.json` — but 9 downstream sites called the env-only
+    `load_git_config()` and 400'd with "GIT_PROVIDER is required" the moment a
+    provider-in-request project hit a v2 endpoint (2026-07-27 live finding:
+    init 200 with provider=gitlab, first shape-spec dispatch 400).
+
+    Every site with project context must use
+    `load_git_config_with_project_fallback(...)` /
+    `load_git_config_for_product_root(...)` (or `git_default_branch(...)` for
+    branch-only reads). The ONLY allowed bare no-arg call is the env-first
+    attempt INSIDE src/git/config.py itself. count == 0 outside it.
+    """
+
+    def test_no_bare_calls_outside_config(self):
+        offenders: list[str] = []
+        for p in SRC.rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            if p == SRC / "git" / "config.py":
+                continue
+            text = _read_text(p)
+            for i, line in enumerate(text.split("\n"), start=1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                if "load_git_config()" in stripped:
+                    offenders.append(f"{p.relative_to(REPO_ROOT)}:{i}: {stripped}")
+        assert offenders == [], (
+            "Bare env-only load_git_config() found outside src/git/config.py. "
+            "Use load_git_config_with_project_fallback([repo_dir...]) or "
+            "load_git_config_for_product_root(product_root) so the provider "
+            "saved by POST /projects/init is honoured:\n  "
+            + "\n  ".join(offenders)
+        )

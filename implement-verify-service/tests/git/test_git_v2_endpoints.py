@@ -229,7 +229,7 @@ class TestV2Endpoints:
         mock_gm.commit_all.assert_called_once()
         assert "write-spec" in mock_gm.commit_all.call_args[0][0]
 
-    @patch("src.api.routes.specs.load_git_config")
+    @patch("src.api.routes.specs.load_git_config_with_project_fallback")
     @patch("src.api.get_haikai_service")
     @patch("src.api._require_git_manager")
     def test_v2_implement_commits_pushes_pr(self, mock_req_gm, mock_svc_fn, mock_load_cfg, client):
@@ -288,7 +288,7 @@ class TestV2Endpoints:
         assert "create-tasks" in mock_gm.commit_all.call_args[0][0]
 
     @patch("src.api.routes.orchestration.get_active_session")
-    @patch("src.api.routes.orchestration.load_git_config")
+    @patch("src.api.routes.orchestration.load_git_config_with_project_fallback")
     @patch("src.api.routes.orchestration.HaikaiOrchestrator")
     @patch("src.api._require_git_manager")
     def test_v2_orchestration_calls_git_ops(self, mock_req_gm, mock_orch_cls, mock_load_cfg, mock_active_session, client):
@@ -343,7 +343,7 @@ class TestOrchestratorGitIntegration:
     """Test orchestrator git integration behavior."""
 
     @patch("src.api.routes.orchestration.get_active_session")
-    @patch("src.api.routes.orchestration.load_git_config")
+    @patch("src.api.routes.orchestration.load_git_config_with_project_fallback")
     @patch("src.api.routes.orchestration.HaikaiOrchestrator")
     @patch("src.api._require_git_manager")
     def test_orchestrator_commits_after_success(self, mock_req_gm, mock_orch_cls, mock_load_cfg, mock_active_session, client):
@@ -388,7 +388,7 @@ class TestOrchestratorGitIntegration:
         mock_gm.push_branch.assert_not_called()
 
     @patch("src.api.routes.orchestration.get_active_session")
-    @patch("src.api.routes.orchestration.load_git_config")
+    @patch("src.api.routes.orchestration.load_git_config_with_project_fallback")
     @patch("src.api.routes.orchestration.HaikaiOrchestrator")
     @patch("src.api._require_git_manager")
     def test_push_failure_does_not_fail_orchestration(self, mock_req_gm, mock_orch_cls, mock_load_cfg, mock_active_session, client):
@@ -428,7 +428,7 @@ class TestOrchestratorGitIntegration:
         assert resp.status_code == 200
 
     @patch("src.api.routes.orchestration.get_active_session")
-    @patch("src.api.routes.orchestration.load_git_config")
+    @patch("src.api.routes.orchestration.load_git_config_with_project_fallback")
     @patch("src.api.routes.orchestration.HaikaiOrchestrator")
     @patch("src.api._require_git_manager")
     def test_pr_failure_does_not_fail_orchestration(self, mock_req_gm, mock_orch_cls, mock_load_cfg, mock_active_session, client):
@@ -498,7 +498,7 @@ class TestOrchestratorGitIntegration:
         assert "deferred" in detail.lower() or "B2" in detail
 
     @patch("src.api.routes.orchestration.get_active_session")
-    @patch("src.api.routes.orchestration.load_git_config")
+    @patch("src.api.routes.orchestration.load_git_config_with_project_fallback")
     @patch("src.api.routes.orchestration.HaikaiOrchestrator")
     @patch("src.api._require_git_manager")
     def test_response_includes_git_metadata(self, mock_req_gm, mock_orch_cls, mock_load_cfg, mock_active_session, client):
@@ -634,7 +634,7 @@ class TestGapAnalysis:
         resp = client.get("/health")
         assert resp.status_code == 200
 
-    @patch("src.api.routes.specs.load_git_config")
+    @patch("src.api.routes.specs.load_git_config_with_project_fallback")
     @patch("src.api.get_haikai_service")
     @patch("src.api._require_git_manager")
     def test_v2_implement_push_fails_but_response_still_has_results(

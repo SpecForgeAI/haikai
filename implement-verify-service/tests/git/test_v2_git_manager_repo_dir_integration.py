@@ -78,7 +78,9 @@ def test_require_git_manager_points_at_repo_folder_and_pull_succeeds(
     # call time). Patch only the GLOBAL git config; read_coordination /
     # GitManager / _run_git stay real.
     monkeypatch.setattr(api, "API_WORKSPACE_DIR", tmp_path.resolve())
-    monkeypatch.setattr(api, "load_git_config", lambda: fake_git_config)
+    monkeypatch.setattr(
+        api, "load_git_config_for_product_root", lambda product_root: fake_git_config
+    )
 
     company, project, folder = "acme", "backend", "app"
     product_root = tmp_path / company / project
@@ -111,7 +113,9 @@ def test_require_git_manager_accepts_polyrepo_uses_first_repo(
     # the multi-repo iteration happens later in tasks._resolve_repo_targets. This
     # guards the removal of the old "polyrepo not supported" rejection.
     monkeypatch.setattr(api, "API_WORKSPACE_DIR", tmp_path.resolve())
-    monkeypatch.setattr(api, "load_git_config", lambda: fake_git_config)
+    monkeypatch.setattr(
+        api, "load_git_config_for_product_root", lambda product_root: fake_git_config
+    )
 
     company, project = "acme", "multi"
     product_root = tmp_path / company / project
@@ -133,7 +137,9 @@ def test_require_git_manager_accepts_polyrepo_uses_first_repo(
 
 def test_require_git_manager_uninitialized_is_400(tmp_path, monkeypatch, fake_git_config):
     monkeypatch.setattr(api, "API_WORKSPACE_DIR", tmp_path.resolve())
-    monkeypatch.setattr(api, "load_git_config", lambda: fake_git_config)
+    monkeypatch.setattr(
+        api, "load_git_config_for_product_root", lambda product_root: fake_git_config
+    )
 
     with pytest.raises(HTTPException) as ei:
         api._require_git_manager("acme", "never-initialized")

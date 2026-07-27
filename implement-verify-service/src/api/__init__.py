@@ -53,7 +53,7 @@ from ..haikai_crud_models import (
 )
 from ..haikai_service import HaikaiService
 from ..git.git_manager import GitManager, GitManagerError
-from ..git.config import load_git_config, GitConfigError
+from ..git.config import load_git_config, load_git_config_for_product_root, GitConfigError
 from ..git.coordination import read_coordination, CoordinationError
 from ..git.models import ProjectInitRequest, ProjectInitResponse
 from ..haikai_status_models import (
@@ -840,12 +840,14 @@ def _require_git_manager(company: str, project: str) -> GitManager:
     """FastAPI dependency: load git config, verify project initialized, return GitManager.
 
     Raises HTTPException(400) if git config is missing or project is not initialized.
-    """
-    try:
-        git_config = load_git_config()
-    except GitConfigError as e:
-        raise HTTPException(status_code=400, detail=f"Git configuration error: {e}")
 
+    Git-config resolution order (2026-07-27): environment first, then the
+    provider persisted by ``POST /projects/init`` in the project's own
+    ``.haikai/config.json`` — a gitlab-initialised project must not 400 with
+    "GIT_PROVIDER is required" just because the workspace-wide env var was
+    never set (the init flow saved the provider precisely for this).
+    The directories are therefore resolved BEFORE the config load.
+    """
     # Validates company/project — see autoresearch:debug 260504-1229 #1.
     # _require_git_manager is called by 10 v2 git endpoints; this single
     # change closes the workspace-escape risk for all of them.
@@ -880,6 +882,12 @@ def _require_git_manager(company: str, project: str) -> GitManager:
     # The actual multi-repo iteration happens in _resolve_repo_targets (tasks.py).
     repo_folder = next(iter(repos))
     repo_dir = product_root / repo_folder
+
+    # Env-first, saved-provider fallback (2026-07-27) — see the docstring.
+    try:
+        git_config = load_git_config_for_product_root(product_root)
+    except GitConfigError as e:
+        raise HTTPException(status_code=400, detail=f"Git configuration error: {e}")
 
     gm = GitManager(
         project_dir=repo_dir,

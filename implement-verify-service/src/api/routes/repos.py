@@ -22,7 +22,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ...api_auth import verify_api_key
-from ...git.config import GitConfig, GitConfigError, load_git_config
+from ...git.config import (
+    GitConfig,
+    GitConfigError,
+    load_git_config,
+    load_git_config_for_product_root,
+)
 from ...git.coordination import (
     COORDINATION_FILENAME,
     CoordinationError,
@@ -103,9 +108,13 @@ def _build_git_manager(repo_dir: Path, git_config: GitConfig) -> GitManager:
     )
 
 
-def _require_git_config() -> GitConfig:
+def _require_git_config(product_root: Path) -> GitConfig:
+    """Env-first git config with the saved-provider fallback (2026-07-27):
+    when the workspace-wide GIT_PROVIDER env is absent, the provider that
+    `POST /projects/init` persisted under the product root's repos is used
+    — mirrors `_require_git_manager`."""
     try:
-        return load_git_config()
+        return load_git_config_for_product_root(product_root)
     except GitConfigError as e:
         raise HTTPException(status_code=400, detail=f"Git configuration error: {e}")
 
@@ -186,7 +195,7 @@ async def add_repo(
             ),
         )
 
-    git_config = _require_git_config()
+    git_config = _require_git_config(product_root)
     repo_dir = product_root / body.folder
 
     # Clone the new repo into product_root/{folder}.
@@ -261,7 +270,7 @@ async def update_repo(
             ),
         )
 
-    git_config = _require_git_config()
+    git_config = _require_git_config(product_root)
     repo_dir = product_root / folder
 
     # Tear down the existing clone and re-clone from the new URL.

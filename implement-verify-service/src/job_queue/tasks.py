@@ -17,7 +17,12 @@ from ..haikai_orchestrator import HaikaiOrchestrator
 from ..haikai_models import OrchestrationRequest
 from ..chat.session_store import get_active_session
 from ..chat.claude_chat_executor import ClaudeChatExecutor
-from ..git.config import load_git_config, GitConfigError
+from ..git.config import (
+    GitConfigError,
+    git_default_branch,
+    load_git_config,
+    load_git_config_with_project_fallback,
+)
 from ..git.git_manager import GitManager, GitManagerError
 from ..trace import tracer
 
@@ -154,11 +159,12 @@ def _project_git_lock(workspace_dir: str, company: str, project: str):
 def _resolve_git_targets(request: OrchestrationRequest, workspace_dir: str):
     """Resolve ``(git_config, targets)`` for the run ONCE. Returns
     ``((git_config, targets), None)`` on success or ``(None, error_str)`` on a
-    config error / no usable repo target (caller records the error)."""
-    try:
-        git_config = load_git_config()
-    except (GitConfigError, GitManagerError) as e:
-        return None, f"Git integration failed: {e}"
+    config error / no usable repo target (caller records the error).
+
+    Targets resolve FIRST (2026-07-27) so the git config can fall back to the
+    provider saved by project init in the target repos' .haikai/config.json
+    when the workspace-wide GIT_PROVIDER env is absent — mirrors
+    ``_require_git_manager``."""
     product_root = Path(workspace_dir) / request.company / request.project
     targets = _resolve_repo_targets(product_root)
     if not targets:
@@ -167,6 +173,12 @@ def _resolve_git_targets(request: OrchestrationRequest, workspace_dir: str):
             "(no .git/ and no usable coordination.yaml)", product_root,
         )
         return None, f"Git integration: no repo targets at {product_root}"
+    try:
+        git_config = load_git_config_with_project_fallback(
+            [live for (_folder, live) in targets]
+        )
+    except (GitConfigError, GitManagerError) as e:
+        return None, f"Git integration failed: {e}"
     return (git_config, targets), None
 
 
@@ -223,9 +235,9 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
             "multi-spec request without batch_name must be dispatched "
             "per-spec under worktree mode (D1 per-spec parallel mode)")
 
-    default_branch = "main"
-    with suppress(Exception):
-        default_branch = load_git_config().default_branch
+    # Provider-free branch read (2026-07-27): env GIT_DEFAULT_BRANCH, else
+    # the branch project init saved for the target repo, else 'main'.
+    default_branch = git_default_branch(targets[0][1] if targets else None)
 
     run_ws = wr.run_root(workspace_dir, job.job_id, spec=spec_scope)
     run_product = run_ws / request.company / request.project
@@ -1880,7 +1892,9 @@ def _deploy_completed_run(request: OrchestrationRequest, workspace_dir: str, res
     try:
         return consolidate_and_deploy(
             repo_dir, branches, request.target,
-            default_branch=load_git_config().default_branch,
+            # Provider-free branch read (2026-07-27): a missing GIT_PROVIDER
+            # must not fail the deploy just to learn the default branch.
+            default_branch=git_default_branch(repo_dir),
             git_lock=lambda: _project_git_lock(
                 str(workspace_dir), request.company, request.project),
         )

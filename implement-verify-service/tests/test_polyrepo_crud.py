@@ -108,7 +108,7 @@ class TestListRepos:
 
 class TestAddRepo:
     @patch("src.api.routes.repos.GitManager")
-    @patch("src.api.routes.repos.load_git_config")
+    @patch("src.api.routes.repos.load_git_config_for_product_root")
     def test_add_succeeds(self, mock_cfg, mock_gm_cls, client):
         _init_project(
             client, {"backend": "https://github.com/acme/backend.git"}
@@ -183,7 +183,7 @@ class TestAddRepo:
 
 class TestUpdateRepo:
     @patch("src.api.routes.repos.GitManager")
-    @patch("src.api.routes.repos.load_git_config")
+    @patch("src.api.routes.repos.load_git_config_for_product_root")
     def test_update_re_clones(self, mock_cfg, mock_gm_cls, client):
         from src.api import API_WORKSPACE_DIR
 

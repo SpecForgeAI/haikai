@@ -125,9 +125,11 @@ class TestAPILoggingIntegration:
         
         log_content = log_files[0].read_text()
         
-        # Check for startup messages
+        # Check for startup messages. The workspace line carries the resolved
+        # full path + pre-existing/initialised diagnostics (2026-07-26 rework).
         assert "Standards Extractor API starting" in log_content
-        assert "API Workspace Directory:" in log_content
+        assert "API Workspace Directory (resolved, full path):" in log_content
+        assert "pre-existing:" in log_content
         assert "Log Directory:" in log_content
         assert "Log File:" in log_content
     
