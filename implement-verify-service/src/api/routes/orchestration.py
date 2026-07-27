@@ -51,7 +51,7 @@ from ...haikai_status_models import (
 )
 from ...api_auth import verify_api_key
 from ...chat.session_store import get_active_session
-from ...git.config import GitConfigError, load_git_config
+from ...git.config import GitConfigError, load_git_config, load_git_config_with_project_fallback
 from ...git.git_manager import GitManagerError
 from ..gates import require_credentials
 
@@ -399,7 +399,8 @@ async def orchestrate_v2(
 
     from ..git_workflow import apply_git_workflow
 
-    git_config = load_git_config()
+    # Saved-provider fallback (2026-07-27): mirrors _require_git_manager.
+    git_config = load_git_config_with_project_fallback([gm.project_dir])
     response.errors = []  # apply_git_workflow appends here on failure
 
     for spec_intent in request.spec_intents:

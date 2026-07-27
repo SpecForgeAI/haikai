@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ...api_auth import verify_api_key
-from ...git.config import GitConfigError, load_git_config
+from ...git.config import GitConfigError, load_git_config, load_git_config_with_project_fallback
 from ...git.git_manager import GitManagerError
 from ...models import (
     GenerateGlobalStandardsRequest,
@@ -143,7 +143,8 @@ async def generate_product_standards_v2(
     from ..git_workflow import apply_git_workflow
 
     try:
-        git_config = load_git_config()
+        # Saved-provider fallback (2026-07-27) — mirrors _require_git_manager.
+        git_config = load_git_config_with_project_fallback([gm.project_dir])
     except GitConfigError as e:
         error_msg = f"Git commit/push failed for product standards: {e}"
         logger.error(error_msg)

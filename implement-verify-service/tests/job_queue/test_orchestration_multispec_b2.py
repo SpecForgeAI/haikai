@@ -67,14 +67,21 @@ def test_each_spec_branch_contains_only_its_own_files(tmp_path, monkeypatch):
 
 def test_resolve_git_targets_single_repo(tmp_path, monkeypatch):
     repo, _ = _repo(tmp_path)
-    monkeypatch.setattr("src.job_queue.tasks.load_git_config", _git_config)
+    # 2026-07-27: targets resolve via the saved-provider-aware fallback loader.
+    monkeypatch.setattr(
+        "src.job_queue.tasks.load_git_config_with_project_fallback",
+        lambda dirs: _git_config(),
+    )
     req = types.SimpleNamespace(company="acme", project="proj")
     setup, err = _resolve_git_targets(req, str(tmp_path))
     assert err is None and setup[1] == [(None, repo)]
 
 
 def test_resolve_git_targets_no_repo_returns_error(tmp_path, monkeypatch):
-    monkeypatch.setattr("src.job_queue.tasks.load_git_config", _git_config)
+    monkeypatch.setattr(
+        "src.job_queue.tasks.load_git_config_with_project_fallback",
+        lambda dirs: _git_config(),
+    )
     req = types.SimpleNamespace(company="acme", project="proj")
     setup, err = _resolve_git_targets(req, str(tmp_path))  # no repo created
     assert setup is None and "no repo targets" in err

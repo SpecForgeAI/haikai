@@ -52,7 +52,7 @@ from ...chat.chat_models import (
     MessageEntry,
 )
 from ...chat.session_store import create_active_session, get_active_session
-from ...git.config import GitConfigError, load_git_config
+from ...git.config import GitConfigError, load_git_config, load_git_config_with_project_fallback
 from ...git.git_manager import GitManagerError
 from ..factories import create_chat_executor
 from ..gates import require_credentials
@@ -1014,7 +1014,11 @@ async def plan_product_stream_v2(
                         # Stream complete — commit plan-product output to feature branch
                         from ..git_workflow import apply_git_workflow
                         try:
-                            git_config = load_git_config()
+                            # Saved-provider fallback (2026-07-27) — see
+                            # load_git_config_with_project_fallback.
+                            git_config = load_git_config_with_project_fallback(
+                                [gm.project_dir]
+                            )
                             gm.pull_latest()
                         except (GitManagerError, GitConfigError) as e:
                             logger.error(f"Git commit/push failed for plan-product: {e}")
