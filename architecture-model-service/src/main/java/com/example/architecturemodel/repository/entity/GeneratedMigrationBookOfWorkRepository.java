@@ -108,6 +108,26 @@ public interface GeneratedMigrationBookOfWorkRepository
         @Param("targetArchitectureId") UUID targetArchitectureId);
 
     /**
+     * Find the ARCHIVED (superseded) books for a tuple — the Q-6 regenerate
+     * flow's cast-offs. The save-to-backlog superseded-plan cleanup
+     * (2026-07-27) reads these to find the work items an OLD generation
+     * saved so the Roadmap/Backlog mirror the CURRENT plan instead of
+     * accumulating every generation's items.
+     *
+     * @param projectId the project UUID
+     * @param currentArchitectureId the current-state architecture UUID
+     * @param targetArchitectureId the target-state architecture UUID
+     * @param status the status to match (the caller passes {@code archived})
+     * @return the matching rows (order undefined)
+     */
+    List<GeneratedMigrationBookOfWorkEntity>
+        findByProjectIdAndCurrentArchitectureIdAndTargetArchitectureIdAndStatus(
+            UUID projectId,
+            UUID currentArchitectureId,
+            UUID targetArchitectureId,
+            String status);
+
+    /**
      * Convenience wrapper around {@link #findActiveForTuple(UUID, UUID, UUID)}
      * that returns the single active draft (or empty). When the invariant has
      * not been violated, this method always returns the at-most-one active

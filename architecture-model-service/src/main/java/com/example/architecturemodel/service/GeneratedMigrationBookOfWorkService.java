@@ -574,12 +574,82 @@ public class GeneratedMigrationBookOfWorkService {
         draft.setUpdatedAt(Instant.now());
         repository.save(draft);
 
+        // ---- Superseded-plan cleanup (2026-07-27). ----
+        // Q-6 archives the prior book on regenerate, but its saved work_item
+        // rows lived on forever (Q-10 saves are deliberately ADDITIVE), so the
+        // Roadmap/Backlog accumulated EVERY generation's items (live-observed:
+        // 8 initiatives on the Roadmap vs 4 in the current plan after re-runs).
+        // Once THIS book's items are in the backlog, delete the work items that
+        // ARCHIVED books of the SAME tuple created — and their spec-generation
+        // rows (project-scoped surfaces like the stale-count chip would
+        // otherwise count phantom rows forever). Scoped strictly to work items
+        // REFERENCED BY an archived generated book's blob: manually-created /
+        // imported backlog items are never touched. Skipped when nothing saved
+        // (an entirely-failed save must not empty the backlog).
+        int supersededWorkItemsDeleted = 0;
+        int supersededSpecRowsDeleted = 0;
+        if (savedCount > 0 || skippedAlreadySavedCount > 0) {
+            Set<String> currentWorkItemIds = new HashSet<>();
+            for (Map<String, Object> it : items) {
+                String wid = stringField(it, "workItemId");
+                if (wid != null) {
+                    currentWorkItemIds.add(wid);
+                }
+            }
+            List<GeneratedMigrationBookOfWorkEntity> supersededBooks =
+                repository.findByProjectIdAndCurrentArchitectureIdAndTargetArchitectureIdAndStatus(
+                    projectId,
+                    draft.getCurrentArchitectureId(),
+                    draft.getTargetArchitectureId(),
+                    GeneratedMigrationBookOfWorkStatus.ARCHIVED);
+            for (GeneratedMigrationBookOfWorkEntity oldBook : supersededBooks) {
+                List<Map<String, Object>> oldItems = extractItems(oldBook.getBookOfWorkJson());
+                if (oldItems == null) {
+                    continue;
+                }
+                for (Map<String, Object> oldItem : oldItems) {
+                    String wid = stringField(oldItem, "workItemId");
+                    if (wid == null || currentWorkItemIds.contains(wid)) {
+                        continue;
+                    }
+                    UUID oldWorkItemId;
+                    try {
+                        oldWorkItemId = UUID.fromString(wid);
+                    } catch (IllegalArgumentException ignore) {
+                        continue; // legacy non-UUID blob id — nothing to delete
+                    }
+                    Optional<WorkItemEntity> stale =
+                        workItemRepository.findByIdAndProjectId(oldWorkItemId, projectId);
+                    if (stale.isEmpty()) {
+                        continue; // already gone (e.g. a cascade from its parent)
+                    }
+                    for (MigrationStorySpecGenerationEntity spec
+                            : specGenerationRepository.findByWorkItemId(oldWorkItemId)) {
+                        if (projectId.equals(spec.getProjectId())) {
+                            specGenerationRepository.delete(spec);
+                            supersededSpecRowsDeleted++;
+                        }
+                    }
+                    workItemRepository.delete(stale.get());
+                    supersededWorkItemsDeleted++;
+                }
+            }
+            if (supersededWorkItemsDeleted > 0 || supersededSpecRowsDeleted > 0) {
+                log.info(
+                    "[diag-ams] book_of_work stage=superseded_cleanup draftId={} supersededBooks={} "
+                        + "workItemsDeleted={} specRowsDeleted={}",
+                    bookId, supersededBooks.size(),
+                    supersededWorkItemsDeleted, supersededSpecRowsDeleted);
+            }
+        }
+
         Map<String, Object> countsTotal = new LinkedHashMap<>();
         countsTotal.put("saved", savedCount);
         countsTotal.put("failed", failedCount);
         countsTotal.put("skipped_already_saved", skippedAlreadySavedCount);
         countsTotal.put("skipped_not_admitted", skippedNotAdmittedCount);
         countsTotal.put("admitted", admittedTotal);
+        countsTotal.put("superseded_work_items_deleted", supersededWorkItemsDeleted);
         countsTotal.put("by_type", countsByType);
 
         log.info(
