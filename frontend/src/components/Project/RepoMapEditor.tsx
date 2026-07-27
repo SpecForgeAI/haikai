@@ -46,6 +46,15 @@ export interface RepoMapEditorProps {
   project: string;
   /** Haikai project UUID (the gateway's AMS persistence target). */
   projectId: string;
+  /**
+   * Fired when the INITIAL live-map load fails (2026-07-27). The stored
+   * init-success flag can DRIFT from reality — the workspace directory may be
+   * gone (wiped host dir, different machine) while AMS still says
+   * initialised. The Edit-project modal uses this to fall back to the
+   * pre-init form so the user can RE-INITIALISE, instead of dead-ending on a
+   * read error with no Save button.
+   */
+  onLoadFailed?: (message: string) => void;
 }
 
 /**
@@ -79,7 +88,7 @@ export function validateRepoChange(
  * add / re-point / delete operations applied through the gateway CRUD
  * routes, plus the external-wins drift notice.
  */
-export function RepoMapEditor({ company, project, projectId }: RepoMapEditorProps) {
+export function RepoMapEditor({ company, project, projectId, onLoadFailed }: RepoMapEditorProps) {
   const [repos, setRepos] = useState<Record<string, string> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -115,12 +124,17 @@ export function RepoMapEditor({ company, project, projectId }: RepoMapEditorProp
       })
       .catch((err) => {
         if (cancelled) return;
-        setLoadError(err instanceof Error ? err.message : 'Failed to load repo map');
+        const message = err instanceof Error ? err.message : 'Failed to load repo map';
+        setLoadError(message);
         setLoading(false);
+        // Surface the drift to the host modal (2026-07-27) so it can fall
+        // back to the re-initialise form instead of dead-ending here.
+        onLoadFailed?.(message);
       });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company, project, projectId, applyResponse]);
 
   const runMutation = async (

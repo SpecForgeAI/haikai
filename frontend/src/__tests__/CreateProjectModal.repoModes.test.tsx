@@ -475,6 +475,56 @@ describe('CreateProjectModal - Single/Poly repo modes (Spec 2026-06-12)', () => 
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('edit mode post-init with a MISSING workspace falls back to the RE-INITIALISE form (2026-07-27: no more dead-end modal)', async () => {
+    // The live drift case: AMS says implementation_init_success=true, but the
+    // workspace directory is gone — the repo-map read 400s ("Project x/y has
+    // no coordination.yaml. Call POST /projects/init first."). Pre-fix the
+    // modal showed that error inside the CRUD editor with a Close-only footer
+    // and NO way to re-init.
+    mockGetImplementationRepoMap.mockRejectedValueOnce(
+      new Error('Project acme-corp/legacy-product has no coordination.yaml. Call POST /projects/init first.')
+    );
+    const project = makeTestProject({
+      id: 'proj-9',
+      name: 'Legacy Product',
+      organisationId: 'org-1',
+      repoUrl: 'https://github.com/acme/legacy.git',
+      implementationInitSuccess: true,
+    });
+    renderModal({ mode: 'edit', project });
+
+    // The fallback engages: the drift notice names the failure and the
+    // PRE-INIT form returns — radio + prefilled URL + a Save button.
+    const notice = await screen.findByTestId('workspace-reinit-notice');
+    expect(notice).toHaveTextContent('has no coordination.yaml');
+    expect(notice).toHaveTextContent('re-initialise');
+    expect(screen.getByTestId('repo-mode-radio-group')).toBeInTheDocument();
+    expect(screen.getByTestId('repo-url-input')).toHaveValue(
+      'https://github.com/acme/legacy.git'
+    );
+    expect(screen.queryByTestId('repo-map-editor')).not.toBeInTheDocument();
+
+    // Save persists the row and RE-RUNS projects/init for the project.
+    await waitFor(() => {
+      expect(screen.getByTestId('organisation-name-input')).toHaveValue('Acme Corp');
+    });
+    fireEvent.click(screen.getByTestId('create-button'));
+    await waitFor(() => {
+      expect(mockUpdateProjectConfig).toHaveBeenCalledWith('proj-9', {
+        repoUrl: 'https://github.com/acme/legacy.git',
+      });
+    });
+    await waitFor(() => {
+      expect(mockInitProjectWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          company: 'acme-corp',
+          project: 'legacy-product',
+          projectId: 'proj-9',
+        })
+      );
+    });
+  });
+
   it('edit mode post-init: Single/Poly radio is gone and the repo CRUD editor loads the live map', async () => {
     const project = makeTestProject({
       id: 'proj-1',
