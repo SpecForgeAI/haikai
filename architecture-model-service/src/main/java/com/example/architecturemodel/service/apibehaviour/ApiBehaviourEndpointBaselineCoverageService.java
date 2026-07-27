@@ -34,7 +34,7 @@ import java.util.UUID;
  * <p><b>Why this exists.</b> The gateway's phase-2 Migration Delivery Plan
  * expansion used to resolve an endpoint's baseline by substring-matching the
  * endpoint NAME against the baseline's free-text NAME — which never matches a
- * descriptively-named baseline ("HiFi API Baseline v1"), so EVERY endpoint
+ * descriptively-named baseline ("Demo API Baseline v1"), so EVERY endpoint
  * showed "missing baseline" despite full capture coverage. This service does
  * the join properly and server-side, where the canonical reconciliation key
  * lives.</p>

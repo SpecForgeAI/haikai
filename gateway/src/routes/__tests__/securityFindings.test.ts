@@ -36,7 +36,7 @@ jest.mock('../../config', () => ({
 
 const GITLAB_CSV = [
   'Project Name,Severity,Vulnerability,CVE,CWE,Vulnerability ID',
-  'HiFi,medium,Spring DoS,CVE-2024-38808,CWE-770,4131704',
+  'DemoApp,medium,Spring DoS,CVE-2024-38808,CWE-770,4131704',
   'MRX (Risk),high,SQL Injection,,CWE-89,1949555',
 ].join('\n');
 
@@ -67,7 +67,7 @@ describe('Security Findings gateway route', () => {
       expect(res.body.proposed_mapping['Project Name']).toBe('linking_value');
       expect(res.body.linking_column).toBe('Project Name');
       expect(res.body.distinct_linking_values).toEqual([
-        { value: 'HiFi', count: 2 },
+        { value: 'DemoApp', count: 2 },
         { value: 'MRX (Risk)', count: 2 },
       ]);
       expect(
@@ -118,7 +118,7 @@ describe('Security Findings gateway route', () => {
         .field(
           'resolutions',
           JSON.stringify([
-            { linking_value: 'HiFi', entity_id: 'app-hifi', match_status: 'auto' },
+            { linking_value: 'DemoApp', entity_id: 'app-demo', match_status: 'auto' },
             { linking_value: 'MRX (Risk)', entity_id: null, match_status: 'unmatched' },
           ]),
         )
@@ -143,8 +143,8 @@ describe('Security Findings gateway route', () => {
       // The append: 2 files x 2 rows = 4 normalized rows in ONE report.
       expect(body.rows).toHaveLength(4);
       expect(body.rows[0]).toMatchObject({
-        linking_value: 'HiFi',
-        entity_id: 'app-hifi',
+        linking_value: 'DemoApp',
+        entity_id: 'app-demo',
         match_status: 'auto',
         severity_raw: 'medium',
         cve_ids: ['CVE-2024-38808'],

@@ -66,7 +66,7 @@ class ApiBehaviourEndpointBaselineCoverageServiceTest {
             .id(id)
             .projectId(PROJECT_ID)
             .architectureId(ARCH_ID)
-            .name("HiFi API Baseline v1")
+            .name("Demo API Baseline v1")
             .status(status)
             .build();
     }

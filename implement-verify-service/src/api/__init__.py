@@ -184,6 +184,10 @@ from ..api_auth import security, verify_api_key
 
 # Configuration
 API_WORKSPACE_DIR = Path(os.getenv("API_WORKSPACE_DIR", "/home/ubuntu/api_workspace")).resolve()
+# Captured BEFORE the mkdir so the startup log can say whether the workspace
+# already existed (a freshly-auto-created dir means NO projects are
+# initialised — the exact state behind a v2 "Project not initialized" 400).
+_WORKSPACE_PREEXISTING = API_WORKSPACE_DIR.exists()
 API_WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 # Propagate the resolved default back into the process env so subsystems
 # that read API_WORKSPACE_DIR directly via os.getenv (notably the async
@@ -236,7 +240,26 @@ root_logger.addHandler(console_handler)
 # Get logger for this module
 logger = logging.getLogger(__name__)
 logger.info(f"Standards Extractor API starting...")
-logger.info(f"API Workspace Directory: {API_WORKSPACE_DIR}")
+# The FULL resolved workspace path — the directory every V2 git endpoint
+# resolves `<company>/<project>` under. NOTE: inside Docker this is the
+# CONTAINER path; the docker-compose volume maps it to a host directory
+# (e.g. `~/.haikai` in this repo's compose file). Also list the initialised
+# projects (any `<company>/<project>/coordination.yaml`) so a "Project not
+# initialized" 400 can be diagnosed from the boot log alone.
+try:
+    _initialised_projects = sorted(
+        p.parent.relative_to(API_WORKSPACE_DIR).as_posix()
+        for p in API_WORKSPACE_DIR.glob("*/*/coordination.yaml")
+    )
+except OSError:
+    _initialised_projects = []
+logger.info(
+    "API Workspace Directory (resolved, full path): %s | pre-existing: %s | "
+    "initialised projects: %s",
+    API_WORKSPACE_DIR,
+    _WORKSPACE_PREEXISTING,
+    ", ".join(_initialised_projects) if _initialised_projects else "(none)",
+)
 logger.info(f"Log Directory: {LOG_DIR}")
 logger.info(f"Orchestration Log Directory: {ORCHESTRATION_LOG_DIR}")
 logger.info(f"Log File: {log_file}")
@@ -838,9 +861,20 @@ def _require_git_manager(company: str, project: str) -> GitManager:
     try:
         repos = read_coordination(product_root)
     except CoordinationError:
+        # Name the EXACT directory checked (2026-07-27): a bare "Project not
+        # initialized" left operators guessing whether the workspace root, the
+        # company/project names, or the init itself was wrong.
+        logger.warning(
+            "git precondition failed: no coordination.yaml under %s "
+            "(workspace root: %s, company=%r, project=%r) — project not initialized",
+            product_root, API_WORKSPACE_DIR, company, project,
+        )
         raise HTTPException(
             status_code=400,
-            detail="Project not initialized. Call POST /projects/init first.",
+            detail=(
+                "Project not initialized. Call POST /projects/init first. "
+                f"(Looked for coordination.yaml under: {product_root})"
+            ),
         )
     # Polyrepo: use the first repo for the pre-flight GitManager check.
     # The actual multi-repo iteration happens in _resolve_repo_targets (tasks.py).
@@ -857,9 +891,19 @@ def _require_git_manager(company: str, project: str) -> GitManager:
     )
 
     if not gm.ensure_initialized():
+        # Sibling branch of the coordination-missing 400 above — same
+        # directory-naming treatment (helper-exists-sibling-missed doctrine).
+        logger.warning(
+            "git precondition failed: repo dir %s is not an initialized git "
+            "repo (workspace root: %s, company=%r, project=%r)",
+            repo_dir, API_WORKSPACE_DIR, company, project,
+        )
         raise HTTPException(
             status_code=400,
-            detail="Project not initialized. Call POST /projects/init first.",
+            detail=(
+                "Project not initialized. Call POST /projects/init first. "
+                f"(Repo directory is not a git repo: {repo_dir})"
+            ),
         )
     return gm
 

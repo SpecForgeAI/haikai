@@ -30,7 +30,7 @@ function inv(operations: ParsedOasOperation[]): ParsedOasInventory {
 }
 
 describe('uniquifyOperationIds', () => {
-  it('renames EVERY member of a cross-route duplicate group (the HiFi overload shape)', () => {
+  it('renames EVERY member of a cross-route duplicate group (the Java-overload shape)', () => {
     const { inventory, renamed } = uniquifyOperationIds(
       inv([
         op('getHierarchyForOrgId', 'POST', '/hierarchynodes/{grdOrgId}'),

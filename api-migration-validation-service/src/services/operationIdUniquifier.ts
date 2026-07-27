@@ -2,7 +2,7 @@
  * OAS operationId uniquification (2026-07-25 — duplicate-operationId collapse).
  *
  * WADL/OAS operation ids come from source method names, and Java method
- * OVERLOADS legally produce the SAME id on DIFFERENT routes (the HiFi app has
+ * OVERLOADS legally produce the SAME id on DIFFERENT routes (a legacy app had
  * `getHierarchyForOrgId` on both `POST /hierarchynodes/{grdOrgId}` and
  * `POST /hierarchy/{businessDate}/{grdOrgId}`, and `getView` on both
  * `GET /views/{viewId}` and `GET /views/{businessDate}/{viewId}`).

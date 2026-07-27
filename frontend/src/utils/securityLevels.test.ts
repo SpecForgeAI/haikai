@@ -17,7 +17,7 @@ const model = {
   entities: {
     applications: [
       { id: 'app-mrx', name: 'MRX', abbreviation: 'MRX' },
-      { id: 'app-hifi', name: 'HiFi', abbreviation: 'HIFI' },
+      { id: 'app-demo', name: 'DemoApp', abbreviation: 'DEMOAPP' },
     ],
     app_components: [{ id: 'comp-core', application_id: 'app-mrx', name: 'Core' }],
     services: [
@@ -28,7 +28,7 @@ const model = {
         name: 'payments',
         repo_location: 'git@gitlab.example.com:GRH/Payments.git',
       },
-      { id: 'svc-web', application_id: 'app-hifi', name: 'web' },
+      { id: 'svc-web', application_id: 'app-demo', name: 'web' },
     ],
   },
   relationships: {},
@@ -49,7 +49,7 @@ describe('buildLevelMatchIndex + resolveAgainstIndex', () => {
   it('applications match by id/name/abbreviation', () => {
     const index = buildLevelMatchIndex(model, 'application');
     expect(resolveAgainstIndex(index, 'application', 'mrx')).toBe('app-mrx');
-    expect(resolveAgainstIndex(index, 'application', 'HIFI')).toBe('app-hifi');
+    expect(resolveAgainstIndex(index, 'application', 'DEMOAPP')).toBe('app-demo');
     expect(resolveAgainstIndex(index, 'application', 'nope')).toBeNull();
   });
 
@@ -72,6 +72,6 @@ describe('entityOptionsForLevel', () => {
     const options = entityOptionsForLevel(model, 'service');
     expect(options.map((o) => o.name)).toEqual(['payments', 'web']);
     expect(options[0].contextLabel).toBe('MRX / Core');
-    expect(options[1].contextLabel).toBe('HiFi');
+    expect(options[1].contextLabel).toBe('DemoApp');
   });
 });

@@ -6,11 +6,11 @@
  * it (project init, repo CRUD, browser shape-spec, orchestration) normalises
  * the organisation/product display names first via
  * `frontend/src/utils/normalizeIdentifier.ts` (Spec 2026-01-30) — so the
- * workspace on disk is e.g. `natwest-markets/hifi-migration`.
+ * workspace on disk is e.g. `example-corp/demo-migration`.
  *
  * The migration execution driver's `MigrateScope` DOCUMENTED its
  * company/project as "normalised" but nothing enforced it, and the plan
- * screen passes the RAW display names ("NatWest Markets" / "HiFi Migration").
+ * screen passes the RAW display names ("Example Corp" / "Demo Migration").
  * Result, live-confirmed 2026-07-27: the first Stage-1 dispatch 400'd at the
  * IVS precondition gate ("Project not initialized") because the driver was
  * addressing a workspace directory that can never exist under the raw names —

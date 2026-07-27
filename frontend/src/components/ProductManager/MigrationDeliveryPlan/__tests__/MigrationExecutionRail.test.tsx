@@ -186,7 +186,7 @@ function renderWorkspace(draft: MigrationBookOfWorkDraft) {
         bookId={BOOK_ID}
         initialDraft={draft}
         companyName="acme"
-        projectName="hifi"
+        projectName="demo"
       />
     </MemoryRouter>,
   );
@@ -299,7 +299,7 @@ describe('execution rail (Phase 1b)', () => {
       // the db plane — "Start stage 1" starts stage 1 ONLY.
       expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
         company: 'acme',
-        project: 'hifi',
+        project: 'demo',
         plane: 'db',
         parityOverride: false,
       }),
@@ -358,7 +358,7 @@ describe('execution rail (Phase 1b)', () => {
     await waitFor(() =>
       expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
         company: 'acme',
-        project: 'hifi',
+        project: 'demo',
         plane: 'service',
         parityOverride: false,
       }),
@@ -505,7 +505,7 @@ describe('execution rail (Phase 1b)', () => {
     await waitFor(() =>
       expect(mockTriggerMigrate).toHaveBeenLastCalledWith(PROJECT_ID, BOOK_ID, {
         company: 'acme',
-        project: 'hifi',
+        project: 'demo',
         plane: 'service',
         parityOverride: true,
       }),
@@ -533,7 +533,7 @@ describe('execution rail (Phase 1b)', () => {
     expect(panel).toHaveTextContent('dbo.orders row counts diverge');
     expect(mockResume).toHaveBeenCalledWith(PROJECT_ID, 'run-1', {
       company: 'acme',
-      project: 'hifi',
+      project: 'demo',
     });
 
     mockResume.mockResolvedValueOnce({ status: 'resumed', nextPlane: 'service' });
@@ -543,7 +543,7 @@ describe('execution rail (Phase 1b)', () => {
     await waitFor(() =>
       expect(mockResume).toHaveBeenLastCalledWith(PROJECT_ID, 'run-1', {
         company: 'acme',
-        project: 'hifi',
+        project: 'demo',
         override: true,
       }),
     );

@@ -28,7 +28,7 @@ export const DEFAULT_GIT_PROVIDER: GitProvider = 'github';
  * Best-effort derivation of the git provider from a repo URL. Matches on the
  * provider name appearing anywhere in the host/path (covers SaaS hosts like
  * `github.com` / `gitlab.com` / `bitbucket.org` AND self-hosted / dedicated
- * hosts like `natwest.gitlab-dedicated.com` or `github.acme.internal`).
+ * hosts like `example.gitlab-dedicated.com` or `github.acme.internal`).
  *
  * Returns `null` when no provider can be inferred so the caller can decide
  * whether to leave a prior manual choice intact or fall back to a default.
