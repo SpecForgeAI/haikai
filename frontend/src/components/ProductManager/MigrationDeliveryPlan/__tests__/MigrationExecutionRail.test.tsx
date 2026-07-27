@@ -221,6 +221,11 @@ describe('planeForStory — the display mirror of the gateway plane vocabulary',
   it('maps workstreams (and the stream: tag fallback) to db/service/ui', () => {
     expect(planeForStory({ workstream: 'target_database_schema_implementation' })).toBe('db');
     expect(planeForStory({ workstream: 'data_migration' })).toBe('db');
+    expect(planeForStory({ workstream: 'target_infrastructure_environment_implementation' })).toBe('db');
+    // 2026-07-27: the gateway's planeForWorkstream now carries this token too
+    // (it was FE-only, so the same story sat on the DB card but ran/gated in
+    // the service phase server-side). Both sides pin all four DB tokens.
+    expect(planeForStory({ workstream: 'data_parity_reconciliation_reporting' })).toBe('db');
     expect(planeForStory({ workstream: 'api_migration' })).toBe('service');
     expect(planeForStory({ workstream: 'target_frontend_implementation' })).toBe('ui');
     expect(planeForStory({ workstream: 'cutover_rollback_decommission' })).toBe('ui');
@@ -428,6 +433,39 @@ describe('execution rail (Phase 1b)', () => {
       ).toHaveTextContent('carry-over accounted 5/5 ✓'),
     );
     expect(screen.getByTestId('execution-rail-start-service')).toBeEnabled();
+  });
+
+  it('STALE parity (2026-07-27): a row stale by REASON ONLY (no boolean) is not satisfied — the card matches the server gate', async () => {
+    // The target-architecture mark-stale stamps `stale` without a reason and
+    // the amend path stamps both — but a row can also arrive with only
+    // stale_reason set. EITHER flag must count on BOTH surfaces.
+    mockFetchRows.mockResolvedValue([
+      { ...generatedRow('wi-1', 's-1'), staleReason: 'resolution_reset' },
+    ]);
+    renderWorkspace(
+      draftWith([makeItem({ id: 's-1', title: 'Schema story', workItemId: 'wi-1' } as never)]),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('execution-rail-gate-db')).toHaveTextContent('specs 0/1'),
+    );
+    expect(screen.getByTestId('execution-rail-start')).toBeDisabled();
+  });
+
+  it('LATEST-ROW parity (2026-07-27): the card judges the HIGHEST-attempt row, exactly like the server gate', async () => {
+    // Attempt 2 failed AFTER attempt 1 generated — the server gates on the
+    // latest attempt, so the card must too (the old "later list rows win"
+    // shortcut depended on list order).
+    mockFetchRows.mockResolvedValue([
+      { ...generatedRow('wi-1', 's-1'), id: 'sg-2', status: 'failed', generationAttemptNumber: 2 },
+      { ...generatedRow('wi-1', 's-1'), id: 'sg-1', status: 'generated', generationAttemptNumber: 1 },
+    ]);
+    renderWorkspace(
+      draftWith([makeItem({ id: 's-1', title: 'Schema story', workItemId: 'wi-1' } as never)]),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('execution-rail-gate-db')).toHaveTextContent('specs 0/1'),
+    );
+    expect(screen.getByTestId('execution-rail-start')).toBeDisabled();
   });
 
   it('a parity-only refusal of a stage-2 start surfaces the recorded break-glass in the dialog', async () => {

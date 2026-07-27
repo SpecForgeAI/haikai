@@ -133,10 +133,14 @@ export function groupBlockReasons(
 ): Array<{ code: string; title: string; remedy: string | null; messages: string[] }> {
   const META: Record<string, { title: string; remedy: string | null }> = {
     story_not_spec_ready: {
-      title: 'Stories not spec-ready',
+      title: 'Stories without a generated spec',
       remedy:
-        'Each listed story needs a generated spec saved to the backlog ' +
-        '(or defer the story to drop it from the run).',
+        'Each listed story needs its implementation spec GENERATED (use ' +
+        '"Generate specs (saved)", or supply a manual spec and mark it ' +
+        "ready). Note: the table's 'ready_for_spec' badge only means a spec " +
+        'CAN be generated — it is not the generated spec itself. A stale ' +
+        'spec (amended story) needs regenerating. Or defer the story to ' +
+        'drop it from the run.',
     },
     missing_current_baseline: {
       title: 'No active current-state baseline',
@@ -645,14 +649,40 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     if (draft) void refreshSpecRows();
   }, [draft, refreshSpecRows]);
 
-  /** Latest spec row per story WorkItem id (later rows win). */
+  /**
+   * Latest spec row per story WorkItem id — the SAME latest-row rule the
+   * server gate uses (highest attempt number, then latest createdAt;
+   * 2026-07-27). The old "later list rows win" shortcut could pick a
+   * different row than the gate when a work item carries several attempts,
+   * letting the card and the server disagree about readiness.
+   */
   const specRowByWorkItem = useMemo(() => {
     const out = new Map<string, SpecGenerationRow>();
     for (const r of specRows ?? []) {
-      if (r.workItemId) out.set(r.workItemId, r);
+      if (!r.workItemId) continue;
+      const prev = out.get(r.workItemId);
+      if (!prev) {
+        out.set(r.workItemId, r);
+        continue;
+      }
+      const an = r.generationAttemptNumber ?? 0;
+      const bn = prev.generationAttemptNumber ?? 0;
+      if (an > bn || (an === bn && (r.createdAt ?? '') >= (prev.createdAt ?? ''))) {
+        out.set(r.workItemId, r);
+      }
     }
     return out;
   }, [specRows]);
+
+  /**
+   * Staleness is EITHER flag (2026-07-27, mirrors the server gate): the
+   * target-architecture mark-stale stamps `stale` with NO reason; the
+   * story-amend path stamps both. Checking only one let surfaces disagree.
+   */
+  const isRowStale = useCallback(
+    (row: SpecGenerationRow): boolean => row.stale === true || !!row.staleReason,
+    [],
+  );
 
   /** Spec chip per story BOOK-ITEM id for the tree. */
   const specStateById = useMemo(() => {
@@ -666,7 +696,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       const wi = (item as { workItemId?: string | null }).workItemId;
       const row = wi ? specRowByWorkItem.get(wi) : undefined;
       if (!row) continue;
-      if (row.stale) {
+      if (isRowStale(row)) {
         // Carry-over triage (2026-07-26): an amended story's spec is stale —
         // it needs REgeneration (the batch picks it up) and the server gate
         // refuses it, so the chip must not read as satisfied.
@@ -692,7 +722,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       }
     }
     return out;
-  }, [specRows, specRowByWorkItem, draft]);
+  }, [specRows, specRowByWorkItem, draft, isRowStale]);
 
   /** Header rollup: generated / warnings / blocked / manual / stale. */
   const specCounts = useMemo(() => {
@@ -703,7 +733,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     let manual = 0;
     let stale = 0;
     for (const r of specRowByWorkItem.values()) {
-      if (r.stale) stale++;
+      if (isRowStale(r)) stale++;
       else if (r.manualReady) manual++;
       else if (r.status === 'generated') ok++;
       else if (r.status === 'generated_with_warnings') warn++;
@@ -715,7 +745,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         blocked++;
     }
     return { ok, warn, blocked, manual, stale };
-  }, [specRows, specRowByWorkItem]);
+  }, [specRows, specRowByWorkItem, isRowStale]);
 
   /**
    * Generate specs for every saved, not-yet-attempted story — batches loop
@@ -864,10 +894,11 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           const row = wi ? specRowByWorkItem.get(wi) : undefined;
           // A STALE row is NOT satisfied (2026-07-26): the story was amended
           // (e.g. for a carry-over finding) and its spec must regenerate —
-          // the server gate refuses stale, so the card must too.
+          // the server gate refuses stale, so the card must too. Either stale
+          // flag counts (2026-07-27, mirrors isStorySpecReady).
           const ok =
             !!row &&
-            row.stale !== true &&
+            !isRowStale(row) &&
             (row.manualReady === true ||
               row.status === 'generated' ||
               row.status === 'generated_with_warnings');
@@ -899,7 +930,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         };
       },
     );
-  }, [draft, specRowByWorkItem, run, carryOverCoverage]);
+  }, [draft, specRowByWorkItem, run, carryOverCoverage, isRowStale]);
 
   const railScopeReady = Boolean(companyName && projectName);
 

@@ -61,6 +61,11 @@ describe('plane assignment', () => {
     expect(planeForWorkstream('target_database_schema_implementation')).toBe('db');
     expect(planeForWorkstream('data_migration')).toBe('db');
     expect(planeForWorkstream('target_infrastructure_environment_implementation')).toBe('db');
+    // 2026-07-27: parity reconcile/reporting is DB-plane work — this token
+    // was missing here while the FE rail's display mirror had it, so the
+    // same story sat on the DB card but ran/gated in the SERVICE phase. The
+    // two vocabularies must stay identical (the FE pins the same 4 tokens).
+    expect(planeForWorkstream('data_parity_reconciliation_reporting')).toBe('db');
     expect(planeForWorkstream('api_migration')).toBe('service');
     expect(planeForWorkstream('internal_processing_implementation')).toBe('service');
     expect(planeForWorkstream('target_frontend_implementation')).toBe('ui');

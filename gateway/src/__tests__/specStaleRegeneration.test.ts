@@ -137,4 +137,50 @@ describe('stale-spec regeneration mechanics', () => {
       isStorySpecReady(item, [{ ...staleRow, stale_reason: null }])
     ).toBe(true);
   });
+
+  it('isStorySpecReady honours BOTH stale flags and manual_ready (2026-07-27, card/gate parity)', () => {
+    const item = {
+      id: 's-1',
+      parentId: null,
+      type: 'story',
+      title: 'Story',
+      sequenceOrder: 0,
+      workItemId: 'wi-1',
+    } as never;
+
+    // The target-architecture mark-stale stamps `stale` with NO reason —
+    // the gate must refuse it just the same (the card already did).
+    const staleBooleanOnly: SpecGeneration = {
+      id: 'sg-1',
+      work_item_id: 'wi-1',
+      status: 'generated',
+      generated_spec_text: 'spec',
+      stale: true,
+      stale_reason: null,
+      generation_attempt_number: 1,
+      created_at: '2026-07-27T10:00:00Z',
+    };
+    expect(isStorySpecReady(item, [staleBooleanOnly])).toBe(false);
+
+    // A human-accepted MANUAL spec (Phase 1a) counts as ready — the card
+    // always counted it; pre-fix the gate refused it ("enabled button ⇒
+    // server says yes" cuts both ways).
+    const manualReadyRow: SpecGeneration = {
+      id: 'sg-2',
+      work_item_id: 'wi-1',
+      status: 'insufficient_context',
+      generated_spec_text: 'human-supplied spec',
+      manual_ready: true,
+      stale: false,
+      stale_reason: null,
+      generation_attempt_number: 1,
+      created_at: '2026-07-27T10:00:00Z',
+    };
+    expect(isStorySpecReady(item, [manualReadyRow])).toBe(true);
+
+    // …but a STALE manual-ready row is still refused (stale wins).
+    expect(
+      isStorySpecReady(item, [{ ...manualReadyRow, stale: true }])
+    ).toBe(false);
+  });
 });

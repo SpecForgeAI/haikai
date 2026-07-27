@@ -344,10 +344,16 @@ export function latestSpecGenerationForWorkItem(
 }
 
 /**
- * A story is spec-ready iff (CD-7):
+ * A story is spec-ready iff (CD-7, aligned 2026-07-27 with the plan screen's
+ * card semantics — "enabled button ⇒ server says yes" cuts BOTH ways):
  *   - it is saved to backlog (`workItemId` present), AND
- *   - its latest spec-generation status is generated / generated_with_warnings, AND
- *   - it is not stale (`stale_reason = null`).
+ *   - its latest spec-generation row is USABLE: status generated /
+ *     generated_with_warnings OR `manual_ready` (the Phase-1a human-accepted
+ *     manual spec — the card counted it, this gate previously did not), AND
+ *   - it is not STALE. Staleness is EITHER flag: `stale === true` OR a
+ *     non-empty `stale_reason` (the target-architecture mark-stale stamps
+ *     `stale` without a reason; the story-amend path stamps both — checking
+ *     only one let the two flags disagree across surfaces).
  */
 export function isStorySpecReady(
   item: BookOfWorkItem,
@@ -356,9 +362,28 @@ export function isStorySpecReady(
   if (!item.workItemId) return false;
   const latest = latestSpecGenerationForWorkItem(item.workItemId, specGens);
   if (!latest) return false;
-  if (!READY_SPEC_STATUSES.has(latest.status ?? '')) return false;
-  if (latest.stale_reason) return false;
-  return true;
+  if (latest.stale === true || latest.stale_reason) return false;
+  if (READY_SPEC_STATUSES.has(latest.status ?? '')) return true;
+  return latest.manual_ready === true;
+}
+
+/**
+ * WHY a story fails {@link isStorySpecReady} — feeds the gate's per-story
+ * message so the refusal is diagnosable against the plan screen (whose
+ * `ready_for_spec` READINESS badge means "a spec CAN be generated", which
+ * users reasonably misread as "ready to run"). Pure; exported for tests.
+ */
+export function describeSpecReadinessGap(
+  item: BookOfWorkItem,
+  specGens: SpecGeneration[]
+): string {
+  if (!item.workItemId) return 'it has not been saved to the backlog';
+  const latest = latestSpecGenerationForWorkItem(item.workItemId, specGens);
+  if (!latest) return 'no implementation spec has been generated for it yet';
+  if (latest.stale === true || latest.stale_reason) {
+    return `its spec is STALE${latest.stale_reason ? ` (${latest.stale_reason})` : ''} — regenerate it`;
+  }
+  return `its latest spec attempt ended '${latest.status ?? 'unknown'}' (not generated, not marked manual-ready)`;
 }
 
 // ============================================================================
@@ -489,10 +514,15 @@ export function evaluateHardBlock(params: {
   const hasSelection = !!params.selectedWorkItemIds && params.selectedWorkItemIds.size > 0;
 
   for (const item of params.items) {
-    // Only leaf STORY/TEST nodes carry specs; structural nodes are scaffolding.
-    // A node with no work item is not a story to gate.
-    const isStoryNode = !!item.workItemId;
-    if (!isStoryNode) continue;
+    // Spec-gate STORY nodes ONLY (2026-07-27). Save-to-backlog stamps a
+    // workItemId on the WHOLE ancestor chain, so "has a workItemId" swept
+    // saved epics/features (and TEST siblings) into this gate — none of which
+    // spec generation ever targets (selectEligibleStories filters
+    // type==='story'), so they could NEVER become ready and blocked a start
+    // the plan screen's card (stories-only) showed as clear. TEST items
+    // without specs are silently skipped by dispatch (pre-existing CD-5
+    // behaviour); structural nodes are scaffolding.
+    if (!item.workItemId || !isStoryTypeItem(item)) continue;
     if (isDeferred(item, params.deferredWorkItemIds)) continue; // deferred drops out
     if (isManualGate(item)) continue; // manual-gate work carries no spec by design
     if (hasSelection && !params.selectedWorkItemIds!.has(item.workItemId as string)) {
@@ -502,8 +532,11 @@ export function evaluateHardBlock(params: {
       reasons.push({
         code: 'story_not_spec_ready',
         message:
-          `Story "${item.title ?? item.workItemId}" is not spec-ready ` +
-          `(must be saved to backlog, generated/generated_with_warnings, and not stale).`,
+          `Story "${item.title ?? item.workItemId}" is not spec-ready: ` +
+          `${describeSpecReadinessGap(item, params.specGens)}. ` +
+          `(The table's 'ready_for_spec' badge means a spec CAN be generated — ` +
+          `the run needs the GENERATED spec itself: use "Generate specs (saved)" ` +
+          `or supply a manual spec and mark it ready.)`,
         workItemId: item.workItemId ?? null,
       });
     }
@@ -605,6 +638,14 @@ const DB_PLANE_WORKSTREAMS = new Set([
   'data_migration',
   // Infra is positionable (Spec V/W); v1 default is early, with the DB plane.
   'target_infrastructure_environment_implementation',
+  // Data-parity reconcile/reporting is DB-plane work (the plane reframe chains
+  // schema → data → parity reconcile INSIDE the DB plane). 2026-07-27: this
+  // token was missing here while the execution rail's display mirror
+  // (MigrationExecutionRail.planeForStory) already had it — the same story sat
+  // on the DB card in the UI but ran (and gated) in the SERVICE phase server-
+  // side. The two vocabularies MUST stay identical; both sides pin all four
+  // tokens in tests.
+  'data_parity_reconciliation_reporting',
 ]);
 const UI_PLANE_WORKSTREAMS = new Set([
   'target_frontend_implementation',
@@ -634,6 +675,27 @@ export function workstreamFromTags(tags: string[] | null | undefined): string | 
 /** Resolve a book item's plane: its workstream, else its `stream:` tag, else service. */
 export function planeForItem(item: BookOfWorkItem): MigrationPlane {
   return planeForWorkstream(item.workstream ?? workstreamFromTags(item.tags));
+}
+
+/**
+ * True for the DISPATCHABLE leaf types: STORY and TEST blob items (blob `type`
+ * is lowercase 'story' for stories and 'TEST' for test siblings — compared
+ * case-insensitively). Structural nodes (initiative / epic / feature) are NOT
+ * dispatchable even though save-to-backlog stamps a `workItemId` on the whole
+ * ancestor chain — treating "has a workItemId" as "is a story" swept saved
+ * epics/features into the plane selection and the spec gate (2026-07-27 bug:
+ * they can NEVER be spec-ready because spec generation only targets stories,
+ * so a plane Start was refused for nodes the plan screen's card — which
+ * counts stories only — never showed as blocking).
+ */
+export function isDispatchableLeafItem(item: BookOfWorkItem): boolean {
+  const t = (item.type ?? '').toLowerCase();
+  return t === 'story' || t === 'test';
+}
+
+/** True when the blob item is a STORY (the spec-carrying, spec-GATED type). */
+export function isStoryTypeItem(item: BookOfWorkItem): boolean {
+  return (item.type ?? '').toLowerCase() === 'story';
 }
 
 /** One phase of the phased plan: a plane and the dispatch descriptors it owns. */
@@ -773,6 +835,11 @@ export async function startMigration(
   if (plane) {
     for (const item of bookItems) {
       if (!item.workItemId) continue;
+      // Only DISPATCHABLE leaves (stories + TEST siblings) enter the plane
+      // selection. Saved EPICS/FEATURES carry workItemIds too (save-to-backlog
+      // stamps the whole ancestor chain) — sweeping them in put permanently
+      // spec-less nodes in front of the spec gate (2026-07-27).
+      if (!isDispatchableLeafItem(item)) continue;
       if (isDeferred(item, deferredWorkItemIds)) continue;
       if (planeForItem(item) === plane) selectedSet.add(item.workItemId);
     }
@@ -918,6 +985,10 @@ export async function startMigration(
     const planesWithStories = new Set<MigrationPlane>();
     for (const item of items) {
       if (!item.workItemId) continue;
+      // Same leaf filter as the selection: a saved epic/feature's workstream
+      // must not manufacture a plane (and a precedence requirement) that has
+      // no dispatchable stories of its own.
+      if (!isDispatchableLeafItem(item)) continue;
       if (isDeferred(item, deferredWorkItemIds)) continue;
       planesWithStories.add(planeForItem(item));
     }
