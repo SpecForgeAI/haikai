@@ -41,6 +41,7 @@
  */
 
 import { logger } from './logger';
+import { normalizeScopeIdentifiers } from './workspaceIdentifier';
 import { createTracer } from '../trace';
 
 // Haikai workflow trace (OFF unless HAIKAI_TRACE set). SUMMARY across the
@@ -806,6 +807,12 @@ export async function startMigration(
   scope: MigrateScope,
   deps: MigrationDriverDeps
 ): Promise<StartMigrationResult> {
+  // Enforce the documented "normalised company/project" contract HERE — the
+  // UI passes display names ("NatWest Markets"), but the IVS workspace is
+  // addressed by the normalised form ("natwest-markets"); live-confirmed
+  // 2026-07-27: raw names 400 at the IVS precondition gate even after a
+  // correct project init. Idempotent.
+  scope = normalizeScopeIdentifiers(scope);
   const { projectId, bookId } = scope;
   logger.info('[diag-gateway] migration_execution_driver start_requested', {
     projectId,
@@ -1606,12 +1613,15 @@ export async function advanceRunOnBuildResult(
   const projectId = run.project_id;
   const runId = item.run_id;
   const runItemId = item.id;
-  const scope: MigrateScope = {
+  // Normalised-identifier enforcement (2026-07-27): the callback door passes
+  // company/project through from the external service for traceability — and
+  // dispatch-next re-enters the IVS workspace with THIS scope.
+  const scope: MigrateScope = normalizeScopeIdentifiers({
     projectId,
     bookId: run.book_of_work_id ?? '',
     company: input.company,
     project: input.project,
-  };
+  });
 
   // Idempotency (CD-6): a run-item that already carries a terminal outcome is
   // not advanced again.
@@ -2000,6 +2010,8 @@ export async function resumeMigration(
   deps: MigrationDriverDeps,
   opts?: { override?: boolean }
 ): Promise<ResumeMigrationResult> {
+  // Same normalised-identifier enforcement as startMigration (2026-07-27).
+  scope = normalizeScopeIdentifiers(scope);
   const run = await deps.getMigrationExecutionRun(scope.projectId, runId);
   if (!run) return { status: 'error', message: `Run ${runId} not found` };
   if (run.status !== RUN_STATUS.AWAITING_APPROVAL) {
@@ -2357,12 +2369,14 @@ export async function recoverInFlightRuns(
       }
       recovered++;
 
-      const scope: MigrateScope = {
+      // Normalised-identifier enforcement (2026-07-27): boot-recovery refs may
+      // come from run records created BEFORE the fix (raw display names).
+      const scope: MigrateScope = normalizeScopeIdentifiers({
         projectId: ref.projectId,
         bookId: ref.bookId || (run.book_of_work_id ?? ''),
         company: ref.company,
         project: ref.project,
-      };
+      });
 
       const items = (run.items ?? []).slice().sort(
         (a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0)

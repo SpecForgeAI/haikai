@@ -516,6 +516,29 @@ describe('startMigration', () => {
     expect(patchedJob).toBeTruthy();
     expect(patchedJob[2].dispatched).toBe(true);
   });
+
+  it('NORMALISES the workspace identifiers at entry (2026-07-27): raw display names never reach the IVS-facing calls', async () => {
+    // The live bug: the plan screen passes "NatWest Markets" / "HiFi
+    // Migration", but the IVS workspace is addressed by the normalised form
+    // ("natwest-markets/hifi-migration") — every OTHER surface (project init,
+    // repo CRUD, browser shape-spec, orchestration) normalises first, so the
+    // raw names 400'd at the IVS precondition gate even after a correct init.
+    const deps = mockDeps();
+    const result = await startMigration(
+      { ...scope, company: '  NatWest   Markets ', project: 'HiFi Migration' },
+      deps
+    );
+    expect(result.status).toBe('started');
+    await flush();
+
+    const answerArg = (deps.autoAnswerer.driveAndAnswer as jest.Mock).mock.calls[0][0];
+    expect(answerArg.company).toBe('natwest-markets');
+    expect(answerArg.project).toBe('hifi-migration');
+
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.company).toBe('natwest-markets');
+    expect(submitArg.project).toBe('hifi-migration');
+  });
 });
 
 // ===========================================================================
