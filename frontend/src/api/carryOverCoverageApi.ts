@@ -133,6 +133,20 @@ export interface CarryOverItemDetail {
   memberFindingCount: number | null;
 }
 
+/**
+ * What the coverage gather actually evaluated (2026-07-27) — makes an EMPTY
+ * coverage explainable instead of a mystery zero. `runScopeSource`:
+ * 'capabilities' = the canonical D5 derivation; 'architecture_runs' = the
+ * no-capabilities fallback (the architecture's own run list); 'none' = no
+ * capabilities AND no runs — nothing was evaluated.
+ */
+export interface CarryOverScopeDiagnostics {
+  capabilityCount: number;
+  runCount: number;
+  findingCount: number;
+  runScopeSource: 'capabilities' | 'architecture_runs' | 'none';
+}
+
 /** The full per-book carry_over coverage result. */
 export interface CarryOverCoverageResult {
   items: CarryOverCoverageItem[];
@@ -145,6 +159,8 @@ export interface CarryOverCoverageResult {
   architectureId?: string | null;
   /** Item id -> human content (2026-07-26; absent on older gateways). */
   itemDetails?: Record<string, CarryOverItemDetail>;
+  /** Scope diagnostics (2026-07-27; absent on older gateways). */
+  scope?: CarryOverScopeDiagnostics;
 }
 
 // ============================================================================

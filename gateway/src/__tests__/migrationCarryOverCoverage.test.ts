@@ -318,5 +318,113 @@ describe('gatherCarryOverCoverageInputs itemDetailById', () => {
       // Only discovery_finding members count (code elements etc. do not).
       memberFindingCount: 1,
     });
+
+    // Scope diagnostics: the canonical capability-derived run scope.
+    expect(inputs.scope).toEqual({
+      capabilityCount: 1,
+      runCount: 1,
+      findingCount: 1,
+      runScopeSource: 'capabilities',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Run-scope FALLBACK (2026-07-27) — the no-capabilities fail-open fix
+// ---------------------------------------------------------------------------
+
+describe('gatherCarryOverCoverageInputs run-scope fallback', () => {
+  const emptyBook: BookOfWork = {
+    id: 'book-1',
+    project_id: 'proj-1',
+    current_architecture_id: 'arch-1',
+    status: 'saved',
+    book_of_work_json: { items: [] },
+  };
+
+  const bbFinding = {
+    id: 'fLoose',
+    title: 'Ledger close halts on replication lag',
+    review_status: 'approved',
+    reviewer_notes: null,
+    detail_json: { behaviourBearing: true },
+  };
+
+  it('NO capabilities -> the architecture run list becomes the scope, so behaviour-bearing findings STILL gate (live-confirmed fail-open)', async () => {
+    const fetchRuns = jest
+      .fn()
+      .mockResolvedValue([{ id: 'run-9', status: 'completed' }]);
+    const deps: CarryOverCoverageReadsDeps = {
+      // The user's live estate: capabilities [] — the canonical D5 run
+      // derivation yields NOTHING, and pre-fix zero findings were evaluated.
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([bbFinding]),
+      fetchDiscoveryRunsForArchitecture: fetchRuns,
+    };
+
+    const inputs = await gatherCarryOverCoverageInputs({
+      projectId: 'proj-1',
+      architectureId: 'arch-1',
+      book: emptyBook,
+      workItems: [],
+      deps,
+    });
+
+    expect(fetchRuns).toHaveBeenCalledWith('proj-1', 'arch-1');
+    expect(deps.fetchFindingsForRun).toHaveBeenCalledWith('proj-1', 'arch-1', 'run-9');
+    expect(inputs.findings).toHaveLength(1);
+    expect(inputs.scope).toEqual({
+      capabilityCount: 0,
+      runCount: 1,
+      findingCount: 1,
+      runScopeSource: 'architecture_runs',
+    });
+
+    // …and the pure gate now sees (and gates) the un-grouped finding.
+    const coverage = computeCarryOverCoverage(inputs);
+    expect(coverage.totalMustAccount).toBe(1);
+    expect(coverage.ok).toBe(false);
+  });
+
+  it('capabilities present -> the fallback is NOT consulted (canonical scope wins)', async () => {
+    const fetchRuns = jest.fn();
+    const deps: CarryOverCoverageReadsDeps = {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([
+        { id: 'capA', run_id: 'run-1', detail_json: { behaviourBearing: true }, members: [] },
+      ]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: fetchRuns,
+    };
+    const inputs = await gatherCarryOverCoverageInputs({
+      projectId: 'proj-1',
+      architectureId: 'arch-1',
+      book: emptyBook,
+      workItems: [],
+      deps,
+    });
+    expect(fetchRuns).not.toHaveBeenCalled();
+    expect(inputs.scope.runScopeSource).toBe('capabilities');
+  });
+
+  it('NO capabilities AND no runs -> honest empty with runScopeSource none', async () => {
+    const deps: CarryOverCoverageReadsDeps = {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn(),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    };
+    const inputs = await gatherCarryOverCoverageInputs({
+      projectId: 'proj-1',
+      architectureId: 'arch-1',
+      book: emptyBook,
+      workItems: [],
+      deps,
+    });
+    expect(deps.fetchFindingsForRun).not.toHaveBeenCalled();
+    expect(inputs.scope).toEqual({
+      capabilityCount: 0,
+      runCount: 0,
+      findingCount: 0,
+      runScopeSource: 'none',
+    });
   });
 });
