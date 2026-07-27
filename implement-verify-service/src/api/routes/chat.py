@@ -62,6 +62,21 @@ logger = logging.getLogger("src.api")
 router = APIRouter()
 
 
+def _create_chat_executor_or_400(**kwargs):
+    """Construct the chat executor, surfacing setup failures as 400 detail.
+
+    Executor construction raises ValueError for client-actionable setup
+    problems (kiro-cli not found in WSL, bad workspace dir). Left uncaught
+    they become bare 500s — the gateway forwards 4xx `detail` verbatim, so
+    wrap every route-level construction with this helper.
+    """
+    try:
+        return create_chat_executor(**kwargs)
+    except ValueError as e:
+        logger.error(f"Chat executor unavailable: {e}")
+        raise HTTPException(status_code=400, detail=f"Chat executor unavailable: {e}")
+
+
 # =============================================================================
 # Shape-Spec (V1)
 # =============================================================================
@@ -110,7 +125,7 @@ async def shape_spec_stream(
             else:
                 logger.info(f"Resuming session for {request.company}/{request.project}: {session_id}")
 
-        executor = create_chat_executor(
+        executor = _create_chat_executor_or_400(
             company=request.company,
             project=request.project,
             workspace_dir=API_WORKSPACE_DIR,
@@ -305,7 +320,7 @@ async def clear_shape_spec(
     try:
         anthropic_api_key = require_credentials()
 
-        executor = create_chat_executor(
+        executor = _create_chat_executor_or_400(
             company=request.company,
             project=request.project,
             workspace_dir=API_WORKSPACE_DIR,
@@ -358,7 +373,7 @@ async def plan_product_stream(
     try:
         anthropic_api_key = require_credentials()
 
-        executor = create_chat_executor(
+        executor = _create_chat_executor_or_400(
             company=request.company,
             project=request.project,
             workspace_dir=API_WORKSPACE_DIR,
@@ -536,7 +551,7 @@ async def clear_plan_product(
     try:
         anthropic_api_key = require_credentials()
 
-        executor = create_chat_executor(
+        executor = _create_chat_executor_or_400(
             company=request.company,
             project=request.project,
             workspace_dir=API_WORKSPACE_DIR,
@@ -602,7 +617,7 @@ async def story_component_anchor_stream(
     try:
         anthropic_api_key = require_credentials()
 
-        executor = create_chat_executor(
+        executor = _create_chat_executor_or_400(
             company=request.company,
             project=request.project,
             workspace_dir=API_WORKSPACE_DIR,
@@ -727,7 +742,7 @@ async def analyze_repo_stream(
     try:
         anthropic_api_key = require_credentials()
 
-        executor = create_chat_executor(
+        executor = _create_chat_executor_or_400(
             company=request.company,
             project=request.project,
             workspace_dir=API_WORKSPACE_DIR,
@@ -875,7 +890,7 @@ async def shape_spec_stream_v2(
         else:
             logger.info(f"V2 shape-spec: resuming session {session_id}")
 
-    executor = create_chat_executor(
+    executor = _create_chat_executor_or_400(
         company=request.company,
         project=request.project,
         workspace_dir=API_WORKSPACE_DIR,
@@ -973,7 +988,7 @@ async def plan_product_stream_v2(
             session_id = create_active_session(API_WORKSPACE_DIR, request.company, request.project)
             is_new_session = True
 
-    executor = create_chat_executor(
+    executor = _create_chat_executor_or_400(
         company=request.company,
         project=request.project,
         workspace_dir=API_WORKSPACE_DIR,

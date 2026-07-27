@@ -18,7 +18,6 @@ Key differences from Claude CLI:
 import json
 import logging
 import os
-import platform
 import re
 import shutil
 import subprocess
@@ -29,6 +28,7 @@ from typing import Optional, Dict, Any, Generator, List
 
 from .cli_limits import MAX_CLI_ARG_LENGTH
 from .profiles_path import HAIKAI_PROFILES_ROOT
+from ..kiro_cli_locator import kiro_cli_args, locate_kiro_cli
 from datetime import datetime
 
 from .tool_executor import ToolExecutor
@@ -101,61 +101,10 @@ class KiroChatExecutor:
         logger.info(f"  Kiro CLI: {self.kiro_cli_path}")
 
     def _find_kiro_cli(self) -> Path:
-        """Locate kiro-cli binary.
-
-        On Linux/WSL: checks PATH then ~/.local/bin.
-        On Windows: kiro-cli is a Linux ELF binary living in the WSL rootfs.
-                    We detect it there and set self._use_wsl = True so callers
-                    prepend ['wsl', ...] to every subprocess invocation.
-        """
-        self._use_wsl = False
-
-        # Check PATH first (works natively on Linux/WSL)
-        kiro_path = shutil.which("kiro-cli")
-        if kiro_path:
-            return Path(kiro_path)
-
-        # Check common native locations
-        candidates = [
-            Path.home() / ".local" / "bin" / "kiro-cli",
-            Path("/usr/local/bin/kiro-cli"),
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-
-        # Windows: kiro-cli lives inside the WSL rootfs - invoke via wsl.exe
-        if platform.system() == "Windows":
-            wsl_exe = shutil.which("wsl")
-            if wsl_exe:
-                try:
-                    result = subprocess.run(
-                        ["wsl", "which", "kiro-cli"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    wsl_path = result.stdout.strip()
-                    if wsl_path:
-                        self._use_wsl = True
-                        logger.info(f"Using kiro-cli via WSL: {wsl_path}")
-                        return Path(wsl_path)
-                except Exception:
-                    pass
-            # Fallback: known WSL install location
-            wsl_rootfs_candidates = [
-                Path(r"C:\Users") / os.environ.get("USERNAME", "") / "wsl" / "Ubuntu-24.04" / "rootfs" / "root" / ".local" / "bin" / "kiro-cli",
-            ]
-            for candidate in wsl_rootfs_candidates:
-                if candidate.exists():
-                    self._use_wsl = True
-                    logger.info(f"Found kiro-cli in WSL rootfs: {candidate}")
-                    # Return the Linux path for wsl to invoke
-                    return Path("/root/.local/bin/kiro-cli")
-
-        raise ValueError(
-            "kiro-cli not found in PATH or common locations. "
-            "Install via the Kiro CLI install script "
-            "(see docs/ENABLING_KIRO_CLI.md for setup)."
-        )
+        """Locate kiro-cli via the shared locator (login-shell-aware WSL
+        probing lives in src/kiro_cli_locator.py — do not add probes here)."""
+        cli_path, self._use_wsl = locate_kiro_cli()
+        return Path(cli_path)
 
     def _setup_kiro_skills(self):
         """
@@ -281,19 +230,11 @@ class KiroChatExecutor:
             cli_prompt = f"Read the file {message_file} and follow the instructions within it."
             logger.info(f"Large message ({len(message)} chars) written to temp file")
 
-        # Build CLI arguments
-        cli_args = [
-            str(self.kiro_cli_path),
-            "chat",
-            "--no-interactive",
-            "--trust-all-tools",
-            "--wrap", "never",
-        ]
-
-        # On Windows, invoke via wsl.exe: wsl /path/to/kiro-cli chat ...
-        if getattr(self, '_use_wsl', False):
-            kiro_linux_path = self.kiro_cli_path.as_posix()
-            cli_args = ["wsl", kiro_linux_path, "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never"]
+        # Build CLI arguments (wsl-prefixed on Windows by the shared builder)
+        cli_args = kiro_cli_args(
+            self.kiro_cli_path, self._use_wsl,
+            "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never",
+        )
 
         # Resume existing session unless starting fresh
         if not is_new_session:
@@ -439,21 +380,22 @@ class KiroChatExecutor:
         clear the chat logs directory.
         """
         success = True
-        # Try to find and delete the kiro session
+        # Try to find and delete the kiro session (kiro_cli_args prefixes
+        # 'wsl' on Windows — the bare argv here previously broke there)
         try:
             result = subprocess.run(
-                [str(self.kiro_cli_path), "chat", "--list-sessions"],
+                kiro_cli_args(self.kiro_cli_path, self._use_wsl, "chat", "--list-sessions"),
                 cwd=str(self.project_dir),
                 capture_output=True, text=True, encoding='utf-8', errors='replace',
-                timeout=10
+                timeout=30
             )
             # Parse session IDs from output
             session_ids = re.findall(r'Chat SessionId:\s*([a-f0-9-]+)', _strip_ansi(result.stdout))
             for sid in session_ids:
                 subprocess.run(
-                    [str(self.kiro_cli_path), "chat", "--delete-session", sid],
+                    kiro_cli_args(self.kiro_cli_path, self._use_wsl, "chat", "--delete-session", sid),
                     cwd=str(self.project_dir),
-                    capture_output=True, text=True, timeout=10
+                    capture_output=True, text=True, timeout=30
                 )
                 logger.info(f"Deleted kiro session: {sid}")
         except Exception as e:

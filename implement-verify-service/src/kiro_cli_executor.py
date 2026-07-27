@@ -15,14 +15,13 @@ Key differences from ClaudeCLIExecutor:
 
 import json
 import logging
-import os
-import platform
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+
+from .kiro_cli_locator import kiro_cli_args, locate_kiro_cli
 
 logger = logging.getLogger(__name__)
 
@@ -64,53 +63,10 @@ class KiroCLIExecutor:
         logger.info(f"Initialized KiroCLIExecutor for project: {project_dir}")
 
     def _find_kiro_cli(self) -> Path:
-        """Locate kiro-cli binary.
-
-        On Linux/WSL: checks PATH then ~/.local/bin.
-        On Windows: kiro-cli is a Linux ELF binary in the WSL rootfs,
-            Sets self._use_wsl = True so execute() prepends ['wsl', ...].
-        """
-        self._use_wsl = False
-        kiro_path = shutil.which("kiro-cli")
-        if kiro_path:
-            return Path(kiro_path)
-
-        candidates = [
-            Path.home() / ".local" / "bin" / "kiro-cli",
-            Path("/usr/local/bin/kiro-cli"),
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
-
-        # Windows: invoke kiro-cli via wsl.exe
-        if platform.system() == "Windows":
-            wsl_exe = shutil.which("wsl")
-            if wsl_exe:
-                try:
-                    result = subprocess.run(
-                        ["wsl", "which", "kiro-cli"],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    wsl_path = result.stdout.strip()
-                    if wsl_path:
-                        self._use_wsl = True
-                        logger.info(f"Using kiro-cli via WSL: {wsl_path}")
-                        return Path(wsl_path)
-                except Exception:
-                    pass
-            # Fallback: known WSL install location
-            wsl_candidate = Path("//wsl$/Users") / os.environ.get("USERNAME", "") / "wsl" / "Ubuntu-24.04" / "rootfs" / "root" / ".local" / "bin" / "kiro-cli"
-            if wsl_candidate.exists():
-                self._use_wsl = True
-                logger.info(f"Found kiro-cli in WSL rootfs: {wsl_candidate}")
-                return Path("/root/.local/bin/kiro-cli")
-
-        raise ValueError(
-            "kiro-cli not found in PATH or common locations. "
-            "Install via the Kiro CLI install script "
-            "(see docs/ENABLING_KIRO_CLI.md for setup)."
-        )
+        """Locate kiro-cli via the shared locator (login-shell-aware WSL
+        probing lives in src/kiro_cli_locator.py — do not add probes here)."""
+        cli_path, self._use_wsl = locate_kiro_cli()
+        return Path(cli_path)
 
     def _setup_skills(self):
         """Setup .kiro/skills/ directory with haikai command skills."""
@@ -177,19 +133,12 @@ class KiroCLIExecutor:
         # Build the full prompt
         full_prompt = f"{system_prompt}\n\n{command}" if system_prompt else command
 
-        cli_args = [
-            str(self.kiro_cli_path),
-            "chat",
-            "--no-interactive",
-            "--trust-all-tools",
-            "--wrap", "never",
+        # wsl-prefixed on Windows by the shared builder
+        cli_args = kiro_cli_args(
+            self.kiro_cli_path, self._use_wsl,
+            "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never",
             full_prompt,
-        ]
-
-        # On Windows, invoke via wsl.exe
-        if getattr(self, '_use_wsl', False):
-            kiro_linux_path = self.kiro_cli_path.as_posix()
-            cli_args = ["wsl", kiro_linux_path, "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never", full_prompt]
+        )
 
         timeout_str = f"{timeout}s" if timeout else "unlimited"
         logger.info(f"Executing: {command} (timeout: {timeout_str})")

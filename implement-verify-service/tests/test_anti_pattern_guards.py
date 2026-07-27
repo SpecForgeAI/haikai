@@ -1086,3 +1086,56 @@ class TestNoBareLoadGitConfigOutsideConfigModule:
             "saved by POST /projects/init is honoured:\n  "
             + "\n  ".join(offenders)
         )
+
+
+# ─── Guard: kiro-cli discovery/invocation only via src/kiro_cli_locator.py ───
+
+
+class TestKiroCliLocatorSingleSource:
+    """kiro-cli lives inside WSL on Windows, and its install dir
+    (~/.local/bin) is only on PATH in LOGIN shells. Both executors carried
+    their own `wsl which kiro-cli` probe (non-login shell -> empty ->
+    ValueError even with kiro-cli installed and logged in; 2026-07-27 live
+    finding on the first shape-spec dispatch), and clear_session invoked
+    `[str(self.kiro_cli_path), ...]` with no wsl prefix at all.
+
+    All discovery goes through `locate_kiro_cli()` and every argv through
+    `kiro_cli_args()` in src/kiro_cli_locator.py. count == 0 siblings.
+    """
+
+    LOCATOR = Path("src/kiro_cli_locator.py")
+
+    def _offenders(self, needles: tuple) -> list:
+        offenders: list[str] = []
+        for p in SRC.rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            if p.relative_to(REPO_ROOT) == self.LOCATOR:
+                continue
+            text = _read_text(p)
+            for i, line in enumerate(text.split("\n"), start=1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                if any(needle in stripped for needle in needles):
+                    offenders.append(f"{p.relative_to(REPO_ROOT)}:{i}: {stripped}")
+        return offenders
+
+    def test_no_sibling_kiro_cli_probes(self):
+        offenders = self._offenders(
+            ('which("kiro-cli")', "which('kiro-cli')", '"wsl", "which"')
+        )
+        assert offenders == [], (
+            "kiro-cli PATH/WSL probe found outside src/kiro_cli_locator.py. "
+            "Delegate to locate_kiro_cli() — sibling probes miss the "
+            "login-shell PATH nuance:\n  " + "\n  ".join(offenders)
+        )
+
+    def test_no_bare_kiro_cli_argv_lists(self):
+        offenders = self._offenders(("[str(self.kiro_cli_path)",))
+        assert offenders == [], (
+            "Bare kiro-cli argv found — build it via kiro_cli_args(path, "
+            "use_wsl, *args) so the wsl prefix is applied on Windows "
+            "(clear_session shipped broken without it):\n  "
+            + "\n  ".join(offenders)
+        )
