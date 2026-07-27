@@ -80,7 +80,18 @@ export interface SpecGeneration {
   book_item_id?: string | null;
   status?: string | null;
   generated_spec_text?: string | null;
+  /**
+   * Stale pair (2026-07-27): BOTH flags are read by the gate — the
+   * target-architecture mark-stale stamps `stale` with NO reason, the
+   * story-amend path stamps both. Either one ⇒ not spec-ready.
+   */
+  stale?: boolean | null;
   stale_reason?: string | null;
+  /**
+   * Phase-1a human acceptance of a manual spec — counts as spec-ready
+   * (2026-07-27; the plan screen's card always counted it, the gate did not).
+   */
+  manual_ready?: boolean | null;
   generation_attempt_number?: number | null;
   created_at?: string | null;
 }

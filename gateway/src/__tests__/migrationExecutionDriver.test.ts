@@ -206,6 +206,46 @@ describe('evaluateHardBlock', () => {
     });
     expect(result.ok).toBe(true);
   });
+
+  it('spec-gates STORY nodes ONLY (2026-07-27): saved epics/features (workItemId via the ancestor-chain save) and spec-less TEST siblings never block', () => {
+    // Save-to-backlog stamps workItemIds on the WHOLE chain — the epic and
+    // feature here carry them, and NONE of these non-story nodes has a spec
+    // (spec generation only targets type='story'). Pre-fix they were all
+    // "not spec-ready" forever — refusing a start the plan screen's card
+    // (stories-only) showed as clear.
+    const items = [
+      { id: 'e1', parentId: null, type: 'epic', title: 'DB epic', sequenceOrder: 0, workItemId: 'wi-epic' },
+      { id: 'f1', parentId: 'e1', type: 'feature', title: 'DB feature', sequenceOrder: 0, workItemId: 'wi-feat' },
+      { id: 's1', parentId: 'f1', type: 'story', title: 'Schema story', sequenceOrder: 0, workItemId: 'wi-1' },
+      { id: 't1', parentId: 'f1', type: 'TEST', title: 'E2E TEST', sequenceOrder: 1, workItemId: 'wi-test-nospec' },
+    ];
+    const result = evaluateHardBlock({
+      items,
+      specGens: [readySpec('wi-1', 'x', 'sg-1')],
+      deferredWorkItemIds: new Set(),
+      hasActiveCurrentBaseline: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.reasons).toHaveLength(0);
+
+    // …while a genuinely spec-less STORY still refuses, and the message
+    // disambiguates the table's 'ready_for_spec' READINESS badge from the
+    // GENERATED spec the gate needs.
+    const withUnspecced = evaluateHardBlock({
+      items: [
+        ...items,
+        { id: 's2', parentId: 'f1', type: 'story', title: 'Unspecced story', sequenceOrder: 2, workItemId: 'wi-2' },
+      ],
+      specGens: [readySpec('wi-1', 'x', 'sg-1')],
+      deferredWorkItemIds: new Set(),
+      hasActiveCurrentBaseline: true,
+    });
+    expect(withUnspecced.ok).toBe(false);
+    const reason = withUnspecced.reasons.find((r) => r.code === 'story_not_spec_ready');
+    expect(reason?.workItemId).toBe('wi-2');
+    expect(reason?.message).toContain('no implementation spec has been generated');
+    expect(reason?.message).toContain("'ready_for_spec' badge");
+  });
 });
 
 // ===========================================================================
@@ -330,6 +370,58 @@ describe('startMigration', () => {
     expect(result.status).toBe('started');
     const createArg = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
     expect(createArg.items.map((i: MigrationExecutionRunItem) => i.work_item_id)).toEqual(['wi-db']);
+  });
+
+  it('plane=db does NOT sweep saved structural nodes into the spec gate (2026-07-27: the "19 not-spec-ready vs ready_for_spec" bug)', async () => {
+    // The user's fully-saved book: the DB epic + feature carry workItemIds
+    // (ancestor-chain save) and DB workstreams; a DB TEST sibling and a
+    // data-parity story ride along. Pre-fix, plane=db selected ALL of them
+    // (any workItemId), demanded specs they can never have, and refused a
+    // start the plan screen's stories-only card showed as clear — while the
+    // parity story sat on the FE's DB card but the server ran it in the
+    // SERVICE phase (vocab drift).
+    const bookWithStructure: BookOfWork = {
+      id: BOOK_ID,
+      project_id: PROJECT_ID,
+      current_architecture_id: 'arch-1',
+      status: 'draft',
+      book_of_work_json: {
+        items: [
+          { id: 'e-db', parentId: null, type: 'epic', title: 'DB epic', sequenceOrder: 0, workItemId: 'wi-epic', workstream: 'target_database_schema_implementation' },
+          { id: 'b-db', parentId: 'e-db', type: 'story', title: 'Schema', sequenceOrder: 1, workItemId: 'wi-db', workstream: 'target_database_schema_implementation' },
+          { id: 'b-parity', parentId: 'e-db', type: 'story', title: 'Parity report', sequenceOrder: 2, workItemId: 'wi-parity', workstream: 'data_parity_reconciliation_reporting' },
+          { id: 't-db', parentId: 'e-db', type: 'TEST', title: 'DB E2E', sequenceOrder: 3, workItemId: 'wi-test', workstream: 'target_database_schema_implementation' },
+          { id: 'b-svc', parentId: null, type: 'story', title: 'API', sequenceOrder: 4, workItemId: 'wi-svc', workstream: 'api_migration' },
+        ],
+      },
+    };
+    const deps = mockDeps({
+      fetchBookOfWork: jest.fn().mockResolvedValue(bookWithStructure),
+      // Both DB-plane STORIES specced; the epic + TEST have none (they never
+      // can); the service story is unspecced and out of scope.
+      fetchSpecGenerationsForBook: jest.fn().mockResolvedValue([
+        readySpec('wi-db', 'db spec', 'sg-db'),
+        readySpec('wi-parity', 'parity spec', 'sg-parity'),
+      ]),
+      fetchWorkItems: jest.fn().mockResolvedValue([
+        { id: 'wi-epic', type: 'EPIC', deferred: false },
+        { id: 'wi-db', type: 'STORY', deferred: false },
+        { id: 'wi-parity', type: 'STORY', deferred: false },
+        { id: 'wi-test', type: 'TEST', deferred: false },
+        { id: 'wi-svc', type: 'STORY', deferred: false },
+      ]),
+      fetchActiveCurrentBaseline: jest.fn().mockResolvedValue(null),
+    });
+    const result = await startMigration({ ...scope, plane: 'db' }, deps);
+    expect(result.status).toBe('started');
+    const createArg = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
+    const dispatched = createArg.items.map((i: MigrationExecutionRunItem) => i.work_item_id);
+    // The data-parity story is DB-plane work (vocab now matches the FE card);
+    // the spec-less TEST is skipped by dispatch (pre-existing CD-5); the epic
+    // never dispatches; the service story stays out of a db run.
+    expect(dispatched).toEqual(expect.arrayContaining(['wi-db', 'wi-parity']));
+    expect(dispatched).not.toEqual(expect.arrayContaining(['wi-epic']));
+    expect(dispatched).not.toEqual(expect.arrayContaining(['wi-svc']));
   });
 
   it('plane=service is BLOCKED with preceding_plane_not_deployed until the db plane run is deployed', async () => {
