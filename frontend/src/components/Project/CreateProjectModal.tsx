@@ -110,9 +110,23 @@ export function CreateProjectModal({
   project = null,
 }: CreateProjectModalProps) {
   const isEdit = mode === 'edit' && project !== null;
+  /**
+   * The stored init-success flag can DRIFT from reality (2026-07-27): AMS
+   * says initialised, but the workspace directory is gone (wiped host dir,
+   * different machine). When the post-init repo-map read FAILS, this holds
+   * the failure message and the modal falls back to the PRE-INIT form so the
+   * user can RE-INITIALISE — the whole point of Edit. Pre-fix the modal
+   * dead-ended: the error rendered inside the CRUD editor and the footer was
+   * Close-only, with no path to re-run projects/init.
+   */
+  const [workspaceLoadError, setWorkspaceLoadError] = useState<string | null>(null);
   // Post-init: workspace registration already succeeded for this project --
   // the Single/Poly radio disappears and repo changes go through repo CRUD.
-  const postInit = isEdit && project?.implementationInitSuccess === true;
+  // A FAILED workspace read cancels post-init (the re-initialise fallback).
+  const postInit =
+    isEdit &&
+    project?.implementationInitSuccess === true &&
+    workspaceLoadError === null;
 
   // Form state
   const [projectName, setProjectName] = useState('');
@@ -192,6 +206,7 @@ export function CreateProjectModal({
       setSubmitStage('idle');
       setInitError(null);
       setCreatedProject(null);
+      setWorkspaceLoadError(null);
 
       // Fetch organisations
       setOrganisationsLoading(true);
@@ -854,6 +869,7 @@ export function CreateProjectModal({
                   company={companyIdentifier}
                   project={projectIdentifier}
                   projectId={project.id}
+                  onLoadFailed={(message) => setWorkspaceLoadError(message)}
                 />
               ) : (
                 <span className={styles.organisationWarning} data-testid="repo-editor-org-pending">
@@ -862,6 +878,24 @@ export function CreateProjectModal({
                     : 'Cannot edit repositories: the project has no resolvable organisation.'}
                 </span>
               )}
+            </div>
+          )}
+
+          {/* Workspace-drift fallback (2026-07-27): the stored init-success
+              said "initialised" but the live workspace read failed — most
+              commonly the workspace directory is gone (wiped host dir, a
+              different machine). The pre-init form above is back in play:
+              check the repo URL and Save to RE-INITIALISE (re-clone). */}
+          {isEdit && workspaceLoadError !== null && (
+            <div
+              className={styles.errorMessage}
+              data-testid="workspace-reinit-notice"
+            >
+              The implementation workspace for this project could not be read:{' '}
+              {workspaceLoadError} — it may have been deleted or never created
+              on this machine. Check the repository details above and click
+              Save to re-initialise the workspace (the repos will be
+              re-cloned).
             </div>
           )}
 
