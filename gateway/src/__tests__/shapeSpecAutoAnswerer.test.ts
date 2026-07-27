@@ -212,6 +212,62 @@ describe('driveShapeSpecStream -- resume protocol (CD-1)', () => {
     // Both decisions were surfaced for logging (CD-4).
     expect(decisions).toHaveLength(2);
   });
+
+  it('a non-OK upstream response surfaces the FastAPI `detail` in the error (2026-07-27 — a bare "status 400" left the operator source-diving)', async () => {
+    // The live failure shape: IVS 400s pre-stream with a JSON detail naming
+    // the precondition; the drive must carry that detail into the run error.
+    const rejected = {
+      ok: false,
+      status: 400,
+      text: async () =>
+        JSON.stringify({ detail: 'Project not initialized. Call POST /projects/init first.' }),
+    } as unknown as Response;
+    const { open } = scriptedOpener([rejected]);
+
+    const result = await driveShapeSpecStream({
+      company: 'NatWest Markets',
+      project: 'HiFi Migration',
+      generatedSpecText: SPEC_TEXT,
+      openStream: open,
+      answerBatch: async () => [],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe(
+      'Shape-spec stream returned status 400: Project not initialized. Call POST /projects/init first.'
+    );
+
+    // A non-JSON body is carried raw; an unreadable body degrades to the bare status.
+    const htmlRejected = {
+      ok: false,
+      status: 502,
+      text: async () => 'Bad Gateway',
+    } as unknown as Response;
+    const second = await driveShapeSpecStream({
+      company: 'acme',
+      project: 'order-mig',
+      generatedSpecText: SPEC_TEXT,
+      openStream: scriptedOpener([htmlRejected]).open,
+      answerBatch: async () => [],
+    });
+    expect(second.error).toBe('Shape-spec stream returned status 502: Bad Gateway');
+
+    const unreadable = {
+      ok: false,
+      status: 400,
+      text: async () => {
+        throw new Error('body already consumed');
+      },
+    } as unknown as Response;
+    const third = await driveShapeSpecStream({
+      company: 'acme',
+      project: 'order-mig',
+      generatedSpecText: SPEC_TEXT,
+      openStream: scriptedOpener([unreadable]).open,
+      answerBatch: async () => [],
+    });
+    expect(third.error).toBe('Shape-spec stream returned status 400');
+  });
 });
 
 // ===========================================================================
