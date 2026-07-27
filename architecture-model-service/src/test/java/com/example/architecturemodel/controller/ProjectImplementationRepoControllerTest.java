@@ -163,7 +163,7 @@ class ProjectImplementationRepoControllerTest {
         when(projectService.updateProjectConfig(
                 eq(projectId), eq((Integer) null), eq((Integer) null),
                 eq((Boolean) null), eq(Boolean.FALSE), eq((String) null),
-                eq((String) null)))
+                eq((String) null), eq((String) null)))
             .thenReturn(updated);
 
         // The gateway's init-failure write: only implementation_init_success.
@@ -176,6 +176,6 @@ class ProjectImplementationRepoControllerTest {
         verify(projectService).updateProjectConfig(
             eq(projectId), eq((Integer) null), eq((Integer) null),
             eq((Boolean) null), eq(Boolean.FALSE), eq((String) null),
-            eq((String) null));
+            eq((String) null), eq((String) null));
     }
 }

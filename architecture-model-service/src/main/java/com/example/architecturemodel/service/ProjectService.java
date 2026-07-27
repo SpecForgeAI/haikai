@@ -360,10 +360,33 @@ public class ProjectService {
             Boolean implementationInitSuccess,
             String implementationMode,
             String implementationProjectDir) {
+        return updateProjectConfig(id, perStoryContextTokenCap,
+            crossStoryContextTokenCap, autoRunPass2, implementationInitSuccess,
+            implementationMode, implementationProjectDir, null);
+    }
+
+    /**
+     * Full-width overload adding the single-repo {@code repoUrl} (Edit-project
+     * flow, 2026-07-27). Same null-guarded PATCH semantics -- with ONE
+     * deliberate extension: {@code repoUrl} null = do not change, BLANK =
+     * explicitly clear the column back to null (the poly-repo convention: the
+     * workspace repo map is the authoritative store), non-blank = trim + set
+     * (mirrors the create-time normalisation).
+     */
+    @Transactional
+    public ProjectDto updateProjectConfig(
+            UUID id,
+            Integer perStoryContextTokenCap,
+            Integer crossStoryContextTokenCap,
+            Boolean autoRunPass2,
+            Boolean implementationInitSuccess,
+            String implementationMode,
+            String implementationProjectDir,
+            String repoUrl) {
         log.info("Updating project config for id={}: perStoryCap={}, crossStoryCap={}, autoRunPass2={}, "
-                + "implInitSuccess={}, implMode={}, implProjectDir={}",
+                + "implInitSuccess={}, implMode={}, implProjectDir={}, repoUrl={}",
             id, perStoryContextTokenCap, crossStoryContextTokenCap, autoRunPass2,
-            implementationInitSuccess, implementationMode, implementationProjectDir);
+            implementationInitSuccess, implementationMode, implementationProjectDir, repoUrl);
 
         ProjectEntity entity = projectRepository.findById(id)
             .orElseThrow(() -> new ResourceNotFoundException(
@@ -389,6 +412,10 @@ public class ProjectService {
         }
         if (implementationProjectDir != null) {
             entity.setImplementationProjectDir(implementationProjectDir);
+        }
+        if (repoUrl != null) {
+            // Blank = explicit clear (poly mode); non-blank = trim + set.
+            entity.setRepoUrl(repoUrl.isBlank() ? null : repoUrl.trim());
         }
 
         ProjectEntity saved = projectRepository.save(entity);

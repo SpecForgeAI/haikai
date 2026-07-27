@@ -126,4 +126,30 @@ class ProjectImplementationInitConfigTest {
 
         assertThat(result.implementationInitSuccess()).isTrue();
     }
+
+    @Test
+    @DisplayName("repo_url PATCH semantics (2026-07-27 Edit-project): null preserves, blank clears, non-blank trims + sets")
+    void repoUrlPatchSemantics() {
+        ProjectEntity entity = storedEntity();
+        entity.setRepoUrl("https://github.com/acme/legacy.git");
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(entity));
+        when(projectRepository.save(any(ProjectEntity.class)))
+            .thenAnswer(inv -> inv.getArgument(0));
+
+        // Null = do not change (a config-only PATCH must not wipe the URL).
+        projectService.updateProjectConfig(
+            projectId, 32000, null, null, null, null, null, null);
+        assertThat(entity.getRepoUrl()).isEqualTo("https://github.com/acme/legacy.git");
+
+        // Non-blank = trim + set (the Edit-project Save persists the new URL).
+        projectService.updateProjectConfig(
+            projectId, null, null, null, null, null, null,
+            "  https://github.com/acme/replatform.git  ");
+        assertThat(entity.getRepoUrl()).isEqualTo("https://github.com/acme/replatform.git");
+
+        // Blank = explicit clear (poly mode: the workspace repo map takes over).
+        projectService.updateProjectConfig(
+            projectId, null, null, null, null, null, null, "");
+        assertThat(entity.getRepoUrl()).isNull();
+    }
 }

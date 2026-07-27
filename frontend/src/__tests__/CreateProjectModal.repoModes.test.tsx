@@ -31,6 +31,7 @@ const mockCreateOrganisation = vi.fn();
 const mockListArchitectures = vi.fn();
 const mockInitProjectWorkspace = vi.fn();
 const mockGetImplementationRepoMap = vi.fn();
+const mockUpdateProjectConfig = vi.fn();
 
 vi.mock('../api/projectsApi', async () => {
   const actual = await vi.importActual('../api/projectsApi');
@@ -38,6 +39,7 @@ vi.mock('../api/projectsApi', async () => {
     ...actual,
     createProject: (...args: unknown[]) => mockCreateProject(...args),
     listProjects: () => mockListProjects(),
+    updateProjectConfig: (...args: unknown[]) => mockUpdateProjectConfig(...args),
   };
 });
 
@@ -141,6 +143,7 @@ describe('CreateProjectModal - Single/Poly repo modes (Spec 2026-06-12)', () => 
     mockCreateProject.mockResolvedValue(createdProjectDto);
     mockListArchitectures.mockResolvedValue([]);
     mockInitProjectWorkspace.mockResolvedValue({ success: true, persisted: true });
+    mockUpdateProjectConfig.mockResolvedValue(createdProjectDto);
     mockGetImplementationRepoMap.mockResolvedValue({
       company: 'acme-corp',
       project: 'test-project',
@@ -410,6 +413,66 @@ describe('CreateProjectModal - Single/Poly repo modes (Spec 2026-06-12)', () => 
       repos: { 'legacy-product': 'https://github.com/acme/legacy.git' },
       gitProvider: 'github',
     });
+  });
+
+  it('edit-mode Save PERSISTS the edited repo URL to the database BEFORE running init (2026-07-27)', async () => {
+    const project = makeTestProject({
+      id: 'proj-9',
+      name: 'Legacy Product',
+      organisationId: 'org-1',
+      repoUrl: 'https://github.com/acme/legacy.git',
+      implementationInitSuccess: false,
+    });
+    renderModal({ mode: 'edit', project });
+    await waitFor(() => {
+      expect(screen.getByTestId('organisation-name-input')).toHaveValue('Acme Corp');
+    });
+
+    // Edit the prefilled URL, then Save.
+    fireEvent.change(screen.getByTestId('repo-url-input'), {
+      target: { value: 'https://github.com/acme/replatform.git' },
+    });
+    fireEvent.click(screen.getByTestId('create-button'));
+
+    // The EDITED value lands in the database (pre-fix, Save only re-ran init
+    // and the row kept the stale URL)…
+    await waitFor(() => {
+      expect(mockUpdateProjectConfig).toHaveBeenCalledWith('proj-9', {
+        repoUrl: 'https://github.com/acme/replatform.git',
+      });
+    });
+    // …and init receives the SAME edited URL, AFTER the persist.
+    await waitFor(() => expect(mockInitProjectWorkspace).toHaveBeenCalled());
+    expect(mockInitProjectWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repos: { 'legacy-product': 'https://github.com/acme/replatform.git' },
+      })
+    );
+    expect(mockUpdateProjectConfig.mock.invocationCallOrder[0]).toBeLessThan(
+      mockInitProjectWorkspace.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('edit-mode Save: a DB-save failure blocks init and surfaces inline (the project row is the source of truth)', async () => {
+    mockUpdateProjectConfig.mockRejectedValueOnce(new Error('AMS unavailable'));
+    const project = makeTestProject({
+      id: 'proj-9',
+      name: 'Legacy Product',
+      organisationId: 'org-1',
+      repoUrl: 'https://github.com/acme/legacy.git',
+      implementationInitSuccess: false,
+    });
+    const { onClose } = renderModal({ mode: 'edit', project });
+    await waitFor(() => {
+      expect(screen.getByTestId('organisation-name-input')).toHaveValue('Acme Corp');
+    });
+
+    fireEvent.click(screen.getByTestId('create-button'));
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to save project changes: AMS unavailable/)).toBeInTheDocument();
+    });
+    expect(mockInitProjectWorkspace).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('edit mode post-init: Single/Poly radio is gone and the repo CRUD editor loads the live map', async () => {

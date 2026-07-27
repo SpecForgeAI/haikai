@@ -102,6 +102,7 @@ class ProjectControllerConfigPatchTest {
                 eq(Boolean.TRUE),
                 eq((Boolean) null),
                 eq((String) null),
+                eq((String) null),
                 eq((String) null)))
             .thenReturn(updated);
 
@@ -137,6 +138,7 @@ class ProjectControllerConfigPatchTest {
                 eq((Boolean) null),
                 eq((Boolean) null),
                 eq((String) null),
+                eq((String) null),
                 eq((String) null)))
             .thenReturn(unchanged);
 
@@ -155,6 +157,7 @@ class ProjectControllerConfigPatchTest {
             crossCaptor.capture(),
             autoCaptor.capture(),
             eq((Boolean) null),
+            eq((String) null),
             eq((String) null),
             eq((String) null));
 

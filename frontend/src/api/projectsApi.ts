@@ -513,6 +513,13 @@ export async function updateProjectConfig(
     crossStoryContextTokenCap?: number | null;
     autoRunPass2?: boolean | null;
     maxContractUploadFileSizeMb?: number | null;
+    /**
+     * Single-repo git URL (Edit-project flow, 2026-07-27). Omit = do not
+     * change; EMPTY STRING = explicitly clear the stored URL (the poly-repo
+     * convention — the workspace repo map is the authoritative store);
+     * non-empty = set.
+     */
+    repoUrl?: string;
   }
 ): Promise<ProjectDto> {
   const url = `${API_BASE}/api/projects/${encodeURIComponent(projectId)}`;
@@ -533,6 +540,9 @@ export async function updateProjectConfig(
   if (updates.maxContractUploadFileSizeMb !== undefined) {
     body.max_contract_upload_file_size_mb =
       updates.maxContractUploadFileSizeMb;
+  }
+  if (updates.repoUrl !== undefined) {
+    body.repo_url = updates.repoUrl;
   }
 
   const response = await fetch(url, {

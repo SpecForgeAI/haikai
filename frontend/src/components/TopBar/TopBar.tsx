@@ -238,6 +238,11 @@ export function TopBar({ children }: TopBarProps) {
   // Spec 2026-01-05: Create Project modal state
   const [isCreateProjectModalOpen, setCreateProjectModalOpen] = useState(false);
 
+  // 2026-07-27: Edit Project modal state — the Create modal in EDIT mode,
+  // prefilled with the active project's saved values; Save persists the
+  // changes and (re)registers the implementation workspace (projects/init).
+  const [isEditProjectModalOpen, setEditProjectModalOpen] = useState(false);
+
   // Spec 2026-03-05: Import Decision Modal state (replaces ImportProjectSnapshotModal)
   const [isImportDecisionModalOpen, setImportDecisionModalOpen] = useState(false);
   const [pendingImportSnapshot, setPendingImportSnapshot] = useState<ProjectSnapshotDto | null>(null);
@@ -1368,6 +1373,8 @@ export function TopBar({ children }: TopBarProps) {
         y={fileMenuPosition.y}
         onClose={handleFileMenuClose}
         onCreateProject={handleCreateProject}
+        onEditProject={() => setEditProjectModalOpen(true)}
+        editProjectDisabled={!activeProject}
         onOpenBackend={handleOpenBackend}
         onSave={handleSave}
         saveDisabled={saveDisabled}
@@ -1397,6 +1404,17 @@ export function TopBar({ children }: TopBarProps) {
         isOpen={isCreateProjectModalOpen}
         onClose={() => setCreateProjectModalOpen(false)}
       />
+
+      {/* 2026-07-27: Edit Project Modal — the same modal in EDIT mode for the
+          ACTIVE project (prefilled; Save persists + runs workspace init). */}
+      {activeProject && (
+        <CreateProjectModal
+          isOpen={isEditProjectModalOpen}
+          onClose={() => setEditProjectModalOpen(false)}
+          mode="edit"
+          project={activeProject}
+        />
+      )}
 
       {/* Spec 2026-01-10: Delete Project Modal */}
       <DeleteProjectModal

@@ -136,7 +136,15 @@ public class ProjectController {
         @JsonAlias({"implementationMode", "implementation_mode"})
         String implementationMode,
         @JsonAlias({"implementationProjectDir", "implementation_project_dir"})
-        String implementationProjectDir
+        String implementationProjectDir,
+        /**
+         * Single-repo git URL (Edit-project flow, 2026-07-27). Null = do not
+         * change; BLANK = explicitly clear the column back to null (the
+         * poly-repo convention -- the workspace repo map becomes the
+         * authoritative store); non-blank = trim + set.
+         */
+        @JsonAlias({"repoUrl", "repo_url"})
+        String repoUrl
     ) {
         /**
          * Backward-compatible 3-arg constructor preserving the pre
@@ -148,6 +156,22 @@ public class ProjectController {
                 Boolean autoRunPass2) {
             this(perStoryContextTokenCap, crossStoryContextTokenCap, autoRunPass2,
                 null, null, null);
+        }
+
+        /**
+         * Backward-compatible 6-arg constructor preserving the pre-repoUrl
+         * signature (2026-07-27 Edit-project flow).
+         */
+        public UpdateProjectConfigRequest(
+                Integer perStoryContextTokenCap,
+                Integer crossStoryContextTokenCap,
+                Boolean autoRunPass2,
+                Boolean implementationInitSuccess,
+                String implementationMode,
+                String implementationProjectDir) {
+            this(perStoryContextTokenCap, crossStoryContextTokenCap, autoRunPass2,
+                implementationInitSuccess, implementationMode,
+                implementationProjectDir, null);
         }
     }
 
@@ -296,14 +320,15 @@ public class ProjectController {
             @PathVariable UUID id,
             @RequestBody UpdateProjectConfigRequest request) {
         log.info("PATCH /api/projects/{} (perStoryCap={}, crossStoryCap={}, autoRunPass2={}, "
-                + "implInitSuccess={}, implMode={}, implProjectDir={})",
+                + "implInitSuccess={}, implMode={}, implProjectDir={}, repoUrl={})",
             id,
             request.perStoryContextTokenCap(),
             request.crossStoryContextTokenCap(),
             request.autoRunPass2(),
             request.implementationInitSuccess(),
             request.implementationMode(),
-            request.implementationProjectDir());
+            request.implementationProjectDir(),
+            request.repoUrl());
         ProjectDto updated = projectService.updateProjectConfig(
             id,
             request.perStoryContextTokenCap(),
@@ -311,7 +336,8 @@ public class ProjectController {
             request.autoRunPass2(),
             request.implementationInitSuccess(),
             request.implementationMode(),
-            request.implementationProjectDir());
+            request.implementationProjectDir(),
+            request.repoUrl());
         return ResponseEntity.ok(updated);
     }
 

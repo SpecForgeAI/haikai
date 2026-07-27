@@ -34,7 +34,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { createProject, listProjects, ProjectDto } from '../../api/projectsApi';
+import { createProject, listProjects, updateProjectConfig, ProjectDto } from '../../api/projectsApi';
 // Spec 2026-05-11: architecture-scoped save needs the new project's default architecture id
 import { listArchitectures } from '../../api/architecturesApi';
 import {
@@ -378,8 +378,32 @@ export function CreateProjectModal({
     setError(null);
     setInitError(null);
 
-    // Edit mode: the project already exists -- Save attempts init only.
+    // Edit mode: the project already exists. Save PERSISTS the edited values
+    // to the database FIRST (2026-07-27 — previously Save only re-ran init,
+    // silently discarding the edited repo URL from the project row), then
+    // registers/refreshes the workspace via POST /projects/init. Post-init
+    // projects edit repos through the RepoMapEditor's own CRUD (which
+    // persists as it goes), so the row write applies to the pre-init form.
     if (isEdit && project) {
+      if (!postInit) {
+        try {
+          await updateProjectConfig(project.id, {
+            // Single mode saves the URL; poly mode explicitly clears the
+            // single-repo column (the workspace repo map, persisted by the
+            // init route, becomes the authoritative store).
+            repoUrl: repoMode === 'single' ? repoUrl.trim() : '',
+          });
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? `Failed to save project changes: ${err.message}`
+              : 'Failed to save project changes'
+          );
+          setSubmitStage('idle');
+          setIsSubmitting(false);
+          return;
+        }
+      }
       await runInit(project);
       return;
     }

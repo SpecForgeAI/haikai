@@ -87,6 +87,15 @@ interface FileMenuProps {
   onClose: () => void;
   /** Handler for Create Project action (Spec 2026-01-05) */
   onCreateProject: () => void;
+  /**
+   * Handler for Edit Project action (2026-07-27): opens the Create-Product
+   * modal in EDIT mode, prefilled with the active project's saved values —
+   * Save persists the changes and (re)registers the implementation
+   * workspace via POST /projects/init.
+   */
+  onEditProject?: () => void;
+  /** Whether Edit Project is disabled (no active project). */
+  editProjectDisabled?: boolean;
   /** Handler for Open action (load from backend) */
   onOpenBackend: () => void;
   /** Handler for Save action (Spec 2026-01-11) - immediate save to backend */
@@ -187,6 +196,8 @@ export function FileMenu({
   y,
   onClose,
   onCreateProject,
+  onEditProject,
+  editProjectDisabled = false,
   onOpenBackend,
   onSave,
   saveDisabled,
@@ -266,6 +277,14 @@ export function FileMenu({
   const handleCreateProjectClick = () => {
     onCreateProject();
     onClose();
+  };
+
+  // 2026-07-27: Edit Project handler (disabled without an active project).
+  const handleEditProjectClick = () => {
+    if (!editProjectDisabled && onEditProject) {
+      onEditProject();
+      onClose();
+    }
   };
 
   const handleOpenBackendClick = () => {
@@ -388,6 +407,16 @@ export function FileMenu({
             data-testid="project-menu-create"
           >
             Create
+          </div>
+
+          {/* 2026-07-27: Edit the ACTIVE project — the Create modal in edit
+              mode, prefilled; Save persists + runs workspace init. */}
+          <div
+            className={`${styles.menuItem} ${editProjectDisabled ? styles.menuItemDisabled : ''}`}
+            onClick={handleEditProjectClick}
+            data-testid="project-menu-edit"
+          >
+            Edit
           </div>
 
           {/* Open from backend */}
