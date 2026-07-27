@@ -808,8 +808,8 @@ export async function startMigration(
   deps: MigrationDriverDeps
 ): Promise<StartMigrationResult> {
   // Enforce the documented "normalised company/project" contract HERE — the
-  // UI passes display names ("NatWest Markets"), but the IVS workspace is
-  // addressed by the normalised form ("natwest-markets"); live-confirmed
+  // UI passes display names ("Example Corp"), but the IVS workspace is
+  // addressed by the normalised form ("example-corp"); live-confirmed
   // 2026-07-27: raw names 400 at the IVS precondition gate even after a
   // correct project init. Idempotent.
   scope = normalizeScopeIdentifiers(scope);

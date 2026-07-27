@@ -225,8 +225,8 @@ describe('driveShapeSpecStream -- resume protocol (CD-1)', () => {
     const { open } = scriptedOpener([rejected]);
 
     const result = await driveShapeSpecStream({
-      company: 'NatWest Markets',
-      project: 'HiFi Migration',
+      company: 'Example Corp',
+      project: 'Demo Migration',
       generatedSpecText: SPEC_TEXT,
       openStream: open,
       answerBatch: async () => [],

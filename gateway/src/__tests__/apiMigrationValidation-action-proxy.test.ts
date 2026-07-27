@@ -211,7 +211,7 @@ test('POST /capture-sessions/:sessionId/parse-oas forwards every multipart file 
   const sessionId = 'sess-42';
 
   mockFetch.mockResolvedValueOnce(
-    jsonResponse(200, { sessionId, operationCount: 2, title: 'HiFi', version: '1.0' }),
+    jsonResponse(200, { sessionId, operationCount: 2, title: 'DemoApp', version: '1.0' }),
   );
 
   const app = createTestApp();
@@ -220,8 +220,8 @@ test('POST /capture-sessions/:sessionId/parse-oas forwards every multipart file 
       `/api/v1/projects/${projectId}/architectures/${architectureId}` +
         `/api-behaviour/capture-sessions/${sessionId}/parse-oas`,
     )
-    .attach('file', Buffer.from('<application/>', 'utf8'), 'hifi.wadl')
-    .attach('file', Buffer.from('<xs:schema/>', 'utf8'), 'hifi-types.xsd');
+    .attach('file', Buffer.from('<application/>', 'utf8'), 'demo.wadl')
+    .attach('file', Buffer.from('<xs:schema/>', 'utf8'), 'demo-types.xsd');
 
   expect(res.status).toBe(200);
 
@@ -246,5 +246,5 @@ test('POST /capture-sessions/:sessionId/parse-oas forwards every multipart file 
     .map((p) => (p as { name?: string }).name)
     .filter((n): n is string => typeof n === 'string')
     .sort();
-  expect(names).toEqual(['hifi-types.xsd', 'hifi.wadl']);
+  expect(names).toEqual(['demo-types.xsd', 'demo.wadl']);
 });

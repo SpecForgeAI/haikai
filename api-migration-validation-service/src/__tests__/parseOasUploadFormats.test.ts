@@ -126,7 +126,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 const YAML_OAS = `openapi: 3.0.0
 info:
-  title: HiFi YAML Sample
+  title: Demo YAML Sample
   version: 2.1.0
 paths:
   /widgets:
@@ -170,10 +170,10 @@ test('(a) YAML OAS upload parses into operations with method + path', async () =
 
   const res = await request(app)
     .post(PARSE_URL)
-    .attach('file', Buffer.from(YAML_OAS, 'utf8'), 'hifi.yaml');
+    .attach('file', Buffer.from(YAML_OAS, 'utf8'), 'demo.yaml');
 
   expect(res.status).toBe(200);
-  expect(res.body.title).toBe('HiFi YAML Sample');
+  expect(res.body.title).toBe('Demo YAML Sample');
   expect(res.body.version).toBe('2.1.0');
   expect(res.body.operationCount).toBe(2);
 
@@ -195,10 +195,10 @@ test('(a) YAML OAS upload parses into operations with method + path', async () =
 // ---------------------------------------------------------------------------
 // (b) WADL + sibling XSD -> typed REST operations
 // ---------------------------------------------------------------------------
-const HIFI_XSD = `<?xml version="1.0" encoding="UTF-8"?>
+const DEMO_XSD = `<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           xmlns:tns="http://hifi.example.com/types"
-           targetNamespace="http://hifi.example.com/types"
+           xmlns:tns="http://demo.example.com/types"
+           targetNamespace="http://demo.example.com/types"
            elementFormDefault="qualified">
   <xs:element name="createOrderRequest" type="tns:OrderRequest"/>
   <xs:element name="createOrderResponse" type="tns:OrderResponse"/>
@@ -226,14 +226,14 @@ const HIFI_XSD = `<?xml version="1.0" encoding="UTF-8"?>
 </xs:schema>
 `;
 
-const HIFI_WADL = `<?xml version="1.0" encoding="UTF-8"?>
+const DEMO_WADL = `<?xml version="1.0" encoding="UTF-8"?>
 <application xmlns="http://wadl.dev.java.net/2009/02"
-             xmlns:tns="http://hifi.example.com/types">
-  <doc title="HiFi Orders API" version="3.0.0"/>
+             xmlns:tns="http://demo.example.com/types">
+  <doc title="Demo Orders API" version="3.0.0"/>
   <grammars>
-    <include href="hifi-types.xsd"/>
+    <include href="demo-types.xsd"/>
   </grammars>
-  <resources base="https://api.hifi.example.com/">
+  <resources base="https://api.demo.example.com/">
     <resource path="/orders">
       <method name="POST" id="createOrder">
         <doc>Create an order</doc>
@@ -264,11 +264,11 @@ test('(b) WADL + XSD upload yields REST operations with method/path AND XSD-deri
 
   const res = await request(app)
     .post(PARSE_URL)
-    .attach('file', Buffer.from(HIFI_WADL, 'utf8'), 'hifi.wadl')
-    .attach('file', Buffer.from(HIFI_XSD, 'utf8'), 'hifi-types.xsd');
+    .attach('file', Buffer.from(DEMO_WADL, 'utf8'), 'demo.wadl')
+    .attach('file', Buffer.from(DEMO_XSD, 'utf8'), 'demo-types.xsd');
 
   expect(res.status).toBe(200);
-  expect(res.body.title).toBe('HiFi Orders API');
+  expect(res.body.title).toBe('Demo Orders API');
   expect(res.body.version).toBe('3.0.0');
   expect(res.body.operationCount).toBe(2);
 
@@ -315,15 +315,15 @@ test('(c) WADL whose grammar XSD was NOT uploaded returns a 400 naming the missi
   const { mock, operationsCreated } = buildArchModelClientMock();
   const app = buildApp({ archModelClient: mock as any });
 
-  // Upload the WADL ONLY -- omit hifi-types.xsd.
+  // Upload the WADL ONLY -- omit demo-types.xsd.
   const res = await request(app)
     .post(PARSE_URL)
-    .attach('file', Buffer.from(HIFI_WADL, 'utf8'), 'hifi.wadl');
+    .attach('file', Buffer.from(DEMO_WADL, 'utf8'), 'demo.wadl');
 
   expect(res.status).toBe(400);
   expect(res.body.error.code).toBe('WADL_MISSING_GRAMMARS');
-  expect(res.body.error.message).toContain('hifi-types.xsd');
-  expect(res.body.error.missingGrammars).toContain('hifi-types.xsd');
+  expect(res.body.error.message).toContain('demo-types.xsd');
+  expect(res.body.error.missingGrammars).toContain('demo-types.xsd');
   // No operations were persisted on the guard path.
   expect(operationsCreated).toHaveLength(0);
 });
@@ -337,8 +337,8 @@ test('(c) WADL whose grammar XSD was NOT uploaded returns a 400 naming the missi
 const SOAP_WSDL = `<?xml version="1.0" encoding="UTF-8"?>
 <wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
                   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
-                  xmlns:tns="http://hifi.example.com/soap"
-                  targetNamespace="http://hifi.example.com/soap">
+                  xmlns:tns="http://demo.example.com/soap"
+                  targetNamespace="http://demo.example.com/soap">
   <wsdl:message name="createOrderRequest">
     <wsdl:part name="parameters" element="tns:createOrder"/>
   </wsdl:message>
@@ -350,12 +350,12 @@ const SOAP_WSDL = `<?xml version="1.0" encoding="UTF-8"?>
   <wsdl:binding name="OrdersBinding" type="tns:OrdersPort">
     <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
     <wsdl:operation name="createOrder">
-      <soap:operation soapAction="http://hifi.example.com/soap/createOrder"/>
+      <soap:operation soapAction="http://demo.example.com/soap/createOrder"/>
     </wsdl:operation>
   </wsdl:binding>
   <wsdl:service name="OrdersService">
     <wsdl:port name="OrdersPortSoap" binding="tns:OrdersBinding">
-      <soap:address location="http://hifi.example.com/services/orders"/>
+      <soap:address location="http://demo.example.com/services/orders"/>
     </wsdl:port>
   </wsdl:service>
 </wsdl:definitions>
@@ -380,9 +380,9 @@ test('(d) WSDL upload parses into POST operations carrying x-amvs-soap (Spec 202
   expect(op.operation_id).toBe('createOrder');
   const soapBlock = op.oas_operation_json?.['x-amvs-soap'] as Record<string, unknown>;
   expect(soapBlock).toMatchObject({
-    soap_action: 'http://hifi.example.com/soap/createOrder',
+    soap_action: 'http://demo.example.com/soap/createOrder',
     request_root_element: 'createOrder',
-    request_namespace: 'http://hifi.example.com/soap',
+    request_namespace: 'http://demo.example.com/soap',
   });
 });
 
@@ -412,7 +412,7 @@ test('(e) a lone XSD upload (no WADL) returns the friendly "upload the WADL too"
 
   const res = await request(app)
     .post(PARSE_URL)
-    .attach('file', Buffer.from(HIFI_XSD, 'utf8'), 'hifi-types.xsd');
+    .attach('file', Buffer.from(DEMO_XSD, 'utf8'), 'demo-types.xsd');
 
   expect(res.status).toBe(400);
   expect(res.body.error.code).toBe('XSD_WITHOUT_WADL');
@@ -458,14 +458,14 @@ function buildDiscoveryStub(files: Record<string, string>): DiscoveryServiceClie
 }
 
 test('(f) WADL spec_link is fetched with its sibling XSD from the cached clone and adapted to REST operations', async () => {
-  const wadlPath = 'src/main/resources/hifi.wadl';
-  // The WADL's grammar href is relative (`hifi-types.xsd`) -> resolves to the
+  const wadlPath = 'src/main/resources/demo.wadl';
+  // The WADL's grammar href is relative (`demo-types.xsd`) -> resolves to the
   // sibling repo path next to the WADL.
-  const xsdPath = 'src/main/resources/hifi-types.xsd';
+  const xsdPath = 'src/main/resources/demo-types.xsd';
 
   const iface = {
     id: 'iface-wadl-1',
-    name: 'HiFi Orders (WADL)',
+    name: 'Demo Orders (WADL)',
     spec_link: wadlPath,
     architecture_id: ARCH_ID,
   };
@@ -475,8 +475,8 @@ test('(f) WADL spec_link is fetched with its sibling XSD from the cached clone a
   mock.listInterfacesForArchitecture = jest.fn(async () => [iface]) as any;
 
   const discoveryServiceClient = buildDiscoveryStub({
-    [wadlPath]: HIFI_WADL,
-    [xsdPath]: HIFI_XSD,
+    [wadlPath]: DEMO_WADL,
+    [xsdPath]: DEMO_XSD,
   });
 
   const app = buildApp({ archModelClient: mock as any, discoveryServiceClient });
@@ -509,11 +509,11 @@ test('(f) WADL spec_link is fetched with its sibling XSD from the cached clone a
 });
 
 test('(f2) WADL spec_link whose grammar XSD is missing from the clone returns the missing-grammar 400', async () => {
-  const wadlPath = 'src/main/resources/hifi.wadl';
+  const wadlPath = 'src/main/resources/demo.wadl';
 
   const iface = {
     id: 'iface-wadl-2',
-    name: 'HiFi Orders (WADL, no grammar)',
+    name: 'Demo Orders (WADL, no grammar)',
     spec_link: wadlPath,
     architecture_id: ARCH_ID,
   };
@@ -523,7 +523,7 @@ test('(f2) WADL spec_link whose grammar XSD is missing from the clone returns th
   mock.listInterfacesForArchitecture = jest.fn(async () => [iface]) as any;
 
   // Only the WADL is in the clone -- the XSD grammar is absent.
-  const discoveryServiceClient = buildDiscoveryStub({ [wadlPath]: HIFI_WADL });
+  const discoveryServiceClient = buildDiscoveryStub({ [wadlPath]: DEMO_WADL });
 
   const app = buildApp({ archModelClient: mock as any, discoveryServiceClient });
 
@@ -537,6 +537,6 @@ test('(f2) WADL spec_link whose grammar XSD is missing from the clone returns th
 
   expect(res.status).toBe(400);
   expect(res.body.error.code).toBe('WADL_MISSING_GRAMMARS');
-  expect(res.body.error.missingGrammars).toContain('hifi-types.xsd');
+  expect(res.body.error.missingGrammars).toContain('demo-types.xsd');
   expect(operationsCreated).toHaveLength(0);
 });

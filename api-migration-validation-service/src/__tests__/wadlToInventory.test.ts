@@ -29,8 +29,8 @@ import type { OpenAPIV3 } from 'openapi-types';
 
 const NESTED_XSD = `<?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           xmlns:tns="http://hifi.example.com/types"
-           targetNamespace="http://hifi.example.com/types">
+           xmlns:tns="http://demo.example.com/types"
+           targetNamespace="http://demo.example.com/types">
   <xs:element name="placeOrderRequest" type="tns:PlaceOrder"/>
   <xs:complexType name="PlaceOrder">
     <xs:sequence>
@@ -151,12 +151,12 @@ describe('xsdSchemaModel.paramSchemaFromXsdType', () => {
 
 const WADL = `<?xml version="1.0" encoding="UTF-8"?>
 <application xmlns="http://wadl.dev.java.net/2009/02"
-             xmlns:tns="http://hifi.example.com/types">
-  <doc title="HiFi Orders" version="9.9"/>
+             xmlns:tns="http://demo.example.com/types">
+  <doc title="Demo Orders" version="9.9"/>
   <grammars>
     <include href="types.xsd"/>
   </grammars>
-  <resources base="https://api.hifi.example.com/">
+  <resources base="https://api.demo.example.com/">
     <resource path="/orders">
       <method name="POST" id="placeOrder">
         <request>
@@ -181,7 +181,7 @@ describe('wadlToInventory', () => {
     expect(result.missingGrammars).toHaveLength(0);
 
     const inventory = wadlToInventory(result, xsd);
-    expect(inventory.title).toBe('HiFi Orders');
+    expect(inventory.title).toBe('Demo Orders');
     expect(inventory.version).toBe('9.9');
     expect(inventory.operations).toHaveLength(2);
 
@@ -225,12 +225,12 @@ describe('wadlToInventory', () => {
 const PARAM_WADL = `<?xml version="1.0" encoding="UTF-8"?>
 <application xmlns="http://wadl.dev.java.net/2009/02"
              xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-             xmlns:tns="http://hifi.example.com/types">
-  <doc title="HiFi Orders" version="9.9"/>
+             xmlns:tns="http://demo.example.com/types">
+  <doc title="Demo Orders" version="9.9"/>
   <grammars>
     <include href="types.xsd"/>
   </grammars>
-  <resources base="https://api.hifi.example.com/">
+  <resources base="https://api.demo.example.com/">
     <resource path="/orders/{orderDate}">
       <param name="orderDate" style="template" type="xsd:date"/>
       <method name="GET" id="findOrders">
@@ -302,8 +302,8 @@ describe('wadlToInventory param XSD typing', () => {
 const MULTI_SEGMENT_WADL = `<?xml version="1.0" encoding="UTF-8"?>
 <application xmlns="http://wadl.dev.java.net/2009/02"
              xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <doc title="HiFi Hierarchy" version="3.0"/>
-  <resources base="https://api.hifi.example.com/">
+  <doc title="Demo Hierarchy" version="3.0"/>
+  <resources base="https://api.demo.example.com/">
     <resource path="/hierarchynodes/{cobDate}">
       <param name="cobDate" style="template" type="xsd:date"/>
       <resource path="{orgId}">
@@ -323,8 +323,8 @@ const MULTI_SEGMENT_WADL = `<?xml version="1.0" encoding="UTF-8"?>
 const MULTI_SEGMENT_UNDECLARED_WADL = `<?xml version="1.0" encoding="UTF-8"?>
 <application xmlns="http://wadl.dev.java.net/2009/02"
              xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <doc title="HiFi Hierarchy" version="3.0"/>
-  <resources base="https://api.hifi.example.com/">
+  <doc title="Demo Hierarchy" version="3.0"/>
+  <resources base="https://api.demo.example.com/">
     <resource path="/hierarchynodes/{cobDate}/{orgId}">
       <param name="cobDate" style="template" type="xsd:date"/>
       <method name="POST" id="createHierarchyNode"/>

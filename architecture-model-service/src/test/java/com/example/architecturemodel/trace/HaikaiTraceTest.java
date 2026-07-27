@@ -58,7 +58,7 @@ class HaikaiTraceTest {
         HaikaiTrace.Tracer t = HaikaiTrace.forService("ams");
         t.fail(
             "plan readiness INSUFFICIENT — baselines=0; gaps: no_api_baseline, inventory_mismatch",
-            HaikaiTrace.Corr.of().project("HiFi SVC DB Migration").arch("Current State"));
+            HaikaiTrace.Corr.of().project("Demo SVC DB Migration").arch("Current State"));
 
         String line = onlyLine();
 
@@ -72,7 +72,7 @@ class HaikaiTraceTest {
         assertThat(parts[1]).isEqualTo("[SUMMARY]");
         assertThat(parts[2]).isEqualTo("ams");
         // corr: stable order project before arch; the value with a space is quoted.
-        assertThat(parts[3]).isEqualTo("project=\"HiFi SVC DB Migration\" arch=\"Current State\"");
+        assertThat(parts[3]).isEqualTo("project=\"Demo SVC DB Migration\" arch=\"Current State\"");
         // body: glyph + space + message.
         assertThat(parts[4]).isEqualTo(
             "✗ plan readiness INSUFFICIENT — baselines=0; gaps: no_api_baseline, inventory_mismatch");
@@ -120,7 +120,7 @@ class HaikaiTraceTest {
         data.put("gaps", List.of("no_api_baseline"));
 
         t.detail("readiness.assessed", data,
-            HaikaiTrace.Corr.of().project("HiFi SVC DB Migration").arch("Current State"));
+            HaikaiTrace.Corr.of().project("Demo SVC DB Migration").arch("Current State"));
 
         String line = onlyLine();
         assertThat(line).matches("^\\S+  \\[detail\\]  ams  .*");
@@ -130,11 +130,11 @@ class HaikaiTraceTest {
         assertThat(parts[0]).matches(TS);
         assertThat(parts[1]).isEqualTo("[detail]");
         assertThat(parts[2]).isEqualTo("ams");
-        assertThat(parts[3]).isEqualTo("project=\"HiFi SVC DB Migration\" arch=\"Current State\"");
+        assertThat(parts[3]).isEqualTo("project=\"Demo SVC DB Migration\" arch=\"Current State\"");
         // event + compact JSON; corr ids merged FIRST, in CORR_ORDER, then data.
         assertThat(parts[4]).isEqualTo(
             "readiness.assessed "
-                + "{\"project\":\"HiFi SVC DB Migration\",\"arch\":\"Current State\","
+                + "{\"project\":\"Demo SVC DB Migration\",\"arch\":\"Current State\","
                 + "\"verdict\":\"insufficient\",\"totalBaselines\":0,"
                 + "\"gaps\":[\"no_api_baseline\"]}");
     }
@@ -201,11 +201,11 @@ class HaikaiTraceTest {
 
     @Test
     void runHeaderHasLeadingBlankDelimiterAndQuotesNames() throws IOException {
-        HaikaiTrace.forService("ams").runHeader("mig-7f3", "HiFi SVC DB Migration", "Current State");
+        HaikaiTrace.forService("ams").runHeader("mig-7f3", "Demo SVC DB Migration", "Current State");
         // A leading blank line delimits runs in the shared append-only file.
         assertThat(Files.readAllLines(traceFile, StandardCharsets.UTF_8).get(0)).isEmpty();
         String line = onlyLine();
-        assertThat(line).startsWith("=== HAIKAI TRACE  run=mig-7f3 project=\"HiFi SVC DB Migration\" arch=\"Current State\"  ");
+        assertThat(line).startsWith("=== HAIKAI TRACE  run=mig-7f3 project=\"Demo SVC DB Migration\" arch=\"Current State\"  ");
         assertThat(line).endsWith(" ===");
         // The ts inside the header is ms-UTC-Z.
         assertThat(line).matches(".*  \\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z ===$");

@@ -71,7 +71,7 @@ class SecurityFindingIngestionServiceTest {
     private UUID architectureId;
 
     private static final String APP_MRX = "app-mrx";
-    private static final String APP_HIFI = "app-hifi";
+    private static final String APP_DEMO = "app-demo";
     private static final String COMP_CORE = "comp-core";
     private static final String SVC_PAY = "svc-pay";
     private static final String SVC_WEB = "svc-web";
@@ -83,7 +83,7 @@ class SecurityFindingIngestionServiceTest {
         applicationRepository.save(ApplicationEntity.builder()
             .id(APP_MRX).modelFileId("mf-1").name("MRX").abbreviation("MRX").build());
         applicationRepository.save(ApplicationEntity.builder()
-            .id(APP_HIFI).modelFileId("mf-1").name("HiFi").abbreviation("HIFI").build());
+            .id(APP_DEMO).modelFileId("mf-1").name("DemoApp").abbreviation("DEMOAPP").build());
         // Hierarchy under MRX: Core component -> payments service (with repo).
         componentRepository.save(ApplicationComponentEntity.builder()
             .id(COMP_CORE).modelFileId("mf-1").applicationId(APP_MRX).name("Core").build());
@@ -91,9 +91,9 @@ class SecurityFindingIngestionServiceTest {
             .id(SVC_PAY).modelFileId("mf-1").applicationId(APP_MRX)
             .applicationComponentId(COMP_CORE).name("payments")
             .repoLocation("https://gitlab.example.com/grh/payments.git").build());
-        // Service directly under HiFi (no component).
+        // Service directly under DemoApp (no component).
         serviceRepository.save(ServiceEntity.builder()
-            .id(SVC_WEB).modelFileId("mf-1").applicationId(APP_HIFI).name("web").build());
+            .id(SVC_WEB).modelFileId("mf-1").applicationId(APP_DEMO).name("web").build());
     }
 
     /** App-level row using the PRE-213 applicationId wire field (fallback path). */
@@ -134,7 +134,7 @@ class SecurityFindingIngestionServiceTest {
             List.of(
                 row("MRX", APP_MRX, "auto", "High", "Spring DoS", "1949555",
                     List.of("CVE-2024-38808"), List.of("CWE-770")),
-                row("HiFi", APP_HIFI, "manual", "medium", "SQL Injection", "1949556",
+                row("DemoApp", APP_DEMO, "manual", "medium", "SQL Injection", "1949556",
                     List.of(), List.of("CWE-89")),
                 row("Unknown App", null, null, "critical", "Orphan finding", "1949557",
                     List.of("CVE-2024-38808"), List.of())));
@@ -150,7 +150,7 @@ class SecurityFindingIngestionServiceTest {
                     "Spring DoS in payments", "d", null, "pom.xml", "grh/payments/1",
                     null, "svc-1",
                     List.of(), List.of("CVE-2024-38808"), List.of("CWE-770")),
-                rowAt("hifi/web", SVC_WEB, "manual", "medium", "XSS in web", "svc-2"),
+                rowAt("demo/web", SVC_WEB, "manual", "medium", "XSS in web", "svc-2"),
                 rowAt("unknown/repo", null, null, "critical", "Orphan svc finding", "svc-3")));
         return ingestionService.ingest(projectId, architectureId, request);
     }
@@ -271,9 +271,9 @@ class SecurityFindingIngestionServiceTest {
         assertThat(unmatchedOnly.total()).isEqualTo(1);
         assertThat(unmatchedOnly.data().get(0).get("application_name")).isNull();
 
-        SecurityRegisterResponse byApp = registerByApp(APP_HIFI, null, null);
+        SecurityRegisterResponse byApp = registerByApp(APP_DEMO, null, null);
         assertThat(byApp.total()).isEqualTo(1);
-        assertThat(byApp.data().get(0).get("linking_value")).isEqualTo("HiFi");
+        assertThat(byApp.data().get(0).get("linking_value")).isEqualTo("DemoApp");
 
         SecurityRegisterResponse narrow = registerByApp(null, null,
             List.of("finding_id", "severity_reported", "no_such_column"));
@@ -298,13 +298,13 @@ class SecurityFindingIngestionServiceTest {
         Map<String, Object> webRow = all.data().stream()
             .filter(r -> "web".equals(r.get("service_name")))
             .findFirst().orElseThrow();
-        assertThat(webRow.get("application_name")).isEqualTo("HiFi");
+        assertThat(webRow.get("application_name")).isEqualTo("DemoApp");
         assertThat(webRow.get("application_component_name")).isNull();
 
         // Ancestor-aware filters: an application filter matches its services'
         // findings; component and service filters narrow further.
         assertThat(registerByApp(APP_MRX, null, null).total()).isEqualTo(1);
-        assertThat(registerByApp(APP_HIFI, null, null).total()).isEqualTo(1);
+        assertThat(registerByApp(APP_DEMO, null, null).total()).isEqualTo(1);
         assertThat(registerService.register(projectId, architectureId, null,
             null, COMP_CORE, null, null, null, null, null, 0, 50).total()).isEqualTo(1);
         assertThat(registerService.register(projectId, architectureId, null,
@@ -335,7 +335,7 @@ class SecurityFindingIngestionServiceTest {
             })
             .anySatisfy(e -> {
                 assertThat(e.entityId()).isEqualTo(SVC_WEB);
-                assertThat(e.applicationId()).isEqualTo(APP_HIFI);
+                assertThat(e.applicationId()).isEqualTo(APP_DEMO);
                 assertThat(e.applicationComponentId()).isNull();
             });
         assertThat(rollup.unmatched()).containsEntry("critical", 1L);
@@ -391,7 +391,7 @@ class SecurityFindingIngestionServiceTest {
                 assertThat(e.counts()).containsEntry("high", 1L);
             })
             .anySatisfy(e -> {
-                assertThat(e.applicationName()).isEqualTo("HiFi");
+                assertThat(e.applicationName()).isEqualTo("DemoApp");
                 assertThat(e.counts()).containsEntry("medium", 1L);
             });
         // ...and the level-generic entities list mirrors it.
@@ -420,8 +420,8 @@ class SecurityFindingIngestionServiceTest {
         List<SecurityLinkingAliasDto> taught = aliasService.upsert(projectId,
             new UpsertSecurityAliasesRequest("application", List.of(
                 new UpsertSecurityAliasesRequest.AliasPair("MRX (Risk)", APP_MRX, "MRX"),
-                new UpsertSecurityAliasesRequest.AliasPair("HiFi Prod", APP_HIFI, "HiFi"),
-                new UpsertSecurityAliasesRequest.AliasPair("  ", APP_HIFI, "skipped"))));
+                new UpsertSecurityAliasesRequest.AliasPair("DemoApp Prod", APP_DEMO, "DemoApp"),
+                new UpsertSecurityAliasesRequest.AliasPair("  ", APP_DEMO, "skipped"))));
         assertThat(taught).hasSize(2);
 
         // Aliases are level-scoped: teaching at service level is independent.
@@ -434,11 +434,11 @@ class SecurityFindingIngestionServiceTest {
         // Re-teach one alias to a different entity: updated, not duplicated.
         aliasService.upsert(projectId,
             new UpsertSecurityAliasesRequest("application", List.of(
-                new UpsertSecurityAliasesRequest.AliasPair("MRX (Risk)", APP_HIFI, "HiFi"))));
+                new UpsertSecurityAliasesRequest.AliasPair("MRX (Risk)", APP_DEMO, "DemoApp"))));
         List<SecurityLinkingAliasDto> listed = aliasService.list(projectId, "application");
         assertThat(listed).hasSize(2);
         assertThat(listed).filteredOn(a -> a.aliasValue().equals("MRX (Risk)"))
             .singleElement()
-            .satisfies(a -> assertThat(a.entityId()).isEqualTo(APP_HIFI));
+            .satisfies(a -> assertThat(a.entityId()).isEqualTo(APP_DEMO));
     }
 }

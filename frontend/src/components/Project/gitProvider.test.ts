@@ -16,7 +16,7 @@ describe('deriveGitProvider', () => {
 
   it('derives gitlab from self-hosted / dedicated gitlab hosts', () => {
     expect(
-      deriveGitProvider('https://natwest.gitlab-dedicated.com/natwestgroup/DigitalX/Commercial'),
+      deriveGitProvider('https://example.gitlab-dedicated.com/examplegroup/platform/backend'),
     ).toBe('gitlab');
   });
 

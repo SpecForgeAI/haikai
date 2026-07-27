@@ -12,7 +12,7 @@
  * (`InventoryReconciliationCalculator`). The gateway MUST NOT reimplement that
  * match — it consumes this payload verbatim. This replaces the old
  * baseline-NAME substring match in the phase-2 expansion, which never matched a
- * descriptively-named baseline ("HiFi API Baseline v1") and therefore reported
+ * descriptively-named baseline ("Demo API Baseline v1") and therefore reported
  * every endpoint as "missing baseline".
  *
  * Spec: Migration Delivery Plan expansion — endpoint↔baseline coverage
