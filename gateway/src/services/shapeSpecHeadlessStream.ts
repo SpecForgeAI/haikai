@@ -20,6 +20,10 @@
  *   3. On stream conclusion (`folder` + `session`) capture the `spec_name`
  *      (the `folder`) for the orchestration handoff and the `session_id` (the
  *      `session`) for the `SpecIntent` only -- NOT for shape-spec resume.
+ *      NOTE (2026-07-28): the `folder` event marks WHERE the spec lives, not
+ *      that shaping FINISHED -- it can arrive in the same turn as a questions
+ *      batch, and the Q&A must still run (requirements.md is written on the
+ *      post-answer resume turn). Only a turn with no questions concludes.
  *
  * The upstream POST is injected as {@link ShapeSpecStreamOpener} so the drive is
  * unit-testable without any network; production passes the real `requestStream`
@@ -369,12 +373,20 @@ export async function driveShapeSpecStream(
 
     let rounds = 0;
     // Answer-then-resume loop: while the concluded turn carried a questions
-    // batch (and we have not captured the folder), answer it and resume.
-    while (state.pendingQuestions && state.pendingQuestions.length > 0 && !state.specName) {
+    // batch, answer it and resume — REGARDLESS of whether the folder has
+    // already been captured. 2026-07-28 live failure: shape-spec created the
+    // spec folder and asked its 6 clarifying questions in the SAME first
+    // turn; the old `!state.specName` guard treated the early folder as
+    // "concluded", skipped the Q&A entirely (decisionCount:0), and the drive
+    // returned ok:true for a HALF-shaped spec — requirements.md is only
+    // written on the post-answer resume turn, so the orchestration's step-0
+    // pre-check refused the job. The folder event marks WHERE the spec lives,
+    // not that shaping is finished; only a turn with no questions ends it.
+    while (state.pendingQuestions && state.pendingQuestions.length > 0) {
       if (rounds >= MAX_RESUME_ROUNDS) {
         return {
           ok: false,
-          specName: null,
+          specName: state.specName,
           sessionId: state.sessionId,
           decisionLog: state.decisionLog,
           error: `Shape-spec stream exceeded ${MAX_RESUME_ROUNDS} resume rounds without concluding.`,
