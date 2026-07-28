@@ -214,6 +214,49 @@ describe('driveShapeSpecStream -- resume protocol (CD-1)', () => {
     expect(decisions).toHaveLength(2);
   });
 
+  it('answers the questions even when `folder` arrived in the SAME turn (2026-07-28 — the early folder skipped the Q&A, requirements.md was never written, and the orchestration pre-check refused)', async () => {
+    // The live race: shape-spec created the spec folder AND asked its 6
+    // clarifying questions in one turn. The old `!state.specName` loop guard
+    // treated the early folder as "concluded" — decisionCount:0, drive
+    // ok:true, half-shaped spec submitted. The folder event marks WHERE the
+    // spec lives, not that shaping finished.
+    const turn1 = sseResponse([
+      'data: {"type":"session","session_id":"sess-1"}',
+      'data: {"type":"folder","folder":"2026-07-28-seed-postgresql-schema-foundations"}',
+      'data: {"type":"questions","questions":[{"id":"q1","question":"Which schema owns dbo?"},{"id":"q2","question":"Preserve identity seeds?"}]}',
+      'data: {"type":"done"}',
+    ]);
+    // The post-answer resume turn (where requirements.md gets written).
+    const turn2 = sseResponse(['data: {"type":"done"}']);
+    const { open, bodies } = scriptedOpener([turn1, turn2]);
+
+    const decisions: Array<{ question: string; answer: string; rationale: string }> = [];
+    const result = await driveShapeSpecStream({
+      company: 'acme',
+      project: 'order-mig',
+      generatedSpecText: SPEC_TEXT,
+      openStream: open,
+      answerBatch: async (questions) =>
+        questions.map((q) => ({
+          question: q.question,
+          answer: `Answer to ${q.id}`,
+          rationale: 'grounded',
+        })),
+      onDecision: (d) => decisions.push(d),
+    });
+
+    // The drive still concludes ok with the captured folder…
+    expect(result.ok).toBe(true);
+    expect(result.specName).toBe('2026-07-28-seed-postgresql-schema-foundations');
+    // …but ONLY AFTER the Q&A ran: both questions answered + resumed.
+    expect(decisions).toHaveLength(2);
+    const sent = bodies();
+    expect(sent).toHaveLength(2);
+    expect(sent[1].session_mode).toBe('resume');
+    expect(sent[1].message).toContain('Answer to q1');
+    expect(sent[1].message).toContain('Answer to q2');
+  });
+
   it('turn 1 leads with the shaping contract; resume answers do NOT repeat it (2026-07-28 — a carriage spec\'s "write these files" body made the agent implement instead of shape)', async () => {
     // Live failure: the DB-pack carriage spec text is imperative ("Write every
     // file ... byte-for-byte" + full file bodies). Fed raw, the shaping agent
