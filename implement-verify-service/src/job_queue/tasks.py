@@ -862,6 +862,12 @@ def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
     workspace_dir = os.getenv("API_WORKSPACE_DIR")
     if not workspace_dir:
         raise ValueError("API_WORKSPACE_DIR environment variable is required.")
+    # ABSOLUTE, always (2026-07-28): a relative value (the literal env string
+    # "api_workspace") split the run in two — git resolved worktree dests
+    # against the live repo (`-C`), Python against the process cwd. Normalise
+    # here so every derived path (run root, seeding, git dests, repo-target
+    # resolution) agrees.
+    workspace_dir = str(Path(workspace_dir).resolve())
 
     session_id = get_active_session(
         Path(workspace_dir), request.company, request.project
@@ -1106,7 +1112,9 @@ def run_orchestration(job_id: str, storage: JobStorage):
     graph_ctx = None  # run-flow-graph context; set after the request resolves
     request = None
     run_workspace, run_worktrees = None, []  # parallel-worktrees (spec v2)
-    workspace_dir = os.getenv("API_WORKSPACE_DIR", ".")
+    # Absolute for the same reason as _resolve_request_context (this binding
+    # only serves the finally-block before the resolve happens).
+    workspace_dir = str(Path(os.getenv("API_WORKSPACE_DIR", ".")).resolve())
     try:
         # Mark RUNNING — no-op for the worker path that already claimed
         # atomically, but records started_at/worker_id for the

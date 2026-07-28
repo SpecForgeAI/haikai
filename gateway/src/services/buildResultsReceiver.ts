@@ -213,18 +213,32 @@ export async function processBuildResult(
   // The Driver advance correlates on the globally-unique job_id and recovers the
   // authoritative project id from the run-item's run, so the door passes
   // company/project through for traceability only.
-  const decision = await advanceRunOnBuildResult(
-    {
-      company,
-      project,
-      jobId: jobId as string,
-      outcome: outcome as BuildResultOutcome,
-      prUrl,
-      targetBaseUrl,
-      summary,
-    },
-    deps
-  );
+  let decision: AdvanceDecision;
+  try {
+    decision = await advanceRunOnBuildResult(
+      {
+        company,
+        project,
+        jobId: jobId as string,
+        outcome: outcome as BuildResultOutcome,
+        prUrl,
+        targetBaseUrl,
+        summary,
+      },
+      deps
+    );
+  } catch (error) {
+    // 2026-07-28: an advance exception (e.g. an AMS read hiccup) used to
+    // escape as an opaque 500 — the caller's log showed only "returned 500".
+    // Keep the door's never-throw contract: structured 502 naming the cause.
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('[diag-gateway] migration_execution_driver build_results_advance_threw', {
+      jobId,
+      outcome,
+      error: message,
+    });
+    return { status: 502, body: { error: `driver advance failed: ${message}` } };
+  }
 
   if (decision === 'run_item_not_found') {
     logger.warn('[diag-gateway] migration_execution_driver build_results_unknown_job', {

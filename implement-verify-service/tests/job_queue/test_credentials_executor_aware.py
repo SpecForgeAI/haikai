@@ -11,6 +11,7 @@ already uses.
 from __future__ import annotations
 
 import types
+from pathlib import Path
 
 import pytest
 
@@ -63,6 +64,20 @@ def test_key_still_flows_through_when_present(base_env):
 
     _request, key, _ws, _sid = _resolve_request_context(_job())
     assert key == "sk-test"
+
+
+def test_workspace_dir_is_resolved_to_absolute(base_env, tmp_path):
+    # 2026-07-28: a RELATIVE API_WORKSPACE_DIR ("api_workspace") made git and
+    # Python resolve the run's worktree paths against DIFFERENT bases. The
+    # prologue now normalises it once for everything downstream.
+    base_env.setenv("CHAT_EXECUTOR", "kiro")
+    base_env.chdir(tmp_path)
+    base_env.setenv("API_WORKSPACE_DIR", "relative-ws")
+
+    _request, _key, workspace_dir, _sid = _resolve_request_context(_job())
+
+    assert Path(workspace_dir).is_absolute()
+    assert Path(workspace_dir) == (tmp_path / "relative-ws").resolve()
 
 
 def test_placeholder_spec_name_fails_at_the_prologue(base_env):
