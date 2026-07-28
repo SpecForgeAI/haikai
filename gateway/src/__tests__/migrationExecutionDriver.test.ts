@@ -34,6 +34,7 @@ import {
   startMigration,
   advanceRunOnBuildResult,
   recoverInFlightRuns,
+  haltMigrationRunByOperator,
   MigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -719,5 +720,74 @@ describe('recoverInFlightRuns', () => {
     );
     expect(result.recovered).toBe(0);
     expect(result.rekicked).toBe(0);
+  });
+});
+
+// ===========================================================================
+// Operator halt (abandon a stranded run, 2026-07-28)
+// ===========================================================================
+
+describe('haltMigrationRunByOperator', () => {
+  it('marks non-terminal items failed and halts a wedged run', async () => {
+    // The live shape: submit 200''d, the IVS job died pre-pipeline, no failure
+    // callback ever arrived -- the run sat dispatching/submitted forever.
+    const wedged: MigrationExecutionRun = {
+      id: 'run-9',
+      project_id: PROJECT_ID,
+      status: RUN_STATUS.DISPATCHING,
+      items: [
+        { id: 'ri-0', status: RUN_ITEM_STATUS.SUBMITTED, job_id: 'job-dead' },
+        { id: 'ri-1', status: RUN_ITEM_STATUS.PENDING },
+        { id: 'ri-2', status: RUN_ITEM_STATUS.IMPLEMENTED },
+      ],
+    };
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(wedged),
+    });
+
+    const result = await haltMigrationRunByOperator(
+      PROJECT_ID, 'run-9', deps, 'stuck after dead IVS job'
+    );
+
+    expect(result).toEqual({ status: 'halted', runId: 'run-9', itemsFailed: 2 });
+    // Only the two NON-terminal items are failed; the implemented one is kept.
+    expect(deps.patchMigrationExecutionRunItem).toHaveBeenCalledTimes(2);
+    expect(deps.patchMigrationExecutionRunItem).toHaveBeenCalledWith(
+      PROJECT_ID,
+      'ri-0',
+      expect.objectContaining({
+        status: RUN_ITEM_STATUS.FAILED,
+        outcome: 'failed',
+        error_detail: expect.stringContaining('stuck after dead IVS job'),
+      })
+    );
+    expect(deps.patchMigrationExecutionRun).toHaveBeenCalledWith(
+      PROJECT_ID, 'run-9', { status: RUN_STATUS.HALTED }
+    );
+  });
+
+  it('reports an already-terminal run without re-patching it', async () => {
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue({
+        id: 'run-9', project_id: PROJECT_ID, status: RUN_STATUS.HALTED, items: [],
+      }),
+    });
+
+    const result = await haltMigrationRunByOperator(PROJECT_ID, 'run-9', deps);
+
+    expect(result).toEqual({
+      status: 'already_terminal', runId: 'run-9', runStatus: RUN_STATUS.HALTED,
+    });
+    expect(deps.patchMigrationExecutionRun).not.toHaveBeenCalled();
+    expect(deps.patchMigrationExecutionRunItem).not.toHaveBeenCalled();
+  });
+
+  it('reports not_found for a missing run', async () => {
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(null),
+    });
+    expect(await haltMigrationRunByOperator(PROJECT_ID, 'nope', deps)).toEqual({
+      status: 'not_found',
+    });
   });
 });

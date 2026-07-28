@@ -1517,6 +1517,77 @@ async function haltBatch(
 }
 
 // ============================================================================
+// Operator halt (abandon a stranded run)
+// ============================================================================
+
+/** Outcome of an operator-requested run halt. */
+export type OperatorHaltResult =
+  | { status: 'halted'; runId: string; itemsFailed: number }
+  | { status: 'already_terminal'; runId: string; runStatus: string }
+  | { status: 'not_found' };
+
+const RUN_TERMINAL_STATUSES = new Set<string>([
+  RUN_STATUS.HALTED,
+  RUN_STATUS.DEPLOYED,
+  RUN_STATUS.FAILED,
+]);
+
+const ITEM_TERMINAL_STATUSES = new Set<string>([
+  RUN_ITEM_STATUS.IMPLEMENTED,
+  RUN_ITEM_STATUS.DEPLOYED,
+  RUN_ITEM_STATUS.FAILED,
+  RUN_ITEM_STATUS.REJECTED,
+]);
+
+/**
+ * Operator "halt run" (2026-07-28): abandon a run wedged in a non-terminal
+ * status so a fresh Start is possible. The live shape that motivated it: the
+ * orchestration submit was ACCEPTED (job_id correlated, item `submitted`),
+ * then the IVS job died before its pipeline ran and — pre-fix — never
+ * delivered a failure callback, so the run sat in an active-looking status
+ * forever and the execution rail (correctly) refused a new Start.
+ *
+ * Marks every non-terminal item failed with the operator reason, then halts
+ * the run. An already-terminal run is reported as such, never re-patched.
+ */
+export async function haltMigrationRunByOperator(
+  projectId: string,
+  runId: string,
+  deps: MigrationDriverDeps,
+  reason?: string
+): Promise<OperatorHaltResult> {
+  const run = await deps.getMigrationExecutionRun(projectId, runId);
+  if (!run) return { status: 'not_found' };
+  const runStatus = (run.status ?? '') as string;
+  if (RUN_TERMINAL_STATUSES.has(runStatus)) {
+    return { status: 'already_terminal', runId, runStatus };
+  }
+  const detail =
+    reason && reason.trim() !== ''
+      ? `Halted by operator: ${reason.trim()}`
+      : 'Halted by operator';
+  let itemsFailed = 0;
+  for (const item of run.items ?? []) {
+    if (!item.id) continue;
+    if (ITEM_TERMINAL_STATUSES.has((item.status ?? '') as string)) continue;
+    await safePatchItem(deps, projectId, item.id, {
+      status: RUN_ITEM_STATUS.FAILED,
+      outcome: 'failed',
+      error_detail: detail,
+    });
+    itemsFailed += 1;
+  }
+  await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
+  logger.info('[diag-gateway] migration_execution_driver operator_halt', {
+    projectId,
+    runId,
+    previousStatus: runStatus,
+    itemsFailed,
+  });
+  return { status: 'halted', runId, itemsFailed };
+}
+
+// ============================================================================
 // Event-driven advance (consumed by the Group 3 build-results door)
 // ============================================================================
 

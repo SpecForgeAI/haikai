@@ -99,6 +99,7 @@ import {
   triggerMigrate,
   getLatestMigrationExecutionRun,
   resumeMigrationRun,
+  haltMigrationRun,
   MigrationExecutionRunDto,
   fetchMigrationCredentialsStatus,
   registerRunTargetDbCredentials,
@@ -1118,6 +1119,30 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     [companyName, projectName, run?.id, projectId, refreshRun],
   );
 
+  // Operator "halt run" (2026-07-28): abandon a wedged run so Start returns.
+  const handleRailHalt = useCallback(async () => {
+    if (!run?.id) return;
+    const confirmed = window.confirm(
+      'Halt this run? Its in-flight items will be marked failed, and a fresh Start becomes possible.',
+    );
+    if (!confirmed) return;
+    setRailBusy(true);
+    setRailError(null);
+    try {
+      const result = await haltMigrationRun(
+        projectId,
+        run.id,
+        'operator abandon via execution rail',
+      );
+      if (result.status === 'error') {
+        setRailError(result.message);
+      }
+      await refreshRun();
+    } finally {
+      setRailBusy(false);
+    }
+  }, [projectId, run?.id, refreshRun]);
+
   const archived = draft?.status === 'archived';
 
   // ----- Initial load -----
@@ -1925,6 +1950,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           onOpenDelivery={onOpenDelivery}
           dbCredsRegistered={credsStatus ? credsStatus.targetRegistered : null}
           onProvideCreds={() => void openStartDialog('register')}
+          onHaltRun={() => void handleRailHalt()}
         />
       )}
 

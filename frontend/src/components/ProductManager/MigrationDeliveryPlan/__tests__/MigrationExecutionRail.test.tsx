@@ -31,6 +31,7 @@ vi.mock('../../../../api/specGenerationApi', async () => {
 const mockTriggerMigrate = vi.fn();
 const mockGetRun = vi.fn();
 const mockResume = vi.fn();
+const mockHaltRun = vi.fn();
 const mockCredsStatus = vi.fn();
 const mockRegisterTargetDb = vi.fn();
 vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
@@ -42,6 +43,7 @@ vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
     triggerMigrate: (...a: unknown[]) => mockTriggerMigrate(...a),
     getLatestMigrationExecutionRun: (...a: unknown[]) => mockGetRun(...a),
     resumeMigrationRun: (...a: unknown[]) => mockResume(...a),
+    haltMigrationRun: (...a: unknown[]) => mockHaltRun(...a),
     fetchMigrationCredentialsStatus: (...a: unknown[]) => mockCredsStatus(...a),
     registerRunTargetDbCredentials: (...a: unknown[]) =>
       mockRegisterTargetDb(...a),
@@ -547,5 +549,42 @@ describe('execution rail (Phase 1b)', () => {
         override: true,
       }),
     );
+  });
+
+  it('wedged run: the active-run status line offers "Halt run…" which halts + refreshes (2026-07-28)', async () => {
+    // The live shape: the IVS job died pre-pipeline and no failure callback
+    // ever arrived — the run sits 'dispatching' forever and every Start is
+    // locked. The halt affordance is the operator's way out.
+    mockFetchRows.mockResolvedValue([generatedRow('wi-1', 's-1')]);
+    mockGetRun.mockResolvedValue({
+      id: 'run-stuck',
+      status: 'dispatching',
+      items: [{ work_item_id: 'wi-1', status: 'submitted' }],
+    });
+    mockHaltRun.mockResolvedValue({ status: 'halted', itemsFailed: 1 });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    try {
+      renderWorkspace(
+        draftWith([makeItem({ id: 's-1', title: 'Schema story', workItemId: 'wi-1' } as never)]),
+      );
+
+      const statusLine = await screen.findByTestId('execution-rail-run-status');
+      expect(statusLine).toHaveTextContent('run status: dispatching');
+      // No Start while the run looks active.
+      expect(screen.queryByTestId('execution-rail-start-db')).toBeNull();
+
+      fireEvent.click(screen.getByTestId('execution-rail-halt-button'));
+      await waitFor(() =>
+        expect(mockHaltRun).toHaveBeenCalledWith(
+          PROJECT_ID,
+          'run-stuck',
+          expect.any(String),
+        ),
+      );
+      // The run was re-read so the rail can re-enable Start.
+      await waitFor(() => expect(mockGetRun).toHaveBeenCalledTimes(2));
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 });
