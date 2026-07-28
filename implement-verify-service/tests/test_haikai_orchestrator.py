@@ -4,6 +4,7 @@ Unit tests for Haikai Orchestrator.
 Tests request validation, CLI execution, and workflow management.
 """
 
+import platform
 import pytest
 import json
 import tempfile
@@ -11,6 +12,14 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
+
+# Warm platform's process-global uname cache BEFORE any test patches
+# subprocess.Popen: on Windows the FIRST platform.system() call shells out
+# (subprocess → `with Popen(...)`), so under a Mocked Popen it explodes with
+# "'Mock' object does not support the context manager protocol". Full-suite
+# runs were green only because an earlier test warmed the cache;
+# standalone/subset runs of TestClaudeCLIExecutor failed (order-dependent).
+platform.system()
 
 
 # Stale: written 2026-02-21. The OrchestrationResponse pydantic model and

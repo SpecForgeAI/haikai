@@ -131,14 +131,39 @@ def _resolve_repo_targets(
         try:
             repos = read_coordination(product_root)
         except CoordinationError:
-            return []
+            return _scan_git_subdirs(product_root)
         targets: "list[tuple[str | None, Path]]" = []
         for folder in repos:  # dict iteration order preserved (Py3.7+)
             sub = product_root / folder
             if (sub / ".git").exists():
                 targets.append((folder, sub))
-        return targets
-    return []
+        if targets:
+            return targets
+        return _scan_git_subdirs(product_root)
+    return _scan_git_subdirs(product_root)
+
+
+def _scan_git_subdirs(product_root: Path) -> "list[tuple[str | None, Path]]":
+    """Last-resort repo-target discovery (2026-07-28): scan direct subdirs for
+    a `.git` (a git WORKTREE has a `.git` file, a clone a `.git` dir — both
+    count). Live shape that demanded it: a run-worktree product root whose
+    seeded coordination read failed still CONTAINED the per-repo worktree —
+    "no repo targets" meant nothing was committed and reclamation then
+    destroyed the run's entire step-3 output."""
+    targets: "list[tuple[str | None, Path]]" = []
+    try:
+        for sub in sorted(p for p in product_root.iterdir() if p.is_dir()):
+            if (sub / ".git").exists():
+                targets.append((sub.name, sub))
+    except OSError:
+        return []
+    if targets:
+        logger.warning(
+            "Git workflow: coordination.yaml missing/unusable at %s — "
+            "recovered repo targets by .git scan: %s",
+            product_root, [f for f, _ in targets],
+        )
+    return targets
 
 
 def _project_git_lock(workspace_dir: str, company: str, project: str):
@@ -277,7 +302,18 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                 wr.seed_repo_config(live_repo, dest)
                 allocated.append((live_repo, dest))
         run_product.mkdir(parents=True, exist_ok=True)  # polyrepo meta root
-        wr.seed_run_root(live_product, run_product, scoped_specs)
+        seeded = wr.seed_run_root(live_product, run_product, scoped_specs)
+        logger.info("Job %s: seeded run root %s with: %s",
+                    job.job_id, run_product, seeded)
+        # Fail FAST if the run root cannot resolve the same repo targets the
+        # live root did (2026-07-28): a doomed git phase otherwise runs the
+        # whole pipeline, commits NOTHING ("no repo targets"), and
+        # reclamation destroys every artifact the run produced.
+        if not _resolve_repo_targets(run_product):
+            raise wr.WorktreeAllocationError(
+                f"run root {run_product} resolves no repo targets after "
+                f"seeding (seeded: {seeded}) — the git phase would have "
+                "nothing to commit and the run's output would be lost")
         # D8: a repair dispatch stamped sha256s over the mini-spec's planning
         # files (enqueue_cli). Re-hash the SEEDED copies — mismatch means the
         # hand-off was tampered with or partially written: fail fast (W5).

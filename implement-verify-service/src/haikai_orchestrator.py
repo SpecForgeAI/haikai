@@ -475,6 +475,16 @@ class HaikaiOrchestrator:
                     collected_content.append(event.get("delta", ""))
                 elif event_type == "error":
                     errors.append(event.get("message", ""))
+                elif event_type == "questions":
+                    # Non-interactive run: nobody can answer (2026-07-28 live:
+                    # a skill-less step improvised /ask-questions and stalled
+                    # a headless job ~7 minutes). A questions batch in an
+                    # orchestration step is an immediate, named failure.
+                    errors.append(
+                        f"Step {step} ({command}) asked clarifying questions in a "
+                        "non-interactive orchestration run — orchestration steps "
+                        "must proceed without questions."
+                    )
                 elif event_type == "file_modified":
                     logger.info(f"File modified: {event.get('path', '')}")
 

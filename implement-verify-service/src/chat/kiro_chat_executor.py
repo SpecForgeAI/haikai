@@ -122,10 +122,14 @@ class KiroChatExecutor:
 
         skills_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create a SKILL.md that loads all haikai commands as context
+        # Create a SKILL.md that loads all haikai commands as context.
+        # MUST cover every HaikaiOrchestrator.COMMANDS entry (2026-07-28:
+        # git-commit-preparation was missing — step 4 found no skill, the
+        # agent improvised /ask-questions and stalled a headless job ~7 min).
         commands_to_setup = [
             "shape-spec", "plan-product", "write-spec",
             "create-tasks", "implement-tasks", "ask-questions",
+            "git-commit-preparation",
         ]
 
         for cmd_name in commands_to_setup:
