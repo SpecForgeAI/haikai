@@ -69,8 +69,15 @@ def run_key(job_id: str) -> str:
 
 
 def run_root(workspace_dir: str, job_id: str, spec: Optional[str] = None) -> Path:
-    """Short root (W8 path budget): <workspace>/wt/<run_key>[/<spec>]."""
-    root = Path(workspace_dir) / "wt" / run_key(job_id)
+    """Short root (W8 path budget): <workspace>/wt/<run_key>[/<spec>].
+
+    ALWAYS absolute (2026-07-28): with a RELATIVE workspace_dir (the literal
+    env value "api_workspace"), `git -C <live_repo> worktree add <dest>`
+    resolved the relative dest against the LIVE REPO — the worktree landed
+    inside the live clone while Python seeded and validated an empty
+    cwd-relative twin, and the run failed "no repo targets after seeding".
+    """
+    root = Path(workspace_dir).resolve() / "wt" / run_key(job_id)
     return root / spec if spec else root
 
 
@@ -105,6 +112,12 @@ def add_worktree(live_repo: Path, path: Path, branch: str, base: str,
     """The three-way allocation rule (D4, user ruling verbatim):
     absent → add -b; exists+active elsewhere → fail clearly;
     exists+free → add without -b. Detached mode: branch=None."""
+    # Resolve BOTH to absolute (2026-07-28): git resolves a relative dest
+    # against the `-C <live_repo>` directory, NOT the process cwd — a
+    # relative `path` silently plants the worktree inside the live clone
+    # while every Python-side check looks at the cwd-relative twin.
+    live_repo = Path(live_repo).resolve()
+    path = Path(path).resolve()
     if _has_submodules(live_repo):
         raise WorktreeAllocationError(
             f"repo {live_repo} uses submodules — unsupported under worktree "
