@@ -96,3 +96,38 @@ class TestPost:
         expected = "sha256=" + hmac.new(b"shh", captured["data"], hashlib.sha256).hexdigest()
         assert captured["headers"]["X-SX-Signature"] == expected
         assert json.loads(captured["data"])["bugId"] == "b1"
+
+    def test_service_token_header_rides_along_when_configured(self, monkeypatch):
+        # 2026-07-28 live: the Haikai gateway's build-results door fail-closes
+        # without a matching token — the first callback ever delivered came
+        # back 401. SX_CALLBACK_SERVICE_TOKEN must ride as X-Service-Token.
+        monkeypatch.setenv("SX_CALLBACK_ALLOWED_HOSTS", "localhost")
+        monkeypatch.setenv("SX_CALLBACK_SERVICE_TOKEN", "shared-secret")
+        monkeypatch.delenv("SX_CALLBACK_SIGNING_SECRET", raising=False)
+        captured = {}
+        import requests
+        def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
+            captured.update(url=url, headers=headers)
+            return _Resp()
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        ok = cb.post_callback(
+            "http://localhost:8081/api/implementation/build-results", {"job_id": "j1"}
+        )
+
+        assert ok is True
+        assert captured["headers"]["X-Service-Token"] == "shared-secret"
+
+    def test_no_token_header_when_unconfigured(self, monkeypatch):
+        monkeypatch.setenv("SX_CALLBACK_ALLOWED_HOSTS", "localhost")
+        monkeypatch.delenv("SX_CALLBACK_SERVICE_TOKEN", raising=False)
+        captured = {}
+        import requests
+        def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
+            captured.update(headers=headers)
+            return _Resp()
+        monkeypatch.setattr(requests, "post", fake_post)
+
+        cb.post_callback("http://localhost:8081/cb", {"job_id": "j1"})
+
+        assert "X-Service-Token" not in captured["headers"]

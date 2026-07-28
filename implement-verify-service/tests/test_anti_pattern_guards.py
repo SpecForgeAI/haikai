@@ -1118,6 +1118,41 @@ class TestNoBareLoadGitConfigOutsideConfigModule:
         )
 
 
+# ─── Guard: ask-and-STOP reinforcement is shape-spec-scoped ──────────────────
+
+
+class TestNewSessionReinforcementScoped:
+    """2026-07-28 live: both chat executors appended "You MUST ask clarifying
+    questions ... and then STOP. Do NOT write ..." to EVERY new session.
+    Worktree runs start /write-spec as a fresh session, so the agent
+    obediently wrote nothing — step 1 failed with "expected output files are
+    missing: spec.md" (the silent-lie guard caught it). The ask-first block
+    must be conditioned on `command_name == "shape-spec"` in BOTH executors,
+    and appear exactly once per file (no unconditional sibling copy).
+    """
+
+    EXECUTORS = [
+        Path("src/chat/claude_chat_executor.py"),
+        Path("src/chat/kiro_chat_executor.py"),
+    ]
+    ASK_STOP = "You MUST ask clarifying questions"
+    SCOPE = 'command_name == "shape-spec"'
+
+    def test_reinforcement_is_scoped_in_both_executors(self):
+        offenders = []
+        for rel in self.EXECUTORS:
+            text = _read_text(REPO_ROOT / rel)
+            if text.count(self.ASK_STOP) != 1:
+                offenders.append(f"{rel}: ask-and-STOP block count != 1")
+            if self.SCOPE not in text:
+                offenders.append(f"{rel}: missing the shape-spec scope condition")
+        assert offenders == [], (
+            "The new-session ask-and-STOP reinforcement must be shape-spec-"
+            "scoped (an unconditional copy makes fresh write-spec sessions "
+            "write nothing):\n  " + "\n  ".join(offenders)
+        )
+
+
 # ─── Guard: every spawning executor honours the on_spawn cancel hook ─────────
 
 

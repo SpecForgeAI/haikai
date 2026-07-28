@@ -17,6 +17,12 @@ Env:
                                  to named hosts so it does NOT re-open general SSRF the way the
                                  blunt SX_CALLBACK_ALLOW_PRIVATE=1 does (S1).
   SX_CALLBACK_SIGNING_SECRET     if set, adds X-SX-Signature: sha256=<hmac(body)>
+  SX_CALLBACK_SERVICE_TOKEN      if set, adds X-Service-Token: <token>. The
+                                 co-located Haikai gateway's inbound
+                                 build-results door REQUIRES it (its
+                                 BUILD_RESULTS_SERVICE_TOKEN is fail-closed —
+                                 an empty/missing token is a 401). Set the
+                                 SAME value on both sides.
 """
 
 from __future__ import annotations
@@ -104,6 +110,12 @@ def post_callback(callback_url: str, payload: dict, timeout: int = 30) -> bool:
     secret = os.environ.get("SX_CALLBACK_SIGNING_SECRET")
     if secret:
         headers["X-SX-Signature"] = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    # Inbound auth for the Haikai gateway's build-results door (2026-07-28):
+    # the door fail-closes without a matching token, so the first callback
+    # ever delivered live came back 401 until this rode along.
+    service_token = os.environ.get("SX_CALLBACK_SERVICE_TOKEN")
+    if service_token:
+        headers["X-Service-Token"] = service_token
     try:
         resp = requests.post(callback_url, data=body, headers=headers, timeout=timeout, allow_redirects=False)
         ok = 200 <= resp.status_code < 300

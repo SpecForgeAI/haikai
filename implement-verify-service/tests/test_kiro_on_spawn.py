@@ -77,6 +77,43 @@ def test_kiro_chat_executor_reports_spawned_pid(monkeypatch, kiro_env):
     assert captured["args"][0].endswith("kiro-cli")
 
 
+def test_new_session_reinforcement_is_scoped_per_command(monkeypatch, kiro_env):
+    # 2026-07-28 live: the unconditional ask-and-STOP reinforcement was
+    # applied to the fresh /write-spec session too (worktree runs start it
+    # NEW) — the agent obediently wrote NOTHING and step 1 failed with
+    # "expected output files are missing: spec.md". Shape-spec keeps the
+    # ask-first block; artifact commands get the opposite: write output now.
+    import src.chat.kiro_chat_executor as mod
+
+    monkeypatch.setattr(mod, "locate_kiro_cli", lambda: ("/fake/kiro-cli", False))
+
+    prompts: list = []
+
+    def fake_popen(args, **kwargs):
+        prompts.append(args[-1])
+        return _FakeChatProc(pid=1, lines=[])
+
+    monkeypatch.setattr(
+        mod,
+        "subprocess",
+        types.SimpleNamespace(Popen=fake_popen, PIPE=subprocess.PIPE, run=None),
+    )
+
+    executor = mod.KiroChatExecutor(
+        company="acme", project="proj", workspace_dir=kiro_env
+    )
+
+    list(executor.stream_message("shape this", is_new_session=True, command_name="shape-spec"))
+    list(executor.stream_message("for demo-spec", is_new_session=True, command_name="write-spec"))
+
+    shape_prompt, write_prompt = prompts
+    assert "You MUST ask clarifying questions" in shape_prompt
+
+    assert "You MUST ask clarifying questions" not in write_prompt
+    assert "WRITE its output files" in write_prompt
+    assert "write-spec skill" in write_prompt
+
+
 def test_kiro_cli_executor_reports_spawned_pid(monkeypatch, kiro_env):
     import src.kiro_cli_executor as mod
 
