@@ -132,6 +132,17 @@ describe('buildDbPackSpecText (pure)', () => {
     expect(text).toContain('byte-for-byte');
   });
 
+  it('phase-scopes the write instructions (2026-07-28 — the imperative body made the SHAPING agent write the files instead of specifying them)', () => {
+    const text = buildDbPackSpecText({
+      story: carriageStory(),
+      packId: 'pack-1',
+      files: FILES.slice(0, 2),
+    });
+    expect(text).toContain('PHASE NOTE');
+    expect(text).toContain('do not write them to the repository while shaping');
+    expect(text).toContain('(Implement phase) Write every file');
+  });
+
   it('uses a fence longer than any backtick run inside the content (unbreakable)', () => {
     const nasty = 'SELECT 1;\n```\n-- a stray fence inside\n````\nSELECT 2;';
     const text = buildDbPackSpecText({

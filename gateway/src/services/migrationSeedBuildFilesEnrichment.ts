@@ -384,6 +384,10 @@ export function buildSeedBuildFilesEnrichment(
       `Do NOT regenerate, overwrite, re-pin, upgrade, downgrade, infer, or replace ` +
       `any of them.`,
     '',
+    `PHASE NOTE: the write instructions above apply to the IMPLEMENT phase only. ` +
+      `During spec SHAPING, record these blocks in the spec verbatim — do not ` +
+      `write any file to the repository while shaping.`,
+    '',
     `Commit timing: because this story runs first, these files are committed at ` +
       `the START of implementation and ride the normal build / commit / push / PR ` +
       `flow — there is no special handoff. (v1 carries the files inline in this ` +
