@@ -801,6 +801,15 @@ def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
     """
     request = OrchestrationRequest(**job.request_payload)
 
+    # Validate spec names EARLY (2026-07-28): worktree allocation builds git
+    # branch names from them BEFORE the orchestrator's own per-spec
+    # safe_segment check runs. A live placeholder echo ('<date>-<slug>')
+    # reached `git worktree add` and died as an illegible "cannot lock ref";
+    # this raise turns it into a clean, named failure at the prologue.
+    from src.path_safety import safe_segment
+    for intent in request.spec_intents:
+        safe_segment(intent.spec_name, "spec_name")
+
     # Executor-aware gate (2026-07-28): a backend that brings its own auth
     # (CHAT_EXECUTOR=kiro — SSO) needs no ANTHROPIC_API_KEY; every executor
     # factory accepts an empty key and the kiro path ignores it. Mirrors

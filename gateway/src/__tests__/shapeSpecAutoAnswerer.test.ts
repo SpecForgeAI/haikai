@@ -214,6 +214,55 @@ describe('driveShapeSpecStream -- resume protocol (CD-1)', () => {
     expect(decisions).toHaveLength(2);
   });
 
+  it('refuses a placeholder/unsafe folder name BEFORE submit; the preamble carries no copyable placeholder (2026-07-28 — the agent created a folder literally named "<date>-<slug>" and git refused the ref)', async () => {
+    // Guard the CAUSE: no angle-bracket placeholder tokens the model can echo.
+    expect(SHAPING_TURN_CONTRACT_PREAMBLE).not.toMatch(/<[a-z][a-z-]*>/);
+
+    // Guard the EFFECT: an echoed placeholder folder must fail the drive,
+    // not reach orchestration (where it died as "cannot lock ref").
+    const turn1 = sseResponse([
+      'data: {"type":"session","session_id":"sess-1"}',
+      'data: {"type":"folder","folder":"<date>-<slug>"}',
+      'data: {"type":"done"}',
+    ]);
+    const { open } = scriptedOpener([turn1]);
+    const result = await driveShapeSpecStream({
+      company: 'acme',
+      project: 'order-mig',
+      generatedSpecText: SPEC_TEXT,
+      openStream: open,
+      answerBatch: async () => [],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.specName).toBeNull();
+    expect(result.error).toContain("<date>-<slug>");
+    expect(result.error).toContain('placeholder');
+  });
+
+  it('a bad folder self-corrected by a later turn still concludes ok with the LAST captured name', async () => {
+    const turn1 = sseResponse([
+      'data: {"type":"session","session_id":"sess-1"}',
+      'data: {"type":"folder","folder":"<date>-<slug>"}',
+      'data: {"type":"questions","questions":[{"id":"q1","question":"Which DB?"}]}',
+      'data: {"type":"done"}',
+    ]);
+    const turn2 = sseResponse([
+      'data: {"type":"folder","folder":"2026-07-28-seed-postgresql-schema-foundations"}',
+      'data: {"type":"done"}',
+    ]);
+    const { open } = scriptedOpener([turn1, turn2]);
+    const result = await driveShapeSpecStream({
+      company: 'acme',
+      project: 'order-mig',
+      generatedSpecText: SPEC_TEXT,
+      openStream: open,
+      answerBatch: async (questions) =>
+        questions.map((q) => ({ question: q.question, answer: 'pg', rationale: 'grounded' })),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.specName).toBe('2026-07-28-seed-postgresql-schema-foundations');
+  });
+
   it('answers the questions even when `folder` arrived in the SAME turn (2026-07-28 — the early folder skipped the Q&A, requirements.md was never written, and the orchestration pre-check refused)', async () => {
     // The live race: shape-spec created the spec folder AND asked its 6
     // clarifying questions in one turn. The old `!state.specName` loop guard
