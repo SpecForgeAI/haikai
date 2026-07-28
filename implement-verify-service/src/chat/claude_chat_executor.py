@@ -408,13 +408,27 @@ class ClaudeChatExecutor:
             cli_prompt = message
 
         if is_new_session:
-            # Reinforce that the LLM must ask questions using /ask-questions on new sessions
-            questions_reinforcement = (
-                "\n\n[System: This is a NEW session. You MUST ask clarifying questions "
-                "using the /ask-questions skill and then STOP. Do NOT write requirements.md "
-                "or skip ahead — ask questions first and wait for the user's answers.]"
-            )
-            cli_prompt = f"/{command_name} {cli_prompt}{questions_reinforcement}"
+            if command_name == "shape-spec":
+                # Reinforce question-asking — SHAPE-SPEC ONLY (2026-07-28):
+                # worktree runs start /write-spec as a fresh session too, and
+                # this ask-and-STOP block made the agent write NOTHING
+                # (step 1 "silent LLM failure": no spec.md).
+                reinforcement = (
+                    "\n\n[System: This is a NEW session. You MUST ask clarifying questions "
+                    "using the /ask-questions skill and then STOP. Do NOT write requirements.md "
+                    "or skip ahead — ask questions first and wait for the user's answers.]"
+                )
+            else:
+                # Artifact commands (write-spec / create-tasks /
+                # implement-tasks) resume from the spec's on-disk files —
+                # the OPPOSITE reinforcement applies: produce output now.
+                reinforcement = (
+                    "\n\n[System: This is a NEW session resuming from the spec's on-disk "
+                    "artifacts under haikai/specs/. Execute the "
+                    f"{command_name} skill fully and WRITE its output files now; "
+                    "do not stop to ask clarifying questions.]"
+                )
+            cli_prompt = f"/{command_name} {cli_prompt}{reinforcement}"
             logger.info(f"New session: prefixed CLI prompt with /{command_name}")
 
         return cli_prompt, message_file

@@ -196,12 +196,26 @@ class KiroChatExecutor:
         cli_prompt = message
         if is_new_session:
             cli_prompt = f"/{command_name} {message}"
-            # Reinforce question-asking behavior
-            cli_prompt += (
-                "\n\n[System: This is a NEW session. You MUST ask clarifying questions "
-                "using the /ask-questions skill and then STOP. Do NOT write requirements.md "
-                "or skip ahead — ask questions first and wait for the user's answers.]"
-            )
+            if command_name == "shape-spec":
+                # Reinforce question-asking behavior — SHAPE-SPEC ONLY
+                # (2026-07-28): worktree runs start /write-spec as a fresh
+                # session too, and this ask-and-STOP block made the agent
+                # write NOTHING (step 1 "silent LLM failure": no spec.md).
+                cli_prompt += (
+                    "\n\n[System: This is a NEW session. You MUST ask clarifying questions "
+                    "using the /ask-questions skill and then STOP. Do NOT write requirements.md "
+                    "or skip ahead — ask questions first and wait for the user's answers.]"
+                )
+            else:
+                # Artifact commands (write-spec / create-tasks /
+                # implement-tasks) resume from the spec's on-disk files —
+                # the OPPOSITE reinforcement applies: produce output now.
+                cli_prompt += (
+                    "\n\n[System: This is a NEW session resuming from the spec's on-disk "
+                    "artifacts under haikai/specs/. Execute the "
+                    f"{command_name} skill fully and WRITE its output files now; "
+                    "do not stop to ask clarifying questions.]"
+                )
 
         # Kiro CLI interprets messages starting with "/" as built-in slash commands.
         # Escape by rephrasing as an instruction to the agent instead.
