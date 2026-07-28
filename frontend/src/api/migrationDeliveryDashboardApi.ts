@@ -1182,6 +1182,63 @@ export async function resumeMigrationRun(
   };
 }
 
+/** The operator-halt response union (2026-07-28). */
+export type HaltMigrationRunResult =
+  | { status: 'halted'; itemsFailed: number }
+  | { status: 'already_terminal'; runStatus: string }
+  | { status: 'error'; message: string };
+
+/**
+ * Operator "halt run" — abandon a run wedged in a non-terminal status so a
+ * fresh Start is possible (e.g. its IVS job died before the pipeline ran and
+ * the failure callback never arrived).
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/halt
+ *
+ * Non-terminal items are marked failed with the reason; the run is halted.
+ * The caller should refresh the latest run so the rail's Start re-enables.
+ */
+export async function haltMigrationRun(
+  projectId: string,
+  runId: string,
+  reason?: string,
+): Promise<HaltMigrationRunResult> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-execution-runs/${encodeURIComponent(runId)}/halt`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+  let payload: unknown = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // fall through to the status-based fallback below
+  }
+  const obj = (payload ?? {}) as Record<string, unknown>;
+  if (obj.status === 'halted') {
+    return {
+      status: 'halted',
+      itemsFailed: typeof obj.itemsFailed === 'number' ? obj.itemsFailed : 0,
+    };
+  }
+  if (obj.status === 'already_terminal') {
+    return {
+      status: 'already_terminal',
+      runStatus: typeof obj.runStatus === 'string' ? obj.runStatus : '',
+    };
+  }
+  return {
+    status: 'error',
+    message:
+      typeof obj.message === 'string' && obj.message
+        ? obj.message
+        : `Failed to halt the migration run: ${res.status} ${res.statusText}`,
+  };
+}
+
 /**
  * Set or clear the `deferred` flag on a story's work item (CD-7).
  *

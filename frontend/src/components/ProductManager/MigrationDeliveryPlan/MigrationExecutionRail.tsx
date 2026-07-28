@@ -122,6 +122,13 @@ export interface MigrationExecutionRailProps {
   dbCredsRegistered?: boolean | null;
   /** Open the credentials dialog to (re)register the run's target-DB secrets. */
   onProvideCreds?: () => void;
+  /**
+   * Operator "halt run" (2026-07-28): abandon the active run so a fresh Start
+   * is possible. Exists for runs wedged non-terminal — e.g. the IVS job died
+   * before its pipeline ran and the failure callback never arrived, leaving
+   * the run looking active forever (which correctly locks every Start).
+   */
+  onHaltRun?: () => void;
 }
 
 function describeBlockReason(r: Record<string, unknown>): string {
@@ -147,6 +154,7 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
   onOpenDelivery,
   dbCredsRegistered,
   onProvideCreds,
+  onHaltRun,
 }) => {
   if (planes.length === 0) return null;
 
@@ -227,6 +235,33 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
           data-testid="execution-rail-error"
         >
           {error}
+        </div>
+      )}
+
+      {/* Active-run status + operator halt (2026-07-28): while a run looks
+          active every Start is locked — if the run is actually dead (its job
+          failed without a callback), Halt is the operator's way out. */}
+      {runActive && (
+        <div
+          className={styles.coveragePanelNote}
+          data-testid="execution-rail-run-status"
+        >
+          run status: {runStatus}
+          {onHaltRun && !paused && (
+            <>
+              {' — '}
+              <button
+                type="button"
+                className={styles.coverageInlineLink}
+                disabled={busy}
+                onClick={onHaltRun}
+                data-testid="execution-rail-halt-button"
+              >
+                Halt run…
+              </button>{' '}
+              (abandon: in-flight items are marked failed and Start re-enables)
+            </>
+          )}
         </div>
       )}
 

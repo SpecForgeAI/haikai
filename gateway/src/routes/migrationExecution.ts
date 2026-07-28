@@ -38,6 +38,7 @@ import { createTracer } from '../trace';
 import {
   startMigration,
   resumeMigration,
+  haltMigrationRunByOperator,
   defaultMigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -421,6 +422,48 @@ migrationExecutionRouter.post(
       return res
         .status(500)
         .json({ status: 'error', message: 'Failed to resume the migration run' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST .../migration-execution-runs/:runId/halt -- operator "abandon run"
+// (2026-07-28). A run wedged non-terminal (e.g. its IVS job died before the
+// pipeline ran and the failure callback never arrived) blocks the rail's
+// Start forever. Halting marks non-terminal items failed + the run halted;
+// Start re-enables on the next latest-run read.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/halt',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as { reason?: string };
+    try {
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      const result = await haltMigrationRunByOperator(
+        projectId,
+        runId,
+        deps,
+        typeof body.reason === 'string' ? body.reason : undefined
+      );
+      logger.info('[diag-gateway] migration_execution_driver operator_halt_requested', {
+        projectId,
+        runId,
+        outcome: result.status,
+      });
+      if (result.status === 'halted') return res.status(200).json(result);
+      if (result.status === 'already_terminal') return res.status(409).json(result);
+      return res.status(404).json({ error: 'Migration execution run not found' });
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver operator_halt_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res
+        .status(500)
+        .json({ status: 'error', message: 'Failed to halt the migration run' });
     }
   }
 );

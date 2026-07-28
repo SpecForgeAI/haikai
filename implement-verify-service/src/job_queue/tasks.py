@@ -1335,6 +1335,11 @@ def run_orchestration(job_id: str, storage: JobStorage):
         job.completed_at = datetime.now(timezone.utc)
         job.error = str(e)
         storage.save_job(job)
+        # 2026-07-28: a job that dies BEFORE the pipeline emits its own
+        # build-results (e.g. in _resolve_request_context) previously failed
+        # SILENTLY toward the caller — the gateway's run stayed 'submitted'
+        # forever and its Start stayed locked. Deliver the failure best-effort.
+        _emit_failure_callback(job, job_id, request, str(e))
         _graph_completed(graph_ctx, False, {"error": str(e)})
         raise
     finally:
@@ -1911,6 +1916,44 @@ def _deploy_completed_run(request: OrchestrationRequest, workspace_dir: str, res
         response.errors.append(f"deploy failed: {exc}")
         response.success = False
         return None
+
+
+def _emit_failure_callback(job, job_id: str, request, error_message: str) -> None:
+    """Best-effort build-results delivery for a job that died BEFORE the
+    pipeline could emit its own callback (2026-07-28 live: the credential
+    gate raised in _resolve_request_context two ms after the submit 200'd;
+    the job was marked failed locally but the gateway's run-item stayed
+    'submitted' forever). Outcome 'error' routes to halt in the gateway's
+    build-results door. NEVER raises — the job failure itself must still
+    propagate unchanged.
+
+    ``request`` may be None (the OrchestrationRequest parse itself failed);
+    the callback_url / company / project then come from the raw payload.
+    """
+    try:
+        raw = getattr(job, "request_payload", None) or {}
+        callback_url = getattr(request, "callback_url", None) or raw.get("callback_url")
+        if not callback_url:
+            return
+        from ..verification import outcomes
+        payload = {
+            "job_id": job_id,
+            "company": getattr(request, "company", None) or raw.get("company"),
+            "project": getattr(request, "project", None) or raw.get("project"),
+            "outcome": outcomes.ERROR,
+            "spec_names": [],
+            "pr_url": None,
+            "errors": [error_message],
+            "spec_git": [],
+        }
+        delivered = _post_callback(callback_url, payload)
+        logger.info(
+            "failure build-results callback for job %s delivered=%s", job_id, delivered
+        )
+    except Exception as exc:
+        logger.warning(
+            "failure build-results callback for job %s errored: %s", job_id, exc
+        )
 
 
 def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, response, deploy,
