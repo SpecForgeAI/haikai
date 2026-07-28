@@ -34,6 +34,7 @@ jest.mock('../services/logger', () => ({
 import {
   parseShapeSpecSseLine,
   driveShapeSpecStream,
+  SHAPING_TURN_CONTRACT_PREAMBLE,
   ShapeSpecStreamOpener,
 } from '../services/shapeSpecHeadlessStream';
 import {
@@ -211,6 +212,52 @@ describe('driveShapeSpecStream -- resume protocol (CD-1)', () => {
 
     // Both decisions were surfaced for logging (CD-4).
     expect(decisions).toHaveLength(2);
+  });
+
+  it('turn 1 leads with the shaping contract; resume answers do NOT repeat it (2026-07-28 — a carriage spec\'s "write these files" body made the agent implement instead of shape)', async () => {
+    // Live failure: the DB-pack carriage spec text is imperative ("Write every
+    // file ... byte-for-byte" + full file bodies). Fed raw, the shaping agent
+    // wrote the files to the repo clone and never created a spec folder — no
+    // `folder` event, run halted at item 0 of 15. The contract preamble pins
+    // the phase boundary on EVERY headless turn 1.
+    const turn1 = sseResponse([
+      'data: {"type":"session","session_id":"sess-1"}',
+      'data: {"type":"questions","questions":[{"id":"q1","question":"Which DB?"}]}',
+      'data: {"type":"done"}',
+    ]);
+    const turn2 = sseResponse([
+      'data: {"type":"folder","folder":"2026-db-pack-spec"}',
+      'data: {"type":"done"}',
+    ]);
+    const { open, bodies } = scriptedOpener([turn1, turn2]);
+
+    const imperativeSpec =
+      '/agent-os:shape-spec # Spec: apply schema pack\n' +
+      '1. Write every file in the "Files to reproduce" section at EXACTLY its stated path.';
+    const result = await driveShapeSpecStream({
+      company: 'acme',
+      project: 'order-mig',
+      generatedSpecText: imperativeSpec,
+      openStream: open,
+      answerBatch: async (questions) =>
+        questions.map((q) => ({ question: q.question, answer: 'pg', rationale: 'grounded' })),
+    });
+    expect(result.ok).toBe(true);
+
+    const sent = bodies();
+    expect(sent).toHaveLength(2);
+
+    // Turn 1: contract FIRST, then the (prefix-stripped) spec body.
+    const first = sent[0].message as string;
+    expect(first.startsWith(SHAPING_TURN_CONTRACT_PREAMBLE)).toBe(true);
+    expect(first).toContain('Do NOT create, write, or modify ANY repository');
+    expect(first).toContain('SPEC REQUIREMENTS START');
+    const contractEnd = first.indexOf('Write every file');
+    expect(contractEnd).toBeGreaterThan(SHAPING_TURN_CONTRACT_PREAMBLE.length - 1);
+
+    // Resume: the answer only — no contract re-send mid-session.
+    const resume = sent[1].message as string;
+    expect(resume).not.toContain('[SHAPING TURN');
   });
 
   it('a non-OK upstream response surfaces the FastAPI `detail` in the error (2026-07-27 — a bare "status 400" left the operator source-diving)', async () => {

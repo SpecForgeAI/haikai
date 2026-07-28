@@ -174,6 +174,12 @@ export function buildDbPackSpecText(args: {
       'repository exactly as given and wire them into the migration run.'
   );
   lines.push('');
+  lines.push(
+    'PHASE NOTE: the file-writing requirements below apply to the IMPLEMENT ' +
+      'phase only. During spec SHAPING, the files are the content to record ' +
+      'in the spec — do not write them to the repository while shaping.'
+  );
+  lines.push('');
   if (story.description) {
     lines.push(story.description);
     lines.push('');
@@ -181,9 +187,9 @@ export function buildDbPackSpecText(args: {
   lines.push('## Requirements');
   lines.push('');
   lines.push(
-    '1. Write every file in the "Files to reproduce" section at EXACTLY its ' +
-      'stated repo-relative path, byte-for-byte (no reflowing, no comment ' +
-      'edits, no renames).'
+    '1. (Implement phase) Write every file in the "Files to reproduce" ' +
+      'section at EXACTLY its stated repo-relative path, byte-for-byte (no ' +
+      'reflowing, no comment edits, no renames).'
   );
   lines.push(
     '2. Do NOT modify any other migration file to "align" it with these — ' +

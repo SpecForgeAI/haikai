@@ -314,6 +314,11 @@ describe('Spec 5 E2E: confirmed manifest -> verbatim seed file in the FIRST stor
     // First-sequencing framing rode along too.
     expect(text).toContain('SEQUENCED FIRST');
     expect(text).toContain('BEFORE any other story');
+    // Phase-scoped (2026-07-28): the exact-write imperative is implement-phase
+    // only — shaping records the blocks, it must not write files.
+    expect(text).toContain('PHASE NOTE');
+    expect(text).toContain('do not');
+    expect(text).toContain('while shaping');
   });
 
   it('(4) ORDINARY stories receive NO manifest bytes whatsoever (isolation preserved through the real handler)', async () => {
