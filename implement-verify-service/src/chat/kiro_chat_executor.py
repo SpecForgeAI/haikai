@@ -259,6 +259,16 @@ class KiroChatExecutor:
                 encoding='utf-8',
                 errors='replace'
             )
+            # D13 parity with the Claude executors (2026-07-28): report the
+            # spawned pid so the job runner's cancel watchdog can kill the
+            # tree. On Windows the pid is wsl.exe's — killing it tears down
+            # the WSL command channel and the kiro-cli run with it.
+            on_spawn = getattr(self, "on_spawn", None)
+            if on_spawn:
+                try:
+                    on_spawn(process.pid)
+                except Exception:
+                    logger.warning("on_spawn callback failed", exc_info=True)
 
             # Track whether we're past the header (trust warning, etc.)
             past_header = False

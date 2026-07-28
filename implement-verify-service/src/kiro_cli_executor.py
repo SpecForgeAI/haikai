@@ -15,6 +15,7 @@ Key differences from ClaudeCLIExecutor:
 
 import json
 import logging
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -146,15 +147,37 @@ class KiroCLIExecutor:
         try:
             actual_timeout = None if timeout == 0 else timeout
 
-            result = subprocess.run(
-                cli_args,
+            # Popen, not blocking subprocess.run — D13 parity with
+            # ClaudeCLIExecutor (2026-07-28): the spawned tree must be a
+            # TRACKED, killable handle for the cancel watchdog, not trapped
+            # inside a blocking call. POSIX: new session → group-killable;
+            # Windows: the pid is wsl.exe's, killing it ends the kiro run.
+            popen_kwargs = dict(
                 cwd=str(self.project_dir),
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=actual_timeout,
             )
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+            proc = subprocess.Popen(cli_args, **popen_kwargs)
+            on_spawn = getattr(self, "on_spawn", None)
+            if on_spawn:
+                try:
+                    on_spawn(proc.pid)
+                except Exception:
+                    logger.warning("on_spawn callback failed", exc_info=True)
+            try:
+                stdout, stderr = proc.communicate(timeout=actual_timeout)
+            except subprocess.TimeoutExpired:
+                from src.job_queue.process_tracking import kill_tree
+                kill_tree(proc.pid)
+                proc.wait()
+                raise
+            result = subprocess.CompletedProcess(
+                cli_args, proc.returncode, stdout, stderr)
 
             end_time = datetime.now()
             execution_time = (end_time - start_time).total_seconds()

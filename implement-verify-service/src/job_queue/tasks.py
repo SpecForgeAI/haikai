@@ -16,7 +16,6 @@ from .job_models import JobStatus, JobProgress
 from ..haikai_orchestrator import HaikaiOrchestrator
 from ..haikai_models import OrchestrationRequest
 from ..chat.session_store import get_active_session
-from ..chat.claude_chat_executor import ClaudeChatExecutor
 from ..git.config import (
     GitConfigError,
     git_default_branch,

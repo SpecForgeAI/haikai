@@ -1118,6 +1118,58 @@ class TestNoBareLoadGitConfigOutsideConfigModule:
         )
 
 
+# ─── Guard: every spawning executor honours the on_spawn cancel hook ─────────
+
+
+class TestExecutorsHonourOnSpawn:
+    """D13: cancel = kill the TRACKED process tree. The job runner sets
+    `executor.on_spawn` so each spawned CLI subprocess is registered with
+    the cancel watchdog. Both Claude executors honoured it; both Kiro
+    executors didn't (2026-07-28 sweep) — a kiro run was unkillable and
+    KiroCLIExecutor additionally trapped the handle in a blocking
+    `subprocess.run`. Any executor module that spawns must wire the hook.
+    """
+
+    # The executors the job runner sets `on_spawn` on (directly or via the
+    # orchestrator) — every one MUST report its spawned pid.
+    TRACKED_EXECUTORS = [
+        Path("src/claude_cli_executor.py"),
+        Path("src/kiro_cli_executor.py"),
+        Path("src/chat/claude_chat_executor.py"),
+        Path("src/chat/kiro_chat_executor.py"),
+    ]
+
+    def test_every_tracked_executor_references_on_spawn(self):
+        offenders = []
+        for rel in self.TRACKED_EXECUTORS:
+            text = _read_text(REPO_ROOT / rel)
+            if "on_spawn" not in text:
+                offenders.append(str(rel))
+        assert offenders == [], (
+            "Tracked CLI executor(s) never call the `on_spawn` pid hook — "
+            "the cancel watchdog cannot kill their runs (D13):\n  "
+            + "\n  ".join(offenders)
+        )
+
+    def test_new_spawning_executors_join_the_tracked_list(self):
+        # A NEW backend executor that spawns must either wire on_spawn or be
+        # consciously added here with a reason. Popen-only: subprocess.run
+        # appears in probe/utility helpers too.
+        tracked = set(self.TRACKED_EXECUTORS)
+        offenders = []
+        for p in (REPO_ROOT / "src").rglob("*_executor.py"):
+            if "__pycache__" in p.parts:
+                continue
+            rel = p.relative_to(REPO_ROOT)
+            text = _read_text(p)
+            if "subprocess.Popen(" in text and rel not in tracked and "on_spawn" not in text:
+                offenders.append(str(rel))
+        assert offenders == [], (
+            "New executor module(s) spawn via Popen without the `on_spawn` "
+            "hook and are not in TRACKED_EXECUTORS:\n  " + "\n  ".join(offenders)
+        )
+
+
 # ─── Guard: kiro-cli discovery/invocation only via src/kiro_cli_locator.py ───
 
 
