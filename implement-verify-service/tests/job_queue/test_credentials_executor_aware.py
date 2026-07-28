@@ -65,6 +65,24 @@ def test_key_still_flows_through_when_present(base_env):
     assert key == "sk-test"
 
 
+def test_placeholder_spec_name_fails_at_the_prologue(base_env):
+    # 2026-07-28 live: a spec folder literally named '<date>-<slug>' (an
+    # echoed instruction placeholder) reached `git worktree add` and died as
+    # "cannot lock ref: Invalid argument". The prologue now validates every
+    # spec name BEFORE worktree allocation builds branch names from them.
+    base_env.setenv("CHAT_EXECUTOR", "kiro")
+    job = types.SimpleNamespace(
+        request_payload={
+            "company": "acme",
+            "project": "proj",
+            "spec_intents": [{"spec_name": "<date>-<slug>", "session_id": "sess-1"}],
+        }
+    )
+
+    with pytest.raises(ValueError, match="spec_name"):
+        _resolve_request_context(job)
+
+
 def test_get_haikai_service_is_executor_aware(base_env):
     # The sibling inline gate: every specs route resolves the service through
     # get_haikai_service, which 503'd without a key even for kiro.

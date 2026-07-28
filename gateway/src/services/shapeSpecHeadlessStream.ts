@@ -52,6 +52,14 @@ const SHAPE_SPEC_STREAM_PATH = '/api/v2/shape-spec/stream';
 const MAX_RESUME_ROUNDS = 12;
 
 /**
+ * Folder names the drive may hand to orchestration: single safe path segment
+ * (mirrors IVS `safe_segment`). A placeholder echo ('<date>-<slug>' — live,
+ * 2026-07-28) or any other unsafe name must fail HERE, before submit — git
+ * refuses such refs downstream with a far less legible "cannot lock ref".
+ */
+const SPEC_FOLDER_SAFE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
  * The shaping-turn contract, prepended to EVERY headless turn-1 message
  * (2026-07-28). Live failure it prevents: a DB-pack carriage spec's body is
  * imperative ("Write every file ... byte-for-byte") with the full file bodies
@@ -66,7 +74,11 @@ const MAX_RESUME_ROUNDS = 12;
 export const SHAPING_TURN_CONTRACT_PREAMBLE = [
   '[SHAPING TURN — PLANNING ONLY]',
   'You are SHAPING a specification, not implementing it. In this session you must ONLY:',
-  '1. initialise the spec folder (haikai/specs/<date>-<slug>/) and record the requirements below in it;',
+  // No copyable placeholder tokens here (2026-07-28): an earlier wording said
+  // "haikai/specs/<date>-<slug>/" and the agent created a folder LITERALLY
+  // named "<date>-<slug>" — git then refused the branch ref. Describe the
+  // naming; never show a template the model can echo verbatim.
+  '1. initialise the spec folder under haikai/specs/ and record the requirements below in it — name the folder with the current date plus a short kebab-case slug derived from this spec\'s title, per the shape-spec skill\'s naming rules;',
   '2. ask clarifying questions via /ask-questions if anything is genuinely ambiguous;',
   '3. stop.',
   'Do NOT create, write, or modify ANY repository, source, or migration file in this turn.',
@@ -443,6 +455,21 @@ export async function driveShapeSpecStream(
         decisionLog: state.decisionLog,
         error:
           'Shape-spec stream concluded without a folder (spec_name); cannot submit orchestration.',
+      };
+    }
+
+    // The LAST captured folder wins (an agent may correct itself mid-drive),
+    // but it must be a safe path segment before it becomes a branch name.
+    if (!SPEC_FOLDER_SAFE.test(state.specName)) {
+      return {
+        ok: false,
+        specName: null,
+        sessionId: state.sessionId,
+        decisionLog: state.decisionLog,
+        error:
+          `Shape-spec produced an invalid spec folder name '${state.specName}' ` +
+          '(looks like an echoed instruction placeholder or unsafe characters); ' +
+          'refusing to submit the orchestration.',
       };
     }
 
