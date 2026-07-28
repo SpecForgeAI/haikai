@@ -385,19 +385,18 @@ from .recovery import (
 
 
 def get_haikai_service() -> HaikaiService:
-    """Get HaikaiService instance with current configuration."""
-    config = load_env_config()
-    anthropic_api_key = config.get('anthropic_api_key')
-    
-    if not anthropic_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ANTHROPIC_API_KEY not configured on server"
-        )
+    """Get HaikaiService instance with current configuration.
+
+    The credential gate is executor-aware (2026-07-28): backends that bring
+    their own auth (CHAT_EXECUTOR=kiro — SSO) proceed with an empty key,
+    which the registry's executor factories accept and ignore. Everything
+    else still 503s without an ANTHROPIC_API_KEY.
+    """
+    from .gates import require_credentials
 
     return HaikaiService(
         workspace_dir=API_WORKSPACE_DIR,
-        anthropic_api_key=anthropic_api_key
+        anthropic_api_key=require_credentials(),
     )
 
 

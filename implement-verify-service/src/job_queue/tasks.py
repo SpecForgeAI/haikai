@@ -802,9 +802,18 @@ def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
     """
     request = OrchestrationRequest(**job.request_payload)
 
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not configured")
+    # Executor-aware gate (2026-07-28): a backend that brings its own auth
+    # (CHAT_EXECUTOR=kiro — SSO) needs no ANTHROPIC_API_KEY; every executor
+    # factory accepts an empty key and the kiro path ignores it. Mirrors
+    # src/api/gates.require_credentials(), which job contexts can't call
+    # (it raises HTTPException).
+    from src.backend_registry import _credentials_satisfied
+    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not _credentials_satisfied(anthropic_api_key):
+        raise ValueError(
+            "Credentials not configured: set ANTHROPIC_API_KEY, or select a "
+            "CHAT_EXECUTOR backend that brings its own auth (e.g. kiro)."
+        )
 
     workspace_dir = os.getenv("API_WORKSPACE_DIR")
     if not workspace_dir:

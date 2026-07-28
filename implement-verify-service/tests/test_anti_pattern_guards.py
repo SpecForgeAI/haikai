@@ -614,6 +614,36 @@ class TestCredentialGateAdoption:
             f"  offenders: {offenders}"
         )
 
+    def test_no_bare_anthropic_key_gate_outside_gates_module(self):
+        """2026-07-28 live finding: `job_queue/tasks._resolve_request_context`
+        raised "ANTHROPIC_API_KEY not configured" unconditionally, so the
+        FIRST orchestration job failed for `CHAT_EXECUTOR=kiro` — right after
+        the kiro-driven shaping turn had succeeded. `src/api/__init__.py`'s
+        `get_haikai_service` carried the same inline gate (all specs routes).
+
+        The ONLY file allowed to carry that message is `src/api/gates.py`
+        (`require_credentials`, the executor-aware 503). Every other gate
+        must consult `_credentials_satisfied` — which knows the active
+        backend brings its own auth — and use distinct wording. count == 0.
+        """
+        offenders = []
+        for p in (REPO_ROOT / "src").rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            rel = p.relative_to(REPO_ROOT)
+            if rel == Path("src/api/gates.py"):
+                continue
+            for ln, line in enumerate(_read_text(p).splitlines(), 1):
+                if "ANTHROPIC_API_KEY not configured" in line:
+                    offenders.append(f"{rel}:{ln}: {line.strip()}")
+        assert offenders == [], (
+            "Bare 'ANTHROPIC_API_KEY not configured' gate outside "
+            "src/api/gates.py. Use `require_credentials()` (HTTP contexts) or "
+            "`_credentials_satisfied(key)` (job/worker contexts) so "
+            "CHAT_EXECUTOR backends that bring their own auth (kiro SSO) are "
+            "not blocked:\n  " + "\n  ".join(offenders)
+        )
+
     def test_no_post_construction_session_uuid_mutation(self):
         # O4' regression guard: `chat_executor.session_uuid = ...` is a
         # Temporary Field smell — the executor accepts `session_uuid` as
