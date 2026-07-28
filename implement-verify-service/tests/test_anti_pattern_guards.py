@@ -1118,6 +1118,43 @@ class TestNoBareLoadGitConfigOutsideConfigModule:
         )
 
 
+# ─── Guard: kiro skill seeding covers every orchestrator command ─────────────
+
+
+class TestKiroSkillSeedingCoversOrchestratorCommands:
+    """2026-07-28 live: HaikaiOrchestrator.COMMANDS runs step 4
+    /git-commit-preparation, but neither kiro seeding list included it — the
+    agent found no skill, improvised /ask-questions, and stalled a headless
+    job ~7 minutes. Every orchestrator command MUST appear in BOTH kiro
+    seeding lists (the claude path has its own sync guard in
+    tests/chat/test_question_flow_gating.py).
+    """
+
+    SEEDING_FILES = [
+        Path("src/chat/kiro_chat_executor.py"),
+        Path("src/kiro_cli_executor.py"),
+    ]
+
+    def test_every_orchestrator_command_is_seeded_for_kiro(self):
+        from src.haikai_orchestrator import HaikaiOrchestrator
+
+        command_names = [
+            c["command"].lstrip("/") for c in HaikaiOrchestrator.COMMANDS
+        ]
+        assert command_names, "orchestrator COMMANDS unexpectedly empty"
+        offenders = []
+        for rel in self.SEEDING_FILES:
+            text = _read_text(REPO_ROOT / rel)
+            for name in command_names:
+                if f'"{name}"' not in text:
+                    offenders.append(f"{rel}: missing '{name}' in its seeding list")
+        assert offenders == [], (
+            "Kiro skill seeding must cover every HaikaiOrchestrator command "
+            "(a skill-less step makes the agent improvise):\n  "
+            + "\n  ".join(offenders)
+        )
+
+
 # ─── Guard: ask-and-STOP reinforcement is shape-spec-scoped ──────────────────
 
 

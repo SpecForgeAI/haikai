@@ -82,7 +82,13 @@ class KiroCLIExecutor:
 
         skills_dir.mkdir(parents=True, exist_ok=True)
 
-        commands = ["write-spec", "create-tasks", "implement-tasks", "shape-spec", "plan-product"]
+        # MUST cover every HaikaiOrchestrator.COMMANDS entry (2026-07-28:
+        # git-commit-preparation was missing from the sibling chat-executor
+        # list — step 4 had no skill to execute).
+        commands = [
+            "write-spec", "create-tasks", "implement-tasks",
+            "shape-spec", "plan-product", "git-commit-preparation",
+        ]
 
         for cmd_name in commands:
             source = haikai_profiles / "commands" / cmd_name / "single-agent" / f"{cmd_name}.md"
