@@ -79,9 +79,18 @@ public class MigrationExecutionRunController {
         }
     }
 
+    /**
+     * {@code projectId} is deliberately {@code String}, not {@code UUID}
+     * (2026-07-29): the gateway's build-results advance correlates purely on
+     * the globally-unique job id and passes the literal sentinel
+     * {@code "by-job"} as the project segment (the real project id is
+     * recovered from the run afterwards). A {@code UUID} declaration made
+     * Spring 400 the sentinel before this handler -- which ignores the
+     * segment entirely -- ever ran, halting every migration run at spec 0.
+     */
     @GetMapping("/api/projects/{projectId}/migration-execution-runs/{runId}")
     public ResponseEntity<?> getRunState(
-            @PathVariable UUID projectId,
+            @PathVariable String projectId,
             @PathVariable UUID runId) {
         try {
             return ResponseEntity.ok(service.getRunState(runId));
@@ -110,9 +119,14 @@ public class MigrationExecutionRunController {
      * {@link MigrationExecutionRunService#findRunItemByJobId(String)} so the
      * gateway never has to reach into AMS storage directly.</p>
      */
+    /**
+     * {@code projectId} is deliberately {@code String} -- the gateway passes
+     * the {@code "by-job"} sentinel here (see {@link #getRunState}); the
+     * lookup keys on the globally-unique {@code jobId} alone.
+     */
     @GetMapping("/api/projects/{projectId}/migration-execution-run-items/by-job-id/{jobId}")
     public ResponseEntity<?> getRunItemByJobId(
-            @PathVariable UUID projectId,
+            @PathVariable String projectId,
             @PathVariable String jobId) {
         Optional<MigrationExecutionRunItemDto> item = service.findRunItemByJobId(jobId);
         return item.<ResponseEntity<?>>map(ResponseEntity::ok)
