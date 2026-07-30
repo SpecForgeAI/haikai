@@ -873,12 +873,79 @@ def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
         Path(workspace_dir), request.company, request.project
     )
     if not session_id:
-        raise ValueError(
-            f"No active session for {request.company}/{request.project}. "
-            "Run shape-spec first."
-        )
+        # Deterministic materialisation (Option A, 2026-07-30): when every
+        # intent carries requirements_text there IS no shape-spec session —
+        # the spec folders are written from the payload and worktree runs
+        # start step 1 fresh anyway. A generated session id keeps the
+        # orchestrator plumbing (log naming, session persist) working.
+        if request.spec_intents and all(
+            getattr(i, "requirements_text", None) for i in request.spec_intents
+        ):
+            import uuid as _uuid
+            session_id = str(_uuid.uuid4())
+            logger.info(
+                "No active session; all intents are materialised — using a "
+                "fresh session id %s", session_id
+            )
+        else:
+            raise ValueError(
+                f"No active session for {request.company}/{request.project}. "
+                "Run shape-spec first."
+            )
 
     return request, anthropic_api_key, workspace_dir, session_id
+
+
+def _materialize_spec_folders(request, workspace_dir: str) -> None:
+    """Deterministic spec materialisation (Option A, 2026-07-30).
+
+    For every intent carrying ``requirements_text``, write the agent-os spec
+    structure into the LIVE product root (worktree seeding copies it into the
+    run root afterwards):
+
+        <spec>/planning/requirements.md      (the payload text)
+        <spec>/planning/initialization.md    (payload or a minimal stub)
+        <spec>/planning/target-repo.md       (single-repo coordination only)
+        <spec>/planning/visuals/             (empty)
+        <spec>/implementation/               (empty)
+
+    Mirrors workflows/specification/initialize-spec.md + research-spec.md —
+    the exact files the step-0 pre-check demands, at the exact paths, every
+    time. Idempotent: re-runs overwrite the planning files (stable folder
+    names are the point).
+    """
+    live_product = Path(workspace_dir) / request.company / request.project
+    for intent in request.spec_intents:
+        requirements = getattr(intent, "requirements_text", None)
+        if not requirements:
+            continue
+        spec_dir = live_product / "haikai" / "specs" / intent.spec_name
+        planning = spec_dir / "planning"
+        (planning / "visuals").mkdir(parents=True, exist_ok=True)
+        (spec_dir / "implementation").mkdir(parents=True, exist_ok=True)
+        (planning / "requirements.md").write_text(requirements, encoding="utf-8")
+        initialization = getattr(intent, "initialization_text", None) or (
+            "# Initial Idea\n\n"
+            f"Materialised deterministically for spec `{intent.spec_name}` "
+            "from the migration plan's generated spec text (no interactive "
+            "shaping session).\n"
+        )
+        (planning / "initialization.md").write_text(initialization, encoding="utf-8")
+        # target-repo.md: unambiguous only when coordination maps ONE folder.
+        try:
+            from ..git.coordination import read_coordination
+            repos = read_coordination(live_product)
+            if len(repos) == 1:
+                folder = next(iter(repos))
+                (planning / "target-repo.md").write_text(
+                    f"target_folder: {folder}\n", encoding="utf-8"
+                )
+        except Exception:
+            pass  # no/unusable coordination — classic layouts don't need it
+        logger.info(
+            "Materialised spec folder %s (requirements %d chars)",
+            spec_dir, len(requirements),
+        )
 
 
 def _finalize_job(job, storage: JobStorage, response, job_id: str, extra: dict | None = None) -> None:
@@ -1130,6 +1197,11 @@ def run_orchestration(job_id: str, storage: JobStorage):
             _resolve_request_context(job)
         )
 
+        # Option A deterministic materialisation (2026-07-30): write any
+        # payload-supplied spec folders into the LIVE product root BEFORE
+        # worktree allocation (seed_run_root requires them there).
+        _materialize_spec_folders(request, workspace_dir)
+
         # Run-flow-graph (spec 2026-07-02): skeleton (normal) or parent-run
         # repair-attempt attach (repair mode, D2c). Best-effort throughout.
         graph_ctx = _init_run_graph(job_id, job, request)
@@ -1369,7 +1441,16 @@ def run_orchestration(job_id: str, storage: JobStorage):
         _graph_completed(graph_ctx, bool(response.success),
                          {"deploy": {"base_url": deploy.get("base_url"),
                                      "box_id": deploy.get("box_id")}} if deploy else None)
-        logger.info(f"Orchestration job {job_id} completed successfully")
+        # Honest terminal line (2026-07-30): a failed pre-check used to log
+        # "completed successfully" here because the failure is a RESPONSE,
+        # not an exception — misleading next to the DB's status: failed.
+        if getattr(response, "success", False):
+            logger.info(f"Orchestration job {job_id} completed successfully")
+        else:
+            logger.warning(
+                f"Orchestration job {job_id} completed with FAILURE "
+                f"(success=false) — see the orchestration log for the failing step"
+            )
 
     except Exception as e:
         # Update with error — same cancel-preserving guard as the success path.

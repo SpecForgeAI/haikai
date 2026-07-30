@@ -195,18 +195,20 @@ describe('runBatchSegment — one job for N specs', () => {
     };
   }
 
-  it('auto-answers every item then submits ONE batch with all spec_intents + batchName', async () => {
+  it('materialises every item DETERMINISTICALLY (Option A, 2026-07-30) then submits ONE batch with all spec_intents + batchName', async () => {
     const deps = mockDeps();
     const run = batchRun();
 
     await runBatchSegment(scope, run, run.items!, descriptors, deps);
 
-    // Auto-answered BOTH specs.
-    expect((deps.autoAnswerer.driveAndAnswer as jest.Mock)).toHaveBeenCalledTimes(2);
+    // NO shaping turns — names computed, requirements carried as payload.
+    expect(deps.autoAnswerer.driveAndAnswer).not.toHaveBeenCalled();
     // ONE batched submit, with both specs + the batch name + deploy.
     expect(deps.submitOrchestrationBatch).toHaveBeenCalledTimes(1);
     const arg = (deps.submitOrchestrationBatch as jest.Mock).mock.calls[0][0];
     expect(arg.specs).toHaveLength(2);
+    expect(arg.specs[0].specName).toMatch(/^\d{4}-\d{2}-\d{2}-/);
+    expect(arg.specs[0].requirementsText).toEqual(expect.any(String));
     expect(arg.batchName).toBe('checkout-revamp');
     expect(arg.deployOnComplete).toBe(true);
     // The single per-spec submit is NOT used.
@@ -218,16 +220,19 @@ describe('runBatchSegment — one job for N specs', () => {
     expect(jobIdPatches.map((c) => c[2].job_id)).toEqual(['job-batch', 'job-batch']);
   });
 
-  it('halts the run (NO submit) if any spec fails to auto-answer', async () => {
-    const failing: ShapeSpecAutoAnswerer = {
-      driveAndAnswer: jest.fn().mockResolvedValue({ ok: false, specName: null, error: 'no folder' }),
-    };
-    const deps = mockDeps({ autoAnswerer: failing });
+  it('halts the run (NO submit) when an item has no matching descriptor', async () => {
+    const deps = mockDeps();
     const run = batchRun();
+    // Descriptor set missing the second item's sequence position.
+    const partial = descriptors.filter((d) => d.sequencePosition === 0);
 
-    await runBatchSegment(scope, run, run.items!, descriptors, deps);
+    await runBatchSegment(scope, run, run.items!, partial, deps);
 
     expect(deps.submitOrchestrationBatch).not.toHaveBeenCalled();
+    const runHalted = (deps.patchMigrationExecutionRun as jest.Mock).mock.calls.some(
+      (c) => c[2]?.status === RUN_STATUS.HALTED,
+    );
+    expect(runHalted).toBe(true);
   });
 });
 

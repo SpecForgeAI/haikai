@@ -520,7 +520,9 @@ class TestHaikaiOrchestrator:
         seen = []
         orchestrator.run_workflow(on_spec_complete=lambda name, idx: seen.append(name) or True)
         assert seen == ["spec-one"]            # stopped after spec-one's git failure
-        assert mock_execute.call_count == 4    # spec-two's steps never ran
+        # spec-one runs steps 1-3 (step 4 is final-spec-only, 2026-07-30);
+        # spec-two's steps never ran.
+        assert mock_execute.call_count == 3
 
     @patch('src.api.factories.ClaudeChatExecutor')
     @patch.object(HaikaiOrchestrator, '_execute_step_with_session')

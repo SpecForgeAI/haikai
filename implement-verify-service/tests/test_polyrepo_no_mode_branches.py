@@ -43,6 +43,12 @@ ALLOWED_OCCURRENCES: List[Tuple[str, str]] = [
     # Repo CRUD endpoint: deleting the last entry is rejected. This is the
     # last-entry rule from FR-4, not a mono/poly branch.
     ("src/api/routes/repos.py", "if len(repos) == 1:"),
+    # Deterministic spec materialisation (2026-07-30): planning/target-repo.md
+    # names the ONE folder implement-tasks writes into. With N=1 the choice
+    # is unambiguous; with N>1 the payload cannot determine it, so the file
+    # is deliberately not materialised (the requirements text carries the
+    # repo context). A target-selection rule, not a pipeline branch.
+    ("src/job_queue/tasks.py", "if len(repos) == 1:"),
     # This convention-check test itself contains the patterns as strings.
     ("tests/test_polyrepo_no_mode_branches.py", "if len(repos) == 1"),
     ("tests/test_polyrepo_no_mode_branches.py", "if is_monorepo"),
