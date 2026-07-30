@@ -495,20 +495,32 @@ describe('startMigration', () => {
     expect(deps.createMigrationExecutionRun).not.toHaveBeenCalled();
   });
 
-  it('per-spec dispatch posts the spec text via the auto-answerer + submits with callback_url and deploy_on_complete=false on the first spec', async () => {
+  it('per-spec dispatch is DETERMINISTIC (Option A, 2026-07-30): no shaping turn — computed spec_name + requirements payload + callback_url, deploy_on_complete=false on the first spec', async () => {
     const deps = mockDeps();
     await startMigration(scope, deps);
     await flush();
 
-    // The auto-answerer was fed the first spec's combined generated_spec_text.
-    const answerArg = (deps.autoAnswerer.driveAndAnswer as jest.Mock).mock.calls[0][0];
-    expect(answerArg.generatedSpecText).toContain('Story 1 body');
+    // NO headless shaping turn any more — the three intermittent-halt seams
+    // (wrong-path requirements.md, placeholder folder echo, cross-wired
+    // folder detection) are structurally gone.
+    expect(deps.autoAnswerer.driveAndAnswer).not.toHaveBeenCalled();
 
-    // The orchestration submit carried the callback_url + deploy_on_complete=false (first spec).
+    // The submit carries the materialisation payload + a computed name from
+    // the book-item title ("Story 1"), plus callback_url and
+    // deploy_on_complete=false (first spec). Step 4 runs on the final spec
+    // only (commitPreparation false here).
     const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
     expect(submitArg.callbackUrl).toBe('http://gw/api/implementation/build-results');
     expect(submitArg.deployOnComplete).toBe(false);
-    expect(submitArg.specName).toBe('2026-06-14-some-spec-folder');
+    expect(submitArg.commitPreparation).toBe(false);
+    expect(submitArg.specName).toMatch(/^\d{4}-\d{2}-\d{2}-story-1$/);
+    expect(submitArg.requirementsText).toContain('Story 1 body');
+
+    // The computed spec_name was stamped onto the run-item at SUBMITTING.
+    const patchedName = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.find(
+      (c) => c[2] && typeof c[2].spec_name === 'string'
+    );
+    expect(patchedName[2].spec_name).toMatch(/-story-1$/);
 
     // The job_id was recorded on the run-item (dispatched=true + job_id).
     const patchedJob = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.find(
@@ -531,10 +543,6 @@ describe('startMigration', () => {
     );
     expect(result.status).toBe('started');
     await flush();
-
-    const answerArg = (deps.autoAnswerer.driveAndAnswer as jest.Mock).mock.calls[0][0];
-    expect(answerArg.company).toBe('example-corp');
-    expect(answerArg.project).toBe('demo-migration');
 
     const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
     expect(submitArg.company).toBe('example-corp');
@@ -705,9 +713,10 @@ describe('recoverInFlightRuns', () => {
     expect(result.recovered).toBe(1);
     expect(result.rekicked).toBe(1);
 
-    // The stuck spec was re-driven through the auto-answerer + submitted.
+    // The stuck spec was re-dispatched DETERMINISTICALLY (Option A): straight
+    // to submit with the materialisation payload — no shaping turn.
     await flush();
-    expect(deps.autoAnswerer.driveAndAnswer).toHaveBeenCalled();
+    expect(deps.autoAnswerer.driveAndAnswer).not.toHaveBeenCalled();
     expect(deps.submitOrchestration).toHaveBeenCalled();
   });
 

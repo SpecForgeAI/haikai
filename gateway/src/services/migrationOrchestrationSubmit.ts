@@ -53,10 +53,24 @@ export interface OrchestrationSubmitInput {
   company: string;
   /** Normalised product. */
   project: string;
-  /** The spec folder name (the shape-spec `folder` event) -> SpecIntent.spec_name. */
+  /** The spec folder name (deterministic, or the shape-spec `folder` event). */
   specName: string;
   /** The shape-spec session id, ONLY for the orchestration handoff (CD-1). */
   sessionId?: string | null;
+  /**
+   * Option A deterministic materialisation (2026-07-30): the full
+   * requirements markdown. IVS writes the spec folder from it before its
+   * pre-check — no shaping session needed for this intent.
+   */
+  requirementsText?: string | null;
+  /** Optional planning/initialization.md body (raw idea). */
+  initializationText?: string | null;
+  /**
+   * Step-4 (/git-commit-preparation) control: FALSE on every non-final spec
+   * of a sequential run so the ~10-minute prep turn runs once per run, on
+   * the final spec (2026-07-30).
+   */
+  commitPreparation?: boolean;
   /** TRUE only on the FINAL spec (big-bang deploy). */
   deployOnComplete: boolean;
   /** The gateway's build-results URL, sent per-request on every submit (CD-3). */
@@ -69,6 +83,10 @@ export interface BatchSpecIntent {
   specName: string;
   /** The shape-spec session id for the handoff (optional). */
   sessionId?: string | null;
+  /** Deterministic materialisation payload (see OrchestrationSubmitInput). */
+  requirementsText?: string | null;
+  /** Optional planning/initialization.md body. */
+  initializationText?: string | null;
 }
 
 /** Inputs for a batched (multi-spec, single-branch) orchestration submit. */
@@ -194,6 +212,12 @@ export async function submitOrchestration(
       {
         spec_name: input.specName,
         ...(input.sessionId ? { session_id: input.sessionId } : {}),
+        ...(input.requirementsText
+          ? { requirements_text: input.requirementsText }
+          : {}),
+        ...(input.initializationText
+          ? { initialization_text: input.initializationText }
+          : {}),
       },
     ],
     context_files: [] as string[],
@@ -202,6 +226,10 @@ export async function submitOrchestration(
     callback_url: input.callbackUrl,
     // CD-3 / big-bang: deploy once everything is implemented.
     deploy_on_complete: input.deployOnComplete,
+    // Step-4 once-per-run control (2026-07-30).
+    ...(input.commitPreparation !== undefined
+      ? { commit_preparation: input.commitPreparation }
+      : {}),
     options: { ...DEFAULT_OPTIONS },
   };
 
@@ -228,6 +256,10 @@ export async function submitOrchestrationBatch(
     spec_intents: input.specs.map((s) => ({
       spec_name: s.specName,
       ...(s.sessionId ? { session_id: s.sessionId } : {}),
+      ...(s.requirementsText ? { requirements_text: s.requirementsText } : {}),
+      ...(s.initializationText
+        ? { initialization_text: s.initializationText }
+        : {}),
     })),
     context_files: [] as string[],
     // Batch mode: the upstream treats a non-empty batch_name as "one branch for

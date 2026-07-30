@@ -7,7 +7,11 @@ haikai_internal:
   # repo. .haikai/config.json in particular was getting swept in by `git add -A`
   # then lost from the working tree on the next branch switch, breaking every
   # subsequent orchestrate / repair with "Project config not found".
+  # .kiro/ (2026-07-30): the kiro backend's seeded skills/agent configs —
+  # tool-internal, never the user's code (first added as a local hotfix on
+  # the work machine; folded in here properly).
   - .haikai/
+  - .kiro/
   - .conversation_history.json
   - chat_logs/
 

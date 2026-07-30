@@ -310,6 +310,19 @@ class HaikaiOrchestrator:
                 commands_to_run = [
                     c for c in self.COMMANDS if c["step"] >= start_from_step
                 ]
+                # Step 4 (/git-commit-preparation) runs ONCE per request, on
+                # the FINAL spec only — its gitignore/secrets value is
+                # per-repo, not per-spec, and the skill is a ~10-minute LLM
+                # turn (2026-07-30 live: 13m37s dominating each spec). A
+                # sequential driver (one spec per request) sets
+                # commit_preparation=False on every non-final request.
+                is_final_intent = spec_idx == len(self.request.spec_intents) - 1
+                run_commit_prep = (
+                    getattr(self.request, "commit_preparation", None) is not False
+                    and is_final_intent
+                )
+                if not run_commit_prep:
+                    commands_to_run = [c for c in commands_to_run if c["step"] != 4]
                 if start_from_step > 1:
                     logger.info(f"Spec '{spec_name}' - Resuming from step {start_from_step}, skipping {start_from_step - 1} step(s)")
 

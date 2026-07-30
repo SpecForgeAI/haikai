@@ -44,6 +44,29 @@ class SpecIntent(BaseModel):
         default=None,
         description="Claude CLI session UUID from shape-spec. Auto-generated if not provided."
     )
+    # Deterministic spec materialisation (Option A, 2026-07-30): when the
+    # caller already HOLDS the full requirements (the migration driver's
+    # generated_spec_text), it sends them here and the orchestration writes
+    # the spec folder itself — no LLM shaping turn, no wrong-path
+    # requirements.md, no folder-name detection. Both optional; absent =
+    # the classic flow (a pre-shaped folder must already exist).
+    requirements_text: Optional[str] = Field(
+        default=None,
+        description=(
+            "Full requirements markdown. When set, the service materialises "
+            "haikai/specs/<spec_name>/planning/requirements.md (plus the "
+            "standard folder structure) deterministically before the "
+            "pre-check — /shape-spec is not needed for this intent."
+        ),
+    )
+    initialization_text: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional planning/initialization.md body (the raw idea). "
+            "Defaults to a minimal '# Initial Idea' stub derived from the "
+            "spec name when requirements_text is set."
+        ),
+    )
 
 
 class OrchestrationRequest(BaseModel):
@@ -103,6 +126,19 @@ class OrchestrationRequest(BaseModel):
     integrate_branches: Optional[List[str]] = Field(
         default=None,
         description="Explicit branches to consolidate at deploy. Defaults to the per-spec feature branches of this run."
+    )
+    # Step 4 (/git-commit-preparation) cost control (2026-07-30): the skill's
+    # artifact sweep + secrets scan is a ~10-minute LLM turn and its value is
+    # once-per-repo, not once-per-spec. The orchestrator now runs it only on
+    # the FINAL intent of a request; a sequential driver (one spec per
+    # request) additionally sets False on every non-final request so a
+    # 15-spec run pays the cost once.
+    commit_preparation: Optional[bool] = Field(
+        default=None,
+        description=(
+            "False = skip the /git-commit-preparation step entirely for this "
+            "request. None/True = run it once, on the request's final spec."
+        ),
     )
 
     @field_validator('spec_intents')

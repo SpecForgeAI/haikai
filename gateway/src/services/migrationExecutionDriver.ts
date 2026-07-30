@@ -79,9 +79,9 @@ import {
 import { recordWorkItemImplementationError } from './migrationWorkItemErrorSink';
 import {
   ShapeSpecAutoAnswerer,
-  ShapeSpecAnswerResult,
 } from './shapeSpecAutoAnswererSeam';
 import { buildDefaultShapeSpecAutoAnswerer } from './shapeSpecAutoAnswerer';
+import { stripShapeSpecPrefix } from './shapeSpecHeadlessStream';
 import {
   ReconciliationDriverDeps,
   defaultReconciliationDriverDeps,
@@ -1227,12 +1227,45 @@ export function kickSpecRunner(
 }
 
 /**
- * The per-spec segment: drive the headless shape-spec stream via the
- * auto-answerer (Group 4), then submit the orchestration with the per-request
+ * Deterministic spec folder name (Option A, 2026-07-30): `<date>-<slug>` from
+ * the book-item title. Replaces the shape-spec `folder` event — computed,
+ * never parsed from LLM output, always safe-segment charset.
+ */
+export function deterministicSpecName(title: string, when: Date): string {
+  const slug =
+    (title || 'migration-spec')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/g, '') || 'migration-spec';
+  const date = when.toISOString().slice(0, 10);
+  return `${date}-${slug}`;
+}
+
+/**
+ * The requirements body IVS materialises as planning/requirements.md: the
+ * generated spec text with the `/agent-os:shape-spec ` command prefix
+ * promoted to a markdown heading.
+ */
+export function requirementsFromGeneratedSpecText(text: string): string {
+  const stripped = stripShapeSpecPrefix((text ?? '').trim());
+  if (stripped === '') return '# Migration spec\n';
+  return stripped.startsWith('#') ? stripped : `# ${stripped}`;
+}
+
+/**
+ * The per-spec segment (Option A deterministic, 2026-07-30): compute the spec
+ * folder name from the book-item title, send the generated spec text as the
+ * materialisation payload, and submit the orchestration with the per-request
  * `callback_url` + `deploy_on_complete`, correlating the returned `job_id` to
- * the run-item. Per-item failure isolation: any failure halts THIS run cleanly
- * (records the error against the run-item + work item, marks the run halted)
- * and never throws to the caller.
+ * the run-item. IVS writes planning/requirements.md itself — there is no
+ * headless shaping turn, no auto-answered Q&A, and no folder detection (the
+ * three seams behind every intermittent halt: wrong-path requirements.md,
+ * the `<date>-<slug>` echo, and the cluster-1 double dispatch).
+ * Per-item failure isolation: any failure halts THIS run cleanly and never
+ * throws to the caller.
  */
 export async function runSpecSegment(
   scope: MigrateScope,
@@ -1253,55 +1286,31 @@ export async function runSpecSegment(
     deployOnComplete: item.deploy_on_complete ?? false,
   });
 
-  // Mark the run dispatching + the item answering (the boot-recovery sweep
-  // recognises answering/submitting-with-no-job_id as "stuck mid-segment").
   await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.DISPATCHING });
-  await safePatchItem(deps, projectId, runItemId, { status: RUN_ITEM_STATUS.ANSWERING });
 
-  let answer: ShapeSpecAnswerResult;
-  try {
-    answer = await deps.autoAnswerer.driveAndAnswer({
-      projectId,
-      company: scope.company,
-      project: scope.project,
-      runItemId,
-      generatedSpecText: descriptor.generatedSpecText,
-    });
-  } catch (error) {
-    await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
-      `Shape-spec auto-answer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    return;
-  }
+  const specName = deterministicSpecName(descriptor.title, new Date());
+  const requirementsText = requirementsFromGeneratedSpecText(
+    descriptor.generatedSpecText
+  );
 
-  if (!answer.ok || !answer.specName) {
-    await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
-      answer.error ??
-        'Shape-spec stream concluded without a folder (spec_name); cannot submit orchestration.');
-    // Persist whatever decision log we captured before halting (CD-4).
-    if (answer.decisionLog && answer.decisionLog.length > 0) {
-      await safePatchItem(deps, projectId, runItemId, {
-        auto_answer_decision_log_json: answer.decisionLog,
-      });
-    }
-    return;
-  }
-
-  // Persist the auto-answer decision log inline on the run-item (CD-4) + the
-  // captured spec_name; move the item to submitting.
+  // Stamp the computed spec_name; SUBMITTING (no ANSWERING phase any more —
+  // the boot-recovery sweep re-kicks submitting-with-no-job_id as before).
   await safePatchItem(deps, projectId, runItemId, {
     status: RUN_ITEM_STATUS.SUBMITTING,
-    spec_name: answer.specName,
-    auto_answer_decision_log_json: answer.decisionLog ?? null,
+    spec_name: specName,
   });
 
-  // Submit the orchestration server-to-server with callback_url + deploy_on_complete.
+  // Submit the orchestration server-to-server with the materialisation
+  // payload. Step 4 (/git-commit-preparation) runs once per run: only the
+  // final item (deploy_on_complete marker) asks for it.
   let submit: OrchestrationSubmitResult;
   try {
     submit = await deps.submitOrchestration({
       company: scope.company,
       project: scope.project,
-      specName: answer.specName,
-      sessionId: answer.sessionId ?? null,
+      specName,
+      requirementsText,
+      commitPreparation: item.deploy_on_complete === true,
       deployOnComplete: item.deploy_on_complete ?? false,
       callbackUrl: deps.buildResultsCallbackUrl,
     });
@@ -1330,11 +1339,11 @@ export async function runSpecSegment(
     runId,
     runItemId,
     jobId: submit.jobId,
-    specName: answer.specName,
+    specName,
     deployOnComplete: item.deploy_on_complete ?? false,
   });
 
-  trace.step(`spec dispatched — ${answer.specName}`, {
+  trace.step(`spec dispatched — ${specName}`, {
     run: runId,
     job: submit.jobId,
     project: scope.project,
@@ -1346,8 +1355,9 @@ export async function runSpecSegment(
 // ============================================================================
 
 /**
- * Kick the detached batch runner: auto-answer ALL selected specs, then ONE
- * batched submit (one branch). Like {@link kickSpecRunner} it never throws.
+ * Kick the detached batch runner: materialise ALL selected specs
+ * deterministically, then ONE batched submit (one branch). Like
+ * {@link kickSpecRunner} it never throws.
  */
 export function kickBatchRunner(
   scope: MigrateScope,
@@ -1366,12 +1376,13 @@ export function kickBatchRunner(
 }
 
 /**
- * The batch segment (subset migrate): auto-answer EVERY selected spec to
- * materialise its folder, then submit them all as ONE coupled batch
- * (`batch_name` -> one `feature/<batch_name>` branch, one MR). The single job_id
- * is correlated onto ALL run-items; the one build-results callback completes the
- * whole batch. A per-item answer failure halts the run cleanly (no partial
- * submit), preserving per-item failure isolation.
+ * The batch segment (subset migrate, Option A deterministic 2026-07-30):
+ * compute every selected spec's folder name + materialisation payload, then
+ * submit them all as ONE coupled batch (`batch_name` -> one
+ * `feature/<batch_name>` branch, one MR). IVS materialises each folder and
+ * runs /git-commit-preparation once, on the batch's final spec. The single
+ * job_id is correlated onto ALL run-items; the one build-results callback
+ * completes the whole batch.
  */
 export async function runBatchSegment(
   scope: MigrateScope,
@@ -1390,11 +1401,13 @@ export async function runBatchSegment(
     .slice()
     .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
 
-  // Phase 1: auto-answer EVERY spec first (collect spec_name + session_id).
+  // Phase 1 (Option A deterministic, 2026-07-30): compute every spec's
+  // folder name from its book-item title and carry the generated spec text
+  // as the materialisation payload — no shaping turns, no auto-answering.
   const resolved: Array<{
     item: MigrationExecutionRunItem;
     specName: string;
-    sessionId: string | null;
+    requirementsText: string;
   }> = [];
   for (const item of ordered) {
     const runItemId = item.id as string;
@@ -1404,37 +1417,16 @@ export async function runBatchSegment(
         'Could not resolve generated_spec_text for a batched spec.');
       return;
     }
-    await safePatchItem(deps, projectId, runItemId, { status: RUN_ITEM_STATUS.ANSWERING });
-    let answer: ShapeSpecAnswerResult;
-    try {
-      answer = await deps.autoAnswerer.driveAndAnswer({
-        projectId,
-        company: scope.company,
-        project: scope.project,
-        runItemId,
-        generatedSpecText: descriptor.generatedSpecText,
-      });
-    } catch (error) {
-      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
-        `Shape-spec auto-answer failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return;
-    }
-    if (!answer.ok || !answer.specName) {
-      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
-        answer.error ?? 'Shape-spec stream concluded without a folder (spec_name).');
-      if (answer.decisionLog && answer.decisionLog.length > 0) {
-        await safePatchItem(deps, projectId, runItemId, {
-          auto_answer_decision_log_json: answer.decisionLog,
-        });
-      }
-      return;
-    }
+    const specName = deterministicSpecName(descriptor.title, new Date());
     await safePatchItem(deps, projectId, runItemId, {
       status: RUN_ITEM_STATUS.SUBMITTING,
-      spec_name: answer.specName,
-      auto_answer_decision_log_json: answer.decisionLog ?? null,
+      spec_name: specName,
     });
-    resolved.push({ item, specName: answer.specName, sessionId: answer.sessionId ?? null });
+    resolved.push({
+      item,
+      specName,
+      requirementsText: requirementsFromGeneratedSpecText(descriptor.generatedSpecText),
+    });
   }
 
   if (resolved.length === 0) {
@@ -1451,7 +1443,10 @@ export async function runBatchSegment(
     submit = await submitBatch({
       company: scope.company,
       project: scope.project,
-      specs: resolved.map((r) => ({ specName: r.specName, sessionId: r.sessionId })),
+      specs: resolved.map((r) => ({
+        specName: r.specName,
+        requirementsText: r.requirementsText,
+      })),
       batchName,
       deployOnComplete: true,
       callbackUrl: deps.buildResultsCallbackUrl,

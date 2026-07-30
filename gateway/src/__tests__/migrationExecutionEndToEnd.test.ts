@@ -504,10 +504,10 @@ describe('end-to-end: boot-recovery resumes a stuck run', () => {
     expect(result.recovered).toBe(1);
     expect(result.rekicked).toBe(1);
 
-    // The stuck spec was re-driven through the auto-answerer + submitted, and
-    // its job_id is now recorded (it is no longer stuck).
+    // The stuck spec was re-dispatched DETERMINISTICALLY (no shaping turn),
+    // and its job_id is now recorded (it is no longer stuck).
     await flush();
-    expect(deps.autoAnswerer.driveAndAnswer).toHaveBeenCalled();
+    expect(deps.autoAnswerer.driveAndAnswer).not.toHaveBeenCalled();
     expect(deps.submitOrchestration).toHaveBeenCalledTimes(1);
     expect(store.run!.items![0].status).toBe(RUN_ITEM_STATUS.SUBMITTED);
     expect(store.run!.items![0].job_id).toBeTruthy();
@@ -652,20 +652,18 @@ describe('end-to-end: auto-answerer never abstains within the dispatch path', ()
     expect(started.status).toBe('started');
     await flush();
 
-    // The sparse question was answered with ONE combined RESUME answer (CD-1):
-    // session_mode 'resume', NO session_id, a concrete non-empty answer.
-    const resume = resumeBodies.find((b) => b.session_mode === 'resume');
-    expect(resume).toBeTruthy();
-    expect(resume!.session_id).toBeUndefined();
-    expect(String(resume!.message).trim().length).toBeGreaterThan(0);
+    // Option A (2026-07-30): the dispatch path is DETERMINISTIC end-to-end.
+    // Even with a fully-wired real answerer available in deps, NO shape-spec
+    // stream is ever opened, and the submit carries the computed name + the
+    // requirements payload instead of a detected folder.
+    expect(resumeBodies).toHaveLength(0);
 
-    // The segment concluded (folder captured) and SUBMITTED -> a job_id recorded.
     expect(deps.submitOrchestration).toHaveBeenCalledTimes(1);
-    expect((deps.submitOrchestration as jest.Mock).mock.calls[0][0].specName).toBe('2026-sparse-folder');
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.specName).toMatch(/^\d{4}-\d{2}-\d{2}-/);
+    expect(submitArg.requirementsText).toEqual(expect.any(String));
     expect(store.run!.items![0].status).toBe(RUN_ITEM_STATUS.SUBMITTED);
     expect(store.run!.items![0].job_id).toBeTruthy();
-    // The decision log was persisted inline on the run-item (CD-4).
-    expect(store.run!.items![0].auto_answer_decision_log_json?.length).toBeGreaterThan(0);
   });
 });
 
@@ -718,7 +716,7 @@ describe('end-to-end: boot-recovery wiring (runMigrationBootRecovery)', () => {
     expect(result.rekicked).toBe(1);
 
     await flush();
-    expect(deps.autoAnswerer.driveAndAnswer).toHaveBeenCalled();
+    expect(deps.autoAnswerer.driveAndAnswer).not.toHaveBeenCalled();
     expect(store.run!.items![0].status).toBe(RUN_ITEM_STATUS.SUBMITTED);
   });
 

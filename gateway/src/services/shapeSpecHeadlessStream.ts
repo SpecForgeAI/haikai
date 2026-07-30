@@ -199,7 +199,7 @@ export interface DriveShapeSpecStreamResult {
 // ---------------------------------------------------------------------------
 
 /** Strip the leading `/agent-os:shape-spec ` / `/shape-spec ` prefix (the endpoint adds it). */
-function stripShapeSpecPrefix(message: string): string {
+export function stripShapeSpecPrefix(message: string): string {
   if (message.startsWith('/agent-os:shape-spec ')) {
     return message.slice('/agent-os:shape-spec '.length);
   }
