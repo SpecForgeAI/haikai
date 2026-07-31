@@ -565,3 +565,52 @@ describe('Implementation-ready generator -- Group 5 end-to-end seams', () => {
     expect(testPlan.map((t) => t.type).sort()).toEqual(['functional', 'unit']);
   });
 });
+
+// ===========================================================================
+// AMS wire-strictness normalization (2026-07-31): AMS types warnings_json /
+// missing_inputs_json STRICTLY as List<Map<String,Object>> and
+// evidence_refs_json as List<String>, and @RequestBody List<...> binds
+// ATOMICALLY — one bare-string warning (or object evidence ref) Jackson-
+// rejected the whole batch as a generic 400 (the live couldNotPersist=25).
+// ===========================================================================
+
+describe('toAmsWireShape free-shape normalization', () => {
+  const base = () =>
+    normaliseAmsRow({ project_id: 'p1', work_item_id: 'w1', status: 'generated' });
+
+  it('coerces string warnings/blockers to objects and object evidence refs to strings', () => {
+    const dto = {
+      ...base(),
+      warningsJson: ['plain warning', { code: 'W1', message: 'kept' }] as unknown as Array<
+        Record<string, unknown>
+      >,
+      missingInputsJson: [{ input: 'db.engine' }, 'missing thing'] as unknown as Array<
+        Record<string, unknown>
+      >,
+      evidenceRefsJson: ['ref-1', { id: 'ev-2', kind: 'finding' }, { kind: 'no-id' }],
+    };
+
+    const wire = toAmsWireShape(dto);
+
+    expect(wire.warnings_json).toEqual([
+      { message: 'plain warning' },
+      { code: 'W1', message: 'kept' },
+    ]);
+    expect(wire.missing_inputs_json).toEqual([
+      { input: 'db.engine' },
+      { message: 'missing thing' },
+    ]);
+    expect(wire.evidence_refs_json).toEqual([
+      'ref-1',
+      'ev-2',
+      JSON.stringify({ kind: 'no-id' }),
+    ]);
+  });
+
+  it('keeps null free-shape fields null (no accidental empty-array coercion)', () => {
+    const wire = toAmsWireShape(base());
+    expect(wire.warnings_json).toBeNull();
+    expect(wire.missing_inputs_json).toBeNull();
+    expect(wire.evidence_refs_json).toBeNull();
+  });
+});

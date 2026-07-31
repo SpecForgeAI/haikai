@@ -1245,6 +1245,44 @@ const defaultPutImplementState: ImplementStatePutter = async (body) => {
   return { success: true };
 };
 
+/**
+ * AMS types `warnings_json` / `missing_inputs_json` STRICTLY as
+ * `List<Map<String,Object>>`, and `@RequestBody List<...>` binds ATOMICALLY —
+ * one malformed element Jackson-rejects the whole batch as 400 "Required
+ * request body is missing or malformed" (the live `couldNotPersist=25`; the
+ * GlobalExceptionHandler masks the real cause). The gateway validator accepts
+ * these entries as strings OR objects, so normalise at the wire boundary:
+ * bare strings wrap as `{ message }`, objects pass through, null stays null
+ * (never an accidental empty-array coercion).
+ */
+export function toObjectArrayOrNull(value: unknown): Array<Record<string, unknown>> | null {
+  if (value == null || !Array.isArray(value)) return null;
+  return value.map((entry) => {
+    if (typeof entry === 'string') return { message: entry };
+    if (entry && typeof entry === 'object') return entry as Record<string, unknown>;
+    return { message: String(entry) };
+  });
+}
+
+/**
+ * `evidence_refs_json` is STRICTLY `List<String>` on the AMS side — an object
+ * entry throws the same batch-wide Jackson rejection. Objects reduce to their
+ * `id` when present (else a JSON string); strings pass through; null stays
+ * null.
+ */
+export function toStringArrayOrNull(value: unknown): string[] | null {
+  if (value == null || !Array.isArray(value)) return null;
+  return value.map((entry) => {
+    if (typeof entry === 'string') return entry;
+    if (entry && typeof entry === 'object') {
+      const id = (entry as Record<string, unknown>).id;
+      if (typeof id === 'string' && id !== '') return id;
+      return JSON.stringify(entry);
+    }
+    return String(entry);
+  });
+}
+
 export function toAmsWireShape(r: MigrationStorySpecGenerationDto): Record<string, unknown> {
   return {
     id: r.id ?? null,
@@ -1256,10 +1294,10 @@ export function toAmsWireShape(r: MigrationStorySpecGenerationDto): Record<strin
     confidence: r.confidence ?? null,
     predicted_readiness: r.predictedReadiness ?? null,
     generated_spec_text: r.generatedSpecText ?? null,
-    warnings_json: r.warningsJson ?? null,
-    missing_inputs_json: r.missingInputsJson ?? null,
+    warnings_json: toObjectArrayOrNull(r.warningsJson),
+    missing_inputs_json: toObjectArrayOrNull(r.missingInputsJson),
     focused_context_refs_json: r.focusedContextRefsJson ?? null,
-    evidence_refs_json: r.evidenceRefsJson ?? null,
+    evidence_refs_json: toStringArrayOrNull(r.evidenceRefsJson),
     generated_at: r.generatedAt ?? null,
     error_message: r.errorMessage ?? null,
     generation_attempt_number: r.generationAttemptNumber ?? null,
