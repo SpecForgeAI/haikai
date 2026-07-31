@@ -39,6 +39,7 @@ import {
   startMigration,
   resumeMigration,
   haltMigrationRunByOperator,
+  retryDbPlaneCompletion,
   defaultMigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -86,7 +87,11 @@ import {
   defaultRunParityStatusDeps,
 } from '../services/migrationRunParityStatus';
 import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
-import type { TargetDbSecret } from '../services/migrationTargetCredentialsStore';
+import type {
+  TargetDbSecret,
+  TargetServeSpec,
+} from '../services/migrationTargetCredentialsStore';
+import { deriveServeSpecDefaults } from '../services/migrationServeSpecDefaults';
 import { defaultFetchPackView } from '../services/migrationDbPackPlanner';
 
 export const migrationExecutionRouter = Router();
@@ -469,6 +474,59 @@ migrationExecutionRouter.post(
 );
 
 // ---------------------------------------------------------------------------
+// POST .../migration-execution-runs/:runId/retry-db-completion — operator
+// "Retry DB build" (2026-07-31). A run whose specs ALL implemented but whose
+// DB execution chain failed (live: the chain's inputs guard halted on
+// unregistered source DB creds) can re-run assemble -> schema-apply -> load
+// -> reconcile WITHOUT re-running the specs. The chain is idempotent
+// end-to-end; the driver guards fail-closed (only a halted run with an
+// implemented/chain-failed final db-plane item).
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/retry-db-completion',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as { company?: string; project?: string; book_id?: string };
+    if (!body.company || !body.project) {
+      return res.status(400).json({
+        error: 'body must include company + project (the workspace identifiers)',
+      });
+    }
+    try {
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      const result = await retryDbPlaneCompletion(
+        {
+          projectId,
+          bookId: body.book_id ?? '',
+          company: body.company,
+          project: body.project,
+        },
+        runId,
+        deps
+      );
+      logger.info('[diag-gateway] migration_execution_driver db_completion_retry_requested', {
+        projectId,
+        runId,
+        outcome: result.status,
+      });
+      if (result.status === 'retrying') return res.status(200).json(result);
+      if (result.status === 'not_retryable') return res.status(409).json(result);
+      return res.status(404).json({ error: 'Migration execution run not found' });
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver db_completion_retry_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res
+        .status(500)
+        .json({ status: 'error', message: 'Failed to retry the DB build' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
 // Run parity status (Spec 2026-07-06-i, Tier-1 batch): the on-demand read of
 // the completion / closure / drift evaluators for a run — gate codes on the
 // existing run surface, no new UI build-out. Evaluators fail CLOSED; input
@@ -719,71 +777,182 @@ migrationExecutionRouter.post(
  * (Spec 2026-07-06-n, Tier-1 batch — user decision Q3) enables state-delta
  * snapshots on the reconcile's mutating replays; same in-memory posture.
  */
+/** Whole-or-400 DB block validation (shared by target `db` + `source_db`). */
+function parseDbBlock(
+  raw: Record<string, unknown> | undefined | null,
+  label: string
+): { db?: TargetDbSecret; error?: string } {
+  if (raw === undefined || raw === null) return {};
+  const d = raw as {
+    dbType?: string;
+    host?: string;
+    port?: number;
+    database?: string;
+    schema?: string | null;
+    username?: string;
+    password?: string;
+  };
+  const engineOk = d.dbType === 'postgres' || d.dbType === 'sybase';
+  if (
+    !engineOk ||
+    !d.host ||
+    typeof d.port !== 'number' ||
+    !d.database ||
+    !d.username ||
+    typeof d.password !== 'string' ||
+    d.password.length === 0
+  ) {
+    return {
+      error: `${label} block must include { dbType: postgres|sybase, host, port, database, username, password }`,
+    };
+  }
+  return {
+    db: {
+      dbType: d.dbType as 'postgres' | 'sybase',
+      host: d.host,
+      port: d.port,
+      database: d.database,
+      schema: d.schema ?? null,
+      username: d.username,
+      password: d.password,
+    },
+  };
+}
+
+const VALID_AUTH_TYPES = [
+  'none', 'bearer', 'api_key_header', 'api_key_query', 'basic', 'custom_header',
+];
+
 migrationExecutionRouter.post(
   '/projects/:projectId/migration-execution-runs/:runId/target-credentials',
   async (req: Request, res: Response) => {
-    const { runId } = req.params;
+    const { projectId, runId } = req.params;
     const body = (req.body ?? {}) as {
       api?: { type?: string };
-      db?: {
-        dbType?: string;
-        host?: string;
-        port?: number;
-        database?: string;
-        schema?: string | null;
-        username?: string;
-        password?: string;
+      db?: Record<string, unknown>;
+      /**
+       * Stage-1 Start modal (2026-07-31): the SOURCE database credentials.
+       * Previously only registerable via the baseline-drift-watch route
+       * (which demands baseline context a DB start does not have) — the
+       * live run halted at the chain's inputs guard because of exactly
+       * that gap. Written to currentSystemCredentialsStore, merge-not-
+       * clobber.
+       */
+      source_db?: Record<string, unknown>;
+      /**
+       * Stage-2 Start modal (2026-07-31): the target-service serve spec
+       * haibox launches for the deploy + API reconcile. TRUST BOUNDARY:
+       * command is operator-confirmed input, executed verbatim by haiboxd.
+       */
+      service?: {
+        command?: string;
+        health_path?: string;
+        port_env?: string;
+        readiness_timeout?: number;
+        env?: Record<string, unknown>;
+      };
+      /** Stage-2 Start modal: the SOURCE (current system) API details. */
+      source_api?: {
+        current_base_url?: string;
+        api?: { type?: string };
       };
     };
     if (!body.api || typeof body.api.type !== 'string') {
       return res.status(400).json({ error: 'body must include { api: { type, ... } }' });
     }
-    const validTypes = ['none', 'bearer', 'api_key_header', 'api_key_query', 'basic', 'custom_header'];
-    if (!validTypes.includes(body.api.type)) {
+    if (!VALID_AUTH_TYPES.includes(body.api.type)) {
       return res.status(400).json({ error: `invalid auth type: ${body.api.type}` });
     }
-    // OPTIONAL target-DB block: validated as a whole — a partial block is a
-    // 400, never a silently-degraded registration.
-    let db: Parameters<typeof migrationTargetCredentialsStore.set>[2];
-    if (body.db !== undefined && body.db !== null) {
-      const d = body.db;
-      const engineOk = d.dbType === 'postgres' || d.dbType === 'sybase';
-      if (
-        !engineOk ||
-        !d.host ||
-        typeof d.port !== 'number' ||
-        !d.database ||
-        !d.username ||
-        typeof d.password !== 'string' ||
-        d.password.length === 0
-      ) {
+    // OPTIONAL DB blocks: validated as a whole — a partial block is a 400,
+    // never a silently-degraded registration.
+    const target = parseDbBlock(body.db, 'db');
+    if (target.error) return res.status(400).json({ error: target.error });
+    const source = parseDbBlock(body.source_db, 'source_db');
+    if (source.error) return res.status(400).json({ error: source.error });
+
+    // OPTIONAL target-service serve spec: whole-or-400.
+    let service: TargetServeSpec | undefined;
+    if (body.service !== undefined && body.service !== null) {
+      const s = body.service;
+      const commandOk = typeof s.command === 'string' && s.command.trim().length > 0;
+      const healthOk = typeof s.health_path === 'string' && s.health_path.startsWith('/');
+      const portEnvOk =
+        typeof s.port_env === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(s.port_env);
+      const timeoutOk =
+        s.readiness_timeout === undefined ||
+        (typeof s.readiness_timeout === 'number' &&
+          Number.isFinite(s.readiness_timeout) &&
+          s.readiness_timeout > 0);
+      const envOk =
+        s.env === undefined ||
+        (typeof s.env === 'object' &&
+          s.env !== null &&
+          Object.values(s.env).every((v) => typeof v === 'string'));
+      if (!commandOk || !healthOk || !portEnvOk || !timeoutOk || !envOk) {
         return res.status(400).json({
           error:
-            'db block must include { dbType: postgres|sybase, host, port, database, username, password }',
+            'service block must include { command (non-empty), health_path (/-prefixed), ' +
+            'port_env (env-var name) } with optional readiness_timeout (positive number) ' +
+            'and env (string values)',
         });
       }
-      db = {
-        dbType: d.dbType as 'postgres' | 'sybase',
-        host: d.host,
-        port: d.port,
-        database: d.database,
-        schema: d.schema ?? null,
-        username: d.username,
-        password: d.password,
+      service = {
+        command: (s.command as string).trim(),
+        healthPath: s.health_path as string,
+        portEnv: s.port_env as string,
+        ...(s.readiness_timeout !== undefined ? { readinessTimeout: s.readiness_timeout } : {}),
+        ...(s.env !== undefined ? { env: s.env as Record<string, string> } : {}),
       };
     }
+
+    // OPTIONAL source-API block: whole-or-400.
+    let sourceApi: { currentBaseUrl: string; api: { type: string } } | undefined;
+    if (body.source_api !== undefined && body.source_api !== null) {
+      const sa = body.source_api;
+      const urlOk =
+        typeof sa.current_base_url === 'string' && /^https?:\/\//.test(sa.current_base_url);
+      const apiOk =
+        !!sa.api && typeof sa.api.type === 'string' && VALID_AUTH_TYPES.includes(sa.api.type);
+      if (!urlOk || !apiOk) {
+        return res.status(400).json({
+          error: 'source_api block must include { current_base_url (http/https), api: { type } }',
+        });
+      }
+      sourceApi = { currentBaseUrl: sa.current_base_url as string, api: sa.api as { type: string } };
+    }
+
     // Never log the secret material -- only that creds were registered.
     migrationTargetCredentialsStore.set(
       runId,
       body.api as Parameters<typeof migrationTargetCredentialsStore.set>[1],
-      db
+      target.db,
+      service
     );
+    if (source.db) {
+      currentSystemCredentialsStore.upsertDb(projectId, source.db);
+    }
+    if (sourceApi) {
+      currentSystemCredentialsStore.upsertApi(projectId, {
+        currentBaseUrl: sourceApi.currentBaseUrl,
+        api: sourceApi.api as Parameters<typeof migrationTargetCredentialsStore.set>[1],
+      });
+    }
     logger.info('[diag-gateway] migration_reconciliation target_credentials_registered', {
       runId,
       authType: body.api.type,
-      dbRegistered: db !== undefined,
+      dbRegistered: target.db !== undefined,
+      sourceDbRegistered: source.db !== undefined,
+      serviceRegistered: service !== undefined,
+      sourceApiRegistered: sourceApi !== undefined,
     });
-    return res.status(200).json({ runId, registered: true, dbRegistered: db !== undefined });
+    return res.status(200).json({
+      runId,
+      registered: true,
+      dbRegistered: target.db !== undefined,
+      sourceDbRegistered: source.db !== undefined,
+      serviceRegistered: service !== undefined,
+      sourceApiRegistered: sourceApi !== undefined,
+    });
   }
 );
 
@@ -818,7 +987,8 @@ migrationExecutionRouter.get(
     }
 
     // Source (current-system) coordinates — non-secret fields only.
-    const sourceDb = currentSystemCredentialsStore.get(projectId)?.db;
+    const watch = currentSystemCredentialsStore.get(projectId);
+    const sourceDb = watch?.db;
     const source = sourceDb
       ? {
           registered: true,
@@ -830,15 +1000,32 @@ migrationExecutionRouter.get(
         }
       : { registered: false };
 
-    // Target registration presence for a specific run (boolean only).
+    // Source SERVICE (current system API) presence — non-secret fields only
+    // (stage-2 Start modal prefill, 2026-07-31).
+    const sourceApi =
+      watch?.api && watch?.currentBaseUrl
+        ? { registered: true, current_base_url: watch.currentBaseUrl, auth_type: watch.api.type }
+        : { registered: false };
+
+    // Target registration presence for a specific run (booleans only).
     const targetRegistered = runId
       ? migrationTargetCredentialsStore.getDb(runId) !== undefined
       : false;
+    const targetServiceRegistered = runId
+      ? migrationTargetCredentialsStore.getService(runId) !== undefined
+      : false;
+
+    // DECLARED target-service serve-spec defaults (stage-2 modal prefill):
+    // derived from the target-state captured decisions, best-effort.
+    const serviceBinding = await deriveServeSpecDefaults(projectId);
 
     return res.status(200).json({
       target_binding: targetBinding,
+      service_binding: serviceBinding,
       source,
+      source_api: sourceApi,
       target_registered: targetRegistered,
+      target_service_registered: targetServiceRegistered,
     });
   }
 );

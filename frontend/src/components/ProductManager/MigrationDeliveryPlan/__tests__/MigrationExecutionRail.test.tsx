@@ -33,7 +33,7 @@ const mockGetRun = vi.fn();
 const mockResume = vi.fn();
 const mockHaltRun = vi.fn();
 const mockCredsStatus = vi.fn();
-const mockRegisterTargetDb = vi.fn();
+const mockRegisterStageCreds = vi.fn();
 vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
   const actual = await vi.importActual<
     typeof import('../../../../api/migrationDeliveryDashboardApi')
@@ -45,10 +45,12 @@ vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
     resumeMigrationRun: (...a: unknown[]) => mockResume(...a),
     haltMigrationRun: (...a: unknown[]) => mockHaltRun(...a),
     fetchMigrationCredentialsStatus: (...a: unknown[]) => mockCredsStatus(...a),
-    registerRunTargetDbCredentials: (...a: unknown[]) =>
-      mockRegisterTargetDb(...a),
+    registerRunStageCredentials: (...a: unknown[]) =>
+      mockRegisterStageCreds(...a),
+    retryRunDbCompletion: (...a: unknown[]) => mockRetryDbCompletion(...a),
   };
 });
+const mockRetryDbCompletion = vi.fn();
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
   const actual = await vi.importActual<
     typeof import('../../../../api/dbMigrationPackApi')
@@ -211,10 +213,20 @@ beforeEach(() => {
       schema: 'public',
       username: 'postgres',
     },
-    source: { registered: true, host: 'sh', port: 5000, database: 'sd' },
+    serviceBinding: null,
+    source: {
+      registered: true,
+      host: 'src-host',
+      port: 5000,
+      database: 'legacy',
+      username: 'reader',
+    },
+    sourceApi: { registered: false },
     targetRegistered: false,
+    targetServiceRegistered: false,
   });
-  mockRegisterTargetDb.mockReset().mockResolvedValue(undefined);
+  mockRegisterStageCreds.mockReset().mockResolvedValue(undefined);
+  mockRetryDbCompletion.mockReset().mockResolvedValue({ status: 'retrying' });
   // Benign default: nothing to account for (the carry-over gate stays clear).
   mockGetCarryOverCoverage.mockReset().mockResolvedValue(coverageOf(0, 0));
 });
@@ -289,7 +301,12 @@ describe('execution rail (Phase 1b)', () => {
       (within(dialog).getByTestId('start-stage-host') as HTMLInputElement)
         .value,
     ).toBe('localhost');
-    expect(dialog).toHaveTextContent(/Source DB:\s*registered ✓/);
+    // 2026-07-31: the old "Source DB: registered" note became a full
+    // editable SOURCE DATABASE section, prefilled from the store.
+    expect(
+      (within(dialog).getByTestId('start-stage-source-host') as HTMLInputElement)
+        .value,
+    ).toBe('src-host');
 
     fireEvent.change(within(dialog).getByTestId('start-stage-password'), {
       target: { value: 's3cret' },
@@ -307,14 +324,52 @@ describe('execution rail (Phase 1b)', () => {
       }),
     );
     await waitFor(() =>
-      expect(mockRegisterTargetDb).toHaveBeenCalledWith(PROJECT_ID, 'run-1', {
-        host: 'localhost',
-        port: 5432,
-        database: 'haikai_target',
-        schema: 'public',
-        username: 'postgres',
-        password: 's3cret',
+      expect(mockRegisterStageCreds).toHaveBeenCalledWith(PROJECT_ID, 'run-1', {
+        targetDb: {
+          dbType: 'postgres',
+          host: 'localhost',
+          port: 5432,
+          database: 'haikai_target',
+          schema: 'public',
+          username: 'postgres',
+          password: 's3cret',
+        },
       }),
+    );
+  });
+
+  it('halted run: "Retry DB build..." opens the stage-1 dialog in retry mode (2026-07-31)', async () => {
+    // The live shape: 14 specs implemented + MRs opened, then the DB chain
+    // halted at its inputs guard (source DB creds unregistered). Retry must
+    // NOT force a full stage re-run.
+    mockFetchRows.mockResolvedValue([generatedRow('wi-1', 's-1')]);
+    mockGetRun.mockResolvedValue({
+      id: 'run-halted',
+      status: 'halted',
+      items: [
+        {
+          work_item_id: 'wi-1', status: 'failed', outcome: 'failed',
+          deploy_on_complete: true,
+          error_detail:
+            'DB execution chain failed at inputs: source DB credentials are not registered',
+        },
+      ],
+    });
+    renderWorkspace(
+      draftWith([makeItem({ id: 's-1', title: 'Schema story', workItemId: 'wi-1' } as never)]),
+    );
+
+    const retryButton = await screen.findByTestId('execution-rail-retry-db-button');
+    fireEvent.click(retryButton);
+
+    // The stage-1 credentials dialog opens in retry mode: BOTH database
+    // sections + the retry confirm label.
+    const dialog = await screen.findByTestId('start-stage-dialog');
+    expect(dialog).toHaveTextContent('Retry DB build');
+    expect(within(dialog).getByTestId('start-stage-source-host')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('start-stage-host')).toBeInTheDocument();
+    expect(within(dialog).getByTestId('start-stage-confirm')).toHaveTextContent(
+      'Retry DB build',
     );
   });
 

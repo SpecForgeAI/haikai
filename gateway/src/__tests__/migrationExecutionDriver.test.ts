@@ -35,6 +35,7 @@ import {
   advanceRunOnBuildResult,
   recoverInFlightRuns,
   haltMigrationRunByOperator,
+  retryDbPlaneCompletion,
   runSpecSegment,
   deterministicSpecName,
   specNameUniquenessSuffix,
@@ -1044,5 +1045,190 @@ describe('DB-plane completion handover', () => {
 
     const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
     expect(submitArg.deployOnComplete).toBe(true);
+  });
+});
+
+// ===========================================================================
+// Stage-2 (2026-07-31): the service plane serve spec rides the submit so
+// haibox can actually launch the migrated service.
+// ===========================================================================
+
+describe('service-plane serve-spec threading', () => {
+  const serveSpec = {
+    command: 'mvn spring-boot:run',
+    healthPath: '/actuator/health',
+    portEnv: 'SERVER_PORT',
+  };
+
+  function serviceSegment(getServeSpec: jest.Mock) {
+    const item: MigrationExecutionRunItem = {
+      id: 'ri-0', run_id: 'run-svc', sequence_position: 0, work_item_id: 'wi-1',
+      status: RUN_ITEM_STATUS.PENDING, deploy_on_complete: true,
+    };
+    const run: MigrationExecutionRun = {
+      id: 'run-svc', project_id: PROJECT_ID, status: RUN_STATUS.DISPATCHING, items: [item],
+    };
+    const descriptor: DispatchDescriptor = {
+      sequencePosition: 0, workItemId: 'wi-1-aaaa-bbbb', specGenerationId: 'sg-1',
+      bookItemId: 's1', generatedSpecText: 'API body', title: 'API',
+      deployOnComplete: true, workstream: 'api_migration', plane: 'service',
+    };
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      getTargetServeSpec: getServeSpec,
+    });
+    return { item, run, descriptor, deps };
+  }
+
+  it('attaches the registered serve spec to a service-plane final submit', async () => {
+    const { item, run, descriptor, deps } = serviceSegment(
+      jest.fn().mockReturnValue(serveSpec)
+    );
+    await runSpecSegment(scope, run, item, descriptor, deps);
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(true);
+    expect(submitArg.targetServeSpec).toEqual(serveSpec);
+  });
+
+  it('missing serve spec: fail-soft, deploy flag stays true with no target attached', async () => {
+    const { item, run, descriptor, deps } = serviceSegment(
+      jest.fn().mockReturnValue(undefined)
+    );
+    await runSpecSegment(scope, run, item, descriptor, deps);
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(true);
+    expect(submitArg.targetServeSpec).toBeUndefined();
+  });
+
+  it('a db-plane final item never gets a serve spec nor the deploy flag', async () => {
+    const getServeSpec = jest.fn().mockReturnValue(serveSpec);
+    const item: MigrationExecutionRunItem = {
+      id: 'ri-0', run_id: 'run-db', sequence_position: 0, work_item_id: 'wi-db',
+      status: RUN_ITEM_STATUS.PENDING, deploy_on_complete: true,
+    };
+    const run: MigrationExecutionRun = {
+      id: 'run-db', project_id: PROJECT_ID, status: RUN_STATUS.DISPATCHING, items: [item],
+    };
+    const descriptor: DispatchDescriptor = {
+      sequencePosition: 0, workItemId: 'wi-db-aaaa', specGenerationId: 'sg-db',
+      bookItemId: 'b-db', generatedSpecText: 'Schema body', title: 'Schema',
+      deployOnComplete: true, workstream: 'target_database_schema_implementation',
+      plane: 'db',
+    };
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      getTargetServeSpec: getServeSpec,
+    });
+    await runSpecSegment(scope, run, item, descriptor, deps);
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(false);
+    expect(submitArg.targetServeSpec).toBeUndefined();
+    expect(getServeSpec).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
+// Operator Retry DB build (2026-07-31): re-run the DB execution chain on a
+// halted run whose specs all implemented; never on spec-authoring failures.
+// ===========================================================================
+
+describe('retryDbPlaneCompletion', () => {
+  const retryBook: BookOfWork = {
+    id: BOOK_ID,
+    project_id: PROJECT_ID,
+    current_architecture_id: 'arch-1',
+    status: 'draft',
+    book_of_work_json: {
+      items: [
+        { id: 'b-a', parentId: null, type: 'story', title: 'Schema', sequenceOrder: 0, workItemId: 'wi-a', workstream: 'target_database_schema_implementation' },
+        { id: 'b-b', parentId: null, type: 'story', title: 'Parity', sequenceOrder: 1, workItemId: 'wi-b', workstream: 'target_database_schema_implementation' },
+      ],
+    },
+  };
+
+  function haltedRun(finalOverrides: Partial<MigrationExecutionRunItem> = {}): MigrationExecutionRun {
+    return {
+      id: 'run-h', project_id: PROJECT_ID, book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.HALTED,
+      items: [
+        {
+          id: 'ri-0', run_id: 'run-h', sequence_position: 0, work_item_id: 'wi-a',
+          status: RUN_ITEM_STATUS.IMPLEMENTED, outcome: 'implemented',
+          spec_name: '2026-07-31-schema-x', deploy_on_complete: false,
+        },
+        {
+          id: 'ri-1', run_id: 'run-h', sequence_position: 1, work_item_id: 'wi-b',
+          status: RUN_ITEM_STATUS.FAILED, outcome: 'failed',
+          spec_name: '2026-07-31-parity-y', deploy_on_complete: true,
+          error_detail: 'DB execution chain failed at inputs: source DB credentials are not registered',
+          ...finalOverrides,
+        },
+      ],
+    };
+  }
+
+  function retryDeps(run: MigrationExecutionRun | null) {
+    const chain = jest.fn().mockResolvedValue(undefined);
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      fetchBookOfWork: jest.fn().mockResolvedValue(retryBook),
+      runDbPlaneCompletion: chain,
+    });
+    return { chain, deps };
+  }
+
+  it('resets the chain-failed final item and re-kicks the chain', async () => {
+    const run = haltedRun();
+    const { chain, deps } = retryDeps(run);
+
+    const result = await retryDbPlaneCompletion(scope, 'run-h', deps);
+
+    expect(result).toEqual({ status: 'retrying', runId: 'run-h' });
+    const reset = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.find(
+      (c) => c[1] === 'ri-1'
+    );
+    expect(reset[2]).toMatchObject({
+      status: RUN_ITEM_STATUS.IMPLEMENTED,
+      outcome: 'implemented',
+      error_detail: null,
+    });
+    expect((deps.patchMigrationExecutionRun as jest.Mock).mock.calls[0][2]).toEqual({
+      status: RUN_STATUS.DISPATCHING,
+    });
+    await flush();
+    expect(chain).toHaveBeenCalledTimes(1);
+    expect(chain.mock.calls[0][2]).toMatchObject({ id: 'ri-1', outcome: 'implemented' });
+  });
+
+  it('refuses a run that is not halted', async () => {
+    const run = { ...haltedRun(), status: RUN_STATUS.DISPATCHING };
+    const { chain, deps } = retryDeps(run);
+    const result = await retryDbPlaneCompletion(scope, 'run-h', deps);
+    expect(result.status).toBe('not_retryable');
+    expect(chain).not.toHaveBeenCalled();
+  });
+
+  it('refuses a spec-authoring failure (the final item never implemented)', async () => {
+    const run = haltedRun({
+      error_detail: 'Step 3 finished but tasks.md still has 2 unticked task checkbox(es)',
+    });
+    const { chain, deps } = retryDeps(run);
+    const result = await retryDbPlaneCompletion(scope, 'run-h', deps);
+    expect(result.status).toBe('not_retryable');
+    expect(chain).not.toHaveBeenCalled();
+  });
+
+  it('refuses when a sibling spec is not implemented', async () => {
+    const run = haltedRun();
+    run.items![0] = { ...run.items![0], status: RUN_ITEM_STATUS.FAILED, outcome: 'failed' };
+    const { chain, deps } = retryDeps(run);
+    const result = await retryDbPlaneCompletion(scope, 'run-h', deps);
+    expect(result.status).toBe('not_retryable');
+    expect(chain).not.toHaveBeenCalled();
+  });
+
+  it('reports not_found for a missing run', async () => {
+    const { deps } = retryDeps(null);
+    expect(await retryDbPlaneCompletion(scope, 'nope', deps)).toEqual({ status: 'not_found' });
   });
 });

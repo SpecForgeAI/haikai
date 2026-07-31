@@ -41,11 +41,18 @@ import type {
 
 export interface BaselineDriftWatch {
   projectId: string;
-  architectureId: string;
-  sourceBaselineId: string;
+  /**
+   * Drift-watch context fields — OPTIONAL since 2026-07-31: the Start-stage
+   * dialogs register SOURCE credentials (DB for stage 1, API for stage 2)
+   * into this store WITHOUT the baseline context a full drift watch needs.
+   * The drift tick skips entries that lack the full context; the DB
+   * execution chain and data-migration dispatch read only `.db`.
+   */
+  architectureId?: string;
+  sourceBaselineId?: string;
   /** The CURRENT (legacy) system's base URL — not the migration target. */
-  currentBaseUrl: string;
-  api: TargetApiAuthSecret;
+  currentBaseUrl?: string;
+  api?: TargetApiAuthSecret;
   /** OPTIONAL current-DB creds — enables state deltas on the drift replay. */
   db?: TargetDbSecret;
   registeredAt: number;
@@ -56,6 +63,43 @@ class CurrentSystemCredentialsStore {
 
   set(watch: Omit<BaselineDriftWatch, 'registeredAt'>): void {
     this.watches.set(watch.projectId, { ...watch, registeredAt: Date.now() });
+  }
+
+  /**
+   * Merge-not-clobber upsert of the SOURCE database credentials (stage-1
+   * Start modal, 2026-07-31). A creds-only registration must never wipe an
+   * existing drift watch's API/baseline fields — and vice versa.
+   */
+  upsertDb(projectId: string, db: TargetDbSecret, architectureId?: string): void {
+    const existing = this.watches.get(projectId);
+    this.watches.set(projectId, {
+      ...(existing ?? { projectId, registeredAt: Date.now() }),
+      projectId,
+      ...(architectureId && !existing?.architectureId ? { architectureId } : {}),
+      db,
+      registeredAt: existing?.registeredAt ?? Date.now(),
+    });
+  }
+
+  /**
+   * Merge-not-clobber upsert of the SOURCE service (current system API)
+   * details (stage-2 Start modal, 2026-07-31).
+   */
+  upsertApi(
+    projectId: string,
+    args: { currentBaseUrl: string; api: TargetApiAuthSecret; architectureId?: string }
+  ): void {
+    const existing = this.watches.get(projectId);
+    this.watches.set(projectId, {
+      ...(existing ?? { projectId, registeredAt: Date.now() }),
+      projectId,
+      ...(args.architectureId && !existing?.architectureId
+        ? { architectureId: args.architectureId }
+        : {}),
+      currentBaseUrl: args.currentBaseUrl,
+      api: args.api,
+      registeredAt: existing?.registeredAt ?? Date.now(),
+    });
   }
 
   get(projectId: string): BaselineDriftWatch | undefined {
@@ -128,6 +172,11 @@ export async function runDriftTick(
   for (const projectId of store.listProjectIds()) {
     const watch = store.get(projectId);
     if (!watch) continue;
+    // A creds-only entry (Start-modal source registration, 2026-07-31) is
+    // NOT a drift watch — it lacks the baseline context a check needs.
+    if (!watch.architectureId || !watch.sourceBaselineId || !watch.currentBaseUrl || !watch.api) {
+      continue;
+    }
     checked += 1;
     try {
       const diffs = await gateReads.listDiffsForBaseline(projectId, watch.sourceBaselineId);

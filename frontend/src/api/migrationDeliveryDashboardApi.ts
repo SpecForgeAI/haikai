@@ -1414,9 +1414,26 @@ export interface TargetDbBinding {
   note?: string;
 }
 
+/**
+ * The tool-DECLARED target-service serve-spec defaults (stage-2 Start modal,
+ * 2026-07-31): derived from the target-state captured decisions; the
+ * operator confirms or overrides. Host is always haibox's 127.0.0.1 and the
+ * port is OS-assigned — neither is an input.
+ */
+export interface ServeSpecBinding {
+  command: string;
+  health_path: string;
+  port_env: string;
+  readiness_timeout: number;
+  source: 'derived' | 'fallback';
+  runtime_hint: string | null;
+}
+
 /** Presence + non-secret coordinates from the gateway's in-memory stores. */
 export interface MigrationCredentialsStatus {
   targetBinding: TargetDbBinding | null;
+  /** Stage-2 modal prefill (2026-07-31). */
+  serviceBinding: ServeSpecBinding | null;
   source: {
     registered: boolean;
     dbType?: string;
@@ -1425,7 +1442,14 @@ export interface MigrationCredentialsStatus {
     database?: string;
     username?: string;
   };
+  /** SOURCE service (current system API) presence — non-secret (2026-07-31). */
+  sourceApi: {
+    registered: boolean;
+    current_base_url?: string;
+    auth_type?: string;
+  };
   targetRegistered: boolean;
+  targetServiceRegistered: boolean;
 }
 
 /**
@@ -1457,13 +1481,19 @@ export async function fetchMigrationCredentialsStatus(
   }
   const body = (await res.json()) as {
     target_binding?: TargetDbBinding | null;
+    service_binding?: ServeSpecBinding | null;
     source?: MigrationCredentialsStatus['source'];
+    source_api?: MigrationCredentialsStatus['sourceApi'];
     target_registered?: boolean;
+    target_service_registered?: boolean;
   };
   return {
     targetBinding: body.target_binding ?? null,
+    serviceBinding: body.service_binding ?? null,
     source: body.source ?? { registered: false },
+    sourceApi: body.source_api ?? { registered: false },
     targetRegistered: body.target_registered ?? false,
+    targetServiceRegistered: body.target_service_registered ?? false,
   };
 }
 
@@ -1487,6 +1517,51 @@ export async function registerRunTargetDbCredentials(
     password: string;
   },
 ): Promise<void> {
+  return registerRunStageCredentials(projectId, runId, {
+    targetDb: { dbType: 'postgres', ...db },
+  });
+}
+
+/** One DB credentials block (source or target side). */
+export interface StageDbCredentials {
+  dbType: 'postgres' | 'sybase';
+  host: string;
+  port: number;
+  database: string;
+  schema?: string | null;
+  username: string;
+  password: string;
+}
+
+/** The stage-2 target-service serve spec (operator-confirmed). */
+export interface StageServeSpec {
+  command: string;
+  healthPath: string;
+  portEnv: string;
+  readinessTimeout?: number;
+  env?: Record<string, string>;
+}
+
+/**
+ * Register a stage's SOURCE + TARGET connection details in ONE call
+ * (2026-07-31): stage 1 = source + target databases; stage 2 = source
+ * service (current system API) + target service (serve spec). All in-memory
+ * gateway-side — never persisted, never logged; lost on a gateway restart.
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/target-credentials
+ */
+export async function registerRunStageCredentials(
+  projectId: string,
+  runId: string,
+  opts: {
+    targetDb?: StageDbCredentials;
+    sourceDb?: StageDbCredentials;
+    service?: StageServeSpec;
+    sourceApi?: { currentBaseUrl: string; authType: string; bearerToken?: string };
+    /** Target-API auth for the reconcile replay; defaults to none. */
+    apiAuthType?: string;
+  },
+): Promise<void> {
   const url =
     `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
     `/migration-execution-runs/${encodeURIComponent(runId)}/target-credentials`;
@@ -1494,8 +1569,35 @@ export async function registerRunTargetDbCredentials(
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({
-      api: { type: 'none' },
-      db: { dbType: 'postgres', ...db },
+      api: { type: opts.apiAuthType ?? 'none' },
+      ...(opts.targetDb ? { db: opts.targetDb } : {}),
+      ...(opts.sourceDb ? { source_db: opts.sourceDb } : {}),
+      ...(opts.service
+        ? {
+            service: {
+              command: opts.service.command,
+              health_path: opts.service.healthPath,
+              port_env: opts.service.portEnv,
+              ...(opts.service.readinessTimeout !== undefined
+                ? { readiness_timeout: opts.service.readinessTimeout }
+                : {}),
+              ...(opts.service.env ? { env: opts.service.env } : {}),
+            },
+          }
+        : {}),
+      ...(opts.sourceApi
+        ? {
+            source_api: {
+              current_base_url: opts.sourceApi.currentBaseUrl,
+              api: {
+                type: opts.sourceApi.authType,
+                ...(opts.sourceApi.bearerToken
+                  ? { bearerToken: opts.sourceApi.bearerToken }
+                  : {}),
+              },
+            },
+          }
+        : {}),
     }),
   });
   if (!res.ok) {
@@ -1508,7 +1610,45 @@ export async function registerRunTargetDbCredentials(
     }
     throw new Error(
       message ||
-        `Failed to register target DB credentials: ${res.status} ${res.statusText}`,
+        `Failed to register stage credentials: ${res.status} ${res.statusText}`,
     );
   }
+}
+
+/**
+ * Operator "Retry DB build" (2026-07-31): re-run the DB execution chain
+ * (assemble -> schema-apply -> load -> reconcile) on a halted run whose
+ * specs all implemented — without re-running the specs. 409 carries the
+ * driver's fail-closed reason.
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/retry-db-completion
+ */
+export async function retryRunDbCompletion(
+  projectId: string,
+  runId: string,
+  args: { company: string; project: string; bookId?: string },
+): Promise<{ status: string; reason?: string }> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-execution-runs/${encodeURIComponent(runId)}/retry-db-completion`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      company: args.company,
+      project: args.project,
+      ...(args.bookId ? { book_id: args.bookId } : {}),
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    status?: string;
+    reason?: string;
+    error?: string;
+  };
+  if (!res.ok && res.status !== 409) {
+    throw new Error(
+      body.error || body.reason || `Failed to retry the DB build: ${res.status} ${res.statusText}`,
+    );
+  }
+  return { status: body.status ?? (res.ok ? 'retrying' : 'error'), reason: body.reason };
 }

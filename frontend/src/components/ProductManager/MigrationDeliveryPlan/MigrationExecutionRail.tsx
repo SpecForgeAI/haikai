@@ -129,6 +129,15 @@ export interface MigrationExecutionRailProps {
    * the run looking active forever (which correctly locks every Start).
    */
   onHaltRun?: () => void;
+  /**
+   * Operator "Retry DB build" (2026-07-31): a HALTED run whose specs all
+   * implemented but whose DB execution chain failed (live: unregistered
+   * source DB creds) re-runs assemble -> schema-apply -> load -> reconcile
+   * WITHOUT re-running the specs. Opens the stage-1 credentials dialog with
+   * Retry as the confirm; the server guards fail-closed (409 + reason when
+   * the run's shape does not qualify).
+   */
+  onRetryDbBuild?: () => void;
 }
 
 function describeBlockReason(r: Record<string, unknown>): string {
@@ -155,6 +164,7 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
   dbCredsRegistered,
   onProvideCreds,
   onHaltRun,
+  onRetryDbBuild,
 }) => {
   if (planes.length === 0) return null;
 
@@ -262,6 +272,30 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
               (abandon: in-flight items are marked failed and Start re-enables)
             </>
           )}
+        </div>
+      )}
+
+      {/* Halted-run DB-build retry (2026-07-31): the chain only fires on the
+          final item's callback, so without this a creds fix would force a
+          full stage re-run. The server 409s with a reason when the run's
+          shape does not qualify (e.g. the specs themselves failed). */}
+      {runStatus === 'halted' && onRetryDbBuild && (
+        <div
+          className={styles.coveragePanelNote}
+          data-testid="execution-rail-halted-status"
+        >
+          run status: halted{' — '}
+          <button
+            type="button"
+            className={styles.coverageInlineLink}
+            disabled={busy}
+            onClick={onRetryDbBuild}
+            data-testid="execution-rail-retry-db-button"
+          >
+            Retry DB build…
+          </button>{' '}
+          (re-runs assemble {'→'} schema {'→'} load {'→'} reconcile without
+          re-running the specs)
         </div>
       )}
 

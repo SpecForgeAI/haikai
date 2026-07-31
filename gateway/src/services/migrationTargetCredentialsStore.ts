@@ -63,24 +63,58 @@ export interface TargetDbSecret {
   password: string;
 }
 
+/**
+ * OPTIONAL target-SERVICE serve spec (stage-2 Start modal, 2026-07-31): how
+ * haibox should launch the migrated service for the deploy + API reconcile.
+ * TRUST BOUNDARY: `command` is executed verbatim by haiboxd on the host — it
+ * is OPERATOR-CONFIRMED input from the Start-stage dialog, carried by the
+ * authenticated co-located gateway (the only peer allowed to set it). Same
+ * in-memory / never-persisted / never-logged posture as the DB secret (env
+ * values may carry datasource passwords).
+ */
+export interface TargetServeSpec {
+  command: string;
+  healthPath: string;
+  portEnv: string;
+  readinessTimeout?: number;
+  env?: Record<string, string>;
+}
+
 interface RunCredentialsBundle {
   runId: string;
   api: TargetApiAuthSecret;
   db?: TargetDbSecret;
+  service?: TargetServeSpec;
   loadedAt: number;
 }
 
 class MigrationTargetCredentialsStore {
   private readonly bundles = new Map<string, RunCredentialsBundle>();
 
-  /** Register the run's target creds (captured at Migrate confirm). */
-  set(runId: string, api: TargetApiAuthSecret, db?: TargetDbSecret): void {
-    this.bundles.set(runId, { runId, api, ...(db ? { db } : {}), loadedAt: Date.now() });
+  /** Register the run's target creds (captured at the Start-stage dialog). */
+  set(
+    runId: string,
+    api: TargetApiAuthSecret,
+    db?: TargetDbSecret,
+    service?: TargetServeSpec
+  ): void {
+    this.bundles.set(runId, {
+      runId,
+      api,
+      ...(db ? { db } : {}),
+      ...(service ? { service } : {}),
+      loadedAt: Date.now(),
+    });
   }
 
   /** Read the run's target creds; undefined when not registered / restarted. */
   get(runId: string): TargetApiAuthSecret | undefined {
     return this.bundles.get(runId)?.api;
+  }
+
+  /** Read the run's OPTIONAL target-service serve spec (stage-2 deploy). */
+  getService(runId: string): TargetServeSpec | undefined {
+    return this.bundles.get(runId)?.service;
   }
 
   /** Read the run's OPTIONAL target-DB creds (state-delta snapshots). */
