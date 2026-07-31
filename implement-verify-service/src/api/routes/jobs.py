@@ -32,7 +32,7 @@ from fastapi import (
     status,
 )
 
-from ...haikai_models import OrchestrationRequest
+from ...haikai_models import AssembleRunRequest, OrchestrationRequest
 from ...api_auth import verify_api_key
 from ...job_queue.job_models import (
     Job,
@@ -386,6 +386,60 @@ async def create_orchestration_job_v2(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create orchestration job: {str(e)}",
+        )
+
+
+@router.post(
+    "/api/v2/jobs/assemblies",
+    tags=["Git Integration"],
+    summary="Assemble a migration run: merge spec branches + overlay the DB pack (V2)",
+    response_model=JobResponse,
+    responses={
+        400: {"description": "Missing prerequisites or git config"},
+        401: {"description": "Invalid or missing API key"},
+        500: {"description": "Server error"},
+    },
+)
+async def create_assembly_job(
+    request: AssembleRunRequest,
+    background_tasks: BackgroundTasks,
+    authenticated: bool = Depends(verify_api_key),
+):
+    """DB-plane execution chain (2026-07-31): merge the run's per-spec
+    branches into ONE new branch, overlay the complete pack (sent inline by
+    the gateway from AMS), validate the assembled pack structurally, push,
+    and open a merge request.
+
+    Returns immediately with a `job_id`; poll `GET /api/v2/jobs/{job_id}`.
+    The job result carries `{branch, mr_url, merged_branches, overlaid_files}`.
+    """
+    from .. import _require_git_manager, _run_job_in_background, job_queue
+
+    _require_git_manager(request.company, request.project)
+
+    try:
+        job = Job(
+            type=JobType.ASSEMBLE_RUN,
+            company=request.company,
+            project=request.project,
+            request_payload=request.model_dump(),
+        )
+        job_id = job_queue.enqueue_job(job)
+        if os.getenv("API_INLINE_JOBS", "on").strip().lower() not in ("off", "false", "0"):
+            background_tasks.add_task(_run_job_in_background, job_id)
+
+        logger.info(f"Assembly job created and dispatched: {job_id}")
+
+        return JobResponse(
+            job_id=job_id,
+            status=JobStatus.QUEUED,
+            created_at=job.created_at,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create assembly job: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create assembly job: {str(e)}",
         )
 
 

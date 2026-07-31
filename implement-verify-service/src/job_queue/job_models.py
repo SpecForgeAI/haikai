@@ -61,6 +61,9 @@ class JobType(str, Enum):
     VERIFY_TASK_GROUP = "verify-task-group"
     BUG_INVESTIGATION = "bug-investigation"
     HAIBOX_VERIFY = "haibox-verify"
+    # WS2 DB-plane execution chain (2026-07-31): merge a run's spec branches
+    # into one assembled branch + overlay the full DB pack from AMS.
+    ASSEMBLE_RUN = "assemble-run"
 
 
 class JobProgress(BaseModel):

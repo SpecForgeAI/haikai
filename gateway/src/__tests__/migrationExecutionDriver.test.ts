@@ -913,3 +913,136 @@ describe('runSpecSegment dispatch idempotency', () => {
     expect(deps.submitOrchestration).toHaveBeenCalledTimes(1);
   });
 });
+
+// ===========================================================================
+// WS2 (2026-07-31): DB-plane completion handover — `implemented` on the
+// plane-final db item starts the DB execution chain (assemble/apply/load/
+// reconcile) instead of expecting a haibox `deployed` that can never come.
+// ===========================================================================
+
+describe('DB-plane completion handover', () => {
+  const dbBook: BookOfWork = {
+    id: BOOK_ID,
+    project_id: PROJECT_ID,
+    current_architecture_id: 'arch-1',
+    status: 'draft',
+    book_of_work_json: {
+      items: [
+        { id: 'b-db', parentId: null, type: 'story', title: 'Schema', sequenceOrder: 0, workItemId: 'wi-db', workstream: 'target_database_schema_implementation' },
+      ],
+    },
+  };
+
+  function dbRun(): MigrationExecutionRun {
+    return {
+      id: 'run-db',
+      project_id: PROJECT_ID,
+      book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.DISPATCHING,
+      items: [
+        {
+          id: 'ri-0', run_id: 'run-db', sequence_position: 0, work_item_id: 'wi-db',
+          spec_generation_id: 'sg-db', status: RUN_ITEM_STATUS.SUBMITTED,
+          job_id: 'job-9', spec_name: '2026-07-31-schema-x', deploy_on_complete: true,
+        },
+      ],
+    };
+  }
+
+  it('implemented on the db-plane final item starts the chain (no dispatch-next)', async () => {
+    const run = dbRun();
+    const chain = jest.fn().mockResolvedValue(undefined);
+    const deps = mockDeps({
+      findMigrationRunItemByJobId: jest.fn().mockResolvedValue(run.items![0]),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      fetchBookOfWork: jest.fn().mockResolvedValue(dbBook),
+      runDbPlaneCompletion: chain,
+    });
+
+    const decision = await advanceRunOnBuildResult(
+      { company: 'acme', project: 'order-mig', jobId: 'job-9', outcome: 'implemented' },
+      deps
+    );
+
+    expect(decision).toBe('db_completion_chain_started');
+    await flush();
+    expect(chain).toHaveBeenCalledTimes(1);
+    expect(deps.submitOrchestration).not.toHaveBeenCalled();
+  });
+
+  it('implemented on a SERVICE-plane final item does NOT start the chain', async () => {
+    // twoStoryBook items carry no workstream -> plane resolves to `service`.
+    const run: MigrationExecutionRun = {
+      id: 'run-svc', project_id: PROJECT_ID, book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.DISPATCHING,
+      items: [{
+        id: 'ri-0', run_id: 'run-svc', sequence_position: 0, work_item_id: 'wi-1',
+        spec_generation_id: 'sg-1', status: RUN_ITEM_STATUS.SUBMITTED,
+        job_id: 'job-1', deploy_on_complete: true,
+      }],
+    };
+    const chain = jest.fn().mockResolvedValue(undefined);
+    const deps = mockDeps({
+      findMigrationRunItemByJobId: jest.fn().mockResolvedValue(run.items![0]),
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      runDbPlaneCompletion: chain,
+    });
+
+    const decision = await advanceRunOnBuildResult(
+      { company: 'acme', project: 'order-mig', jobId: 'job-1', outcome: 'implemented' },
+      deps
+    );
+
+    expect(decision).toBe('advanced_run_complete');
+    expect(chain).not.toHaveBeenCalled();
+  });
+
+  it('runSpecSegment decouples the haibox flag: db-plane final item submits deployOnComplete=false', async () => {
+    const item: MigrationExecutionRunItem = {
+      id: 'ri-0', run_id: 'run-db', sequence_position: 0, work_item_id: 'wi-db',
+      status: RUN_ITEM_STATUS.PENDING, deploy_on_complete: true,
+    };
+    const run: MigrationExecutionRun = {
+      id: 'run-db', project_id: PROJECT_ID, status: RUN_STATUS.DISPATCHING, items: [item],
+    };
+    const descriptor: DispatchDescriptor = {
+      sequencePosition: 0, workItemId: 'wi-db-aaaa-bbbb', specGenerationId: 'sg-db',
+      bookItemId: 'b-db', generatedSpecText: 'Schema body', title: 'Schema',
+      deployOnComplete: true, workstream: 'target_database_schema_implementation',
+      plane: 'db',
+    };
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+    });
+
+    await runSpecSegment(scope, run, item, descriptor, deps);
+
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(false);
+    // Step 4 (/git-commit-preparation) still runs on the final spec.
+    expect(submitArg.commitPreparation).toBe(true);
+  });
+
+  it('runSpecSegment keeps deployOnComplete=true for a service-plane final item', async () => {
+    const item: MigrationExecutionRunItem = {
+      id: 'ri-0', run_id: 'run-svc', sequence_position: 0, work_item_id: 'wi-1',
+      status: RUN_ITEM_STATUS.PENDING, deploy_on_complete: true,
+    };
+    const run: MigrationExecutionRun = {
+      id: 'run-svc', project_id: PROJECT_ID, status: RUN_STATUS.DISPATCHING, items: [item],
+    };
+    const descriptor: DispatchDescriptor = {
+      sequencePosition: 0, workItemId: 'wi-1-aaaa-bbbb', specGenerationId: 'sg-1',
+      bookItemId: 's1', generatedSpecText: 'API body', title: 'API',
+      deployOnComplete: true, workstream: 'api_migration', plane: 'service',
+    };
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+    });
+
+    await runSpecSegment(scope, run, item, descriptor, deps);
+
+    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submitArg.deployOnComplete).toBe(true);
+  });
+});

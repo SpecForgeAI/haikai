@@ -114,6 +114,7 @@ import {
 } from './migrationDataParityGate';
 import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
 import { createDataMigrationTrigger } from './migrationDataRunnerDispatch';
+import { createDbPlaneCompletionRunner } from './migrationDbPlaneCompletion';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -285,6 +286,18 @@ export interface MigrationDriverDeps {
   triggerDataMigration?: (
     scope: MigrateScope,
     runId: string,
+    deps: MigrationDriverDeps
+  ) => Promise<void>;
+  /**
+   * WS2 (2026-07-31): the DB-plane completion chain (assemble -> schema apply
+   * -> data load -> reconcile -> pause on the parity report) that takes over
+   * when the LAST db-plane item reports `implemented` — a DB pack can never
+   * produce a haibox `deployed` outcome. Lazily defaulted; tests inject a mock.
+   */
+  runDbPlaneCompletion?: (
+    scope: MigrateScope,
+    run: MigrationExecutionRun,
+    item: MigrationExecutionRunItem,
     deps: MigrationDriverDeps
   ) => Promise<void>;
   /**
@@ -790,6 +803,10 @@ export function defaultMigrationDriverDeps(
     // Spec W / Y: the DB plane loads the target via the data-migration runner
     // (AMVS route) before the data-parity reconcile compares it.
     triggerDataMigration: createDataMigrationTrigger(),
+    // WS2 (2026-07-31): the DB execution chain — assemble the run's branches
+    // + pack, apply schema, load data, reconcile — fired on the db plane's
+    // final `implemented` callback.
+    runDbPlaneCompletion: createDbPlaneCompletionRunner(),
     handleBugCallback,
     carryOverCoverageReads: defaultCarryOverCoverageReadsDeps(),
   };
@@ -1385,7 +1402,14 @@ export async function runSpecSegment(
       specName,
       requirementsText,
       commitPreparation: item.deploy_on_complete === true,
-      deployOnComplete: item.deploy_on_complete ?? false,
+      // WS2 (2026-07-31): db-plane items never haibox-deploy — the DB
+      // execution chain takes over on `implemented`. The AMS item keeps
+      // deploy_on_complete=true as the plane-final marker; only the IVS
+      // flag is decoupled (kills the bogus "deploy failed: no target serve
+      // spec" error on every db-plane final item).
+      deployOnComplete:
+        (item.deploy_on_complete ?? false) &&
+        (descriptor.plane ?? planeForWorkstream(descriptor.workstream)) !== 'db',
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {
@@ -1522,7 +1546,11 @@ export async function runBatchSegment(
         requirementsText: r.requirementsText,
       })),
       batchName,
-      deployOnComplete: true,
+      // WS2 (2026-07-31): a db-plane batch never haibox-deploys — the DB
+      // execution chain takes over on `implemented`.
+      deployOnComplete: !descriptors.every(
+        (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'db'
+      ),
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {
@@ -1668,7 +1696,10 @@ export type AdvanceDecision =
   | 'awaiting_approval'
   | 'halted'
   | 'noop_idempotent'
-  | 'run_item_not_found';
+  | 'run_item_not_found'
+  // WS2 (2026-07-31): the last db-plane item implemented -> the DB execution
+  // chain (assemble -> schema apply -> load -> reconcile) was kicked detached.
+  | 'db_completion_chain_started';
 
 /**
  * Inbound callback payload the door hands to the advance. The advance correlates
@@ -1893,6 +1924,20 @@ export async function advanceRunOnBuildResult(
     project: scope.project,
   });
 
+  // WS2 (2026-07-31): `implemented` on the item carrying the plane-final
+  // marker (deploy_on_complete) means the DB plane just finished BUILDING —
+  // a DB pack can never produce a haibox `deployed` outcome (nothing to
+  // serve), so this is where the DB execution chain takes over: assemble the
+  // branches + pack, apply the schema, load the data, reconcile, then pause
+  // on the parity report. Detached; failures land on the run state.
+  if (item.deploy_on_complete === true) {
+    const plane = await resolveItemPlane(scope, run, item, deps);
+    if (plane === 'db') {
+      kickDbPlaneCompletion(scope, run, item, deps);
+      return 'db_completion_chain_started';
+    }
+  }
+
   // Advance the run position + dispatch the next pending spec. If this was the
   // final spec, the run is fully implemented; the submit that carried
   // deploy_on_complete handles the deploy (a `deployed` callback will follow).
@@ -1978,7 +2023,8 @@ async function advanceBatchOnBuildResult(
     return 'deployed_recorded';
   }
 
-  // outcome === 'implemented' (defensive; the batch submits deploy_on_complete=true)
+  // outcome === 'implemented' (db-plane batches EXPECT this: their submit
+  // carries deployOnComplete=false — the DB chain deploys, not haibox)
   for (const s of siblings) {
     if (!s.id) continue;
     await safePatchItem(deps, projectId, s.id, {
@@ -1993,6 +2039,18 @@ async function advanceBatchOnBuildResult(
     jobId,
     itemCount: siblings.length,
   });
+
+  // WS2 (2026-07-31): a db-plane batch hands over to the DB execution chain
+  // once its single job implements — same semantics as the per-spec path.
+  const finalItem =
+    siblings.find((s) => s.deploy_on_complete === true) ?? siblings[siblings.length - 1];
+  if (finalItem) {
+    const plane = await resolveItemPlane(scope, run, finalItem, deps);
+    if (plane === 'db') {
+      kickDbPlaneCompletion(scope, run, finalItem, deps);
+      return 'db_completion_chain_started';
+    }
+  }
   return 'advanced_run_complete';
 }
 
@@ -2022,6 +2080,28 @@ export function kickFullReconcile(
     logger.error('[diag-gateway] migration_reconciliation reconcile_kick_crashed', {
       projectId: scope.projectId,
       runId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  });
+}
+
+/**
+ * Kick the DB-plane completion chain DETACHED (fire-and-forget) — the
+ * build-results door must 202 promptly while the chain runs for minutes.
+ * Failures are isolated inside the chain (it patches the run state itself).
+ */
+export function kickDbPlaneCompletion(
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  item: MigrationExecutionRunItem,
+  deps: MigrationDriverDeps
+): void {
+  const chain = deps.runDbPlaneCompletion ?? createDbPlaneCompletionRunner();
+  void chain(scope, run, item, deps).catch((error) => {
+    logger.error('[diag-gateway] migration_execution_driver db_completion_chain_crashed', {
+      projectId: scope.projectId,
+      runId: run.id,
+      runItemId: item.id,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   });
@@ -2475,6 +2555,7 @@ async function resolveDescriptorForItem(
   // guarantees distinct folders).
   let title = '';
   let bookItemId: string | null = null;
+  let plane: MigrationPlane | undefined;
   try {
     if (item.work_item_id) {
       const book = await deps.fetchBookOfWork(scope.projectId, bookId);
@@ -2483,6 +2564,9 @@ async function resolveDescriptorForItem(
       );
       title = (bookItem?.title ?? '').trim();
       bookItemId = bookItem?.id ?? null;
+      // Plane matters on the FINAL item: the submit decouples the haibox
+      // deploy flag for db-plane items (WS2).
+      plane = bookItem ? planeForItem(bookItem) : undefined;
     }
   } catch {
     /* fail-soft — the fallback slug + suffix stay valid */
@@ -2496,6 +2580,7 @@ async function resolveDescriptorForItem(
     generatedSpecText: text,
     title,
     deployOnComplete: item.deploy_on_complete ?? false,
+    plane,
   };
 }
 
