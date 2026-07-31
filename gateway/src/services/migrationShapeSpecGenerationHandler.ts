@@ -1529,20 +1529,33 @@ export function isManualAdd(story: LoadedBookOfWorkItem): boolean {
   return hasProvenance && !hasCapability;
 }
 
-/** The prompt FLAVOUR a manual add's `kind` selects (api vs operational). */
-export type ManualAddFlavour = 'api' | 'operational';
+/** The prompt FLAVOUR a description-grounded item selects. */
+export type ManualAddFlavour = 'api' | 'operational' | 'foundation';
 
 /**
- * Resolve a manual add's prompt flavour from its `kind` blob field. Anything
- * other than the explicit `operational` token is treated as `api` (the
- * default), mirroring the AMS add-item default.
+ * Resolve a description-grounded item's prompt flavour.
+ *
+ * An explicit `kind: operational` blob field wins (the AMS add-item
+ * contract). Otherwise a code FOUNDATION story (2026-07-31) resolves to
+ * `foundation`: these are planner-authored cross-cutting infra stories
+ * ("Scheduler & queue infrastructure rehoming", "Security & auth parity
+ * foundations", ...) with ZERO endpoints by definition — the old default
+ * funnelled them into the `api` flavour, whose "produce an endpoint spec"
+ * instruction directly contradicts the manual-add "the description is
+ * authoritative" block for an endpoint-less description. The LLM resolved
+ * that tension non-deterministically (one run complied, the next returned
+ * insufficient_context — the live `de6b7f2d` story). Everything else stays
+ * `api` (the AMS add-item default).
  */
 export function resolveManualAddFlavour(
-  story: LoadedBookOfWorkItem
+  story: LoadedBookOfWorkItem,
+  foundationStory = false
 ): ManualAddFlavour {
-  return (story.kind ?? '').trim().toLowerCase() === 'operational'
-    ? 'operational'
-    : 'api';
+  if ((story.kind ?? '').trim().toLowerCase() === 'operational') {
+    return 'operational';
+  }
+  if (foundationStory) return 'foundation';
+  return 'api';
 }
 
 /**
@@ -1560,9 +1573,10 @@ export function resolveManualAddFlavour(
  */
 export function buildDescriptionGroundedContext(
   story: LoadedBookOfWorkItem,
-  bow: LoadedBookOfWork
+  bow: LoadedBookOfWork,
+  foundationStory = false
 ): MigrationSpecContextDto {
-  const flavour = resolveManualAddFlavour(story);
+  const flavour = resolveManualAddFlavour(story, foundationStory);
   return {
     projectId: bow.projectId,
     bookOfWorkId: bow.bookOfWorkId,
@@ -1584,7 +1598,7 @@ export function buildDescriptionGroundedContext(
   } as MigrationSpecContextDto;
 }
 
-function buildStoryUserPrompt(
+export function buildStoryUserPrompt(
   ctx: MigrationSpecContextDto,
   story: LoadedBookOfWorkItem,
   pass: number,
@@ -1642,6 +1656,23 @@ function buildStoryUserPrompt(
           'under it) and then assert the DB tables it writes, the downstream ' +
           'message it emits, or the snapshot / file artefact it produces. Keep ' +
           'the SAME { title, description, type: unit | functional } shape. Leave ' +
+          'coveredEndpointIds empty — there is no endpoint.'
+      );
+    } else if (manualAddFlavour === 'foundation') {
+      lines.push(
+        'KIND = foundation (cross-cutting, non-API): this item is a ' +
+          'cross-cutting CODE FOUNDATION (infrastructure rehoming, conventions, ' +
+          'configuration wiring) that applies across the stream — it is NOT an ' +
+          'HTTP or SOAP endpoint and NOT a single scheduled job. Do NOT invent ' +
+          'an endpoint path, HTTP method, request/response shape or status ' +
+          'codes, and do NOT return insufficient_context because those are ' +
+          'absent — a foundation story never has them. Orient the spec around ' +
+          'the foundation itself: the components/conventions to put in place, ' +
+          'how interface stories will consume them, and the target-stack ' +
+          'idioms to follow. The STRUCTURED TEST PACK asserts the foundation ' +
+          "EFFECTS (unit tests on the new components; functional checks that " +
+          'the wiring/convention holds), keeping the SAME { title, ' +
+          'description, type: unit | functional } shape. Leave ' +
           'coveredEndpointIds empty — there is no endpoint.'
       );
     } else {
@@ -2434,15 +2465,20 @@ async function runSinglePassBatch(
     // reach this path.)
     const foundationStory = isCodeFoundationStory(story);
     const manualAdd = isManualAdd(story) || seedBuildFilesStory || foundationStory;
+    // 2026-07-31: foundation stories route to the `foundation` flavour — the
+    // old `api` default handed an endpoint-less infra story the "produce an
+    // endpoint spec" prompt, contradicting the manual-add block and making
+    // the LLM refuse non-deterministically (insufficient_context on some
+    // runs, a spec on others).
     const manualAddFlavour: ManualAddFlavour | undefined = manualAdd
-      ? resolveManualAddFlavour(story)
+      ? resolveManualAddFlavour(story, foundationStory)
       : undefined;
 
     let ctx: MigrationSpecContextDto | null = null;
     if (manualAdd) {
       // Description-grounded: REPLACE the resolver fetch with the human
       // description. No AMS round-trip; no discovered context.
-      ctx = buildDescriptionGroundedContext(story, bow);
+      ctx = buildDescriptionGroundedContext(story, bow, foundationStory);
       console.log(
         `[diag-gateway] pm_migration_shape_spec_generation description_grounded ` +
           `workItemId=${workItemId} provenance=${story.provenance ?? 'null'} ` +
