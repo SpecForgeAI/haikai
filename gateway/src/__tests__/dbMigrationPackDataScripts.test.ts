@@ -165,9 +165,9 @@ describe('dbMigrationPack data scripts (Group 3)', () => {
     // Mapping-aligned cast expressions in the Sybase extract.
     expect(customersBulk).toContain('convert(numeric(19,4), balance) AS balance');
     expect(customersBulk).toContain('convert(char(23), created_at, 23) AS created_at');
-    // The Postgres COPY template.
+    // The Postgres COPY template (quoted identifiers, source case preserved).
     expect(customersBulk).toContain(
-      "COPY dbo.customers (customer_id, balance, created_at) FROM STDIN WITH (FORMAT csv, NULL '\\N');"
+      'COPY "dbo"."customers" ("customer_id", "balance", "created_at") FROM STDIN WITH (FORMAT csv, NULL \'\\N\');'
     );
     expect(ordersBulk).toContain('FROM dbo.orders;');
   });
@@ -194,7 +194,7 @@ describe('dbMigrationPack data scripts (Group 3)', () => {
     const bulk = fileByPath(artifacts.files, 'data/bulk/001-dbo.order_items.sql');
 
     // Generated column excluded from the COPY column list (Postgres computes it).
-    expect(bulk).toContain('COPY dbo.order_items (item_id, price, qty) FROM STDIN');
+    expect(bulk).toContain('COPY "dbo"."order_items" ("item_id", "price", "qty") FROM STDIN');
     expect(bulk).not.toContain('COPY dbo.order_items (item_id, price, qty, total)');
     expect(bulk).toContain('Generated columns (total): EXCLUDED from the COPY column list');
 
@@ -204,7 +204,7 @@ describe('dbMigrationPack data scripts (Group 3)', () => {
 
     // And the DDL emitted the generated column (so the exclusion is real).
     const ddl = fileByPath(artifacts.files, 'liquibase/changesets/010-tables/dbo.order_items.sql');
-    expect(ddl).toContain('total numeric(19,2) GENERATED ALWAYS AS (price * qty) STORED');
+    expect(ddl).toContain('"total" numeric(19,2) GENERATED ALWAYS AS (price * qty) STORED');
   });
 
   // (c) -----------------------------------------------------------------
@@ -311,8 +311,8 @@ describe('dbMigrationPack data scripts (Group 3)', () => {
     const auditInc = fileByPath(artifacts.files, 'data/incremental/dbo.audit_log.sql');
     expect(auditInc).toContain('-- Delta key: updated_at | strategy: insert_update | chosen by: timestamp_name_heuristic');
     expect(auditInc).toContain('WHERE updated_at > :last_high_water');
-    expect(auditInc).toContain('ON CONFLICT (entry_id) DO UPDATE SET');
-    expect(auditInc).toContain('updated_at = EXCLUDED.updated_at');
+    expect(auditInc).toContain('ON CONFLICT ("entry_id") DO UPDATE SET');
+    expect(auditInc).toContain('"updated_at" = EXCLUDED."updated_at"');
   });
 
   // (e) -----------------------------------------------------------------

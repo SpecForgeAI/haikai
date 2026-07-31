@@ -63,6 +63,7 @@ import {
   SYNC_RUNNER_PATH,
   SYNC_STATE_PATH,
 } from './dbMigrationPack/syncPack';
+import { BULK_LOAD_MANIFEST_PATH } from './dbMigrationPack/dataScripts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -902,18 +903,30 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           parentId: foundations.id,
           title: `Seed the ${manifest.target_engine ?? 'target'} schema foundations from the pack`,
           description:
-            'Write the pack master changelog and schema-creation changeset verbatim into the target repo and wire the Liquibase run (structural context first, post-load context after the bulk load).',
+            'Write the pack master changelog, schema-creation changeset, and BOTH manifests ' +
+            '(manifest.json + the bulk-load manifest) verbatim into the target repo and wire ' +
+            'the Liquibase run (structural context first, post-load context after the bulk load). ' +
+            'The manifests are REQUIRED runtime inputs for the data-migration and parity runners.',
           workstream: ws,
           sequenceOrder: next(),
           acceptanceCriteria: [
             'The pack files are reproduced byte-for-byte at their pack-relative paths.',
+            'manifest.json and the bulk-load manifest are committed with the changelog — the data tier cannot run without them.',
             'Liquibase applies the structural context cleanly against an empty target database.',
           ],
           tags: [...packTags, SEED_DB_PACK_FILES_TAG],
           traceabilitySummary: `Carries pack ${packView.packId} foundations files verbatim.`,
           extras: {
             packId: packView.packId,
-            packFilePaths: [MASTER_CHANGELOG_PATH, SCHEMAS_CHANGESET_PATH],
+            // 2026-07-31 (live: the data runner's required manifest.json was
+            // never committed to ANY branch): the foundations story carries
+            // the manifests too, not just the changelog files.
+            packFilePaths: [
+              MASTER_CHANGELOG_PATH,
+              SCHEMAS_CHANGESET_PATH,
+              'manifest.json',
+              BULK_LOAD_MANIFEST_PATH,
+            ],
           },
         })
       );

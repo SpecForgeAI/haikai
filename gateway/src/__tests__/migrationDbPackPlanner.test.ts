@@ -425,6 +425,8 @@ describe('buildDbEpicStories — schema epic', () => {
     expect((foundations as MigrationBookOfWorkItem & { packFilePaths?: string[] }).packFilePaths).toEqual([
       'liquibase/db.changelog-master.xml',
       'liquibase/changesets/000-schemas.sql',
+      'manifest.json',
+      'data/bulk-load-manifest.json',
     ]);
 
     const cluster0 = stories.find((s) => s.id.endsWith('-s-cluster-0'))!;

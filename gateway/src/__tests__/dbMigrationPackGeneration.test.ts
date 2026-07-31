@@ -197,12 +197,12 @@ describe('dbMigrationPack generation core (Group 2)', () => {
     const customers = fileByPath(artifacts.files, 'liquibase/changesets/010-tables/dbo.customers.sql');
     const orders = fileByPath(artifacts.files, 'liquibase/changesets/010-tables/dbo.orders.sql');
 
-    expect(customers).toContain('balance numeric(19,4) NOT NULL');
-    expect(customers).toContain('created_at timestamptz NOT NULL');
-    expect(customers).toContain('active boolean NOT NULL');
-    expect(customers).toContain('last_name varchar(50) NOT NULL');
-    expect(customers).toContain('customer_id integer GENERATED ALWAYS AS IDENTITY NOT NULL');
-    expect(orders).toContain('amount numeric(10,2) NOT NULL');
+    expect(customers).toContain('"balance" numeric(19,4) NOT NULL');
+    expect(customers).toContain('"created_at" timestamptz NOT NULL');
+    expect(customers).toContain('"active" boolean NOT NULL');
+    expect(customers).toContain('"last_name" varchar(50) NOT NULL');
+    expect(customers).toContain('"customer_id" integer GENERATED ALWAYS AS IDENTITY NOT NULL');
+    expect(orders).toContain('"amount" numeric(10,2) NOT NULL');
 
     // Sybase timestamp (rowversion): NO emitted type anywhere — omitted +
     // flagged with concrete options.
@@ -216,7 +216,7 @@ describe('dbMigrationPack generation core (Group 2)', () => {
     expect(decision!.options).toEqual(['map_to_bytea', 'drop_column', 'application_managed']);
 
     // Checksum-stable changeset id + logicalFilePath as functions of identity.
-    expect(customers).toContain('--changeset db-migration-pack:table--dbo.customers');
+    expect(customers).toContain('--changeset db-migration-pack:table-dbo.customers');
     expect(customers).toContain(
       'logicalFilePath:liquibase/changesets/010-tables/dbo.customers.sql'
     );
@@ -241,13 +241,13 @@ describe('dbMigrationPack generation core (Group 2)', () => {
 
     // Non-portable default with a safe equivalent -> deterministic rewrite.
     const customers = fileByPath(artifacts.files, 'liquibase/changesets/010-tables/dbo.customers.sql');
-    expect(customers).toContain('created_at timestamptz NOT NULL DEFAULT now()');
+    expect(customers).toContain('"created_at" timestamptz NOT NULL DEFAULT now()');
     expect(customers).not.toContain('getdate');
 
     // Captured high-water (5000) + margin (1000) -> RESTART WITH 6000.
     const seed = fileByPath(artifacts.files, 'liquibase/changesets/040-sequences-seed.sql');
     expect(seed).toContain(
-      'ALTER TABLE dbo.customers ALTER COLUMN customer_id RESTART WITH 6000;'
+      'ALTER TABLE "dbo"."customers" ALTER COLUMN "customer_id" RESTART WITH 6000;'
     );
 
     // Value-unavailable high-water -> needs_decision, NEVER a silent restart-at-1.
@@ -417,13 +417,13 @@ describe('dbMigrationPack generation core (Group 2)', () => {
 
     const fks = fileByPath(artifacts.files, 'liquibase/changesets/020-foreign-keys.sql');
     expect(fks).toContain(
-      'ALTER TABLE dbo.orders ADD CONSTRAINT fk_orders__customers__customer_id ' +
-        'FOREIGN KEY (customer_id) REFERENCES dbo.customers (customer_id) ' +
+      'ALTER TABLE "dbo"."orders" ADD CONSTRAINT "fk_orders__customers__customer_id" ' +
+        'FOREIGN KEY ("customer_id") REFERENCES "dbo"."customers" ("customer_id") ' +
         'ON DELETE SET NULL ON UPDATE NO ACTION;'
     );
 
     const indexes = fileByPath(artifacts.files, 'liquibase/changesets/030-indexes.sql');
-    expect(indexes).toContain('CREATE INDEX ix_customers_last_name ON dbo.customers (last_name ASC);');
+    expect(indexes).toContain('CREATE INDEX "ix_customers_last_name" ON "dbo"."customers" ("last_name" ASC);');
     expect(indexes).toContain('-- CLUSTER: source index ix_customers_last_name was CLUSTERED on Sybase');
     expect(artifacts.manifest.cluster_notes.join(' ')).toContain('ix_customers_last_name');
 
@@ -529,14 +529,14 @@ describe('dbMigrationPack Group 7 — generate -> resolve -> regenerate cycle', 
     const customersFile = persisted[1].files.find(
       (f) => f.file_path === 'liquibase/changesets/010-tables/dbo.customers.sql'
     )!;
-    expect(customersFile.content).toContain('rowver bytea');
-    expect(customersFile.content).toContain('last_name citext NOT NULL');
+    expect(customersFile.content).toContain('"rowver" bytea');
+    expect(customersFile.content).toContain('"last_name" citext NOT NULL');
     expect(customersFile.content).not.toContain('NEEDS DECISION');
     const seedFile = persisted[1].files.find(
       (f) => f.file_path === 'liquibase/changesets/040-sequences-seed.sql'
     )!;
     expect(seedFile.content).toContain(
-      'ALTER TABLE dbo.orders ALTER COLUMN order_id RESTART WITH 90001;'
+      'ALTER TABLE "dbo"."orders" ALTER COLUMN "order_id" RESTART WITH 90001;'
     );
     expect(seedFile.content).not.toContain('NEEDS DECISION');
 

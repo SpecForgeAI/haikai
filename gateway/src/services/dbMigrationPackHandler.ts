@@ -66,6 +66,8 @@ import {
   MASTER_CHANGELOG_PATH,
   OmittedColumnNote,
   qualifiedName,
+  quotedQualifiedName,
+  quoteIdent,
   SCHEMAS_CHANGESET_PATH,
   SEQUENCES_SEED_CHANGESET_PATH,
   SequenceSeedStatement,
@@ -73,6 +75,7 @@ import {
   tableChangesetPath,
   topologicalTableOrder,
 } from './dbMigrationPack/liquibase';
+import { assertPackFilesValid } from './dbMigrationPack/packValidation';
 import {
   BULK_LOAD_MANIFEST_PATH,
   bulkScriptPath,
@@ -428,6 +431,7 @@ export function buildSequenceSeeds(
   for (const table of ir.tables) {
     if (table.objectType !== 'table') continue;
     const qn = qualifiedName(table.schemaName, table.tableName);
+    const qq = quotedQualifiedName(table.schemaName, table.tableName);
     for (const column of table.columns) {
       if (!column.isIdentity) continue;
       const colRef = `${qn}.${column.columnName}`;
@@ -438,7 +442,7 @@ export function buildSequenceSeeds(
       if (option === 'provide_restart_value' && typeof resolution?.['restart_with'] === 'string') {
         statements.push({
           objectRef: colRef,
-          sql: `ALTER TABLE ${qn} ALTER COLUMN ${column.columnName} RESTART WITH ${resolution['restart_with']};`,
+          sql: `ALTER TABLE ${qq} ALTER COLUMN ${quoteIdent(column.columnName)} RESTART WITH ${resolution['restart_with']};`,
           note: `restart value provided by resolved decision '${seedKey}'.`,
         });
         continue;
@@ -447,8 +451,11 @@ export function buildSequenceSeeds(
         statements.push({
           objectRef: colRef,
           sql:
-            `SELECT setval(pg_get_serial_sequence('${qn}', '${column.columnName}'), ` +
-            `(SELECT COALESCE(MAX(${column.columnName}), 0) + ${seedMargin} FROM ${qn}));`,
+            // pg_get_serial_sequence parses its table arg as identifiers —
+            // the QUOTED text form keeps the case-exact lookup; the column
+            // arg is matched literally, so raw source case is correct.
+            `SELECT setval(pg_get_serial_sequence('${qq}', '${column.columnName}'), ` +
+            `(SELECT COALESCE(MAX(${quoteIdent(column.columnName)}), 0) + ${seedMargin} FROM ${qq}));`,
           note: `restart derived from table max at cutover (resolved decision '${seedKey}').`,
         });
         continue;
@@ -456,7 +463,7 @@ export function buildSequenceSeeds(
       if (seq && seq.currentValueAvailable && seq.currentValue !== null) {
         statements.push({
           objectRef: colRef,
-          sql: `ALTER TABLE ${qn} ALTER COLUMN ${column.columnName} RESTART WITH ${restartValue(seq.currentValue)};`,
+          sql: `ALTER TABLE ${qq} ALTER COLUMN ${quoteIdent(column.columnName)} RESTART WITH ${restartValue(seq.currentValue)};`,
           note: null,
         });
         continue;
@@ -860,6 +867,12 @@ export function buildDbMigrationPackArtifacts(
 
   // --- the coverage CODE guarantee (2.5) -----------------------------------
   assertCoverage(ir, coverage);
+
+  // --- runnable-pack validation gate (WS3 P0, 2026-07-31) ------------------
+  // XML well-formed comments, includes resolve, changeset ids parser-safe,
+  // JSON BOM-free: a pack that cannot parse at apply time FAILS generation
+  // loudly instead (the live 2026-07-30 pack shipped all three defects).
+  assertPackFilesValid(files, 'generation');
 
   return { files, decisions: dedupedDecisions, manifest, coverage, counts };
 }
