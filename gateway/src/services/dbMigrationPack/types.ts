@@ -160,6 +160,41 @@ export interface SourceSchemaIr {
    * object back into translated/skipped per its resolution.
    */
   resolvedDecisions: Record<string, Record<string, unknown>>;
+  /**
+   * Structural completeness accounting (WS3 P1, 2026-07-31). Set by
+   * buildSourceSchemaIr; optional so IR literals in tests stay valid — the
+   * handler falls back to an IR-derived approximation when absent.
+   */
+  structuralAccounting?: StructuralAccounting;
+}
+
+/**
+ * Structural completeness accounting (WS3 P1, 2026-07-31).
+ *
+ * The live 2026-07-30 pack shipped 0 PKs / 0 FKs / 0 indexes and NO
+ * stored-procedure/view/default coverage — all silently, because the IR
+ * builder defaults absent metadata to empty (`constraints_metadata ?? {}`,
+ * fk_columns-less relationships skipped, code objects only present when a
+ * finding exists). These counts make the drop VISIBLE: they land in the
+ * manifest, drive count-tied acceptance criteria on the constraints story,
+ * and convert suspicious zeros into explicit prerequisite items in the plan.
+ */
+export interface StructuralAccounting {
+  tables_total: number;
+  view_entities_total: number;
+  tables_with_constraints_metadata: number;
+  tables_with_primary_key: number;
+  unique_constraints_total: number;
+  check_constraints_total: number;
+  indexes_total: number;
+  relationships_total: number;
+  relationships_with_fk_columns: number;
+  code_objects_captured: {
+    stored_procedure: number;
+    trigger: number;
+    view: number;
+    scheduled_job: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +314,15 @@ export interface PackManifest {
   };
   /** The Group 5 diff baseline — emitted at generation time (spec 2.5). */
   expected_schema: ExpectedSchema;
+  /**
+   * Structural completeness accounting + explicit warnings (WS3 P1,
+   * 2026-07-31): visible counts of what generation actually received, and
+   * one warning per suspicious zero (no PKs / no indexes / join-less
+   * relationships / no code objects captured). The planner converts each
+   * warning into a prerequisite item. Absent on packs generated earlier.
+   */
+  structural_accounting?: StructuralAccounting;
+  structural_warnings?: string[];
   /**
    * The DECLARED target-database binding (2026-07-20): the plan CREATES the
    * target DB, so the plan states its coordinates — the operator confirms

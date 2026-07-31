@@ -40,6 +40,7 @@ import {
   IrTable,
   IrUntranslatedObject,
   SourceSchemaIr,
+  StructuralAccounting,
   UnsupportedEnginePairError,
 } from './types';
 
@@ -540,7 +541,7 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     }
   }
 
-  return {
+  const ir: SourceSchemaIr = {
     sourceEngine,
     targetEngine,
     tables,
@@ -554,6 +555,143 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     dbDecisions: inputs.dbDecisions,
     resolvedDecisions,
   };
+  ir.structuralAccounting = buildStructuralAccounting(inputs, ir);
+  return ir;
+}
+
+// ---------------------------------------------------------------------------
+// Structural completeness accounting (WS3 P1, 2026-07-31)
+// ---------------------------------------------------------------------------
+
+/**
+ * Count what the generation inputs actually carried, so silent drops become
+ * visible numbers. The live 2026-07-30 pack shipped 0 PKs / 0 FKs / 0
+ * indexes and no code-object coverage precisely because every absence here
+ * defaulted to "empty" without a trace.
+ */
+export function buildStructuralAccounting(
+  inputs: GenerationInputs,
+  ir: SourceSchemaIr
+): StructuralAccounting {
+  let tablesWithCm = 0;
+  let tablesWithPk = 0;
+  let uniqueTotal = 0;
+  let checkTotal = 0;
+  let indexesTotal = 0;
+  for (const table of ir.tables) {
+    if (table.objectType !== 'table') continue;
+    if (table.primaryKey) tablesWithPk++;
+    uniqueTotal += table.uniqueConstraints.length;
+    checkTotal += table.checkConstraints.length;
+    indexesTotal += table.indexes.length;
+  }
+  for (const entity of inputs.model.physicalDataEntities) {
+    const cm = entity.constraints_metadata;
+    if (cm && typeof cm === 'object' && Object.keys(cm).length > 0) tablesWithCm++;
+  }
+  const relationshipsTotal = inputs.model.dataEntityRelationships.length;
+  const relationshipsWithFk = inputs.model.dataEntityRelationships.filter(
+    (r) => r.fk_columns && Array.isArray(r.fk_columns.join_columns) && r.fk_columns.join_columns.length > 0
+  ).length;
+  const codeCounts = { stored_procedure: 0, trigger: 0, view: 0, scheduled_job: 0 };
+  for (const u of ir.untranslated) {
+    if (u.kind in codeCounts) codeCounts[u.kind as keyof typeof codeCounts]++;
+  }
+  // View ENTITIES also count as captured views (they reach requires_translation
+  // via the emitter's view pass even without a view_definition finding).
+  const viewEntities = ir.tables.filter((t) => t.objectType === 'view').length;
+
+  return {
+    tables_total: ir.tables.filter((t) => t.objectType === 'table').length,
+    view_entities_total: viewEntities,
+    tables_with_constraints_metadata: tablesWithCm,
+    tables_with_primary_key: tablesWithPk,
+    unique_constraints_total: uniqueTotal,
+    check_constraints_total: checkTotal,
+    indexes_total: indexesTotal,
+    relationships_total: relationshipsTotal,
+    relationships_with_fk_columns: relationshipsWithFk,
+    code_objects_captured: codeCounts,
+  };
+}
+
+/**
+ * IR-only approximation for IR literals that bypassed buildSourceSchemaIr
+ * (test fixtures, older callers). Relationships fall back to the emittable
+ * FK count — the model-level relationship total is unknown here.
+ */
+export function accountingFromIr(ir: SourceSchemaIr): StructuralAccounting {
+  const codeCounts = { stored_procedure: 0, trigger: 0, view: 0, scheduled_job: 0 };
+  for (const u of ir.untranslated) {
+    if (u.kind in codeCounts) codeCounts[u.kind as keyof typeof codeCounts]++;
+  }
+  const realTables = ir.tables.filter((t) => t.objectType === 'table');
+  return {
+    tables_total: realTables.length,
+    view_entities_total: ir.tables.filter((t) => t.objectType === 'view').length,
+    tables_with_constraints_metadata: realTables.filter(
+      (t) => t.primaryKey || t.uniqueConstraints.length > 0 || t.checkConstraints.length > 0 || t.indexes.length > 0
+    ).length,
+    tables_with_primary_key: realTables.filter((t) => t.primaryKey).length,
+    unique_constraints_total: realTables.reduce((n, t) => n + t.uniqueConstraints.length, 0),
+    check_constraints_total: realTables.reduce((n, t) => n + t.checkConstraints.length, 0),
+    indexes_total: realTables.reduce((n, t) => n + t.indexes.length, 0),
+    relationships_total: ir.foreignKeys.length,
+    relationships_with_fk_columns: ir.foreignKeys.length,
+    code_objects_captured: codeCounts,
+  };
+}
+
+/**
+ * Convert suspicious zeros into EXPLICIT warnings. Each one becomes a
+ * manifest `structural_warnings` entry and a prerequisite item in the plan —
+ * resolve the capture gap and regenerate, or defer the item as an explicit
+ * out-of-scope sign-off. Never a silent drop.
+ */
+export function deriveStructuralWarnings(acc: StructuralAccounting): string[] {
+  const warnings: string[] = [];
+  if (acc.tables_total > 0 && acc.tables_with_constraints_metadata === 0) {
+    warnings.push(
+      `constraints_metadata is absent from every committed entity (${acc.tables_total} tables) — ` +
+        'primary keys, unique constraints, check constraints and indexes CANNOT be emitted. ' +
+        'Re-run discovery/commit with constraint capture, then regenerate the pack.'
+    );
+  } else {
+    if (acc.tables_total > 0 && acc.tables_with_primary_key === 0) {
+      warnings.push(
+        `no table carries a primary key (${acc.tables_total} tables) — the target gets 0 PKs, ` +
+          'row identity is lost, and data-parity reconciliation has no reliable ordering.'
+      );
+    }
+    if (acc.tables_total > 0 && acc.indexes_total === 0) {
+      warnings.push(
+        `no indexes captured across ${acc.tables_total} tables — 030-indexes.sql will be EMPTY. ` +
+          'If the source has indexes, re-run discovery with index capture.'
+      );
+    }
+  }
+  if (acc.relationships_total > 0 && acc.relationships_with_fk_columns === 0) {
+    warnings.push(
+      `${acc.relationships_total} relationship(s) carry no fk_columns join metadata — ` +
+        '020-foreign-keys.sql will be EMPTY despite declared relationships. ' +
+        'Re-run discovery/commit with referential-constraint capture.'
+    );
+  }
+  const codeTotal =
+    acc.code_objects_captured.stored_procedure +
+    acc.code_objects_captured.trigger +
+    acc.code_objects_captured.view +
+    acc.code_objects_captured.scheduled_job +
+    acc.view_entities_total;
+  if (codeTotal === 0) {
+    warnings.push(
+      'discovery captured NO stored-procedure / trigger / view / scheduled-job objects — ' +
+        'if the source database contains DB code objects they are MISSING from this pack ' +
+        '(no translation, no finding). Re-run discovery with DB code capture, or sign the ' +
+        'absence off explicitly.'
+    );
+  }
+  return warnings;
 }
 
 // ---------------------------------------------------------------------------

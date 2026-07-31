@@ -1041,6 +1041,18 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
     // Constraints / indexes / sequence-seed changesets story.
     const constraints = featureOfKind(features, 'constraints');
     if (constraints) {
+      // Count-tied acceptance criteria (WS3 P1, 2026-07-31): the live run
+      // shipped EMPTY FK/index changesets that "applied cleanly" — an empty
+      // file passes a clean-apply criterion. Tie the criteria to the source
+      // counts so an empty changeset FAILS verification.
+      const acc = manifest.structural_accounting;
+      const countCriteria = acc
+        ? [
+            `020-foreign-keys.sql applies ${acc.relationships_with_fk_columns} foreign key(s) — the target FK count must equal the source's ${acc.relationships_with_fk_columns} relationship(s) with join metadata (an empty changeset fails this).`,
+            `030-indexes.sql applies ${acc.indexes_total} index(es) — the target non-PK index count must match (an empty changeset fails this).`,
+            `${acc.tables_with_primary_key} of ${acc.tables_total} tables declare a PRIMARY KEY in their structural changesets — the target PK count must match.`,
+          ]
+        : [];
       stories.push(
         mkItem({
           id: `${epic.id}-s-constraints`,
@@ -1053,6 +1065,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           sequenceOrder: next(),
           acceptanceCriteria: [
             'FK + index changesets apply cleanly after a bulk load.',
+            ...countCriteria,
             'Sequence-seed changeset seeds every sequence/identity above the recorded high-water mark.',
           ],
           tags: [...packTags, SEED_DB_PACK_FILES_TAG],
@@ -1068,6 +1081,33 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
         })
       );
     }
+
+    // Structural warnings -> EXPLICIT prerequisite stories (WS3 P1,
+    // 2026-07-31). Every suspicious zero the generator detected (no PKs, no
+    // indexes, join-less relationships, no code objects captured) becomes a
+    // visible, blocking item: resolve the capture gap and regenerate, or
+    // DEFER the story as the explicit out-of-scope sign-off. Never silent.
+    const structuralWarnings = manifest.structural_warnings ?? [];
+    structuralWarnings.forEach((warning, index) => {
+      stories.push(
+        mkItem({
+          id: `${epic.id}-s-structural-gap-${index}`,
+          type: 'story',
+          parentId: epic.id,
+          title: `Structural completeness gap: ${warning.split('—')[0].trim().slice(0, 80)}`,
+          description:
+            `${warning}\n\nResolve the capture gap and regenerate the pack, or defer this ` +
+            'story to sign the gap off as explicitly out of scope.',
+          workstream: ws,
+          sequenceOrder: next(),
+          acceptanceCriteria: [
+            'The capture gap is resolved and the pack regenerated (the warning no longer appears), OR this story is deferred as an explicit sign-off.',
+          ],
+          tags: [...packTags, PREREQUISITE_PROVENANCE_TAG],
+          traceabilitySummary: `Structural warning from pack ${packView.packId} generation accounting.`,
+        })
+      );
+    });
 
     // Code-guarantee: every translated/flagged manifest table landed exactly once.
     const covered = new Set<string>();

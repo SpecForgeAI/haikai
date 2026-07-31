@@ -36,10 +36,12 @@
 import { getConfig } from '../config';
 import { logger } from './logger';
 import {
+  accountingFromIr,
   buildSourceSchemaIr,
   canonicalSerialize,
   computeInputSnapshotHash,
   defaultInputFetchDeps,
+  deriveStructuralWarnings,
   fetchGenerationInputs,
   GenerationInputs,
   InputFetchDeps,
@@ -803,6 +805,9 @@ export function buildDbMigrationPackArtifacts(
     flagged: coverage.filter((c) => c.disposition === 'flagged').length,
   };
 
+  const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
+  const structuralWarnings = deriveStructuralWarnings(structuralAccounting);
+
   const manifest: PackManifest = {
     manifest_version: 1,
     source_engine: ir.sourceEngine,
@@ -832,6 +837,11 @@ export function buildDbMigrationPackArtifacts(
       cast_notes: castNotes,
     },
     expected_schema: expectedSchema,
+    // Structural completeness (WS3 P1, 2026-07-31): visible counts + one
+    // explicit warning per suspicious zero — the planner converts each into
+    // a prerequisite item. Kills the silent 0-PK/0-FK/0-index/no-code pack.
+    structural_accounting: structuralAccounting,
+    structural_warnings: structuralWarnings,
     // The DECLARED target-DB binding (2026-07-20): the plan creates the target
     // database, so the plan states its coordinates — local-machine defaults
     // (data parity runs locally). The seed story's spec text confirms this
