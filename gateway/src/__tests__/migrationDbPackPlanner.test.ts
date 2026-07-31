@@ -16,6 +16,7 @@ import {
   computeTableLayers,
   flaggedTableSet,
   PackView,
+  PREREQUISITE_PROVENANCE_TAG,
   SEED_DB_PACK_FILES_TAG,
 } from '../services/migrationDbPackPlanner';
 import type { PackManifest } from '../services/dbMigrationPack/types';
@@ -598,5 +599,55 @@ describe('buildDbEpicStories — prerequisite epic', () => {
     expect(stories[0].title).toBe('Generate the DB migration pack');
     expect(stories[0].readiness).toBe('blocked');
     expect(stories.every((s) => (s.tags ?? []).includes('provenance:prerequisite'))).toBe(true);
+  });
+});
+
+// ===========================================================================
+// WS3 P1 (2026-07-31): structural completeness — count-tied acceptance
+// criteria on the constraints story + warnings become prerequisite stories.
+// ===========================================================================
+
+describe('structural completeness surfacing (WS3 P1)', () => {
+  it('ties the constraints-story acceptance criteria to the source counts', () => {
+    const packView = makePackView();
+    (packView.manifest as PackManifest).structural_accounting = {
+      tables_total: 65,
+      view_entities_total: 4,
+      tables_with_constraints_metadata: 65,
+      tables_with_primary_key: 60,
+      unique_constraints_total: 3,
+      check_constraints_total: 2,
+      indexes_total: 61,
+      relationships_total: 5,
+      relationships_with_fk_columns: 5,
+      code_objects_captured: { stored_procedure: 29, trigger: 0, view: 4, scheduled_job: 0 },
+    };
+    const stories = expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
+    const constraints = stories.find((s) => s.id.endsWith('-s-constraints'))!;
+    const criteria = constraints.acceptanceCriteria!.join(' | ');
+    expect(criteria).toContain('applies 5 foreign key(s)');
+    expect(criteria).toContain('applies 61 index(es)');
+    expect(criteria).toContain('60 of 65 tables declare a PRIMARY KEY');
+    expect(criteria).toContain('an empty changeset fails this');
+  });
+
+  it('converts every structural warning into a prerequisite story', () => {
+    const packView = makePackView();
+    (packView.manifest as PackManifest).structural_warnings = [
+      'no table carries a primary key (65 tables) — the target gets 0 PKs.',
+      '5 relationship(s) carry no fk_columns join metadata — 020-foreign-keys.sql will be EMPTY.',
+    ];
+    const stories = expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
+    const gaps = stories.filter((s) => s.id.includes('-s-structural-gap-'));
+    expect(gaps).toHaveLength(2);
+    expect(gaps[0].title).toContain('Structural completeness gap');
+    expect(gaps[0].tags).toContain(PREREQUISITE_PROVENANCE_TAG);
+    expect(gaps[0].description).toContain('defer this story');
+    expect(gaps[1].description).toContain('020-foreign-keys.sql will be EMPTY');
+  });
+
+  it('emits NO gap stories when the pack has no warnings', () => {
+    const stories = expandEpic(makePackView(), `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
+    expect(stories.filter((s) => s.id.includes('-s-structural-gap-'))).toHaveLength(0);
   });
 });
