@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+from .chat.model_pinning import describe_pinned_model, kiro_pinned_model, model_args
 from .kiro_cli_locator import kiro_cli_args, locate_kiro_cli
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,11 @@ class KiroCLIExecutor:
         # Setup skills
         self._setup_skills()
 
+        # Model pinned on EVERY kiro-cli chat spawn (see chat/model_pinning.py)
+        self.model = kiro_pinned_model()
+
         logger.info(f"Initialized KiroCLIExecutor for project: {project_dir}")
+        logger.info(f"  Model: {describe_pinned_model(self.model)}")
 
     def _find_kiro_cli(self) -> Path:
         """Locate kiro-cli via the shared locator (login-shell-aware WSL
@@ -140,10 +145,12 @@ class KiroCLIExecutor:
         # Build the full prompt
         full_prompt = f"{system_prompt}\n\n{command}" if system_prompt else command
 
-        # wsl-prefixed on Windows by the shared builder
+        # wsl-prefixed on Windows by the shared builder; the model is pinned
+        # explicitly on every spawn (model_args is empty when disabled)
         cli_args = kiro_cli_args(
             self.kiro_cli_path, self._use_wsl,
             "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never",
+            *model_args(self.model),
             full_prompt,
         )
 

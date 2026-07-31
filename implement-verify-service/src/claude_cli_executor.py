@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 
+from .chat.model_pinning import claude_pinned_model, describe_pinned_model, model_args
+
 # `pwd` is POSIX-only. Import lazily so this module can be imported on
 # Windows (where `_demote_to_appuser` is never called — the only call site
 # at line ~206 short-circuits via `hasattr(os, 'getuid')`).
@@ -92,8 +94,13 @@ class ClaudeCLIExecutor:
         
         # Setup Haikai commands
         self._setup_claude_commands(project_root)
-        
+
+        # Model pinned on every spawn WHEN LLM_MODEL is set (see
+        # chat/model_pinning.py — the env line was ignored on CLI paths).
+        self.model = claude_pinned_model()
+
         logger.info(f"Initialized ClaudeCLIExecutor for project: {project_dir}")
+        logger.info(f"  Model: {describe_pinned_model(self.model)}")
     
     def _setup_claude_commands(self, project_root: Path):
         """
@@ -233,6 +240,8 @@ class ClaudeCLIExecutor:
             "--no-session-persistence",  # Don't save sessions
             "--add-dir", str(self.project_dir).replace("\\", "/"),  # Add project directory (Unix paths)
             "--add-dir", str(haikai_profiles).replace("\\", "/"),  # Add haikai-profiles for instruction files
+            # Pin the model explicitly when LLM_MODEL is set (empty when not)
+            *model_args(self.model),
         ]
         
         # Build the full prompt

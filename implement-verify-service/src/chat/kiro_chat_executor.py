@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Generator, List
 
 from .cli_limits import MAX_CLI_ARG_LENGTH
+from .model_pinning import describe_pinned_model, kiro_pinned_model, model_args
 from .profiles_path import HAIKAI_PROFILES_ROOT
 from ..kiro_cli_locator import kiro_cli_args, locate_kiro_cli
 from datetime import datetime
@@ -96,9 +97,15 @@ class KiroChatExecutor:
         # Tool executor for handling file writes detected in output
         self.tool_executor = ToolExecutor(self.project_dir)
 
+        # Model pinned on EVERY kiro-cli chat spawn (see model_pinning.py:
+        # kiro-cli ignores `settings chat.defaultModel`, and each step is a
+        # separate --no-interactive process).
+        self.model = kiro_pinned_model()
+
         logger.info(f"Initialized KiroChatExecutor for {self.session_id}")
         logger.info(f"  Project dir: {self.project_dir}")
         logger.info(f"  Kiro CLI: {self.kiro_cli_path}")
+        logger.info(f"  Model: {describe_pinned_model(self.model)}")
 
     def _find_kiro_cli(self) -> Path:
         """Locate kiro-cli via the shared locator (login-shell-aware WSL
@@ -253,6 +260,9 @@ class KiroChatExecutor:
             self.kiro_cli_path, self._use_wsl,
             "chat", "--no-interactive", "--trust-all-tools", "--wrap", "never",
         )
+
+        # Pin the model explicitly on every spawn (no-op when disabled)
+        cli_args.extend(model_args(self.model))
 
         # Resume existing session unless starting fresh
         if not is_new_session:

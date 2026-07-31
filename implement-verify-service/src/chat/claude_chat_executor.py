@@ -18,6 +18,7 @@ from datetime import datetime
 
 from . import rate_limit_backoff
 from .cli_limits import MAX_CLI_ARG_LENGTH
+from .model_pinning import claude_pinned_model, describe_pinned_model, model_args
 from .profiles_path import HAIKAI_PROFILES_ROOT
 from .tool_executor import ToolExecutor
 
@@ -157,6 +158,13 @@ class ClaudeChatExecutor:
         self.session_uuid = session_uuid or str(uuid.uuid5(uuid.NAMESPACE_DNS, session_string))
         self.session_id = session_string  # Keep human-readable ID for logging
         self.anthropic_api_key = anthropic_api_key
+
+        # Model pinned on every Claude CLI spawn WHEN LLM_MODEL is set —
+        # previously the env line was silently ignored on the CLI path
+        # (only the OAuth-SDK / OpenAI fallbacks honoured it). See
+        # model_pinning.py.
+        self.model = claude_pinned_model()
+        logger.info(f"  Model: {describe_pinned_model(self.model)}")
 
         # Polyrepo: additional --add-dir mounts. Normalised to a list of
         # Path objects so the CLI builders can iterate deterministically.
@@ -452,6 +460,8 @@ class ClaudeChatExecutor:
         ]
         for d in self.extra_dirs:
             argv.extend(["--add-dir", str(d).replace("\\", "/")])
+        # Pin the model explicitly when LLM_MODEL is set (empty when not)
+        argv.extend(model_args(self.model))
         argv.extend([
             "--dangerously-skip-permissions",
             "--print",
