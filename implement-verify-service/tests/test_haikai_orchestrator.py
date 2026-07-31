@@ -621,3 +621,99 @@ class TestHaikaiOrchestrator:
         # smell closed by the pass-2 cheap-commit bundle).
         ctor_kwargs = mock_chat_executor_cls.call_args.kwargs
         assert ctor_kwargs.get("session_uuid") == session_uuid
+
+
+class TestStep3CompletionGuard:
+    """Step 3 (implement-tasks) success keys on ACTUAL task completion.
+
+    2026-07-30 live: an 18k-char spec implemented everything and ticked
+    every box, then ran out of its LLM turn right before writing
+    verification/final-verification.md — and the old report-existence
+    gate failed the whole run. tasks.md checkboxes are the ground truth;
+    the verification report is advisory.
+    """
+
+    class _FakeExec:
+        session_uuid = "fake-session-uuid-1234"
+
+        def stream_message(self, prompt, is_new_session=False, command_name=None):
+            return iter(())
+
+        def persist_session_to_spec(self, spec_name):
+            pass
+
+    def _orchestrator(self, ws, logs, spec_name):
+        request = OrchestrationRequest(
+            company="acme", project="backend",
+            spec_intents=[make_spec_intent(spec_name)],
+        )
+        return HaikaiOrchestrator(
+            request=request, anthropic_api_key="k",
+            workspace_dir=ws, logs_dir=logs,
+        )
+
+    def _spec_dir(self, ws, spec_name):
+        d = Path(ws) / "acme" / "backend" / "haikai" / "specs" / spec_name
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    # -- _count_unchecked_tasks ------------------------------------------
+
+    def test_count_all_checked_is_zero(self, tmp_path):
+        f = tmp_path / "tasks.md"
+        f.write_text("- [x] one\n  - [X] sub\n- [x] two\n", encoding="utf-8")
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) == 0
+
+    def test_count_reports_unchecked(self, tmp_path):
+        f = tmp_path / "tasks.md"
+        f.write_text("- [x] one\n- [ ] two\n  - [ ] sub\n", encoding="utf-8")
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) == 2
+
+    def test_count_none_when_no_checkboxes(self, tmp_path):
+        f = tmp_path / "tasks.md"
+        f.write_text("# Tasks\n\nProse only, no boxes.\n", encoding="utf-8")
+        assert HaikaiOrchestrator._count_unchecked_tasks(f) is None
+
+    def test_count_none_when_unreadable(self, tmp_path):
+        assert HaikaiOrchestrator._count_unchecked_tasks(tmp_path / "absent.md") is None
+
+    # -- step-3 verdicts through _execute_step_with_session --------------
+
+    def test_step3_gated_output_is_tasks_md(self, test_workspace_dir, test_logs_dir):
+        self._spec_dir(test_workspace_dir, "step3-spec")
+        orch = self._orchestrator(test_workspace_dir, test_logs_dir, "step3-spec")
+        paths = orch._determine_output_paths(3, "step3-spec")
+        assert paths and paths[0].endswith("haikai/specs/step3-spec/tasks.md")
+
+    def test_step3_passes_with_all_ticked_and_no_report(self, test_workspace_dir, test_logs_dir):
+        spec = self._spec_dir(test_workspace_dir, "step3-spec")
+        (spec / "tasks.md").write_text("- [x] a\n- [x] b\n", encoding="utf-8")
+        orch = self._orchestrator(test_workspace_dir, test_logs_dir, "step3-spec")
+        result = orch._execute_step_with_session(
+            self._FakeExec(), 3, "/implement-tasks", "step3-spec")
+        assert result.status == "success"
+
+    def test_step3_fails_on_unticked_boxes(self, test_workspace_dir, test_logs_dir):
+        spec = self._spec_dir(test_workspace_dir, "step3-spec")
+        (spec / "tasks.md").write_text("- [x] a\n- [ ] b\n", encoding="utf-8")
+        orch = self._orchestrator(test_workspace_dir, test_logs_dir, "step3-spec")
+        result = orch._execute_step_with_session(
+            self._FakeExec(), 3, "/implement-tasks", "step3-spec")
+        assert result.status == "failure"
+        assert "unticked" in (result.error_message or "")
+
+    def test_step3_passes_when_completion_unjudgeable(self, test_workspace_dir, test_logs_dir):
+        spec = self._spec_dir(test_workspace_dir, "step3-spec")
+        (spec / "tasks.md").write_text("no boxes here\n", encoding="utf-8")
+        orch = self._orchestrator(test_workspace_dir, test_logs_dir, "step3-spec")
+        result = orch._execute_step_with_session(
+            self._FakeExec(), 3, "/implement-tasks", "step3-spec")
+        assert result.status == "success"
+
+    def test_step3_still_fails_when_tasks_md_missing(self, test_workspace_dir, test_logs_dir):
+        self._spec_dir(test_workspace_dir, "step3-spec")
+        orch = self._orchestrator(test_workspace_dir, test_logs_dir, "step3-spec")
+        result = orch._execute_step_with_session(
+            self._FakeExec(), 3, "/implement-tasks", "step3-spec")
+        assert result.status == "failure"
+        assert "missing" in (result.error_message or "")

@@ -8,6 +8,7 @@ This module provides the main orchestration logic for running Haikai workflows
 import logging
 import json
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Callable, Union
@@ -519,8 +520,6 @@ class HaikaiOrchestrator:
         # Without this guard, an LLM that silently gave up (no error event,
         # no exception, but also no spec.md written) produced a "success"
         # response — surfaced as the silent-lie pattern in E2E test #1.
-        # Step 3 (implement-tasks) writes verification-report.md only on
-        # successful completion, so this catches partial failures there too.
         if success:
             missing = [p for p in output_paths if not Path(p).exists()]
             if missing:
@@ -532,6 +531,38 @@ class HaikaiOrchestrator:
                 )
                 logger.error(msg)
                 errors.append(msg)
+
+        # Step 3 (implement-tasks): success is keyed on ACTUAL task
+        # completion — the tasks.md checkboxes are the ground truth. The
+        # verification report is advisory only (see _determine_output_paths):
+        # failing the step over a missing report conflates "didn't write a
+        # report" with "didn't implement".
+        if success and step == 3:
+            spec_dir = self.project_dir / "haikai" / "specs" / spec_name
+            unchecked = self._count_unchecked_tasks(spec_dir / "tasks.md")
+            if unchecked is not None and unchecked > 0:
+                success = False
+                msg = (
+                    f"Step {step} ({command}) finished but tasks.md still has "
+                    f"{unchecked} unticked task checkbox(es) — the "
+                    "implementation is incomplete."
+                )
+                logger.error(msg)
+                errors.append(msg)
+            elif unchecked is None:
+                logger.warning(
+                    "Step 3 (%s): completion cannot be judged from tasks.md "
+                    "checkboxes (file unreadable or no checkboxes) — not "
+                    "failing the step on it.",
+                    command,
+                )
+            if not (spec_dir / "verification" / "final-verification.md").exists():
+                logger.warning(
+                    "Step 3 (%s): verification/final-verification.md was not "
+                    "written — advisory only; the step is judged on tasks.md "
+                    "completion.",
+                    command,
+                )
 
         # DETAIL: per-spec workflow step outcome — concentrated where failures
         # hide. The git/deploy detail lives in the job runner (tasks.py); this is
@@ -599,15 +630,36 @@ class HaikaiOrchestrator:
             # create-tasks creates tasks.md
             return [str(spec_dir / "tasks.md").replace("\\", "/")]
         elif step == 3:
-            # implement-tasks writes the verification report at
-            # verification/final-verification.md (see the
-            # create-verification-report workflow). Previously this asserted
-            # verification-report.md at the spec root, which neither the
-            # skill nor Claude actually produces — yielding false-positive
-            # "step 3 failed" verdicts.
-            return [str(spec_dir / "verification" / "final-verification.md").replace("\\", "/")]
+            # implement-tasks success is keyed on ACTUAL task completion:
+            # tasks.md (which always exists after create-tasks) plus the
+            # unchecked-checkbox judgement in _execute_step_with_session.
+            # The verification report (verification/final-verification.md)
+            # is advisory — a big spec can run out of its LLM turn right
+            # before writing the report despite having implemented and
+            # ticked every task (live 2026-07-30: 18k-char spec failed the
+            # run on exactly that), so its absence must not gate the step.
+            return [str(spec_dir / "tasks.md").replace("\\", "/")]
 
         return []
+
+    @staticmethod
+    def _count_unchecked_tasks(tasks_md: Path) -> Optional[int]:
+        """Count unticked ``- [ ]`` checkboxes in a tasks.md.
+
+        Returns ``None`` when the file is unreadable or contains no
+        checkboxes at all — the caller warns instead of hard-failing,
+        because "cannot judge completion" must not be conflated with
+        "did not implement".
+        """
+        try:
+            text = tasks_md.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        unchecked = len(re.findall(r"^\s*[-*]\s*\[ \]", text, flags=re.MULTILINE))
+        checked = len(re.findall(r"^\s*[-*]\s*\[[xX]\]", text, flags=re.MULTILINE))
+        if unchecked == 0 and checked == 0:
+            return None
+        return unchecked
 
     def _create_step_log(self, step: int, command: str, execution_result: Dict[str, Any]) -> str:
         """
