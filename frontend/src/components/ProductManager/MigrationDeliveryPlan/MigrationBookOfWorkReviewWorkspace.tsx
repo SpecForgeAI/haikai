@@ -102,7 +102,8 @@ import {
   haltMigrationRun,
   MigrationExecutionRunDto,
   fetchMigrationCredentialsStatus,
-  registerRunTargetDbCredentials,
+  registerRunStageCredentials,
+  retryRunDbCompletion,
   MigrationCredentialsStatus,
   type MigrateBlockReason,
 } from '../../../api/migrationDeliveryDashboardApi';
@@ -943,7 +944,13 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   // after a gateway restart dropped the in-memory store).
   const [startDialog, setStartDialog] = useState<{
     open: boolean;
-    mode: 'start' | 'register';
+    /**
+     * 'start' = confirm + trigger the run + register; 'register' = re-register
+     * for the active run; 'retry-db' (2026-07-31) = the stage-1 credentials
+     * modal with "Retry DB build" as the confirm action — re-runs the DB
+     * execution chain on a halted run WITHOUT re-running the specs.
+     */
+    mode: 'start' | 'register' | 'retry-db';
     /** The plane this start targets (per-plane runs, 2026-07-26). */
     plane?: RailPlaneId;
     /** Stage number for the dialog title (derived from the rail card). */
@@ -962,6 +969,33 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     username: 'postgres',
   });
   const [targetDbPassword, setTargetDbPassword] = useState('');
+  // Stage-1 SOURCE database section (2026-07-31): previously only
+  // registerable via the drift-watch flow — the live run halted at the DB
+  // chain's inputs guard because of exactly that gap.
+  const [sourceDbFields, setSourceDbFields] = useState({
+    host: '',
+    port: 5000,
+    database: '',
+    schema: '',
+    username: '',
+  });
+  const [sourceDbPassword, setSourceDbPassword] = useState('');
+  // Stage-2 TARGET service serve spec (2026-07-31): prefilled from the
+  // derived binding; command executes verbatim via haibox — operator input.
+  const [serveFields, setServeFields] = useState({
+    command: '',
+    healthPath: '/',
+    portEnv: 'PORT',
+    readinessTimeout: 30,
+  });
+  /** KEY=VALUE per line (e.g. the migrated service's datasource settings). */
+  const [serveEnvText, setServeEnvText] = useState('');
+  // Stage-2 SOURCE service (current system API) section (2026-07-31).
+  const [sourceApiFields, setSourceApiFields] = useState({
+    baseUrl: '',
+    authType: 'none',
+    bearerToken: '',
+  });
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   // The server gate's verbatim blocking reasons (2026-07-26): the plane cards
@@ -993,11 +1027,16 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   }, [run?.id, refreshCredsStatus]);
 
   const openStartDialog = useCallback(
-    async (mode: 'start' | 'register', plane?: RailPlaneId, stageNo?: number) => {
+    async (
+      mode: 'start' | 'register' | 'retry-db',
+      plane?: RailPlaneId,
+      stageNo?: number,
+    ) => {
       setDialogError(null);
       setDialogBlockReasons(null);
       setShowParityBreakGlass(false);
       setTargetDbPassword('');
+      setSourceDbPassword('');
       const status = await refreshCredsStatus();
       const b = status?.targetBinding;
       if (b) {
@@ -1009,10 +1048,55 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           username: b.username,
         });
       }
+      // Stage-1 SOURCE DB prefill: non-secret coordinates from a previous
+      // registration in this gateway process (password always re-entered).
+      const s = status?.source;
+      if (s?.registered) {
+        setSourceDbFields({
+          host: s.host ?? '',
+          port: s.port ?? 5000,
+          database: s.database ?? '',
+          schema: '',
+          username: s.username ?? '',
+        });
+      }
+      // Stage-2 prefills: the tool-DECLARED serve spec + any previously
+      // registered source-API coordinates.
+      const sb = status?.serviceBinding;
+      if (sb) {
+        setServeFields({
+          command: sb.command,
+          healthPath: sb.health_path,
+          portEnv: sb.port_env,
+          readinessTimeout: sb.readiness_timeout,
+        });
+      }
+      const sa = status?.sourceApi;
+      if (sa?.registered) {
+        setSourceApiFields((f) => ({
+          ...f,
+          baseUrl: sa.current_base_url ?? '',
+          authType: sa.auth_type ?? 'none',
+        }));
+      }
       setStartDialog({ open: true, mode, plane, stageNo });
     },
     [refreshCredsStatus],
   );
+
+  /** Parse the env textarea (KEY=VALUE per line). Returns null on a bad line. */
+  const parseServeEnv = (text: string): Record<string, string> | null => {
+    const env: Record<string, string> = {};
+    for (const rawLine of text.split('\n')) {
+      const line = rawLine.trim();
+      if (line === '') continue;
+      const eq = line.indexOf('=');
+      const key = eq > 0 ? line.slice(0, eq).trim() : '';
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return null;
+      env[key] = line.slice(eq + 1);
+    }
+    return env;
+  };
 
   const confirmStartDialog = useCallback(async (parityOverride = false) => {
     if (!companyName || !projectName) return;
@@ -1051,25 +1135,89 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       } else {
         runId = run?.id ?? null;
       }
-      // Register the target-DB secrets against the run (skippable: an empty
-      // password means "not now" — the data step will fail-soft and the
-      // parity gate blocks until provided, exactly as Spec W designed).
-      if (runId && targetDbPassword.trim().length > 0) {
-        try {
-          await registerRunTargetDbCredentials(projectId, runId, {
-            ...targetDbFields,
-            password: targetDbPassword,
-          });
-        } catch (err) {
-          setRailError(
-            `Run started, but credential registration failed: ${
-              err instanceof Error ? err.message : 'unknown'
-            } — use "Provide credentials…" on the DB card.`,
-          );
+      // Register the stage's SOURCE + TARGET details against the run
+      // (2026-07-31; skippable per section: an empty password/command means
+      // "not now" — the affected step fail-softs and its gate blocks until
+      // provided, exactly as Spec W designed).
+      const dialogPlane: RailPlaneId = startDialog.plane ?? 'db';
+      if (runId) {
+        const opts: Parameters<typeof registerRunStageCredentials>[2] = {};
+        if (dialogPlane !== 'service') {
+          if (targetDbPassword.trim().length > 0) {
+            opts.targetDb = {
+              dbType: 'postgres',
+              ...targetDbFields,
+              password: targetDbPassword,
+            };
+          }
+          if (sourceDbPassword.trim().length > 0 && sourceDbFields.host.trim() !== '') {
+            opts.sourceDb = {
+              dbType: 'sybase',
+              host: sourceDbFields.host,
+              port: sourceDbFields.port,
+              database: sourceDbFields.database,
+              schema: sourceDbFields.schema.trim() === '' ? null : sourceDbFields.schema,
+              username: sourceDbFields.username,
+              password: sourceDbPassword,
+            };
+          }
+        } else {
+          if (serveFields.command.trim() !== '') {
+            const env = parseServeEnv(serveEnvText);
+            if (env === null) {
+              setDialogError(
+                'Environment variables must be KEY=VALUE, one per line (keys: letters/digits/underscore).',
+              );
+              return;
+            }
+            opts.service = {
+              command: serveFields.command.trim(),
+              healthPath: serveFields.healthPath,
+              portEnv: serveFields.portEnv,
+              readinessTimeout: serveFields.readinessTimeout,
+              ...(Object.keys(env).length > 0 ? { env } : {}),
+            };
+          }
+          if (sourceApiFields.baseUrl.trim() !== '') {
+            opts.sourceApi = {
+              currentBaseUrl: sourceApiFields.baseUrl.trim(),
+              authType: sourceApiFields.authType,
+              ...(sourceApiFields.authType === 'bearer' &&
+              sourceApiFields.bearerToken.trim() !== ''
+                ? { bearerToken: sourceApiFields.bearerToken }
+                : {}),
+            };
+          }
+        }
+        if (Object.keys(opts).length > 0) {
+          try {
+            await registerRunStageCredentials(projectId, runId, opts);
+          } catch (err) {
+            setRailError(
+              `Run started, but credential registration failed: ${
+                err instanceof Error ? err.message : 'unknown'
+              } — use "Provide credentials…" on the DB card.`,
+            );
+          }
+        }
+      }
+      // Retry mode (2026-07-31): re-kick the DB execution chain on the
+      // halted run. A refusal keeps the dialog open with the driver's
+      // fail-closed reason.
+      if (startDialog.mode === 'retry-db' && runId && companyName && projectName) {
+        const result = await retryRunDbCompletion(projectId, runId, {
+          company: companyName,
+          project: projectName,
+          bookId,
+        });
+        if (result.status !== 'retrying') {
+          setDialogError(`Retry refused: ${result.reason ?? result.status}`);
+          return;
         }
       }
       setStartDialog({ open: false, mode: 'start' });
       setTargetDbPassword('');
+      setSourceDbPassword('');
       await refreshRun();
       await refreshCredsStatus();
     } finally {
@@ -1085,6 +1233,11 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     run?.id,
     targetDbFields,
     targetDbPassword,
+    sourceDbFields,
+    sourceDbPassword,
+    serveFields,
+    serveEnvText,
+    sourceApiFields,
     refreshRun,
     refreshCredsStatus,
   ]);
@@ -1951,6 +2104,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           dbCredsRegistered={credsStatus ? credsStatus.targetRegistered : null}
           onProvideCreds={() => void openStartDialog('register')}
           onHaltRun={() => void handleRailHalt()}
+          onRetryDbBuild={() => void openStartDialog('retry-db', 'db', 1)}
         />
       )}
 
@@ -2047,14 +2201,18 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             aria-label={
               startDialog.mode === 'start'
                 ? 'Start stage'
-                : 'Provide target credentials'
+                : startDialog.mode === 'retry-db'
+                  ? 'Retry DB build'
+                  : 'Provide target credentials'
             }
           >
             <div className={styles.modalHeader}>
               <h2 className={styles.modalTitle}>
                 {startDialog.mode === 'start'
                   ? `Start stage ${startDialog.stageNo ?? 1}`
-                  : 'Provide target-DB credentials'}
+                  : startDialog.mode === 'retry-db'
+                    ? 'Retry DB build'
+                    : 'Provide credentials'}
               </h2>
             </div>
             <div className={styles.modalBody}>
@@ -2064,87 +2222,290 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   reconcile). The next stage unlocks when it completes.
                 </p>
               )}
-              <p data-testid="start-stage-binding-note">
-                <strong>Target database (declared by this plan):</strong>{' '}
-                {credsStatus?.targetBinding
-                  ? 'the coordinates below come from the pack — confirm, don’t re-type.'
-                  : 'no pack binding found — enter the target coordinates.'}
-              </p>
-              <div className={styles.modalInputRow}>
-                <label htmlFor="tgt-host">Host</label>
-                <input
-                  id="tgt-host"
-                  className={styles.modalInput}
-                  value={targetDbFields.host}
-                  onChange={(e) =>
-                    setTargetDbFields((f) => ({ ...f, host: e.target.value }))
-                  }
-                  data-testid="start-stage-host"
-                />
-                <label htmlFor="tgt-port">Port</label>
-                <input
-                  id="tgt-port"
-                  className={styles.modalInput}
-                  type="number"
-                  value={targetDbFields.port}
-                  onChange={(e) =>
-                    setTargetDbFields((f) => ({
-                      ...f,
-                      port: Number(e.target.value),
-                    }))
-                  }
-                  data-testid="start-stage-port"
-                />
-                <label htmlFor="tgt-db">Database</label>
-                <input
-                  id="tgt-db"
-                  className={styles.modalInput}
-                  value={targetDbFields.database}
-                  onChange={(e) =>
-                    setTargetDbFields((f) => ({
-                      ...f,
-                      database: e.target.value,
-                    }))
-                  }
-                  data-testid="start-stage-database"
-                />
-                <label htmlFor="tgt-user">Username</label>
-                <input
-                  id="tgt-user"
-                  className={styles.modalInput}
-                  value={targetDbFields.username}
-                  onChange={(e) =>
-                    setTargetDbFields((f) => ({
-                      ...f,
-                      username: e.target.value,
-                    }))
-                  }
-                  data-testid="start-stage-username"
-                />
-                <label htmlFor="tgt-pass">Password</label>
-                <input
-                  id="tgt-pass"
-                  className={styles.modalInput}
-                  type="password"
-                  value={targetDbPassword}
-                  onChange={(e) => setTargetDbPassword(e.target.value)}
-                  data-testid="start-stage-password"
-                />
-                <span className={styles.modalHint}>
-                  In memory only, for this run — never persisted, never
-                  logged. Leave blank to skip: the data load + parity will
-                  skip and the approval gate blocks until provided.
-                </span>
-              </div>
-              <p
-                className={styles.coveragePanelNote}
-                data-testid="start-stage-source-status"
-              >
-                Source DB:{' '}
-                {credsStatus?.source.registered
-                  ? `registered ✓ (${credsStatus.source.host}:${credsStatus.source.port}/${credsStatus.source.database})`
-                  : 'not registered — register via the API capture / drift-watch screen for the data load to run.'}
-              </p>
+              {startDialog.mode === 'retry-db' && (
+                <p className={styles.coveragePanelNote}>
+                  Re-runs the DB build (assemble {'→'} schema apply {'→'} data
+                  load {'→'} reconcile) on this halted run WITHOUT re-running
+                  the specs. Confirm both database sections first — the chain
+                  reads the source and writes the target.
+                </p>
+              )}
+              {(startDialog.plane ?? 'db') !== 'service' && (
+                <>
+                  <p data-testid="start-stage-source-db-note">
+                    <strong>Source database (the current system):</strong> the
+                    data load and parity reconcile READ from it.
+                    {credsStatus?.source.registered
+                      ? ' Previously registered — confirm and re-enter the password.'
+                      : ''}
+                  </p>
+                  <div className={styles.modalInputRow}>
+                    <label htmlFor="src-host">Host</label>
+                    <input
+                      id="src-host"
+                      className={styles.modalInput}
+                      value={sourceDbFields.host}
+                      onChange={(e) =>
+                        setSourceDbFields((f) => ({ ...f, host: e.target.value }))
+                      }
+                      data-testid="start-stage-source-host"
+                    />
+                    <label htmlFor="src-port">Port</label>
+                    <input
+                      id="src-port"
+                      className={styles.modalInput}
+                      type="number"
+                      value={sourceDbFields.port}
+                      onChange={(e) =>
+                        setSourceDbFields((f) => ({
+                          ...f,
+                          port: Number(e.target.value),
+                        }))
+                      }
+                      data-testid="start-stage-source-port"
+                    />
+                    <label htmlFor="src-db">Database</label>
+                    <input
+                      id="src-db"
+                      className={styles.modalInput}
+                      value={sourceDbFields.database}
+                      onChange={(e) =>
+                        setSourceDbFields((f) => ({
+                          ...f,
+                          database: e.target.value,
+                        }))
+                      }
+                      data-testid="start-stage-source-database"
+                    />
+                    <label htmlFor="src-user">Username</label>
+                    <input
+                      id="src-user"
+                      className={styles.modalInput}
+                      value={sourceDbFields.username}
+                      onChange={(e) =>
+                        setSourceDbFields((f) => ({
+                          ...f,
+                          username: e.target.value,
+                        }))
+                      }
+                      data-testid="start-stage-source-username"
+                    />
+                    <label htmlFor="src-pass">Password</label>
+                    <input
+                      id="src-pass"
+                      className={styles.modalInput}
+                      type="password"
+                      value={sourceDbPassword}
+                      onChange={(e) => setSourceDbPassword(e.target.value)}
+                      data-testid="start-stage-source-password"
+                    />
+                    <span className={styles.modalHint}>
+                      Sybase (the source engine). In gateway memory only —
+                      never persisted, never logged. Leave the password blank
+                      to skip: the data load will halt with a named
+                      &quot;source DB credentials are not registered&quot;
+                      error until provided.
+                    </span>
+                  </div>
+                  <p data-testid="start-stage-binding-note">
+                    <strong>Target database (declared by this plan):</strong>{' '}
+                    {credsStatus?.targetBinding
+                      ? 'the coordinates below come from the pack — confirm, don’t re-type.'
+                      : 'no pack binding found — enter the target coordinates.'}
+                  </p>
+                  <div className={styles.modalInputRow}>
+                    <label htmlFor="tgt-host">Host</label>
+                    <input
+                      id="tgt-host"
+                      className={styles.modalInput}
+                      value={targetDbFields.host}
+                      onChange={(e) =>
+                        setTargetDbFields((f) => ({ ...f, host: e.target.value }))
+                      }
+                      data-testid="start-stage-host"
+                    />
+                    <label htmlFor="tgt-port">Port</label>
+                    <input
+                      id="tgt-port"
+                      className={styles.modalInput}
+                      type="number"
+                      value={targetDbFields.port}
+                      onChange={(e) =>
+                        setTargetDbFields((f) => ({
+                          ...f,
+                          port: Number(e.target.value),
+                        }))
+                      }
+                      data-testid="start-stage-port"
+                    />
+                    <label htmlFor="tgt-db">Database</label>
+                    <input
+                      id="tgt-db"
+                      className={styles.modalInput}
+                      value={targetDbFields.database}
+                      onChange={(e) =>
+                        setTargetDbFields((f) => ({
+                          ...f,
+                          database: e.target.value,
+                        }))
+                      }
+                      data-testid="start-stage-database"
+                    />
+                    <label htmlFor="tgt-user">Username</label>
+                    <input
+                      id="tgt-user"
+                      className={styles.modalInput}
+                      value={targetDbFields.username}
+                      onChange={(e) =>
+                        setTargetDbFields((f) => ({
+                          ...f,
+                          username: e.target.value,
+                        }))
+                      }
+                      data-testid="start-stage-username"
+                    />
+                    <label htmlFor="tgt-pass">Password</label>
+                    <input
+                      id="tgt-pass"
+                      className={styles.modalInput}
+                      type="password"
+                      value={targetDbPassword}
+                      onChange={(e) => setTargetDbPassword(e.target.value)}
+                      data-testid="start-stage-password"
+                    />
+                    <span className={styles.modalHint}>
+                      In memory only, for this run — never persisted, never
+                      logged. Leave blank to skip: the data load + parity will
+                      skip and the approval gate blocks until provided.
+                    </span>
+                  </div>
+                </>
+              )}
+              {(startDialog.plane ?? 'db') === 'service' && (
+                <>
+                  <p data-testid="start-stage-source-api-note">
+                    <strong>Source service (the current system API):</strong>{' '}
+                    optional — the reconcile replays the pinned baseline
+                    against the target; this feeds baseline drift-watching.
+                  </p>
+                  <div className={styles.modalInputRow}>
+                    <label htmlFor="src-api-url">Base URL</label>
+                    <input
+                      id="src-api-url"
+                      className={styles.modalInput}
+                      placeholder="http://current-system:8080"
+                      value={sourceApiFields.baseUrl}
+                      onChange={(e) =>
+                        setSourceApiFields((f) => ({ ...f, baseUrl: e.target.value }))
+                      }
+                      data-testid="start-stage-source-api-url"
+                    />
+                    <label htmlFor="src-api-auth">Auth</label>
+                    <select
+                      id="src-api-auth"
+                      className={styles.modalInput}
+                      value={sourceApiFields.authType}
+                      onChange={(e) =>
+                        setSourceApiFields((f) => ({ ...f, authType: e.target.value }))
+                      }
+                      data-testid="start-stage-source-api-auth"
+                    >
+                      <option value="none">none</option>
+                      <option value="bearer">bearer</option>
+                    </select>
+                    {sourceApiFields.authType === 'bearer' && (
+                      <>
+                        <label htmlFor="src-api-token">Token</label>
+                        <input
+                          id="src-api-token"
+                          className={styles.modalInput}
+                          type="password"
+                          value={sourceApiFields.bearerToken}
+                          onChange={(e) =>
+                            setSourceApiFields((f) => ({
+                              ...f,
+                              bearerToken: e.target.value,
+                            }))
+                          }
+                          data-testid="start-stage-source-api-token"
+                        />
+                      </>
+                    )}
+                  </div>
+                  <p data-testid="start-stage-serve-note">
+                    <strong>Target service (how to run it):</strong>{' '}
+                    {credsStatus?.serviceBinding?.source === 'derived'
+                      ? `derived from the target stack (${credsStatus.serviceBinding.runtime_hint ?? 'captured decisions'}) — confirm or adjust.`
+                      : 'no runtime could be derived — enter the serve command.'}{' '}
+                    Host is 127.0.0.1; the port is assigned automatically and
+                    injected via the port env var.
+                  </p>
+                  <div className={styles.modalInputRow}>
+                    <label htmlFor="srv-cmd">Serve command</label>
+                    <input
+                      id="srv-cmd"
+                      className={styles.modalInput}
+                      placeholder="mvn spring-boot:run"
+                      value={serveFields.command}
+                      onChange={(e) =>
+                        setServeFields((f) => ({ ...f, command: e.target.value }))
+                      }
+                      data-testid="start-stage-serve-command"
+                    />
+                    <label htmlFor="srv-health">Health path</label>
+                    <input
+                      id="srv-health"
+                      className={styles.modalInput}
+                      value={serveFields.healthPath}
+                      onChange={(e) =>
+                        setServeFields((f) => ({ ...f, healthPath: e.target.value }))
+                      }
+                      data-testid="start-stage-serve-health"
+                    />
+                    <label htmlFor="srv-port-env">Port env var</label>
+                    <input
+                      id="srv-port-env"
+                      className={styles.modalInput}
+                      value={serveFields.portEnv}
+                      onChange={(e) =>
+                        setServeFields((f) => ({ ...f, portEnv: e.target.value }))
+                      }
+                      data-testid="start-stage-serve-port-env"
+                    />
+                    <label htmlFor="srv-timeout">Readiness (s)</label>
+                    <input
+                      id="srv-timeout"
+                      className={styles.modalInput}
+                      type="number"
+                      value={serveFields.readinessTimeout}
+                      onChange={(e) =>
+                        setServeFields((f) => ({
+                          ...f,
+                          readinessTimeout: Number(e.target.value),
+                        }))
+                      }
+                      data-testid="start-stage-serve-timeout"
+                    />
+                    <label htmlFor="srv-env">Env vars</label>
+                    <textarea
+                      id="srv-env"
+                      className={styles.modalInput}
+                      rows={3}
+                      placeholder={'SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/haikai_target\nSPRING_DATASOURCE_USERNAME=postgres'}
+                      value={serveEnvText}
+                      onChange={(e) => setServeEnvText(e.target.value)}
+                      data-testid="start-stage-serve-env"
+                    />
+                    <span className={styles.modalHint}>
+                      KEY=VALUE, one per line — the migrated service usually
+                      needs its target-DB datasource settings to boot. In
+                      gateway memory only. Leave the command blank to skip:
+                      the plane will implement + open MRs but will NOT deploy
+                      or run the API reconcile.
+                    </span>
+                  </div>
+                </>
+              )}
               {dialogError && (
                 <div
                   className={styles.modalWarning}
@@ -2217,7 +2578,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   ? 'Working…'
                   : startDialog.mode === 'start'
                     ? '▶ Start'
-                    : 'Register credentials'}
+                    : startDialog.mode === 'retry-db'
+                      ? '↻ Retry DB build'
+                      : 'Register credentials'}
               </button>
             </div>
           </div>

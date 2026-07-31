@@ -73,6 +73,19 @@ export interface OrchestrationSubmitInput {
   commitPreparation?: boolean;
   /** TRUE only on the FINAL spec (big-bang deploy). */
   deployOnComplete: boolean;
+  /**
+   * Stage-2 (2026-07-31): the operator-registered target-service serve spec
+   * — mapped to the upstream `target` body field (the haibox launch spec)
+   * so a service-plane deployOnComplete submit can actually deploy. TRUST
+   * BOUNDARY upstream: `command` executes verbatim on the host.
+   */
+  targetServeSpec?: {
+    command: string;
+    healthPath: string;
+    portEnv: string;
+    readinessTimeout?: number;
+    env?: Record<string, string>;
+  };
   /** The gateway's build-results URL, sent per-request on every submit (CD-3). */
   callbackUrl: string;
 }
@@ -104,6 +117,8 @@ export interface OrchestrationBatchSubmitInput {
   batchName: string;
   /** TRUE -> big-bang deploy after the whole batch implements. */
   deployOnComplete: boolean;
+  /** Stage-2 (2026-07-31): serve spec for the batch deploy (see the single-spec field). */
+  targetServeSpec?: OrchestrationSubmitInput['targetServeSpec'];
   /** The gateway's build-results URL (one callback for the whole batch). */
   callbackUrl: string;
 }
@@ -118,6 +133,24 @@ export interface OrchestrationSubmitResult {
   status?: string | null;
   /** Error detail on a non-accepted submit. */
   error?: string | null;
+}
+
+/**
+ * Map the operator-registered serve spec to the IVS `target` wire shape —
+ * the haibox launch kwargs verbatim (command / health_type / health_path /
+ * port_env / readiness_timeout / env).
+ */
+function toTargetWire(
+  spec: NonNullable<OrchestrationSubmitInput['targetServeSpec']>
+): Record<string, unknown> {
+  return {
+    command: spec.command,
+    health_type: 'http',
+    health_path: spec.healthPath,
+    port_env: spec.portEnv,
+    ...(spec.readinessTimeout !== undefined ? { readiness_timeout: spec.readinessTimeout } : {}),
+    ...(spec.env ? { env: spec.env } : {}),
+  };
 }
 
 /**
@@ -226,6 +259,10 @@ export async function submitOrchestration(
     callback_url: input.callbackUrl,
     // CD-3 / big-bang: deploy once everything is implemented.
     deploy_on_complete: input.deployOnComplete,
+    // Stage-2 (2026-07-31): the haibox serve spec (snake wire matches the
+    // IVS/haibox launch kwargs). Only present when the operator registered
+    // one at the Start-stage dialog.
+    ...(input.targetServeSpec ? { target: toTargetWire(input.targetServeSpec) } : {}),
     // Step-4 once-per-run control (2026-07-30).
     ...(input.commitPreparation !== undefined
       ? { commit_preparation: input.commitPreparation }
@@ -267,6 +304,7 @@ export async function submitOrchestrationBatch(
     batch_name: input.batchName,
     callback_url: input.callbackUrl,
     deploy_on_complete: input.deployOnComplete,
+    ...(input.targetServeSpec ? { target: toTargetWire(input.targetServeSpec) } : {}),
     options: { ...DEFAULT_OPTIONS },
   };
 

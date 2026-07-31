@@ -115,6 +115,10 @@ import {
 import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
 import { createDataMigrationTrigger } from './migrationDataRunnerDispatch';
 import { createDbPlaneCompletionRunner } from './migrationDbPlaneCompletion';
+import {
+  migrationTargetCredentialsStore,
+  type TargetServeSpec,
+} from './migrationTargetCredentialsStore';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -300,6 +304,13 @@ export interface MigrationDriverDeps {
     item: MigrationExecutionRunItem,
     deps: MigrationDriverDeps
   ) => Promise<void>;
+  /**
+   * Stage-2 (2026-07-31): the run's operator-registered target-service serve
+   * spec (Start-stage dialog) — attached as the `target` body field on
+   * service-plane deployOnComplete submits so haibox can launch the migrated
+   * service. Lazily defaulted to the in-memory store read.
+   */
+  getTargetServeSpec?: (runId: string) => TargetServeSpec | undefined;
   /**
    * Handles a `bug_id` build-results callback (Group 4 seam). Defaults to
    * {@link handleBugCallback}; run fire-and-forget for `deployed` (scoped
@@ -807,6 +818,8 @@ export function defaultMigrationDriverDeps(
     // + pack, apply schema, load data, reconcile — fired on the db plane's
     // final `implemented` callback.
     runDbPlaneCompletion: createDbPlaneCompletionRunner(),
+    // Stage-2 (2026-07-31): serve spec for service-plane haibox deploys.
+    getTargetServeSpec: (runId: string) => migrationTargetCredentialsStore.getService(runId),
     handleBugCallback,
     carryOverCoverageReads: defaultCarryOverCoverageReadsDeps(),
   };
@@ -1394,6 +1407,31 @@ export async function runSpecSegment(
   // Submit the orchestration server-to-server with the materialisation
   // payload. Step 4 (/git-commit-preparation) runs once per run: only the
   // final item (deploy_on_complete marker) asks for it.
+  // WS2 (2026-07-31): db-plane items never haibox-deploy — the DB execution
+  // chain takes over on `implemented`. The AMS item keeps
+  // deploy_on_complete=true as the plane-final marker; only the IVS flag is
+  // decoupled (kills the bogus "deploy failed: no target serve spec" error
+  // on every db-plane final item).
+  const itemPlane = descriptor.plane ?? planeForWorkstream(descriptor.workstream);
+  const wantsHaiboxDeploy = (item.deploy_on_complete ?? false) && itemPlane !== 'db';
+  // Stage-2 (2026-07-31): a service-plane deploy needs the serve spec the
+  // operator registered in the Start-stage dialog. Missing = today's
+  // fail-soft (implement + MRs, no deploy) with a LOUD dispatch-time trace.
+  let targetServeSpec: TargetServeSpec | undefined;
+  if (wantsHaiboxDeploy && itemPlane === 'service') {
+    const getServeSpec =
+      deps.getTargetServeSpec ??
+      ((id: string) => migrationTargetCredentialsStore.getService(id));
+    targetServeSpec = getServeSpec(runId);
+    if (!targetServeSpec) {
+      trace.warn(
+        'target-service serve spec is NOT registered for this run — the plane will ' +
+          'implement and open MRs but will NOT deploy or run the API reconcile. ' +
+          'Register it in the Start-stage dialog (Target service section).',
+        { run: runId, project: scope.project }
+      );
+    }
+  }
   let submit: OrchestrationSubmitResult;
   try {
     submit = await deps.submitOrchestration({
@@ -1402,14 +1440,8 @@ export async function runSpecSegment(
       specName,
       requirementsText,
       commitPreparation: item.deploy_on_complete === true,
-      // WS2 (2026-07-31): db-plane items never haibox-deploy — the DB
-      // execution chain takes over on `implemented`. The AMS item keeps
-      // deploy_on_complete=true as the plane-final marker; only the IVS
-      // flag is decoupled (kills the bogus "deploy failed: no target serve
-      // spec" error on every db-plane final item).
-      deployOnComplete:
-        (item.deploy_on_complete ?? false) &&
-        (descriptor.plane ?? planeForWorkstream(descriptor.workstream)) !== 'db',
+      deployOnComplete: wantsHaiboxDeploy,
+      ...(targetServeSpec ? { targetServeSpec } : {}),
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {
@@ -1536,6 +1568,32 @@ export async function runBatchSegment(
   // subset deploys big-bang and a single `deployed` callback completes the run
   // (same deploy + reconcile semantics as a whole-book migrate).
   const submitBatch = deps.submitOrchestrationBatch ?? submitOrchestrationBatch;
+  // WS2 (2026-07-31): a db-plane batch never haibox-deploys — the DB
+  // execution chain takes over on `implemented`.
+  const batchDeploys = !descriptors.every(
+    (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'db'
+  );
+  const batchHasServicePlane = descriptors.some(
+    (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'service'
+  );
+  // Stage-2 (2026-07-31): attach the operator-registered serve spec so the
+  // batch deploy can actually launch the service. Missing = fail-soft +
+  // loud trace (mirrors the per-spec path).
+  let batchServeSpec: TargetServeSpec | undefined;
+  if (batchDeploys && batchHasServicePlane) {
+    const getServeSpec =
+      deps.getTargetServeSpec ??
+      ((id: string) => migrationTargetCredentialsStore.getService(id));
+    batchServeSpec = getServeSpec(runId);
+    if (!batchServeSpec) {
+      trace.warn(
+        'target-service serve spec is NOT registered for this run — the batch will ' +
+          'implement and open its MR but will NOT deploy or run the API reconcile. ' +
+          'Register it in the Start-stage dialog (Target service section).',
+        { run: runId, project: scope.project }
+      );
+    }
+  }
   let submit: OrchestrationSubmitResult;
   try {
     submit = await submitBatch({
@@ -1546,11 +1604,8 @@ export async function runBatchSegment(
         requirementsText: r.requirementsText,
       })),
       batchName,
-      // WS2 (2026-07-31): a db-plane batch never haibox-deploys — the DB
-      // execution chain takes over on `implemented`.
-      deployOnComplete: !descriptors.every(
-        (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'db'
-      ),
+      deployOnComplete: batchDeploys,
+      ...(batchServeSpec ? { targetServeSpec: batchServeSpec } : {}),
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {
@@ -2105,6 +2160,114 @@ export function kickDbPlaneCompletion(
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   });
+}
+
+/** Outcome of an operator "Retry DB build" request (2026-07-31). */
+export type RetryDbCompletionResult =
+  | { status: 'retrying'; runId: string }
+  | { status: 'not_found' }
+  | { status: 'not_retryable'; reason: string };
+
+/**
+ * Operator retry of the DB-plane completion chain (2026-07-31). The live
+ * shape that demanded it: 14 specs implemented + MRs opened, then the chain
+ * halted at its inputs guard (source DB creds unregistered) — and the chain
+ * only fires on the final item's build-results callback, so without this the
+ * ONLY way to re-run assemble -> schema-apply -> load -> reconcile was to
+ * re-run the whole stage (burning every spec again). The chain is idempotent
+ * end-to-end (assembly recreates its branch, schema-apply skips applied
+ * changeset ids, the load truncates first, reconcile re-runs), so a retry is
+ * safe.
+ *
+ * Guards (fail-closed, 409-shaped reasons): the run must be HALTED, its
+ * final db-plane item must have implemented (or failed AT THE CHAIN — never
+ * a spec-authoring failure), and every other item must be implemented or
+ * deployed. The final item + run are reset and the chain re-kicked detached.
+ */
+export async function retryDbPlaneCompletion(
+  scope: MigrateScope,
+  runId: string,
+  deps: MigrationDriverDeps
+): Promise<RetryDbCompletionResult> {
+  scope = normalizeScopeIdentifiers(scope);
+  const projectId = scope.projectId;
+  const run = await deps.getMigrationExecutionRun(projectId, runId);
+  if (!run) return { status: 'not_found' };
+  if (run.status !== RUN_STATUS.HALTED) {
+    return {
+      status: 'not_retryable',
+      reason: `run status is '${run.status}' — only a halted run can retry the DB build`,
+    };
+  }
+  const items = (run.items ?? [])
+    .slice()
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+  const finalItem =
+    [...items].reverse().find((i) => i.deploy_on_complete === true) ?? items[items.length - 1];
+  if (!finalItem?.id) {
+    return { status: 'not_retryable', reason: 'the run has no final item' };
+  }
+  const plane = await resolveItemPlane(scope, run, finalItem, deps);
+  if (plane !== 'db') {
+    return {
+      status: 'not_retryable',
+      reason: `the final item's plane is '${plane}' — DB-build retry only applies to the db plane`,
+    };
+  }
+  const chainFailed =
+    finalItem.status === RUN_ITEM_STATUS.FAILED &&
+    String(finalItem.error_detail ?? '').includes('DB execution chain failed');
+  const implementedOk =
+    finalItem.outcome === 'implemented' || finalItem.status === RUN_ITEM_STATUS.IMPLEMENTED;
+  if (!chainFailed && !implementedOk) {
+    return {
+      status: 'not_retryable',
+      reason:
+        'the final item did not implement (the spec run itself failed) — re-run the stage instead',
+    };
+  }
+  const badSibling = items.find(
+    (i) =>
+      i.id !== finalItem.id &&
+      !(
+        i.outcome === 'implemented' ||
+        i.outcome === 'deployed' ||
+        i.status === RUN_ITEM_STATUS.IMPLEMENTED ||
+        i.status === RUN_ITEM_STATUS.DEPLOYED
+      )
+  );
+  if (badSibling) {
+    return {
+      status: 'not_retryable',
+      reason:
+        `item at position ${badSibling.sequence_position} is '${badSibling.status}' — ` +
+        'every spec must be implemented before the DB build can retry',
+    };
+  }
+
+  await safePatchItem(deps, projectId, finalItem.id, {
+    status: RUN_ITEM_STATUS.IMPLEMENTED,
+    outcome: 'implemented',
+    error_detail: null,
+  });
+  await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.DISPATCHING });
+  logger.info('[diag-gateway] migration_execution_driver db_completion_retry', {
+    projectId,
+    runId,
+    runItemId: finalItem.id,
+    previouslyFailedAtChain: chainFailed,
+  });
+  trace.step('operator retry — re-running the DB execution chain', {
+    run: runId,
+    project: scope.project,
+  });
+  kickDbPlaneCompletion(
+    scope,
+    run,
+    { ...finalItem, status: RUN_ITEM_STATUS.IMPLEMENTED, outcome: 'implemented' },
+    deps
+  );
+  return { status: 'retrying', runId };
 }
 
 // ============================================================================
