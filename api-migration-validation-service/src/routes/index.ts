@@ -5,6 +5,7 @@ import { diffActionsRouter } from './diffActions';
 import { testConnectionActionRouter } from './testConnectionAction';
 import { dataParityRunRouter } from './dataParityRun';
 import { dataMigrationRunRouter } from './dataMigrationRun';
+import { schemaApplyRunRouter } from './schemaApplyRun';
 
 /**
  * API Migration Validation Routes Barrel
@@ -62,5 +63,10 @@ apiMigrationValidationRouter.use(dataParityRunRouter);
 // Phase-2 bulk load source -> target through the pair ruleset; credentials
 // request-scoped only.
 apiMigrationValidationRouter.use(dataMigrationRunRouter);
+// Schema-apply run (WS2 DB-plane execution chain, 2026-07-31): applies the
+// pack's Liquibase-formatted changesets to the live target by phase context
+// (structural before the load, post-load after); credentials request-scoped
+// only; applied ids tracked in haikai_schema_apply_log on the target.
+apiMigrationValidationRouter.use(schemaApplyRunRouter);
 
 export { apiMigrationValidationRouter };

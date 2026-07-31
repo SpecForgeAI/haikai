@@ -152,6 +152,9 @@ class Worker:
                             run_bug_investigation(job.job_id, self.storage)
                         elif job.type == JobType.HAIBOX_VERIFY:
                             run_haibox_verify(job.job_id, self.storage)
+                        elif job.type == JobType.ASSEMBLE_RUN:
+                            from .assembly import run_assembly
+                            run_assembly(job.job_id, self.storage)
                         else:
                             logger.error(f"Worker {self.worker_id}: Unknown job type: {job.type}")
                         

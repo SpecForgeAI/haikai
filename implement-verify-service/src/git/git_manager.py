@@ -487,6 +487,45 @@ class GitManager:
             return False
 
     # ------------------------------------------------------------------
+    # Assembly primitives (WS2 DB-plane execution chain, 2026-07-31)
+    # ------------------------------------------------------------------
+
+    def fetch_origin(self) -> None:
+        """Best-effort ``git fetch origin --prune`` (auth refreshed first)."""
+        self._refresh_origin_auth_url()
+        self._run_git(["git", "fetch", "origin", "--prune"], check=False)
+
+    def ref_exists(self, ref: str) -> bool:
+        """True when ``ref`` resolves (local branch, tag, or remote ref)."""
+        result = self._run_git(
+            ["git", "rev-parse", "--verify", "--quiet", ref], check=False
+        )
+        return result.returncode == 0
+
+    def checkout_new_branch_from(self, branch: str, base: str) -> None:
+        """``git checkout -B <branch> <base>``; raises GitManagerError."""
+        result = self._run_git(
+            ["git", "checkout", "-B", branch, base], check=False
+        )
+        if result.returncode != 0:
+            raise GitManagerError(
+                f"cannot create branch {branch} from {base}: "
+                f"{((result.stderr or result.stdout) or '').strip()[:300]}"
+            )
+        logger.info("Checked out %s from %s", branch, base)
+
+    def merge_no_ff(self, ref: str, message: str) -> None:
+        """``git merge --no-ff <ref>``; aborts + raises on conflict."""
+        result = self._run_git(
+            ["git", "merge", "--no-ff", "-m", message, ref], check=False
+        )
+        if result.returncode != 0:
+            self._run_git(["git", "merge", "--abort"], check=False)
+            detail = ((result.stdout or "") + (result.stderr or "")).strip()
+            raise GitManagerError(f"merge of {ref} failed: {detail[-400:]}")
+        logger.info("Merged %s", ref)
+
+    # ------------------------------------------------------------------
     # Pull Request Creation
     # ------------------------------------------------------------------
 

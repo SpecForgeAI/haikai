@@ -282,3 +282,47 @@ class OrchestrationV2Response(BaseModel):
         default_factory=list,
         description="Non-fatal errors (git push, PR creation, etc.) that occurred during the operation"
     )
+
+
+class AssemblePackFile(BaseModel):
+    """One pack file overlaid verbatim during run assembly (WS2, 2026-07-31)."""
+
+    path: str = Field(
+        ...,
+        description="Repo-relative destination path (e.g. 'liquibase/db.changelog-master.xml'). Absolute paths and '..' segments are rejected by the assembly runner."
+    )
+    content: str = Field(..., description="Full file text (written UTF-8, no BOM)")
+
+
+class AssembleRunRequest(BaseModel):
+    """Payload for POST /api/v2/jobs/assemblies (DB-plane execution chain, 2026-07-31).
+
+    After a migration run's specs implement, the gateway asks IVS to merge the
+    run's per-spec branches into ONE new feature branch, deterministically
+    overlay the COMPLETE DB pack from AMS (manifest + master changelog + every
+    changeset + data scripts), structurally validate the result, then push and
+    open a merge request. This kills the live 2026-07-30 failure classes:
+    manifest never committed to any branch, pack split across 15 branches with
+    no runnable whole, and dangling changelog includes.
+    """
+
+    company: str = Field(..., description="Normalised organisation")
+    project: str = Field(..., description="Normalised product")
+    branch_name: str = Field(
+        ...,
+        description="The assembled branch to create from the default branch (e.g. 'db-migration/ab12cd34')"
+    )
+    spec_names: List[str] = Field(
+        ...,
+        description="The run's spec folder names, in sequence order; each resolves to its feature/<spec>[--<folder>] branch"
+    )
+    pack_files: List[AssemblePackFile] = Field(
+        default_factory=list,
+        description="The complete pack file set fetched from AMS by the gateway (no IVS->AMS coupling)"
+    )
+    open_merge_request: bool = Field(
+        default=True,
+        description="Open a merge request for the assembled branch after push"
+    )
+    mr_title: Optional[str] = Field(default=None, description="Override MR title")
+    mr_body: Optional[str] = Field(default=None, description="Override MR body")
