@@ -1293,3 +1293,47 @@ class TestKiroCliLocatorSingleSource:
             "(clear_session shipped broken without it):\n  "
             + "\n  ".join(offenders)
         )
+
+
+class TestCliSpawnsPinTheModel:
+    """Every CLI-spawning executor pins the model explicitly (2026-07-31).
+
+    kiro-cli silently ignores `settings chat.defaultModel`; the Claude CLI
+    ignores LLM_MODEL unless it is passed `--model`. A spawn site that
+    builds chat argv without routing through model_args() reintroduces the
+    silent login-state default. File-level check: any src file that
+    constructs a kiro chat argv (quoted "--no-interactive") or a Claude
+    CLI argv (quoted "--dangerously-skip-permissions") must reference
+    model_args(. count == total, never >= N.
+    """
+
+    SPAWN_MARKERS = (
+        '"--no-interactive"',
+        "'--no-interactive'",
+        '"--dangerously-skip-permissions"',
+        "'--dangerously-skip-permissions'",
+    )
+
+    def test_every_spawn_file_uses_model_args(self):
+        offenders: list[str] = []
+        spawn_files: list[str] = []
+        for p in SRC.rglob("*.py"):
+            if "__pycache__" in p.parts:
+                continue
+            text = _read_text(p)
+            if not any(m in text for m in self.SPAWN_MARKERS):
+                continue
+            spawn_files.append(str(p.relative_to(REPO_ROOT)))
+            if "model_args(" not in text:
+                offenders.append(str(p.relative_to(REPO_ROOT)))
+        # The 4 known executors must all be seen — keeps the markers honest
+        # against refactors that would silently blind this guard.
+        assert len(spawn_files) >= 4, (
+            f"expected the 4 CLI executors to match the spawn markers, got: {spawn_files}"
+        )
+        assert offenders == [], (
+            "CLI spawn site(s) found that never pin the model via "
+            "model_args() (src/chat/model_pinning.py). Route the argv "
+            "through model_args(self.model) so the model is explicit on "
+            "every spawn:\n  " + "\n  ".join(offenders)
+        )
