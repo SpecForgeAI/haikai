@@ -39,6 +39,7 @@ import {
   changesetHeader,
   formattedSqlHeader,
 } from './liquibase';
+import { assertPackFilesValid } from './packValidation';
 import {
   TranslationRow,
   TranslationsAmsError,
@@ -54,9 +55,12 @@ export function translationFilePath(kind: string, objectRef: string): string {
   return `translations/${kind}.${objectRef}.sql`;
 }
 
-/** Stable changeset id — a pure function of object identity (Spec-1 convention). */
+/** Stable changeset id — a pure function of object identity (Spec-1 convention).
+ * Single-dash separators ONLY: `--` inside a changeset id breaks Liquibase's
+ * formatted-SQL parser (2026-07-31; the persisted `translation_key` DB key
+ * keeps its historic `--` form — that key never enters a changelog). */
 export function translationChangesetId(kind: string, objectRef: string): string {
-  return `translation--${translationKey(kind, objectRef)}`;
+  return `translation-${kind}-${objectRef}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +107,7 @@ export function emitTranslationsChangeset(approved: TranslationRow[]): string {
   );
   for (const row of approved) {
     lines.push(
-      changesetHeader(`translation--${row.kind}--${row.object_ref}`, 'post-load')
+      changesetHeader(translationChangesetId(row.kind, row.object_ref), 'post-load')
         .trimEnd()
         .replace(/^\n/, '')
     );
@@ -183,7 +187,7 @@ export function buildManifestTranslationsSection(
       object_ref: row.object_ref,
       translation_key: row.translation_key,
       file_path: translationFilePath(row.kind, row.object_ref),
-      changeset_id: `translation--${row.kind}--${row.object_ref}`,
+      changeset_id: translationChangesetId(row.kind, row.object_ref),
       source_body_hash: row.source_body_hash ?? null,
       reviewed_at: row.reviewed_at ?? null,
     })),
@@ -363,6 +367,11 @@ export async function runTranslationEmission(
     manifest: pack.manifest_json ?? null,
     rows,
   });
+
+  // Runnable-pack gate (WS3 P0): the emission rewrites the master changelog
+  // include list — a dangling 050 include (the live 2026-07-30 parse
+  // blocker) must fail HERE, before the pack is persisted.
+  assertPackFilesValid(result.files, 'translation emission');
 
   const changed =
     JSON.stringify(result.files.map((f) => [f.file_path, f.content])) !==

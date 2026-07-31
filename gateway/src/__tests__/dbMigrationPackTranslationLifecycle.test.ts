@@ -214,6 +214,8 @@ function createTestApp() {
 }
 
 function baseFiles(): EmissionFileRow[] {
+  // Every include resolves — the runnable-pack validation gate (WS3 P0)
+  // rejects dangling includes at emission time, like real generation output.
   return [
     {
       file_path: MASTER_CHANGELOG_PATH,
@@ -222,10 +224,28 @@ function baseFiles(): EmissionFileRow[] {
       sort_order: 0,
     },
     {
+      file_path: SCHEMAS_CHANGESET_PATH,
+      file_kind: 'liquibase_changeset',
+      content:
+        `--liquibase formatted sql logicalFilePath:${SCHEMAS_CHANGESET_PATH}\n` +
+        '--changeset db-migration-pack:schemas context:structural splitStatements:false\n' +
+        'CREATE SCHEMA IF NOT EXISTS "dbo";\n',
+      sort_order: 1,
+    },
+    {
+      file_path: SEQUENCES_SEED_CHANGESET_PATH,
+      file_kind: 'liquibase_changeset',
+      content:
+        `--liquibase formatted sql logicalFilePath:${SEQUENCES_SEED_CHANGESET_PATH}\n` +
+        '--changeset db-migration-pack:sequences-seed context:post-load splitStatements:false\n' +
+        'SELECT 1;\n',
+      sort_order: 2,
+    },
+    {
       file_path: 'manifest.json',
       file_kind: 'manifest',
       content: '{}\n',
-      sort_order: 1,
+      sort_order: 3,
     },
   ];
 }

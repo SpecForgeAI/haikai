@@ -24,7 +24,7 @@
  */
 
 import { mapSourceType, parseSourceType } from './typeMapping';
-import { qualifiedName } from './liquibase';
+import { qualifiedName, quotedQualifiedName, quoteIdent } from './liquibase';
 import { DeltaStrategy, IrColumn, IrTable, PackDecision } from './types';
 
 export const FIVE_PHASE_ORDERING: string[] = [
@@ -274,8 +274,12 @@ export function emitBulkLoadScript(args: {
   }
   lines.push('');
   lines.push(`-- 2) PostgreSQL load (pipe the extract as CSV into):`);
+  // Target-side statements quote every identifier (source case preserved) —
+  // matching the quoted DDL; the Sybase extract above stays unquoted (source
+  // engine semantics).
   lines.push(
-    `COPY ${qn} (${copyColumns.map((c) => c.columnName).join(', ')}) FROM STDIN WITH (FORMAT csv, NULL '\\N');`
+    `COPY ${quotedQualifiedName(table.schemaName, table.tableName)} ` +
+      `(${copyColumns.map((c) => quoteIdent(c.columnName)).join(', ')}) FROM STDIN WITH (FORMAT csv, NULL '\\N');`
   );
   return lines.join('\n') + '\n';
 }
@@ -329,7 +333,6 @@ export function emitIncrementalScript(args: {
   }
 
   const copyColumns = columns.filter((c) => !c.excludedAsGenerated);
-  const columnList = copyColumns.map((c) => c.columnName).join(', ');
   const lines: string[] = [];
   lines.push(`-- Incremental top-up: ${qn}`);
   lines.push(
@@ -340,9 +343,14 @@ export function emitIncrementalScript(args: {
   lines.push(`-- ${DELETE_PROPAGATION_STATEMENT}`);
   lines.push('');
 
+  // Target-side (Postgres) statements quote every identifier, source case
+  // preserved — matching the quoted DDL. Sybase extract stays unquoted.
+  const qq = quotedQualifiedName(table.schemaName, table.tableName);
+  const quotedColumnList = copyColumns.map((c) => quoteIdent(c.columnName)).join(', ');
+
   if (strategy.strategy === 'full_reload') {
     lines.push(`-- Full reload each increment (this is the delete-catching mechanism for this table):`);
-    lines.push(`TRUNCATE TABLE ${qn} CASCADE;`);
+    lines.push(`TRUNCATE TABLE ${qq} CASCADE;`);
     lines.push(`-- Re-run the bulk extract + COPY for ${qn} (see the bulk script).`);
     return lines.join('\n') + '\n';
   }
@@ -356,21 +364,24 @@ export function emitIncrementalScript(args: {
 
   if (strategy.strategy === 'insert_only') {
     lines.push(`-- 2) PostgreSQL insert-only load (identity delta keys only ever append):`);
-    lines.push(`INSERT INTO ${qn} (${columnList})`);
+    lines.push(`INSERT INTO ${qq} (${quotedColumnList})`);
     lines.push(`OVERRIDING SYSTEM VALUE`);
-    lines.push(`SELECT ${columnList} FROM staging_${table.tableName}`);
-    lines.push(`WHERE ${strategy.deltaKey} > :last_high_water;`);
+    lines.push(`SELECT ${quotedColumnList} FROM ${quoteIdent(`staging_${table.tableName}`)}`);
+    lines.push(`WHERE ${quoteIdent(strategy.deltaKey ?? '')} > :last_high_water;`);
   } else {
     const pkColumns = table.primaryKey?.columns ?? [];
-    const conflictTarget = pkColumns.length > 0 ? pkColumns.join(', ') : strategy.deltaKey ?? '';
+    const conflictTarget =
+      pkColumns.length > 0
+        ? pkColumns.map(quoteIdent).join(', ')
+        : quoteIdent(strategy.deltaKey ?? '');
     const updates = copyColumns
       .filter((c) => !pkColumns.includes(c.columnName))
-      .map((c) => `${c.columnName} = EXCLUDED.${c.columnName}`)
+      .map((c) => `${quoteIdent(c.columnName)} = EXCLUDED.${quoteIdent(c.columnName)}`)
       .join(',\n    ');
     lines.push(`-- 2) PostgreSQL insert+update (upsert) load:`);
-    lines.push(`INSERT INTO ${qn} (${columnList})`);
-    lines.push(`SELECT ${columnList} FROM staging_${table.tableName}`);
-    lines.push(`WHERE ${strategy.deltaKey} > :last_high_water`);
+    lines.push(`INSERT INTO ${qq} (${quotedColumnList})`);
+    lines.push(`SELECT ${quotedColumnList} FROM ${quoteIdent(`staging_${table.tableName}`)}`);
+    lines.push(`WHERE ${quoteIdent(strategy.deltaKey ?? '')} > :last_high_water`);
     lines.push(`ON CONFLICT (${conflictTarget}) DO UPDATE SET`);
     lines.push(`    ${updates};`);
   }

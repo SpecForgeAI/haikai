@@ -12,8 +12,18 @@
  *   liquibase/changesets/040-sequences-seed.sql   — consolidated seed
  *
  * CHECKSUM STABILITY: changeset ids and logicalFilePath are stable functions
- * of object identity (`table--dbo.orders`); NO timestamps, NO generated-at
+ * of object identity (`table-dbo.orders`); NO timestamps, NO generated-at
  * markers in any file — regeneration over identical inputs is byte-identical.
+ * Ids NEVER contain `--` (2026-07-31: `table--dbo.X` broke Liquibase's
+ * formatted-SQL parser on the live run — `--` reads as a comment opener).
+ *
+ * IDENTIFIER CASING (2026-07-31, the live 53-of-65-tables load failure):
+ * EVERY emitted identifier is double-quoted with the source case preserved
+ * (`"dbo"."ARM_VERSION"`). Unquoted DDL folds to lowercase in Postgres while
+ * the bulk loader (AMVS targetLoader) emits quoted case-exact statements —
+ * the two can never be allowed to diverge again. One canonical strategy:
+ * quote everything, preserve source case. Unquoted `qualifiedName` remains
+ * ONLY for ids / file paths / map keys / prose — never for SQL.
  *
  * PHASES are expressed as Liquibase contexts: the structural per-table
  * changesets carry `context:structural`; the consolidated sequences-seed /
@@ -40,6 +50,21 @@ export function tableChangesetPath(table: IrTable): string {
 
 export function qualifiedName(schemaName: string, tableName: string): string {
   return `${schemaName}.${tableName}`;
+}
+
+/**
+ * Quote ONE identifier for Postgres, preserving source case exactly.
+ * Sybase names are case-insensitive but case-PRESERVING; quoting keeps the
+ * target byte-identical to the source and matches the bulk loader's quoted
+ * INSERT/COPY statements (`targetLoader.quoteIdent`).
+ */
+export function quoteIdent(name: string): string {
+  return `"${String(name).replace(/"/g, '""')}"`;
+}
+
+/** `"schema"."table"` — the quoted form EVERY emitted SQL statement uses. */
+export function quotedQualifiedName(schemaName: string, tableName: string): string {
+  return `${quoteIdent(schemaName)}.${quoteIdent(tableName)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,15 +183,16 @@ export function emitTableChangeset(args: {
 }): string {
   const { table, columns, omitted, skipped } = args;
   const qn = qualifiedName(table.schemaName, table.tableName);
+  const qq = quotedQualifiedName(table.schemaName, table.tableName);
   const path = tableChangesetPath(table);
 
   const lines: string[] = [];
   lines.push(formattedSqlHeader(path).trimEnd());
-  lines.push(changesetHeader(`table--${qn}`, 'structural').trimEnd().replace(/^\n/, ''));
+  lines.push(changesetHeader(`table-${qn}`, 'structural').trimEnd().replace(/^\n/, ''));
 
   const columnDefs: string[] = [];
   for (const c of columns) {
-    let def = `    ${c.columnName} ${c.postgresType}`;
+    let def = `    ${quoteIdent(c.columnName)} ${c.postgresType}`;
     if (c.generationExpression) {
       def += ` GENERATED ALWAYS AS (${c.generationExpression}) STORED`;
     } else if (c.isIdentity) {
@@ -183,20 +209,23 @@ export function emitTableChangeset(args: {
   const presentColumns = new Set(columns.map((c) => c.columnName));
   if (table.primaryKey && table.primaryKey.columns.every((c) => presentColumns.has(c))) {
     constraintDefs.push(
-      `    CONSTRAINT ${table.primaryKey.name} PRIMARY KEY (${table.primaryKey.columns.join(', ')})`
+      `    CONSTRAINT ${quoteIdent(table.primaryKey.name)} PRIMARY KEY ` +
+        `(${table.primaryKey.columns.map(quoteIdent).join(', ')})`
     );
   }
   for (const u of [...table.uniqueConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
     if (!u.columns.every((c) => presentColumns.has(c))) continue;
-    constraintDefs.push(`    CONSTRAINT ${u.name} UNIQUE (${u.columns.join(', ')})`);
+    constraintDefs.push(
+      `    CONSTRAINT ${quoteIdent(u.name)} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
+    );
   }
   for (const ck of [...table.checkConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
     if (!ck.expression) continue;
     // Check expressions are reproduced VERBATIM from constraints_metadata.
-    constraintDefs.push(`    CONSTRAINT ${ck.name} CHECK (${ck.expression})`);
+    constraintDefs.push(`    CONSTRAINT ${quoteIdent(ck.name)} CHECK (${ck.expression})`);
   }
 
-  lines.push(`CREATE TABLE ${qn} (`);
+  lines.push(`CREATE TABLE ${qq} (`);
   lines.push([...columnDefs, ...constraintDefs].join(',\n'));
   lines.push(');');
 
@@ -270,8 +299,11 @@ export function emitForeignKeysChangeset(args: {
       continue;
     }
     let sql =
-      `ALTER TABLE ${child} ADD CONSTRAINT ${foreignKeyName(fk)} ` +
-      `FOREIGN KEY (${fk.joinColumns.join(', ')}) REFERENCES ${parent} (${fk.referencedColumns.join(', ')})`;
+      `ALTER TABLE ${quotedQualifiedName(fk.fromSchema, fk.fromTable)} ` +
+      `ADD CONSTRAINT ${quoteIdent(foreignKeyName(fk))} ` +
+      `FOREIGN KEY (${fk.joinColumns.map(quoteIdent).join(', ')}) ` +
+      `REFERENCES ${quotedQualifiedName(fk.toSchema, fk.toTable)} ` +
+      `(${fk.referencedColumns.map(quoteIdent).join(', ')})`;
     if (fk.onDelete) sql += ` ON DELETE ${fk.onDelete.toUpperCase()}`;
     if (fk.onUpdate) sql += ` ON UPDATE ${fk.onUpdate.toUpperCase()}`;
     sql += ';';
@@ -303,23 +335,24 @@ export function emitIndexesChangeset(args: {
   for (const table of sortedTables) {
     const qn = qualifiedName(table.schemaName, table.tableName);
     if (!args.emittedTables.has(qn)) continue;
+    const qq = quotedQualifiedName(table.schemaName, table.tableName);
     const sortedIndexes = [...table.indexes].sort((a, b) => a.name.localeCompare(b.name));
     for (const idx of sortedIndexes) {
       // Column ordering/direction verbatim from constraints_metadata.indexes[].
       const cols = idx.columns
         .map((c, i) => {
           const dir = idx.columnDirections?.[i];
-          return dir ? `${c} ${dir}` : c;
+          return dir ? `${quoteIdent(c)} ${dir}` : quoteIdent(c);
         })
         .join(', ');
-      let sql = `CREATE ${idx.isUnique ? 'UNIQUE ' : ''}INDEX ${idx.name} ON ${qn} (${cols});`;
+      let sql = `CREATE ${idx.isUnique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(idx.name)} ON ${qq} (${cols});`;
       if (idx.isClustered) {
         // Sybase clustered -> plain btree + explicit note (Postgres keeps no
         // maintained clustering).
         sql +=
           `\n-- CLUSTER: source index ${idx.name} was CLUSTERED on Sybase. Postgres does not` +
           ` maintain clustering; this is a plain btree index. Optionally run` +
-          ` \`CLUSTER ${qn} USING ${idx.name};\` once after load.`;
+          ` \`CLUSTER ${qq} USING ${quoteIdent(idx.name)};\` once after load.`;
         clusterNotes.push(
           `${qn}.${idx.name}: clustered on source; emitted as plain btree (see indexes changeset).`
         );
@@ -335,7 +368,7 @@ export function emitSchemasChangeset(schemas: string[]): string {
   lines.push(formattedSqlHeader(SCHEMAS_CHANGESET_PATH).trimEnd());
   lines.push(changesetHeader('schemas', 'structural').trimEnd().replace(/^\n/, ''));
   for (const s of [...schemas].sort()) {
-    lines.push(`CREATE SCHEMA IF NOT EXISTS ${s};`);
+    lines.push(`CREATE SCHEMA IF NOT EXISTS ${quoteIdent(s)};`);
   }
   return lines.join('\n') + '\n';
 }
@@ -358,8 +391,10 @@ export function emitMasterChangelog(orderedChangesetPaths: string[]): string {
     `    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"\n` +
     `    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog\n` +
     `        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">\n` +
-    `  <!-- Structural phase: run with --contexts=structural (tables/PKs/constraints; NO FKs, NO non-PK indexes). -->\n` +
-    `  <!-- Post-load phase: run with --contexts=post-load AFTER the bulk load (FKs + indexes ONCE, then sequence reseed). -->\n` +
+    // XML comments must NEVER contain a double-dash (illegal XML — the live
+    // 2026-07-30 parse failure): say "contexts=structural", not the CLI flag.
+    `  <!-- Structural phase: run with contexts=structural (tables/PKs/constraints; no FKs, no non-PK indexes). -->\n` +
+    `  <!-- Post-load phase: run with contexts=post-load AFTER the bulk load (FKs + indexes ONCE, then sequence reseed). -->\n` +
     includes +
     `\n</databaseChangeLog>\n`
   );

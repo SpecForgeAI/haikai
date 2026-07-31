@@ -97,6 +97,18 @@ function baseManifest(): Record<string, unknown> {
 }
 
 function baseFiles(): EmissionFileRow[] {
+  // Every include resolves to a real file row — the runnable-pack validation
+  // gate (WS3 P0) rejects dangling includes at emission time, exactly like
+  // real generation output.
+  const changeset = (path: string, id: string, context: string, sql: string): EmissionFileRow => ({
+    file_path: path,
+    file_kind: 'liquibase_changeset',
+    content:
+      `--liquibase formatted sql logicalFilePath:${path}\n` +
+      `--changeset db-migration-pack:${id} context:${context} splitStatements:false\n` +
+      `${sql}\n`,
+    sort_order: 0,
+  });
   return [
     {
       file_path: MASTER_CHANGELOG_PATH,
@@ -108,11 +120,14 @@ function baseFiles(): EmissionFileRow[] {
       ]),
       sort_order: 0,
     },
+    { ...changeset(SCHEMAS_CHANGESET_PATH, 'schemas', 'structural', 'CREATE SCHEMA IF NOT EXISTS "dbo";'), sort_order: 1 },
+    { ...changeset('liquibase/changesets/010-tables/dbo.orders.sql', 'table-dbo.orders', 'structural', 'CREATE TABLE "dbo"."orders" ("id" integer);'), sort_order: 2 },
+    { ...changeset(SEQUENCES_SEED_CHANGESET_PATH, 'sequences-seed', 'post-load', 'SELECT 1;'), sort_order: 3 },
     {
       file_path: 'manifest.json',
       file_kind: 'manifest',
       content: JSON.stringify(baseManifest(), null, 2) + '\n',
-      sort_order: 1,
+      sort_order: 4,
     },
   ];
 }
@@ -234,7 +249,7 @@ describe('dbMigrationPack translation emission (4.2)', () => {
     expect(second.manifest).toEqual(first.manifest);
     // Identity-derived names are pure functions of object identity.
     expect(translationChangesetId('stored_procedure', 'dbo.usp_calc')).toBe(
-      'translation--stored_procedure--dbo.usp_calc'
+      'translation-stored_procedure-dbo.usp_calc'
     );
     expect(translationFilePath('stored_procedure', 'dbo.usp_calc')).toBe(
       'translations/stored_procedure.dbo.usp_calc.sql'
@@ -261,7 +276,7 @@ describe('dbMigrationPack translation emission (4.2)', () => {
       object_ref: 'dbo.usp_calc',
       translation_key: 'stored_procedure--dbo.usp_calc',
       file_path: 'translations/stored_procedure.dbo.usp_calc.sql',
-      changeset_id: 'translation--stored_procedure--dbo.usp_calc',
+      changeset_id: 'translation-stored_procedure-dbo.usp_calc',
       source_body_hash: APPROVED.source_body_hash,
       reviewed_at: '2026-06-11T10:00:00Z',
     });
