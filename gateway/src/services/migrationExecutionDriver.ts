@@ -1226,12 +1226,45 @@ export function kickSpecRunner(
   });
 }
 
+/** The identifier fields a spec-name uniqueness suffix can derive from. */
+export interface SpecNameDescriptorIds {
+  workItemId?: string | null;
+  specGenerationId?: string | null;
+  bookItemId?: string | null;
+  sequencePosition?: number;
+}
+
+/**
+ * Short, stable, filesystem-safe uniqueness suffix for a spec name, derived
+ * from the item's most stable identifier: workItemId -> specGenerationId ->
+ * bookItemId (last 8 alphanumerics), falling back to `p<sequencePosition>`
+ * (always unique within a run). Live 2026-07-30: two book items titled
+ * "migration spec" slugged to the SAME `<date>-<slug>` — the second worktree
+ * allocation died on "branch is active in another worktree" and halted the
+ * run. Keyed on stable ids so a RETRY of the same item resolves to the same
+ * folder/branch (no accidental duplicate specs).
+ */
+export function specNameUniquenessSuffix(descriptor: SpecNameDescriptorIds): string {
+  const id =
+    descriptor.workItemId || descriptor.specGenerationId || descriptor.bookItemId || '';
+  const alnum = id.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (alnum.length >= 4) return alnum.slice(-8);
+  return `p${descriptor.sequencePosition ?? 0}`;
+}
+
 /**
  * Deterministic spec folder name (Option A, 2026-07-30): `<date>-<slug>` from
  * the book-item title. Replaces the shape-spec `folder` event — computed,
- * never parsed from LLM output, always safe-segment charset.
+ * never parsed from LLM output, always safe-segment charset. With a
+ * `descriptor` (2026-07-31) the per-item uniqueness suffix is appended —
+ * `<date>-<slug>-<uid>` — so same-titled book items get distinct folders and
+ * branches; without one the legacy `<date>-<slug>` shape is unchanged.
  */
-export function deterministicSpecName(title: string, when: Date): string {
+export function deterministicSpecName(
+  title: string,
+  when: Date,
+  descriptor?: SpecNameDescriptorIds
+): string {
   const slug =
     (title || 'migration-spec')
       .toLowerCase()
@@ -1241,7 +1274,8 @@ export function deterministicSpecName(title: string, when: Date): string {
       .slice(0, 60)
       .replace(/-+$/g, '') || 'migration-spec';
   const date = when.toISOString().slice(0, 10);
-  return `${date}-${slug}`;
+  const base = `${date}-${slug}`;
+  return descriptor ? `${base}-${specNameUniquenessSuffix(descriptor)}` : base;
 }
 
 /**
@@ -1286,9 +1320,49 @@ export async function runSpecSegment(
     deployOnComplete: item.deploy_on_complete ?? false,
   });
 
+  // Dispatch idempotency (2026-07-31): re-read the item's CURRENT state and
+  // no-op when it has already been dispatched — a duplicated kick (duplicate
+  // advance, duplicate build-results callback, recovery race) must not submit
+  // a second IVS job for the same spec (live 2026-07-30: two kicks ~19s apart;
+  // the second job died minutes later on the worktree branch lock and halted
+  // the run). Deliberately does NOT skip SUBMITTING-with-no-job_id — that is
+  // the genuine "stuck mid-submit" state the boot-recovery sweep re-kicks;
+  // the IVS-side active-job dedup makes that re-kick safe end-to-end. A
+  // failed pre-read falls through and dispatches (never stall on a read
+  // hiccup); the IVS dedup + worktree branch lock remain the backstops.
+  try {
+    const fresh = await deps.getMigrationExecutionRun(projectId, runId);
+    const current = (fresh?.items ?? []).find((i) => i.id === runItemId);
+    if (current) {
+      const alreadyDispatched =
+        !!current.job_id ||
+        current.status === RUN_ITEM_STATUS.SUBMITTED ||
+        current.status === RUN_ITEM_STATUS.IMPLEMENTED ||
+        current.status === RUN_ITEM_STATUS.DEPLOYED ||
+        !!current.outcome;
+      if (alreadyDispatched) {
+        logger.info('[diag-gateway] migration_execution_driver spec_segment_skip_duplicate', {
+          projectId,
+          runId,
+          runItemId,
+          status: current.status ?? null,
+          jobId: current.job_id ?? null,
+        });
+        return;
+      }
+    }
+  } catch (error) {
+    logger.warn('[diag-gateway] migration_execution_driver spec_segment_precheck_failed', {
+      projectId,
+      runId,
+      runItemId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+
   await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.DISPATCHING });
 
-  const specName = deterministicSpecName(descriptor.title, new Date());
+  const specName = deterministicSpecName(descriptor.title, new Date(), descriptor);
   const requirementsText = requirementsFromGeneratedSpecText(
     descriptor.generatedSpecText
   );
@@ -1417,7 +1491,7 @@ export async function runBatchSegment(
         'Could not resolve generated_spec_text for a batched spec.');
       return;
     }
-    const specName = deterministicSpecName(descriptor.title, new Date());
+    const specName = deterministicSpecName(descriptor.title, new Date(), descriptor);
     await safePatchItem(deps, projectId, runItemId, {
       status: RUN_ITEM_STATUS.SUBMITTING,
       spec_name: specName,
@@ -2392,13 +2466,35 @@ async function resolveDescriptorForItem(
   }
   if (!text) return null;
 
+  // Recover the book-item title (2026-07-31): this path previously built
+  // descriptors with title '' — so EVERY advance/recovery-dispatched item
+  // (i.e. all items after the first) was named with the generic
+  // `migration-spec` fallback slug instead of its real title. That is how
+  // the live 2026-07-30 pair collided on one name. Best-effort: an
+  // unresolvable title keeps the fallback slug (the uniqueness suffix still
+  // guarantees distinct folders).
+  let title = '';
+  let bookItemId: string | null = null;
+  try {
+    if (item.work_item_id) {
+      const book = await deps.fetchBookOfWork(scope.projectId, bookId);
+      const bookItem = (book?.book_of_work_json?.items ?? []).find(
+        (bi) => bi.workItemId === item.work_item_id
+      );
+      title = (bookItem?.title ?? '').trim();
+      bookItemId = bookItem?.id ?? null;
+    }
+  } catch {
+    /* fail-soft — the fallback slug + suffix stay valid */
+  }
+
   return {
     sequencePosition: item.sequence_position ?? 0,
     workItemId: item.work_item_id ?? null,
     specGenerationId: item.spec_generation_id ?? null,
-    bookItemId: null,
+    bookItemId,
     generatedSpecText: text,
-    title: '',
+    title,
     deployOnComplete: item.deploy_on_complete ?? false,
   };
 }

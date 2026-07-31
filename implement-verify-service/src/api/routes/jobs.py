@@ -47,6 +47,57 @@ logger = logging.getLogger("src.api")
 router = APIRouter()
 
 
+def find_active_duplicate_orchestration(job_queue, request: OrchestrationRequest):
+    """Return an ACTIVE (queued/running) orchestration job for the SAME
+    company/project/spec set, or None.
+
+    Idempotent submit (2026-07-31). The gateway's dispatch can be duplicated
+    in ways its own pre-checks cannot see — the live case: a tsx-watch
+    gateway reload landed mid-submit, so the boot-recovery sweep re-kicked a
+    `submitting`-with-no-job_id item ~19s after the first kick's POST had
+    already reached IVS. The second job died minutes later on the worktree
+    branch lock and halted the run (and a duplicated data load double-loaded
+    `view_tag`). Returning the existing ACTIVE job makes the re-kick safe
+    end-to-end: whichever submit lands second correlates to the SAME job.
+
+    Only queued/running jobs match — terminal jobs never block a genuine
+    re-run. Best-effort: any storage error returns None (a legitimate submit
+    must never be blocked by the dedup scan; the worktree branch lock stays
+    the last-resort backstop).
+    """
+    requested = sorted((i.spec_name or "") for i in (request.spec_intents or []))
+    if not requested:
+        return None
+    try:
+        active = []
+        for st in (JobStatus.QUEUED, JobStatus.RUNNING):
+            active.extend(
+                job_queue.storage.list_jobs(
+                    status=st,
+                    company=request.company,
+                    project=request.project,
+                    limit=100,
+                )
+            )
+        for existing in active:
+            if getattr(existing, "type", None) != JobType.ORCHESTRATION:
+                continue
+            payload = getattr(existing, "request_payload", None) or {}
+            existing_specs = sorted(
+                (i.get("spec_name") or "")
+                for i in (payload.get("spec_intents") or [])
+                if isinstance(i, dict)
+            )
+            if existing_specs == requested:
+                return existing
+    except Exception:
+        logger.warning(
+            "idempotent-submit scan failed; proceeding with a new job",
+            exc_info=True,
+        )
+    return None
+
+
 @router.post(
     "/api/v1/jobs/orchestrations",
     tags=["Jobs"],
@@ -73,6 +124,18 @@ async def create_orchestration_job(
     """
     from .. import job_queue
     try:
+        duplicate = find_active_duplicate_orchestration(job_queue, request)
+        if duplicate is not None:
+            logger.warning(
+                "Duplicate orchestration submit for %s/%s — returning existing "
+                "active job %s instead of spawning a second one",
+                request.company, request.project, duplicate.job_id,
+            )
+            return JobResponse(
+                job_id=duplicate.job_id,
+                status=duplicate.status,
+                created_at=duplicate.created_at,
+            )
         job = Job(
             type=JobType.ORCHESTRATION,
             company=request.company,
@@ -283,6 +346,18 @@ async def create_orchestration_job_v2(
     _require_git_manager(request.company, request.project)
 
     try:
+        duplicate = find_active_duplicate_orchestration(job_queue, request)
+        if duplicate is not None:
+            logger.warning(
+                "Duplicate V2 orchestration submit for %s/%s — returning "
+                "existing active job %s instead of spawning a second one",
+                request.company, request.project, duplicate.job_id,
+            )
+            return JobResponse(
+                job_id=duplicate.job_id,
+                status=duplicate.status,
+                created_at=duplicate.created_at,
+            )
         job = Job(
             type=JobType.ORCHESTRATION,
             company=request.company,

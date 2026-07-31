@@ -35,6 +35,10 @@ import {
   advanceRunOnBuildResult,
   recoverInFlightRuns,
   haltMigrationRunByOperator,
+  runSpecSegment,
+  deterministicSpecName,
+  specNameUniquenessSuffix,
+  DispatchDescriptor,
   MigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -513,14 +517,16 @@ describe('startMigration', () => {
     expect(submitArg.callbackUrl).toBe('http://gw/api/implementation/build-results');
     expect(submitArg.deployOnComplete).toBe(false);
     expect(submitArg.commitPreparation).toBe(false);
-    expect(submitArg.specName).toMatch(/^\d{4}-\d{2}-\d{2}-story-1$/);
+    // 2026-07-31: the per-item uniqueness suffix rides the computed name —
+    // same-titled book items must resolve to distinct folders/branches.
+    expect(submitArg.specName).toMatch(/^\d{4}-\d{2}-\d{2}-story-1-[a-z0-9]+$/);
     expect(submitArg.requirementsText).toContain('Story 1 body');
 
     // The computed spec_name was stamped onto the run-item at SUBMITTING.
     const patchedName = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.find(
       (c) => c[2] && typeof c[2].spec_name === 'string'
     );
-    expect(patchedName[2].spec_name).toMatch(/-story-1$/);
+    expect(patchedName[2].spec_name).toMatch(/-story-1-[a-z0-9]+$/);
 
     // The job_id was recorded on the run-item (dispatched=true + job_id).
     const patchedJob = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls.find(
@@ -798,5 +804,112 @@ describe('haltMigrationRunByOperator', () => {
     expect(await haltMigrationRunByOperator(PROJECT_ID, 'nope', deps)).toEqual({
       status: 'not_found',
     });
+  });
+});
+
+// ===========================================================================
+// Spec-name uniqueness suffix (2026-07-31): same-titled book items must get
+// distinct folders/branches; the same item retried must reuse its name.
+// ===========================================================================
+
+describe('deterministicSpecName + specNameUniquenessSuffix', () => {
+  const when = new Date('2026-07-31T12:00:00Z');
+
+  it('same title, different work items -> DISTINCT names', () => {
+    const a = deterministicSpecName('migration spec', when, {
+      workItemId: '01234567-89ab-cdef-0123-456789abcdef', sequencePosition: 0,
+    });
+    const b = deterministicSpecName('migration spec', when, {
+      workItemId: 'fedcba98-7654-3210-fedc-ba9876543210', sequencePosition: 1,
+    });
+    expect(a).toMatch(/^2026-07-31-migration-spec-[a-z0-9]{8}$/);
+    expect(b).toMatch(/^2026-07-31-migration-spec-[a-z0-9]{8}$/);
+    expect(a).not.toBe(b);
+  });
+
+  it('same item retried -> IDENTICAL name (stable across re-dispatch)', () => {
+    const d = { workItemId: '01234567-89ab-cdef-0123-456789abcdef', sequencePosition: 3 };
+    expect(deterministicSpecName('Schema', when, d)).toBe(
+      deterministicSpecName('Schema', when, d)
+    );
+  });
+
+  it('prefers workItemId, then specGenerationId, then bookItemId', () => {
+    expect(specNameUniquenessSuffix({
+      workItemId: 'aaaaaaaa-1111', specGenerationId: 'bbbbbbbb-2222', bookItemId: 'cccccccc-3333',
+    })).toBe(specNameUniquenessSuffix({ workItemId: 'aaaaaaaa-1111' }));
+    expect(specNameUniquenessSuffix({
+      workItemId: null, specGenerationId: 'bbbbbbbb-2222', bookItemId: 'cccccccc-3333',
+    })).toBe(specNameUniquenessSuffix({ specGenerationId: 'bbbbbbbb-2222' }));
+    expect(specNameUniquenessSuffix({
+      workItemId: null, specGenerationId: null, bookItemId: 'cccccccc-3333',
+    })).toBe(specNameUniquenessSuffix({ bookItemId: 'cccccccc-3333' }));
+  });
+
+  it('falls back to p<sequencePosition> when no id is stable enough', () => {
+    expect(specNameUniquenessSuffix({ sequencePosition: 7 })).toBe('p7');
+    // short ids (< 4 alphanumerics) are not unique enough — positional wins
+    expect(specNameUniquenessSuffix({ workItemId: 'wi1', sequencePosition: 2 })).toBe('p2');
+  });
+
+  it('without a descriptor the legacy <date>-<slug> shape is unchanged', () => {
+    expect(deterministicSpecName('Story 1', when)).toBe('2026-07-31-story-1');
+  });
+});
+
+// ===========================================================================
+// runSpecSegment dispatch idempotency (2026-07-31): a duplicated kick must
+// not submit a second IVS job; the boot-recovery re-kick state stays kickable.
+// ===========================================================================
+
+describe('runSpecSegment dispatch idempotency', () => {
+  const segmentRun = { id: 'run-1', status: 'dispatching' } as MigrationExecutionRun;
+  const baseItem = {
+    id: 'ri-0', run_id: 'run-1', sequence_position: 0,
+    work_item_id: 'wi-1', status: RUN_ITEM_STATUS.PENDING,
+  } as MigrationExecutionRunItem;
+  const descriptor: DispatchDescriptor = {
+    sequencePosition: 0,
+    workItemId: 'wi-1-aaaa-bbbb',
+    specGenerationId: 'sg-1',
+    bookItemId: 's1',
+    generatedSpecText: 'Story 1 body',
+    title: 'Story 1',
+    deployOnComplete: false,
+  };
+
+  function depsSeeingFreshItem(fresh: Partial<MigrationExecutionRunItem>): MigrationDriverDeps {
+    return mockDeps({
+      getMigrationExecutionRun: jest.fn().mockResolvedValue({
+        ...segmentRun, items: [{ ...baseItem, ...fresh }],
+      }),
+    });
+  }
+
+  it.each([
+    ['a job_id is already recorded', { job_id: 'job-existing' }],
+    ['status is SUBMITTED', { status: RUN_ITEM_STATUS.SUBMITTED }],
+    ['status is IMPLEMENTED', { status: RUN_ITEM_STATUS.IMPLEMENTED }],
+    ['status is DEPLOYED', { status: RUN_ITEM_STATUS.DEPLOYED }],
+    ['a terminal outcome is recorded', { outcome: 'failed' }],
+  ])('no-ops when %s (no second submit, no patches)', async (_label, fresh) => {
+    const deps = depsSeeingFreshItem(fresh as Partial<MigrationExecutionRunItem>);
+    await runSpecSegment(scope, segmentRun, baseItem, descriptor, deps);
+    expect(deps.submitOrchestration).not.toHaveBeenCalled();
+    expect(deps.patchMigrationExecutionRunItem).not.toHaveBeenCalled();
+  });
+
+  it('does NOT skip submitting-with-no-job_id — the boot-recovery re-kick state', async () => {
+    const deps = depsSeeingFreshItem({ status: RUN_ITEM_STATUS.SUBMITTING });
+    await runSpecSegment(scope, segmentRun, baseItem, descriptor, deps);
+    expect(deps.submitOrchestration).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches when the pre-read fails (never stall on a read hiccup)', async () => {
+    const deps = mockDeps({
+      getMigrationExecutionRun: jest.fn().mockRejectedValue(new Error('AMS down')),
+    });
+    await runSpecSegment(scope, segmentRun, baseItem, descriptor, deps);
+    expect(deps.submitOrchestration).toHaveBeenCalledTimes(1);
   });
 });
