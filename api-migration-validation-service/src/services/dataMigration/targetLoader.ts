@@ -9,6 +9,13 @@ import { TableLoadSpec } from './types';
 
 export interface TargetLoader {
   /**
+   * Make the target table safe to (re)load: truncate it so a re-run of the
+   * bulk load can NEVER double the rows (WS3 P2, 2026-07-31 — live:
+   * `view_tag` 864 -> 1,728, exactly 2x, from a duplicated run). Called by
+   * the runner immediately before `loadTable`.
+   */
+  prepareTable(spec: TableLoadSpec): Promise<void>;
+  /**
    * Insert `rows` (each tuple aligned positionally to spec.loadColumns) into the
    * target table. Returns the number of rows written.
    */
@@ -50,6 +57,13 @@ export class PostgresTargetLoader implements TargetLoader {
     };
     this.pool = new Pool(poolConfig);
     this.batchRows = Math.max(1, opts?.batchRows ?? 500);
+  }
+
+  async prepareTable(spec: TableLoadSpec): Promise<void> {
+    const qn = `${spec.schema ? `${quoteIdent(spec.schema)}.` : ''}${quoteIdent(spec.table)}`;
+    // CASCADE: a re-run AFTER the post-load FKs exist must still truncate;
+    // cascaded children are reloaded later in the same FK-ordered plan.
+    await this.pool.query(`TRUNCATE TABLE ${qn} CASCADE`);
   }
 
   async loadTable(spec: TableLoadSpec, rows: unknown[][]): Promise<number> {

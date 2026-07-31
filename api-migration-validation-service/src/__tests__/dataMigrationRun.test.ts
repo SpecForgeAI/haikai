@@ -69,8 +69,16 @@ class FakeAdapter implements DbAdapter {
 
 class FakeLoader implements TargetLoader {
   loaded: Record<string, unknown[][]> = {};
+  prepared: string[] = [];
+  async prepareTable(spec: TableLoadSpec): Promise<void> {
+    this.prepared.push(`${spec.schema ?? ''}.${spec.table}`);
+  }
   async loadTable(spec: TableLoadSpec, rows: unknown[][]): Promise<number> {
-    this.loaded[`${spec.schema ?? ''}.${spec.table}`] = rows;
+    const key = `${spec.schema ?? ''}.${spec.table}`;
+    if (!this.prepared.includes(key)) {
+      throw new Error(`loadTable called before prepareTable for ${key}`);
+    }
+    this.loaded[key] = rows;
     return rows.length;
   }
   async dispose(): Promise<void> {
