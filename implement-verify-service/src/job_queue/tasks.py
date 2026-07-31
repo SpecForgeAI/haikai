@@ -1444,8 +1444,18 @@ def run_orchestration(job_id: str, storage: JobStorage):
         # Honest terminal line (2026-07-30): a failed pre-check used to log
         # "completed successfully" here because the failure is a RESPONSE,
         # not an exception — misleading next to the DB's status: failed.
-        if getattr(response, "success", False):
+        # 2026-07-31 (WS3 P2): success WITH accumulated errors (a failed git
+        # push / MR / deploy rides response.errors without flipping success)
+        # is its own honest middle case — the live run logged "completed
+        # successfully" beside a failed git workflow.
+        response_errors = list(getattr(response, "errors", None) or [])
+        if getattr(response, "success", False) and not response_errors:
             logger.info(f"Orchestration job {job_id} completed successfully")
+        elif getattr(response, "success", False):
+            logger.warning(
+                f"Orchestration job {job_id} completed with {len(response_errors)} "
+                f"non-fatal error(s) — first: {response_errors[0][:200]}"
+            )
         else:
             logger.warning(
                 f"Orchestration job {job_id} completed with FAILURE "

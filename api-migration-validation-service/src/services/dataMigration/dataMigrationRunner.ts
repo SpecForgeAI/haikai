@@ -112,9 +112,23 @@ async function migrateOneTable(
     tuples.push(transformed.values);
   }
 
+  // Idempotent load (WS3 P2, 2026-07-31): truncate before load so a re-run
+  // (duplicate dispatch, retry, chain re-fire) can NEVER double the rows —
+  // live: `view_tag` 864 -> 1,728 (exactly 2x) from a duplicated run.
+  await loader.prepareTable(spec);
+
   const loadedCount = await loader.loadTable(spec, tuples);
   const targetCount = await safeCount(target, spec, knobs.timeoutSeconds);
   const reconciled = targetCount === sourceCount && loadedCount === read.rows.length;
+
+  // In-loader manifest check: the pack's expected source count is the
+  // generation-time truth — drift is worth a visible note even on a clean
+  // load (the live business_date over-count class).
+  const expected = spec.expectedSourceRowCount;
+  const driftNote =
+    expected !== null && expected !== sourceCount
+      ? ` (source count ${sourceCount} differs from the pack manifest expectation ${expected} — source drifted since generation)`
+      : '';
 
   return {
     ...base,
@@ -123,8 +137,10 @@ async function migrateOneTable(
     targetCount,
     rulesCited: [...rulesCited].sort(),
     reason: reconciled
-      ? null
-      : `post-load reconcile off: source=${sourceCount} loaded=${loadedCount} target=${targetCount ?? '?'}`,
+      ? driftNote !== ''
+        ? driftNote.trim()
+        : null
+      : `post-load reconcile off: source=${sourceCount} loaded=${loadedCount} target=${targetCount ?? '?'}${driftNote}`,
   };
 }
 
