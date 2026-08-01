@@ -112,6 +112,37 @@ describe('buildApplyPlan', () => {
     expect(plan).toEqual([]);
     expect(issues[0]).toContain('db.changelog-master.xml');
   });
+
+  // Path normalisation unification (2026-08-01): the include resolver and
+  // the file keying previously used DIFFERENT partial normalisers (one fixed
+  // backslashes, the other collapsed ./.. segments) -- a path needing both
+  // fixes keyed differently on each side and the include lookup missed with
+  // a spurious "not among the posted files" issue.
+  it('resolves includes when posted paths carry backslashes or ./ segments', () => {
+    const files = [
+      {
+        path: 'liquibase\\db.changelog-master.xml',
+        content:
+          '<databaseChangeLog>' +
+          '<include file="changesets/./000-schemas.sql" relativeToChangelogFile="true"/>' +
+          '</databaseChangeLog>',
+      },
+      {
+        path: 'liquibase/changesets/000-schemas.sql',
+        content:
+          '--liquibase formatted sql\n' +
+          '--changeset db-migration-pack:schemas context:structural splitStatements:false\n' +
+          'CREATE SCHEMA "dbo";\n',
+      },
+    ];
+    const { plan, issues } = buildApplyPlan(
+      files,
+      ['structural'],
+      'liquibase\\db.changelog-master.xml'
+    );
+    expect(issues).toEqual([]);
+    expect(plan.map((c) => c.id)).toEqual(['schemas']);
+  });
 });
 
 describe('runSchemaApply', () => {

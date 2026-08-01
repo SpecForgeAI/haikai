@@ -21,7 +21,12 @@
  * logged and never persisted.
  */
 
-import { ParsedChangeset, parseFormattedSql, parseMasterIncludes } from './formattedSql';
+import {
+  ParsedChangeset,
+  normalisePackPath,
+  parseFormattedSql,
+  parseMasterIncludes,
+} from './formattedSql';
 
 export interface SchemaApplyFile {
   path: string;
@@ -47,10 +52,10 @@ export function buildApplyPlan(
   masterPath?: string
 ): SchemaApplyPlan {
   const issues: string[] = [];
-  const byPath = new Map(files.map((f) => [normalise(f.path), f]));
+  const byPath = new Map(files.map((f) => [normalisePackPath(f.path), f]));
 
   const master =
-    (masterPath ? byPath.get(normalise(masterPath)) : undefined) ??
+    (masterPath ? byPath.get(normalisePackPath(masterPath)) : undefined) ??
     files.find((f) => f.path.endsWith('db.changelog-master.xml'));
   if (!master) {
     return { plan: [], issues: ['no db.changelog-master.xml among the posted files'], totalParsed: 0 };
@@ -59,7 +64,7 @@ export function buildApplyPlan(
   const wanted = new Set(contexts);
   const plan: ParsedChangeset[] = [];
   let totalParsed = 0;
-  for (const includePath of parseMasterIncludes(master.content, normalise(master.path))) {
+  for (const includePath of parseMasterIncludes(master.content, master.path)) {
     const file = byPath.get(includePath);
     if (!file) {
       issues.push(`master changelog includes '${includePath}' but it is not among the posted files`);
@@ -76,10 +81,6 @@ export function buildApplyPlan(
     }
   }
   return { plan, issues, totalParsed };
-}
-
-function normalise(p: string): string {
-  return p.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
 /** The minimal pg-client surface the executor needs (injected in tests). */
