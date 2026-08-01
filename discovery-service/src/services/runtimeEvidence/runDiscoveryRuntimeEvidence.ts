@@ -529,22 +529,29 @@ async function persistSkipped(
 }
 
 /**
- * Convert a rich observation that carries a logged status into the legacy
- * {@link HttpRuntimeObservation} the aggregator/matcher trio consumes. Returns
- * null when the observation has no usable status (the trio requires a numeric
- * status); such observations still become `source='log'` evidence atoms, they
- * just do not contribute a best-effort `runtime_usage` finding.
+ * Convert a rich observation into the {@link HttpRuntimeObservation} the
+ * aggregator/matcher trio consumes. Returns null ONLY when the observation
+ * has no usable endpoint identity (missing method or path).
+ *
+ * Status is OPTIONAL (2026-08-01): the old mandatory-status guard here
+ * silently discarded EVERY request-only observation — a log that records
+ * the request line with no response code is still real usage. It flows
+ * through with `status: undefined` and contributes to `totalLogRequests`
+ * but to no status bucket (the aggregator never invents a response).
  */
 function richToHttpObservation(
   obs: RichObservation,
   artifact: LogFileArtifactEntry,
 ): HttpRuntimeObservation | null {
-  if (typeof obs.status !== 'number' || !Number.isFinite(obs.status)) return null;
+  if (!obs.method || !obs.rawPath) return null;
   return {
     method: obs.method,
     rawPath: obs.rawPath,
     normalizedPath: obs.normalizedPath,
-    status: obs.status,
+    status:
+      typeof obs.status === 'number' && Number.isFinite(obs.status)
+        ? obs.status
+        : undefined,
     timestampIso: obs.timestampIso,
     sourceArtifactId: obs.sourceArtifactId ?? artifact.artifactId,
     sourceFileName: obs.sourceFileName ?? artifact.originalFileName,

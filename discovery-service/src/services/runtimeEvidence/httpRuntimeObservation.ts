@@ -25,8 +25,14 @@ export interface HttpRuntimeObservation {
   rawPath: string;
   /** Path after three-tier path-segment normalization to `{id}` placeholders. */
   normalizedPath: string;
-  /** HTTP status code (integer 100..599). */
-  status: number;
+  /**
+   * HTTP status code (integer 100..599) when the log records a response.
+   * OPTIONAL (2026-08-01): request-only log formats record the request line
+   * with no response code — those observations still count toward
+   * `totalLogRequests` (real usage) but contribute to NO status bucket.
+   * The pipeline never invents a response.
+   */
+  status?: number;
   /** ISO 8601 timestamp string when the request occurred, if the log format provides it. */
   timestampIso?: string;
   /** Identifier of the source log artifact (matches `inputArtifacts.logFiles[].artifactId`). */
