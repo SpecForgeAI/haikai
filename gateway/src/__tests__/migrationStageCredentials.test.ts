@@ -110,10 +110,11 @@ describe('POST .../target-credentials — stage-2 source + target service', () =
     health_path: '/actuator/health',
     port_env: 'SERVER_PORT',
     readiness_timeout: 60,
+    setup: 'mvn -q dependency:resolve',
     env: { SPRING_DATASOURCE_URL: 'jdbc:postgresql://localhost:5432/haikai_target' },
   };
 
-  it('registers the serve spec per-run and the source API per-project', async () => {
+  it('registers the serve spec per-run (incl. the optional setup command) and the source API per-project', async () => {
     const res = await request(app())
       .post(URL)
       .send({
@@ -130,9 +131,18 @@ describe('POST .../target-credentials — stage-2 source + target service', () =
       healthPath: '/actuator/health',
       portEnv: 'SERVER_PORT',
       readinessTimeout: 60,
+      setup: 'mvn -q dependency:resolve',
       env: { SPRING_DATASOURCE_URL: 'jdbc:postgresql://localhost:5432/haikai_target' },
     });
     expect(currentSystemCredentialsStore.get('p1')?.currentBaseUrl).toBe('http://legacy:8080');
+  });
+
+  it('treats a whitespace-only setup as absent (no setup key on the stored spec)', async () => {
+    const res = await request(app())
+      .post(URL)
+      .send({ api: { type: 'none' }, service: { ...SERVICE, setup: '   ' } });
+    expect(res.status).toBe(200);
+    expect(migrationTargetCredentialsStore.getService('run-1')).not.toHaveProperty('setup');
   });
 
   it.each([
@@ -198,9 +208,19 @@ describe('serveSpecDefaultsFromAnswers', () => {
     expect(d.command).toBe('./gradlew bootRun');
   });
 
-  it('derives Node', () => {
+  it('derives Node (with an npm install setup — npm start cannot boot without node_modules)', () => {
     const d = serveSpecDefaultsFromAnswers({ runtime: 'Node.js 22', framework: 'Express' });
-    expect(d).toMatchObject({ command: 'npm start', port_env: 'PORT', source: 'derived' });
+    expect(d).toMatchObject({
+      command: 'npm start',
+      port_env: 'PORT',
+      setup: 'npm install',
+      source: 'derived',
+    });
+  });
+
+  it('derives Spring with NO setup (the run command self-builds)', () => {
+    const d = serveSpecDefaultsFromAnswers({ framework: 'Spring Boot 3.3', buildTool: 'Maven' });
+    expect(d.setup).toBe('');
   });
 
   it('falls back when nothing matches (command left for the operator)', () => {

@@ -24,6 +24,13 @@ export interface ServeSpecDefaults {
   health_path: string;
   port_env: string;
   readiness_timeout: number;
+  /**
+   * OPTIONAL bootstrap command run once before `command` (haibox `setup`,
+   * 2026-08-01). '' = none needed: self-building run commands like
+   * `mvn spring-boot:run` install their own dependencies, while `npm start`
+   * style runtimes need an install step first.
+   */
+  setup: string;
   /** 'derived' when a runtime matched; 'fallback' when nothing did. */
   source: 'derived' | 'fallback';
   /** The decision text the derivation keyed on (operator context). */
@@ -35,6 +42,7 @@ const FALLBACK: ServeSpecDefaults = {
   health_path: '/',
   port_env: 'PORT',
   readiness_timeout: 30,
+  setup: '',
   source: 'fallback',
   runtime_hint: null,
 };
@@ -59,6 +67,7 @@ export function serveSpecDefaultsFromAnswers(answers: {
       health_path: '/actuator/health',
       port_env: 'SERVER_PORT',
       readiness_timeout: 60,
+      setup: '', // bootRun / spring-boot:run resolve dependencies themselves
       source: 'derived',
       runtime_hint: hint,
     };
@@ -69,6 +78,7 @@ export function serveSpecDefaultsFromAnswers(answers: {
       health_path: '/health',
       port_env: 'PORT',
       readiness_timeout: 30,
+      setup: 'npm install', // `npm start` cannot boot without node_modules
       source: 'derived',
       runtime_hint: hint,
     };
@@ -79,6 +89,7 @@ export function serveSpecDefaultsFromAnswers(answers: {
       health_path: '/health',
       port_env: 'PORT',
       readiness_timeout: 30,
+      setup: 'pip install -r requirements.txt',
       source: 'derived',
       runtime_hint: hint,
     };
@@ -89,6 +100,7 @@ export function serveSpecDefaultsFromAnswers(answers: {
       health_path: '/health',
       port_env: 'ASPNETCORE_HTTP_PORTS',
       readiness_timeout: 60,
+      setup: 'dotnet restore',
       source: 'derived',
       runtime_hint: hint,
     };
@@ -99,6 +111,7 @@ export function serveSpecDefaultsFromAnswers(answers: {
       health_path: '/health',
       port_env: 'PORT',
       readiness_timeout: 30,
+      setup: '', // `go run` fetches modules itself
       source: 'derived',
       runtime_hint: hint,
     };

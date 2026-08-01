@@ -1425,6 +1425,8 @@ export interface ServeSpecBinding {
   health_path: string;
   port_env: string;
   readiness_timeout: number;
+  /** Optional bootstrap command run before `command` ('' = none, 2026-08-01). */
+  setup: string;
   source: 'derived' | 'fallback';
   runtime_hint: string | null;
 }
@@ -1539,6 +1541,8 @@ export interface StageServeSpec {
   healthPath: string;
   portEnv: string;
   readinessTimeout?: number;
+  /** Optional bootstrap command haibox runs before `command` (2026-08-01). */
+  setup?: string;
   env?: Record<string, string>;
 }
 
@@ -1581,6 +1585,7 @@ export async function registerRunStageCredentials(
               ...(opts.service.readinessTimeout !== undefined
                 ? { readiness_timeout: opts.service.readinessTimeout }
                 : {}),
+              ...(opts.service.setup ? { setup: opts.service.setup } : {}),
               ...(opts.service.env ? { env: opts.service.env } : {}),
             },
           }
