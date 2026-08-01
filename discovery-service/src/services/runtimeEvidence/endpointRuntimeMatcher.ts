@@ -109,18 +109,30 @@ const CONFIDENCE_RANK: Record<'high' | 'medium' | 'low', number> = {
  * to those candidates instead of treating them as "no usage observed"
  * just because the field name differs. The existing string + non-empty
  * guard is preserved so non-string / empty values still return undefined.
+ *
+ * 2026-08-01: `path_or_address` added as the FINAL fallback — it is the
+ * canonical post-merge / save-back slot, so a run whose endpoint
+ * candidates are merged-shaped stored EVERY path there and the matcher
+ * dropped all of them (matchedEndpoints: 0). Original precedence is
+ * unchanged, so raw adapter candidates are unaffected.
  */
 function readPathTemplate(c: DiscoveryCandidate): string | undefined {
   const data = c.data as Record<string, unknown> | undefined;
   if (!data) return undefined;
-  const v = data.pathTemplate ?? data.fullPath ?? data.path ?? data.url;
+  const v = data.pathTemplate ?? data.fullPath ?? data.path ?? data.url ?? data.path_or_address;
   return typeof v === 'string' && v.length > 0 ? v : undefined;
 }
 
+/**
+ * 2026-08-01: merged/save-back-shaped candidates carry the verb under the
+ * canonical `operation_verb` (plus legacy snake/camel `http_method` /
+ * `httpMethod` variants) rather than `method`. Same precedence rule as
+ * {@link readPathTemplate}: original key first, canonical fallbacks after.
+ */
 function readMethod(c: DiscoveryCandidate): string | undefined {
   const data = c.data as Record<string, unknown> | undefined;
   if (!data) return undefined;
-  const v = data.method;
+  const v = data.method ?? data.operation_verb ?? data.httpMethod ?? data.http_method;
   if (typeof v !== 'string') return undefined;
   const trimmed = v.trim();
   if (!trimmed) return undefined;

@@ -355,3 +355,68 @@ describe('endpointRuntimeMatcher.matchAggregatesToCandidates — Tier 3 suffix m
     expect(normalizePath('/ui/job/123/succinct')).toBe('/ui/job/{id}/succinct');
   });
 });
+
+describe('canonical merged-candidate field names (2026-08-01)', () => {
+  function mergedShapeCandidate(
+    id: string,
+    verb: string,
+    pathOrAddress: string,
+  ): DiscoveryCandidate {
+    return {
+      id,
+      runId: 'run-1',
+      candidateType: 'endpoints',
+      name: `${verb} ${pathOrAddress}`,
+      confidence: 0.9,
+      status: 'proposed',
+      sourceClusterIds: [],
+      // The post-merge / save-back shape: NO method/pathTemplate keys —
+      // the verb lives under `operation_verb`, the path under
+      // `path_or_address`. Before the reader fallbacks, every such
+      // candidate was dropped (matchedEndpoints: 0).
+      data: {
+        operation_verb: verb,
+        path_or_address: pathOrAddress,
+      },
+      synthesizedAt: '2026-08-01T00:00:00.000Z',
+    };
+  }
+
+  it('binds a merged-shape candidate (operation_verb + path_or_address) to its log aggregate', () => {
+    const aggregates = aggregatesMap([
+      aggregate({ method: 'POST', normalizedPath: '/views/lookup' }),
+    ]);
+    const candidates: DiscoveryCandidate[] = [
+      mergedShapeCandidate('cand-merged', 'post', '/views/lookup'),
+    ];
+
+    const { matched, noUsage } = matchAggregatesToCandidates(aggregates, candidates);
+
+    expect(matched).toHaveLength(1);
+    expect(matched[0].candidateId).toBe('cand-merged');
+    expect(matched[0].method).toBe('POST'); // operation_verb read + uppercased
+    expect(matched[0].codePathTemplate).toBe('/views/lookup');
+    expect(noUsage).toHaveLength(0);
+  });
+
+  it('original keys keep precedence over the canonical fallbacks', () => {
+    const aggregates = aggregatesMap([
+      aggregate({ method: 'GET', normalizedPath: '/orders' }),
+    ]);
+    const candidate: DiscoveryCandidate = {
+      ...mergedShapeCandidate('cand-both', 'delete', '/ignored'),
+      data: {
+        method: 'get',
+        pathTemplate: '/orders',
+        operation_verb: 'delete',
+        path_or_address: '/ignored',
+      },
+    };
+
+    const { matched } = matchAggregatesToCandidates(aggregates, [candidate]);
+
+    expect(matched).toHaveLength(1);
+    expect(matched[0].method).toBe('GET');
+    expect(matched[0].codePathTemplate).toBe('/orders');
+  });
+});
