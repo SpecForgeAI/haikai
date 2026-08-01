@@ -918,6 +918,100 @@ function objectTypeToPhysicalType(raw: unknown): string | null {
   }
 }
 
+// ============================================================================
+// Structural-fidelity carriage + backfill (2026-08-01)
+// ============================================================================
+
+/**
+ * Read a JSON-object structural block off the candidate `data` with the
+ * file's snake/camel dual-tolerant idiom. Returns null unless the value is a
+ * plain object (arrays and scalars are not valid blocks).
+ */
+function readStructuralBlock(
+  data: Record<string, any>,
+  snakeKey: string,
+  camelKey: string,
+): Record<string, unknown> | null {
+  const value = data?.[snakeKey] ?? data?.[camelKey];
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * The six structural-fidelity slots `PhysicalDataAttributeDto` actually
+ * declares (`source_type` / `scale` / `precision` / `column_default` /
+ * `ordinal` / `is_identity`) -- exactly the fields the DB-migration-pack
+ * generator's IR reads to emit typed DDL. The DB packs emit the snake keys
+ * verbatim (discovery `attributeStructuralFidelityFields`); the camel
+ * fallbacks cover the packs' legacy column keys. `??` throughout so legit
+ * falsy values (scale 0, is_identity false) survive; keys the candidate does
+ * not carry stay ABSENT (never explicit null) so non-DB candidates are
+ * untouched. NOTE: discovery also emits sequence_name / collation /
+ * is_generated / generation_expression, but AMS has no storage for those --
+ * intentionally NOT carried here (they would be silently ignored).
+ */
+function readAttributeStructuralFields(
+  data: Record<string, any>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const put = (key: string, value: unknown): void => {
+    if (value !== undefined && value !== null) out[key] = value;
+  };
+  put('source_type', data.source_type ?? data.sourceType);
+  put('scale', data.scale);
+  put('precision', data.precision);
+  put(
+    'column_default',
+    data.column_default ?? data.columnDefault ?? data.defaultExpression,
+  );
+  put('ordinal', data.ordinal ?? data.ordinalPosition);
+  put('is_identity', data.is_identity ?? data.isIdentity);
+  return out;
+}
+
+/**
+ * Additively repair an EXISTING model row with structural fields the
+ * pre-2026-08-01 save-back dropped (`constraints_metadata` + `database` on
+ * physical entities; the six fidelity slots on physical attributes).
+ *
+ * Models committed before the carriage fix have these NULL/'' on every row,
+ * and a re-scan routes through the dedup-suppression / idempotent-reuse
+ * paths, which reuse existing rows UNTOUCHED -- so without this hook a
+ * re-scan could never repair them. Fills ONLY missing values; NEVER
+ * overwrites a present one (the enrich no-overwrite doctrine). Returns the
+ * list of filled keys (empty when nothing was repaired).
+ */
+function backfillExistingRowStructure(
+  targetArrayKey: string,
+  existing: any,
+  data: Record<string, any>,
+): string[] {
+  const filled: string[] = [];
+  if (!existing || !data) return filled;
+  if (targetArrayKey === 'physical_data_entities') {
+    const cm = readStructuralBlock(data, 'constraints_metadata', 'constraintsMetadata');
+    if (cm && existing.constraints_metadata == null) {
+      existing.constraints_metadata = cm;
+      filled.push('constraints_metadata');
+    }
+    const db = data.database_name || data.databaseName || data.database || '';
+    if (db && !existing.database) {
+      existing.database = db;
+      filled.push('database');
+    }
+  } else if (targetArrayKey === 'physical_data_attributes') {
+    const structural = readAttributeStructuralFields(data);
+    for (const [key, value] of Object.entries(structural)) {
+      if (existing[key] === null || existing[key] === undefined) {
+        existing[key] = value;
+        filled.push(key);
+      }
+    }
+  }
+  return filled;
+}
+
 /**
  * The SOAP-specific `data` field names emitted by
  * `discovery-service/src/services/findings/packFindingScanners/springClassicSoap/soapEndpointEmitter.ts`.
@@ -1225,11 +1319,22 @@ export function convertCandidateToEntity(
       // value the UI expects ('Table' / 'View' / 'Materialized View').
       entity.physical_type =
         data.physical_type || objectTypeToPhysicalType(data.objectType) || '';
-      // Database packs put the DB name on `data.databaseName` (camelCase).
-      // Keep the existing `data.database_name` path as the primary so non-DB
-      // callers are unaffected.
-      entity.database_name = data.database_name || data.databaseName || '';
+      // Bug fix (2026-08-01): the DTO wire key is `database`
+      // (EntityMapper: `.databaseName(dto.database())`); the previous
+      // `database_name` write bound to NOTHING -- Spring silently ignores
+      // unknown JSON keys -- so committed rows lost the database name.
+      // Database packs put the name on `data.databaseName` (camelCase); keep
+      // `data.database_name` as the primary so non-DB callers are unaffected.
+      entity.database = data.database_name || data.databaseName || data.database || '';
       entity.tags = data.tags || '';
+      // Structural fidelity (2026-08-01): carry the PK/unique/check/index
+      // truth the DB packs emit (`constraints_metadata`, snake DTO key);
+      // ABSENT for non-DB candidates (leave the column unset, mirroring the
+      // protocol-metadata idiom).
+      {
+        const cm = readStructuralBlock(data, 'constraints_metadata', 'constraintsMetadata');
+        if (cm) entity.constraints_metadata = cm;
+      }
       entity.valid_from = null;
       entity.valid_to = null;
       break;
@@ -1425,6 +1530,12 @@ export function convertCandidateToEntity(
       // DB columns are NOT NULL with defaults: is_primary_key DEFAULT FALSE, is_nullable DEFAULT TRUE
       entity.is_primary_key = data.isPrimaryKey ?? data.is_primary_key ?? false;
       entity.is_nullable = data.isNullable ?? data.is_nullable ?? true;
+      // Structural fidelity (2026-08-01): the six PhysicalDataAttributeDto
+      // slots (source_type / scale / precision / column_default / ordinal /
+      // is_identity) the DB-pack generator's IR reads for typed DDL --
+      // previously dropped here entirely, so every generated column lost its
+      // precision/scale/default/identity.
+      Object.assign(entity, readAttributeStructuralFields(data));
       break;
 
     case 'logical_data_attributes':
@@ -1479,10 +1590,19 @@ export function convertCandidateToEntity(
     case 'logical_data_entity_relationships':
       // Entity relationship: id, name, description, model_file_id
       // Metadata carries sourceEntity, targetEntity, cardinality, relationshipType
+      // NOTE: relationship candidates are normally DEFERRED to Pass 2 (which
+      // resolves names to point ids and has its own fk_columns carriage);
+      // this branch only serves direct conversions (tests / legacy callers).
       entity.source_entity = data.sourceEntity || null;
       entity.target_entity = data.targetEntity || null;
       entity.cardinality = data.cardinality || null;
       entity.relationship_type = data.relationshipType || null;
+      // Structural fidelity (2026-08-01): FK column detail (snake DTO key
+      // `fk_columns` on LogicalDataEntityRelationshipDto).
+      {
+        const fk = readStructuralBlock(data, 'fk_columns', 'fkColumns');
+        if (fk) entity.fk_columns = fk;
+      }
       break;
 
     case 'ui_screens':
@@ -2715,6 +2835,10 @@ export async function saveDiscoveryCandidatesToModel(
   };
   let enrichmentsApplied = 0;
   let linksCreated = 0;
+  // Structural backfill (2026-08-01): count of fields additively repaired on
+  // EXISTING rows via the dedup-suppression / idempotent-reuse / Pass-2
+  // paths (see backfillExistingRowStructure).
+  let structuralBackfills = 0;
 
   // Snapshot the names of entities that ALREADY EXISTED in the loaded model,
   // per target array, BEFORE Pass 1 mints anything. Dedup-against-existing must
@@ -2920,6 +3044,22 @@ export async function saveDiscoveryCandidatesToModel(
         );
         const dupMatch = matchByNormalizedName(preExistingRows, candidate.name);
         if (dupMatch.matchKind === 'exact' && dupMatch.item) {
+          // Structural backfill (2026-08-01): the suppressed duplicate may
+          // carry structural truth the existing row is missing (models
+          // committed before the carriage fix) -- repair additively before
+          // suppressing, so a re-scan + approve + save heals the model.
+          const backfilled = backfillExistingRowStructure(
+            targetArrayKey,
+            dupMatch.item,
+            candidate.data || {},
+          );
+          if (backfilled.length > 0) {
+            structuralBackfills += backfilled.length;
+            console.log(
+              `[save-back] Structural backfill: "${candidate.name}" -> existing ` +
+                `${targetArrayKey} ${dupMatch.item.id} (${backfilled.join(', ')})`,
+            );
+          }
           suppressedDuplicates.push({
             candidateId: candidate.id,
             candidateName: candidate.name,
@@ -2973,6 +3113,17 @@ export async function saveDiscoveryCandidatesToModel(
     });
 
     if (existingEntity) {
+      // Structural backfill (2026-08-01): same additive repair as the
+      // dedup-suppression path -- covers child rows (physical attributes)
+      // matched by name + parent FK on a re-scan of an older model.
+      {
+        const backfilled = backfillExistingRowStructure(
+          targetArrayKey,
+          existingEntity,
+          candidate.data || {},
+        );
+        if (backfilled.length > 0) structuralBackfills += backfilled.length;
+      }
       // Skip creation, record existing entity ID for downstream parent resolution
       candidateIdToEntityId[candidate.id] = existingEntity.id;
       candidateActions.push({
@@ -3171,6 +3322,11 @@ export async function saveDiscoveryCandidatesToModel(
       const sourcePointId = sourceRes.pointId;
       const targetPointId = targetRes.pointId;
 
+      // Structural fidelity (2026-08-01): FK column-level detail emitted by
+      // the DB packs (snake DTO key `fk_columns` on
+      // LogicalDataEntityRelationshipDto).
+      const fkColumns = readStructuralBlock(data, 'fk_columns', 'fkColumns');
+
       // Check for existing relationship with same endpoints (idempotent matching)
       // DTO serializes fromDataEntityPointId/toDataEntityPointId as camelCase JSON.
       const existingRel = relArray.find(
@@ -3178,6 +3334,13 @@ export async function saveDiscoveryCandidatesToModel(
       );
 
       if (existingRel) {
+        // Structural backfill (2026-08-01): rows written before the
+        // fk_columns carriage fix are missing the block -- repair additively
+        // on re-discovery (never overwrite a present one).
+        if (fkColumns && existingRel.fk_columns == null) {
+          existingRel.fk_columns = fkColumns;
+          structuralBackfills++;
+        }
         candidateIdToEntityId[candidate.id] = existingRel.id;
         candidateActions.push({
           candidateId: candidate.id,
@@ -3200,6 +3363,9 @@ export async function saveDiscoveryCandidatesToModel(
           tags: '',
           valid_from: null,
           valid_to: null,
+          // Structural fidelity (2026-08-01): snake wire key per the DTO;
+          // ABSENT when the candidate carries no FK detail.
+          ...(fkColumns ? { fk_columns: fkColumns } : {}),
         };
         relArray.push(rel);
         candidateIdToEntityId[candidate.id] = relId;
@@ -3586,6 +3752,9 @@ export async function saveDiscoveryCandidatesToModel(
             model.metaModel.relationships[relArrayKey] = [];
           }
           const relArray: any[] = model.metaModel.relationships[relArrayKey];
+          // Structural fidelity (2026-08-01): carry / backfill fk_columns on
+          // the enrich path too (model-aware re-discovery routes here).
+          const fkColumns = readStructuralBlock(data, 'fk_columns', 'fkColumns');
           const existsRel = relArray.find(
             (r: any) =>
               r.fromDataEntityPointId === targetPointId && r.toDataEntityPointId === relatedPointId,
@@ -3601,11 +3770,17 @@ export async function saveDiscoveryCandidatesToModel(
               tags: '',
               valid_from: null,
               valid_to: null,
+              ...(fkColumns ? { fk_columns: fkColumns } : {}),
             });
             enrichmentsApplied++;
             didApply = true;
           } else {
-            // Idempotent: the relationship already exists -- treat as applied.
+            // Idempotent: the relationship already exists -- treat as applied
+            // (additively repairing a missing fk_columns block).
+            if (fkColumns && existsRel.fk_columns == null) {
+              existsRel.fk_columns = fkColumns;
+              structuralBackfills++;
+            }
             didApply = true;
           }
         } else {
@@ -3929,6 +4104,13 @@ export async function saveDiscoveryCandidatesToModel(
         `${newEdes.length} endpoint_data_effects could not be saved.`
       );
     }
+  }
+
+  if (structuralBackfills > 0) {
+    console.log(
+      `[save-back] Structural backfill repaired ${structuralBackfills} missing field(s) ` +
+        `on existing rows (constraints_metadata / database / attribute fidelity / fk_columns).`,
+    );
   }
 
   // ===========================================================================
