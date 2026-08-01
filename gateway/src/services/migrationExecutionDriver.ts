@@ -2216,7 +2216,10 @@ export async function retryDbPlaneCompletion(
   }
   const chainFailed =
     finalItem.status === RUN_ITEM_STATUS.FAILED &&
-    String(finalItem.error_detail ?? '').includes('DB execution chain failed');
+    // Anchored to the chain's exact error template ("DB execution chain
+    // failed at <phase>: ...") so an operator halt reason that merely
+    // mentions the phrase can never make a non-chain failure retryable.
+    String(finalItem.error_detail ?? '').startsWith('DB execution chain failed at ');
   const implementedOk =
     finalItem.outcome === 'implemented' || finalItem.status === RUN_ITEM_STATUS.IMPLEMENTED;
   if (!chainFailed && !implementedOk) {

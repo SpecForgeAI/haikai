@@ -11,7 +11,10 @@ jest.mock('../services/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-import { createDbPlaneCompletionRunner } from '../services/migrationDbPlaneCompletion';
+import {
+  createDbPlaneCompletionRunner,
+  defaultApplySchema,
+} from '../services/migrationDbPlaneCompletion';
 import {
   RUN_STATUS,
   RUN_ITEM_STATUS,
@@ -154,6 +157,8 @@ describe('createDbPlaneCompletionRunner', () => {
     );
     expect(deployed).toBeTruthy();
     expect(deployed![1].pr_url).toBe('https://gitlab.example.com/mr/7');
+    // Invariant (2026-08-01): a DEPLOYED item carries no error residue.
+    expect(deployed![1].error_detail).toBeNull();
     // No pending later items -> the run is DEPLOYED.
     expect(runPatches(deps)).toContainEqual({ status: RUN_STATUS.DEPLOYED });
 
@@ -286,5 +291,43 @@ describe('createDbPlaneCompletionRunner', () => {
 
     const failed = itemPatches(deps).find(([, p]) => p.status === RUN_ITEM_STATUS.FAILED);
     expect(String(failed![1].error_detail)).toContain('did not complete within');
+  });
+});
+
+describe('defaultApplySchema response integrity (2026-08-01)', () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  const args = {
+    projectId: 'proj-1',
+    architectureId: 'arch-1',
+    targetDb: secret,
+    files: [{ path: 'liquibase/db.changelog-master.xml', content: '<x/>' }],
+    contexts: ['structural'],
+  };
+
+  it('treats a 2xx with an unparseable body as FAILURE, never ok/applied:0', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new Error('unexpected token')),
+    }) as never;
+
+    const result = await defaultApplySchema(args as never);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('unparseable body');
+  });
+
+  it('still reports a parseable 2xx as success with the summary counts', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ summary: { applied: 3, skipped: 1 } }),
+    }) as never;
+
+    const result = await defaultApplySchema(args as never);
+    expect(result).toEqual({ ok: true, applied: 3, skipped: 1 });
   });
 });

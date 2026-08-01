@@ -203,7 +203,11 @@ export async function defaultApplySchema(
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(body),
   });
-  const json = (await resp.json().catch(() => ({}))) as {
+  let parseFailed = false;
+  const json = (await resp.json().catch(() => {
+    parseFailed = true;
+    return {};
+  })) as {
     summary?: { applied?: number; skipped?: number };
     error?: string;
     detail?: string;
@@ -220,6 +224,17 @@ export async function defaultApplySchema(
       applied: json.summary?.applied ?? 0,
       skipped: json.summary?.skipped ?? 0,
       error: `${json.error || json.detail || `HTTP ${resp.status}`}${failed}${issues}`,
+    };
+  }
+  if (parseFailed) {
+    // A 2xx whose body does not parse is an integrity violation, NOT a
+    // success -- treating it as ok/applied:0 would let the chain proceed
+    // past a schema apply it cannot actually account for (2026-08-01).
+    return {
+      ok: false,
+      applied: 0,
+      skipped: 0,
+      error: `schema-apply returned HTTP ${resp.status} with an unparseable body`,
     };
   }
   return {
@@ -504,6 +519,10 @@ export function createDbPlaneCompletionRunner(subDeps: DbPlaneCompletionSubDeps 
         await safePatchItem(deps, projectId, target.id, {
           status: RUN_ITEM_STATUS.DEPLOYED,
           outcome: 'deployed',
+          // Invariant: a DEPLOYED item carries no error residue. The retry
+          // path already nulls this before re-kicking; clearing here too
+          // keeps the invariant local (2026-08-01).
+          error_detail: null,
           ...(mrUrl ? { pr_url: mrUrl } : {}),
         });
       }
