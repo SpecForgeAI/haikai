@@ -89,14 +89,20 @@ function applyObservation(
 ): void {
   acc.totalLogRequests += 1;
 
-  if (o.status >= 200 && o.status < 300) acc.status2xxCount += 1;
-  else if (o.status >= 300 && o.status < 400) acc.status3xxCount += 1;
-  else if (o.status >= 400 && o.status < 500) {
-    acc.status4xxCount += 1;
-    acc.fourXxCounts.set(o.status, (acc.fourXxCounts.get(o.status) ?? 0) + 1);
-  } else if (o.status >= 500 && o.status < 600) acc.status5xxCount += 1;
+  // Status is OPTIONAL (2026-08-01): a request-only observation (log line
+  // with no response code) still counts toward `totalLogRequests` — the
+  // real "was this endpoint hit" signal — but touches NO status bucket and
+  // never lands in `topStatusCodes`. Counts stay honest; no invented 200s.
+  if (typeof o.status === 'number') {
+    if (o.status >= 200 && o.status < 300) acc.status2xxCount += 1;
+    else if (o.status >= 300 && o.status < 400) acc.status3xxCount += 1;
+    else if (o.status >= 400 && o.status < 500) {
+      acc.status4xxCount += 1;
+      acc.fourXxCounts.set(o.status, (acc.fourXxCounts.get(o.status) ?? 0) + 1);
+    } else if (o.status >= 500 && o.status < 600) acc.status5xxCount += 1;
 
-  acc.statusCounts.set(o.status, (acc.statusCounts.get(o.status) ?? 0) + 1);
+    acc.statusCounts.set(o.status, (acc.statusCounts.get(o.status) ?? 0) + 1);
+  }
 
   if (o.timestampIso) {
     if (!acc.firstSeen || o.timestampIso < acc.firstSeen) acc.firstSeen = o.timestampIso;

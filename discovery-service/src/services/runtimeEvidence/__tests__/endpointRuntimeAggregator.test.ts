@@ -163,3 +163,50 @@ describe('endpointRuntimeAggregator.aggregateObservations', () => {
     }
   });
 });
+
+describe('status-less (request-only) observations (2026-08-01)', () => {
+  function statuslessObs(overrides: Partial<HttpRuntimeObservation> = {}): HttpRuntimeObservation {
+    return {
+      method: 'POST',
+      rawPath: '/views/lookup',
+      normalizedPath: '/views/lookup',
+      sourceArtifactId: 'artifact-1',
+      sourceFileName: 'app.log',
+      lineNumber: 1,
+      ...overrides,
+    };
+  }
+
+  it('counts toward totalLogRequests but touches NO status bucket and never invents a 200', () => {
+    let aggregateObservations: typeof import('../endpointRuntimeAggregator').aggregateObservations;
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      aggregateObservations = require('../endpointRuntimeAggregator').aggregateObservations;
+    });
+
+    const { aggregates } = aggregateObservations!([
+      statuslessObs({ lineNumber: 1 }),
+      statuslessObs({ lineNumber: 2 }),
+      statuslessObs({ lineNumber: 3 }),
+    ]);
+
+    const agg = aggregates.get('POST /views/lookup');
+    expect(agg).toBeDefined();
+    expect(agg!.totalLogRequests).toBe(3); // the real "was this endpoint hit" signal
+    expect(agg!.observedUsageCount).toBe(0); // 2xx+3xx only — status-less adds nothing
+    expect(agg!.status2xxCount).toBe(0);
+    expect(agg!.status4xxCount).toBe(0);
+    expect(agg!.topStatusCodes).toEqual([]); // no invented responses
+  });
+
+  it('a status-less-only route is NOT treated as pure-404 (it stays in the aggregates)', () => {
+    let aggregateObservations: typeof import('../endpointRuntimeAggregator').aggregateObservations;
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      aggregateObservations = require('../endpointRuntimeAggregator').aggregateObservations;
+    });
+
+    const { aggregates } = aggregateObservations!([statuslessObs()]);
+    expect(aggregates.has('POST /views/lookup')).toBe(true);
+  });
+});
