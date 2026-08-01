@@ -620,6 +620,9 @@ describe('structural completeness surfacing (WS3 P1)', () => {
       indexes_total: 61,
       relationships_total: 5,
       relationships_with_fk_columns: 5,
+      collation_hazard_columns: 0,
+      generated_columns: 0,
+      sequences_captured: 0,
       code_objects_captured: { stored_procedure: 29, trigger: 0, view: 4, scheduled_job: 0 },
     };
     const stories = expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);

@@ -189,6 +189,16 @@ export interface StructuralAccounting {
   indexes_total: number;
   relationships_total: number;
   relationships_with_fk_columns: number;
+  /**
+   * FINDINGS-channel visibility (2026-08-01): collation hazards, computed
+   * columns and sequences reach the IR ONLY via discovery findings (never
+   * committed attributes). These counts make that channel's health visible
+   * in the manifest — zero can be legit (no such objects), so they carry
+   * NO warnings, just numbers a reviewer can question.
+   */
+  collation_hazard_columns: number;
+  generated_columns: number;
+  sequences_captured: number;
   code_objects_captured: {
     stored_procedure: number;
     trigger: number;
