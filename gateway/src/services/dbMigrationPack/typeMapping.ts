@@ -388,6 +388,138 @@ export function translateComputedExpression(
 }
 
 // ---------------------------------------------------------------------------
+// Check-constraint expression translation — deterministic or skipped loudly
+// ---------------------------------------------------------------------------
+
+/**
+ * Function tokens translatable 1:1 inside check expressions (lowercased).
+ * Superset of the computed-column table: checks commonly wrap length/trim
+ * style built-ins that have exact PostgreSQL spellings.
+ */
+const CHECK_FN_TRANSLATIONS: Record<string, string> = {
+  isnull: 'coalesce',
+  getdate: 'now',
+  upper: 'upper',
+  lower: 'lower',
+  abs: 'abs',
+  round: 'round',
+  coalesce: 'coalesce',
+  len: 'length',
+  char_length: 'char_length',
+  ltrim: 'ltrim',
+  rtrim: 'rtrim',
+  floor: 'floor',
+  ceiling: 'ceil',
+};
+
+/**
+ * Bare keywords allowed verbatim inside a check expression (lowercased).
+ * Checked BEFORE the function-call rule so `status IN ('A','B')` is a list,
+ * not a call to an unknown function `in`.
+ */
+const CHECK_KEYWORDS = new Set([
+  'and',
+  'or',
+  'not',
+  'in',
+  'between',
+  'like',
+  'is',
+  'null',
+  'escape',
+  'true',
+  'false',
+]);
+
+export type CheckTranslationResult =
+  | { kind: 'translated'; expression: string; changed: boolean }
+  | { kind: 'non_portable'; reason: string };
+
+/**
+ * Deterministic token translation of a Sybase check-constraint expression,
+ * mirroring `translateComputedExpression`'s conservative whitelist walker
+ * (identifiers, literals, comparison/boolean operators, whitelisted function
+ * names). The previous behaviour copied expressions VERBATIM into the DDL,
+ * so any T-SQL built-in (datalength / isdate / convert / dateadd ...) failed
+ * at schema-apply time. Now: portable expressions emit (with safe renames
+ * like getdate()->now(), len()->length()); anything outside the whitelist is
+ * NON-PORTABLE and the emitter SKIPS the constraint with a loud comment
+ * carrying the verbatim source — never a guessed emission, never a silent
+ * drop. T-SQL string concatenation (`+` with a string literal present) is
+ * non-portable for the same reason as computed columns.
+ */
+export function translateCheckExpression(
+  verbatimExpression: string
+): CheckTranslationResult {
+  const expr = verbatimExpression.trim();
+  const tokens =
+    expr.match(
+      /[a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?|'(?:[^']|'')*'|>=|<=|<>|!=|[-+*/(),.%=<>]|\S/g
+    ) ?? [];
+  if (tokens.length === 0) {
+    return { kind: 'non_portable', reason: 'empty expression' };
+  }
+
+  const hasStringLiteral = tokens.some((t) => t.startsWith("'"));
+  const parts: string[] = [];
+  let changed = false;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(t)) {
+      if (CHECK_KEYWORDS.has(t.toLowerCase())) {
+        parts.push(t);
+        continue;
+      }
+      const isFunctionCall = tokens[i + 1] === '(';
+      if (isFunctionCall) {
+        const fn = CHECK_FN_TRANSLATIONS[t.toLowerCase()];
+        if (!fn) {
+          return { kind: 'non_portable', reason: `function '${t}'` };
+        }
+        if (fn !== t.toLowerCase()) changed = true;
+        parts.push(`${fn}(`);
+        i++; // consume the '('
+        continue;
+      }
+      parts.push(t); // bare column reference — verbatim
+      continue;
+    }
+    if (/^[0-9]+(\.[0-9]+)?$/.test(t) || t.startsWith("'")) {
+      parts.push(t);
+      continue;
+    }
+    if (t === '+') {
+      if (hasStringLiteral) {
+        return {
+          kind: 'non_portable',
+          reason: "string '+' concatenation (T-SQL semantics)",
+        };
+      }
+      parts.push(t);
+      continue;
+    }
+    if (
+      ['-', '*', '/', '%', '(', ')', ',', '.', '=', '>', '<', '>=', '<=', '<>', '!='].includes(t)
+    ) {
+      parts.push(t);
+      continue;
+    }
+    return { kind: 'non_portable', reason: `token '${t}'` };
+  }
+
+  // Join with spaces, then tighten punctuation. SQL correctness does not
+  // depend on the spacing; this is for readable DDL.
+  const joined = parts
+    .join(' ')
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .replace(/\s+,/g, ',')
+    .replace(/\s+\.\s+/g, '.');
+  return { kind: 'translated', expression: joined, changed };
+}
+
+// ---------------------------------------------------------------------------
 // Collation hazard — always a decision, never a silent default
 // ---------------------------------------------------------------------------
 

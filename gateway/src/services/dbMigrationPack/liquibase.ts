@@ -34,6 +34,7 @@
  */
 
 import { IrForeignKey, IrTable } from './types';
+import { translateCheckExpression } from './typeMapping';
 
 export const CHANGESET_AUTHOR = 'db-migration-pack';
 export const MASTER_CHANGELOG_PATH = 'liquibase/db.changelog-master.xml';
@@ -219,10 +220,25 @@ export function emitTableChangeset(args: {
       `    CONSTRAINT ${quoteIdent(u.name)} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
     );
   }
+  // Check expressions are TRANSLATED deterministically (2026-08-01) --
+  // mirroring the default/computed-column pipelines. The previous verbatim
+  // copy shipped T-SQL built-ins (getdate(), datalength(), ...) PostgreSQL
+  // rejects at schema-apply time. Portable expressions emit (with safe
+  // renames like getdate()->now()); non-portable ones are SKIPPED with a
+  // loud comment carrying the verbatim source below the CREATE TABLE.
+  const rewrittenChecks: Array<{ name: string; from: string; to: string }> = [];
+  const skippedChecks: Array<{ name: string; expression: string; reason: string }> = [];
   for (const ck of [...table.checkConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
     if (!ck.expression) continue;
-    // Check expressions are reproduced VERBATIM from constraints_metadata.
-    constraintDefs.push(`    CONSTRAINT ${quoteIdent(ck.name)} CHECK (${ck.expression})`);
+    const t = translateCheckExpression(ck.expression);
+    if (t.kind === 'translated') {
+      constraintDefs.push(`    CONSTRAINT ${quoteIdent(ck.name)} CHECK (${t.expression})`);
+      if (t.changed) {
+        rewrittenChecks.push({ name: ck.name, from: ck.expression, to: t.expression });
+      }
+    } else {
+      skippedChecks.push({ name: ck.name, expression: ck.expression, reason: t.reason });
+    }
   }
 
   lines.push(`CREATE TABLE ${qq} (`);
@@ -239,8 +255,26 @@ export function emitTableChangeset(args: {
   for (const s of skipped) {
     lines.push(`-- SKIPPED column ${qn}.${s.columnName}: ${s.reason}`);
   }
+  for (const rc of rewrittenChecks) {
+    lines.push(
+      `-- CHECK ${qn}.${rc.name}: expression rewritten deterministically from Sybase ` +
+        `('${oneLine(rc.from)}' -> '${oneLine(rc.to)}').`
+    );
+  }
+  for (const sc of skippedChecks) {
+    lines.push(
+      `-- SKIPPED CHECK ${qn}.${sc.name}: non-portable expression (${sc.reason}). ` +
+        `Source (Sybase, verbatim): CHECK (${oneLine(sc.expression)}). ` +
+        `Translate manually and add via ALTER TABLE after review.`
+    );
+  }
 
   return lines.join('\n') + '\n';
+}
+
+/** Flatten an expression for safe embedding in a single SQL comment line. */
+function oneLine(s: string): string {
+  return s.replace(/\s*\r?\n\s*/g, ' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -338,14 +372,28 @@ export function emitIndexesChangeset(args: {
     const qq = quotedQualifiedName(table.schemaName, table.tableName);
     const sortedIndexes = [...table.indexes].sort((a, b) => a.name.localeCompare(b.name));
     for (const idx of sortedIndexes) {
-      // Column ordering/direction verbatim from constraints_metadata.indexes[].
+      // Column ordering from constraints_metadata.indexes[]; directions are
+      // guarded to the portable ASC/DESC pair (2026-08-01) -- any other
+      // directive from the source engine is dropped with a note instead of
+      // shipping DDL PostgreSQL would reject.
+      const droppedDirections: string[] = [];
       const cols = idx.columns
         .map((c, i) => {
           const dir = idx.columnDirections?.[i];
-          return dir ? `${quoteIdent(c)} ${dir}` : quoteIdent(c);
+          const normalized = dir ? dir.trim().toUpperCase() : null;
+          if (normalized === 'ASC' || normalized === 'DESC') {
+            return `${quoteIdent(c)} ${normalized}`;
+          }
+          if (dir && dir.trim() !== '') {
+            droppedDirections.push(`'${dir.trim()}' on ${c}`);
+          }
+          return quoteIdent(c);
         })
         .join(', ');
       let sql = `CREATE ${idx.isUnique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(idx.name)} ON ${qq} (${cols});`;
+      if (droppedDirections.length > 0) {
+        sql += `\n-- NOTE: index ${idx.name}: dropped non-portable column direction(s) ${droppedDirections.join(', ')}.`;
+      }
       if (idx.isClustered) {
         // Sybase clustered -> plain btree + explicit note (Postgres keeps no
         // maintained clustering).
