@@ -849,6 +849,7 @@ migrationExecutionRouter.post(
         health_path?: string;
         port_env?: string;
         readiness_timeout?: number;
+        setup?: string;
         env?: Record<string, unknown>;
       };
       /** Stage-2 Start modal: the SOURCE (current system) API details. */
@@ -888,12 +889,13 @@ migrationExecutionRouter.post(
         (typeof s.env === 'object' &&
           s.env !== null &&
           Object.values(s.env).every((v) => typeof v === 'string'));
-      if (!commandOk || !healthOk || !portEnvOk || !timeoutOk || !envOk) {
+      const setupOk = s.setup === undefined || typeof s.setup === 'string';
+      if (!commandOk || !healthOk || !portEnvOk || !timeoutOk || !envOk || !setupOk) {
         return res.status(400).json({
           error:
             'service block must include { command (non-empty), health_path (/-prefixed), ' +
-            'port_env (env-var name) } with optional readiness_timeout (positive number) ' +
-            'and env (string values)',
+            'port_env (env-var name) } with optional readiness_timeout (positive number), ' +
+            'setup (string) and env (string values)',
         });
       }
       service = {
@@ -901,6 +903,10 @@ migrationExecutionRouter.post(
         healthPath: s.health_path as string,
         portEnv: s.port_env as string,
         ...(s.readiness_timeout !== undefined ? { readinessTimeout: s.readiness_timeout } : {}),
+        // Optional bootstrap command (2026-08-01); whitespace-only = absent.
+        ...(typeof s.setup === 'string' && s.setup.trim() !== ''
+          ? { setup: s.setup.trim() }
+          : {}),
         ...(s.env !== undefined ? { env: s.env as Record<string, string> } : {}),
       };
     }

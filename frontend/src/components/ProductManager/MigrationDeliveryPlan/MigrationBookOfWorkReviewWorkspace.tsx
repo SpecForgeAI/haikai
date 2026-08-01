@@ -987,6 +987,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     healthPath: '/',
     portEnv: 'PORT',
     readinessTimeout: 30,
+    setup: '',
   });
   /** KEY=VALUE per line (e.g. the migrated service's datasource settings). */
   const [serveEnvText, setServeEnvText] = useState('');
@@ -1069,6 +1070,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           healthPath: sb.health_path,
           portEnv: sb.port_env,
           readinessTimeout: sb.readiness_timeout,
+          setup: sb.setup ?? '',
         });
       }
       const sa = status?.sourceApi;
@@ -1175,6 +1177,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
               healthPath: serveFields.healthPath,
               portEnv: serveFields.portEnv,
               readinessTimeout: serveFields.readinessTimeout,
+              ...(serveFields.setup.trim() !== '' ? { setup: serveFields.setup.trim() } : {}),
               ...(Object.keys(env).length > 0 ? { env } : {}),
             };
           }
@@ -2451,6 +2454,17 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                         setServeFields((f) => ({ ...f, command: e.target.value }))
                       }
                       data-testid="start-stage-serve-command"
+                    />
+                    <label htmlFor="srv-setup">Setup command</label>
+                    <input
+                      id="srv-setup"
+                      className={styles.modalInput}
+                      placeholder="npm install (optional — runs once before the serve command)"
+                      value={serveFields.setup}
+                      onChange={(e) =>
+                        setServeFields((f) => ({ ...f, setup: e.target.value }))
+                      }
+                      data-testid="start-stage-serve-setup"
                     />
                     <label htmlFor="srv-health">Health path</label>
                     <input

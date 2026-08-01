@@ -84,6 +84,8 @@ export interface OrchestrationSubmitInput {
     healthPath: string;
     portEnv: string;
     readinessTimeout?: number;
+    /** Optional bootstrap command run before `command` (haibox `setup`). */
+    setup?: string;
     env?: Record<string, string>;
   };
   /** The gateway's build-results URL, sent per-request on every submit (CD-3). */
@@ -149,6 +151,8 @@ function toTargetWire(
     health_path: spec.healthPath,
     port_env: spec.portEnv,
     ...(spec.readinessTimeout !== undefined ? { readiness_timeout: spec.readinessTimeout } : {}),
+    // haibox runs `setup` once before `command` (its serve() kwarg name).
+    ...(spec.setup ? { setup: spec.setup } : {}),
     ...(spec.env ? { env: spec.env } : {}),
   };
 }

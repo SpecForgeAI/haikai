@@ -77,6 +77,13 @@ export interface TargetServeSpec {
   healthPath: string;
   portEnv: string;
   readinessTimeout?: number;
+  /**
+   * OPTIONAL bootstrap command haibox runs ONCE before `command` (dependency
+   * install, e.g. `npm install` -- run commands like `mvn spring-boot:run`
+   * self-build and need none). Same TRUST BOUNDARY as `command`: executed
+   * verbatim on the host, operator-confirmed (2026-08-01).
+   */
+  setup?: string;
   env?: Record<string, string>;
 }
 
