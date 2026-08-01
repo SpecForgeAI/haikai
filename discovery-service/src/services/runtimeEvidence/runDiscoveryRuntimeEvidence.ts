@@ -49,7 +49,11 @@ import {
 import { parseClfStream } from './accessLogParser';
 import { normalizePath } from './endpointPathNormalizer';
 import { aggregateObservations } from './endpointRuntimeAggregator';
-import { matchAggregatesToCandidates } from './endpointRuntimeMatcher';
+import {
+  matchAggregatesToCandidates,
+  readMethod,
+  readPathTemplate,
+} from './endpointRuntimeMatcher';
 import {
   applyRuntimeEvidenceToCandidates,
   persistRuntimeEvidence,
@@ -1086,25 +1090,20 @@ export async function runDiscoveryRuntimeEvidence(
       // D2): for each code-discovered endpoint candidate that had NO matching
       // runtime traffic, emit one info-severity finding so reviewers can
       // filter no-usage endpoints in the Findings tab. The method / path
-      // come from the candidate's data blob (with the same fallback chain
-      // the matcher uses) since NoUsageRuntimeEvidence does not carry them.
+      // come from the candidate's data blob via the matcher's OWN shared
+      // readers (2026-08-01) — a private re-implementation here drifted when
+      // the canonical merged keys (operation_verb / path_or_address) were
+      // added, labelling every merged-shape no-usage finding
+      // "ANY (unknown path)". NoUsageRuntimeEvidence does not carry them.
       const candidateById = new Map(deterministicCandidates.map((c) => [c.id, c]));
       for (const n of noUsage) {
         const cand = candidateById.get(n.candidateId);
         if (!cand) continue;
-        const data = (cand.data as Record<string, unknown> | undefined) ?? {};
-        const rawMethod = typeof data.method === 'string' ? data.method.trim().toUpperCase() : '';
-        const rawPath =
-          (typeof data.pathTemplate === 'string' && data.pathTemplate) ||
-          (typeof data.fullPath === 'string' && data.fullPath) ||
-          (typeof data.path === 'string' && data.path) ||
-          (typeof data.url === 'string' && data.url) ||
-          '';
         findingInputs.push(
           buildUnusedCodeEndpointFinding({
             candidateId: n.candidateId,
-            method: rawMethod || 'ANY',
-            pathTemplate: rawPath || '(unknown path)',
+            method: readMethod(cand) ?? 'ANY',
+            pathTemplate: readPathTemplate(cand) ?? '(unknown path)',
             note: n.note,
           }),
         );

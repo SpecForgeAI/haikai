@@ -116,7 +116,7 @@ const CONFIDENCE_RANK: Record<'high' | 'medium' | 'low', number> = {
  * dropped all of them (matchedEndpoints: 0). Original precedence is
  * unchanged, so raw adapter candidates are unaffected.
  */
-function readPathTemplate(c: DiscoveryCandidate): string | undefined {
+export function readPathTemplate(c: DiscoveryCandidate): string | undefined {
   const data = c.data as Record<string, unknown> | undefined;
   if (!data) return undefined;
   const v = data.pathTemplate ?? data.fullPath ?? data.path ?? data.url ?? data.path_or_address;
@@ -129,7 +129,7 @@ function readPathTemplate(c: DiscoveryCandidate): string | undefined {
  * `httpMethod` variants) rather than `method`. Same precedence rule as
  * {@link readPathTemplate}: original key first, canonical fallbacks after.
  */
-function readMethod(c: DiscoveryCandidate): string | undefined {
+export function readMethod(c: DiscoveryCandidate): string | undefined {
   const data = c.data as Record<string, unknown> | undefined;
   if (!data) return undefined;
   const v = data.method ?? data.operation_verb ?? data.httpMethod ?? data.http_method;
