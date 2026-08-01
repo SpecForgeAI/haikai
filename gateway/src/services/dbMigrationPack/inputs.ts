@@ -601,6 +601,18 @@ export function buildStructuralAccounting(
   // via the emitter's view pass even without a view_definition finding).
   const viewEntities = ir.tables.filter((t) => t.objectType === 'view').length;
 
+  // FINDINGS-channel visibility (2026-08-01): these facts exist ONLY in
+  // findings (merged into IR columns / sequences above), never on committed
+  // attributes — count them so the channel's health shows in the manifest.
+  let collationHazardColumns = 0;
+  let generatedColumns = 0;
+  for (const table of ir.tables) {
+    for (const c of table.columns) {
+      if (c.collationCaseInsensitive) collationHazardColumns++;
+      if (c.isGenerated) generatedColumns++;
+    }
+  }
+
   return {
     tables_total: ir.tables.filter((t) => t.objectType === 'table').length,
     view_entities_total: viewEntities,
@@ -611,6 +623,9 @@ export function buildStructuralAccounting(
     indexes_total: indexesTotal,
     relationships_total: relationshipsTotal,
     relationships_with_fk_columns: relationshipsWithFk,
+    collation_hazard_columns: collationHazardColumns,
+    generated_columns: generatedColumns,
+    sequences_captured: ir.sequences.length,
     code_objects_captured: codeCounts,
   };
 }
@@ -638,6 +653,15 @@ export function accountingFromIr(ir: SourceSchemaIr): StructuralAccounting {
     indexes_total: realTables.reduce((n, t) => n + t.indexes.length, 0),
     relationships_total: ir.foreignKeys.length,
     relationships_with_fk_columns: ir.foreignKeys.length,
+    collation_hazard_columns: ir.tables.reduce(
+      (n, t) => n + t.columns.filter((c) => c.collationCaseInsensitive).length,
+      0
+    ),
+    generated_columns: ir.tables.reduce(
+      (n, t) => n + t.columns.filter((c) => c.isGenerated).length,
+      0
+    ),
+    sequences_captured: ir.sequences.length,
     code_objects_captured: codeCounts,
   };
 }

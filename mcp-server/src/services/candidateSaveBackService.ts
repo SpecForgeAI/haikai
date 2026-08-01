@@ -948,8 +948,13 @@ function readStructuralBlock(
  * falsy values (scale 0, is_identity false) survive; keys the candidate does
  * not carry stay ABSENT (never explicit null) so non-DB candidates are
  * untouched. NOTE: discovery also emits sequence_name / collation /
- * is_generated / generation_expression, but AMS has no storage for those --
- * intentionally NOT carried here (they would be silently ignored).
+ * is_generated / generation_expression on the candidate data, but those
+ * facts travel the FINDINGS channel BY DESIGN (collation hazard /
+ * computed-column / sequence findings -> the DB-pack IR merge in gateway
+ * dbMigrationPack/inputs.ts, which documents "these facts exist ONLY in
+ * findings, never on committed attributes") -- AMS has no attribute columns
+ * for them and the pack generator never reads them from the model, so they
+ * are intentionally NOT carried here.
  */
 function readAttributeStructuralFields(
   data: Record<string, any>,

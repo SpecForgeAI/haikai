@@ -93,9 +93,32 @@ describe('buildStructuralAccounting', () => {
         { id: 'r2' }, // declared but join-less — emittable FKs exclude it
       ],
     });
+    // Findings-channel facts (2026-08-01): a case-insensitive + generated
+    // column and one captured sequence, merged onto the IR the way the
+    // findings pass does.
+    tables[0].columns = [
+      {
+        schemaName: 'dbo', tableName: 'customers', columnName: 'display_name',
+        dataType: 'varchar(80)', maxLength: null, scale: null, precision: null,
+        isNullable: true, isPrimaryKey: false, defaultExpression: null,
+        ordinalPosition: 2, isIdentity: false, collation: 'nocase',
+        collationCaseInsensitive: true, isGenerated: true,
+        generationExpression: "upper(first_name)", nonPortableDefault: null,
+        attributeId: 'a-1', entityId: 'e-customers', findingIds: ['f-b', 'f-e'],
+      },
+    ];
     const acc = buildStructuralAccounting(
       inputs,
-      ir(tables, { untranslated: [{ kind: 'stored_procedure', objectRef: 'dbo.usp_x', findingIds: [] }] })
+      ir(tables, {
+        untranslated: [{ kind: 'stored_procedure', objectRef: 'dbo.usp_x', findingIds: [] }],
+        sequences: [
+          {
+            schemaName: 'dbo', sequenceName: 'seq_orders', currentValue: '100',
+            currentValueAvailable: true, startValue: null, ownedByTable: null,
+            ownedByColumn: null, findingIds: ['f-c'],
+          },
+        ],
+      })
     );
 
     expect(acc.tables_total).toBe(2);
@@ -107,6 +130,9 @@ describe('buildStructuralAccounting', () => {
     expect(acc.indexes_total).toBe(1);
     expect(acc.relationships_total).toBe(2);
     expect(acc.relationships_with_fk_columns).toBe(1);
+    expect(acc.collation_hazard_columns).toBe(1);
+    expect(acc.generated_columns).toBe(1);
+    expect(acc.sequences_captured).toBe(1);
     expect(acc.code_objects_captured.stored_procedure).toBe(1);
   });
 });
@@ -123,6 +149,9 @@ describe('deriveStructuralWarnings', () => {
       indexes_total: 61,
       relationships_total: 5,
       relationships_with_fk_columns: 5,
+      collation_hazard_columns: 12,
+      generated_columns: 2,
+      sequences_captured: 7,
       code_objects_captured: { stored_procedure: 29, trigger: 0, view: 4, scheduled_job: 0 },
       ...overrides,
     };
