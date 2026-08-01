@@ -211,8 +211,83 @@ describe('candidateSaveBackService - conversion and topological sort', () => {
   // ==========================================================================
   // Test 6: convertCandidateToEntity for `physical_data_entities` type
   // ==========================================================================
+  describe('convertCandidateToEntity - physical_data_attributes structural fidelity (2026-08-01)', () => {
+    it('carries the six DTO fidelity slots, preserving falsy scale 0 / is_identity false', () => {
+      const candidate = makeCandidate({
+        id: 'cand-attr-1',
+        name: 'amount',
+        candidate_type: 'physical_data_attributes',
+        parent_candidate_id: 'cand-pde-parent',
+        data: {
+          dataType: 'numeric',
+          isPrimaryKey: false,
+          isNullable: false,
+          source_type: 'numeric(19,0)',
+          scale: 0,
+          precision: 19,
+          column_default: '0',
+          ordinal: 3,
+          is_identity: false,
+        },
+      });
+
+      const entity = convertCandidateToEntity(candidate, 'TestProject', {
+        'cand-pde-parent': 'pde-parent-001',
+      });
+
+      expect(entity.physical_entity_id).toBe('pde-parent-001');
+      expect(entity.data_type).toBe('numeric');
+      expect(entity.source_type).toBe('numeric(19,0)');
+      expect(entity.scale).toBe(0);
+      expect(entity.precision).toBe(19);
+      expect(entity.column_default).toBe('0');
+      expect(entity.ordinal).toBe(3);
+      expect(entity.is_identity).toBe(false);
+    });
+
+    it('leaves absent fidelity keys ABSENT for non-DB candidates', () => {
+      const candidate = makeCandidate({
+        id: 'cand-attr-plain',
+        name: 'plain',
+        candidate_type: 'physical_data_attributes',
+        parent_candidate_id: 'cand-pde-parent',
+        data: { dataType: 'string' },
+      });
+      const entity = convertCandidateToEntity(candidate, 'TestProject', {
+        'cand-pde-parent': 'pde-parent-001',
+      });
+      expect('source_type' in entity).toBe(false);
+      expect('scale' in entity).toBe(false);
+      expect('is_identity' in entity).toBe(false);
+    });
+  });
+
+  describe('convertCandidateToEntity - logical_data_entity_relationships fk_columns (2026-08-01)', () => {
+    it('carries fk_columns on the direct-conversion branch', () => {
+      const fk = {
+        join_columns: ['order_id'],
+        referenced_columns: ['id'],
+        on_delete: 'CASCADE',
+      };
+      const candidate = makeCandidate({
+        id: 'cand-rel-1',
+        name: 'orders -> customers',
+        candidate_type: 'logical_data_entity_relationships',
+        data: {
+          sourceEntity: 'orders',
+          targetEntity: 'customers',
+          cardinality: 'MANY_TO_ONE',
+          relationshipType: 'ASSOCIATION',
+          fk_columns: fk,
+        },
+      });
+      const entity = convertCandidateToEntity(candidate, 'TestProject', {});
+      expect(entity.fk_columns).toEqual(fk);
+    });
+  });
+
   describe('convertCandidateToEntity - physical_data_entities type', () => {
-    it('populates physical_type and database_name from candidate data', () => {
+    it('populates physical_type and the database (DTO wire key) from candidate data', () => {
       const candidate = makeCandidate({
         id: 'cand-pde-1',
         name: 'orders_table',
@@ -232,9 +307,12 @@ describe('candidateSaveBackService - conversion and topological sort', () => {
       expect(entity.description).toBe('Orders database table');
       expect(entity.model_file_id).toBe('TestProject');
 
-      // Type-specific fields
+      // Type-specific fields. 2026-08-01: the row key is `database` -- the
+      // PhysicalDataEntityDto wire key -- because the old `database_name`
+      // write was silently ignored by the AMS PUT (Jackson unknown key).
       expect(entity.physical_type).toBe('TABLE');
-      expect(entity.database_name).toBe('order_db');
+      expect(entity.database).toBe('order_db');
+      expect(entity.database_name).toBeUndefined();
 
       // Default fields
       expect(entity.tags).toBe('');
@@ -244,6 +322,39 @@ describe('candidateSaveBackService - conversion and topological sort', () => {
       // Should NOT have parent FK
       expect(entity.application_id).toBeUndefined();
       expect(entity.service_id).toBeUndefined();
+    });
+
+    it('carries constraints_metadata through to the entity (snake DTO key)', () => {
+      const constraints = {
+        primary_key: { name: 'orders_pk', columns: ['order_id'] },
+        unique_constraints: [{ name: 'orders_ref_uq', columns: ['order_ref'] }],
+        check_constraints: [{ name: 'orders_qty_ck', expression: 'qty > 0' }],
+        indexes: [{ name: 'orders_cust_ix', columns: ['customer_id'], is_unique: false }],
+      };
+      const candidate = makeCandidate({
+        id: 'cand-pde-cm',
+        name: 'orders_table',
+        candidate_type: 'physical_data_entities',
+        data: {
+          physical_type: 'TABLE',
+          database_name: 'order_db',
+          constraints_metadata: constraints,
+        },
+      });
+
+      const entity = convertCandidateToEntity(candidate, 'TestProject', {});
+      expect(entity.constraints_metadata).toEqual(constraints);
+    });
+
+    it('leaves constraints_metadata ABSENT (not null) for non-DB candidates', () => {
+      const candidate = makeCandidate({
+        id: 'cand-pde-nocm',
+        name: 'plain_entity',
+        candidate_type: 'physical_data_entities',
+        data: { physical_type: 'TABLE' },
+      });
+      const entity = convertCandidateToEntity(candidate, 'TestProject', {});
+      expect('constraints_metadata' in entity).toBe(false);
     });
 
     // ------------------------------------------------------------------------
@@ -266,8 +377,9 @@ describe('candidateSaveBackService - conversion and topological sort', () => {
       });
       const entity = convertCandidateToEntity(candidate, 'TestProject', {});
       expect(entity.physical_type).toBe('Table');
-      // databaseName (camelCase from DB pack) maps to database_name on the row.
-      expect(entity.database_name).toBe('hier_dev1');
+      // databaseName (camelCase from DB pack) maps to `database` on the row
+      // (the DTO wire key; 2026-08-01).
+      expect(entity.database).toBe('hier_dev1');
     });
 
     it("falls back to data.objectType='view' -> 'View'", () => {

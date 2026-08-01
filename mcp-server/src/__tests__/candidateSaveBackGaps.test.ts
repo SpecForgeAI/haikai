@@ -490,7 +490,9 @@ describe('candidateSaveBack - Gap Analysis Tests (Task Group 8)', () => {
       expect(pdeEntity.id).toMatch(/^pde-/);
       expect(pdeEntity.description).toBe('');
       expect(pdeEntity.physical_type).toBe('');
-      expect(pdeEntity.database_name).toBe('');
+      // 2026-08-01: the row key follows the DTO wire key `database`
+      // (the old `database_name` write never bound on the AMS PUT).
+      expect(pdeEntity.database).toBe('');
 
       // Interface with empty data (but parent resolved)
       const ifcCandidate = makeCandidate({
@@ -539,7 +541,8 @@ describe('candidateSaveBack - Gap Analysis Tests (Task Group 8)', () => {
 
       // Verify physical entity-specific fields are populated
       expect(entity.physical_type).toBe('VIEW');
-      expect(entity.database_name).toBe('analytics_db');
+      // 2026-08-01: DTO wire key `database` (see the physical branch fix).
+      expect(entity.database).toBe('analytics_db');
       expect(entity.tags).toBe('');
       expect(entity.valid_from).toBeNull();
       expect(entity.valid_to).toBeNull();
