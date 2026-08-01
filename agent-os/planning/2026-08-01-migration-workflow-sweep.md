@@ -95,16 +95,32 @@ All 7 agents complete. Final Phase-3 verdicts on the remaining findings:
 | 4d3602b | fix/db-chain-robustness (gateway) | schema-apply 2xx-with-unparseable-body = failure (was ok/applied:0); DEPLOYED patch clears error_detail; retry guard anchored startsWith('DB execution chain failed at '). 4 suites / 79 tests green. |
 | baac418 | fix/schema-apply-path-normalisation (AMVS) | one canonical normalisePackPath (backslash + ./.. collapse) for file keying, master lookup, include resolution. 11 tests green. |
 
-## Open user questions (deferred by design)
+## User questions — ANSWERED + BUILT (2026-08-01, second round)
 
-1. Haibox `setup` field: the serve spec has no bootstrap-script slot; targets whose
-   run command doesn't install deps (plain `npm start`) would fail to boot. The
-   user's Spring target (`mvn spring-boot:run`) self-builds. Add the optional
-   field end-to-end (FE modal → gateway wire → IVS)?
-2. AMS storage gap: discovery emits sequence_name / collation / is_generated /
-   generation_expression on attributes but AMS has no columns for them (DTO+entity).
-   Only matters if the source schema uses computed columns / non-default
-   collations. Build the additive AMS schema + carriage?
+1. Haibox `setup` field — user wants it → BUILT (merge 8f23664,
+   feat/serve-spec-setup-field): FE stage-2 "Setup command" input
+   (start-stage-serve-setup) prefilled from the derived binding; gateway
+   TargetServeSpec.setup + route validation (whitespace-only = absent) +
+   toTargetWire → haibox serve() `setup` kwarg (IVS passes the target block
+   through unchanged); per-runtime defaults (node → `npm install`, python →
+   `pip install -r requirements.txt`, dotnet → `dotnet restore`;
+   spring/gradle/go self-build → '').
+2. Computed columns / non-default collations for the GENERIC tool — user
+   confirmed many Sybase sources will have them. VERIFICATION OUTCOME: the
+   pipeline already handles both end-to-end via the FINDINGS channel by
+   design — Sybase capture (Group B collation / Group E computed / Group C
+   sequences, discovery sybaseFindings.ts) → AMS findings → pack-gen IR
+   merge (inputs.ts:420 collation handler; :504 tolerant generation-
+   expression merge, "these facts exist ONLY in findings, never on committed
+   attributes") → citext / computed-column needs_decisions →
+   `GENERATED ALWAYS AS (...) STORED` emission → bulk-load EXCLUDES
+   generated columns (AMVS buildLoadPlan.ts:78). The model-storage gap I
+   originally flagged is deliberate architecture, not a bug. BUILT (merge
+   ce24649, feat/findings-channel-visibility): structural_accounting now
+   surfaces collation_hazard_columns / generated_columns /
+   sequences_captured (numbers only, no zero-warnings — zero can be legit)
+   so a source whose findings were lost is visibly suspicious; the
+   save-back comment now documents the findings-channel design.
 
 ## Work-machine pickup (fresh clone as usual)
 
