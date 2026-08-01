@@ -36,22 +36,31 @@ const CONTEXT_ATTR = /(?:^|\s)context:(\S+)/;
  * form the pack generator emits).
  */
 export function parseMasterIncludes(masterXml: string, masterPath: string): string[] {
-  const masterDir = masterPath.includes('/')
-    ? masterPath.slice(0, masterPath.lastIndexOf('/') + 1)
+  const cleanMaster = normalisePackPath(masterPath);
+  const masterDir = cleanMaster.includes('/')
+    ? cleanMaster.slice(0, cleanMaster.lastIndexOf('/') + 1)
     : '';
   const includes: string[] = [];
   const re = /<include\s+[^>]*?file="([^"]+)"[^>]*?\/>/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(masterXml)) !== null) {
-    includes.push(normalisePath(masterDir + match[1]));
+    includes.push(normalisePackPath(masterDir + match[1]));
   }
   return includes;
 }
 
-/** Collapse `a/./b` and `a/x/../b` segments (pure string normalisation). */
-function normalisePath(p: string): string {
+/**
+ * Canonical pack-path normalisation (2026-08-01): backslashes -> forward
+ * slashes, then collapse `.` / `..` / empty segments. Shared by the include
+ * resolver AND the apply-plan file keying — the two previously used
+ * DIFFERENT partial normalisers (one fixed slashes, the other collapsed
+ * segments), so a path needing both fixes keyed differently on each side
+ * and the include lookup missed with a spurious "not among the posted
+ * files" issue.
+ */
+export function normalisePackPath(p: string): string {
   const out: string[] = [];
-  for (const seg of p.split('/')) {
+  for (const seg of p.replace(/\\/g, '/').split('/')) {
     if (seg === '' || seg === '.') continue;
     if (seg === '..') {
       out.pop();
