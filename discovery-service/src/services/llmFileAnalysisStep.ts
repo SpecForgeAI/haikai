@@ -291,6 +291,11 @@ export async function executeLlmFileAnalysis(
     sourceFiles,
     techHints,
     allowedCandidateTypes: serviceScopedOptions?.allowedCandidateTypes,
+    // Operator-uploaded API contracts (2026-08-02): threaded verbatim to the
+    // pipeline's contract passes as an authoritative Interface/Endpoint source.
+    contractFiles: Array.isArray(discoveryConfig.contractFiles)
+      ? discoveryConfig.contractFiles
+      : undefined,
     tier,
     skipPersist: true,
     // Bug-fix 2026-05-28: forward the cloned-repo root so the spec-file
