@@ -215,6 +215,69 @@ describe('mergeCandidates — media-type variant collapse', () => {
     ]);
     // UNION is not a conflict — media types are attributes, not identity.
     expect(d._conflicts ?? {}).toEqual({});
+    // Name re-derived from the union so per-format expansion can still split.
+    expect(merged[0].name).toBe(
+      'POST /things [consumes=application/json,application/xml;produces=application/json,application/xml]',
+    );
+  });
+
+  it('re-derives the survivor NAME from the union when a suffix-LESS WADL twin outranks its JAX-RS twin (90→75 regression fix)', () => {
+    // The regression shape: the WADL-derived survivor wins precedence but its
+    // NAME carries NO discriminator suffix; the JAX-RS twin contributes the
+    // media types. Pre-fix the union landed in `data` but the survivor NAME
+    // stayed suffix-less, so per-format expansion (which keys off the NAME)
+    // skipped the endpoint and the capture universe shrank.
+    // Same source label so precedence ties → the id tiebreak makes the
+    // suffix-LESS candidate ('a-wadl') the survivor; the twin ('b-jaxrs')
+    // contributes the media types.
+    const wadlSurvivor = makeCandidate({
+      id: 'a-wadl',
+      candidateType: 'endpoints',
+      name: 'getViews_op', // no discriminator suffix
+      data: {
+        operation_verb: 'POST',
+        path_or_address: '/views',
+        _addedBy: 'rest-wadl-pack',
+      },
+    });
+    const jaxRsTwin = makeCandidate({
+      id: 'b-jaxrs',
+      candidateType: 'endpoints',
+      name: 'POST /views [consumes=application/json,application/xml;produces=application/json,application/xml]',
+      data: {
+        httpMethod: 'POST',
+        fullPath: '/views',
+        consumes: ['application/json', 'application/xml'],
+        produces: ['application/json', 'application/xml'],
+        _addedBy: 'rest-wadl-pack',
+      },
+    });
+
+    const { merged } = mergeCandidates([wadlSurvivor, jaxRsTwin]);
+    expect(merged).toHaveLength(1);
+    // The survivor NAME now carries the unioned discriminator suffix, even
+    // though the higher-precedence WADL source's name had none.
+    expect(merged[0].name).toBe(
+      'getViews_op [consumes=application/json,application/xml;produces=application/json,application/xml]',
+    );
+  });
+
+  it('a survivor with NO discriminator lists loses any stale suffix (bare verb+path name)', () => {
+    const a = makeCandidate({
+      id: 'a',
+      candidateType: 'endpoints',
+      name: 'POST /plain [consumes=application/json]', // stale suffix, no data lists
+      data: { operation_verb: 'POST', path_or_address: '/plain', _addedBy: 'rest-wadl-pack' },
+    });
+    const b = makeCandidate({
+      id: 'b',
+      candidateType: 'endpoints',
+      name: 'POST /plain',
+      data: { httpMethod: 'POST', fullPath: '/plain', _addedBy: 'spring-classic-jaxrs' },
+    });
+    const { merged } = mergeCandidates([a, b]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].name).toBe('POST /plain');
   });
 });
 
