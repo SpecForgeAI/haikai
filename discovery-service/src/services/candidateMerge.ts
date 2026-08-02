@@ -104,6 +104,43 @@ const UNION_LIST_KEYS = new Set<string>([
 ]);
 
 /**
+ * The endpoint NAME's content/param discriminator suffix grammar, byte-identical
+ * to the detector's `discriminatorNameSuffix` and the AMVS `restDiscriminator`
+ * parser: ` [key=members;…]` with key ∈ {consumes,produces,headers,params},
+ * members comma-separated. Keys render in this fixed order; members sorted.
+ */
+const DISCRIMINATOR_SUFFIX_RE =
+  / \[(?:consumes|produces|headers|params)=[^;\]]+(?:;(?:consumes|produces|headers|params)=[^;\]]+)*\]$/;
+const DISCRIMINATOR_KEY_ORDER = ['consumes', 'produces', 'headers', 'params'] as const;
+
+/** String members of a merged discriminator list on the survivor data. */
+function discriminatorMembers(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((m): m is string => typeof m === 'string' && m.trim().length > 0);
+  }
+  return typeof value === 'string' && value.trim().length > 0 ? [value] : [];
+}
+
+/**
+ * Re-derive an endpoint candidate's name so its ` [consumes=…;produces=…]`
+ * discriminator suffix reflects the UNIONED discriminator lists on `data`
+ * (2026-08-02). Strips any existing suffix, then re-appends one built from the
+ * merged lists (same order + sorted members as the detector). Returns null when
+ * the name is not a string (nothing to do). A survivor with no discriminator
+ * lists loses any stale suffix — the name stays the bare `${verb} ${path}`.
+ */
+function rederiveEndpointName(name: string, data: Record<string, unknown>): string | null {
+  if (typeof name !== 'string') return null;
+  const base = name.replace(DISCRIMINATOR_SUFFIX_RE, '');
+  const parts: string[] = [];
+  for (const key of DISCRIMINATOR_KEY_ORDER) {
+    const members = discriminatorMembers(data[key]);
+    if (members.length > 0) parts.push(`${key}=${[...members].sort().join(',')}`);
+  }
+  return parts.length > 0 ? `${base} [${parts.join(';')}]` : base;
+}
+
+/**
  * Endpoint field-name normalization (root cause #2). The JAX-RS detector writes
  * camelCase `httpMethod`/`fullPath`; the save-back's canonical slots are
  * `operation_verb`/`path_or_address`. The merge folds the camelCase source keys
@@ -370,6 +407,20 @@ function mergeGroup(
   for (const [key, list] of unionPools.entries()) {
     survivorData[key] = list;
     attributeProvenance[key] = attributeProvenance[key] ?? 'merged-union';
+  }
+
+  // --- Re-derive the endpoint NAME discriminator from the UNIONED data ----
+  // (2026-08-02 regression fix): the survivor keeps the highest-precedence
+  // source's NAME, but per-format capture expansion keys off the ` [consumes=
+  // …;produces=…]` suffix ON THE NAME — not `data.consumes/produces`. When a
+  // WADL-derived survivor (no suffix) outranked its JAX-RS twin (which carried
+  // the media types), the union landed in `data` but the NAME lost the
+  // discriminator, so expansion skipped the endpoint and the capture universe
+  // silently shrank (the 90→75 drop). Recompute the suffix from the merged
+  // discriminator lists so the name and data can never disagree.
+  if (survivor.candidateType === 'endpoints') {
+    const rederived = rederiveEndpointName(survivor.name, survivorData);
+    if (rederived !== null) survivor.name = rederived;
   }
 
   // --- Drop the camelCase endpoint originals now that canonical slots are set
