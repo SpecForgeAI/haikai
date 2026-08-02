@@ -48,6 +48,11 @@ import type { AxiosError, AxiosResponse } from 'axios';
 import type { HttpMethod } from '../types/oas';
 import { redactHeaders, redactJson, redactUrl } from '../services/redactor';
 import { buildMirrorArgs, parseFormatVariant } from '../services/formatTwinMirror';
+import { applyClosureToSummary } from '../services/captureClosureDriver';
+import {
+  classifyObservedBehaviour,
+  type ResponseSemanticsConfig,
+} from '../services/responseSemantics';
 import { normaliseBodyForAms } from '../services/amsBodyEnvelope';
 import { LLM_TOOL_CALL_TIMEOUT_MS } from '../config';
 import {
@@ -2040,6 +2045,23 @@ export function buildCaptureSessionActionsRouter(
         // `accepted` intentionally OMITTED -> AMS default null (un-reviewed).
       });
 
+      // Closure candidates for the gate recompute below: the primary capture
+      // and (when it fires) the mirrored sibling, each judged on its OWN
+      // response by the strict behaviour classifier — never naive 2xx.
+      const closureCandidates: Array<{
+        operationId: string;
+        captureId: string;
+        status: number | null;
+        body: unknown;
+      }> = [
+        {
+          operationId: operation.operation_id,
+          captureId: capture.id,
+          status: response ? response.status : null,
+          body: safeResponseBody,
+        },
+      ];
+
       // ---- Format-twin mirror (2026-08-02): a 2xx manual/Postman capture on
       // one variant of a dual-format pair deterministically closes the
       // UNCOVERED sibling too — same facts, body converted between formats,
@@ -2184,6 +2206,12 @@ export function buildCaptureSessionActionsRouter(
                 captureId: mCapture.id,
                 responseStatus: mResponse ? mResponse.status : null,
               };
+              closureCandidates.push({
+                operationId: sibling.operation_id,
+                captureId: mCapture.id,
+                status: mResponse ? mResponse.status : null,
+                body: mSafeRespBody,
+              });
             }
           }
         }
@@ -2194,9 +2222,56 @@ export function buildCaptureSessionActionsRouter(
         );
       }
 
+      // ---- Happy-path gate recompute (2026-08-02, ported from the live-run
+      // fix): a manual/Postman capture moves the gate exactly like a closure
+      // run — coverage_summary_json is patched via applyClosureToSummary (the
+      // same primitive retry-uncovered uses). Success is judged by
+      // classifyObservedBehaviour (`bucket === 'success'`, the session's
+      // semantics config respected) — never naive 2xx — so a 400 / 500 /
+      // HTML error page / 200-wrapped recognised error can NEVER close the
+      // gate. Each format twin closes ONLY on its own genuinely-successful
+      // send. Best-effort + null-safe: no summary, or no genuine success,
+      // is a no-op that never breaks the persisted capture.
+      let gate: ReturnType<typeof computeHappyPathGate> | null = null;
+      try {
+        const rawClosureSummary = session.coverage_summary_json as Record<string, unknown> | null;
+        const closureSummary =
+          rawClosureSummary &&
+          Array.isArray((rawClosureSummary as { per_endpoint?: unknown }).per_endpoint)
+            ? (rawClosureSummary as unknown as CoverageSummary)
+            : null;
+        if (closureSummary) {
+          const semantics =
+            (session.behaviour_semantics_config_json as
+              | ResponseSemanticsConfig
+              | null
+              | undefined) ?? null;
+          const closedBy = new Map<string, string>();
+          for (const cand of closureCandidates) {
+            if (cand.status === null) continue;
+            const ob = classifyObservedBehaviour(cand.status, cand.body, semantics ?? undefined);
+            if (ob.bucket === 'success') closedBy.set(cand.operationId, cand.captureId);
+          }
+          if (closedBy.size > 0) {
+            const updatedSummary = applyClosureToSummary(closureSummary, closedBy);
+            await archModelClient.patchCaptureSession(projectId, sessionId, {
+              coverage_summary_json: updatedSummary as unknown as Record<string, unknown>,
+            });
+            gate = computeHappyPathGate(updatedSummary);
+          } else {
+            gate = computeHappyPathGate(closureSummary);
+          }
+        }
+      } catch (gateErr) {
+        console.warn(
+          '[manual-capture] gate recompute failed (capture unaffected):',
+          gateErr instanceof Error ? gateErr.message : String(gateErr),
+        );
+      }
+
       return res
         .status(201)
-        .json({ sessionId, scenarioId: scenario.id, capture, mirroredSibling });
+        .json({ sessionId, scenarioId: scenario.id, capture, mirroredSibling, gate });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'manual-capture failed';
       return fail(res, 500, message);
