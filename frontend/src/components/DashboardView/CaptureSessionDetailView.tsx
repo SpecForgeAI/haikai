@@ -92,6 +92,7 @@ import {
 import {
   resolvePostmanSources,
   buildPostmanCollection,
+  minePathParamValues,
   type ExportCapture,
 } from './postmanExport';
 import { retryUncoveredApis, listCaptures, excludeEndpoint } from '../../api/apiBehaviourClient';
@@ -395,10 +396,13 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       captures = [];
     }
     const sources = resolvePostmanSources(included, captures, gate);
+    // Prefill exported path variables from concrete values seen in ANY
+    // capture row (2026-08-02) so parameterised requests are runnable.
     const collection = buildPostmanCollection(
       `API baseline — ${session.environment_name ?? sessionId}`,
       session.api_base_url ?? '{{baseUrl}}',
       sources,
+      minePathParamValues(included, captures),
     );
     const blob = new Blob([JSON.stringify(collection, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

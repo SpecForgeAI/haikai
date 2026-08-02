@@ -208,6 +208,11 @@ export function PostmanImportWizardStep({
                 operations={operations}
                 reconciliation={reconciliation}
                 loading={reconciliationLoading}
+                onUpdateRequest={(index, request) =>
+                  onImportedRequestsChange(
+                    importedRequests.map((r, i) => (i === index ? request : r)),
+                  )
+                }
               />
 
               {flagged.length > 0 && sessionId !== null && (

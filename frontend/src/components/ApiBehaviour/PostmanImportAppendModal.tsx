@@ -282,6 +282,11 @@ export function PostmanImportAppendModal({
                 operations={operations}
                 reconciliation={reconciliation}
                 loading={loading}
+                onUpdateRequest={(index, request) =>
+                  setImportedRequests((prev) =>
+                    prev.map((r, i) => (i === index ? request : r)),
+                  )
+                }
               />
 
               {run.flagged.length > 0 && (
