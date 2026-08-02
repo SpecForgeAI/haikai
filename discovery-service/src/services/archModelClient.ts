@@ -2440,6 +2440,15 @@ class ArchModelClient {
    * rather than N. Body shape mirrors {@code BulkCreateDiscoveryFindingsRequest}
    * on the AMS side: `{ findings: [...create payloads...] }`.
    *
+   * CHUNKED (2026-08-02): AMS enforces `MAX_BULK_FINDINGS = 500` per call
+   * and REJECTS over-cap requests with a 400 (never truncates) -- a large
+   * emission (runtime evidence alone can exceed 500 findings) previously
+   * failed wholesale (`findingsEmit failed:true, persisted:0`). Chunks post
+   * sequentially; a failed chunk logs a warning and the remaining chunks
+   * continue (the FindingEmitter's never-propagate posture). Only when
+   * NOTHING persisted does the last error propagate, so a total failure
+   * stays loud.
+   *
    * Spec: 2026-05-16 Discovery Findings -- Task Group 4.
    */
   async bulkCreateDiscoveryFindings(
@@ -2448,12 +2457,32 @@ class ArchModelClient {
     payloads: DiscoveryFindingCreatePayload[],
   ): Promise<DiscoveryFindingDto[]> {
     const architectureId = await this._resolveArchitectureForRun(projectId, runId);
-    const body = { findings: payloads.map(mapFindingCreateToBackend) };
-    const response = await this.client.post<Record<string, unknown>[]>(
-      `/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/discovery/runs/${encodeURIComponent(runId)}/findings/bulk`,
-      body,
-    );
-    return (response.data ?? []).map(mapFindingFromBackend);
+    // Matches AMS DiscoveryFindingService.MAX_BULK_FINDINGS.
+    const BULK_FINDINGS_CHUNK_SIZE = 500;
+    const url = `/api/model/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/discovery/runs/${encodeURIComponent(runId)}/findings/bulk`;
+    const totalChunks = Math.ceil(payloads.length / BULK_FINDINGS_CHUNK_SIZE);
+    const created: DiscoveryFindingDto[] = [];
+    let lastError: unknown = null;
+    for (let i = 0; i < payloads.length; i += BULK_FINDINGS_CHUNK_SIZE) {
+      const chunk = payloads.slice(i, i + BULK_FINDINGS_CHUNK_SIZE);
+      try {
+        const response = await this.client.post<Record<string, unknown>[]>(url, {
+          findings: chunk.map(mapFindingCreateToBackend),
+        });
+        created.push(...(response.data ?? []).map(mapFindingFromBackend));
+      } catch (err) {
+        lastError = err;
+        console.warn(
+          `[archModelClient] bulk findings chunk ${Math.floor(i / BULK_FINDINGS_CHUNK_SIZE) + 1}` +
+            `/${totalChunks} failed (${chunk.length} findings): ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
+    }
+    if (created.length === 0 && payloads.length > 0 && lastError) {
+      throw lastError;
+    }
+    return created;
   }
 
   /**

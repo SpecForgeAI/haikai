@@ -299,7 +299,10 @@ public class DiscoveryFindingService {
         for (CreateDiscoveryFindingRequest fr : findings) {
             DiscoveryFindingEntity entity = persistNewFinding(
                 projectId, architectureId, runId, fr);
-            List<DiscoveryFindingLinkEntity> links = persistLinks(
+            // Bulk path skips invalid link TARGETS instead of failing the
+            // whole @Transactional batch (2026-08-02) -- see
+            // persistLinksSkippingInvalid. Single create stays strict.
+            List<DiscoveryFindingLinkEntity> links = persistLinksSkippingInvalid(
                 entity, runId, architectureId, fr.links());
             out.add(DiscoveryFindingMapper.toDto(entity, links));
         }
@@ -1035,6 +1038,45 @@ public class DiscoveryFindingService {
         List<DiscoveryFindingLinkEntity> out = new ArrayList<>(requests.size());
         for (CreateDiscoveryFindingLinkRequest req : requests) {
             out.add(persistLink(finding, runId, architectureId, req));
+        }
+        return out;
+    }
+
+    /**
+     * Bulk-create variant of {@link #persistLinks} (2026-08-02): an INVALID
+     * LINK TARGET skips that one link (warn logged) instead of failing the
+     * whole batch. Root cause: emitters may cite volatile targets (e.g. a
+     * {@code discovery_evidence} id that never persisted); with the strict
+     * path one bad target aborted the entire {@code @Transactional} bulk
+     * create, so NOTHING persisted ({@code findingsEmit failed:true,
+     * persisted:0}).
+     *
+     * <p>Only {@link InvalidFindingLinkTargetException} (the D6 target
+     * validation, incl. UUID-shape failures) is skipped -- structurally
+     * invalid link REQUESTS (null entry / blank linkType / blank targetType /
+     * blank targetId) still throw, and the single-create path keeps the
+     * strict hard-reject.</p>
+     */
+    private List<DiscoveryFindingLinkEntity> persistLinksSkippingInvalid(
+            DiscoveryFindingEntity finding,
+            UUID runId, UUID architectureId,
+            List<CreateDiscoveryFindingLinkRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
+        List<DiscoveryFindingLinkEntity> out = new ArrayList<>(requests.size());
+        for (CreateDiscoveryFindingLinkRequest req : requests) {
+            try {
+                out.add(persistLink(finding, runId, architectureId, req));
+            } catch (InvalidFindingLinkTargetException ex) {
+                log.warn(
+                    "Bulk finding create: skipping link with invalid target "
+                        + "(finding={}, targetType={}, targetId={}): {}",
+                    finding.getId(),
+                    req == null ? null : req.targetType(),
+                    req == null ? null : req.targetId(),
+                    ex.getMessage());
+            }
         }
         return out;
     }
