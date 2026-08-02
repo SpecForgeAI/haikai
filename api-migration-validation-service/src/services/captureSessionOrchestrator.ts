@@ -1576,10 +1576,15 @@ export async function orchestrateCaptureSession(
 
     // Format-twin mirror (2026-08-02): re-order so the XML variant of a
     // dual-format pair attempts FIRST (XML->JSON is the clean deterministic
-    // mirror direction); its proven happy-path request then serves as the
-    // sibling's free first attempt below.
+    // mirror direction). EVERY scenario a variant achieves (happy path AND
+    // error variations — its canonical capture matched the scenario's OWN
+    // intent) stashes the proven request keyed by (base op, scenario name),
+    // so the sibling variant's SAME-NAMED scenario gets a free deterministic
+    // first attempt below: a 12-scenario dual-format endpoint mirrors all 12.
     const orderedOperations = sortVariantsXmlFirst(deps.persistedOperations);
-    const provenHappyPathByBase = new Map<string, ProvenHappyPath>();
+    const provenScenarioRequests = new Map<string, ProvenHappyPath>();
+    const provenKey = (base: string, scenarioName: string): string =>
+      `${base} ${scenarioName}`;
     for (const op of orderedOperations) {
       if (op.included !== true) continue;
       // Mode 1(c) Postman only (R4c): skip the planner + execute_http_request
@@ -1666,16 +1671,22 @@ export async function orchestrateCaptureSession(
         };
 
         // Format-twin mirror (2026-08-02): when the SIBLING variant already
-        // proved its happy path this run, fire the deterministically mirrored
-        // request as a FREE first attempt through the exact execute primitive
-        // (send + redact + persist + recording all reuse; session auth is the
-        // executor's, never copied from recorded headers). A 2xx among the
-        // scenario's captures skips the LLM chain; anything else falls
-        // through to the normal loop with the attempt honestly recorded.
+        // achieved THIS SAME-NAMED scenario this run (happy path or an error
+        // variation), fire the deterministically mirrored request as a FREE
+        // first attempt through the exact execute primitive (send + redact +
+        // persist + recording all reuse; session auth is the executor's,
+        // never copied from recorded headers). The mirror satisfies the
+        // scenario ONLY when a capture matches the scenario's OWN intended
+        // outcome (selectCanonicalCapture on scenario.expectedStatus — a
+        // negative scenario's mirror must land its 4xx, never a 2xx);
+        // anything else falls through to the normal LLM loop with the
+        // attempt honestly recorded.
         let mirrorSatisfied = false;
         const variantInfo = parseFormatVariant(op.operation_id);
-        if (scenario.name === 'happy_path' && variantInfo) {
-          const proven = provenHappyPathByBase.get(variantInfo.base);
+        if (variantInfo) {
+          const proven = provenScenarioRequests.get(
+            provenKey(variantInfo.base, scenario.name),
+          );
           if (proven && proven.media !== variantInfo.media) {
             const mirrorArgs = buildMirrorArgs(proven, variantInfo.media, op.operation_id);
             if (mirrorArgs) {
@@ -1689,6 +1700,7 @@ export async function orchestrateCaptureSession(
                   'capture.format_twin_mirror',
                   {
                     operationId: op.operation_id,
+                    scenario: scenario.name,
                     outcome: 'send_error',
                     error:
                       mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr),
@@ -1696,25 +1708,34 @@ export async function orchestrateCaptureSession(
                   corr,
                 );
               }
-              mirrorSatisfied = runManager
-                .getScenarioCaptures(session.id)
-                .some(
-                  (c) =>
-                    typeof c.status === 'number' && c.status >= 200 && c.status < 300,
-                );
+              mirrorSatisfied =
+                selectCanonicalCapture(
+                  runManager.getScenarioCaptures(session.id).map((c) => ({
+                    captureId: c.captureId,
+                    status: c.status,
+                    body: c.data?.responseBody,
+                  })),
+                  scenario.expectedStatus,
+                  semanticsConfig,
+                ) !== null;
               trace.detail(
                 'capture.format_twin_mirror',
                 {
                   operationId: op.operation_id,
+                  scenario: scenario.name,
                   direction: `${proven.media} -> ${variantInfo.media}`,
-                  outcome: mirrorSatisfied ? 'mirrored_happy_path' : 'fell_back_to_llm',
+                  outcome: mirrorSatisfied ? 'mirrored_scenario' : 'fell_back_to_llm',
                 },
                 corr,
               );
             } else {
               trace.detail(
                 'capture.format_twin_mirror',
-                { operationId: op.operation_id, outcome: 'conversion_unavailable' },
+                {
+                  operationId: op.operation_id,
+                  scenario: scenario.name,
+                  outcome: 'conversion_unavailable',
+                },
                 corr,
               );
             }
@@ -1819,17 +1840,15 @@ export async function orchestrateCaptureSession(
               semanticsConfig,
             );
 
-        // Format-twin mirror stash (2026-08-02): a variant's PROVEN 2xx
-        // happy path (the recording carries the full request) becomes the
-        // sibling variant's deterministic first attempt later in the loop.
+        // Format-twin mirror stash (2026-08-02): a variant's ACHIEVED
+        // scenario — the canonical capture matched the scenario's own intent
+        // (2xx for happy, its 4xx for a negative) and the recording carries
+        // the full request — becomes the sibling variant's deterministic
+        // first attempt for the SAME-NAMED scenario later in the loop.
         if (
-          scenario.name === 'happy_path' &&
           variantInfo &&
           canonical &&
-          typeof canonical.status === 'number' &&
-          canonical.status >= 200 &&
-          canonical.status < 300 &&
-          !provenHappyPathByBase.has(variantInfo.base)
+          !provenScenarioRequests.has(provenKey(variantInfo.base, scenario.name))
         ) {
           const canonicalEntry = scenarioCaptures.find(
             (c) => c.captureId === canonical.captureId,
@@ -1843,7 +1862,7 @@ export async function orchestrateCaptureSession(
               }
             | undefined;
           if (data && typeof data.method === 'string' && typeof data.path === 'string') {
-            provenHappyPathByBase.set(variantInfo.base, {
+            provenScenarioRequests.set(provenKey(variantInfo.base, scenario.name), {
               media: variantInfo.media,
               method: data.method,
               path: data.path,
