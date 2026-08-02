@@ -47,6 +47,7 @@ import { classifyDataTypes } from '../services/dataTypeClassifier';
 import type { AxiosError, AxiosResponse } from 'axios';
 import type { HttpMethod } from '../types/oas';
 import { redactHeaders, redactJson, redactUrl } from '../services/redactor';
+import { buildMirrorArgs, parseFormatVariant } from '../services/formatTwinMirror';
 import { normaliseBodyForAms } from '../services/amsBodyEnvelope';
 import { LLM_TOOL_CALL_TIMEOUT_MS } from '../config';
 import {
@@ -2039,7 +2040,163 @@ export function buildCaptureSessionActionsRouter(
         // `accepted` intentionally OMITTED -> AMS default null (un-reviewed).
       });
 
-      return res.status(201).json({ sessionId, scenarioId: scenario.id, capture });
+      // ---- Format-twin mirror (2026-08-02): a 2xx manual/Postman capture on
+      // one variant of a dual-format pair deterministically closes the
+      // UNCOVERED sibling too — same facts, body converted between formats,
+      // Content-Type/Accept swapped — sent LIVE and persisted through the
+      // identical redact+persist sequence. The mirrored response is captured
+      // as-is (never assumed 2xx). Best-effort: a mirror failure NEVER breaks
+      // the primary capture. The in-run LLM case is handled by the
+      // orchestrator's own mirror; this hook covers the Postman/append path.
+      let mirroredSibling: Record<string, unknown> | null = null;
+      try {
+        const primaryOpRowId = operation.id;
+        const variant = parseFormatVariant(operation.operation_id);
+        const primaryStatus = response ? response.status : null;
+        if (variant && primaryStatus !== null && primaryStatus >= 200 && primaryStatus < 300) {
+          const sibling = operations.find((op) => {
+            if (op.id === primaryOpRowId || op.included !== true) return false;
+            const v = parseFormatVariant(op.operation_id);
+            return v !== null && v.base === variant.base && v.media !== variant.media;
+          });
+          // Only mirror an UNCOVERED sibling (the happy-path gate's unresolved
+          // list). A session without a coverage summary skips (fresh runs are
+          // the orchestrator mirror's job).
+          const rawGateSummary = session.coverage_summary_json as Record<string, unknown> | null;
+          const gateSummary =
+            rawGateSummary &&
+            Array.isArray((rawGateSummary as { per_endpoint?: unknown }).per_endpoint)
+              ? (rawGateSummary as unknown as CoverageSummary)
+              : null;
+          const siblingUncovered =
+            sibling && gateSummary
+              ? computeHappyPathGate(gateSummary).unresolved.some(
+                  (u) => u.operation_id === sibling.operation_id,
+                )
+              : false;
+          if (sibling && siblingUncovered) {
+            const siblingVariant = parseFormatVariant(sibling.operation_id);
+            const mirrorArgs = siblingVariant
+              ? buildMirrorArgs(
+                  {
+                    media: variant.media,
+                    method,
+                    path,
+                    query: (queryParams as Record<string, unknown> | undefined) ?? null,
+                    body: requestBody ?? null,
+                  },
+                  siblingVariant.media,
+                  sibling.operation_id,
+                )
+              : null;
+            if (mirrorArgs) {
+              // Custom request headers survive; Content-Type/Accept swap to
+              // the sibling media (case-insensitive removal of the originals).
+              const mirrorHeaders: Record<string, string> = {};
+              for (const [k, v] of Object.entries(requestHeaders ?? {})) {
+                const lower = k.toLowerCase();
+                if (lower === 'content-type' || lower === 'accept') continue;
+                mirrorHeaders[k] = v;
+              }
+              Object.assign(mirrorHeaders, mirrorArgs.headers);
+
+              const mexec = createSessionHttpExecutor({
+                auth: secrets.api,
+                baseURL: session.api_base_url,
+                defaultHeaders: session.default_headers_redacted_json ?? {},
+                timeoutMs: LLM_TOOL_CALL_TIMEOUT_MS,
+              });
+              const mStart = Date.now();
+              let mResponse: AxiosResponse<unknown> | null = null;
+              let mErrorType: string | null = null;
+              let mErrorMessage: string | null = null;
+              try {
+                mResponse = await mexec.request({
+                  url: path,
+                  method: method.toLowerCase() as HttpMethod,
+                  params: queryParams,
+                  headers: mirrorHeaders,
+                  data: mirrorArgs.body,
+                });
+              } catch (mErr) {
+                const axiosErr = mErr as AxiosError;
+                if (axiosErr && axiosErr.response) {
+                  mResponse = axiosErr.response as AxiosResponse<unknown>;
+                } else {
+                  mErrorType = axiosErr?.code ?? axiosErr?.name ?? 'UnknownError';
+                  mErrorMessage = axiosErr?.message ?? String(mErr);
+                }
+              } finally {
+                mexec.dispose();
+              }
+              const mDurationMs = Date.now() - mStart;
+              const mSafeReqHeaders = redactHeaders(mirrorHeaders);
+              const mSafeReqBody =
+                mirrorArgs.body !== undefined && mirrorArgs.body !== null
+                  ? redactJson(mirrorArgs.body)
+                  : null;
+              const mSafeRespHeaders = mResponse
+                ? redactHeaders(
+                    mResponse.headers as unknown as Record<string, string | string[] | undefined>,
+                  )
+                : null;
+              const mSafeRespBody = mResponse ? redactJson(mResponse.data) : null;
+              const mTimestamp = new Date().toISOString();
+              const mScenario = await archModelClient.createScenario(projectId, {
+                session_id: sessionId,
+                operation_id: sibling.id,
+                scenario_name: `Manual (format mirror): ${method} ${path} ${mTimestamp}`,
+                scenario_type: 'manual',
+                generation_source: 'manual',
+                request_method: method,
+                request_path: path,
+                request_query_json: queryParams ?? null,
+                request_headers_redacted_json:
+                  mSafeReqHeaders as unknown as Record<string, string> | null,
+                request_body_json: normaliseBodyForAms(mSafeReqBody),
+              });
+              const mCapture = await archModelClient.createCapture(projectId, {
+                session_id: sessionId,
+                scenario_id: mScenario.id,
+                operation_id: sibling.id,
+                request_method: method,
+                request_path: path,
+                request_url_redacted: requestUrlRedacted,
+                request_query_json: queryParams ?? null,
+                request_headers_redacted_json:
+                  mSafeReqHeaders as unknown as Record<string, string> | null,
+                request_body_json: normaliseBodyForAms(mSafeReqBody),
+                response_status: mResponse ? mResponse.status : null,
+                response_headers_redacted_json: mResponse
+                  ? (mSafeRespHeaders as unknown as Record<string, string> | null)
+                  : null,
+                response_body_json: normaliseBodyForAms(mSafeRespBody),
+                duration_ms: mDurationMs,
+                error_type: mErrorType,
+                error_message: mErrorMessage,
+                captured_at: mTimestamp,
+                volatile_paths_json: null,
+              });
+              mirroredSibling = {
+                operationRowId: sibling.id,
+                operationId: sibling.operation_id,
+                scenarioId: mScenario.id,
+                captureId: mCapture.id,
+                responseStatus: mResponse ? mResponse.status : null,
+              };
+            }
+          }
+        }
+      } catch (mirrorErr) {
+        console.warn(
+          '[manual-capture] format-twin mirror failed (primary capture unaffected):',
+          mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr),
+        );
+      }
+
+      return res
+        .status(201)
+        .json({ sessionId, scenarioId: scenario.id, capture, mirroredSibling });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'manual-capture failed';
       return fail(res, 500, message);
