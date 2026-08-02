@@ -98,6 +98,7 @@ interface MockArch {
   listOperationsBySession: jest.Mock;
   createScenario: jest.Mock;
   createCapture: jest.Mock;
+  patchCaptureSession: jest.Mock;
 }
 
 function buildArchClient(session: CaptureSessionDto, operations: OperationDto[]): MockArch {
@@ -136,6 +137,33 @@ function buildArchClient(session: CaptureSessionDto, operations: OperationDto[])
         reviewer_notes: null,
       } as unknown as CaptureDto;
     }),
+    patchCaptureSession: jest.fn(async () => ({})),
+  };
+}
+
+/** A gate-ready summary: one per_endpoint row per op, happy dim unachieved. */
+function closureSummary(operationIds: string[]): Record<string, unknown> {
+  return {
+    per_endpoint: operationIds.map((operationId) => ({
+      operation_id: operationId,
+      method: 'POST',
+      path: '/nodes/{orgId}',
+      score: 0,
+      dimensions: [
+        {
+          type: 'happy_path',
+          name: 'happy_path',
+          achieved: false,
+          canonical_capture_id: null,
+          reason: 'no capture was recorded',
+          observation: null,
+        },
+      ],
+    })),
+    dimensions_total: operationIds.length,
+    dimensions_achieved: 0,
+    overall_score: 0,
+    auth_coverage: { achieved: false },
   };
 }
 
@@ -262,6 +290,69 @@ test('a COVERED sibling (not in the gate unresolved list) is NOT mirrored', asyn
   expect(mockRequest).toHaveBeenCalledTimes(1);
   expect(arch.createCapture).toHaveBeenCalledTimes(1);
   expect(res.body.mirroredSibling).toBeNull();
+});
+
+test('gate recompute: genuine 2xx on both twins closes both and returns complete: true', async () => {
+  seedSecret();
+  const jsonOp = buildOperation();
+  const xmlOp = buildOperation({
+    id: XML_ROW_ID,
+    operation_id: 'getNode [format=application/xml]',
+  });
+  const arch = buildArchClient(
+    buildSession({
+      coverage_summary_json: closureSummary([
+        'getNode [format=application/json]',
+        'getNode [format=application/xml]',
+      ]) as never,
+    } as Partial<CaptureSessionDto>),
+    [jsonOp, xmlOp],
+  );
+  const app = buildApp(arch);
+  mockRequest
+    .mockResolvedValueOnce({ status: 200, headers: {}, data: { node: { ok: true } } })
+    .mockResolvedValueOnce({ status: 200, headers: {}, data: '<node><ok>true</ok></node>' });
+
+  const res = await request(app)
+    .post(`/api/capture-sessions/${SESSION_ID}/manual-capture?projectId=${PROJECT_ID}`)
+    .send(SEND_BODY);
+
+  expect(res.status).toBe(201);
+  expect(arch.patchCaptureSession).toHaveBeenCalledTimes(1);
+  const patched = arch.patchCaptureSession.mock.calls[0][2].coverage_summary_json as {
+    per_endpoint: Array<{ operation_id: string; dimensions: Array<{ achieved: boolean }> }>;
+  };
+  for (const ep of patched.per_endpoint) {
+    expect(ep.dimensions.some((d) => d.achieved)).toBe(true);
+  }
+  expect(res.body.gate).toMatchObject({ complete: true, happy_achieved: 2 });
+});
+
+test('gate recompute: a 200-wrapped recognised error does NOT close the gate', async () => {
+  seedSecret();
+  const plainOp = buildOperation({ operation_id: 'createWidget', path: '/widgets' });
+  const arch = buildArchClient(
+    buildSession({
+      coverage_summary_json: closureSummary(['createWidget']) as never,
+    } as Partial<CaptureSessionDto>),
+    [plainOp],
+  );
+  const app = buildApp(arch);
+  // HTTP 200 whose body is a RECOGNISED error marker — the strict classifier
+  // buckets this as not_found, never success.
+  mockRequest.mockResolvedValue({
+    status: 200,
+    headers: {},
+    data: { detail: 'record not found' },
+  });
+
+  const res = await request(app)
+    .post(`/api/capture-sessions/${SESSION_ID}/manual-capture?projectId=${PROJECT_ID}`)
+    .send({ ...SEND_BODY, path: '/widgets' });
+
+  expect(res.status).toBe(201);
+  expect(arch.patchCaptureSession).not.toHaveBeenCalled();
+  expect(res.body.gate).toMatchObject({ complete: false });
 });
 
 test('a non-variant operation is NOT mirrored', async () => {
