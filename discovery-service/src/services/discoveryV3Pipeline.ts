@@ -178,6 +178,16 @@ export interface V3PipelineContext {
   projectId: string;
   /** Source files keyed by file path (contents already read + truncated). */
   sourceFiles: Map<string, string>;
+  /**
+   * Operator-supplied API contract files (2026-08-02): WADL/WSDL/XSD content
+   * uploaded to the scan as an AUTHORITATIVE Interface/Endpoint source — the
+   * service-discovery analogue of API Baseline Capture's contract upload.
+   * Parsed by the SAME contract passes as repo-discovered contracts (injected
+   * as synthetic IR files before Stage 2), so their declared media types stamp
+   * the endpoint discriminators even when the repo merge missed them. Contract
+   * endpoints union with code-discovered ones; the merge reconciles the rest.
+   */
+  contractFiles?: Array<{ fileName: string; content: string }>;
   /** Technology hints from the discovery config, used for pack selection. */
   techHints: TechHints;
   /**
@@ -899,6 +909,37 @@ async function runCapabilitySynthesisStage(args: {
  * @returns        V3PipelineResult with merged candidates, counts, tier, and
  *                 gap-fill stage output.
  */
+/**
+ * Turn operator-uploaded contract files into synthetic `SourceFileIR` entries
+ * (keyed `__uploaded_contract__/<fileName>`) that the WADL/XSD contract passes
+ * parse identically to a repo-discovered `.wadl`/`.xsd`. The extension drives
+ * the pass selection (`isWadlFile`/`isXsdFile` key off it), so the uploaded
+ * file name MUST carry the real extension. Blank names / empty content are
+ * dropped. Pure + exported for tests.
+ */
+export function buildUploadedContractIrEntries(
+  contractFiles: ReadonlyArray<{ fileName: string; content: string }>,
+): Map<string, SourceFileIR> {
+  const out = new Map<string, SourceFileIR>();
+  for (const cf of contractFiles) {
+    const fileName = (cf?.fileName || '').trim();
+    const content = typeof cf?.content === 'string' ? cf.content : '';
+    if (!fileName || content.length === 0) continue;
+    const key = `__uploaded_contract__/${fileName}`;
+    if (out.has(key)) continue;
+    out.set(key, {
+      filePath: key,
+      language: 'xml',
+      packageOrNamespace: null,
+      imports: [],
+      classes: [],
+      functions: [],
+      rawContent: content,
+    });
+  }
+  return out;
+}
+
 export async function runDiscoveryV3(
   context: V3PipelineContext,
 ): Promise<V3PipelineResult> {
@@ -1041,6 +1082,25 @@ export async function runDiscoveryV3(
   // `context.allowedCandidateTypes` for service-scoped runs to match the
   // existing pack-candidate post-filter.
   // ---------------------------------------------------------------------------
+  // Inject operator-uploaded contract files as synthetic IR entries so the
+  // contract passes parse them exactly like repo-discovered `.wadl`/`.xsd`
+  // files (2026-08-02). Authoritative source: an endpoint the repo merge
+  // missed is recovered here, and its declared media types stamp the
+  // discriminator on merge.
+  if (context.contractFiles && context.contractFiles.length > 0) {
+    const injectedEntries = buildUploadedContractIrEntries(context.contractFiles);
+    let injected = 0;
+    for (const [key, entry] of injectedEntries) {
+      if (irFiles.has(key)) continue; // repo wins the key; both parse the same
+      irFiles.set(key, entry);
+      injected += 1;
+    }
+    console.log(
+      `[DiscoveryV3:Stage2] Injected ${injected} operator-uploaded contract file(s) ` +
+        `for the contract passes (authoritative Interface/Endpoint source).`,
+    );
+  }
+
   const deferredContractFindings: FindingEmitInput[] = [];
   try {
     const contractOutput = runContractCandidatePasses({

@@ -50,6 +50,14 @@ export interface DiscoveryConfigPayload {
    * 'java-spring-boot' or 'react-typescript'.
    */
   extensionPacks?: string[];
+  /**
+   * Operator-uploaded API contract files (2026-08-02): WADL/WSDL/XSD content
+   * supplied to the scan as an AUTHORITATIVE Interface/Endpoint source, the
+   * service-discovery analogue of API Baseline Capture's contract upload.
+   * Threaded into the V3 pipeline's contract passes (parsed like a repo
+   * `.wadl`/`.xsd`).
+   */
+  contractFiles?: Array<{ fileName: string; content: string }>;
   /** Allow additional untyped fields for forward compatibility */
   [key: string]: unknown;
 }

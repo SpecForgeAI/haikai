@@ -140,17 +140,52 @@ function buildWadlInterfaceCandidate(
   };
 }
 
+/** Distinct, order-stable media types declared on a representation list. */
+function mediaTypesOf(
+  reps: ReadonlyArray<{ mediaType?: string | null }>,
+): string[] {
+  const out: string[] = [];
+  for (const r of reps) {
+    const mt = typeof r?.mediaType === 'string' ? r.mediaType.trim().toLowerCase() : '';
+    if (mt && !out.includes(mt)) out.push(mt);
+  }
+  return out;
+}
+
+/**
+ * Derive the endpoint name's ` [consumes=…;produces=…]` discriminator suffix
+ * (2026-08-02) from the declared media types, byte-identical to the JAX-RS
+ * detector's `discriminatorNameSuffix`. Empty string when neither side
+ * declares a type. So a WADL-derived endpoint (repo-discovered OR
+ * operator-uploaded) carries the SAME discriminator a JAX-RS `@Produces`
+ * endpoint does, and per-format capture expansion can split it.
+ */
+function wadlNameWithDiscriminator(
+  compositeId: string,
+  consumes: string[],
+  produces: string[],
+): string {
+  const parts: string[] = [];
+  if (consumes.length > 0) parts.push(`consumes=${[...consumes].sort().join(',')}`);
+  if (produces.length > 0) parts.push(`produces=${[...produces].sort().join(',')}`);
+  return parts.length > 0 ? `${compositeId} [${parts.join(';')}]` : compositeId;
+}
+
 function buildWadlEndpointCandidate(
   runId: string,
   parentInterfaceId: string,
   sourceFilePath: string,
   op: WadlParseResult['operations'][number],
 ): DiscoveryCandidate {
+  const consumes = mediaTypesOf(op.request.representations);
+  const produces = mediaTypesOf(op.response.representations);
   return {
     id: uuidv4(),
     runId,
     candidateType: 'endpoints' as CandidateType,
-    name: op.compositeId,
+    // Name carries the media-type discriminator so the endpoint splits per
+    // format the same way a JAX-RS `@Produces`/`@Consumes` endpoint does.
+    name: wadlNameWithDiscriminator(op.compositeId, consumes, produces),
     confidence: 0.9,
     status: 'proposed',
     sourceClusterIds: [sourceFilePath],
@@ -163,6 +198,10 @@ function buildWadlEndpointCandidate(
       params: op.params,
       request_representations: op.request.representations,
       response_representations: op.response.representations,
+      // Canonical discriminator slots (merge UNION keys) derived from the
+      // declared media types; absent when the WADL declares none.
+      ...(consumes.length > 0 ? { consumes } : {}),
+      ...(produces.length > 0 ? { produces } : {}),
       doc: op.doc ?? null,
       wadlSource: sourceFilePath,
       discovery_method: 'framework_scanner',
