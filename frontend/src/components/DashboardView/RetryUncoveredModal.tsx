@@ -1,22 +1,23 @@
 /**
- * RetryUncoveredModal (Spec 2026-07-20 API Behaviour Baseline Coverage Closure).
+ * RetryUncoveredModal — Coverage Closure control (Spec 2026-07-20; table
+ * redesign 2026-08-02).
  *
- * The one-step modal the "Retry uncovered APIs" button opens. It lists the
- * endpoints still missing their happy-path baseline and, per endpoint, lets the
- * user set:
- *   - the LLM attempt budget (default 15) for the Pass B repair loop, and
- *   - free-text notes to the LLM ("try ID=3275, use 'Core' for parameter
- *     'type'").
- * Both are Pass B controls (Pass A runs deterministically first, free, with no
- * config). On launch the collected per-endpoint config drives Coverage Closure.
+ * A single wide table of EVERY missing coverage scenario — happy-path
+ * baselines (the gate) AND other failed scenarios (error paths, auth-negative,
+ * …), one row each with a Type badge. Per row: the LLM attempt budget, hints
+ * for the repair pass, and a "Not possible" toggle.
  *
- * CC3 (this revision) completes the config-capture UI. The `onLaunch` handler is
- * supplied by the host once the server-side closure run is wired; while it is
- * absent the launch control renders disabled with an honest affordance rather
- * than firing a request that would not yet close coverage.
+ * "Not possible" removes the row from the closure run AND excludes it from the
+ * coverage population with an audited reason (the row's notes): a happy-path
+ * row excludes the whole operation from the gate denominator; an "other" row
+ * excludes just that failed dimension. A compact "Include other failed
+ * coverage scenarios" checkbox beside the buttons governs whether the "other"
+ * rows take part in the run (the table always shows them).
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
+import type { FailedDimensionItem } from './CoverageSummaryPanel';
+import modal from './RetryUncoveredModal.module.css';
 
 /** Default per-endpoint LLM attempts (mirrors service DEFAULT_REPAIR_ATTEMPTS). */
 export const DEFAULT_ATTEMPTS = 15;
@@ -39,93 +40,134 @@ export interface RetryUncoveredModalClasses {
   secondaryButton: string;
 }
 
+/** A unified table row: a happy-path baseline OR an other failed scenario. */
+type RowKind = 'happy' | 'other';
+interface TableRow {
+  key: string;
+  kind: RowKind;
+  operation_id: string;
+  method: string;
+  path: string;
+  /** Present only for `other` rows — the dimension identity for exclusion. */
+  scenarioName?: string;
+  reason: string | null;
+}
+
 export interface RetryUncoveredModalProps {
+  /** Happy-path baselines still missing (the gate denominator). */
   unresolved: UnresolvedEndpoint[];
+  /** Other failed non-happy scenarios (error paths, auth-negative, …). */
+  failedDimensions?: FailedDimensionItem[];
   classes: RetryUncoveredModalClasses;
   onClose: () => void;
   /**
-   * Launch closure with the per-endpoint Pass B config. Wired by the host once
-   * the server-side run exists; absent → the launch control is disabled.
-   * `includeOtherDimensions` reflects the dimensional-retry checkbox
-   * (2026-07-25): also repair the other failed coverage dimensions so the
-   * full request/response rubric climbs to 100%, not just the happy path.
+   * Launch closure with the per-endpoint Pass B config for the NON-excluded
+   * happy-path rows. `includeOtherDimensions` reflects the checkbox.
    */
   onLaunch?: (config: EndpointRetryConfig[], includeOtherDimensions: boolean) => void;
   /**
-   * How many failed NON-happy coverage dimensions exist across the session
-   * (from the coverage summary). > 0 renders the dimensional-retry checkbox.
+   * Exclude-with-reason. `scenarioName` present → dimension-level exclusion of
+   * an `other` row; absent → the whole endpoint (happy-path row). When omitted
+   * the "Not possible" control is not rendered.
    */
-  failedDimensionsCount?: number;
-  /** Disables inputs + buttons while a launch is in flight. */
+  onExclude?: (operationId: string, reason: string, scenarioName?: string) => void;
+  /** Disables inputs + buttons while a launch/exclude is in flight. */
   busy?: boolean;
-  /** Progress / error note shown after a closure run (e.g. "closed 3; 2 left"). */
+  /** Progress / error note shown after a run (e.g. "closed 3; 2 left"). */
   note?: string | null;
-  /**
-   * Pass C: download ALL endpoints (covered + uncovered) as a Postman
-   * collection. When omitted the button is not rendered.
-   */
+  /** Pass C: download ALL endpoints as a Postman collection. */
   onDownloadPostman?: () => void;
-  /**
-   * Pass C: exclude-with-reason for a genuinely uncapturable endpoint. Called
-   * with the operation id + the reason (the row's notes value). When omitted
-   * the per-row exclude button is not rendered.
-   */
-  onExclude?: (operationId: string, reason: string) => void;
   testId?: string;
 }
 
 export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
   unresolved,
+  failedDimensions = [],
   classes,
   onClose,
   onLaunch,
-  failedDimensionsCount = 0,
+  onExclude,
   busy = false,
   note = null,
   onDownloadPostman,
-  onExclude,
   testId = 'retry-uncovered-modal',
 }) => {
-  const [config, setConfig] = useState<Record<string, { attempts: number; notes: string }>>(() =>
-    Object.fromEntries(
-      unresolved.map((u) => [u.operation_id, { attempts: DEFAULT_ATTEMPTS, notes: '' }]),
-    ),
-  );
-  const [includeOtherDimensions, setIncludeOtherDimensions] = useState(false);
-  // Dimensional-only mode (2026-07-25): every happy-path baseline is complete,
-  // so there are no unresolved endpoints to configure — the run exists purely
-  // to re-attempt the failed coverage scenarios, and the flag is implied.
-  const dimensionalOnly = unresolved.length === 0 && failedDimensionsCount > 0;
+  const rows = useMemo<TableRow[]>(() => {
+    const happy: TableRow[] = unresolved.map((u) => ({
+      key: `happy:${u.operation_id}`,
+      kind: 'happy',
+      operation_id: u.operation_id,
+      method: u.method,
+      path: u.path,
+      reason: u.reason ?? null,
+    }));
+    const other: TableRow[] = failedDimensions.map((d) => ({
+      key: `other:${d.operation_id}:${d.name}`,
+      kind: 'other',
+      operation_id: d.operation_id,
+      method: d.method,
+      path: d.path,
+      scenarioName: d.name,
+      reason: d.reason ?? null,
+    }));
+    return [...happy, ...other];
+  }, [unresolved, failedDimensions]);
 
-  const setAttempts = (id: string, raw: string) => {
+  const [config, setConfig] = useState<Record<string, { attempts: number; notes: string }>>(() =>
+    Object.fromEntries(rows.map((r) => [r.key, { attempts: DEFAULT_ATTEMPTS, notes: '' }])),
+  );
+  const [notPossible, setNotPossible] = useState<Record<string, boolean>>({});
+  const [includeOtherDimensions, setIncludeOtherDimensions] = useState(false);
+
+  const otherCount = failedDimensions.length;
+  const dimensionalOnly = unresolved.length === 0 && otherCount > 0;
+
+  const setAttempts = (key: string, raw: string) => {
     const n = Number.parseInt(raw, 10);
     setConfig((c) => ({
       ...c,
-      [id]: { ...c[id], attempts: Number.isFinite(n) && n > 0 ? n : DEFAULT_ATTEMPTS },
+      [key]: { ...c[key], attempts: Number.isFinite(n) && n > 0 ? n : DEFAULT_ATTEMPTS },
     }));
   };
-  const setNotes = (id: string, notes: string) => {
-    setConfig((c) => ({ ...c, [id]: { ...c[id], notes } }));
+  const setNotes = (key: string, notes: string) =>
+    setConfig((c) => ({ ...c, [key]: { ...c[key], notes } }));
+
+  const toggleNotPossible = (row: TableRow) => {
+    setNotPossible((p) => {
+      const next = { ...p, [row.key]: !p[row.key] };
+      // Marking not-possible fires the exclusion immediately with the row's
+      // notes as the audited reason (the host refreshes the list on success).
+      if (next[row.key] && onExclude) {
+        const reason = (config[row.key]?.notes ?? '').trim();
+        if (reason.length > 0) {
+          onExclude(row.operation_id, reason, row.scenarioName);
+        }
+      }
+      return next;
+    });
   };
 
   const launch = () => {
     if (!onLaunch) return;
-    onLaunch(
-      unresolved.map((u) => ({
-        operation_id: u.operation_id,
-        method: u.method,
-        path: u.path,
-        attempts: config[u.operation_id]?.attempts ?? DEFAULT_ATTEMPTS,
-        notes: (config[u.operation_id]?.notes ?? '').trim(),
-      })),
-      dimensionalOnly || (includeOtherDimensions && failedDimensionsCount > 0),
-    );
+    // Only the happy-path rows NOT marked not-possible drive the gate closure.
+    const happyConfig = rows
+      .filter((r) => r.kind === 'happy' && !notPossible[r.key])
+      .map((r) => ({
+        operation_id: r.operation_id,
+        method: r.method,
+        path: r.path,
+        attempts: config[r.key]?.attempts ?? DEFAULT_ATTEMPTS,
+        notes: (config[r.key]?.notes ?? '').trim(),
+      }));
+    onLaunch(happyConfig, dimensionalOnly || (includeOtherDimensions && otherCount > 0));
   };
+
+  const panelClass = `${classes.panel} ${modal.wide}`;
 
   return (
     <div className={classes.backdrop} data-testid={`${testId}-backdrop`} role="presentation">
       <div
-        className={classes.panel}
+        className={panelClass}
         role="dialog"
         aria-modal="true"
         aria-label="Retry uncovered APIs"
@@ -134,102 +176,133 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
         <div className={classes.header}>
           <strong>{dimensionalOnly ? 'Re-attempt failed scenarios' : 'Retry uncovered APIs'}</strong>
           <span data-testid={`${testId}-count`}>
-            {dimensionalOnly
-              ? `${failedDimensionsCount} failed coverage scenario${
-                  failedDimensionsCount === 1 ? '' : 's'
-                } — all happy-path baselines are complete`
-              : `${unresolved.length} endpoint${unresolved.length === 1 ? '' : 's'} without a
-            happy-path baseline`}
+            {unresolved.length} without a happy-path baseline
+            {otherCount > 0 ? ` · ${otherCount} other failed scenario${otherCount === 1 ? '' : 's'}` : ''}
           </span>
         </div>
         <div className={classes.body}>
-          {dimensionalOnly ? (
-            <p>
-              Every included endpoint already has its happy-path baseline. This run
-              re-attempts the remaining failed coverage scenarios — error paths,
-              auth-negative and similar — each judged against its own intended
-              behaviour class. Existing baselines are untouched.
+          {rows.length === 0 ? (
+            <p className={modal.emptyState} data-testid={`${testId}-empty`}>
+              Every included endpoint has its happy-path baseline and no other
+              scenario is failing.
             </p>
           ) : (
-          <p>
-            Coverage Closure first runs a free, deterministic pass (replays real IDs
-            harvested anywhere in the session and mines the source database for missing
-            path-param values). Whatever remains goes to an LLM repair pass — set its
-            attempt budget and add any hints per endpoint below.
-          </p>
+            <div className={modal.tableWrap}>
+              <table className={modal.table} data-testid={`${testId}-table`}>
+                <thead>
+                  <tr>
+                    <th>Operation</th>
+                    <th>Type</th>
+                    <th>LLM attempts</th>
+                    <th>Notes / reason to the LLM</th>
+                    {onExclude && <th className={modal.notPossibleCell}>Not possible</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const excluded = !!notPossible[r.key];
+                    // Unique per-row testid suffix (an operation can appear as
+                    // both a happy row and an other row).
+                    const rid =
+                      r.kind === 'happy' ? r.operation_id : `${r.operation_id}-${r.scenarioName}`;
+                    return (
+                      <tr
+                        key={r.key}
+                        className={excluded ? modal.excludedRow : undefined}
+                        data-testid={`${testId}-row`}
+                        data-operation-id={r.operation_id}
+                        data-kind={r.kind}
+                      >
+                        <td className={modal.opCell}>
+                          <code>
+                            {(r.method || '').toUpperCase()} {r.path || r.operation_id}
+                          </code>
+                          {r.kind === 'other' && (
+                            <span className={modal.reasonHint}>{r.scenarioName}</span>
+                          )}
+                          {r.reason && <span className={modal.reasonHint}>{r.reason}</span>}
+                        </td>
+                        <td>
+                          <span
+                            className={`${modal.typeBadge} ${
+                              r.kind === 'happy' ? modal.typeHappy : modal.typeOther
+                            }`}
+                          >
+                            {r.kind === 'happy' ? 'Happy path' : 'Other'}
+                          </span>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min={1}
+                            max={50}
+                            className={modal.attemptsInput}
+                            value={config[r.key]?.attempts ?? DEFAULT_ATTEMPTS}
+                            disabled={busy || excluded}
+                            data-testid={`${testId}-attempts-${rid}`}
+                            onChange={(e) => setAttempts(r.key, e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="text"
+                            className={modal.notesInput}
+                            placeholder={
+                              excluded
+                                ? 'reason for exclusion (required)'
+                                : "e.g. try ID=3275, use 'Core' for parameter 'type'"
+                            }
+                            value={config[r.key]?.notes ?? ''}
+                            disabled={busy}
+                            data-testid={`${testId}-notes-${rid}`}
+                            onChange={(e) => setNotes(r.key, e.target.value)}
+                          />
+                        </td>
+                        {onExclude && (
+                          <td className={modal.notPossibleCell}>
+                            <input
+                              type="checkbox"
+                              checked={excluded}
+                              disabled={
+                                busy || (!excluded && (config[r.key]?.notes ?? '').trim().length === 0)
+                              }
+                              title={
+                                (config[r.key]?.notes ?? '').trim().length === 0
+                                  ? 'Enter a reason in Notes first'
+                                  : 'Exclude from coverage — uses the notes as the audited reason'
+                              }
+                              data-testid={`${testId}-notpossible-${rid}`}
+                              onChange={() => toggleNotPossible(r)}
+                            />
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
-          <ul data-testid={`${testId}-list`}>
-            {unresolved.map((u) => (
-              <li
-                key={u.operation_id}
-                data-testid={`${testId}-row`}
-                data-operation-id={u.operation_id}
-              >
-                <code>
-                  {(u.method || '').toUpperCase()} {u.path || u.operation_id}
-                </code>
-                <span>{u.reason}</span>
-                <label>
-                  LLM attempts
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={config[u.operation_id]?.attempts ?? DEFAULT_ATTEMPTS}
-                    disabled={busy}
-                    data-testid={`${testId}-attempts-${u.operation_id}`}
-                    onChange={(e) => setAttempts(u.operation_id, e.target.value)}
-                  />
-                </label>
-                <label>
-                  Notes to the LLM
-                  <input
-                    type="text"
-                    placeholder="e.g. try ID=3275, use 'Core' for parameter 'type'"
-                    value={config[u.operation_id]?.notes ?? ''}
-                    disabled={busy}
-                    data-testid={`${testId}-notes-${u.operation_id}`}
-                    onChange={(e) => setNotes(u.operation_id, e.target.value)}
-                  />
-                </label>
-                {onExclude && (
-                  <button
-                    type="button"
-                    className={classes.secondaryButton}
-                    data-testid={`${testId}-exclude-${u.operation_id}`}
-                    disabled={busy || (config[u.operation_id]?.notes ?? '').trim().length === 0}
-                    title="Exclude this endpoint from the baseline — uses the notes above as the audited reason"
-                    onClick={() =>
-                      onExclude(u.operation_id, (config[u.operation_id]?.notes ?? '').trim())
-                    }
-                  >
-                    Exclude (reason = notes)
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          {failedDimensionsCount > 0 && !dimensionalOnly && (
-            <label data-testid={`${testId}-dimensions-toggle`}>
-              <input
-                type="checkbox"
-                checked={includeOtherDimensions}
-                disabled={busy}
-                data-testid={`${testId}-dimensions-checkbox`}
-                onChange={(e) => setIncludeOtherDimensions(e.target.checked)}
-              />
-              Also re-attempt other failed coverage scenarios ({failedDimensionsCount}) —
-              error paths, auth-negative and similar scenarios that never captured
-              their intended behaviour. The gate stays happy-path-only; this drives
-              the full request/response coverage toward 100%.
-            </label>
-          )}
+
           {note && (
-            <p data-testid={`${testId}-note`} role="status">
+            <p className={modal.note} data-testid={`${testId}-note`} role="status">
               {note}
             </p>
           )}
-          <div>
+
+          <div className={modal.footerRow}>
+            {otherCount > 0 && !dimensionalOnly && (
+              <label className={modal.includeOther} data-testid={`${testId}-dimensions-toggle`}>
+                <input
+                  type="checkbox"
+                  checked={includeOtherDimensions}
+                  disabled={busy}
+                  data-testid={`${testId}-dimensions-checkbox`}
+                  onChange={(e) => setIncludeOtherDimensions(e.target.checked)}
+                />
+                Include other failed coverage scenarios ({otherCount})
+              </label>
+            )}
             <button
               type="button"
               className={classes.primaryButton}
@@ -242,11 +315,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
                   : 'Closure run is wired in the next step'
               }
             >
-              {busy
-                ? 'Running closure…'
-                : dimensionalOnly
-                  ? 'Re-attempt failed scenarios'
-                  : 'Run closure'}
+              {busy ? 'Running closure…' : dimensionalOnly ? 'Re-attempt failed scenarios' : 'Run closure'}
             </button>
             {onDownloadPostman && (
               <button
@@ -270,15 +339,6 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               Close
             </button>
           </div>
-          {onDownloadPostman && (
-            <p data-testid={`${testId}-postman-hint`}>
-              Prefer to fix these by hand? Download every endpoint as a Postman
-              collection — covered ones carry their proven request as a reference,
-              uncovered ones carry the last attempt + the failure reason. Fix them
-              in Postman, then re-upload via “Append a Postman collection”; only the
-              uncovered endpoints are re-attempted.
-            </p>
-          )}
         </div>
       </div>
     </div>

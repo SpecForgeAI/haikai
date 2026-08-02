@@ -1898,13 +1898,23 @@ export async function excludeEndpoint(
   sessionId: string,
   operationId: string,
   reason: string,
+  /**
+   * Optional (2026-08-02): scope the exclusion to ONE failed non-happy
+   * dimension ("Not Possible" on an `other` row). Absent excludes the whole
+   * endpoint (the happy-path "Not Possible").
+   */
+  scenarioName?: string,
 ): Promise<ExcludeEndpointResponse> {
   return jsonRequest<ExcludeEndpointResponse>(
     actionUrl(projectId, architectureId, sessionId, 'exclude-endpoint'),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operationId, reason }),
+      body: JSON.stringify({
+        operationId,
+        reason,
+        ...(scenarioName ? { scenarioName } : {}),
+      }),
     },
   );
 }

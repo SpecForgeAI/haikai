@@ -87,7 +87,7 @@ import type { EndpointRetryConfig } from './RetryUncoveredModal';
 import {
   computeHappyPathGate,
   parseCoverageSummary,
-  countFailedDimensions,
+  collectFailedDimensions,
 } from './CoverageSummaryPanel';
 import {
   resolvePostmanSources,
@@ -337,11 +337,18 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   // endpoint. Drops it from the gate denominator (accounted, not unresolved)
   // with an audited reason, then refreshes the modal's remaining list.
   const handleExclude = useCallback(
-    async (operationId: string, reason: string) => {
+    async (operationId: string, reason: string, scenarioName?: string) => {
       setClosureBusy(true);
       setClosureNote(null);
       try {
-        const result = await excludeEndpoint(projectId, architectureId, sessionId, operationId, reason);
+        const result = await excludeEndpoint(
+          projectId,
+          architectureId,
+          sessionId,
+          operationId,
+          reason,
+          scenarioName,
+        );
         await fetchOnce();
         if (result.gate.complete) {
           setRetryModalEndpoints(null);
@@ -907,12 +914,12 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       {retryModalEndpoints && (
         <RetryUncoveredModal
           unresolved={retryModalEndpoints}
+          failedDimensions={collectFailedDimensions(session.coverage_summary_json)}
           onClose={() => {
             setRetryModalEndpoints(null);
             setClosureNote(null);
           }}
           onLaunch={handleRunClosure}
-          failedDimensionsCount={countFailedDimensions(session.coverage_summary_json)}
           onDownloadPostman={handleDownloadPostman}
           onExclude={handleExclude}
           busy={closureBusy}

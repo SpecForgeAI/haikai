@@ -1,12 +1,13 @@
 /**
- * RetryUncoveredModal — per-endpoint attempts + notes config capture (CC3, Spec
- * 2026-07-20).
+ * RetryUncoveredModal — table redesign (2026-08-02): one table of all missing
+ * scenarios (happy + other) with per-row attempts/notes/not-possible and a
+ * compact "include other" checkbox beside the buttons.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 
 import { RetryUncoveredModal, DEFAULT_ATTEMPTS } from './RetryUncoveredModal';
-import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
+import type { UnresolvedEndpoint, FailedDimensionItem } from './CoverageSummaryPanel';
 
 const classes = {
   backdrop: 'backdrop',
@@ -22,10 +23,24 @@ const unresolved: UnresolvedEndpoint[] = [
   { operation_id: 'op2', method: 'POST', path: '/orders', reason: '422 bad body' },
 ];
 
-describe('RetryUncoveredModal', () => {
-  it('lists the uncovered endpoints and defaults attempts to 15', () => {
-    render(<RetryUncoveredModal unresolved={unresolved} classes={classes} onClose={() => {}} />);
-    expect(screen.getAllByTestId('retry-uncovered-modal-row')).toHaveLength(2);
+const failedDimensions: FailedDimensionItem[] = [
+  { operation_id: 'op1', method: 'GET', path: '/orders/{id}', name: 'not_found', type: 'error', reason: null },
+];
+
+describe('RetryUncoveredModal (table)', () => {
+  it('renders one table row per missing scenario, happy + other, with a Type badge', () => {
+    render(
+      <RetryUncoveredModal
+        unresolved={unresolved}
+        failedDimensions={failedDimensions}
+        classes={classes}
+        onClose={() => {}}
+      />,
+    );
+    const rows = screen.getAllByTestId('retry-uncovered-modal-row');
+    expect(rows).toHaveLength(3); // 2 happy + 1 other
+    expect(rows[0]).toHaveAttribute('data-kind', 'happy');
+    expect(rows[2]).toHaveAttribute('data-kind', 'other');
     expect(screen.getByTestId('retry-uncovered-modal-attempts-op1')).toHaveValue(DEFAULT_ATTEMPTS);
   });
 
@@ -34,7 +49,7 @@ describe('RetryUncoveredModal', () => {
     expect(screen.getByTestId('retry-uncovered-modal-launch')).toBeDisabled();
   });
 
-  it('collects per-endpoint attempts + notes and passes them to onLaunch', () => {
+  it('passes only NON-excluded happy-path rows to onLaunch with their attempts + notes', () => {
     const onLaunch = vi.fn();
     render(
       <RetryUncoveredModal
@@ -66,7 +81,7 @@ describe('RetryUncoveredModal', () => {
     );
   });
 
-  it('hides the dimensional-retry checkbox when there are no failed dimensions', () => {
+  it('hides the include-other checkbox when there are no other failed scenarios', () => {
     render(
       <RetryUncoveredModal
         unresolved={unresolved}
@@ -78,29 +93,81 @@ describe('RetryUncoveredModal', () => {
     expect(screen.queryByTestId('retry-uncovered-modal-dimensions-toggle')).toBeNull();
   });
 
-  it('dimensional-only mode (2026-07-25): no unresolved endpoints -> adjusted copy, no checkbox, launch implies the flag', () => {
+  it('shows the include-other checkbox with a count and passes the flag when checked', () => {
+    const onLaunch = vi.fn();
+    render(
+      <RetryUncoveredModal
+        unresolved={unresolved}
+        failedDimensions={failedDimensions}
+        classes={classes}
+        onClose={() => {}}
+        onLaunch={onLaunch}
+      />,
+    );
+    const toggle = screen.getByTestId('retry-uncovered-modal-dimensions-toggle');
+    expect(toggle.textContent).toContain('Include other failed coverage scenarios (1)');
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-dimensions-checkbox'));
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
+    expect(onLaunch.mock.calls[0][1]).toBe(true);
+  });
+
+  it('dimensional-only (no happy rows) implies the include-other flag on launch', () => {
     const onLaunch = vi.fn();
     render(
       <RetryUncoveredModal
         unresolved={[]}
+        failedDimensions={failedDimensions}
         classes={classes}
         onClose={() => {}}
         onLaunch={onLaunch}
-        failedDimensionsCount={4}
       />,
     );
-    expect(screen.getByTestId('retry-uncovered-modal-count')).toHaveTextContent(
-      '4 failed coverage scenarios — all happy-path baselines are complete',
-    );
-    // The checkbox is meaningless here (nothing else to run) — hidden.
-    expect(screen.queryByTestId('retry-uncovered-modal-dimensions-toggle')).toBeNull();
     const launch = screen.getByTestId('retry-uncovered-modal-launch');
     expect(launch).toHaveTextContent('Re-attempt failed scenarios');
     fireEvent.click(launch);
     expect(onLaunch).toHaveBeenCalledWith([], true);
   });
 
-  it('dimensional-retry checkbox (2026-07-25): shows the count and passes the flag to onLaunch when checked', () => {
+  it('"Not possible" needs a reason, then excludes the row (whole endpoint for happy, dimension for other)', () => {
+    const onExclude = vi.fn();
+    const onLaunch = vi.fn();
+    render(
+      <RetryUncoveredModal
+        unresolved={unresolved}
+        failedDimensions={failedDimensions}
+        classes={classes}
+        onClose={() => {}}
+        onLaunch={onLaunch}
+        onExclude={onExclude}
+      />,
+    );
+    // Disabled until a reason is present.
+    expect(screen.getByTestId('retry-uncovered-modal-notpossible-op2')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('retry-uncovered-modal-notes-op2'), {
+      target: { value: 'XML variant 400s on current-state; JSON only' },
+    });
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-notpossible-op2'));
+    // Happy-path row -> whole-endpoint exclusion (no scenarioName).
+    expect(onExclude).toHaveBeenCalledWith(
+      'op2',
+      'XML variant 400s on current-state; JSON only',
+      undefined,
+    );
+
+    // The "other" row (op1 / not_found) excludes at the dimension level.
+    fireEvent.change(screen.getByTestId('retry-uncovered-modal-notes-op1-not_found'), {
+      target: { value: 'error path not reproducible on current-state' },
+    });
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-notpossible-op1-not_found'));
+    expect(onExclude).toHaveBeenLastCalledWith(
+      'op1',
+      'error path not reproducible on current-state',
+      'not_found',
+    );
+  });
+
+  it('a not-possible happy row is dropped from the closure launch set', () => {
+    const onExclude = vi.fn();
     const onLaunch = vi.fn();
     render(
       <RetryUncoveredModal
@@ -108,14 +175,16 @@ describe('RetryUncoveredModal', () => {
         classes={classes}
         onClose={() => {}}
         onLaunch={onLaunch}
-        failedDimensionsCount={7}
+        onExclude={onExclude}
       />,
     );
-    const toggle = screen.getByTestId('retry-uncovered-modal-dimensions-toggle');
-    expect(toggle.textContent).toContain('Also re-attempt other failed coverage scenarios (7)');
-    fireEvent.click(screen.getByTestId('retry-uncovered-modal-dimensions-checkbox'));
+    fireEvent.change(screen.getByTestId('retry-uncovered-modal-notes-op2'), {
+      target: { value: 'not possible' },
+    });
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-notpossible-op2'));
     fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
-    expect(onLaunch.mock.calls[0][1]).toBe(true);
+    const launched = onLaunch.mock.calls[0][0] as Array<{ operation_id: string }>;
+    expect(launched.map((c) => c.operation_id)).toEqual(['op1']);
   });
 
   it('invalid attempts fall back to the default', () => {
