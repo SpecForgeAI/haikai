@@ -71,8 +71,10 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { LogFileUploadInput } from './LogFileUploadInput';
+import { ContractFileUploadInput } from './ContractFileUploadInput';
 import {
   uploadDiscoveryRunLogFiles,
+  uploadDiscoveryRunContractFiles,
   testDatabaseConnection,
   type DiscoveryDatabaseConnectionConfig,
   type DiscoveryDatabaseEngine,
@@ -216,6 +218,9 @@ export function StartDiscoveryRunModal({
 }: StartDiscoveryRunModalProps) {
   // Existing code-path state.
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  // Operator-uploaded API contract files (WADL/WSDL/XSD) — an authoritative
+  // Interface/Endpoint source (2026-08-02).
+  const [selectedContractFiles, setSelectedContractFiles] = useState<File[]>([]);
   const [maxLogPathPrefixSegments, setMaxLogPathPrefixSegments] = useState<number>(
     DEFAULT_MAX_LOG_PATH_PREFIX_SEGMENTS
   );
@@ -467,8 +472,9 @@ export function StartDiscoveryRunModal({
       return;
     }
 
-    // Step 4: upload-after only when the user picked files.
-    if (selectedFiles.length === 0) {
+    // Step 4: upload-after only when the user picked files (logs and/or
+    // contract files, each an independent optional attachment).
+    if (selectedFiles.length === 0 && selectedContractFiles.length === 0) {
       setIsSubmitting(false);
       onRunStarted(runId);
       onClose();
@@ -479,13 +485,26 @@ export function StartDiscoveryRunModal({
       // Spec 2026-05-11 Section 1: thread the M value through to the
       // log-files PATCH. The run-create POST shape is UNCHANGED -- M only
       // rides this multipart upload call.
-      await uploadDiscoveryRunLogFiles(
-        projectId,
-        architectureId,
-        runId,
-        selectedFiles,
-        maxLogPathPrefixSegments
-      );
+      if (selectedFiles.length > 0) {
+        await uploadDiscoveryRunLogFiles(
+          projectId,
+          architectureId,
+          runId,
+          selectedFiles,
+          maxLogPathPrefixSegments
+        );
+      }
+      // Operator-uploaded API contracts (2026-08-02): inlined onto the run's
+      // config_snapshot.contractFiles so the pipeline reads them as an
+      // authoritative Interface/Endpoint source.
+      if (selectedContractFiles.length > 0) {
+        await uploadDiscoveryRunContractFiles(
+          projectId,
+          architectureId,
+          runId,
+          selectedContractFiles
+        );
+      }
       // Step 5: full success -> hand off + close.
       setIsSubmitting(false);
       onRunStarted(runId);
@@ -511,6 +530,7 @@ export function StartDiscoveryRunModal({
     sourceMode,
     dbForm,
     selectedFiles,
+    selectedContractFiles,
     maxLogPathPrefixSegments,
     onRunStarted,
     onRunStartError,
@@ -595,6 +615,12 @@ export function StartDiscoveryRunModal({
               <LogFileUploadInput
                 selectedFiles={selectedFiles}
                 onChange={setSelectedFiles}
+                disabled={isSubmitting}
+              />
+
+              <ContractFileUploadInput
+                selectedFiles={selectedContractFiles}
+                onChange={setSelectedContractFiles}
                 disabled={isSubmitting}
               />
 

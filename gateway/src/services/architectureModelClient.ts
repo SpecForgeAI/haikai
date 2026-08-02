@@ -2311,6 +2311,53 @@ export interface LogFilesPatchRequest {
  * @returns The updated `inputArtifacts` Map (opaque JSON object)
  * @throws ArchitectureModelHttpError on non-2xx responses
  */
+/**
+ * PATCH operator-uploaded API contract files (WADL/WSDL/XSD content, inline)
+ * onto a discovery run's `config_snapshot.contractFiles[]` (2026-08-02). The
+ * discovery pipeline reads them as an authoritative Interface/Endpoint source.
+ * Idempotent on fileName at the service layer.
+ */
+export async function patchDiscoveryRunContractFiles(
+  projectId: string,
+  architectureId: string,
+  runId: string,
+  body: { contractFiles: Array<{ fileName: string; content: string }> }
+): Promise<unknown> {
+  const config = getConfig();
+  const baseUrl = config.architectureModelServiceBaseUrl;
+  const url =
+    `${baseUrl}/api/model/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}` +
+    `/discovery/runs/${encodeURIComponent(runId)}` +
+    `/contract-files`;
+
+  logger.debug('PATCHing discovery run contract files', {
+    projectId,
+    architectureId,
+    runId,
+    url,
+    fileCount: body.contractFiles.length,
+  });
+
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const responseBody = await readBodyOrEmpty(response);
+  if (!response.ok) {
+    logger.warn('Architecture model service returned non-OK for discovery run contract-files PATCH', {
+      projectId,
+      architectureId,
+      runId,
+      status: response.status,
+    });
+    throw new ArchitectureModelHttpError(response.status, responseBody);
+  }
+  return responseBody;
+}
+
 export async function patchDiscoveryRunLogFileArtifacts(
   projectId: string,
   architectureId: string,

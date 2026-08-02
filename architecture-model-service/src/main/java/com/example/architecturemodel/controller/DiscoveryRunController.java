@@ -1,6 +1,7 @@
 package com.example.architecturemodel.controller;
 
 import com.example.architecturemodel.model.dto.DiscoveryRunDto;
+import com.example.architecturemodel.model.dto.discovery.ContractFilesPatchRequest;
 import com.example.architecturemodel.model.dto.discovery.LogFilesPatchRequest;
 import com.example.architecturemodel.service.DiscoveryRunService;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -363,6 +364,32 @@ public class DiscoveryRunController {
             projectId, architectureId, runId, request);
 
         return ResponseEntity.ok(updatedInputArtifacts);
+    }
+
+    /**
+     * PATCH /api/model/projects/{projectId}/architectures/{architectureId}/discovery/runs/{runId}/contract-files
+     *
+     * Merge operator-uploaded API contract files (WADL/WSDL/XSD content) into
+     * the run's {@code config_snapshot.contractFiles[]} (2026-08-02). The
+     * content is stored inline (small text) so the discovery pipeline reads it
+     * as an authoritative Interface/Endpoint source. Idempotent on fileName.
+     * 404 when the run is out of scope; 400 on validation failure.
+     */
+    @PatchMapping("/{runId}/contract-files")
+    public ResponseEntity<Map<String, Object>> patchContractFiles(
+            @PathVariable UUID projectId,
+            @PathVariable UUID architectureId,
+            @PathVariable UUID runId,
+            @Valid @RequestBody ContractFilesPatchRequest request) {
+        log.debug("PATCH /api/model/projects/{}/architectures/{}/discovery/runs/{}/contract-files "
+            + "-- contractFiles count: {}",
+            projectId, architectureId, runId,
+            request.contractFiles() == null ? 0 : request.contractFiles().size());
+
+        List<Map<String, Object>> merged = discoveryRunService.patchContractFiles(
+            projectId, architectureId, runId, request);
+
+        return ResponseEntity.ok(Map.of("contractFiles", merged));
     }
 
     /**

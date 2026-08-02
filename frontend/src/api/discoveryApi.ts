@@ -1651,6 +1651,41 @@ export async function uploadDiscoveryRunLogFiles(
   return res.json();
 }
 
+/**
+ * Upload operator-supplied API contract files (WADL/WSDL/XSD) to a discovery
+ * run (2026-08-02) — the service-discovery analogue of API Baseline Capture's
+ * contract upload. Multipart field `contractFiles`; the gateway inlines each
+ * file's text onto `config_snapshot.contractFiles[]` so the pipeline reads
+ * them as an authoritative Interface/Endpoint source. Fire AFTER the run is
+ * created and BEFORE it processes (mirrors `uploadDiscoveryRunLogFiles`).
+ */
+export async function uploadDiscoveryRunContractFiles(
+  projectId: string,
+  architectureId: string,
+  runId: string,
+  files: File[]
+): Promise<unknown> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/runs/${encodeURIComponent(runId)}/contract-files`;
+
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('contractFiles', file);
+  }
+
+  const res = await fetch(url, { method: 'POST', body: formData });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const text = await res.text();
+      detail = text ? `: ${text}` : '';
+    } catch {
+      // ignore
+    }
+    throw new Error(`Failed to upload discovery run contract files (${res.status})${detail}`);
+  }
+  return res.json();
+}
+
 // ============================================================================
 // Spec 2026-05-16: Database Discovery Packs (Sybase + PostgreSQL) -- Group 5
 //

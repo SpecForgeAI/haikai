@@ -193,8 +193,8 @@ export function LogFileUploadInput({
       </label>
       <p className={styles.helperText} data-testid="log-file-upload-input-helper">
         Optional. Runtime logs only (.log, .txt, .jsonl, .ndjson) &mdash; correlated by later
-        discovery steps. Source and API-contract files (e.g. .wadl, .xsd, OpenAPI) are scanned
-        from your codebase, not uploaded here.
+        discovery steps. API-contract files (.wadl, .wsdl, .xsd) go in the separate
+        &ldquo;Upload API contract files&rdquo; section below.
       </p>
       <input
         id="log-file-upload-input-files"
