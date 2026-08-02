@@ -4,6 +4,7 @@ import com.example.architecturemodel.exception.ResourceNotFoundException;
 import com.example.architecturemodel.model.dto.DiscoveryOrphanSummaryDto;
 import com.example.architecturemodel.model.dto.DiscoveryRunDto;
 import com.example.architecturemodel.model.dto.discovery.LogFileMetaDto;
+import com.example.architecturemodel.model.dto.discovery.ContractFilesPatchRequest;
 import com.example.architecturemodel.model.dto.discovery.LogFilesPatchRequest;
 import com.example.architecturemodel.model.entity.DiscoveryConfigEntity;
 import com.example.architecturemodel.model.entity.DiscoveryRunEntity;
@@ -1100,6 +1101,80 @@ public class DiscoveryRunService {
         Map<String, Object> savedInputArtifacts =
             (Map<String, Object>) saved.getConfigSnapshot().get("inputArtifacts");
         return savedInputArtifacts == null ? inputArtifacts : savedInputArtifacts;
+    }
+
+    /**
+     * Merge operator-uploaded API contract files into the run's
+     * {@code config_snapshot.contractFiles[]} JSONB array (2026-08-02).
+     *
+     * <p>Idempotent on {@code fileName}: re-PATCHing with the same name
+     * REPLACES that entry, never appends a duplicate (so a gateway retry is
+     * safe). The content is stored inline — WADL/XSD are small and the
+     * discovery pipeline reads them straight from the config as an
+     * authoritative Interface/Endpoint source. Returns the merged list.</p>
+     */
+    @Transactional
+    public List<Map<String, Object>> patchContractFiles(UUID projectId, UUID architectureId,
+                                                        UUID runId, ContractFilesPatchRequest request) {
+        log.debug("PATCH contract-files on run: {} scoped to project: {}, architecture: {}, "
+            + "incoming contractFiles count: {}",
+            runId, projectId, architectureId,
+            request.contractFiles() == null ? 0 : request.contractFiles().size());
+
+        DiscoveryRunEntity entity = runRepository.findById(runId)
+            .filter(e -> projectId.equals(e.getProjectId()))
+            .filter(e -> architectureId.equals(e.getArchitectureId()))
+            .orElseThrow(() -> new ResourceNotFoundException(
+                "Discovery run not found in architecture: runId=" + runId
+                    + ", projectId=" + projectId + ", architectureId=" + architectureId));
+
+        UUID boundArchitectureBefore = entity.getArchitectureId();
+
+        Map<String, Object> configSnapshot = entity.getConfigSnapshot();
+        configSnapshot = (configSnapshot == null) ? new HashMap<>() : new HashMap<>(configSnapshot);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> existing =
+            (List<Map<String, Object>>) configSnapshot.get("contractFiles");
+        List<Map<String, Object>> merged = (existing == null)
+            ? new ArrayList<>()
+            : new ArrayList<>(existing);
+
+        if (request.contractFiles() != null) {
+            for (ContractFilesPatchRequest.ContractFileDto incoming : request.contractFiles()) {
+                Map<String, Object> incomingMap = new LinkedHashMap<>();
+                incomingMap.put("fileName", incoming.fileName());
+                incomingMap.put("content", incoming.content());
+
+                int replaceIdx = -1;
+                for (int i = 0; i < merged.size(); i++) {
+                    Object existingName = merged.get(i).get("fileName");
+                    if (incoming.fileName() != null && incoming.fileName().equals(existingName)) {
+                        replaceIdx = i;
+                        break;
+                    }
+                }
+                if (replaceIdx >= 0) {
+                    merged.set(replaceIdx, incomingMap);
+                } else {
+                    merged.add(incomingMap);
+                }
+            }
+        }
+
+        configSnapshot.put("contractFiles", merged);
+        entity.setConfigSnapshot(configSnapshot);
+        DiscoveryRunEntity saved = runRepository.save(entity);
+
+        if (!boundArchitectureBefore.equals(saved.getArchitectureId())) {
+            throw new IllegalStateException(
+                "BUG: discovery run architectureId mutated during PATCH contract-files (was="
+                    + boundArchitectureBefore + ", now=" + saved.getArchitectureId() + ").");
+        }
+
+        log.debug("PATCH contract-files saved on run: {} -- merged contractFiles count: {}",
+            saved.getId(), merged.size());
+        return merged;
     }
 
     /**

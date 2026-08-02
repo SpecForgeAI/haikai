@@ -63,7 +63,10 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import { getConfig } from '../config';
 import { logger } from '../services/logger';
-import { ArchitectureModelHttpError } from '../services/architectureModelClient';
+import {
+  ArchitectureModelHttpError,
+  patchDiscoveryRunContractFiles,
+} from '../services/architectureModelClient';
 import {
   writeLogFilesAndPatchRun,
   InvalidFileNameError,
@@ -2923,6 +2926,132 @@ discoveryRouter.post(
           code: 500,
           message: 'Unexpected error processing discovery-run log upload',
         },
+      });
+    }
+  }
+);
+
+// ============================================================================
+// Contract-file upload (2026-08-02) — service-discovery analogue of API
+// Baseline Capture's contract upload. Multipart WADL/WSDL/XSD attached AFTER a
+// run is created; the CONTENT is inlined onto the run's
+// `config_snapshot.contractFiles[]` (small text) so the discovery pipeline
+// reads it as an authoritative Interface/Endpoint source. No disk write.
+// ============================================================================
+
+const CONTRACT_UPLOAD_ALLOWED_EXTENSIONS = ['.wadl', '.wsdl', '.xsd', '.xml'];
+const CONTRACT_UPLOAD_MAX_FILE_BYTES = 10_485_760; // 10 MB per contract file
+const CONTRACT_UPLOAD_MAX_FILES = 25;
+
+const contractUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: CONTRACT_UPLOAD_MAX_FILE_BYTES, files: CONTRACT_UPLOAD_MAX_FILES },
+});
+
+function hasAllowedContractExtension(originalName: string): boolean {
+  if (!originalName) return false;
+  const lower = originalName.toLowerCase();
+  return CONTRACT_UPLOAD_ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+/**
+ * POST /projects/:projectId/architectures/:architectureId/runs/:runId/contract-files
+ *
+ * Multipart upload (field `contractFiles`) of one-or-more API contract files
+ * for a discovery run that has already been created. Each file's text content
+ * is inlined onto `config_snapshot.contractFiles[]` via the AMS PATCH.
+ */
+discoveryRouter.post(
+  '/projects/:projectId/architectures/:architectureId/runs/:runId/contract-files',
+  (req: Request, res: Response, next) => {
+    contractUpload.any()(req, res, (err: unknown) => {
+      if (err) {
+        const isMulter = (err as { name?: string }).name === 'MulterError';
+        const code = (err as { code?: string }).code;
+        if (isMulter && code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({
+            error: { code: 413, message: `A contract file exceeds the ${CONTRACT_UPLOAD_MAX_FILE_BYTES}-byte cap` },
+          });
+        }
+        if (isMulter && code === 'LIMIT_FILE_COUNT') {
+          return res.status(413).json({
+            error: { code: 413, message: `Too many contract files (max ${CONTRACT_UPLOAD_MAX_FILES})` },
+          });
+        }
+        return res.status(400).json({
+          error: { code: 400, message: 'Failed to parse contract-file upload' },
+        });
+      }
+      next();
+    });
+  },
+  async (req: Request, res: Response) => {
+    const requestId = (req as unknown as { requestId?: string }).requestId || 'unknown';
+    const { projectId, architectureId, runId } = req.params;
+    if (!runId) {
+      return res.status(400).json({ error: { code: 400, message: 'runId path parameter is required' } });
+    }
+    const files = (req.files as Express.Multer.File[] | undefined) || [];
+    if (files.length === 0) {
+      return res.status(400).json({ error: { code: 400, message: 'At least one contract file must be uploaded' } });
+    }
+    for (const f of files) {
+      if (!hasAllowedContractExtension(f.originalname)) {
+        return res.status(415).json({
+          error: {
+            code: 415,
+            message: `Unsupported file extension for ${f.originalname}. Allowed: ${CONTRACT_UPLOAD_ALLOWED_EXTENSIONS.join(', ')}`,
+          },
+        });
+      }
+    }
+
+    // Inline the text content (contracts are small); strip a leading BOM so the
+    // XML parser downstream sees a clean root.
+    const stripBom = (s: string): string =>
+      s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+    const contractFiles = files.map((f) => ({
+      fileName: f.originalname,
+      content: stripBom(f.buffer.toString('utf8')),
+    }));
+
+    logger.info('Processing discovery-run contract-file upload', {
+      requestId,
+      projectId,
+      architectureId,
+      runId,
+      fileCount: contractFiles.length,
+    });
+
+    try {
+      const result = await patchDiscoveryRunContractFiles(projectId, architectureId, runId, {
+        contractFiles,
+      });
+      return res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof ArchitectureModelHttpError) {
+        logger.warn('Discovery-run contract upload: AMS PATCH returned non-2xx', {
+          requestId,
+          projectId,
+          runId,
+          status: err.status,
+        });
+        return res.status(err.status).json({
+          error: {
+            code: err.status,
+            message: 'Architecture model service rejected contract-file PATCH',
+            upstream: err.body,
+          },
+        });
+      }
+      logger.error('Discovery-run contract upload: unexpected error', {
+        requestId,
+        projectId,
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return res.status(500).json({
+        error: { code: 500, message: 'Unexpected error processing discovery-run contract upload' },
       });
     }
   }
