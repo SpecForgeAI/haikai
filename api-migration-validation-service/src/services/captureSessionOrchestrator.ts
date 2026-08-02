@@ -35,6 +35,13 @@ import { createTracer } from '../trace';
 // into Capture, R6). The two-stage bounded subtraction (code pre-filter +
 // LLM judge) lives in NET-NEW helpers; this loop only wires the per-op seam.
 import { computePostmanDelta } from './postmanDelta';
+import {
+  buildMirrorArgs,
+  parseFormatVariant,
+  sortVariantsXmlFirst,
+  type ProvenHappyPath,
+} from './formatTwinMirror';
+import { executeHttpRequestTool } from './tools/execute_http_request';
 import type { PostmanCapturedRequest } from './postmanDeltaStage1';
 import type { JudgeFn } from './postmanDeltaStage2';
 
@@ -1567,7 +1574,13 @@ export async function orchestrateCaptureSession(
       architectureId: session.architectureId,
     });
 
-    for (const op of deps.persistedOperations) {
+    // Format-twin mirror (2026-08-02): re-order so the XML variant of a
+    // dual-format pair attempts FIRST (XML->JSON is the clean deterministic
+    // mirror direction); its proven happy-path request then serves as the
+    // sibling's free first attempt below.
+    const orderedOperations = sortVariantsXmlFirst(deps.persistedOperations);
+    const provenHappyPathByBase = new Map<string, ProvenHappyPath>();
+    for (const op of orderedOperations) {
       if (op.included !== true) continue;
       // Mode 1(c) Postman only (R4c): skip the planner + execute_http_request
       // loop entirely. The imported items were already captured via
@@ -1652,7 +1665,65 @@ export async function orchestrateCaptureSession(
           // with existing test mocks (see toolTypes.ts).
         };
 
-        const outcome = await runScenarioLoop({
+        // Format-twin mirror (2026-08-02): when the SIBLING variant already
+        // proved its happy path this run, fire the deterministically mirrored
+        // request as a FREE first attempt through the exact execute primitive
+        // (send + redact + persist + recording all reuse; session auth is the
+        // executor's, never copied from recorded headers). A 2xx among the
+        // scenario's captures skips the LLM chain; anything else falls
+        // through to the normal loop with the attempt honestly recorded.
+        let mirrorSatisfied = false;
+        const variantInfo = parseFormatVariant(op.operation_id);
+        if (scenario.name === 'happy_path' && variantInfo) {
+          const proven = provenHappyPathByBase.get(variantInfo.base);
+          if (proven && proven.media !== variantInfo.media) {
+            const mirrorArgs = buildMirrorArgs(proven, variantInfo.media, op.operation_id);
+            if (mirrorArgs) {
+              try {
+                await executeHttpRequestTool.handler(
+                  mirrorArgs as unknown as Record<string, unknown>,
+                  ctx,
+                );
+              } catch (mirrorErr) {
+                trace.detail(
+                  'capture.format_twin_mirror',
+                  {
+                    operationId: op.operation_id,
+                    outcome: 'send_error',
+                    error:
+                      mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr),
+                  },
+                  corr,
+                );
+              }
+              mirrorSatisfied = runManager
+                .getScenarioCaptures(session.id)
+                .some(
+                  (c) =>
+                    typeof c.status === 'number' && c.status >= 200 && c.status < 300,
+                );
+              trace.detail(
+                'capture.format_twin_mirror',
+                {
+                  operationId: op.operation_id,
+                  direction: `${proven.media} -> ${variantInfo.media}`,
+                  outcome: mirrorSatisfied ? 'mirrored_happy_path' : 'fell_back_to_llm',
+                },
+                corr,
+              );
+            } else {
+              trace.detail(
+                'capture.format_twin_mirror',
+                { operationId: op.operation_id, outcome: 'conversion_unavailable' },
+                corr,
+              );
+            }
+          }
+        }
+
+        let outcome: Awaited<ReturnType<typeof runScenarioLoop>> | null = null;
+        if (!mirrorSatisfied) {
+          outcome = await runScenarioLoop({
           context: ctx,
           initialMessages: buildScenarioPrompt(
             session,
@@ -1670,14 +1741,15 @@ export async function orchestrateCaptureSession(
           gatewayClient: gateway,
           archModelClient: archClient,
           abortSignal: runManager.get(session.id)?.abortController.signal,
-        });
+          });
+        }
 
         // Per-DAY provider quota (Spec 2026-07-22): stop the WHOLE capture --
         // waiting is pointless (hours away) and every further scenario would
         // just re-hit it. Preserve everything captured so far; the finaliser
         // marks the session `paused_rate_limited` so the operator resumes after
         // reset via "Retry uncovered APIs". Break both loops.
-        if (outcome.reason === 'llm_daily_limit') {
+        if (outcome?.reason === 'llm_daily_limit') {
           dailyLimitHit = true;
           break;
         }
@@ -1746,6 +1818,40 @@ export async function orchestrateCaptureSession(
               scenario.expectedStatus,
               semanticsConfig,
             );
+
+        // Format-twin mirror stash (2026-08-02): a variant's PROVEN 2xx
+        // happy path (the recording carries the full request) becomes the
+        // sibling variant's deterministic first attempt later in the loop.
+        if (
+          scenario.name === 'happy_path' &&
+          variantInfo &&
+          canonical &&
+          typeof canonical.status === 'number' &&
+          canonical.status >= 200 &&
+          canonical.status < 300 &&
+          !provenHappyPathByBase.has(variantInfo.base)
+        ) {
+          const canonicalEntry = scenarioCaptures.find(
+            (c) => c.captureId === canonical.captureId,
+          );
+          const data = canonicalEntry?.data as
+            | {
+                method?: string;
+                path?: string;
+                query?: Record<string, unknown> | null;
+                body?: unknown;
+              }
+            | undefined;
+          if (data && typeof data.method === 'string' && typeof data.path === 'string') {
+            provenHappyPathByBase.set(variantInfo.base, {
+              media: variantInfo.media,
+              method: data.method,
+              path: data.path,
+              query: data.query ?? null,
+              body: data.body ?? null,
+            });
+          }
+        }
 
         // Coverage accumulation: snapshot this scenario's ordered captures by
         // name (copy -- the array is reset on the next `beginScenario`). The
@@ -1830,7 +1936,7 @@ export async function orchestrateCaptureSession(
           'capture.scenario.end',
           {
             scenario: scenario.name,
-            terminalTool: outcome.reason,
+            terminalTool: outcome ? outcome.reason : 'format_twin_mirror',
             capturesPersisted,
             expectedStatus: scenario.expectedStatus,
             canonicalCaptureId: canonical ? canonical.captureId : null,
