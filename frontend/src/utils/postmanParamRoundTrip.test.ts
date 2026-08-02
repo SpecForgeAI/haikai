@@ -115,6 +115,39 @@ describe('staging: template matching + the unresolved-params gate', () => {
     expect(item.operation?.path).toBe('/nodes/{orgId}');
   });
 
+  it('format-aware: a JSON import binds to the [format=application/json] variant even when the XML variant is listed first', () => {
+    const variants = [
+      {
+        id: 'row-xml',
+        operation_id: 'getNode [format=application/xml]',
+        method: 'POST',
+        path: '/nodes/{orgId}',
+      },
+      {
+        id: 'row-json',
+        operation_id: 'getNode [format=application/json]',
+        method: 'POST',
+        path: '/nodes/{orgId}',
+      },
+    ] as unknown as ApiBehaviourOperationDto[];
+    const [req] = parsePostmanCollection({
+      info: { name: 'c' },
+      item: [
+        {
+          name: 'POST /nodes/62552',
+          request: {
+            method: 'POST',
+            header: [{ key: 'Content-Type', value: 'application/json; charset=utf-8' }],
+            url: { host: ['{{baseUrl}}'], path: ['nodes', '62552'] },
+          },
+        },
+      ],
+    });
+    const [item] = stageImportItems([req], variants, null);
+    expect(item.archStatus).toBe('matched');
+    expect(item.operation?.id).toBe('row-json');
+  });
+
   it('blocks an unresolved item until values are applied, then unblocks', () => {
     const [req] = parsePostmanCollection(
       collectionWith({ host: ['{{baseUrl}}'], path: ['nodes', ':orgId'] }),
