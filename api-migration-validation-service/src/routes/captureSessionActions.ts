@@ -79,6 +79,7 @@ import {
 import {
   runClosureOrchestration,
   removeEndpointFromSummary,
+  excludeDimensionFromSummary,
   selectDimensionClosingCapture,
   applyAuthCoverageToSummary,
   type ClosureFirer,
@@ -2753,15 +2754,25 @@ export function buildCaptureSessionActionsRouter(
   // genuinely uncapturable endpoint (endpoint 500s, not deployed on non-prod).
   // Drops it from the coverage summary so it leaves the happy-path gate
   // denominator — "accounted", not "unresolved" — with an audited reason. Body:
-  // { operationId, reason } (reason REQUIRED, non-blank).
+  // { operationId, reason, scenarioName? } (reason REQUIRED, non-blank).
+  // scenarioName (2026-08-02) scopes the exclusion to ONE failed non-happy
+  // dimension ("Not Possible" on an `other` row); absent → whole endpoint.
   router.post('/api/capture-sessions/:id/exclude-endpoint', async (req: Request, res: Response) => {
     const sessionId = req.params.id;
     const projectId = extractProjectId(req);
     if (!projectId) return fail(res, 400, 'projectId is required (query param or body field)');
-    const body = (req.body || {}) as { operationId?: unknown; reason?: unknown };
+    const body = (req.body || {}) as {
+      operationId?: unknown;
+      reason?: unknown;
+      scenarioName?: unknown;
+    };
     const operationId = typeof body.operationId === 'string' ? body.operationId : null;
     const reason =
       typeof body.reason === 'string' && body.reason.trim().length > 0 ? body.reason.trim() : null;
+    const scenarioName =
+      typeof body.scenarioName === 'string' && body.scenarioName.trim().length > 0
+        ? body.scenarioName.trim()
+        : null;
     if (!operationId) return fail(res, 400, 'operationId is required');
     if (!reason) return fail(res, 400, 'A non-empty exclusion reason is required.');
     try {
@@ -2774,12 +2785,10 @@ export function buildCaptureSessionActionsRouter(
       if (!summary) {
         return fail(res, 400, 'No coverage summary recorded for this session; run a capture first.');
       }
-      const updated = removeEndpointFromSummary(
-        summary,
-        operationId,
-        reason,
-        new Date().toISOString(),
-      );
+      const at = new Date().toISOString();
+      const updated = scenarioName
+        ? excludeDimensionFromSummary(summary, operationId, scenarioName, reason, at)
+        : removeEndpointFromSummary(summary, operationId, reason, at);
       await archModelClient.patchCaptureSession(projectId, sessionId, {
         coverage_summary_json: updated as unknown as Record<string, unknown>,
       });

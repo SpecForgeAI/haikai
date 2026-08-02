@@ -348,6 +348,52 @@ export function removeEndpointFromSummary(
   } as CoverageSummary;
 }
 
+/**
+ * Dimension-level exclude-with-reason (2026-08-02): mark ONE failed non-happy
+ * dimension of an endpoint `reported_only` so it leaves the retryable/failed
+ * coverage population (the "Not Possible" action on an `other` row) WITHOUT
+ * removing the endpoint or touching its happy-path gate. PURE. Records the
+ * disposition under `closure_excluded` (with the scenario name) for the audit
+ * trail. A no-op (returns the input) when the endpoint or dimension is absent.
+ */
+export function excludeDimensionFromSummary(
+  summary: CoverageSummary,
+  operationId: string,
+  scenarioName: string,
+  reason: string,
+  at: string,
+): CoverageSummary {
+  const target = summary.per_endpoint.find((e) => e.operation_id === operationId);
+  if (!target) return summary;
+  const idx = target.dimensions.findIndex((d) => d.name === scenarioName);
+  if (idx === -1 || target.dimensions[idx].reported_only) return summary;
+  const dimensions = target.dimensions.slice();
+  dimensions[idx] = { ...dimensions[idx], reported_only: true };
+  const perEndpoint = summary.per_endpoint.map((e) =>
+    e.operation_id === operationId ? { ...e, dimensions } : e,
+  );
+  const priorExcluded = Array.isArray((summary as { closure_excluded?: unknown }).closure_excluded)
+    ? ((summary as unknown as { closure_excluded: Array<Record<string, unknown>> }).closure_excluded)
+    : [];
+  return {
+    ...summary,
+    per_endpoint: perEndpoint,
+    ...({
+      closure_excluded: [
+        ...priorExcluded,
+        {
+          operation_id: operationId,
+          method: target.method,
+          path: target.path,
+          scenario_name: scenarioName,
+          reason,
+          at,
+        },
+      ],
+    } as object),
+  } as CoverageSummary;
+}
+
 /** A synthetic achieved happy dimension for an endpoint that had none. */
 function achievedHappyDimension(captureId: string): CoverageDimensionResult {
   return {

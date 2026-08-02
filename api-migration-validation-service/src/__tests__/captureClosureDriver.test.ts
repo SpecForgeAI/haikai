@@ -13,6 +13,7 @@ import {
   applyDimensionClosuresToSummary,
   applyAuthCoverageToSummary,
   removeEndpointFromSummary,
+  excludeDimensionFromSummary,
   isHappyStatus,
   selectDimensionClosingCapture,
   type ClosureFirer,
@@ -121,6 +122,46 @@ describe('removeEndpointFromSummary (exclude-with-reason)', () => {
   it('is a no-op for an unknown endpoint', () => {
     const s = summaryOf([ep('op2', 'GET', '/b', true)]);
     expect(removeEndpointFromSummary(s, 'nope', 'x', 't')).toBe(s);
+  });
+});
+
+describe('excludeDimensionFromSummary (dimension-level Not Possible)', () => {
+  function epWithDims(operation_id: string, dims: CoverageDimensionResult[]): EndpointCoverageResult {
+    return {
+      operation_id,
+      method: 'POST',
+      path: '/a',
+      score: dims.filter((d) => d.achieved).length / dims.length,
+      dimensions: dims,
+    };
+  }
+
+  it('marks the named failed dimension reported_only, keeps the endpoint, and audits it', () => {
+    const s = summaryOf([
+      epWithDims('op1', [happy(true), dim('not_found', 'not_found', false)]),
+    ]);
+    const out = excludeDimensionFromSummary(
+      s,
+      'op1',
+      'not_found',
+      'error path not reproducible on current-state',
+      '2026-08-02T00:00:00Z',
+    );
+    // Endpoint stays; the happy path is untouched.
+    expect(out.per_endpoint.map((e) => e.operation_id)).toEqual(['op1']);
+    const target = out.per_endpoint[0].dimensions.find((d) => d.name === 'not_found')!;
+    expect(target.reported_only).toBe(true); // leaves the failed/retry set
+    expect(out.per_endpoint[0].dimensions.find((d) => d.name === 'happy_path')!.achieved).toBe(true);
+    const excluded = (out as unknown as {
+      closure_excluded: Array<{ operation_id: string; scenario_name: string; reason: string }>;
+    }).closure_excluded;
+    expect(excluded[0]).toMatchObject({ operation_id: 'op1', scenario_name: 'not_found' });
+  });
+
+  it('is a no-op for an unknown endpoint or dimension', () => {
+    const s = summaryOf([epWithDims('op1', [happy(true), dim('not_found', 'not_found', false)])]);
+    expect(excludeDimensionFromSummary(s, 'nope', 'not_found', 'x', 't')).toBe(s);
+    expect(excludeDimensionFromSummary(s, 'op1', 'no_such_dim', 'x', 't')).toBe(s);
   });
 });
 

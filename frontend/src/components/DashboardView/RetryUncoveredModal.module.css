@@ -1,0 +1,126 @@
+/* Retry Uncovered APIs modal — wide, table-structured (2026-08-02). */
+
+.wide {
+  width: min(1100px, 96vw);
+  max-width: 96vw;
+}
+
+.intro {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #555);
+}
+
+.tableWrap {
+  max-height: 55vh;
+  overflow: auto;
+  border: 1px solid var(--border-color, #d0d0d0);
+  border-radius: 6px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2, #f4f4f6);
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color, #d0d0d0);
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle, #ececec);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.opCell code {
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.reasonHint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #777);
+}
+
+.typeBadge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.typeHappy {
+  background: #e3f0ff;
+  color: #1652a3;
+}
+
+.typeOther {
+  background: #f0ecff;
+  color: #5a3fb0;
+}
+
+.attemptsInput {
+  width: 4rem;
+}
+
+.notesInput {
+  width: 100%;
+  min-width: 12rem;
+}
+
+.excludedRow td {
+  opacity: 0.55;
+}
+
+.excludedRow .notesInput {
+  opacity: 1;
+}
+
+.notPossibleCell {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.footerRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.includeOther {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  margin-right: auto;
+}
+
+.note {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.emptyState {
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-secondary, #777);
+}

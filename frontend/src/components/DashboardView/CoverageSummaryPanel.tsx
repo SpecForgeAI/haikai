@@ -355,6 +355,45 @@ export function countFailedDimensions(
   return n;
 }
 
+/** One failed NON-happy coverage scenario, for the retry modal's table. */
+export interface FailedDimensionItem {
+  operation_id: string;
+  method: string;
+  path: string;
+  /** The scenario/dimension name (identity for dimension-level exclusion). */
+  name: string;
+  type: string;
+  reason: string | null;
+}
+
+/**
+ * Collect the failed NON-happy, non-reported-only scenarios as rows the retry
+ * modal renders in its "Other" section — the display sibling of the count
+ * returned by {@link countFailedDimensions} (per_endpoint only; the
+ * session-level auth dimension has no per-endpoint row). Pure.
+ */
+export function collectFailedDimensions(
+  raw: Record<string, unknown> | null | undefined,
+): FailedDimensionItem[] {
+  const summary = parseCoverageSummary(raw);
+  if (!summary) return [];
+  const out: FailedDimensionItem[] = [];
+  for (const ep of summary.per_endpoint) {
+    for (const d of ep.dimensions) {
+      if (d.achieved || d.reported_only || isHappyDimension(d)) continue;
+      out.push({
+        operation_id: ep.operation_id,
+        method: ep.method,
+        path: ep.path,
+        name: d.name,
+        type: d.type,
+        reason: d.reason ?? null,
+      });
+    }
+  }
+  return out;
+}
+
 export interface CoverageGateBannerClasses {
   /** Outer banner container. */
   banner: string;
