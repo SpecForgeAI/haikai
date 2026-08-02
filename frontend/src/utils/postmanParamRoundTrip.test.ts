@@ -104,6 +104,17 @@ describe('staging: template matching + the unresolved-params gate', () => {
     expect(item.runnable).toBe(true);
   });
 
+  it('tier 3: a fully-concrete import (no surviving token) binds to its templated operation', () => {
+    const [req] = parsePostmanCollection(
+      collectionWith({ host: ['{{baseUrl}}'], path: ['nodes', '123'] }),
+    );
+    expect(req.pathTemplate).toBeUndefined(); // nothing token-shaped survived
+    const [item] = stageImportItems([req], operations, null);
+    expect(item.archStatus).toBe('matched');
+    expect(item.runnable).toBe(true);
+    expect(item.operation?.path).toBe('/nodes/{orgId}');
+  });
+
   it('blocks an unresolved item until values are applied, then unblocks', () => {
     const [req] = parsePostmanCollection(
       collectionWith({ host: ['{{baseUrl}}'], path: ['nodes', ':orgId'] }),

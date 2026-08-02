@@ -93,15 +93,34 @@ export function operationKey(
  * Returns the first row whose normalised method + path match; `null` when none
  * match (the item maps to NO known operation -> Group 4).
  */
+/**
+ * Segment-wise template match (2026-08-02): a `{param}` / `:param` template
+ * segment is a wildcard matching exactly ONE concrete segment; literal
+ * segments compare case-insensitively (via `normalisePath`). The frontend
+ * mirror of AMS's InventoryReconciliationCalculator normalisation — a
+ * concrete `/nodes/123` binds to the templated row `/nodes/{orgId}`.
+ */
+export function pathMatchesTemplate(
+  concretePath: string | null | undefined,
+  templatePath: string | null | undefined,
+): boolean {
+  const concrete = normalisePath(concretePath).split('/').filter(Boolean);
+  const template = normalisePath(templatePath).split('/').filter(Boolean);
+  if (concrete.length !== template.length) return false;
+  return template.every((tSeg, i) => {
+    if (/^\{.+\}$/.test(tSeg) || tSeg.startsWith(':')) return concrete[i].length > 0;
+    return tSeg === concrete[i];
+  });
+}
+
 export function matchOperation(
   request: ImportedRequest,
   operations: ApiBehaviourOperationDto[],
 ): ApiBehaviourOperationDto | null {
   const wanted = operationKey(request.method, request.path);
-  // Template-level fallback (2026-08-02): a parameterised item whose params
-  // were substituted carries a concrete send path that will never string-match
-  // the operation row's TEMPLATE path — match on the canonical `{param}`
-  // template too.
+  // Tier 2 (2026-08-02): a parameterised item whose params were substituted
+  // carries a concrete send path that will never string-match the operation
+  // row's TEMPLATE path — match on the canonical `{param}` template too.
   const wantedTemplate = request.pathTemplate
     ? operationKey(request.method, request.pathTemplate)
     : null;
@@ -109,6 +128,18 @@ export function matchOperation(
     const key = operationKey(op.method, op.path);
     if (key === wanted) return op;
     if (wantedTemplate !== null && key === wantedTemplate) return op;
+  }
+  // Tier 3 (2026-08-02): a FULLY-CONCRETE import (no surviving token — the
+  // export carried a real capture path, or the user substituted values in
+  // Postman) has no template to compare, so pattern-match the concrete path
+  // against each templated row. Without this, `/nodes/123` reported
+  // "No matching operation" against the row `/nodes/{orgId}`.
+  const method = normaliseMethod(request.method);
+  for (const op of operations) {
+    if (normaliseMethod(op.method) !== method) continue;
+    const opPath = op.path ?? '';
+    if (!/[{:]/.test(opPath)) continue;
+    if (pathMatchesTemplate(request.path, opPath)) return op;
   }
   return null;
 }
