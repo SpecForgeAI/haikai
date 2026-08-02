@@ -113,6 +113,45 @@ export function pathMatchesTemplate(
   });
 }
 
+/** The request's base Content-Type (lowercased, parameters stripped). */
+function requestContentType(request: ImportedRequest): string | null {
+  for (const [key, value] of Object.entries(request.headers)) {
+    if (key.toLowerCase() === 'content-type') {
+      const base = value.split(';')[0].trim().toLowerCase();
+      return base.length > 0 ? base : null;
+    }
+  }
+  return null;
+}
+
+/** The `[format=<media type>]` marker a per-format VARIANT operation carries. */
+function operationFormat(op: ApiBehaviourOperationDto): string | null {
+  const marker = /\[format=([^\]]+)\]/.exec(String(op.operation_id ?? ''));
+  return marker ? marker[1].trim().toLowerCase() : null;
+}
+
+/**
+ * Pick among rows tying on method+path (2026-08-02): dual-format endpoints
+ * expand to per-format VARIANT operations (`[format=application/json]` /
+ * `[format=application/xml]`) sharing method+path — a format-blind
+ * first-match bound the import to whichever variant was listed first, so a
+ * JSON replay could land its capture on the wrong variant and the gate's
+ * per-format coverage never closed. Prefer the variant matching the
+ * request's Content-Type; fall back to the first row.
+ */
+function pickByFormat(
+  candidates: ApiBehaviourOperationDto[],
+  request: ImportedRequest,
+): ApiBehaviourOperationDto | null {
+  if (candidates.length <= 1) return candidates[0] ?? null;
+  const contentType = requestContentType(request);
+  if (contentType) {
+    const exact = candidates.find((op) => operationFormat(op) === contentType);
+    if (exact) return exact;
+  }
+  return candidates[0];
+}
+
 export function matchOperation(
   request: ImportedRequest,
   operations: ApiBehaviourOperationDto[],
@@ -124,24 +163,29 @@ export function matchOperation(
   const wantedTemplate = request.pathTemplate
     ? operationKey(request.method, request.pathTemplate)
     : null;
+  const tier1: ApiBehaviourOperationDto[] = [];
+  const tier2: ApiBehaviourOperationDto[] = [];
   for (const op of operations) {
     const key = operationKey(op.method, op.path);
-    if (key === wanted) return op;
-    if (wantedTemplate !== null && key === wantedTemplate) return op;
+    if (key === wanted) tier1.push(op);
+    else if (wantedTemplate !== null && key === wantedTemplate) tier2.push(op);
   }
+  if (tier1.length > 0) return pickByFormat(tier1, request);
+  if (tier2.length > 0) return pickByFormat(tier2, request);
   // Tier 3 (2026-08-02): a FULLY-CONCRETE import (no surviving token — the
   // export carried a real capture path, or the user substituted values in
   // Postman) has no template to compare, so pattern-match the concrete path
   // against each templated row. Without this, `/nodes/123` reported
   // "No matching operation" against the row `/nodes/{orgId}`.
   const method = normaliseMethod(request.method);
+  const tier3: ApiBehaviourOperationDto[] = [];
   for (const op of operations) {
     if (normaliseMethod(op.method) !== method) continue;
     const opPath = op.path ?? '';
     if (!/[{:]/.test(opPath)) continue;
-    if (pathMatchesTemplate(request.path, opPath)) return op;
+    if (pathMatchesTemplate(request.path, opPath)) tier3.push(op);
   }
-  return null;
+  return pickByFormat(tier3, request);
 }
 
 /**
