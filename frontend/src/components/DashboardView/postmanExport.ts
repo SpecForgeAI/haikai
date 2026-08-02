@@ -149,21 +149,81 @@ function toPostmanHeaders(headers: Record<string, unknown> | null): PostmanHeade
     .map(([key, value]) => ({ key, value: String(value ?? '') }));
 }
 
-function toPostmanUrl(path: string, query: Record<string, unknown> | null) {
+/**
+ * Mine concrete path-parameter values from the session's capture rows
+ * (2026-08-02): align each capture's concrete `request_path` against its
+ * operation's template segments and collect `{param} -> value` (most recent
+ * capture wins). A param captured on ANY endpoint (e.g. an org id used by
+ * several routes) prefills the same-named variable on endpoints that never
+ * captured — so an exported parameterised request is runnable by default.
+ */
+export function minePathParamValues(
+  included: ReadonlyArray<IncludedEndpoint>,
+  captures: ReadonlyArray<ExportCapture>,
+): Record<string, string> {
+  const templateByOp = new Map(included.map((ep) => [ep.operation_id, ep.path]));
+  const best: Record<string, { value: string; at: string }> = {};
+  for (const c of captures) {
+    const template = templateByOp.get(c.operation_id);
+    if (!template || !c.request_path) continue;
+    const tSegs = template.split('/').filter(Boolean);
+    const cSegs = c.request_path.split('?')[0].split('/').filter(Boolean);
+    if (tSegs.length !== cSegs.length) continue;
+    for (let i = 0; i < tSegs.length; i += 1) {
+      const m = /^\{(.+)\}$/.exec(tSegs[i]);
+      if (!m) continue;
+      const value = cSegs[i];
+      if (!value || value.startsWith('{') || value.startsWith(':')) continue;
+      const at = c.captured_at ?? '';
+      const name = m[1];
+      if (!best[name] || at >= best[name].at) best[name] = { value, at };
+    }
+  }
+  return Object.fromEntries(Object.entries(best).map(([k, v]) => [k, v.value]));
+}
+
+function toPostmanUrl(
+  path: string,
+  query: Record<string, unknown> | null,
+  paramValues: Record<string, string> = {},
+) {
   const [rawPath] = path.split('?');
-  const segments = rawPath.split('/').filter(Boolean);
+  // Path params emit as native Postman URL variables (2026-08-02): a
+  // `{param}` template segment becomes a `:param` segment + a `variable`
+  // entry (prefilled from mined capture values when available). The previous
+  // verbatim `{param}` emission produced a request that could never send —
+  // the literal token fired at the server on re-import.
+  const variables: Array<{ key: string; value: string; description: string }> = [];
+  const segments = rawPath
+    .split('/')
+    .filter(Boolean)
+    .map((seg) => {
+      const m = /^\{(.+)\}$/.exec(seg);
+      if (!m) return seg;
+      const name = m[1];
+      variables.push({
+        key: name,
+        value: paramValues[name] ?? '',
+        description: paramValues[name]
+          ? 'path parameter — prefilled from a captured request; adjust if needed'
+          : 'path parameter — supply a real value before running',
+      });
+      return `:${name}`;
+    });
+  const exportPath = `/${segments.join('/')}`;
   const queryParams = query
     ? Object.entries(query).map(([key, value]) => ({ key, value: String(value ?? '') }))
     : [];
   return {
-    raw: `{{baseUrl}}${path.startsWith('/') ? path : `/${path}`}`,
+    raw: `{{baseUrl}}${exportPath}`,
     host: ['{{baseUrl}}'],
     path: segments,
+    ...(variables.length > 0 ? { variable: variables } : {}),
     ...(queryParams.length > 0 ? { query: queryParams } : {}),
   };
 }
 
-function toPostmanItem(source: PostmanSource) {
+function toPostmanItem(source: PostmanSource, paramValues: Record<string, string> = {}) {
   const req = source.request;
   const description = source.covered
     ? `✓ Covered — proven working request (reference example).`
@@ -181,7 +241,7 @@ function toPostmanItem(source: PostmanSource) {
     request: {
       method: (req?.method ?? source.method ?? 'GET').toUpperCase(),
       header: toPostmanHeaders(req?.headers ?? null),
-      url: toPostmanUrl(req?.path ?? source.path, req?.query ?? null),
+      url: toPostmanUrl(req?.path ?? source.path, req?.query ?? null, paramValues),
       ...(body ? { body } : {}),
       description,
     },
@@ -204,9 +264,10 @@ export function buildPostmanCollection(
   collectionName: string,
   baseUrl: string,
   sources: ReadonlyArray<PostmanSource>,
+  paramValues: Record<string, string> = {},
 ): PostmanCollection {
-  const covered = sources.filter((s) => s.covered).map(toPostmanItem);
-  const uncovered = sources.filter((s) => !s.covered).map(toPostmanItem);
+  const covered = sources.filter((s) => s.covered).map((s) => toPostmanItem(s, paramValues));
+  const uncovered = sources.filter((s) => !s.covered).map((s) => toPostmanItem(s, paramValues));
   return {
     info: {
       name: collectionName,

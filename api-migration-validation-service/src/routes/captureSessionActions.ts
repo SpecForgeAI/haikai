@@ -687,8 +687,13 @@ interface StartCaptureBody {
  * Body shape for `POST /api/capture-sessions/:id/manual-capture`
  * ("Add New Behaviour" manual capture, spec 2026-06-20).
  *
- * The frontend resolves path-param tokens client-side, so `path` arrives
- * already substituted (the concrete `request_path`). `operationId` is the
+ * `path` MUST arrive concrete: the frontend substitutes path-param tokens
+ * (Postman collection/url variables at parse time; operator-supplied values
+ * via the staging param editor), and THIS ROUTE 400s a path that still
+ * carries a template token (2026-08-02) — for a long time a comment here
+ * claimed a client-side substitution step that did not exist, so literal
+ * `{param}` tokens fired at the target server and the capture failed with
+ * "NO CAPTURE was recorded". `operationId` is the
  * AMS operation ROW id (matches `OperationDto.id`), used to attach the
  * scenario + capture and to enforce the included-operation guard.
  * `mutatingCallsConfirmed` carries the modal's explicit-intent confirm flag
@@ -1858,6 +1863,19 @@ export function buildCaptureSessionActionsRouter(
     if (!operationId) return fail(res, 400, 'operationId is required');
     if (!method) return fail(res, 400, 'method is required');
     if (!path) return fail(res, 400, 'path is required');
+    // Backstop (2026-08-02): a path still carrying a template token would
+    // fire the LITERAL token at the target server — reject precisely instead.
+    const unresolvedToken =
+      path.match(/\{\{[^}]+\}\}|\{[^}]+\}/)?.[0] ??
+      (path.split('/').find((seg) => /^:[A-Za-z_]/.test(seg)) ?? null);
+    if (unresolvedToken) {
+      return fail(
+        res,
+        400,
+        `path contains an unresolved path-parameter token ('${unresolvedToken}') — ` +
+          'substitute a concrete value before sending (the route performs no substitution)',
+      );
+    }
 
     const queryParams =
       body.query && typeof body.query === 'object' && !Array.isArray(body.query)

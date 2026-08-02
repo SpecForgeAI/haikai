@@ -91,6 +91,19 @@ export interface ImportedRequest {
   body: unknown;
   sourceItemName: string;
   unsupportedReason?: string;
+  /**
+   * Present when the URL carried path parameters (`:param` Postman syntax,
+   * `{param}` template tokens, or in-path `{{var}}` usages): the path with
+   * every parameter position in canonical `{param}` form. Used for
+   * template-level operation matching while `path` stays the SEND form.
+   */
+  pathTemplate?: string;
+  /**
+   * Parameter names that could NOT be resolved to a concrete value (no
+   * collection/url variable value). An item with unresolved params must
+   * NEVER be sent — the literal token would fire at the server (2026-08-02).
+   */
+  unresolvedParams?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +145,95 @@ function isVariableSegment(seg: string): boolean {
   return /^\{\{.*\}\}$/.test(seg.trim());
 }
 
+/** The resolved path pair + any parameters left without a concrete value. */
+interface ResolvedPathParts {
+  path: string;
+  pathTemplate: string;
+  unresolvedParams: string[];
+}
+
+/**
+ * Process path segments into the SEND path + canonical `{param}` template
+ * (2026-08-02). Three parameter spellings are recognised:
+ *   - `:param`   Postman path-variable syntax — value from the URL's
+ *                `variable` array (falling back to collection variables);
+ *   - `{param}`  template tokens (our exporter's legacy form);
+ *   - `{{var}}`  Postman variables, whole- or partial-segment — value from
+ *                collection variables. A LEADING whole-`{{var}}` segment is
+ *                treated as a host token and stripped (the `{{baseUrl}}`
+ *                convention), preserving the old behaviour.
+ * Known values substitute (URL-encoded); unknown ones keep the literal token
+ * in `path` AND are reported in `unresolvedParams` so staging can block the
+ * send — previously the literal token fired at the server and the capture
+ * failed with "NO HTTP attempt".
+ */
+function processPathSegments(
+  segments: string[],
+  urlVars: Record<string, string>,
+  collectionVars: Record<string, string>,
+): ResolvedPathParts {
+  const sendSegs: string[] = [];
+  const templateSegs: string[] = [];
+  const unresolved: string[] = [];
+  const valueFor = (name: string): string | null => {
+    const v = urlVars[name] ?? collectionVars[name];
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : null;
+  };
+
+  segments.forEach((seg, index) => {
+    if (index === 0 && isVariableSegment(seg)) return; // `{{baseUrl}}` host token
+    const colon = /^:([A-Za-z_][A-Za-z0-9_.-]*)$/.exec(seg);
+    const curly = /^\{([A-Za-z_][A-Za-z0-9_.-]*)\}$/.exec(seg);
+    if (colon || curly) {
+      const name = (colon ?? curly)![1];
+      templateSegs.push(`{${name}}`);
+      const v = valueFor(name);
+      if (v !== null) {
+        sendSegs.push(encodeURIComponent(v));
+      } else {
+        sendSegs.push(seg);
+        unresolved.push(name);
+      }
+      return;
+    }
+    if (seg.includes('{{')) {
+      const names: string[] = [];
+      const substituted = seg.replace(/\{\{([^}]+)\}\}/g, (match, rawName: string) => {
+        const name = rawName.trim();
+        const v = valueFor(name);
+        if (v !== null) return encodeURIComponent(v);
+        names.push(name);
+        return match;
+      });
+      templateSegs.push(seg.replace(/\{\{([^}]+)\}\}/g, (_m, n: string) => `{${n.trim()}}`));
+      sendSegs.push(substituted);
+      unresolved.push(...names);
+      return;
+    }
+    sendSegs.push(seg);
+    templateSegs.push(seg);
+  });
+
+  return {
+    path: sendSegs.length > 0 ? `/${sendSegs.join('/')}` : '/',
+    pathTemplate: templateSegs.length > 0 ? `/${templateSegs.join('/')}` : '/',
+    unresolvedParams: unresolved,
+  };
+}
+
+/** Read a Postman `variable` array (`[{key, value}]`) into a record. */
+function resolveVariableRecord(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const entry of asArray(raw)) {
+    const v = asRecord(entry);
+    if (!v) continue;
+    const key = asString(v.key);
+    if (key === null || key.length === 0) continue;
+    out[key] = valueToString(v.value);
+  }
+  return out;
+}
+
 /**
  * Resolve a Postman item's URL down to a `{ path, query }` pair, dropping any
  * `{{baseUrl}}` / host. The URL may be a structured `PostmanUrl` object OR a
@@ -140,33 +242,37 @@ function isVariableSegment(seg: string): boolean {
  * Path normalisation: the segments are joined with a single leading slash
  * (`/a/b`); an empty path resolves to `/`. Query duplicate keys: last wins.
  */
-function resolveUrl(rawUrl: unknown): {
-  path: string;
+function resolveUrl(
+  rawUrl: unknown,
+  collectionVars: Record<string, string> = {},
+): ResolvedPathParts & {
   query: Record<string, string>;
 } {
   // String form: parse off the query string, then strip a leading host/scheme
   // and any `{{baseUrl}}` token.
   if (typeof rawUrl === 'string') {
-    return resolveUrlString(rawUrl);
+    return resolveUrlString(rawUrl, collectionVars, {});
   }
 
   const url = asRecord(rawUrl);
-  if (!url) return { path: '/', query: {} };
+  if (!url) return { path: '/', pathTemplate: '/', unresolvedParams: [], query: {} };
+
+  // The URL-level `variable` array carries values for `:param` path variables.
+  const urlVars = resolveVariableRecord(url.variable);
 
   // Prefer the structured `path` array; fall back to parsing `raw`.
   const pathSegments = asArray(url.path)
     .map((seg) => asString(seg))
-    .filter((seg): seg is string => seg !== null && seg.length > 0)
-    .filter((seg) => !isVariableSegment(seg));
+    .filter((seg): seg is string => seg !== null && seg.length > 0);
 
-  let path: string;
+  let parts: ResolvedPathParts;
   if (pathSegments.length > 0) {
-    path = `/${pathSegments.join('/')}`;
+    parts = processPathSegments(pathSegments, urlVars, collectionVars);
   } else if (typeof url.raw === 'string') {
     // No usable path array -- recover the path from the raw string.
-    path = resolveUrlString(url.raw).path;
+    parts = resolveUrlString(url.raw, collectionVars, urlVars);
   } else {
-    path = '/';
+    parts = { path: '/', pathTemplate: '/', unresolvedParams: [] };
   }
 
   const query: Record<string, string> = {};
@@ -178,7 +284,7 @@ function resolveUrl(rawUrl: unknown): {
     query[key] = valueToString(q.value);
   }
 
-  return { path, query };
+  return { ...parts, query };
 }
 
 /**
@@ -186,12 +292,15 @@ function resolveUrl(rawUrl: unknown): {
  * leading `{{baseUrl}}`), keep the path and parse the query string. Fail-soft:
  * an unparseable string yields `{ path: '/', query: {} }`.
  */
-function resolveUrlString(raw: string): {
-  path: string;
+function resolveUrlString(
+  raw: string,
+  collectionVars: Record<string, string> = {},
+  urlVars: Record<string, string> = {},
+): ResolvedPathParts & {
   query: Record<string, string>;
 } {
   let s = raw.trim();
-  if (!s) return { path: '/', query: {} };
+  if (!s) return { path: '/', pathTemplate: '/', unresolvedParams: [], query: {} };
 
   // Split off the query string first.
   const hashIdx = s.indexOf('#');
@@ -208,9 +317,8 @@ function resolveUrlString(raw: string): {
   const segments = pathPart
     .split('/')
     .map((seg) => seg.trim())
-    .filter((seg) => seg.length > 0)
-    .filter((seg) => !isVariableSegment(seg));
-  const path = segments.length > 0 ? `/${segments.join('/')}` : '/';
+    .filter((seg) => seg.length > 0);
+  const parts = processPathSegments(segments, urlVars, collectionVars);
 
   const query: Record<string, string> = {};
   if (queryString) {
@@ -236,7 +344,7 @@ function resolveUrlString(raw: string): {
     }
   }
 
-  return { path, query };
+  return { ...parts, query };
 }
 
 // ---------------------------------------------------------------------------
@@ -324,9 +432,13 @@ function resolveBody(rawBody: unknown): {
 function resolveItem(
   itemRecord: Record<string, unknown>,
   request: Record<string, unknown>,
+  collectionVars: Record<string, string> = {},
 ): ImportedRequest {
   const method = (asString(request.method) ?? 'GET').toUpperCase();
-  const { path, query } = resolveUrl(request.url);
+  const { path, pathTemplate, unresolvedParams, query } = resolveUrl(
+    request.url,
+    collectionVars,
+  );
   const headers = resolveHeaders(request.header);
   const { body, unsupportedReason } = resolveBody(request.body);
   const sourceItemName = asString(itemRecord.name) ?? 'Imported request';
@@ -340,6 +452,10 @@ function resolveItem(
     sourceItemName,
   };
   if (unsupportedReason) result.unsupportedReason = unsupportedReason;
+  // Additive: only present for parameterised URLs so param-less collections
+  // (and their existing consumers/fixtures) are byte-identical.
+  if (pathTemplate !== path) result.pathTemplate = pathTemplate;
+  if (unresolvedParams.length > 0) result.unresolvedParams = unresolvedParams;
   return result;
 }
 
@@ -352,7 +468,10 @@ function resolveItem(
  *     `item.steps[]`) -> one `ImportedRequest` per step in step order.
  * Items that carry none of the above are skipped (never throw).
  */
-function flattenItems(rawItems: unknown): ImportedRequest[] {
+function flattenItems(
+  rawItems: unknown,
+  collectionVars: Record<string, string> = {},
+): ImportedRequest[] {
   const out: ImportedRequest[] = [];
   for (const entry of asArray(rawItems)) {
     const item = asRecord(entry);
@@ -360,7 +479,7 @@ function flattenItems(rawItems: unknown): ImportedRequest[] {
 
     // Folder: recurse the nested item[] in order.
     if (Array.isArray(item.item)) {
-      out.push(...flattenItems(item.item));
+      out.push(...flattenItems(item.item, collectionVars));
       continue;
     }
 
@@ -369,14 +488,14 @@ function flattenItems(rawItems: unknown): ImportedRequest[] {
     // and a bare `request`-less item that nests requests under `steps`.
     const steps = resolveSteps(item);
     if (steps.length > 0) {
-      out.push(...flattenSteps(item, steps));
+      out.push(...flattenSteps(item, steps, collectionVars));
       continue;
     }
 
     // Ordinary request-bearing item.
     const request = asRecord(item.request);
     if (request) {
-      out.push(resolveItem(item, request));
+      out.push(resolveItem(item, request, collectionVars));
     }
   }
   return out;
@@ -420,6 +539,7 @@ function resolveSteps(item: Record<string, unknown>): Record<string, unknown>[] 
 function flattenSteps(
   item: Record<string, unknown>,
   steps: Record<string, unknown>[],
+  collectionVars: Record<string, string> = {},
 ): ImportedRequest[] {
   const baseName = asString(item.name) ?? 'Imported sequence';
   const out: ImportedRequest[] = [];
@@ -432,7 +552,7 @@ function flattenSteps(
       ...step,
       name: role ? `${baseName} (${role} #${index})` : `${baseName} (#${index})`,
     };
-    out.push(resolveItem(stepRecord, request));
+    out.push(resolveItem(stepRecord, request, collectionVars));
   });
   return out;
 }
@@ -458,7 +578,12 @@ export function parsePostmanCollection(
 ): ImportedRequest[] {
   const root = asRecord(collection);
   if (!root) return [];
-  return flattenItems(root.item);
+  // Collection-level variables resolve `{{var}}` path usages (and act as a
+  // fallback for `:param` values). `baseUrl` is host-only by convention —
+  // never substituted into the path (the leading-token strip handles it).
+  const collectionVars = resolveVariableRecord(root.variable);
+  delete collectionVars.baseUrl;
+  return flattenItems(root.item, collectionVars);
 }
 
 export default parsePostmanCollection;

@@ -28,13 +28,14 @@
  * flagged items.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type {
   ApiBehaviourOperationDto,
   InventoryReconciliationResponse,
 } from '../../api/apiBehaviourClient';
 import type { ImportedRequest } from '../../utils/postmanImport';
 import {
+  applyParamValues,
   flaggedForArchMatch,
   stageImportItems,
   type ArchMatchStatus,
@@ -59,6 +60,12 @@ export interface PostmanImportStagingProps {
    * cleanly `matched`). The parent forwards these to the arch-match step.
    */
   onFlaggedChange?: (flagged: StagedImportItem[]) => void;
+  /**
+   * Replace one imported request (by its stable index) — used by the
+   * path-parameter editor to fold operator-supplied values into the item via
+   * `applyParamValues` (2026-08-02). When omitted the editor is hidden.
+   */
+  onUpdateRequest?: (index: number, request: ImportedRequest) => void;
   /**
    * Optional CSS-module override (CSS modules are file-scoped; tests proxy the
    * import). Defaults to this component's own module.
@@ -137,11 +144,63 @@ function CoveragePanel({
   );
 }
 
-function StagedItemRow({
+function ParamValueEditor({
   item,
+  onUpdateRequest,
   styles,
 }: {
   item: StagedImportItem;
+  onUpdateRequest: (index: number, request: ImportedRequest) => void;
+  styles: Record<string, string>;
+}): React.ReactElement {
+  const params = item.request.unresolvedParams ?? [];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const applyDisabled = params.some((p) => !(values[p] ?? '').trim());
+
+  return (
+    <div
+      className={styles.paramEditor}
+      data-testid={`postman-import-staging-item-${item.index}-params`}
+    >
+      <span className={styles.unsupported}>
+        Path parameter{params.length > 1 ? 's need values' : ' needs a value'}{' '}
+        before this item can run:
+      </span>
+      {params.map((name) => (
+        <label key={name} className={styles.paramField}>
+          <span>{`{${name}}`}</span>
+          <input
+            type="text"
+            value={values[name] ?? ''}
+            placeholder="concrete value"
+            onChange={(e) =>
+              setValues((prev) => ({ ...prev, [name]: e.target.value }))
+            }
+            data-testid={`postman-import-staging-item-${item.index}-param-${name}`}
+          />
+        </label>
+      ))}
+      <button
+        type="button"
+        disabled={applyDisabled}
+        onClick={() =>
+          onUpdateRequest(item.index, applyParamValues(item.request, values))
+        }
+        data-testid={`postman-import-staging-item-${item.index}-apply-params`}
+      >
+        Apply values
+      </button>
+    </div>
+  );
+}
+
+function StagedItemRow({
+  item,
+  onUpdateRequest,
+  styles,
+}: {
+  item: StagedImportItem;
+  onUpdateRequest?: (index: number, request: ImportedRequest) => void;
   styles: Record<string, string>;
 }): React.ReactElement {
   const { request, operation, archStatus } = item;
@@ -170,6 +229,13 @@ function StagedItemRow({
           >
             {request.unsupportedReason}
           </span>
+        )}
+        {(request.unresolvedParams ?? []).length > 0 && onUpdateRequest && (
+          <ParamValueEditor
+            item={item}
+            onUpdateRequest={onUpdateRequest}
+            styles={styles}
+          />
         )}
       </div>
 
@@ -207,6 +273,7 @@ export function PostmanImportStaging({
   reconciliation,
   loading,
   onFlaggedChange,
+  onUpdateRequest,
   styles = defaultStyles,
 }: PostmanImportStagingProps): React.ReactElement {
   // The single shared mapping + classification seam (pure). Recomputed only
@@ -267,7 +334,12 @@ export function PostmanImportStaging({
             <div>Architecture</div>
           </div>
           {staged.map((item) => (
-            <StagedItemRow key={item.index} item={item} styles={styles} />
+            <StagedItemRow
+              key={item.index}
+              item={item}
+              onUpdateRequest={onUpdateRequest}
+              styles={styles}
+            />
           ))}
         </div>
       )}

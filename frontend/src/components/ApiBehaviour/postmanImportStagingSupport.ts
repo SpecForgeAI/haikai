@@ -63,10 +63,14 @@ function normaliseMethod(method: string | null | undefined): string {
 
 /**
  * Normalise a URL path for `(method, path)` comparison: ensure a single leading
- * slash, drop any trailing slash (except the root), and lower-case. Parameterised
- * segments (`{id}` / `:id`) are NOT resolved here -- the imported path is already
- * concrete and is compared against the operation row's stored `path` verbatim
- * (the wizard pre-substitutes tokens before any send). Fail-soft on nullish.
+ * slash, drop any trailing slash (except the root), and lower-case.
+ * Parameterised segments are NOT resolved here: matching tries the SEND path
+ * first and then the item's `pathTemplate` (canonical `{param}` form), so a
+ * parameterised item auto-matches its templated operation row while the send
+ * uses the concrete path. (An earlier comment claimed "the wizard
+ * pre-substitutes tokens before any send" — no such step existed; substitution
+ * now genuinely lives in the parser + `applyParamValues`, 2026-08-02.)
+ * Fail-soft on nullish.
  */
 export function normalisePath(path: string | null | undefined): string {
   let p = (path ?? '').trim();
@@ -94,10 +98,54 @@ export function matchOperation(
   operations: ApiBehaviourOperationDto[],
 ): ApiBehaviourOperationDto | null {
   const wanted = operationKey(request.method, request.path);
+  // Template-level fallback (2026-08-02): a parameterised item whose params
+  // were substituted carries a concrete send path that will never string-match
+  // the operation row's TEMPLATE path — match on the canonical `{param}`
+  // template too.
+  const wantedTemplate = request.pathTemplate
+    ? operationKey(request.method, request.pathTemplate)
+    : null;
   for (const op of operations) {
-    if (operationKey(op.method, op.path) === wanted) return op;
+    const key = operationKey(op.method, op.path);
+    if (key === wanted) return op;
+    if (wantedTemplate !== null && key === wantedTemplate) return op;
   }
   return null;
+}
+
+/**
+ * Substitute operator-supplied values into an item's unresolved path params
+ * (2026-08-02). Values are URL-encoded; every token spelling the parser can
+ * leave behind (`{param}`, `:param`, `{{param}}`) is replaced. Returns a NEW
+ * request with `unresolvedParams` recomputed (dropped when empty) — pure, so
+ * the staging UI can fold it over its state.
+ */
+export function applyParamValues(
+  request: ImportedRequest,
+  values: Record<string, string>,
+): ImportedRequest {
+  const unresolved = request.unresolvedParams ?? [];
+  if (unresolved.length === 0) return request;
+  const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let path = request.path;
+  const remaining: string[] = [];
+  for (const name of unresolved) {
+    const raw = values[name];
+    if (raw === undefined || raw.trim() === '') {
+      remaining.push(name);
+      continue;
+    }
+    const encoded = encodeURIComponent(raw.trim());
+    path = path
+      .replace(new RegExp(`\\{\\{${escape(name)}\\}\\}`, 'g'), encoded)
+      .split('/')
+      .map((seg) => (seg === `{${name}}` || seg === `:${name}` ? encoded : seg))
+      .join('/');
+  }
+  const next: ImportedRequest = { ...request, path };
+  if (remaining.length > 0) next.unresolvedParams = remaining;
+  else delete next.unresolvedParams;
+  return next;
 }
 
 /**
@@ -156,7 +204,11 @@ export function stageImportItems(
     }
 
     const runnable =
-      archStatus === 'matched' && request.unsupportedReason === undefined;
+      archStatus === 'matched' &&
+      request.unsupportedReason === undefined &&
+      // An unresolved path param would fire its literal token at the server
+      // ("NO CAPTURE was recorded") — never runnable until values are set.
+      (request.unresolvedParams ?? []).length === 0;
 
     return { index, request, operation, archStatus, runnable };
   });

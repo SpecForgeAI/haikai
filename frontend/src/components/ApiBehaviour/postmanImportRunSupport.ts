@@ -86,8 +86,28 @@ export function isItemSendable(
   resolutions: Record<number, ArchMatchResolution>,
 ): boolean {
   if (item.request.unsupportedReason !== undefined) return false;
+  // An unresolved path param must NEVER fire (2026-08-02) — the literal
+  // token would hit the server and the capture would fail. This guards the
+  // `kept`-resolution path too, not just the runnable-computed one.
+  if ((item.request.unresolvedParams ?? []).length > 0) return false;
   if (item.archStatus === 'matched') return true;
   return resolutions[item.index] === 'kept';
+}
+
+/**
+ * TRUE when some item that WOULD send (matched, or resolved `kept`) still has
+ * unresolved path params (2026-08-02). Used to hold the run gate so those
+ * items are never silently skipped — the operator supplies values first.
+ */
+export function hasUnresolvedSendableParams(
+  staged: StagedImportItem[],
+  resolutions: Record<number, ArchMatchResolution>,
+): boolean {
+  return staged.some((item) => {
+    if ((item.request.unresolvedParams ?? []).length === 0) return false;
+    if (item.request.unsupportedReason !== undefined) return false;
+    return item.archStatus === 'matched' || resolutions[item.index] === 'kept';
+  });
 }
 
 /**
@@ -104,8 +124,11 @@ export function sendableItems(
 /**
  * Map one sendable staged item + its resolved operation row onto the
  * `ManualCaptureRequest` body. The body is camelCase (the existing
- * `manual-capture` contract); the path is the concrete resolved path the parser
- * staged (the route does NO further substitution). Query keys ride through as
+ * `manual-capture` contract); the path MUST already be concrete — the parser
+ * substitutes known variable values, `applyParamValues` folds in
+ * operator-supplied ones, `isItemSendable` blocks anything still carrying an
+ * unresolved token, and the AMVS route 400s a templated path as the final
+ * backstop (2026-08-02; the route does NO substitution). Query keys ride through as
  * the parser's `{ key: value }` record; headers likewise. `body` is the parsed
  * JSON value (or null for a bodiless request).
  *

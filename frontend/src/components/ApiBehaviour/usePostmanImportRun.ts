@@ -43,6 +43,7 @@ import {
   resolveSendOperation,
   buildManualCaptureRequest,
   canSendRun,
+  hasUnresolvedSendableParams,
   classifyStatus,
   addCaptured,
   type PostmanCapturedWire,
@@ -148,7 +149,11 @@ export function usePostmanImportRun({
   const flagged = useMemo(() => flaggedForArchMatch(staged), [staged]);
 
   const canSend = useMemo(
-    () => canSendRun(staged, resolutions),
+    () =>
+      canSendRun(staged, resolutions) &&
+      // Items that would send but still carry unresolved path params hold the
+      // gate (2026-08-02) — never silently skipped, never fired templated.
+      !hasUnresolvedSendableParams(staged, resolutions),
     [staged, resolutions],
   );
 
