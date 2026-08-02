@@ -238,6 +238,85 @@ describe('archModelClient -- Discovery Findings methods (cross-stack gap-fill)',
   });
 
   // ===========================================================================
+  // Test 2b-2d: bulk chunking (2026-08-02). AMS caps a bulk call at
+  // MAX_BULK_FINDINGS = 500 and 400s over-cap requests wholesale -- the
+  // client chunks, continues past a failed chunk, and throws only when
+  // NOTHING persisted.
+  // ===========================================================================
+  function bulkPayloads(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      findingType: 'evidence_gap',
+      category: 'evidence_gap',
+      severity: 'medium',
+      title: `finding-${i}`,
+    }));
+  }
+
+  it('chunks an over-cap bulk create into 500-sized POSTs and concatenates the results', async () => {
+    const mockAxiosInstance = setupAxiosMock();
+    mockAxiosInstance.post
+      .mockResolvedValueOnce({ data: [backendFindingDto({ id: 'f-a' })] })
+      .mockResolvedValueOnce({ data: [backendFindingDto({ id: 'f-b' })] })
+      .mockResolvedValueOnce({ data: [backendFindingDto({ id: 'f-c' })] });
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { archModelClient } = require('../services/archModelClient');
+    const result = await archModelClient.bulkCreateDiscoveryFindings(
+      PROJECT_ID,
+      RUN_ID,
+      bulkPayloads(1201),
+    );
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledTimes(3);
+    const lengths = mockAxiosInstance.post.mock.calls.map(
+      ([, body]: [string, { findings: unknown[] }]) => body.findings.length,
+    );
+    expect(lengths).toEqual([500, 500, 201]);
+    for (const [url] of mockAxiosInstance.post.mock.calls) {
+      expect(url).toBe(`${findingsUrl}/bulk`);
+    }
+    expect(result.map((f: { id: string }) => f.id)).toEqual(['f-a', 'f-b', 'f-c']);
+  });
+
+  it('a failed chunk logs and the remaining chunks still persist (partial success returned)', async () => {
+    const mockAxiosInstance = setupAxiosMock();
+    mockAxiosInstance.post
+      .mockResolvedValueOnce({ data: [backendFindingDto({ id: 'f-1' })] })
+      .mockRejectedValueOnce(new Error('AMS 400 on chunk 2'))
+      .mockResolvedValueOnce({ data: [backendFindingDto({ id: 'f-3' })] });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { archModelClient } = require('../services/archModelClient');
+    const result = await archModelClient.bulkCreateDiscoveryFindings(
+      PROJECT_ID,
+      RUN_ID,
+      bulkPayloads(1201),
+    );
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledTimes(3);
+    expect(result.map((f: { id: string }) => f.id)).toEqual(['f-1', 'f-3']);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('chunk 2/3 failed'));
+    warnSpy.mockRestore();
+  });
+
+  it('throws when EVERY chunk fails (total failure stays loud)', async () => {
+    const mockAxiosInstance = setupAxiosMock();
+    mockAxiosInstance.post
+      .mockRejectedValueOnce(new Error('boom1'))
+      .mockRejectedValueOnce(new Error('boom2'));
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { archModelClient } = require('../services/archModelClient');
+    await expect(
+      archModelClient.bulkCreateDiscoveryFindings(PROJECT_ID, RUN_ID, bulkPayloads(600)),
+    ).rejects.toThrow('boom2');
+    expect(mockAxiosInstance.post).toHaveBeenCalledTimes(2);
+    warnSpy.mockRestore();
+  });
+
+  // ===========================================================================
   // Test 3: updateDiscoveryFinding PATCH preserves an explicit `confidence: null`
   // on the wire (boxed-Double pitfall coverage end-to-end through the wire
   // mapper) AND omits keys that were not supplied so AMS null-guards apply.

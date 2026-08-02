@@ -1,9 +1,11 @@
 package com.example.architecturemodel.service.discovery;
 
 import com.example.architecturemodel.exception.InvalidFindingLinkTargetException;
+import com.example.architecturemodel.model.dto.discovery.BulkCreateDiscoveryFindingsRequest;
 import com.example.architecturemodel.model.dto.discovery.CreateDiscoveryFindingRequest;
 import com.example.architecturemodel.model.dto.discovery.CreateDiscoveryFindingRequest.CreateDiscoveryFindingLinkRequest;
 import com.example.architecturemodel.model.dto.discovery.DiscoveryFindingDto;
+import com.example.architecturemodel.model.entity.DiscoveryCandidateEntity;
 import com.example.architecturemodel.model.entity.discovery.DiscoveryFindingEntity;
 import com.example.architecturemodel.model.entity.discovery.DiscoveryFindingLinkEntity;
 import com.example.architecturemodel.repository.discovery.DiscoveryFindingLinkRepository;
@@ -25,6 +27,7 @@ import org.mockito.quality.Strictness;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -33,6 +36,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -285,5 +289,73 @@ class DiscoveryFindingOriginAndLinkTargetTest {
                 PROJECT_ID, ARCHITECTURE_ID, null, req("medium")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Exactly one of runId / apiBehaviourDiffId");
+    }
+
+    // =========================================================================
+    // Bulk create skips invalid link TARGETS instead of failing the batch
+    // (2026-08-02). Root cause of the live findingsEmit {failed:true,
+    // persisted:0}: one never-persisted discovery_evidence target 400'd the
+    // whole @Transactional bulk.
+    // =========================================================================
+
+    private CreateDiscoveryFindingRequest reqWithLinks(List<CreateDiscoveryFindingLinkRequest> links) {
+        return new CreateDiscoveryFindingRequest(
+            "runtime_usage_observation",
+            "runtime_evidence",
+            "info",
+            null,
+            null,
+            "Observed usage for GET /widgets",
+            null,
+            Map.of("method", "GET", "path", "/widgets"),
+            "log_processing",
+            "runtimeEvidence.findingEmission",
+            null,
+            links
+        );
+    }
+
+    @Test
+    @DisplayName("bulkCreate skips a link with an invalid target (never-persisted evidence id) and keeps the finding + valid links")
+    void bulkCreateSkipsInvalidLinkTargetInsteadOfFailingBatch() {
+        UUID goodCandidateId = UUID.fromString("66666666-6666-6666-6666-666666666666");
+        UUID missingEvidenceId = UUID.fromString("77777777-7777-7777-7777-777777777777");
+        DiscoveryCandidateEntity candidate = mock(DiscoveryCandidateEntity.class);
+        when(candidate.getRunId()).thenReturn(RUN_ID);
+        when(candidateRepository.findById(goodCandidateId)).thenReturn(Optional.of(candidate));
+        when(evidenceRepository.findById(missingEvidenceId)).thenReturn(Optional.empty());
+
+        CreateDiscoveryFindingRequest body = reqWithLinks(List.of(
+            new CreateDiscoveryFindingLinkRequest(
+                "cites", "discovery_candidate", goodCandidateId.toString(), null),
+            new CreateDiscoveryFindingLinkRequest(
+                "cites", "discovery_evidence", missingEvidenceId.toString(), null)));
+
+        List<DiscoveryFindingDto> out = service.bulkCreate(
+            PROJECT_ID, ARCHITECTURE_ID, RUN_ID,
+            new BulkCreateDiscoveryFindingsRequest(List.of(body)));
+
+        // The finding persisted; the valid candidate link persisted; the
+        // invalid evidence link was SKIPPED (not thrown).
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).links()).hasSize(1);
+        assertThat(out.get(0).links().get(0).targetId()).isEqualTo(goodCandidateId.toString());
+        verify(findingRepository, times(1)).saveAndFlush(any(DiscoveryFindingEntity.class));
+        verify(linkRepository, times(1)).saveAndFlush(any(DiscoveryFindingLinkEntity.class));
+    }
+
+    @Test
+    @DisplayName("single create keeps the strict D6 hard-reject on an invalid link target")
+    void singleCreateStillHardRejectsInvalidLinkTarget() {
+        UUID missingEvidenceId = UUID.fromString("77777777-7777-7777-7777-777777777777");
+        when(evidenceRepository.findById(missingEvidenceId)).thenReturn(Optional.empty());
+
+        CreateDiscoveryFindingRequest body = reqWithLinks(List.of(
+            new CreateDiscoveryFindingLinkRequest(
+                "cites", "discovery_evidence", missingEvidenceId.toString(), null)));
+
+        assertThatThrownBy(() -> service.create(PROJECT_ID, ARCHITECTURE_ID, RUN_ID, body))
+            .isInstanceOf(InvalidFindingLinkTargetException.class)
+            .hasMessageContaining("does not exist");
     }
 }
