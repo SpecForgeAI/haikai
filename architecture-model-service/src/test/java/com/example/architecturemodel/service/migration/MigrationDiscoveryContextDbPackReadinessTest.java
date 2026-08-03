@@ -101,7 +101,7 @@ class MigrationDiscoveryContextDbPackReadinessTest {
             discoveryDecisionTaskRepository,
             apiBehaviourBaselineRepository,
             architectureElementMappingRepository,
-            null, null, null, null, null, null, null, null, // coverage gates
+            null, null, null, null, null, null, null, null, null, // coverage gates (incl. InterfaceRepository)
             null, // MetaModelSummaryService -- counts 0, hasModel false
             null, // TargetStateCapturedDecisionService -- empty default block
             dbMigrationPackRepository,

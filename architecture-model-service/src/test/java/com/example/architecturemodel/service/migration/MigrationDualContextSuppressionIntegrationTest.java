@@ -114,7 +114,7 @@ class MigrationDualContextSuppressionIntegrationTest {
             discoveryCandidateRepository, discoveryEvidenceRepository,
             discoveryDecisionTaskRepository, apiBehaviourBaselineRepository,
             architectureElementMappingRepository,
-            null, null, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, null, null, null, null, null, null,
             null, null, null /* DB-migration-pack repos (Spec 2026-07-02-a) */);
 
         specContextResolver = new MigrationSpecContextResolver(

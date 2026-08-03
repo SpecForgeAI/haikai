@@ -110,12 +110,15 @@ class MigrationCaptureCoverageReadinessTest {
     // ======================================================================
 
     @Test
-    @DisplayName("(B) under-specified REST (no data effect) vs SOAP scored on message-binding bar")
+    @DisplayName("(B) contract-aware: an entity-binding REST with no data effect is under-specified; a primitive REST is NOT")
     void specificationCoveragePerProtocolBar() {
-        // REST endpoint WITH a resolved data effect -> fully specified.
-        EndpointEntity restOk = endpoint("ep-rest-ok", "iface-rest", "REST", "GET", "/ok", null);
-        // REST endpoint WITHOUT a data effect -> under-specified.
-        EndpointEntity restBad = endpoint("ep-rest-bad", "iface-rest", "REST", "GET", "/bad", null);
+        // REST endpoint that BINDS a modelled entity AND has a data effect -> specified.
+        EndpointEntity restOk = restEndpoint("ep-rest-ok", "iface-rest", "/ok", true);
+        // REST endpoint that BINDS a modelled entity but has NO data effect -> under-specified.
+        EndpointEntity restBad = restEndpoint("ep-rest-bad", "iface-rest", "/bad", true);
+        // REST endpoint that binds NO modelled entity (primitive/no-body) -> specified
+        // (contract-aware: nothing to link, so NOT under-specified).
+        EndpointEntity restPrimitive = restEndpoint("ep-rest-prim", "iface-rest", "/ping", false);
         // SOAP op whose parent interface HAS bound message entities -> fully specified
         // (judged on the SOAP bar, NOT on data effects -- it has none).
         EndpointEntity soapOk = endpoint("ep-soap-ok", "iface-soap-ok", "SOAP", "POST", null,
@@ -126,17 +129,18 @@ class MigrationCaptureCoverageReadinessTest {
 
         Map<String, List<EndpointDataEffectEntity>> effectsByEndpoint = new HashMap<>();
         effectsByEndpoint.put("ep-rest-ok", List.of(dataEffect("ep-rest-ok")));
-        // restBad, soapOk, soapBad: no data effects.
+        // restBad, restPrimitive, soapOk, soapBad: no data effects.
 
         Map<String, List<InterfaceLogicalEntityEntity>> bindingsByInterface = new HashMap<>();
         bindingsByInterface.put("iface-soap-ok", List.of(messageBinding("iface-soap-ok")));
         // iface-soap-bad: no bindings.
 
         SpecificationCoverage cov = MigrationDiscoveryContextService.computeSpecificationCoverage(
-            List.of(restOk, restBad, soapOk, soapBad), effectsByEndpoint, bindingsByInterface);
+            List.of(restOk, restBad, restPrimitive, soapOk, soapBad),
+            effectsByEndpoint, bindingsByInterface);
 
-        assertThat(cov.totalEndpoints()).isEqualTo(4);
-        assertThat(cov.fullySpecifiedCount()).isEqualTo(2); // restOk + soapOk
+        assertThat(cov.totalEndpoints()).isEqualTo(5);
+        assertThat(cov.fullySpecifiedCount()).isEqualTo(3); // restOk + restPrimitive + soapOk
         assertThat(cov.isComplete()).isFalse();
         assertThat(cov.underSpecifiedEndpointIds())
             .containsExactlyInAnyOrder("ep-rest-bad", "ep-soap-bad");
@@ -398,6 +402,29 @@ class MigrationCaptureCoverageReadinessTest {
             .pathOrAddress(path)
             .protocolMetadataJson(protocolMeta)
             .build();
+    }
+
+    /**
+     * A REST endpoint that optionally BINDS a modelled data entity via its
+     * response data-entity-point (the contract-aware specification signal,
+     * 2026-08-03). {@code bindsEntity=false} models a primitive/no-body
+     * endpoint that references no modelled entity.
+     */
+    private static EndpointEntity restEndpoint(
+            String id, String interfaceId, String path, boolean bindsEntity) {
+        EndpointEntity.EndpointEntityBuilder b = EndpointEntity.builder()
+            .id(id)
+            .modelFileId("mf-1")
+            .interfaceId(interfaceId)
+            .name(id)
+            .protocol("REST")
+            .endpointType("REST")
+            .operationVerb("GET")
+            .pathOrAddress(path);
+        if (bindsEntity) {
+            b.responseDataEntityPointId("dep-" + id);
+        }
+        return b.build();
     }
 
     private static Map<String, Object> soapMeta(String soapAction, String requestRootElement) {

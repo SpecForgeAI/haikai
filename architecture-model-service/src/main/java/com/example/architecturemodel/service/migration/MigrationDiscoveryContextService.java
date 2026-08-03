@@ -45,6 +45,7 @@ import com.example.architecturemodel.repository.entity.DiscoveryDecisionTaskRepo
 import com.example.architecturemodel.repository.entity.DiscoveryEvidenceRepository;
 import com.example.architecturemodel.repository.entity.DiscoveryRunRepository;
 import com.example.architecturemodel.repository.entity.EndpointRepository;
+import com.example.architecturemodel.repository.entity.InterfaceRepository;
 import com.example.architecturemodel.repository.relationship.InterfaceLogicalEntityRepository;
 import com.example.architecturemodel.model.dto.targetstate.CapturedDecisionRefDto;
 import com.example.architecturemodel.model.dto.targetstate.TargetStateDecisionsSummaryDto;
@@ -221,6 +222,26 @@ public class MigrationDiscoveryContextService {
     private final EndpointRepository endpointRepository;
     private final EndpointDataEffectRepository endpointDataEffectRepository;
     private final InterfaceLogicalEntityRepository interfaceLogicalEntityRepository;
+    /**
+     * Coverage B/C internal-endpoint exclusion (2026-08-03). Nullable per the
+     * test-isolation pattern: absent, no interface is treated as internal.
+     */
+    private final InterfaceRepository interfaceRepository;
+
+    /**
+     * Interface types whose endpoints are internal (non-HTTP) entry points —
+     * batch classes, scheduler entries, listeners. They can NEVER be exercised
+     * over HTTP, so the capture harness auto-excludes them from scope. The
+     * migration coverage dimensions (B specification, C inventory
+     * reconciliation) must exclude them too, otherwise every internal endpoint
+     * shows as discovered-but-not-captured and inflates the inventory mismatch
+     * even at 100% external coverage. Both spellings tolerated (the save-back
+     * originally wrote INTERNAL_PROCESS; the formalised value is
+     * INTERNAL_PROCESSING) — byte-identical to
+     * {@code ApiBehaviourInventoryReconciliationService}.
+     */
+    private static final Set<String> INTERNAL_INTERFACE_TYPES =
+        Set.of("INTERNAL_PROCESSING", "INTERNAL_PROCESS");
 
     /**
      * Optional meta-model summary service. The constructor accepts a null
@@ -270,6 +291,7 @@ public class MigrationDiscoveryContextService {
             EndpointRepository endpointRepository,
             EndpointDataEffectRepository endpointDataEffectRepository,
             InterfaceLogicalEntityRepository interfaceLogicalEntityRepository,
+            InterfaceRepository interfaceRepository,
             MetaModelSummaryService metaModelSummaryService,
             TargetStateCapturedDecisionService targetStateCapturedDecisionService,
             DbMigrationPackRepository dbMigrationPackRepository,
@@ -293,6 +315,7 @@ public class MigrationDiscoveryContextService {
         this.endpointRepository = endpointRepository;
         this.endpointDataEffectRepository = endpointDataEffectRepository;
         this.interfaceLogicalEntityRepository = interfaceLogicalEntityRepository;
+        this.interfaceRepository = interfaceRepository;
         this.metaModelSummaryService = metaModelSummaryService;
         this.targetStateCapturedDecisionService = targetStateCapturedDecisionService;
         this.dbMigrationPackRepository = dbMigrationPackRepository;
@@ -1293,19 +1316,31 @@ public class MigrationDiscoveryContextService {
         // (projectId, architectureId)-scoped lookup; absent -> dimensions B + C
         // are skipped (empty).
         String modelFileId = resolveModelFileId(projectId, currentArchitectureId);
-        List<EndpointEntity> endpoints = (modelFileId == null || endpointRepository == null)
+        List<EndpointEntity> allEndpoints = (modelFileId == null || endpointRepository == null)
             ? List.of()
             : endpointRepository.findByModelFileId(modelFileId);
 
-        // (B) SPECIFICATION -- per-protocol "fully specified" bar over the model
-        // endpoints.
+        // Internal (non-HTTP) entry points are auto-excluded from HTTP capture
+        // scope by the harness, so B + C must exclude them too (2026-08-03) —
+        // otherwise every internal endpoint reads as under-specified /
+        // discovered-but-not-captured and inflates both dimensions even at 100%
+        // external coverage. `endpoints` below is the EXTERNAL (HTTP) set.
+        Set<String> internalInterfaceIds = loadInternalInterfaceIds(modelFileId);
+        List<EndpointEntity> endpoints = internalInterfaceIds.isEmpty()
+            ? allEndpoints
+            : allEndpoints.stream()
+                .filter(ep -> !internalInterfaceIds.contains(ep.getInterfaceId()))
+                .toList();
+
+        // (B) SPECIFICATION -- per-protocol "fully specified" bar over the
+        // external endpoints (contract-aware; see computeSpecificationCoverage).
         SpecificationCoverage specification = endpoints.isEmpty()
             ? SpecificationCoverage.empty()
             : computeSpecificationCoverageFromModel(endpoints);
 
-        // (C) RECONCILIATION -- compare the model endpoint inventory against the
-        // union of harness operations across the baseline sessions. Needs BOTH
-        // an endpoint set and a harness operation set to be meaningful.
+        // (C) RECONCILIATION -- compare the EXTERNAL model endpoint inventory
+        // against the union of harness operations across the baseline sessions.
+        // Needs BOTH an endpoint set and a harness operation set to be meaningful.
         List<ApiBehaviourOperationEntity> harnessOps =
             loadHarnessOperationsForBaselines(baselines);
         InventoryReconciliation reconciliation =
@@ -1314,6 +1349,28 @@ public class MigrationDiscoveryContextService {
                 : computeInventoryReconciliation(endpoints, harnessOps);
 
         return new CoverageAggregates(capture, specification, reconciliation);
+    }
+
+    /**
+     * The set of interface ids typed as internal (non-HTTP) entry points for a
+     * model file (2026-08-03). Empty when the interface repository is absent
+     * (test isolation) or the model file is unknown. Mirrors
+     * {@code ApiBehaviourInventoryReconciliationService}'s internal detection.
+     */
+    private Set<String> loadInternalInterfaceIds(String modelFileId) {
+        if (modelFileId == null || interfaceRepository == null) {
+            return Set.of();
+        }
+        Set<String> ids = new HashSet<>();
+        for (var iface : interfaceRepository.findByModelFileId(modelFileId)) {
+            String type = iface.getInterfaceType() == null
+                ? ""
+                : iface.getInterfaceType().trim().toUpperCase();
+            if (INTERNAL_INTERFACE_TYPES.contains(type)) {
+                ids.add(iface.getId());
+            }
+        }
+        return ids;
     }
 
     /** Resolve the architecture's model_file_id the way MetaModelSummaryService does. */
@@ -1490,10 +1547,20 @@ public class MigrationDiscoveryContextService {
 
     /**
      * (B) SPECIFICATION coverage over a discovered endpoint set, per protocol.
-     * REST endpoint is "fully specified" iff it has a resolved
-     * {@code endpoint_data_effects} edge; a SOAP operation is "fully specified"
-     * iff its parent interface has bound message entities. Captured behaviour is
-     * a BONUS only and is intentionally NOT consulted here.
+     *
+     * <p>CONTRACT-AWARE (2026-08-03): a REST endpoint is only EXPECTED to carry
+     * a data-effect link when its contract actually references a modelled data
+     * entity — i.e. its request OR response binds a data-entity-point
+     * ({@code request_data_entity_point_id} / {@code
+     * response_data_entity_point_id}). An endpoint whose request/response
+     * references NO modelled entity (no body + a primitive/empty response) has
+     * nothing to link and is NOT under-specified — previously the naive
+     * has-an-edge check flagged every such endpoint (health checks, primitive
+     * GETs, no-body POSTs) as a false positive. When it DOES bind an entity, it
+     * is "fully specified" iff it has a resolved {@code endpoint_data_effects}
+     * edge. A SOAP operation is "fully specified" iff its parent interface has
+     * bound message entities. Captured behaviour is a BONUS only and is
+     * intentionally NOT consulted here.</p>
      */
     static SpecificationCoverage computeSpecificationCoverage(
             List<EndpointEntity> endpoints,
@@ -1510,6 +1577,10 @@ public class MigrationDiscoveryContextService {
                 List<InterfaceLogicalEntityEntity> bindings =
                     bindingsByInterface == null ? null : bindingsByInterface.get(ep.getInterfaceId());
                 specified = bindings != null && !bindings.isEmpty();
+            } else if (!bindsModelledEntity(ep)) {
+                // No modelled entity in the request/response contract -> nothing
+                // to link -> not under-specified.
+                specified = true;
             } else {
                 List<EndpointDataEffectEntity> effects =
                     effectsByEndpoint == null ? null : effectsByEndpoint.get(ep.getId());
@@ -1522,6 +1593,21 @@ public class MigrationDiscoveryContextService {
             }
         }
         return new SpecificationCoverage(endpoints.size(), fullySpecified, underSpecified);
+    }
+
+    /**
+     * True when a REST endpoint's request OR response binds a modelled data
+     * entity (a non-blank {@code request_data_entity_point_id} /
+     * {@code response_data_entity_point_id}). The contract-aware gate for
+     * specification coverage (2026-08-03).
+     */
+    static boolean bindsModelledEntity(EndpointEntity ep) {
+        return isNonBlank(ep.getRequestDataEntityPointId())
+            || isNonBlank(ep.getResponseDataEntityPointId());
+    }
+
+    private static boolean isNonBlank(String s) {
+        return s != null && !s.trim().isEmpty();
     }
 
     /**
