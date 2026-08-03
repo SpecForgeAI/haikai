@@ -116,6 +116,7 @@ class MigrationDiscoveryContextAggregationTest {
             null, // EndpointRepository               (coverage B/C)
             null, // EndpointDataEffectRepository     (coverage B REST bar)
             null, // InterfaceLogicalEntityRepository (coverage B SOAP bar)
+            null, // InterfaceRepository              (coverage B/C internal exclusion)
             null /* MetaModelSummaryService -- not exercised here */,
             targetStateCapturedDecisionService,
             null, // DbMigrationPackRepository            (Spec 2026-07-02-a)
