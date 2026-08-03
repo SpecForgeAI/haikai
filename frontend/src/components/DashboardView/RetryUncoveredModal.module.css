@@ -3,6 +3,26 @@
 .wide {
   width: min(1100px, 96vw);
   max-width: 96vw;
+  /* The panel is a flex column (header + body); cap its height so the body
+     region scrolls for a large unmatched-operations list. */
+  max-height: 90vh;
+}
+
+/*
+ * OWN body layout — the host's diff-modal body is a 2-column grid, which
+ * splits the table/buttons/note sideways. This overrides it: a single
+ * full-width vertical stack (table → buttons → note) that scrolls as a whole
+ * within the panel's capped height.
+ */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.9rem 1rem 1rem;
+  overflow-y: auto;
+  /* flex child in the column panel: allow it to shrink + own the scroll. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .intro {
@@ -12,8 +32,9 @@
 }
 
 .tableWrap {
-  max-height: 55vh;
-  overflow: auto;
+  width: 100%;
+  /* Horizontal scroll only when the table itself is wider than the modal. */
+  overflow-x: auto;
   border: 1px solid var(--border-color, #d0d0d0);
   border-radius: 6px;
 }
@@ -82,7 +103,14 @@
 
 .notesInput {
   width: 100%;
-  min-width: 12rem;
+  min-width: 16rem;
+  box-sizing: border-box;
+}
+
+/* Give the Notes column the flexible width so the table fills the modal. */
+.table th:nth-child(4),
+.table td:nth-child(4) {
+  width: 100%;
 }
 
 .excludedRow td {
@@ -102,7 +130,6 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-top: 1rem;
   flex-wrap: wrap;
 }
 
@@ -115,8 +142,12 @@
 }
 
 .note {
-  margin-top: 0.75rem;
+  margin: 0;
   font-size: 0.85rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface-2, #f4f4f6);
+  border-left: 3px solid var(--accent, #1652a3);
+  border-radius: 4px;
 }
 
 .emptyState {

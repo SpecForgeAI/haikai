@@ -180,7 +180,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
             {otherCount > 0 ? ` · ${otherCount} other failed scenario${otherCount === 1 ? '' : 's'}` : ''}
           </span>
         </div>
-        <div className={classes.body}>
+        <div className={modal.body}>
           {rows.length === 0 ? (
             <p className={modal.emptyState} data-testid={`${testId}-empty`}>
               Every included endpoint has its happy-path baseline and no other
@@ -284,12 +284,6 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
             </div>
           )}
 
-          {note && (
-            <p className={modal.note} data-testid={`${testId}-note`} role="status">
-              {note}
-            </p>
-          )}
-
           <div className={modal.footerRow}>
             {otherCount > 0 && !dimensionalOnly && (
               <label className={modal.includeOther} data-testid={`${testId}-dimensions-toggle`}>
@@ -339,6 +333,14 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               Close
             </button>
           </div>
+
+          {/* Warning/status text lands BELOW the buttons (the outcome of a
+              button press), full width. */}
+          {note && (
+            <p className={modal.note} data-testid={`${testId}-note`} role="status">
+              {note}
+            </p>
+          )}
         </div>
       </div>
     </div>
