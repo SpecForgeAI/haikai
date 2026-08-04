@@ -892,15 +892,16 @@ class ClaudeChatExecutor:
         if process.returncode != 0:
             state.is_fatal_error = True
             stderr_output = process.stderr.read().strip() if process.stderr else ""
-            if stderr_output:
-                state.cli_errors.append(stderr_output)
-                logger.error(f"Claude CLI failed (code {process.returncode}): {stderr_output}")
-                yield {"type": "error", "message": stderr_output}
-            else:
-                error_msg = f"Claude CLI exited with code {process.returncode}"
-                state.cli_errors.append(error_msg)
-                logger.error(error_msg)
-                yield {"type": "error", "message": error_msg}
+            # ALWAYS lead with the exit code (2026-08-04, same incident as the
+            # kiro executor): stderr verbatim masked the true cause — a
+            # reloader SIGTERM (-15) read as a tool problem. Code first,
+            # stderr appended as context only.
+            error_msg = f"Claude CLI exited with code {process.returncode}" + (
+                f": {stderr_output}" if stderr_output else ""
+            )
+            state.cli_errors.append(error_msg)
+            logger.error(error_msg)
+            yield {"type": "error", "message": error_msg}
             return
         # Process succeeded — drain stderr for warnings/debug info only.
         if process.stderr:
@@ -995,9 +996,13 @@ class ClaudeChatExecutor:
                 state.is_fatal_error = True
                 stderr_output = retry_process.stderr.read().strip() if retry_process.stderr else ""
                 if stderr_output:
-                    state.cli_errors.append(stderr_output)
-                    logger.error(f"Retry {retry_attempt + 1} failed (code {retry_process.returncode}): {stderr_output}")
-                    yield {"type": "error", "message": stderr_output}
+                    # Exit code first (2026-08-04) — stderr is context, not the cause.
+                    error_msg = (
+                        f"Claude CLI exited with code {retry_process.returncode}: {stderr_output}"
+                    )
+                    state.cli_errors.append(error_msg)
+                    logger.error(f"Retry {retry_attempt + 1} failed: {error_msg}")
+                    yield {"type": "error", "message": error_msg}
                 else:
                     logger.error(f"Retry {retry_attempt + 1} failed (code {retry_process.returncode})")
                 continue

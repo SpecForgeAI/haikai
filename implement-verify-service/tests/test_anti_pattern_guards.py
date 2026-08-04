@@ -1337,3 +1337,53 @@ class TestCliSpawnsPinTheModel:
             "through model_args(self.model) so the model is explicit on "
             "every spawn:\n  " + "\n  ".join(offenders)
         )
+
+
+# ─── Guard: CLI failure messages must lead with the exit code ────────────────
+
+
+class TestCliErrorMessagesCarryExitCode:
+    """2026-08-04 live incident: the dev-reloader SIGTERM'd an in-flight
+    kiro-cli run and the executor reported the (chronically noisy) stderr
+    VERBATIM as the error message — a killed process read as a spurious
+    tool-trust problem. The rule: a non-zero-exit error message ALWAYS
+    leads with ``exited with code {returncode}``; stderr is appended as
+    context only. Guard: no executor may yield/append raw ``stderr_output``
+    as the error message.
+    """
+
+    EXECUTOR_FILES = [
+        SRC / "chat" / "kiro_chat_executor.py",
+        SRC / "chat" / "claude_chat_executor.py",
+    ]
+
+    # The exact anti-pattern shapes the 2026-08-04 fix removed.
+    RAW_STDERR_MESSAGE = re.compile(
+        r"\"message\":\s*stderr_output|"          # yield raw stderr as message
+        r"cli_errors\.append\(stderr_output\)|"    # record raw stderr as the error
+        r"error_msg\s*=\s*stderr_output\s+or\b"    # stderr wins over the code
+    )
+
+    def test_no_raw_stderr_error_messages(self):
+        offenders: list[str] = []
+        for path in self.EXECUTOR_FILES:
+            text = _read_text(path)
+            for i, line in enumerate(text.split("\n"), start=1):
+                if self.RAW_STDERR_MESSAGE.search(line):
+                    offenders.append(f"{path.name}:{i}: {line.strip()}")
+        assert offenders == [], (
+            "CLI failure message built from raw stderr — it must lead with "
+            "`exited with code {returncode}` (stderr appended as context "
+            "only), or a reloader/OOM kill reads as a tool problem:\n  "
+            + "\n  ".join(offenders)
+        )
+
+    def test_exit_code_phrasing_present(self):
+        # Positive control: both executors carry the code-first phrasing, so
+        # a refactor that deletes the messages outright also fails loudly.
+        for path in self.EXECUTOR_FILES:
+            assert "exited with code {" in _read_text(path).replace(
+                "process.returncode", "{"
+            ) or "exited with code" in _read_text(path), (
+                f"{path.name} no longer builds a code-first CLI failure message"
+            )

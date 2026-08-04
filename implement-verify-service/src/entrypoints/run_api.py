@@ -186,13 +186,46 @@ Environment Variables:
                 workers=args.workers,
                 log_level=args.log_level
             )
-        else:
-            # Development mode or single worker
+        elif args.reload:
+            # Development mode with hot reload.
+            #
+            # SCOPE THE WATCHER TO SOURCE ONLY (2026-08-04 live incident): the
+            # default reloader watches the whole CWD tree, and the agent
+            # workspaces (api_workspace/, workspace/ — where kiro-cli/Claude
+            # write files on EVERY orchestration step) live under it. Any file
+            # an agent wrote triggered a reload, which killed the in-flight
+            # subprocess mid-run (surfacing as a spurious "kiro-cli exited"
+            # error). Watching src/templates/config keeps hot reload for code
+            # edits while agent writes can never restart the server. The
+            # excludes are belt-and-braces for anyone who nests a workspace
+            # under src or points the watcher elsewhere.
+            project_root = Path(__file__).resolve().parents[2]
+            reload_dirs = [
+                str(project_root / d)
+                for d in ("src", "templates", "config")
+                if (project_root / d).is_dir()
+            ]
             uvicorn.run(
                 "src.api:app",
                 host=args.host,
                 port=args.port,
-                reload=args.reload,
+                reload=True,
+                reload_dirs=reload_dirs,
+                reload_excludes=[
+                    "api_workspace/*",
+                    "workspace/*",
+                    "sessions/*",
+                    "haikai/*",
+                    "*.log",
+                ],
+                log_level=args.log_level
+            )
+        else:
+            # Single worker, no reload.
+            uvicorn.run(
+                "src.api:app",
+                host=args.host,
+                port=args.port,
                 log_level=args.log_level
             )
     except KeyboardInterrupt:

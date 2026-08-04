@@ -707,8 +707,9 @@ class TestHandleResumeRetryEvent:
 
 class TestCheckMainReturncode:
     """Behaviour contract:
-    - returncode != 0: sets is_fatal_error, appends stderr (or synthetic
-      msg if empty) to cli_errors, yields one error event.
+    - returncode != 0: sets is_fatal_error, appends a code-first message
+      ("Claude CLI exited with code N[: stderr]") to cli_errors, yields
+      one error event.
     - returncode == 0: drains stderr to logger.warning, yields nothing,
       does NOT touch state.is_fatal_error.
     """
@@ -724,9 +725,14 @@ class TestCheckMainReturncode:
         state = _StreamLoopState()
         proc = self._make_proc(returncode=1, stderr_text="boom\n")
         events = list(executor._check_main_returncode(proc, state))
-        assert events == [{"type": "error", "message": "boom"}]
+        # 2026-08-04: the message ALWAYS leads with the exit code — stderr is
+        # appended context, never the whole story (a reloader SIGTERM with
+        # noisy stderr must still read as an exit, not a tool problem).
+        assert events == [
+            {"type": "error", "message": "Claude CLI exited with code 1: boom"}
+        ]
         assert state.is_fatal_error is True
-        assert state.cli_errors == ["boom"]
+        assert state.cli_errors == ["Claude CLI exited with code 1: boom"]
 
     def test_nonzero_with_empty_stderr_yields_synthetic_error(self, executor):
         state = _StreamLoopState()

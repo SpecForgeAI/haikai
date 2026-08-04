@@ -373,8 +373,15 @@ class KiroChatExecutor:
             process.wait()
 
             if process.returncode != 0:
+                # ALWAYS lead with the exit code (2026-08-04 live incident):
+                # kiro-cli's stderr is chronically noisy (trust banners etc.),
+                # and reporting it VERBATIM masked the true cause — a reloader
+                # SIGTERM (-15) read as a spurious tool-trust problem. The
+                # code is the signal; stderr is appended as context only.
                 stderr_output = process.stderr.read().strip() if process.stderr else ""
-                error_msg = stderr_output or f"kiro-cli exited with code {process.returncode}"
+                error_msg = f"kiro-cli exited with code {process.returncode}" + (
+                    f": {stderr_output}" if stderr_output else ""
+                )
                 logger.error(f"Kiro CLI failed: {error_msg}")
                 yield {"type": "error", "message": error_msg}
             else:
