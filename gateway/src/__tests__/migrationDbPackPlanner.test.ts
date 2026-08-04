@@ -14,6 +14,7 @@ import {
   buildDbStreamSkeleton,
   clusterMechanicalTables,
   computeTableLayers,
+  estimateTableChars,
   flaggedTableSet,
   PackView,
   SEED_DB_PACK_FILES_TAG,
@@ -687,5 +688,74 @@ describe('structural completeness surfacing (WS3 P1)', () => {
     const stories = expandEpic(makePackView(), `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
     expect(stories.filter((s) => s.id.includes('-s-structural-gap-'))).toHaveLength(0);
     expect(stories.filter((s) => s.type === 'known_gap')).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Adaptive cluster sizing (2026-08-04, Kiro fix 3): the cap is a TARGET —
+// projected per-cluster payload decrements it by one until every cluster
+// fits the budget; floor at 1 flags (logs) instead of silently oversizing.
+// ===========================================================================
+
+describe('adaptive cluster sizing (2026-08-04)', () => {
+  function columnsFor(table: string, count: number) {
+    const [schemaName, tableName] = table.split('.');
+    return Array.from({ length: count }, (_, i) => ({
+      schemaName,
+      tableName,
+      columnName: `col_${i}`,
+      dataType: 'text',
+      isNullable: true,
+      isPrimaryKey: false,
+      defaultExpression: null,
+      isIdentity: false,
+      isGenerated: false,
+      generationExpression: null,
+    }));
+  }
+
+  it('no adaptation when projected payloads fit (column-less fixture, default budget)', () => {
+    const manifest = makeManifest();
+    const atTarget = clusterMechanicalTables(manifest, 25);
+    // 8 small tables — clustering identical to the pre-adaptive behaviour.
+    expect(atTarget.every((c) => c.tables.length <= 25)).toBe(true);
+    expect(atTarget.flatMap((c) => c.tables)).toHaveLength(7); // dbo.orders is flagged
+  });
+
+  it('decrements the cap by one until every cluster fits the budget', () => {
+    const manifest = makeManifest();
+    // 10 columns per table -> 400 + 10*80 = 1,200 chars each. Budget 2,500
+    // fits at most TWO tables per cluster; target 8 must step down.
+    manifest.expected_schema.columns = [
+      'dbo.customers',
+      'dbo.products',
+      'dbo.regions',
+      'dbo.audit_log',
+      'dbo.stores',
+      'dbo.order_items',
+      'dbo.inventory',
+    ].flatMap((t) => columnsFor(t, 10));
+    const clusters = clusterMechanicalTables(manifest, 8, 2_500);
+    expect(Math.max(...clusters.map((c) => c.tables.length))).toBeLessThanOrEqual(2);
+    // Coverage is untouched by adaptation — every mechanical table still lands.
+    expect(clusters.flatMap((c) => c.tables)).toHaveLength(7);
+  });
+
+  it('floors at 1 when a SINGLE table exceeds the budget (the de-inlining flag case)', () => {
+    const manifest = makeManifest();
+    manifest.expected_schema.columns = columnsFor('dbo.customers', 200); // ~16,400 chars
+    const clusters = clusterMechanicalTables(manifest, 8, 5_000);
+    // Every cluster is a single table; the monster is alone and over budget
+    // (surfaced via the diag log — batching cannot subdivide one table).
+    expect(clusters.every((c) => c.tables.length === 1)).toBe(true);
+    expect(clusters.flatMap((c) => c.tables)).toHaveLength(7);
+  });
+
+  it('estimateTableChars: column counts drive estimates; unknown tables get the flat default', () => {
+    const manifest = makeManifest();
+    manifest.expected_schema.columns = columnsFor('dbo.customers', 10);
+    const estimates = estimateTableChars(manifest);
+    expect(estimates.get('dbo.customers')).toBe(400 + 10 * 80);
+    expect(estimates.get('dbo.products')).toBe(1_200);
   });
 });

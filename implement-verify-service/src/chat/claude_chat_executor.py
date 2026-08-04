@@ -731,7 +731,10 @@ class ClaudeChatExecutor:
             return True
         if tool_name == "Skill":
             skill_name = tool_input.get("skill", "") if isinstance(tool_input, dict) else ""
-            if skill_name == "ask-questions" or "ask-questions" in str(tool_input):
+            # Exact skill name only (2026-08-04): the old str(tool_input)
+            # substring fallback could flip on a DIFFERENT skill whose args
+            # merely mention ask-questions. Namespaced form tolerated.
+            if skill_name == "ask-questions" or skill_name.endswith(":ask-questions"):
                 state.is_collecting_questions = True
                 args_str = tool_input.get("args", "") if isinstance(tool_input, dict) else str(tool_input)
                 if args_str:

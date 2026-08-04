@@ -1387,3 +1387,34 @@ class TestCliErrorMessagesCarryExitCode:
             ) or "exited with code" in _read_text(path), (
                 f"{path.name} no longer builds a code-first CLI failure message"
             )
+
+
+# ─── Guard: no substring /ask-questions detection in executors ───────────────
+
+
+class TestNoSubstringAskQuestionsDetection:
+    """2026-08-04 live incident: a naive ``'ask-questions' in line`` substring
+    check tripped on a skills DIRECTORY LISTING and hard-failed a successful
+    /write-spec run. Detection lives in src/chat/ask_questions_detection.py
+    ONLY (line-start command rule + delta-stream assembler); executors must
+    never re-grow an inline substring check.
+    """
+
+    EXECUTOR_GLOB = "chat/*_executor.py"
+
+    SUBSTRING_DETECTION = re.compile(
+        r"['\"]/?ask-questions['\"]\s+in\s"
+    )
+
+    def test_no_inline_substring_detection(self):
+        offenders: list[str] = []
+        for path in sorted((SRC / "chat").glob("*_executor.py")):
+            for i, line in enumerate(_read_text(path).split("\n"), start=1):
+                if self.SUBSTRING_DETECTION.search(line):
+                    offenders.append(f"{path.name}:{i}: {line.strip()}")
+        assert offenders == [], (
+            "Inline substring /ask-questions detection found — use "
+            "is_ask_questions_invocation / AskQuestionsDeltaDetector from "
+            "src/chat/ask_questions_detection.py (line-start command rule):\n  "
+            + "\n  ".join(offenders)
+        )

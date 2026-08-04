@@ -371,11 +371,15 @@ export function loadConfig(): Config {
     // .env.example alongside the other gateway env vars.
     migrationPlanLlmConcurrency: parseIntEnv(process.env.MIGRATION_PLAN_LLM_CONCURRENCY, 4),
     migrationPlanExpansionBatchSize: parseIntEnv(process.env.MIGRATION_PLAN_EXPANSION_BATCH_SIZE, 12),
-    // MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES: max tables per mechanical schema-
-    // cluster story in the deterministic DB plan path (Spec 2026-07-02-b).
+    // MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES: TARGET tables per mechanical
+    // schema-cluster story in the deterministic DB plan path (Spec
+    // 2026-07-02-b). Since 2026-08-04 this is a target, not a fixed size —
+    // the planner decrements by one until every cluster's projected spec
+    // payload fits the module budget (adaptive batch sizing). Default
+    // lowered 25 -> 15 in the same change.
     migrationPlanDbClusterMaxTables: parseIntEnv(
       process.env.MIGRATION_PLAN_DB_CLUSTER_MAX_TABLES,
-      25
+      15
     ),
     // MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS: max endpoints per interface-
     // cluster story in the deterministic code plan path (Spec 2026-07-06-g).

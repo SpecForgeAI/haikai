@@ -10,12 +10,13 @@
  *   - missing files -> insufficient_context (never a spec with silent holes)
  */
 
+import { createHash } from 'crypto';
 import {
   buildDbPackSpecText,
   isDbPackCarriageStory,
   runDbPackSpecCarriage,
   selectCarriageFiles,
-  DB_PACK_CARRIAGE_SIZE_WARNING_CHARS,
+  DB_PACK_INLINE_MAX_CHARS,
   PackFileRow,
 } from '../services/migrationDbPackSpecCarriage';
 import {
@@ -257,17 +258,53 @@ describe('runDbPackSpecCarriage', () => {
     expect(row.errorMessage).toContain('HTTP 503');
   });
 
-  it('oversized carriage -> generated_with_warnings, content still complete', async () => {
-    const big = 'X'.repeat(DB_PACK_CARRIAGE_SIZE_WARNING_CHARS + 10);
+  it('MANY small files past the total budget -> generated_with_warnings, all inline', async () => {
+    // Six files each under the per-file inline cap but summing past the
+    // total-size warning threshold: everything stays inline (each IS the
+    // deliverable) and the honest size warning fires.
+    const chunk = 'X'.repeat(60_000);
+    const files = Array.from({ length: 6 }, (_, i) => ({
+      file_path: `chunk-${i}.sql`,
+      content: chunk,
+      sort_order: i,
+    }));
     const row = await runDbPackSpecCarriage({
       projectId: 'proj-1',
-      story: carriageStory({ packFilePaths: ['big.sql'] }),
+      story: carriageStory({ packFilePaths: files.map((f) => f.file_path) }),
       baseRow: baseRow(),
-      fetchPackFiles: async () => [{ file_path: 'big.sql', content: big, sort_order: 0 }],
+      fetchPackFiles: async () => files,
     });
     expect(row.status).toBe('generated_with_warnings');
     expect(JSON.stringify(row.warningsJson)).toContain('db_pack_carriage_large');
-    expect(row.generatedSpecText).toContain(big);
+    expect(row.generatedSpecText).toContain(chunk);
+  });
+
+  it('a SINGLE oversized file de-inlines to path + sha256 + do-not-author (2026-08-04)', async () => {
+    const big = 'M'.repeat(DB_PACK_INLINE_MAX_CHARS + 100);
+    const small = 'CREATE SCHEMA dbo;';
+    const row = await runDbPackSpecCarriage({
+      projectId: 'proj-1',
+      story: carriageStory({ packFilePaths: ['manifest.json', 'liquibase/changesets/000-schemas.sql'] }),
+      baseRow: baseRow(),
+      fetchPackFiles: async () => [
+        { file_path: 'manifest.json', content: big, sort_order: 0 },
+        { file_path: 'liquibase/changesets/000-schemas.sql', content: small, sort_order: 1 },
+      ],
+    });
+    // The 640KB-class blob no longer rides the spec text at all…
+    expect(row.status).toBe('generated');
+    expect(row.generatedSpecText).not.toContain(big);
+    // …the small file still carries verbatim…
+    expect(row.generatedSpecText).toContain(small);
+    // …and the oversized one is referenced with checksum + explicit
+    // do-not-author (run assembly overlays the real bytes).
+    const text = row.generatedSpecText ?? '';
+    expect(text).toContain('Files overlaid at run assembly');
+    expect(text).toContain('do NOT author');
+    expect(text).toContain(
+      createHash('sha256').update(big, 'utf8').digest('hex')
+    );
+    expect(text).toContain('Files to reproduce byte-for-byte (1)');
   });
 });
 
