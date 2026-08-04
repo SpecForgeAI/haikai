@@ -1,6 +1,6 @@
 Topic: Code-evidence request contract — mine the current-state CODE SCAN for per-endpoint request-construction facts (request date FORMATS, request CONTENT-TYPE, required HEADERS, request-field VALIDATION), store them as separate non-reviewed facts, and ENRICH the capture-time OAS so the API-behaviour capture LLM builds correct requests on the FIRST attempt — instead of reverse-engineering them at runtime.
 
-Motivating real failures (a "HiFi" API capture run, 34% success):
+Motivating real failures (a "SampleSvc" API capture run, 34% success):
 1. Date-format mismatch: API uses Joda `dd-MMM-yyyy` (e.g. `17-JUN-2026`); the LLM sends ISO (`2024-01-01`) → 400 "Invalid format ... malformed". Kills all `businessDate`-parameterized endpoints. The WADL/XSD contract is MISLEADING here (types it as `xsd:date` → ISO).
 2. "No capture was recorded" on ~38 later `/views/*` scenarios — NOT token expiry (confirmed: that diagnostic = ZERO persisted HTTP attempts; `endpoint_skipped` is a reused label for an errored scenario). Root cause = #1 cascading: those endpoints are `businessDate`-parameterized, so the LLM burned its per-scenario round/wall-clock budget wrestling the date format and never persisted a request. Fixing #1 fixes #2.
 3. 415 Unsupported Media Type on body-less PUTs (setFavourite/unsetFavourite/revertFilterPromotionRequest): the executor's Content-Type default is gated on `body !== undefined`, so body-less PUTs get no Content-Type → Jersey 415.

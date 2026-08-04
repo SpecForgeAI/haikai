@@ -2,7 +2,7 @@
 
 ## Overview / Problem
 
-The capture tool decides whether a scenario was "captured" by whether the observed HTTP status matches the status CLASS the scenario's intent implies — NOT by whether the API's behaviour was actually observed. A legacy ("HiFi") API that violates REST conventions (returns 200 for a missing resource, 500 for malformed input, or 200 when no auth is enforced) is therefore scored as a coverage MISS, and — the real bug — its captured response is REJECT-AND-HIDDEN so it never reaches the baseline or reconcile.
+The capture tool decides whether a scenario was "captured" by whether the observed HTTP status matches the status CLASS the scenario's intent implies — NOT by whether the API's behaviour was actually observed. A legacy ("SampleSvc") API that violates REST conventions (returns 200 for a missing resource, 500 for malformed input, or 200 when no auth is enforced) is therefore scored as a coverage MISS, and — the real bug — its captured response is REJECT-AND-HIDDEN so it never reaches the baseline or reconcile.
 
 This is a behaviour-baseline tool: those non-conventional responses ARE the behaviour it must record. Per the run the user analysed, of 108 "errored" scenarios, ~42 were `not_found`-via-200, ~64 were `client_error`-via-500, and only ~2 were genuine misses — i.e. coverage reported 65/173 (38%) when ~169/173 (98%) of scenarios actually exercised the API successfully.
 
@@ -142,7 +142,7 @@ PREFER NO AMS schema / Liquibase change. The build must confirm WHERE session-le
 
 ## Non-Goals
 
-- No change to the legacy/HiFi API (its design is out of scope; deviations are observations).
+- No change to the legacy/SampleSvc API (its design is out of scope; deviations are observations).
 - No change to reconcile/diff algorithms beyond ensuring valid captures now reach the baseline.
 - Coverage stays DISPLAY-ONLY — no new hard gate.
 - Do not regress fumble-deduplication.

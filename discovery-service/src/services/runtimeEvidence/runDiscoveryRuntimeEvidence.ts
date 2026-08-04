@@ -131,7 +131,7 @@ const HTTP_METHOD_PATH_REGEX =
  * `/path[?query]` portion. A value that is already a bare `/path` (or
  * any non-absolute-URL string) is returned unchanged. Used so the
  * broadened {@link HTTP_METHOD_PATH_REGEX} -- which now also matches
- * `METHOD <absolute-URL>` (the bespoke HiFi `POST http://host:port/path`
+ * `METHOD <absolute-URL>` (the bespoke SampleSvc `POST http://host:port/path`
  * shape) -- yields a PATH for `normalizePath`, never a full URL.
  *
  * Examples:

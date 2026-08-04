@@ -28,7 +28,7 @@ SOAP peer without gating on `core_tech`.
 ### Completed Tasks
 - [x] Task Group 1: Anonymised Jersey WADL fixture + synthesised edge-case snippets
   - [x] 1.1 Fixtures directory `discovery-service/src/__tests__/fixtures/wadl/` exists
-  - [x] 1.2 `samplesvc.wadl` anonymised (no `HiFi`, no real hostnames; carries 4 methods over 2 nested resource paths)
+  - [x] 1.2 `samplesvc.wadl` anonymised (no `SampleSvc`, no real hostnames; carries 4 methods over 2 nested resource paths)
   - [x] 1.3 `xsd0.xsd` carries top-level `<xs:element name>` declarations matching every WADL representation ref
   - [x] 1.4 `edgeCases.ts` ships `WRONG_NAMESPACE_WADL`, `MALFORMED_XML`, `WADL_WITH_PARAM_STYLES_ALL_FOUR`, `WADL_DOC_ONLY`
   - [N/A] 1.5 Fixture `README.txt` intentionally skipped (operator convention)
@@ -61,7 +61,7 @@ None.
 | Evidence-gap kinds `wadl_parse_failed`, `wadl_missing_grammar`, `wadl_missing_schema_element`, `wadl_unsupported_namespace` registered in `emissionSources.ts` | Passed | `emissionSources.ts` lines 414-417; `buildWadlEvidenceGapFinding` helper at line 549 |
 | Always-active pack: registered in `springClassicFindingScanner.ts` `runSpringClassicScannerWithSoap`; runs alongside SOAP, not gated on `core_tech` | Passed | Import at line 93; invocation at line 1125; output exposed as `wadlFindings` (line 1101 / 1131) |
 | Emission ordering: interface first -> endpoints in document order -> evidence-gap findings last | Passed | `restWadl/index.ts` orchestrator concatenates emitter output (interface + endpoints) then gap-builder output last; verified by Group 6 fixtures 1 + 3 |
-| Anonymised Jersey WADL fixture + matching XSD present | Passed | `samplesvc.wadl` (zero `HiFi` / real-hostname references; `SampleSvc` + `example.invalid` only) and `xsd0.xsd` colocated under `fixtures/wadl/` |
+| Anonymised Jersey WADL fixture + matching XSD present | Passed | `samplesvc.wadl` (zero `SampleSvc` / real-hostname references; `SampleSvc` + `example.invalid` only) and `xsd0.xsd` colocated under `fixtures/wadl/` |
 
 ---
 

@@ -98,7 +98,7 @@ describe('buildIdentityKey', () => {
     const wadlTwin = makeCandidate({
       candidateType: 'endpoints',
       name: 'POST /hierarchy/{businessDate}/{grdOrgId}',
-      parentCandidateId: 'hifi-service-version-iface',
+      parentCandidateId: 'samplesvc-service-version-iface',
       data: {
         operation_verb: 'POST',
         path_or_address: '/hierarchy/{businessDate}/{grdOrgId}',

@@ -7,8 +7,8 @@
  * dependency declared by a service or library. The original walker
  * implementation assumed every internal library lived as a subfolder
  * of the root repo (`<rootRepoDir>/<repoSubfolder>`), which only holds
- * for multi-module repos. Many real layouts (e.g. `hifi-core`,
- * `hifi-db` siblings of the main service repo) keep each library in
+ * for multi-module repos. Many real layouts (e.g. `samplesvc-core`,
+ * `samplesvc-db` siblings of the main service repo) keep each library in
  * its own sibling folder.
  *
  * This module implements a two-stage resolution:
@@ -172,10 +172,10 @@ function manifestFileFor(ecosystem: 'MAVEN' | 'NPM'): string {
  * dependency.
  *
  * @param libraryName    The library's coordinate. MAVEN: "groupId:artifactId"
- *                       (e.g. "com.rbs.mib.risk.hifi:hifi-core"). NPM: the
+ *                       (e.g. "com.example.samplesvc:samplesvc-core"). NPM: the
  *                       package name (e.g. "@org/pkg" or "pkg").
  * @param repoSubfolder  The repo-subfolder hint captured by the walker
- *                       (e.g. "hifi-core" or "" for repo root).
+ *                       (e.g. "samplesvc-core" or "" for repo root).
  * @param rootRepoDir    Absolute path to the root entity's cloned/local repo.
  * @param ecosystem      'MAVEN' or 'NPM'.
  * @returns An array of resolved source dirs (empty when no match).

@@ -114,7 +114,7 @@ Add a deterministic WADL parser pack to discovery-service that mirrors the exist
 - WADL with declared grammar href but no sibling XSD -> `wadl_missing_grammar` gap finding emitted.
 
 **Test fixtures**
-- Anonymise the user's existing Jersey 1.16 WADL sample: `HiFi Service Version` -> `SampleSvc Service Version`, all hostnames stripped (per Q1).
+- Anonymise the user's existing Jersey 1.16 WADL sample: `SampleSvc Service Version` -> `SampleSvc Service Version`, all hostnames stripped (per Q1).
 - Place under `discovery-service/src/__tests__/fixtures/wadl/` along with a minimal matching `xsd0.xsd` for the grammar-resolution integration test.
 - Supplement with 2-3 small synthesised WADL snippets covering: missing grammar, unsupported namespace, multi-resource nesting.
 

@@ -2,7 +2,7 @@
  * Task Group 1 — Flexible deterministic HTTP method+path matcher.
  *
  * The current `HTTP_METHOD_PATH_REGEX` required a `/`-leading path
- * IMMEDIATELY after the method, so a bespoke HiFi trace line of the form
+ * IMMEDIATELY after the method, so a bespoke SampleSvc trace line of the form
  * `POST http://host:port/path` (an ABSOLUTE URL) extracted ZERO
  * observations. This file pins the broadened behaviour:
  *
@@ -31,8 +31,8 @@ import type { ParsedLogEntry } from '../../../types/logParsing';
 
 const TEST_ARTIFACT: LogFileArtifactEntry = {
   artifactId: 'art-1',
-  originalFileName: 'hifi.log',
-  relativePath: 'logs/hifi.log',
+  originalFileName: 'samplesvc.log',
+  relativePath: 'logs/samplesvc.log',
 };
 
 function makeEntry(line: string, lineNumber = 1): ParsedLogEntry {
@@ -48,8 +48,8 @@ function makeEntry(line: string, lineNumber = 1): ParsedLogEntry {
 }
 
 describe('flexible HTTP method+path matcher — absolute URL support', () => {
-  it('extracts method + PATH from an absolute-URL line (the HiFi failing case)', () => {
-    // The bespoke HiFi trace shape: METHOD <absolute-URL> ... status.
+  it('extracts method + PATH from an absolute-URL line (the SampleSvc failing case)', () => {
+    // The bespoke SampleSvc trace shape: METHOD <absolute-URL> ... status.
     const entry = makeEntry(
       'req-42 > POST http://orders-svc:8080/api/orders status=201',
     );

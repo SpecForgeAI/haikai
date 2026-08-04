@@ -8,8 +8,8 @@
  *
  *   maven-siblings/
  *     root-repo/pom.xml            <-- the root entity's repo
- *     hifi-core/pom.xml            <-- sibling, groupId+artifactId match
- *     hifi-db/pom.xml              <-- sibling, groupId+artifactId match
+ *     samplesvc-core/pom.xml            <-- sibling, groupId+artifactId match
+ *     samplesvc-db/pom.xml              <-- sibling, groupId+artifactId match
  *     unrelated/pom.xml            <-- sibling, NO match
  *
  *   npm-siblings/
@@ -39,20 +39,20 @@ describe('resolveLibrarySource', () => {
   it('Maven: resolves a sibling folder by groupId+artifactId match', async () => {
     const rootRepo = path.join(FIX_ROOT, 'maven-siblings', 'root-repo');
     const result = await resolveLibrarySource(
-      'com.rbs.mib.risk.hifi:hifi-core',
+      'com.example.samplesvc:samplesvc-core',
       '', // subfolder hint absent — sibling fallback path
       rootRepo,
       'MAVEN',
     );
     expect(result).toHaveLength(1);
     expect(result[0].matchKind).toBe('sibling-folder');
-    expect(path.basename(result[0].sourceDir)).toBe('hifi-core');
-    expect(result[0].manifestPath).toMatch(/hifi-core[\\/]+pom\.xml$/);
+    expect(path.basename(result[0].sourceDir)).toBe('samplesvc-core');
+    expect(result[0].manifestPath).toMatch(/samplesvc-core[\\/]+pom\.xml$/);
   });
 
   it('Maven: does NOT false-match a sibling whose <dependencies> include the target coordinate', async () => {
-    // hifi-core/pom.xml declares org.springframework:spring-core as a
-    // dependency. A naive regex match would surface hifi-core as a match
+    // samplesvc-core/pom.xml declares org.springframework:spring-core as a
+    // dependency. A naive regex match would surface samplesvc-core as a match
     // when querying for spring-core; the scrubber must prevent that.
     const rootRepo = path.join(FIX_ROOT, 'maven-siblings', 'root-repo');
     const result = await resolveLibrarySource(
@@ -135,17 +135,17 @@ describe('resolveLibrarySource', () => {
 
   it('Maven: subfolder hint pointing at a nonexistent path falls through to sibling fallback', async () => {
     // maven-siblings has no `nonexistent-sub` subfolder; the fallback
-    // should still locate hifi-core.
+    // should still locate samplesvc-core.
     const rootRepo = path.join(FIX_ROOT, 'maven-siblings', 'root-repo');
     const result = await resolveLibrarySource(
-      'com.rbs.mib.risk.hifi:hifi-core',
+      'com.example.samplesvc:samplesvc-core',
       'nonexistent-sub',
       rootRepo,
       'MAVEN',
     );
     expect(result).toHaveLength(1);
     expect(result[0].matchKind).toBe('sibling-folder');
-    expect(path.basename(result[0].sourceDir)).toBe('hifi-core');
+    expect(path.basename(result[0].sourceDir)).toBe('samplesvc-core');
   });
 
   // ---------------------------------------------------------------

@@ -142,7 +142,7 @@ primitive reused by Task Group 2.
 - [x] 1.0 Broaden the deterministic HTTP method+path matcher
   - [x] 1.1 Write 2-8 focused tests (NEW file
     `runtimeEvidence/__tests__/flexibleMethodPathMatcher.test.ts`)
-    - HiFi absolute-URL case: `POST http://host:port/api/orders` → method `POST`,
+    - SampleSvc absolute-URL case: `POST http://host:port/api/orders` → method `POST`,
       path `/api/orders` (THE load-bearing failing case).
     - Bare-path still works: `GET /api/users 200` → method `GET`, path `/api/users`,
       status `200` (regression guard — must not break existing behaviour).
@@ -176,7 +176,7 @@ primitive reused by Task Group 2.
       confirm both pass. Do NOT run the whole suite.
 
 **Acceptance Criteria:**
-- The 2-8 tests in 1.1 pass, including the HiFi `POST http://host:port/path` case.
+- The 2-8 tests in 1.1 pass, including the SampleSvc `POST http://host:port/path` case.
 - Bare-path + status capture regress cleanly (`userLogShape.regression.test.ts` green).
 - A shared request-like-line detector primitive is exported for TG2.
 - `runDiscoveryRuntimeEvidence.ts` is byte-intact (no mojibake, no truncation).
@@ -390,7 +390,7 @@ file is ALWAYS processed by this deterministic code.
 - [x] 6.0 Apply a validated recipe across the full file
   - [x] 6.1 Write 2-8 focused tests (NEW
     `runtimeEvidence/__tests__/recipeAwareExtractor.test.ts`)
-    - Multi-line record assembly: a HiFi block (`<id> > METHOD http://host/path`,
+    - Multi-line record assembly: a SampleSvc block (`<id> > METHOD http://host/path`,
       `<id> > header: value` lines, blank `<id> >`, then JSON body) is assembled
       into ONE record → method + path + headers + body extracted.
     - Response captured ONLY when present; a request with no logged response
@@ -415,7 +415,7 @@ file is ALWAYS processed by this deterministic code.
     - Run ONLY `recipeAwareExtractor.test.ts`. Do NOT run the whole suite.
 
 **Acceptance Criteria:**
-- The 2-8 tests in 6.1 pass, including the HiFi multi-line record case.
+- The 2-8 tests in 6.1 pass, including the SampleSvc multi-line record case.
 - Responses/fields are captured ONLY when present; nothing is invented.
 - The extractor streams the full file and emits a TG7-compatible observation shape.
 
@@ -565,12 +565,12 @@ This is THE dead-branch fix: writing `source='log'` evidence flips
       (evidence write + wiring), TG8 (diagnostics). Total existing: ~24-60 tests.
   - [x] 9.2 Analyze coverage gaps for THIS feature only
     - Identify critical end-to-end workflows lacking coverage. Prioritize the
-      headline path: HiFi-style log → Stage 2.5 → `source='log'` evidence written
+      headline path: SampleSvc-style log → Stage 2.5 → `source='log'` evidence written
       → gap-clearing precondition holds (`source==='log'` atoms present). Do NOT
       assess whole-application coverage.
   - [x] 9.3 Write up to 10 additional strategic tests MAXIMUM
     - Focus on integration / end-to-end seams, especially:
-      - HiFi-log fixture → orchestrator → `bulkSaveEvidence` called with
+      - SampleSvc-log fixture → orchestrator → `bulkSaveEvidence` called with
         `source:'log'` atoms (the gap-clears headline).
       - Fallback path end-to-end: absolute-URL log with NO valid recipe still
         writes `source='log'` evidence via the broadened matcher.
@@ -588,7 +588,7 @@ This is THE dead-branch fix: writing `source='log'` evidence flips
 
 **Acceptance Criteria:**
 - All feature-specific tests pass (~24-70 tests total).
-- The headline workflow (HiFi-log → `source='log'` evidence → gap-clearing
+- The headline workflow (SampleSvc-log → `source='log'` evidence → gap-clearing
   precondition) is covered end-to-end.
 - No more than 10 additional tests added.
 - Testing is exclusively scoped to this spec's feature.
