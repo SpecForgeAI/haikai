@@ -20,8 +20,18 @@
  *     plan/expansion — regenerate; NEVER emit a spec with silent holes).
  *   - Oversized carriage (many bulk scripts) is still carried in full, with a
  *     size warning -> `generated_with_warnings`.
+ *   - SIZE-GATED de-inlining (2026-08-04 live incident): a single file above
+ *     `DB_PACK_INLINE_MAX_CHARS` (the live case: a 640KB `manifest.json`
+ *     producing a 21,870-line requirements.md) is NOT inlined. It is listed
+ *     reference-only (path + sha256 + size) with an explicit DO-NOT-AUTHOR
+ *     instruction — the IVS run-end `assemble-run` job overlays the COMPLETE
+ *     pack fetched from AMS byte-for-byte with structural validation
+ *     (implement-verify-service/src/job_queue/assembly.py), so the
+ *     authoritative bytes never depended on the agent re-typing spec text.
+ *     Small files stay inline so per-spec branches remain reviewable.
  */
 
+import { createHash } from 'crypto';
 import { getConfig } from '../config';
 import type {
   LoadedBookOfWorkItem,
@@ -48,6 +58,14 @@ export type FetchPackFilesFn = (
 
 /** Char budget above which the carriage adds a size warning (not a cap). */
 export const DB_PACK_CARRIAGE_SIZE_WARNING_CHARS = 300_000;
+
+/**
+ * Per-file inline budget (2026-08-04): a file larger than this is carried
+ * REFERENCE-ONLY (path + sha256 + size + do-not-author) — run assembly
+ * overlays the real bytes. 64KB keeps every ordinary changeset inline while
+ * catching the pathological reference blobs (manifest.json was ~640KB live).
+ */
+export const DB_PACK_INLINE_MAX_CHARS = 65_536;
 
 /**
  * True when the story must run the deterministic DB-pack carriage: the
@@ -184,6 +202,12 @@ export function buildDbPackSpecText(args: {
     lines.push(story.description);
     lines.push('');
   }
+  // SIZE-GATED split (2026-08-04): oversized files are reference-only — the
+  // run-end assemble job overlays the real bytes from AMS, so inlining 640KB
+  // of manifest.json bought nothing and cost a 21,870-line requirements.md.
+  const inline = files.filter((f) => (f.content ?? '').length <= DB_PACK_INLINE_MAX_CHARS);
+  const overlaid = files.filter((f) => (f.content ?? '').length > DB_PACK_INLINE_MAX_CHARS);
+
   lines.push('## Requirements');
   lines.push('');
   lines.push(
@@ -199,9 +223,17 @@ export function buildDbPackSpecText(args: {
     "3. Acceptance is mechanical: the files match the pack content exactly " +
       "and the pack's expected-schema diff remains green after they apply."
   );
+  if (overlaid.length > 0) {
+    lines.push(
+      '4. Do NOT author, stub, or placeholder any file in the "Files overlaid ' +
+        'at run assembly" section — the run-end assembly job writes those ' +
+        'byte-for-byte from the pack store with structural validation. ' +
+        'Creating them here would only be overwritten (or worse, drift).'
+    );
+  }
   lines.push('');
-  lines.push(`## Files to reproduce byte-for-byte (${files.length})`);
-  for (const file of files) {
+  lines.push(`## Files to reproduce byte-for-byte (${inline.length})`);
+  for (const file of inline) {
     const content = file.content ?? '';
     const fence = fenceFor(content);
     lines.push('');
@@ -210,6 +242,28 @@ export function buildDbPackSpecText(args: {
     lines.push(`${fence}${languageFor(file.file_path)}`);
     lines.push(content.replace(/\r\n/g, '\n').replace(/\n$/, ''));
     lines.push(fence);
+  }
+  if (overlaid.length > 0) {
+    lines.push('');
+    lines.push(`## Files overlaid at run assembly — do NOT author (${overlaid.length})`);
+    lines.push('');
+    lines.push(
+      `These pack ${packId} files exceed the inline budget ` +
+        `(${DB_PACK_INLINE_MAX_CHARS.toLocaleString('en-GB')} chars). They are ` +
+        'runtime reference data, not requirements to read: the run-end ' +
+        'assembly overlays each byte-for-byte from the pack store and ' +
+        'validates the assembled whole. Verify by path + checksum only.'
+    );
+    for (const file of overlaid) {
+      const content = file.content ?? '';
+      const sha256 = createHash('sha256').update(content, 'utf8').digest('hex');
+      lines.push('');
+      lines.push(`### \`${file.file_path}\``);
+      lines.push('');
+      lines.push(`- Size: ${content.length.toLocaleString('en-GB')} chars`);
+      lines.push(`- sha256: \`${sha256}\``);
+      lines.push(`- Source: pack ${packId} file store (overlaid at assembly)`);
+    }
   }
   lines.push('');
   return lines.join('\n');

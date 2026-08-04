@@ -29,6 +29,7 @@ from datetime import datetime
 from anthropic import Anthropic
 
 from . import rate_limit_backoff
+from .ask_questions_detection import AskQuestionsDeltaDetector
 from .profiles_path import HAIKAI_PROFILES_ROOT
 from .tool_executor import ToolExecutor
 
@@ -345,6 +346,7 @@ class OAuthChatExecutor:
         folder_buffer = None
         ask_questions_content = []
         is_collecting_questions = False
+        ask_questions_detector = AskQuestionsDeltaDetector()
         full_response = ""
         
         # Automatically log the workflow for new sessions
@@ -392,8 +394,10 @@ class OAuthChatExecutor:
                                 _streamed_any = True
                                 full_response += text
 
-                                # Check for /ask-questions invocation in response
-                                if "/ask-questions" in text or "ask-questions" in text:
+                                # Line-start invocation only (2026-08-04) —
+                                # deltas are assembled into lines first so a
+                                # path/prose mention never flips collection.
+                                if ask_questions_detector.feed(text):
                                     is_collecting_questions = True
                                     logger.info("Detected /ask-questions in response")
 
@@ -409,6 +413,10 @@ class OAuthChatExecutor:
                                     ask_questions_content.append(text)
 
                                 yield {"type": "content", "delta": text}
+
+                            # Stream end: evaluate an unterminated final line.
+                            if ask_questions_detector.flush():
+                                is_collecting_questions = True
 
                             # Get final message to check for tool calls
                             final_message = stream.get_final_message()

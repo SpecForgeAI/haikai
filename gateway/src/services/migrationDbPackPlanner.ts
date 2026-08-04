@@ -299,31 +299,111 @@ export function computeTableLayers(manifest: PackManifest): Map<string, number> 
 }
 
 /**
+ * Projected spec-payload budget per cluster story (2026-08-04 adaptive
+ * sizing). A cluster's spec carries every member table's changeset verbatim;
+ * this budget is what the size-aware batcher decrements the cluster cap to
+ * fit. A MODULE CONSTANT (not config) deliberately: the skeleton and the
+ * expansion must cluster identically or the drift guard false-fires, so the
+ * budget must never vary between the two call sites.
+ */
+export const DB_CLUSTER_MAX_PROJECTED_CHARS = 150_000;
+
+/** Per-table changeset size estimate: base DDL scaffolding + per-column line. */
+const TABLE_CHARS_BASE = 400;
+const TABLE_CHARS_PER_COLUMN = 80;
+/** Estimate for tables the expected schema carries no column rows for. */
+const TABLE_CHARS_UNKNOWN = 1_200;
+
+/**
+ * Projected changeset chars per table, from the expected schema's column
+ * counts. A cheap proxy — the point is ORDER-OF-MAGNITUDE sizing so a
+ * 200-column monster doesn't share a 25-table cluster, not precision.
+ */
+export function estimateTableChars(manifest: PackManifest): Map<string, number> {
+  const columnsPerTable = new Map<string, number>();
+  for (const col of manifest.expected_schema?.columns ?? []) {
+    const key = lc(`${col.schemaName}.${col.tableName}`);
+    columnsPerTable.set(key, (columnsPerTable.get(key) ?? 0) + 1);
+  }
+  const estimates = new Map<string, number>();
+  for (const table of orderedTables(manifest)) {
+    const key = lc(table);
+    const cols = columnsPerTable.get(key);
+    estimates.set(
+      key,
+      cols === undefined ? TABLE_CHARS_UNKNOWN : TABLE_CHARS_BASE + cols * TABLE_CHARS_PER_COLUMN
+    );
+  }
+  return estimates;
+}
+
+/**
  * Mechanical tables (NOT flagged) grouped into clusters: bulk-load order,
  * grouped by FK dependency layer, each layer chunked at `cap` tables. The
  * clusters are the plan's unit of schema work — the anti-explosion guarantee.
+ *
+ * ADAPTIVE (2026-08-04, Kiro fix 3): `cap` is a TARGET, not a fixed size.
+ * The batcher projects each candidate clustering's per-cluster payload
+ * (estimateTableChars) and decrements the cap BY ONE until every cluster
+ * fits {@link DB_CLUSTER_MAX_PROJECTED_CHARS} or the cap floors at 1. A
+ * single table over budget at cap 1 is flagged in the log — that is the
+ * "needs de-inlining, not smaller batches" signal (the carriage's per-file
+ * size gate is the actual payload protection). Deterministic for a given
+ * manifest + cap, so the skeleton/expansion cluster-count guard holds.
  */
 export function clusterMechanicalTables(
   manifest: PackManifest,
-  cap: number
+  cap: number,
+  maxProjectedChars: number = DB_CLUSTER_MAX_PROJECTED_CHARS
 ): TableCluster[] {
   const flagged = flaggedTableSet(manifest);
   const layers = computeTableLayers(manifest);
-  const size = Number.isFinite(cap) && Math.floor(cap) >= 1 ? Math.floor(cap) : 25;
+  const target = Number.isFinite(cap) && Math.floor(cap) >= 1 ? Math.floor(cap) : 15;
 
-  const clusters: TableCluster[] = [];
-  let current: TableCluster | null = null;
-  let index = 0;
-  for (const table of orderedTables(manifest)) {
-    const key = lc(table);
-    if (flagged.has(key)) continue;
-    const layer = layers.get(key) ?? 1;
-    if (current === null || current.layer !== layer || current.tables.length >= size) {
-      current = { index, layer, tables: [] };
-      clusters.push(current);
-      index += 1;
+  const chunkAt = (size: number): TableCluster[] => {
+    const clusters: TableCluster[] = [];
+    let current: TableCluster | null = null;
+    let index = 0;
+    for (const table of orderedTables(manifest)) {
+      const key = lc(table);
+      if (flagged.has(key)) continue;
+      const layer = layers.get(key) ?? 1;
+      if (current === null || current.layer !== layer || current.tables.length >= size) {
+        current = { index, layer, tables: [] };
+        clusters.push(current);
+        index += 1;
+      }
+      current.tables.push(table);
     }
-    current.tables.push(table);
+    return clusters;
+  };
+
+  const estimates = estimateTableChars(manifest);
+  const projected = (cluster: TableCluster): number =>
+    cluster.tables.reduce((sum, t) => sum + (estimates.get(lc(t)) ?? TABLE_CHARS_UNKNOWN), 0);
+
+  let size = target;
+  let clusters = chunkAt(size);
+  while (size > 1 && clusters.some((c) => projected(c) > maxProjectedChars)) {
+    size -= 1;
+    clusters = chunkAt(size);
+  }
+  if (size !== target) {
+    logger.info(
+      `[diag-gateway] db_cluster_sizing adapted cap ${target} -> ${size} ` +
+        `(projected cluster payload over ${maxProjectedChars} chars)`
+    );
+  }
+  for (const c of clusters) {
+    if (c.tables.length === 1 && projected(c) > maxProjectedChars) {
+      // Floor case: batching cannot subdivide one table. This is the explicit
+      // "needs de-inlining" flag — the spec carriage's per-file size gate is
+      // what actually protects the payload.
+      logger.warn(
+        `[diag-gateway] db_cluster_sizing single_table_over_budget ` +
+          `table=${c.tables[0]} projected=${projected(c)} budget=${maxProjectedChars}`
+      );
+    }
   }
   return clusters;
 }

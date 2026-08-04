@@ -45,6 +45,13 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub('', text)
 
 
+# A genuine /ask-questions INVOCATION is a line-start command only — see
+# src/chat/ask_questions_detection.py for the rule, the 2026-08-04 incident
+# (a skills directory-listing line flipped collection and failed a successful
+# run), and the delta-stream variant the openai/oauth executors use.
+from .ask_questions_detection import is_ask_questions_invocation  # noqa: E402
+
+
 class KiroChatExecutor:
     """
     Wrapper class for executing conversational Kiro CLI commands with streaming.
@@ -354,8 +361,9 @@ class KiroChatExecutor:
                             folder_buffer = folder_match.group(1)
                             logger.info(f"Detected spec folder: {folder_buffer}")
 
-                    # Detect /ask-questions invocation
-                    if '/ask-questions' in line or 'ask-questions' in line.lower():
+                    # Detect a GENUINE /ask-questions invocation (line-start
+                    # command only — never a path/prose mention; 2026-08-04).
+                    if is_ask_questions_invocation(line):
                         is_collecting_questions = True
                         logger.info("Detected /ask-questions invocation")
 

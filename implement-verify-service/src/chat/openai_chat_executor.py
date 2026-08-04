@@ -16,6 +16,7 @@ from datetime import datetime
 
 import httpx
 
+from .ask_questions_detection import AskQuestionsDeltaDetector
 from .profiles_path import HAIKAI_PROFILES_ROOT
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,7 @@ class OpenAIChatExecutor:
         
         ask_questions_content = []
         is_collecting_questions = False
+        ask_questions_detector = AskQuestionsDeltaDetector()
         folder_buffer = None
         full_response = ""
         
@@ -177,7 +179,10 @@ class OpenAIChatExecutor:
                             if text:
                                 full_response += text
                                 
-                                if "/ask-questions" in text or "ask-questions" in text:
+                                # Line-start invocation only (2026-08-04) —
+                                # deltas are assembled into lines first so a
+                                # path/prose mention never flips collection.
+                                if ask_questions_detector.feed(text):
                                     is_collecting_questions = True
                                 
                                 if not folder_buffer and "haikai/specs/" in text:
@@ -191,7 +196,11 @@ class OpenAIChatExecutor:
                                 yield {"type": "content", "delta": text}
                         except json.JSONDecodeError:
                             continue
-            
+
+            # Stream end: evaluate an unterminated final line too.
+            if ask_questions_detector.flush():
+                is_collecting_questions = True
+
             self.conversation_history.append({
                 "role": "assistant",
                 "content": full_response
