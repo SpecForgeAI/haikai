@@ -888,6 +888,12 @@ export interface DbMigrationPackStructuralFinding {
   kind: string;
   subject: string;
   message: string;
+  /**
+   * The itemised affected list behind the aggregate count (2026-08-04
+   * partial-coverage follow-up): PK-less tables or join-less relationship
+   * pairs. Absent on aggregate-by-nature findings and pre-follow-up packs.
+   */
+  details?: string[];
   disposition: DbMigrationPackStructuralFindingDisposition | string | null;
   note: string | null;
   /** True while the finding blocks plan generation / Migrate (undispositioned OR fix_upstream). */

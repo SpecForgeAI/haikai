@@ -39,6 +39,8 @@ export interface StructuralFindingState {
   kind: string;
   subject: string;
   message: string;
+  /** The itemised affected list (PK-less tables / join-less pairs), when carried. */
+  details?: string[];
   disposition: StructuralDispositionRow['disposition'] | null;
   note: string | null;
   /** True while the finding blocks plan generation / Migrate. */
@@ -85,6 +87,7 @@ export function resolveStructuralFindingStates(
       kind: f.kind,
       subject: f.subject,
       message: f.message,
+      ...(f.details && f.details.length > 0 ? { details: f.details } : {}),
       disposition: row?.disposition ?? null,
       note: row?.note ?? null,
       open: !row || !CLOSING_DISPOSITIONS.has(row.disposition),

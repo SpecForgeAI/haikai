@@ -240,4 +240,40 @@ describe('DbMigrationPackStructuralFindingsPanel', () => {
     ).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('details expander lists the itemised affected pairs (partial-coverage follow-up)', async () => {
+    const withDetails: DbMigrationPackStructuralFinding = {
+      ...OPEN_FINDING,
+      key: 'relationships_without_fk_columns:all_relationships',
+      kind: 'relationships_without_fk_columns',
+      subject: 'all_relationships',
+      message:
+        '17 of 62 relationship(s) carry no fk_columns join metadata — those 17 FK(s) will be silently absent.',
+      details: ['dbo.orders -> dbo.customers', 'dbo.items -> dbo.orders'],
+    };
+    mockListFindings.mockResolvedValue({ findings: [withDetails] });
+    renderPanel();
+
+    const toggle = await screen.findByTestId(
+      `db-pack-structural-finding-details-toggle-${withDetails.key}`,
+    );
+    expect(toggle).toHaveTextContent('Show 2 affected');
+    // Collapsed by default.
+    expect(
+      screen.queryByTestId(`db-pack-structural-finding-details-${withDetails.key}`),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    const list = screen.getByTestId(
+      `db-pack-structural-finding-details-${withDetails.key}`,
+    );
+    expect(list).toHaveTextContent('dbo.orders -> dbo.customers');
+    expect(list).toHaveTextContent('dbo.items -> dbo.orders');
+    expect(toggle).toHaveTextContent('Hide affected');
+
+    fireEvent.click(toggle);
+    expect(
+      screen.queryByTestId(`db-pack-structural-finding-details-${withDetails.key}`),
+    ).not.toBeInTheDocument();
+  });
 });
