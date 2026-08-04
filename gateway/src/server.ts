@@ -8,6 +8,9 @@
 import express from 'express';
 import { getConfig } from './config';
 import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsRouter, implementConversationsRouter, implementStateRouter, organisationsRouter, shapeSpecRouter, standardsGenerateRouter, projectStandardsGenerateRouter, jiraIssuesRouter, jiraImportRouter, jiraSyncRouter, dashboardSummaryRouter, chatV2Router, architectureExplainerRouter, discoveryRouter, discoveryDecisionTasksRouter, discoveryGapFillRouter, discoveryLogRecipeRouter, discoveryBehaviourCaptureRouter, discoveryOperationalArtifactRouter, discoveryCapabilityNamingRouter, techHintsResolveRouter, discoveryPerformanceScoreRouter, pdfRouter, architecturesRouter, apiMigrationValidationRouter, migrationContextRouter, migrationBookOfWorkRouter, migrationShapeSpecGenerationRouter, migrationShapeSpecCostPreviewRouter, migrationDeliveryDashboardRouter, epicCapturedDecisionsRouter, targetArchitecturesRouter, missingInputResolutionsRouter, architectConversationRouter, discoveryReviewConversationRouter, dbMigrationPackRouter, oasExportRouter, vulnerabilitiesRouter, securityFindingsRouter, vulnerabilityReductionRouter, migrationExecutionRouter } from './routes';
+// Spec 4 (LLM gap-proposal queue, 2026-08-04): own import line (not the big
+// './routes' list) to keep the diff surface minimal for concurrent edits.
+import { dbGapProposalsRouter } from './routes/dbGapProposals';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -136,6 +139,9 @@ app.use('/api/v1', migrationBookOfWorkRouter);
 // pack generation / decisions / drift / download surface, sibling of the
 // migration book-of-work routes.
 app.use('/api/v1', dbMigrationPackRouter);
+// DB Gap-Proposal queue (Spec 4, 2026-08-04): LLM-drafted fk/pk metadata
+// proposals for pack structural findings — generate / list / review / manual.
+app.use('/api/v1', dbGapProposalsRouter);
 // OAS Export (direct build 2026-06-11): deterministic OpenAPI contracts for
 // an architecture's interfaces — list / generate / zip download. Sibling of
 // the DB migration pack surface on the Migration Delivery Plan.

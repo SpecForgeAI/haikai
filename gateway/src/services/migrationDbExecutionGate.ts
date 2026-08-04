@@ -36,6 +36,10 @@ import {
   defaultFetchPackView,
 } from './migrationDbPackPlanner';
 import { evaluatePackStaleness } from './dbMigrationPack/staleness';
+import {
+  describeOpenFindings,
+  openStructuralFindings,
+} from './migrationStructuralFindings';
 import type { BookOfWorkItem } from './migrationDriverAmsReads';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +52,7 @@ export interface DbPackGateReason {
     | 'db_pack_stale'
     | 'db_pack_decisions_unresolved'
     | 'db_translations_unapproved'
+    | 'db_structural_findings_open'
     | 'db_pack_read_failed';
   message: string;
 }
@@ -226,6 +231,23 @@ export async function evaluateDbPackReadiness(params: {
         `${unapproved.length} DB-object translation draft(s) (${kinds}) are not yet approved. ` +
         'Only APPROVED translations are ever applied — review them on the Schema migration tab ' +
         'before Migrate.',
+    });
+  }
+
+  // Structural findings (Spec 2026-08-04-2): every finding the CURRENT pack
+  // emits must be dispositioned `accepted` or `known_gap` before Migrate;
+  // undispositioned and fix_upstream findings block (fix + regenerate first).
+  const openFindings = openStructuralFindings(
+    packView.manifest,
+    packView.structuralDispositions ?? []
+  );
+  if (openFindings.length > 0) {
+    reasons.push({
+      code: 'db_structural_findings_open',
+      message:
+        `${describeOpenFindings(openFindings)}. Disposition each on the Schema migration ` +
+        'tab → Structural findings (accept with a reason / fix upstream + regenerate / ' +
+        'known gap) before Migrate.',
     });
   }
 

@@ -77,6 +77,7 @@ import {
   OrchestrationSubmitResult,
 } from './migrationOrchestrationSubmit';
 import { recordWorkItemImplementationError } from './migrationWorkItemErrorSink';
+import { isManualExecutionItem } from './migrationExecutionClass';
 import {
   ShapeSpecAutoAnswerer,
 } from './shapeSpecAutoAnswererSeam';
@@ -471,13 +472,15 @@ function isDeferred(item: BookOfWorkItem, deferredWorkItemIds: Set<string>): boo
 }
 
 /**
- * True when the item is MANUAL-GATE work (Spec 2026-07-06-g): human/wizard
- * activity (baseline capture sessions, parity sign-off sweeps) that is NEVER
- * dispatched to the implement-verify service and never required to be
- * spec-ready. Completion is gated elsewhere (Spec I's gates), not by specs.
+ * True when the item is MANUAL work (Spec 2026-08-04-1, unifying Spec
+ * 2026-07-06-g's manual-gate): human activity (baseline capture sessions,
+ * parity sign-off sweeps, db-pack review procedures, prerequisite gates) that
+ * is NEVER dispatched to the implement-verify service and never required to
+ * be spec-ready. Completion is gated by plane/condition gates, not by specs.
+ * The single classifier in migrationExecutionClass.ts is the oracle.
  */
 function isManualGate(item: BookOfWorkItem): boolean {
-  return (item.tags ?? []).includes('execution:manual-gate');
+  return isManualExecutionItem(item);
 }
 
 /**

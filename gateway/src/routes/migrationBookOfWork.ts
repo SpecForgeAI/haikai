@@ -54,6 +54,7 @@ import {
   GenerateMigrationBookOfWorkInput,
   TokenBudgetOverflowError,
   MigrationBookOfWorkSchemaError,
+  MigrationStructuralFindingsOpenError,
 } from '../services/migrationBookOfWorkHandler';
 import {
   AmsRoundTripError,
@@ -124,6 +125,26 @@ migrationBookOfWorkRouter.post(
             message: error.message,
             overflowingItems: error.overflowingItems,
             finalTokenCount: error.finalTokenCount,
+          },
+        });
+        return;
+      }
+      if (error instanceof MigrationStructuralFindingsOpenError) {
+        logger.warn('Migration book-of-work generate: structural findings undispositioned', {
+          requestId,
+          projectId,
+          findings: error.findings.map((f) => f.key),
+        });
+        console.warn(
+          `[diag-gw] route=migration-books-of-work-generate status=409 ` +
+            `elapsed_ms=${elapsed}`
+        );
+        res.status(409).json({
+          error: {
+            code: 409,
+            reason: 'structural_findings_open',
+            message: error.message,
+            findings: error.findings,
           },
         });
         return;

@@ -26,6 +26,7 @@ import {
 } from './migrationParityVerifier';
 import { defaultConsumerResolverReads } from './dbChangeConsumerResolver';
 import type { ReconcileBookOfWorkItem } from './migrationReconciliationNetNewMatch';
+import { isManualExecutionItem } from './migrationExecutionClass';
 
 export interface StoryParityStatus {
   workItemId: string;
@@ -69,13 +70,13 @@ const API_PARITY_STREAM_TAGS = new Set([
   'stream:target_service_api_implementation',
   'stream:api_soap_integration_compatibility',
 ]);
-const MANUAL_GATE_TAG = 'execution:manual-gate';
-
 function isApiParityCodeStory(item: ReconcileBookOfWorkItem): boolean {
   const tags = item.tags ?? [];
   return (
     !!item.workItemId &&
-    !tags.includes(MANUAL_GATE_TAG) &&
+    // Unified execution class (Spec 2026-08-04-1): ALL manual work is out of
+    // parity scope, not just the legacy manual-gate tag.
+    !isManualExecutionItem(item) &&
     tags.some((t) => API_PARITY_STREAM_TAGS.has(t)) &&
     (item.apiEndpointIds?.length ?? 0) > 0
   );

@@ -24,6 +24,7 @@ import type {
   MigrationBookOfWorkSaveState,
   MigrationBookOfWorkExpansionState,
 } from '../../../api/migrationBookOfWorkApi';
+import { isManualExecutionTags } from '../../../utils/executionClass';
 import styles from './MigrationBookOfWork.module.css';
 
 // ============================================================================
@@ -441,6 +442,31 @@ export const MigrationBookOfWorkHierarchyTree: React.FC<
             >
               {item.confidence}
             </span>
+            {item.type === 'known_gap' && (
+              // Known-gap debt chip (Spec 2026-08-04-2): a structural finding
+              // dispositioned `known_gap` — accepted debt tracked in the plan,
+              // auto-cleared when a regenerated pack stops emitting it.
+              <span
+                className={`${styles.badge} ${styles.badgeKnownGap}`}
+                data-testid={`badge-known-gap-${item.id}`}
+                title="Accepted debt from a structural finding — clears when a regenerated pack no longer emits it"
+              >
+                Known gap
+              </span>
+            )}
+            {(item.type === 'story' || item.type === 'known_gap') &&
+              isManualExecutionTags(item.tags) && (
+              // Execution-class chip (Spec 2026-08-04-1): mirrors the gateway
+              // oracle — manual stories are human work, never spec'ed or
+              // dispatched.
+              <span
+                className={`${styles.badge} ${styles.badgeManualExecution}`}
+                data-testid={`badge-manual-execution-${item.id}`}
+                title="Human work item — never dispatched to the implement service"
+              >
+                manual
+              </span>
+            )}
             {(() => {
               // Preflight override (Phase 0): live generator-input check wins
               // over the baked expansion-time readiness when present.

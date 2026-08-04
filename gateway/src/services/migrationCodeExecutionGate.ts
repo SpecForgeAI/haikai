@@ -35,10 +35,8 @@
 
 import { getConfig } from '../config';
 import { logger } from './logger';
-import {
-  CODE_PROVENANCE_TAG,
-  MANUAL_GATE_TAG,
-} from './migrationCodeStreamPlanner';
+import { CODE_PROVENANCE_TAG } from './migrationCodeStreamPlanner';
+import { isManualExecutionItem } from './migrationExecutionClass';
 import {
   fetchEndpointBaselineCoverageRows,
   type EndpointBaselineCoverageRow,
@@ -220,7 +218,9 @@ function tagsOf(item: BookOfWorkItem): string[] {
 
 function isApiParityCodeStory(item: BookOfWorkItem): boolean {
   const tags = tagsOf(item);
-  if (tags.includes(MANUAL_GATE_TAG)) return false; // human/wizard work
+  // Unified execution class (Spec 2026-08-04-1): ALL manual work is out of
+  // this gate's scope, not just the legacy manual-gate tag.
+  if (isManualExecutionItem({ tags })) return false; // human work
   if (tags.some((t) => API_PARITY_STREAM_TAGS.has(t))) return true;
   // Deterministic code stories outside the two API streams (e.g. the
   // internal-processing stream) are NOT this gate's scope.

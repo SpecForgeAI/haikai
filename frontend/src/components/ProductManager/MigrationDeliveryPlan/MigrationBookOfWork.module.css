@@ -353,6 +353,24 @@
   font-style: italic;
 }
 
+/* Execution-class chip (Spec 2026-08-04-1): manual = human work, never
+   dispatched to the implement service. Neutral indigo so it reads as an
+   attribute, not a warning. */
+.badgeManualExecution {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+}
+
+/* Known-gap debt chip (Spec 2026-08-04-2 — Structural findings dispositions):
+   amber/warning tone — accepted debt from a dispositioned structural finding,
+   visually distinct from ordinary stories. */
+.badgeKnownGap {
+  background: #fef3c7;
+  border-color: #fcd34d;
+  color: #92400e;
+}
+
 .badgeSaved {
   background: #34d399;
   color: #064e3b;

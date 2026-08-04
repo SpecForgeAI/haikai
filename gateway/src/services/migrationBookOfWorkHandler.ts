@@ -76,6 +76,7 @@ import {
   buildDbStreamSkeleton,
   defaultFetchPackView,
 } from './migrationDbPackPlanner';
+import { openStructuralFindings } from './migrationStructuralFindings';
 import {
   CODE_DELIVERY_STREAMS,
   CodeModelView,
@@ -203,6 +204,26 @@ export class MigrationBookOfWorkSchemaError extends Error {
     );
     this.name = 'MigrationBookOfWorkSchemaError';
     this.errors = errors;
+  }
+}
+
+/**
+ * Plan generation refused because structural findings on the DB pack are not
+ * yet dispositioned (Spec 2026-08-04-2). The decision belongs BEFORE the plan
+ * exists — the route maps this to 409 with the per-finding list so the UI can
+ * link straight to the Schema migration tab.
+ */
+export class MigrationStructuralFindingsOpenError extends Error {
+  public readonly findings: Array<{ key: string; message: string; disposition: string | null }>;
+  constructor(findings: Array<{ key: string; message: string; disposition: string | null }>) {
+    super(
+      `${findings.length} structural finding(s) on the DB migration pack are undispositioned ` +
+        'or awaiting an upstream fix. Disposition each on the Schema migration tab → ' +
+        'Structural findings (accept with a reason / fix upstream + regenerate / known gap) ' +
+        'before generating the migration plan.'
+    );
+    this.name = 'MigrationStructuralFindingsOpenError';
+    this.findings = findings;
   }
 }
 
@@ -1066,6 +1087,31 @@ export async function generateMigrationBookOfWork(
           `prerequisite stories instead of pack-driven work.`
       );
       dbPackView = null;
+    }
+  }
+
+  // Structural-findings gate (Spec 2026-08-04-2): the disposition decision
+  // belongs BEFORE a plan exists. When the pack emits findings and any is
+  // still open (undispositioned or fix_upstream), REFUSE generation with the
+  // list — the operator dispositions them on the Schema migration tab and
+  // re-runs. Only applies when a DB stream is selected and a pack was read.
+  if (dbStreamSelected && dbPackView) {
+    const openFindings = openStructuralFindings(
+      dbPackView.manifest,
+      dbPackView.structuralDispositions ?? []
+    );
+    if (openFindings.length > 0) {
+      console.log(
+        `[diag-gateway] pm_migration_delivery_plan stage=structural_findings_gate ` +
+          `projectId=${projectId} open=${openFindings.length}`
+      );
+      throw new MigrationStructuralFindingsOpenError(
+        openFindings.map((f) => ({
+          key: f.key,
+          message: f.message,
+          disposition: f.disposition,
+        }))
+      );
     }
   }
   let dbClusterCap = 25;

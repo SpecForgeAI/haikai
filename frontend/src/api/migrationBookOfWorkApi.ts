@@ -40,7 +40,17 @@ export type MigrationBookOfWorkItemType =
   | 'initiative'
   | 'epic'
   | 'feature'
-  | 'story';
+  | 'story'
+  /**
+   * Known-gap debt item (Spec 2026-08-04-2 — Structural findings
+   * dispositions): a structural finding dispositioned `known_gap`
+   * materialises as one of these under the schema epic's "Known gaps
+   * (accepted debt)" feature. Renders like a story with a "Known gap" chip;
+   * always carries `execution:manual` + `known_gap` tags (human work — never
+   * spec'ed, never dispatched). Auto-clears when a regenerated pack stops
+   * emitting the finding.
+   */
+  | 'known_gap';
 
 export type MigrationBookOfWorkConfidence = 'high' | 'medium' | 'low';
 

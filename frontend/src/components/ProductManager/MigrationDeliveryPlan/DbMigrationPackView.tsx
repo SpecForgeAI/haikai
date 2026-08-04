@@ -48,6 +48,7 @@ import DbMigrationPackCredentialsModal, {
 } from './DbMigrationPackCredentialsModal';
 import DbMigrationPackDecisionQueue from './DbMigrationPackDecisionQueue';
 import DbMigrationPackDriftReports from './DbMigrationPackDriftReports';
+import DbMigrationPackStructuralFindingsPanel from './DbMigrationPackStructuralFindingsPanel';
 import DbMigrationPackEpicPicker from './DbMigrationPackEpicPicker';
 import DbMigrationPackTranslationsTab from './DbMigrationPackTranslationsTab';
 import styles from './DbMigrationPack.module.css';
@@ -432,6 +433,25 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
           </>
         )}
       </div>
+
+      {/* Structural findings (Spec 2026-08-04-2) — dispositions gate plan
+          generation + Migrate, so the panel sits ABOVE the section tabs where
+          it is always visible. Renders nothing when the pack has no findings.
+          Keyed by pack id + generation timestamp so an explicit Regenerate
+          remounts it with the fresh pack's findings. */}
+      <DbMigrationPackStructuralFindingsPanel
+        key={`${pack.id}-${pack.generated_at ?? ''}`}
+        projectId={projectId}
+        packId={pack.id}
+        architectureId={architectureId}
+        onPackRegenerated={() => {
+          // A completed harvest REGENERATED the pack server-side — reuse the
+          // post-Regenerate refetch (pack row incl. staleness + file rows).
+          void Promise.all([refreshPack(pack.id), loadFiles(pack.id)]).catch(() => {
+            /* refresh is best-effort; the next load shows it */
+          });
+        }}
+      />
 
       {/* Section tabs --------------------------------------------------------- */}
       <div className={styles.sectionTabs}>

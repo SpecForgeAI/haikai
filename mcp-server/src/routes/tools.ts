@@ -22,6 +22,7 @@ import { saveDiscoveryRunRouter } from './saveDiscoveryRunRoute';
 import { saveProjectAnchorEntitiesRouter } from './saveProjectAnchorEntitiesRoute';
 import { saveDiscoveryCandidatesRouter } from './saveDiscoveryCandidatesRoute';
 import { saveApprovedCandidatesRouter } from './saveApprovedCandidatesRoute';
+import { applyGapMetadataRouter } from './applyGapMetadataRoute';
 import { createProjectArtifactRouter } from './createProjectArtifactRoute';
 
 /**
@@ -73,6 +74,10 @@ toolsRouter.use('/save_discovery_candidates_to_model', saveDiscoveryCandidatesRo
 
 // Mount the save_approved_candidates route (Increment 13: manual save-back for approved candidates)
 toolsRouter.use('/save_approved_candidates', saveApprovedCandidatesRouter);
+
+// Mount the apply_gap_metadata route (Spec 4 — LLM gap-proposal queue,
+// 2026-08-04: additive fk_columns / primary-key metadata apply on approve)
+toolsRouter.use('/apply_gap_metadata', applyGapMetadataRouter);
 
 // Mount the create_project_artifact route
 toolsRouter.use('/create_project_artifact', createProjectArtifactRouter);

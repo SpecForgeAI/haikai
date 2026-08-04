@@ -1,0 +1,243 @@
+/**
+ * DbMigrationPackStructuralFindingsPanel tests
+ *
+ * Spec 2026-08-04-2 — Structural findings dispositions (frontend surface).
+ *
+ * Focused coverage only:
+ *   (a) the panel renders one row per finding (message, status chip, note)
+ *       plus the "Open findings block plan generation and Migrate." banner
+ *       while any finding is open;
+ *   (b) Accept requires a reason — the disposition call NEVER fires without
+ *       one; with a reason it fires with disposition 'accepted' + the note +
+ *       the finding's kind/subject, then the list refetches;
+ *   (c) Fix upstream fires immediately (no note) and Clear disposition fires
+ *       the delete;
+ *   (d) zero findings renders NOTHING.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+
+const PROJECT_ID = 'proj-sf-1';
+const PACK_ID = 'pack-sf-1';
+const ARCH_ID = 'arch-sf-1';
+
+vi.mock('../DbMigrationPack.module.css', () => ({
+  default: new Proxy(
+    {},
+    { get: (_t: object, prop: string | symbol) => String(prop) },
+  ),
+}));
+
+const mockListFindings = vi.fn();
+const mockSetDisposition = vi.fn();
+const mockClearDisposition = vi.fn();
+
+vi.mock('../../../../api/dbMigrationPackApi', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../../api/dbMigrationPackApi')
+  >('../../../../api/dbMigrationPackApi');
+  return {
+    ...actual,
+    listDbMigrationPackStructuralFindings: (...args: unknown[]) =>
+      mockListFindings(...args),
+    setDbMigrationPackStructuralFindingDisposition: (...args: unknown[]) =>
+      mockSetDisposition(...args),
+    clearDbMigrationPackStructuralFindingDisposition: (...args: unknown[]) =>
+      mockClearDisposition(...args),
+  };
+});
+
+import DbMigrationPackStructuralFindingsPanel from '../DbMigrationPackStructuralFindingsPanel';
+import type { DbMigrationPackStructuralFinding } from '../../../../api/dbMigrationPackApi';
+
+const OPEN_FINDING: DbMigrationPackStructuralFinding = {
+  key: 'no_primary_keys:all_tables',
+  kind: 'no_primary_keys',
+  subject: 'all_tables',
+  message: 'No primary keys captured across any table — suspicious zero.',
+  disposition: null,
+  note: null,
+  open: true,
+};
+
+const KNOWN_GAP_FINDING: DbMigrationPackStructuralFinding = {
+  key: 'no_foreign_keys:all_tables',
+  kind: 'no_foreign_keys',
+  subject: 'all_tables',
+  message: 'No foreign keys captured.',
+  disposition: 'known_gap',
+  note: 'Source schema genuinely has no declared FKs; app-enforced.',
+  open: false,
+};
+
+function renderPanel() {
+  return render(
+    <DbMigrationPackStructuralFindingsPanel
+      projectId={PROJECT_ID}
+      packId={PACK_ID}
+      architectureId={ARCH_ID}
+    />,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('DbMigrationPackStructuralFindingsPanel', () => {
+  it('renders a row per finding with status chips, the note, and the open-findings banner', async () => {
+    mockListFindings.mockResolvedValue({
+      findings: [OPEN_FINDING, KNOWN_GAP_FINDING],
+    });
+    renderPanel();
+
+    expect(
+      await screen.findByTestId('db-pack-structural-findings'),
+    ).toBeInTheDocument();
+    expect(mockListFindings).toHaveBeenCalledWith(PROJECT_ID, PACK_ID);
+
+    // Row 1: undispositioned — Open chip.
+    expect(
+      screen.getByTestId(`db-pack-structural-finding-status-${OPEN_FINDING.key}`),
+    ).toHaveTextContent('Open');
+    expect(
+      screen.getByText(/No primary keys captured across any table/),
+    ).toBeInTheDocument();
+
+    // Row 2: known_gap — chip + persisted note.
+    expect(
+      screen.getByTestId(
+        `db-pack-structural-finding-status-${KNOWN_GAP_FINDING.key}`,
+      ),
+    ).toHaveTextContent('Known gap');
+    expect(
+      screen.getByTestId(
+        `db-pack-structural-finding-note-${KNOWN_GAP_FINDING.key}`,
+      ),
+    ).toHaveTextContent('app-enforced');
+
+    // Any open finding shows the blocking banner.
+    expect(
+      screen.getByTestId('db-pack-structural-findings-open-banner'),
+    ).toHaveTextContent('Open findings block plan generation and Migrate.');
+
+    // Only the dispositioned row offers Clear disposition.
+    expect(
+      screen.queryByTestId(
+        `db-pack-structural-finding-clear-${OPEN_FINDING.key}`,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId(
+        `db-pack-structural-finding-clear-${KNOWN_GAP_FINDING.key}`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('Accept requires a reason before the disposition call fires, then refetches', async () => {
+    mockListFindings.mockResolvedValue({ findings: [OPEN_FINDING] });
+    mockSetDisposition.mockResolvedValue({
+      finding_key: OPEN_FINDING.key,
+      disposition: 'accepted',
+      note: 'Verified against the source DDL.',
+    });
+    renderPanel();
+
+    fireEvent.click(
+      await screen.findByTestId(
+        `db-pack-structural-finding-accept-${OPEN_FINDING.key}`,
+      ),
+    );
+
+    // Confirming with an EMPTY reason never fires the call.
+    fireEvent.click(
+      screen.getByTestId(
+        `db-pack-structural-finding-note-confirm-${OPEN_FINDING.key}`,
+      ),
+    );
+    expect(mockSetDisposition).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId('db-pack-structural-findings-error'),
+    ).toHaveTextContent(/reason is required/i);
+
+    // With a reason the call fires with the note + kind/subject from the row.
+    fireEvent.change(
+      screen.getByTestId(
+        `db-pack-structural-finding-note-input-${OPEN_FINDING.key}`,
+      ),
+      { target: { value: 'Verified against the source DDL.' } },
+    );
+    fireEvent.click(
+      screen.getByTestId(
+        `db-pack-structural-finding-note-confirm-${OPEN_FINDING.key}`,
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mockSetDisposition).toHaveBeenCalledWith(
+        PROJECT_ID,
+        PACK_ID,
+        expect.objectContaining({
+          key: OPEN_FINDING.key,
+          kind: 'no_primary_keys',
+          subject: 'all_tables',
+        }),
+        'accepted',
+        'Verified against the source DDL.',
+      ),
+    );
+    // After the action the merged list refetches (initial load + 1).
+    await waitFor(() => expect(mockListFindings).toHaveBeenCalledTimes(2));
+  });
+
+  it('Fix upstream fires without a note; Clear disposition fires the delete', async () => {
+    mockListFindings.mockResolvedValue({
+      findings: [OPEN_FINDING, KNOWN_GAP_FINDING],
+    });
+    mockSetDisposition.mockResolvedValue({
+      finding_key: OPEN_FINDING.key,
+      disposition: 'fix_upstream',
+    });
+    mockClearDisposition.mockResolvedValue(undefined);
+    renderPanel();
+
+    fireEvent.click(
+      await screen.findByTestId(
+        `db-pack-structural-finding-fix-upstream-${OPEN_FINDING.key}`,
+      ),
+    );
+    await waitFor(() =>
+      expect(mockSetDisposition).toHaveBeenCalledWith(
+        PROJECT_ID,
+        PACK_ID,
+        expect.objectContaining({ key: OPEN_FINDING.key }),
+        'fix_upstream',
+        undefined,
+      ),
+    );
+
+    fireEvent.click(
+      screen.getByTestId(
+        `db-pack-structural-finding-clear-${KNOWN_GAP_FINDING.key}`,
+      ),
+    );
+    await waitFor(() =>
+      expect(mockClearDisposition).toHaveBeenCalledWith(
+        PROJECT_ID,
+        PACK_ID,
+        KNOWN_GAP_FINDING.key,
+      ),
+    );
+  });
+
+  it('renders NOTHING when the pack has zero findings', async () => {
+    mockListFindings.mockResolvedValue({ findings: [] });
+    const { container } = renderPanel();
+    await waitFor(() => expect(mockListFindings).toHaveBeenCalled());
+    expect(
+      screen.queryByTestId('db-pack-structural-findings'),
+    ).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+});
