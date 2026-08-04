@@ -41,7 +41,7 @@ filesystem, build strings, or serialize JSON. Read the env once at process start
 - `{service}` — short stable name from the registry below.
 - `{corr}` — space-joined `key=value` correlation pairs, **stable key order**:
   `run session job bug project arch`. Include only the ones set. Quote values
-  containing spaces: `project="HiFi SVC DB Migration"`. This is the grep anchor
+  containing spaces: `project="SampleSvc SVC DB Migration"`. This is the grep anchor
   (`grep session=abc123 trace.log`). **Always include `project` (and `arch`) when
   known** — they are the workflow-spanning grouping key (discovery/capture/migrate
   each have their own `run`/`session`/`job`, but a whole migration is one
@@ -61,13 +61,13 @@ A run starts with a header line so the summarize tool can group:
 ### Worked example (this is the capture bug we just debugged)
 
 ```
-=== HAIKAI TRACE  run=mig-7f3  project="HiFi SVC DB Migration"  arch="Current State"  2026-06-16T16:04:19.240Z ===
+=== HAIKAI TRACE  run=mig-7f3  project="SampleSvc SVC DB Migration"  arch="Current State"  2026-06-16T16:04:19.240Z ===
 2026-06-16T16:04:19.300Z  [SUMMARY]  discovery    run=mig-7f3  ✓ code scan COMPLETED — 4 services, 45 endpoints
 2026-06-16T16:05:02.110Z  [SUMMARY]  discovery    run=mig-7f3  ✓ database scan COMPLETED — profiling OFF
-2026-06-16T16:04:19.240Z  [SUMMARY]  capture-svc  run=mig-7f3 session=abc123  ▶ API capture started — http://hifiuat1:10078/hifi/ auth=header(ssoToken)
+2026-06-16T16:04:19.240Z  [SUMMARY]  capture-svc  run=mig-7f3 session=abc123  ▶ API capture started — http://samplesvcuat1:10078/samplesvc/ auth=header(ssoToken)
 2026-06-16T16:11:39.300Z  [detail]   capture-svc  session=abc123  capture.http.fail {"session":"abc123","op":"GET /accounts","status":401,"durationMs":88,"auth":"header:ssoToken"}
 2026-06-16T16:11:39.335Z  [SUMMARY]  capture-svc  run=mig-7f3 session=abc123  ✗ capture COMPLETED but 0/45 captured — 45 scenarios errored (http 401 ×45: ssoToken rejected)
-2026-06-16T16:12:50.900Z  [SUMMARY]  ams          run=mig-7f3 project="HiFi SVC DB Migration"  ✗ plan readiness INSUFFICIENT — baselines=0; gaps: no_api_baseline, inventory_mismatch
+2026-06-16T16:12:50.900Z  [SUMMARY]  ams          run=mig-7f3 project="SampleSvc SVC DB Migration"  ✗ plan readiness INSUFFICIENT — baselines=0; gaps: no_api_baseline, inventory_mismatch
 ```
 
 `grep '\[SUMMARY\]' trace.log` reproduces the story; `grep session=abc123` follows one capture across services.

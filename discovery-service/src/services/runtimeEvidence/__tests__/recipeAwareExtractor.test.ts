@@ -4,7 +4,7 @@
  * Pins the load-bearing behaviours from tasks.md 6.1. CRITICAL invariant under
  * test: the LLM only ever saw small samples (TG5); THIS code applies the
  * recipe to the WHOLE file deterministically.
- *   1. Multi-line record assembly: a HiFi block (`<id> > METHOD http://host/path`,
+ *   1. Multi-line record assembly: a SampleSvc block (`<id> > METHOD http://host/path`,
  *      `<id> > header: value` lines, blank `<id> >`, then JSON body) assembles
  *      into ONE record -> method + path + headers + body extracted.
  *   2. Response captured ONLY when present; a request with no logged response
@@ -29,9 +29,9 @@ import {
 // ----------------------------------------------------------------------------
 
 /**
- * The HiFi recipe: records START at `<id> > METHOD `; method/path from the
+ * The SampleSvc recipe: records START at `<id> > METHOD `; method/path from the
  * start line, headers from `<id> > name: value` lines, request body from the
- * JSON object line. No response rules (the request-only HiFi shape).
+ * JSON object line. No response rules (the request-only SampleSvc shape).
  */
 const HIFI_REQUEST_RECIPE: ExtractorRecipe = {
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
@@ -47,7 +47,7 @@ const HIFI_REQUEST_RECIPE: ExtractorRecipe = {
   },
 };
 
-/** A HiFi recipe that ALSO knows how to read a logged response status + body. */
+/** A SampleSvc recipe that ALSO knows how to read a logged response status + body. */
 const HIFI_WITH_RESPONSE_RECIPE: ExtractorRecipe = {
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
   fields: {
@@ -59,11 +59,11 @@ const HIFI_WITH_RESPONSE_RECIPE: ExtractorRecipe = {
 };
 
 // ----------------------------------------------------------------------------
-// 1: multi-line record assembly (HiFi)
+// 1: multi-line record assembly (SampleSvc)
 // ----------------------------------------------------------------------------
 
 describe('recipeAwareExtractor — multi-line record assembly', () => {
-  it('assembles a HiFi multi-line block into ONE record with method+path+headers+body', () => {
+  it('assembles a SampleSvc multi-line block into ONE record with method+path+headers+body', () => {
     const content = [
       '7 > POST http://svc:8080/api/orders/42',
       '7 > content-type: application/json',
@@ -98,7 +98,7 @@ describe('recipeAwareExtractor — multi-line record assembly', () => {
     expect(extractRecord(HIFI_REQUEST_RECIPE, noise, 1, 1)).toBeNull();
   });
 
-  it('assembles two consecutive HiFi records into two observations', () => {
+  it('assembles two consecutive SampleSvc records into two observations', () => {
     const content = [
       '1 > GET http://svc:8080/api/users/1',
       '1 > accept: application/json',
@@ -194,7 +194,7 @@ describe('recipeAwareExtractor — interleaved noise + streaming', () => {
 
   it('extracts in a STREAMED pass over a real file on disk', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'recipe-extract-'));
-    const file = path.join(dir, 'hifi.log');
+    const file = path.join(dir, 'samplesvc.log');
     // Build a multi-record file; interleave a noise line between records.
     const records: string[] = [];
     for (let i = 1; i <= 25; i++) {
@@ -209,7 +209,7 @@ describe('recipeAwareExtractor — interleaved noise + streaming', () => {
     try {
       const obs = await extractWithRecipe(file, HIFI_REQUEST_RECIPE, {
         sourceArtifactId: 'art-stream',
-        sourceFileName: 'hifi.log',
+        sourceFileName: 'samplesvc.log',
       });
       expect(obs).toHaveLength(25);
       expect(obs[0].method).toBe('POST');

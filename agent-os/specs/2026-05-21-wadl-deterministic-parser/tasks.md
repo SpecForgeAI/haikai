@@ -25,7 +25,7 @@ Common technical constraints applied to every group:
     - Path: `discovery-service/src/__tests__/fixtures/wadl/`
     - Place all files described below under this directory
   - [x] 1.2 Anonymise the user's Jersey 1.16 WADL sample
-    - Rename `HiFi Service Version` -> `SampleSvc Service Version`
+    - Rename `SampleSvc Service Version` -> `SampleSvc Service Version`
     - Strip every hostname and replace with `example.invalid`
     - Rename app-specific identifiers (org names, project names) to neutral `Sample`-prefixed equivalents
     - Save as `samplesvc.wadl` (filename per the operator override in the user's task prompt; supersedes the originally-planned `sampleSvc-jersey-1.16.wadl` so the canonical sample matches the prompt's `samplesvc.wadl` reference)
@@ -45,7 +45,7 @@ Common technical constraints applied to every group:
     - Skipped per the "Do not Write report/summary/findings/analysis .md files" / "no documentation files unless asked" agent instructions, and the task itself flagged this as conditional ("Skip if codebase convention is to omit fixture READMEs"). Sibling fixture folders (`fixtures/dependencyResolvers`, `fixtures/librarySourceResolver`, `fixtures/runtimeEvidence`) carry no README either; convention is to omit.
   - [x] 1.6 Verify fixtures load via a smoke check
     - Confirmed via the unit-test run: `parsesAnonymisedJerseyFixture` loads `samplesvc.wadl` + `xsd0.xsd` cleanly with non-empty content
-    - Manually scanned the fixtures for the original identifiers (`HiFi`, `localhost`, the original hostname) -- none remain; only `SampleSvc` / `example.invalid` appear
+    - Manually scanned the fixtures for the original identifiers (`SampleSvc`, `localhost`, the original hostname) -- none remain; only `SampleSvc` / `example.invalid` appear
 
 **Acceptance Criteria:**
 - All required fixture files exist under `discovery-service/src/__tests__/fixtures/wadl/` (`samplesvc.wadl`, `xsd0.xsd`, `edgeCases.ts`)

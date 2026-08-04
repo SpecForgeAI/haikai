@@ -50,7 +50,7 @@ export interface ParseWadlOptions {
    */
   relatedFiles?: Map<string, string>;
   /**
-   * Identifier for the source file (e.g. `src/main/resources/hifi.wadl`) --
+   * Identifier for the source file (e.g. `src/main/resources/samplesvc.wadl`) --
    * surfaces verbatim on emitted findings / evidence.
    */
   sourceFilePath?: string;

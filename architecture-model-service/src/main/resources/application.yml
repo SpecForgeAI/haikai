@@ -5,14 +5,9 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/architecture_model
     username: postgres
-    password: p05tgre5
+    password: "${SPRING_DATASOURCE_PASSWORD:postgres}"
     driver-class-name: org.postgresql.Driver
 
-#  datasource:
-#    url: jdbc:postgresql://abmbot-postgres.czag82yqiits.eu-west-2.rds.amazonaws.com:5432/architecture_model
-#    username: arch_app
-#    password: ArchApp_2026!
-#    driver-class-name: org.postgresql.Driver
 
   liquibase:
     enabled: true

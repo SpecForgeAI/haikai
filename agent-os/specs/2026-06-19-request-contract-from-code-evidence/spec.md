@@ -1,7 +1,7 @@
 # Specification: Request Contract from Code Evidence
 
 ## Goal
-Mine the current-state CODE SCAN for per-endpoint request-construction facts (request content-type, required headers, request date-formats, request-field validation), persist them as a new non-reviewed `request_contract` JSONB on the endpoint (mirroring `response_contract`), and ENRICH the capture-time OAS so the capture LLM builds correct requests on the FIRST attempt — fixing three real HiFi-API failures from code evidence rather than runtime guessing.
+Mine the current-state CODE SCAN for per-endpoint request-construction facts (request content-type, required headers, request date-formats, request-field validation), persist them as a new non-reviewed `request_contract` JSONB on the endpoint (mirroring `response_contract`), and ENRICH the capture-time OAS so the capture LLM builds correct requests on the FIRST attempt — fixing three real SampleSvc-API failures from code evidence rather than runtime guessing.
 
 ## User Stories
 - As the API-behaviour capture loop, I want code-derived request facts (date format, content-type, required headers) layered onto the OAS operation I read, so I send a correctly-formatted request the first time instead of burning my per-scenario budget reverse-engineering a misleading `xsd:date`/Joda mismatch.

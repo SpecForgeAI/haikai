@@ -219,7 +219,7 @@ describe('wadlEndpointEmitter -- payload shape', () => {
           methodId: 'getHierarchyForOrgId',
           httpMethod: 'POST',
           path: '/hierarchynodes/{grdOrgId}',
-          baseUrl: 'http://localhost:8080/hifi/',
+          baseUrl: 'http://localhost:8080/samplesvc/',
           params,
           request: { representations: [requestRep] },
           response: { representations: [responseRep] },
@@ -237,7 +237,7 @@ describe('wadlEndpointEmitter -- payload shape', () => {
     expect(dj.protocol).toBe('rest');
     expect(dj.method).toBe('POST');
     expect(dj.path).toBe('/hierarchynodes/{grdOrgId}');
-    expect(dj.baseUrl).toBe('http://localhost:8080/hifi/');
+    expect(dj.baseUrl).toBe('http://localhost:8080/samplesvc/');
     expect(dj.methodId).toBe('getHierarchyForOrgId');
     expect(dj.params).toEqual(params);
     expect(dj.request).toEqual({ representations: [requestRep] });

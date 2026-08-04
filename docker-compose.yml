@@ -9,7 +9,7 @@ services:
     container_name: arch-tool-postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: p05tgre5
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
       POSTGRES_DB: architecture_model
     ports:
       - "5432:5432"
@@ -40,7 +40,7 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/architecture_model
       SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: p05tgre5
+      SPRING_DATASOURCE_PASSWORD: "${SPRING_DATASOURCE_PASSWORD:-postgres}"
       HAIKAI_TRACE: ${HAIKAI_TRACE:-off}
       HAIKAI_TRACE_FILE: /trace/trace.log
     networks:

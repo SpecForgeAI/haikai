@@ -7,7 +7,7 @@ accept, at wizard step-1, BOTH:
   - OAS in JSON **and** YAML, and
   - REST-via-WADL with its XSD grammar file(s).
 
-The confirmed driver is the "HiFi" service (REST: WADL = the ~45 REST
+The confirmed driver is the "SampleSvc" service (REST: WADL = the ~45 REST
 endpoints; XSD = the request/response body types; calls are HTTP GET/POST +
 custom headers + JSON -- NOT SOAP). REST execution is already built; this is
 the PARSING + acceptance extension only. No schema / Liquibase change.

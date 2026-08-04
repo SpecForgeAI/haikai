@@ -5,7 +5,7 @@ Extract HTTP request observations (plus response/headers/body where the log cont
 
 ## User Stories
 - As a migration planner, I want a rich runtime log I uploaded to a discovery run to actually count as runtime evidence, so that the "Create Migration Delivery Plan" wizard stops reporting "Insufficient runtime evidence".
-- As a platform engineer, I want bespoke/absolute-URL log formats (e.g. HiFi `POST http://host:port/path`) to be parsed without me writing a custom parser, so that non-standard traces still produce endpoint usage.
+- As a platform engineer, I want bespoke/absolute-URL log formats (e.g. SampleSvc `POST http://host:port/path`) to be parsed without me writing a custom parser, so that non-standard traces still produce endpoint usage.
 
 ## Specific Requirements
 
@@ -113,7 +113,7 @@ No visual assets were provided in `planning/visuals/`. Not applicable.
 - Introducing a new gap type for the ~0-despite-hits diagnostic case.
 
 ## Load-Bearing Test Surfaces
-- **Broadened deterministic matcher**: extracts method+path from an absolute-URL line — specifically the HiFi `POST http://host:port/path` case the current regex fails on.
+- **Broadened deterministic matcher**: extracts method+path from an absolute-URL line — specifically the SampleSvc `POST http://host:port/path` case the current regex fails on.
 - **Evidence write -> gap clears**: writing `source='log'` `discovery_evidence` rows makes AMS `buildRuntimeUsageSummary` report `hasRuntimeEvidence = true`, clearing `insufficient_runtime_evidence`.
 - **Pre-scan / sampler determinism**: candidate detection and byte-offset-spread block selection (with dedup, per-line truncation, head/middle/tail fallback on zero hits) are reproducible.
 - **Recipe validation + bounded retries + fallback**: recipe accepted at >=60% held-out yield; re-sampled up to 2 retries (max 3 LLM calls/file); falls back to the flexible deterministic matcher when no valid recipe is produced.

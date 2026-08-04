@@ -41,7 +41,7 @@ describe('mergeCandidates — attribute union + source precedence', () => {
       id: 'wadl-twin',
       candidateType: 'endpoints',
       name: 'getHierarchy_op',
-      parentCandidateId: 'hifi-service-version',
+      parentCandidateId: 'samplesvc-service-version',
       data: {
         operation_verb: 'POST',
         path_or_address: '/hierarchy/{businessDate}/{grdOrgId}',

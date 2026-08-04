@@ -53,7 +53,7 @@ required correction.
   never fails the run; no new gap type.
 - [x] **TG9 — Test Review & Gap Analysis** — added end-to-end suites
   (`runDiscoveryRuntimeEvidence.evidence.test.ts`, `.featureE2e.test.ts`, `.diagnostic.test.ts`)
-  plus fixtures; headline HiFi → `source='log'` path covered.
+  plus fixtures; headline SampleSvc → `source='log'` path covered.
 
 ### Incomplete or Issues
 None.
@@ -137,7 +137,7 @@ failures.
 
 | TG | Acceptance criterion | Evidence | Verdict |
 |---|---|---|---|
-| 1 | HiFi `POST http://host:port/path` → `/path`; bare-path + status regress; detector exported; byte-intact | `flexibleMethodPathMatcher.test.ts` (8/8); `detectRequestLikeLine` L157; `extractPathFromTarget` L133 | ✅ |
+| 1 | SampleSvc `POST http://host:port/path` → `/path`; bare-path + status regress; detector exported; byte-intact | `flexibleMethodPathMatcher.test.ts` (8/8); `detectRequestLikeLine` L157; `extractPathFromTarget` L133 | ✅ |
 | 2 | 8-12 blocks, byte-spread, dedup, per-line+total caps, redaction, zero-hits fallback, deterministic | `logPreScanSampler.test.ts`; caps L54/56; `redactFullBody` L282/304/348; fallback L396 | ✅ |
 | 3 | Rich JSONL uses fast path; thin CLF falls through; no field invented | `knownFormatFastPath.test.ts`; richness gate returns `{usedFastPath:false}` when thin | ✅ |
 | 4 | `POST /api/v1/discovery/v3/log-recipe` relays unmodified; 400 on bad input; model gateway-side | `discoveryLogRecipe.test.ts` (6/6); route L90-174; `temperature:0` | ✅ |
@@ -145,7 +145,7 @@ failures.
 | 6 | Multi-line record assembly; response only-if-present; streams full file; TG7-compatible shape | `recipeAwareExtractor.test.ts`; all rich fields default `undefined` L186-205 | ✅ |
 | 7 | `bulkSaveEvidence` called with ≥1 `source:'log'` atom even with 0 candidate matches; recipe persisted | `runtimeEvidenceAtomBuilder.test.ts` + `.evidence.test.ts` (incl. "ZERO candidates match"); atom L152-173 | ✅ |
 | 8 | `extractionOutcome` in steps_payload + low-sev `runtime_log` finding; never throws; no new gap type | `.diagnostic.test.ts` (5/5); finding L327-356 (`category:'runtime_log'`, `severity:'low'`) | ✅ |
-| 9 | Headline HiFi→`source='log'` covered E2E; ≤10 added tests; feature-scoped | `.featureE2e.test.ts` (4/4) incl. redaction-invariant E2E | ✅ |
+| 9 | Headline SampleSvc→`source='log'` covered E2E; ≤10 added tests; feature-scoped | `.featureE2e.test.ts` (4/4) incl. redaction-invariant E2E | ✅ |
 
 ---
 
@@ -153,7 +153,7 @@ failures.
 
 | # | Invariant | Result | Evidence |
 |---|---|---|---|
-| (a) | Broadened matcher extracts method+path from `POST http://host:port/path` → `/path` | ✅ PASS | `detectRequestLikeLine`/`extractPathFromTarget`; `flexibleMethodPathMatcher.test.ts` HiFi case green |
+| (a) | Broadened matcher extracts method+path from `POST http://host:port/path` → `/path` | ✅ PASS | `detectRequestLikeLine`/`extractPathFromTarget`; `flexibleMethodPathMatcher.test.ts` SampleSvc case green |
 | (b) | Writes `source='log'` atoms via `bulkSaveEvidence` even with ZERO candidate matches; atom shape `type:'string_pattern'`,`source:'log'` | ✅ PASS | Orchestrator L913-946 (best-effort try/catch, richObservations-driven, independent of L872 matching); atom builder L152-173; test "writes source:log evidence even when ZERO candidates match" |
 | (c) | LLM only ever gets small REDACTED samples; whole file processed deterministically; induction bounded (≤3 calls; ≥60% held-out) | ✅ PASS | Sampler redacts every block; `induceAndValidateRecipe` sends only `block.text` (L558); `MAX_LLM_CALLS_PER_FILE=3`/`0.6`; full-file via recipe extractor or fallback matcher; "never sends a planted secret" E2E green |
 | (d) | Runtime stage NEVER-THROWS preserved (evidence write + diagnostic emit best-effort) | ✅ PASS | Evidence write L913-946, diagnostic emit L962-979, smart-path L602-657 all wrapped; "does NOT block the run when findings emission throws" green |

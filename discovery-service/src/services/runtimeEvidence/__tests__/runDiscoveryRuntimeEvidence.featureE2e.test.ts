@@ -4,7 +4,7 @@
  * the WHOLE Stage-2.5 orchestrator through a real fixture for the seams that
  * unit tests cannot exercise:
  *
- *   Seam A (fallback E2E): an absolute-URL HiFi log for which the LLM returns
+ *   Seam A (fallback E2E): an absolute-URL SampleSvc log for which the LLM returns
  *     "no pattern" still writes `source='log'` evidence via the broadened TG1
  *     matcher — AND we prove the relay was genuinely consulted first (the
  *     recipe path was attempted, then the fallback branch produced the
@@ -12,7 +12,7 @@
  *     already covered by `runDiscoveryRuntimeEvidence.evidence.test.ts`; this
  *     pins the path that produced it.
  *
- *   Seam B (recipe E2E): a RICH multi-line HiFi log (headers + body + logged
+ *   Seam B (recipe E2E): a RICH multi-line SampleSvc log (headers + body + logged
  *     response) drives induction -> held-out validation (>=60%) -> the
  *     recipe-aware extractor assembles multi-line records across the FULL file
  *     -> RICH `source='log'` atoms are written (the response status flows into
@@ -92,7 +92,7 @@ const FIXTURES_DIR = path.resolve(
 );
 
 /**
- * A recipe that reads the RICH multi-line HiFi shape: records start at
+ * A recipe that reads the RICH multi-line SampleSvc shape: records start at
  * `<id> > METHOD `; method/path from the start line, headers from
  * `<id> > name: value`, request body from the JSON line, response status/body
  * from the `<id> < ...` lines. Serialized as the relay's `content` (exactly the
@@ -119,7 +119,7 @@ function makeNoPatternRelay(): LogRecipeRelay & { induceLogRecipe: jest.Mock } {
   return { induceLogRecipe: jest.fn(async () => ({ content: 'no pattern' })) };
 }
 
-/** A relay that returns the rich HiFi recipe so induction is ACCEPTED. */
+/** A relay that returns the rich SampleSvc recipe so induction is ACCEPTED. */
 function makeRichRecipeRelay(): LogRecipeRelay & { induceLogRecipe: jest.Mock } {
   return {
     induceLogRecipe: jest.fn(async () => ({ content: JSON.stringify(RICH_HIFI_RECIPE) })),
@@ -174,7 +174,7 @@ describe('runtime-log E2E — fallback path (absolute URL, no valid recipe)', ()
       deterministicCandidates: [],
       configSnapshot: {
         repoUrl: 'https://example.com/app.git',
-        inputArtifacts: { logFiles: [logFileArtifact('sample-hifi-absolute-url.log')] },
+        inputArtifacts: { logFiles: [logFileArtifact('sample-absolute-url.log')] },
       },
       logRecipeRelay: relay,
     });
@@ -214,7 +214,7 @@ describe('runtime-log E2E — recipe path (rich multi-line log)', () => {
       deterministicCandidates: [],
       configSnapshot: {
         repoUrl: 'https://example.com/app.git',
-        inputArtifacts: { logFiles: [logFileArtifact('sample-hifi-rich-multiline.log')] },
+        inputArtifacts: { logFiles: [logFileArtifact('sample-rich-multiline.log')] },
       },
       logRecipeRelay: relay,
     });
@@ -266,7 +266,7 @@ describe('runtime-log E2E — recipe path (rich multi-line log)', () => {
       deterministicCandidates: [makeEndpointCandidate('c-users', 'GET', '/api/users/{id}')],
       configSnapshot: {
         repoUrl: 'https://example.com/app.git',
-        inputArtifacts: { logFiles: [logFileArtifact('sample-hifi-rich-multiline.log')] },
+        inputArtifacts: { logFiles: [logFileArtifact('sample-rich-multiline.log')] },
       },
       logRecipeRelay: relay,
     });
@@ -312,7 +312,7 @@ describe('runtime-log E2E — redaction invariant', () => {
       deterministicCandidates: [],
       configSnapshot: {
         repoUrl: 'https://example.com/app.git',
-        inputArtifacts: { logFiles: [logFileArtifact('sample-hifi-secret.log')] },
+        inputArtifacts: { logFiles: [logFileArtifact('sample-secret.log')] },
       },
       logRecipeRelay: relay,
     });

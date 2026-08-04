@@ -9,7 +9,7 @@ JSONB on the endpoint, mirroring `responseContract`), and ENRICH the
 capture-time OAS so the API-behaviour capture LLM builds correct requests on the
 FIRST attempt — instead of reverse-engineering them at runtime.
 
-Motivating real failures (a "HiFi" API capture run, 34% success):
+Motivating real failures (a "SampleSvc" API capture run, 34% success):
 1. Date-format mismatch — API uses Joda `dd-MMM-yyyy` (e.g. `17-JUN-2026`); the
    LLM sends ISO (`2024-01-01`) → 400 "Invalid format ... malformed". The
    WADL/XSD contract is MISLEADING here (types it as `xsd:date` → ISO).

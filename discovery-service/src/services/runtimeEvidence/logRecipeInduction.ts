@@ -103,13 +103,13 @@ export interface RecipeFieldRules {
 
 /**
  * How the Task Group 6 engine splits the full file into RECORDS before applying
- * the field rules. A multi-line bespoke trace (the HiFi case) groups several
+ * the field rules. A multi-line bespoke trace (the SampleSvc case) groups several
  * physical lines into one logical record.
  *
  *   - `single_line`  : one record per physical line (CLF-ish / JSON-lines-ish).
  *   - `blank_line`   : records separated by a blank (or whitespace-only) line.
  *   - `start_regex`  : a new record BEGINS whenever a line matches `pattern`
- *                      (e.g. the HiFi `^<id> > METHOD ` request-start line);
+ *                      (e.g. the SampleSvc `^<id> > METHOD ` request-start line);
  *                      every following line accumulates until the next start.
  */
 export interface RecipeRecordDelimiter {

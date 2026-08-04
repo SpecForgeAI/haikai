@@ -15,7 +15,7 @@ set -euo pipefail
 NET=gitlab-net
 URL=http://localhost:8929
 EXTURL=http://host.docker.internal:8929
-ROOT_PW=HaikaiLocal2026!
+ROOT_PW=${GITLAB_ROOT_PASSWORD:-LocalDev-ChangeMe-2026}
 IMG=gitlab/gitlab-ce:latest
 RUNNER_IMG=gitlab/gitlab-runner:latest
 

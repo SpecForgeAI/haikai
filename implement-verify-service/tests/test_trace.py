@@ -62,7 +62,7 @@ def test_default_env_is_off(tmp_path, monkeypatch):
 def test_summary_line_format(tmp_path, monkeypatch):
     f = tmp_path / "trace.log"
     t = _reload(monkeypatch, "summary", f).tracer("impl-verify")
-    t.step("orchestration started — 2 specs", {"project": "HiFi SVC DB Migration", "job": "job-7"})
+    t.step("orchestration started — 2 specs", {"project": "SampleSvc SVC DB Migration", "job": "job-7"})
 
     line = f.read_text(encoding="utf-8").splitlines()[0]
     # Split on the TWO-space separator the contract mandates.
@@ -73,7 +73,7 @@ def test_summary_line_format(tmp_path, monkeypatch):
     assert tier == "[SUMMARY]"
     assert service == "impl-verify"
     # Correlation: stable order, quote values with spaces, only-set keys.
-    assert corr == 'job=job-7 project="HiFi SVC DB Migration"'
+    assert corr == 'job=job-7 project="SampleSvc SVC DB Migration"'
     assert body == "▶ orchestration started — 2 specs"
 
 
@@ -145,14 +145,14 @@ def test_detail_line_format_and_corr_merge(tmp_path, monkeypatch):
 def test_run_header_format(tmp_path, monkeypatch):
     f = tmp_path / "trace.log"
     t = _reload(monkeypatch, "summary", f).tracer("impl-verify")
-    t.run_header("mig-7f3", project="HiFi SVC DB Migration", arch="Current State")
+    t.run_header("mig-7f3", project="SampleSvc SVC DB Migration", arch="Current State")
     # A leading blank line delimits runs in the shared append-only file; the
     # header is the first non-empty line (the summarizer skips the blank).
     lines = f.read_text(encoding="utf-8").splitlines()
     assert lines and lines[0] == "", "expected a leading blank-line run delimiter"
     hdr = next(l for l in lines if l.strip())
     m = re.match(
-        r'^=== HAIKAI TRACE  run=mig-7f3 project="HiFi SVC DB Migration" '
+        r'^=== HAIKAI TRACE  run=mig-7f3 project="SampleSvc SVC DB Migration" '
         r'arch="Current State"  (\S+) ===$',
         hdr,
     )

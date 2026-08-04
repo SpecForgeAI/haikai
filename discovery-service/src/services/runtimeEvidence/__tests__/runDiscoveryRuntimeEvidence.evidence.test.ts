@@ -121,9 +121,9 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
         inputArtifacts: {
           logFiles: [
             {
-              artifactId: 'a-hifi',
-              originalFileName: 'sample-hifi-absolute-url.log',
-              relativePath: 'sample-hifi-absolute-url.log',
+              artifactId: 'a-samplesvc',
+              originalFileName: 'sample-absolute-url.log',
+              relativePath: 'sample-absolute-url.log',
             },
           ],
         },
@@ -140,7 +140,7 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
 
     // THE gap-clearing precondition: every atom is source:'log'.
     expect(atoms.every((a) => a.source === 'log')).toBe(true);
-    // The HiFi POST http://host:8080/api/orders line (the load-bearing absolute
+    // The SampleSvc POST http://host:8080/api/orders line (the load-bearing absolute
     // URL the OLD regex extracted ZERO from) is present as endpoint_usage_log.
     expect(
       atoms.some(
@@ -163,9 +163,9 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
         inputArtifacts: {
           logFiles: [
             {
-              artifactId: 'a-hifi',
-              originalFileName: 'sample-hifi-absolute-url.log',
-              relativePath: 'sample-hifi-absolute-url.log',
+              artifactId: 'a-samplesvc',
+              originalFileName: 'sample-absolute-url.log',
+              relativePath: 'sample-absolute-url.log',
             },
           ],
         },
@@ -193,9 +193,9 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
         inputArtifacts: {
           logFiles: [
             {
-              artifactId: 'a-hifi',
-              originalFileName: 'sample-hifi-absolute-url.log',
-              relativePath: 'sample-hifi-absolute-url.log',
+              artifactId: 'a-samplesvc',
+              originalFileName: 'sample-absolute-url.log',
+              relativePath: 'sample-absolute-url.log',
             },
           ],
         },
@@ -230,9 +230,9 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
         inputArtifacts: {
           logFiles: [
             {
-              artifactId: 'a-hifi',
-              originalFileName: 'sample-hifi-absolute-url.log',
-              relativePath: 'sample-hifi-absolute-url.log',
+              artifactId: 'a-samplesvc',
+              originalFileName: 'sample-absolute-url.log',
+              relativePath: 'sample-absolute-url.log',
             },
           ],
         },
@@ -246,7 +246,7 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
   });
 
   it('persists the recipe into steps_payload.v3.runtimeEvidence.recipe when a recipe is accepted', async () => {
-    // A relay that returns a valid recipe for the HiFi `reqId=N > METHOD <url>`
+    // A relay that returns a valid recipe for the SampleSvc `reqId=N > METHOD <url>`
     // shape so induction is ACCEPTED and the recipe is persisted + reused.
     const recipeRelay: LogRecipeRelay = {
       induceLogRecipe: jest.fn(async () => ({
@@ -271,9 +271,9 @@ describe('runDiscoveryRuntimeEvidence — source=log evidence write (TG7 dead-br
         inputArtifacts: {
           logFiles: [
             {
-              artifactId: 'a-hifi',
-              originalFileName: 'sample-hifi-absolute-url.log',
-              relativePath: 'sample-hifi-absolute-url.log',
+              artifactId: 'a-samplesvc',
+              originalFileName: 'sample-absolute-url.log',
+              relativePath: 'sample-absolute-url.log',
             },
           ],
         },

@@ -98,7 +98,7 @@ No visual assets were provided (`planning/visuals/` confirmed empty). UI follows
 - `response_body_json` (110-112) and `response_headers_redacted_json` (106-108) already store full responses; `accepted` carries the keep/hide state — no schema change for the selector/scoring work (config-persistence handled per the build-time note).
 
 ## Out of Scope
-- No change to the legacy/HiFi API — its design is fixed; deviations are observations, not defects to repair.
+- No change to the legacy/SampleSvc API — its design is fixed; deviations are observations, not defects to repair.
 - No change to reconcile/diff or target-replay algorithms (`diffRunner.ts:435`, `targetReplayRunner.ts:430`) beyond valid captures now reaching the baseline.
 - No new hard coverage gate — coverage stays DISPLAY-ONLY; `SaveAsBaselineModal` `canSubmit` still ignores the score.
 - Do NOT regress fumble-deduplication.

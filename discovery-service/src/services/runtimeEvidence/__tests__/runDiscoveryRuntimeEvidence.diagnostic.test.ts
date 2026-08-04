@@ -173,9 +173,9 @@ describe('runDiscoveryRuntimeEvidence — ~0-despite-hits diagnostic (TG8)', () 
         inputArtifacts: {
           logFiles: [
             {
-              artifactId: 'a-hifi',
-              originalFileName: 'sample-hifi-absolute-url.log',
-              relativePath: 'sample-hifi-absolute-url.log',
+              artifactId: 'a-samplesvc',
+              originalFileName: 'sample-absolute-url.log',
+              relativePath: 'sample-absolute-url.log',
             },
           ],
         },

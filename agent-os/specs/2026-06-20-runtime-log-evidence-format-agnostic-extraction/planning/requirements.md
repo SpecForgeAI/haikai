@@ -26,7 +26,7 @@ both verified against the codebase:
 `discovery-service` `src/services/runtimeEvidence/runDiscoveryRuntimeEvidence.ts`
 (~lines 93-94) uses `HTTP_METHOD_PATH_REGEX = /\b(GET|POST|...)\s+(\/[^\s...]+).../`
 which requires a path that starts with `/` IMMEDIATELY after the HTTP method. The
-user's real log is a bespoke HiFi trace where each request is
+user's real log is a bespoke SampleSvc trace where each request is
 `<reqId> > METHOD http://host:port/path` (an ABSOLUTE URL, not a `/path`), followed
 by `<reqId> > header: value` lines, a blank `<reqId> >`, then a JSON body, all
 interleaved with log4j lines whose logger is bracketed (`[thread] [logger]`). The
@@ -370,7 +370,7 @@ These behaviours must be covered by tests; they are the failure modes that defin
 "good" for this spec:
 
 1. **Broadened deterministic matcher** MUST extract method+path from an absolute-URL
-   line — specifically the HiFi `POST http://host:port/path` case that the current
+   line — specifically the SampleSvc `POST http://host:port/path` case that the current
    regex fails on.
 2. **The new evidence write** MUST make AMS `buildRuntimeUsageSummary` report
    `hasRuntimeEvidence = true` (i.e. `source='log'` `discovery_evidence` rows are

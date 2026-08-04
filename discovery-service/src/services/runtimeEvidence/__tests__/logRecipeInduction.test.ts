@@ -52,8 +52,8 @@ function block(text: string, startLineIndex = 0): SampleBlock {
   };
 }
 
-/** A HiFi-style multi-line block: a request-start line per record + body. */
-function hifiBlock(ids: number[], startLineIndex = 0): SampleBlock {
+/** A SampleSvc-style multi-line block: a request-start line per record + body. */
+function samplesvcBlock(ids: number[], startLineIndex = 0): SampleBlock {
   const text = ids
     .map(
       (id) =>
@@ -63,7 +63,7 @@ function hifiBlock(ids: number[], startLineIndex = 0): SampleBlock {
   return block(text, startLineIndex);
 }
 
-/** A recipe that correctly reads the HiFi shape (method+path load-bearing). */
+/** A recipe that correctly reads the SampleSvc shape (method+path load-bearing). */
 const HIFI_RECIPE_JSON = JSON.stringify({
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
   fields: {
@@ -104,7 +104,7 @@ function makeRelay(contents: string[]): LogRecipeRelay & { calls: number } {
 
 describe('logRecipeInduction — held-out validation threshold', () => {
   it('accepts a recipe extracting method+path from >=60% of request-like lines', async () => {
-    const blocks = [hifiBlock([1, 2, 3], 0), hifiBlock([4, 5, 6], 100)];
+    const blocks = [samplesvcBlock([1, 2, 3], 0), samplesvcBlock([4, 5, 6], 100)];
     const relay = makeRelay([HIFI_RECIPE_JSON]);
 
     const result = await induceAndValidateRecipe({
@@ -125,7 +125,7 @@ describe('logRecipeInduction — held-out validation threshold', () => {
   });
 
   it('rejects a recipe whose held-out method+path yield is below 60%', async () => {
-    const blocks = [hifiBlock([1, 2, 3], 0), hifiBlock([4, 5, 6], 100)];
+    const blocks = [samplesvcBlock([1, 2, 3], 0), samplesvcBlock([4, 5, 6], 100)];
     const relay = makeRelay([BAD_RECIPE_JSON]); // every attempt returns the same bad recipe
 
     const result = await induceAndValidateRecipe({
@@ -142,7 +142,7 @@ describe('logRecipeInduction — held-out validation threshold', () => {
   });
 
   it('validateRecipeAgainstBlock returns the method+path yield fraction directly', () => {
-    const held = hifiBlock([10, 11, 12, 13, 14]); // 5 request-like lines
+    const held = samplesvcBlock([10, 11, 12, 13, 14]); // 5 request-like lines
     const goodRecipe = JSON.parse(HIFI_RECIPE_JSON);
     const yieldGood = validateRecipeAgainstBlock(goodRecipe, held.text);
     expect(yieldGood).toBeGreaterThanOrEqual(HELD_OUT_ACCEPT_FRACTION);
@@ -161,7 +161,7 @@ describe('logRecipeInduction — bounded retry budget', () => {
   it('re-samples on weak yield but never exceeds MAX_LLM_CALLS_PER_FILE', async () => {
     // Three blocks so the held-out rotation truly differs per attempt; every
     // attempt returns a recipe that fails validation -> retries until the cap.
-    const blocks = [hifiBlock([1, 2], 0), hifiBlock([3, 4], 50), hifiBlock([5, 6], 100)];
+    const blocks = [samplesvcBlock([1, 2], 0), samplesvcBlock([3, 4], 50), samplesvcBlock([5, 6], 100)];
     const relay = makeRelay([BAD_RECIPE_JSON, BAD_RECIPE_JSON, BAD_RECIPE_JSON, BAD_RECIPE_JSON]);
 
     const result = await induceAndValidateRecipe({
@@ -181,7 +181,7 @@ describe('logRecipeInduction — bounded retry budget', () => {
   });
 
   it('accepts on a later attempt without exceeding the cap (first weak, second good)', async () => {
-    const blocks = [hifiBlock([1, 2], 0), hifiBlock([3, 4], 50), hifiBlock([5, 6], 100)];
+    const blocks = [samplesvcBlock([1, 2], 0), samplesvcBlock([3, 4], 50), samplesvcBlock([5, 6], 100)];
     const relay = makeRelay([BAD_RECIPE_JSON, HIFI_RECIPE_JSON]);
 
     const result = await induceAndValidateRecipe({
@@ -203,7 +203,7 @@ describe('logRecipeInduction — bounded retry budget', () => {
 
 describe('logRecipeInduction — fallback signals', () => {
   it('returns the deterministic-fallback signal on an explicit "no pattern" reply', async () => {
-    const blocks = [hifiBlock([1, 2, 3], 0), hifiBlock([4, 5, 6], 100)];
+    const blocks = [samplesvcBlock([1, 2, 3], 0), samplesvcBlock([4, 5, 6], 100)];
     const relay = makeRelay(['no pattern']);
 
     const result = await induceAndValidateRecipe({
@@ -254,7 +254,7 @@ describe('logRecipeInduction — persistence shape + fingerprint reuse', () => {
   });
 
   it('reuses a persisted recipe by fingerprint on a same-fingerprint re-run WITHOUT another LLM call', async () => {
-    const blocks = [hifiBlock([1, 2, 3], 0), hifiBlock([4, 5, 6], 100)];
+    const blocks = [samplesvcBlock([1, 2, 3], 0), samplesvcBlock([4, 5, 6], 100)];
     const relay = makeRelay([HIFI_RECIPE_JSON]);
 
     // First run: induce + persist into an in-memory steps_payload recipe store.
@@ -273,7 +273,7 @@ describe('logRecipeInduction — persistence shape + fingerprint reuse', () => {
     // Re-run on byte-identical-format blocks: the orchestrator (TG7) would
     // compute the fingerprint and look it up BEFORE calling the relay. Prove
     // the lookup hits so no second LLM call is needed.
-    const reRunBlocks = [hifiBlock([7, 8, 9], 0), hifiBlock([10, 11, 12], 100)];
+    const reRunBlocks = [samplesvcBlock([7, 8, 9], 0), samplesvcBlock([10, 11, 12], 100)];
     const fingerprint = fingerprintFromBlocks(reRunBlocks);
     expect(fingerprint).toBe(first.recipe.fingerprint);
 
