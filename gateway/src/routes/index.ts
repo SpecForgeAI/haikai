@@ -185,3 +185,10 @@ export { securityFindingsRouter } from './securityFindings';
 // and round-trips the Task Group 4 AMS proceed-critical override audit trio
 // verbatim (GET/PUT) for the critical hard-gate.
 export { vulnerabilityReductionRouter } from './vulnerabilityReduction';
+
+// DB Gap-Proposal routes (Spec 4 -- LLM gap-proposal queue, 2026-08-04):
+// LLM-drafted fk_columns / primary-key metadata proposals for structural pack
+// findings -- generate into the AMS db_gap_proposals review queue, list,
+// human review (approve routes the additive write through the MCP server's
+// apply_gap_metadata tool), and model-validated manual capture.
+export { dbGapProposalsRouter } from './dbGapProposals';

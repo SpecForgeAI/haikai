@@ -64,6 +64,12 @@ import {
   SYNC_STATE_PATH,
 } from './dbMigrationPack/syncPack';
 import { BULK_LOAD_MANIFEST_PATH } from './dbMigrationPack/dataScripts';
+import { MANUAL_EXECUTION_TAG } from './migrationExecutionClass';
+import {
+  StructuralDispositionRow,
+  describeOpenFindings,
+  resolveStructuralFindingStates,
+} from './migrationStructuralFindings';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -97,6 +103,13 @@ export interface PackView {
   manifest: PackManifest;
   decisions: PackDecisionRow[];
   translations: PackTranslationRow[];
+  /**
+   * Per-project structural-finding dispositions (Spec 2026-08-04-2), joined
+   * against the manifest's `structural_findings` by `kind:subject` key.
+   * Best-effort read — an older AMS degrades to [] (all findings open).
+   * Optional so pre-Spec fixtures/callers remain valid; consumers `?? []`.
+   */
+  structuralDispositions?: StructuralDispositionRow[];
 }
 
 export type FetchPackViewFn = (
@@ -170,6 +183,22 @@ export const defaultFetchPackView: FetchPackViewFn = async (
     });
   }
 
+  let structuralDispositions: StructuralDispositionRow[] = [];
+  try {
+    structuralDispositions = await amsGetJson<StructuralDispositionRow[]>(
+      `${baseUrl}/api/projects/${encodeURIComponent(projectId)}/db-structural-finding-dispositions`,
+      'db structural finding dispositions'
+    );
+  } catch (error) {
+    logger.warn(
+      'Structural-finding dispositions read failed; planner proceeds with none (findings stay open)',
+      {
+        projectId,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    );
+  }
+
   return {
     packId,
     status: pack.status ?? null,
@@ -177,6 +206,7 @@ export const defaultFetchPackView: FetchPackViewFn = async (
     manifest: (pack.manifest_json ?? {}) as unknown as PackManifest,
     decisions: Array.isArray(decisions) ? decisions : [],
     translations: Array.isArray(translations) ? translations : [],
+    structuralDispositions: Array.isArray(structuralDispositions) ? structuralDispositions : [],
   };
 };
 
@@ -437,7 +467,7 @@ export function buildDbStreamSkeleton(
         readiness: 'blocked',
         readinessReasons: [reason],
         missingInputs: [reason],
-        tags: [PREREQUISITE_PROVENANCE_TAG],
+        tags: [PREREQUISITE_PROVENANCE_TAG, MANUAL_EXECUTION_TAG],
         recommendedNextAction:
           'Resolve the pack prerequisites (capture db.engine in the target conversation; promote the discovered schema), then regenerate the plan.',
         traceabilitySummary: `Deterministic prerequisite skeleton — pack ensure outcome: ${ensureOutcome?.status ?? 'unknown'}.`,
@@ -454,7 +484,7 @@ export function buildDbStreamSkeleton(
         readiness: 'blocked',
         readinessReasons: [reason],
         missingInputs: [reason],
-        tags: [PREREQUISITE_PROVENANCE_TAG],
+        tags: [PREREQUISITE_PROVENANCE_TAG, MANUAL_EXECUTION_TAG],
         extras: { dbPrereqReason: reason },
       }),
       mkItem({
@@ -468,7 +498,7 @@ export function buildDbStreamSkeleton(
         confidence: 'low',
         readiness: 'blocked',
         readinessReasons: [reason],
-        tags: [PREREQUISITE_PROVENANCE_TAG],
+        tags: [PREREQUISITE_PROVENANCE_TAG, MANUAL_EXECUTION_TAG],
         extras: { dbFeatureKind: 'prerequisites' },
       })
     );
@@ -847,7 +877,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           ? 'Run the target-state architect conversation and capture db.engine (and the db.* policy questions), then regenerate the migration plan.'
           : 'Resolve the pack generation failure (see reason), then regenerate the migration plan.',
         traceabilitySummary: `Prerequisite story — pack ensure outcome ${ensureOutcome?.status ?? 'unknown'}.`,
-        tags: [PREREQUISITE_PROVENANCE_TAG, `stream:${stream}`],
+        tags: [PREREQUISITE_PROVENANCE_TAG, MANUAL_EXECUTION_TAG, `stream:${stream}`],
       })
     );
     if (wantsEngineDecision) {
@@ -866,7 +896,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           readinessReasons: ['Pack prerequisites unresolved.'],
           recommendedNextAction:
             'Open the database discovery run, promote the schema candidates, accept the deep-detail findings.',
-          tags: [PREREQUISITE_PROVENANCE_TAG, `stream:${stream}`],
+          tags: [PREREQUISITE_PROVENANCE_TAG, MANUAL_EXECUTION_TAG, `stream:${stream}`],
         })
       );
     }
@@ -1082,32 +1112,82 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
       );
     }
 
-    // Structural warnings -> EXPLICIT prerequisite stories (WS3 P1,
-    // 2026-07-31). Every suspicious zero the generator detected (no PKs, no
-    // indexes, join-less relationships, no code objects captured) becomes a
-    // visible, blocking item: resolve the capture gap and regenerate, or
-    // DEFER the story as the explicit out-of-scope sign-off. Never silent.
-    const structuralWarnings = manifest.structural_warnings ?? [];
-    structuralWarnings.forEach((warning, index) => {
+    // Structural findings (Spec 2026-08-04-2, replacing WS3 P1's
+    // structural-gap STORIES — which were human questions dressed as
+    // buildable work, and whose epic-parenting broke hierarchy validation).
+    // By the time a plan expands, every finding must be DISPOSITIONED on the
+    // Schema migration tab (the plan-generation gate enforces it):
+    //   accepted     → nothing in the plan (reason recorded in AMS);
+    //   fix_upstream → still OPEN — blocks below (fix + regenerate first);
+    //   known_gap    → a "Known gaps" feature carrying one KNOWN_GAP debt
+    //                  item per finding (manual execution class — never
+    //                  spec'ed, never dispatched, auto-clears when a
+    //                  regenerated pack stops emitting the finding).
+    // Open findings reaching expansion (e.g. a pack regenerated AFTER plan
+    // generation surfaced new warnings) fail the epic loudly — retryable
+    // after dispositioning; never a silent drop.
+    const findingStates = resolveStructuralFindingStates(
+      manifest,
+      packView.structuralDispositions ?? []
+    );
+    const openFindings = findingStates.filter((s) => s.open);
+    if (openFindings.length > 0) {
+      throw new Error(
+        `Structural findings must be dispositioned before the schema epic can expand: ` +
+          `${describeOpenFindings(openFindings)}. Open the Schema migration tab → ` +
+          'Structural findings, disposition each (accept / fix upstream / known gap), ' +
+          'then retry expansion.'
+      );
+    }
+    const knownGaps = findingStates.filter((s) => s.disposition === 'known_gap');
+    if (knownGaps.length > 0) {
+      const knownGapsFeatureId = `${epic.id}-f-known-gaps`;
       stories.push(
         mkItem({
-          id: `${epic.id}-s-structural-gap-${index}`,
-          type: 'story',
+          id: knownGapsFeatureId,
+          type: 'feature',
           parentId: epic.id,
-          title: `Structural completeness gap: ${warning.split('—')[0].trim().slice(0, 80)}`,
+          title: 'Known gaps (accepted debt)',
           description:
-            `${warning}\n\nResolve the capture gap and regenerate the pack, or defer this ` +
-            'story to sign the gap off as explicitly out of scope.',
+            'Structural findings dispositioned as KNOWN GAPS: real work the tool cannot ' +
+            'perform yet. Tracked as manual debt items — never dispatched to the ' +
+            'implement-verify service.',
           workstream: ws,
           sequenceOrder: next(),
-          acceptanceCriteria: [
-            'The capture gap is resolved and the pack regenerated (the warning no longer appears), OR this story is deferred as an explicit sign-off.',
-          ],
-          tags: [...packTags, PREREQUISITE_PROVENANCE_TAG],
-          traceabilitySummary: `Structural warning from pack ${packView.packId} generation accounting.`,
+          tags: [...packTags, MANUAL_EXECUTION_TAG],
+          traceabilitySummary: `Structural findings dispositioned known_gap for pack ${packView.packId}.`,
         })
       );
-    });
+      for (const gap of knownGaps) {
+        stories.push(
+          mkItem({
+            id: `${epic.id}-kg-${gap.key.replace(/[^a-z0-9]+/gi, '-')}`,
+            type: 'known_gap',
+            parentId: knownGapsFeatureId,
+            title: `Known gap: ${gap.message.split('—')[0].trim().slice(0, 80)}`,
+            description:
+              `${gap.message}\n\nDispositioned KNOWN GAP` +
+              `${gap.note ? ` — ${gap.note}` : ''}. Resolve outside the tool (record the ` +
+              'outcome here), or improve capture later — a regenerated pack that no longer ' +
+              'emits this finding auto-clears the gap.',
+            workstream: ws,
+            sequenceOrder: next(),
+            acceptanceCriteria: [
+              'The gap is resolved outside the tool (outcome recorded on this item), OR a ' +
+                'regenerated pack no longer emits the finding.',
+            ],
+            readiness: 'blocked',
+            readinessReasons: [
+              gap.note ? `Known gap: ${gap.note}` : 'Known gap (accepted debt).',
+            ],
+            recommendedNextAction:
+              'Track and resolve outside the tool; regenerate the pack when capture improves.',
+            tags: [...packTags, MANUAL_EXECUTION_TAG, 'known_gap'],
+            traceabilitySummary: `Structural finding ${gap.key} dispositioned known_gap.`,
+          })
+        );
+      }
+    }
 
     // Code-guarantee: every translated/flagged manifest table landed exactly once.
     const covered = new Set<string>();
@@ -1168,7 +1248,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           readinessReasons: ['Job definitions live in findings; per-job schedules need review.'],
           recommendedNextAction:
             'Review each job finding and spec its target home per the db.jobsRehoming decision.',
-          tags: packTags,
+          tags: [...packTags, MANUAL_EXECUTION_TAG],
           traceabilitySummary: `Pack ${packView.packId} manifest lists ${total} DB-resident scheduled job(s).`,
         })
       );
@@ -1197,7 +1277,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           unapproved.length > 0
             ? 'Open the Schema migration tab → Translations and review the outstanding drafts.'
             : 'Generate the focused shape-spec for this story.',
-        tags: packTags,
+        tags: [...packTags, MANUAL_EXECUTION_TAG],
         traceabilitySummary: `Pack ${packView.packId}: ${total} ${label}, ${approved.length} approved, ${unapproved.length} outstanding.`,
       })
     );
@@ -1232,7 +1312,12 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
                   `${approved.length} approved ${label} translation(s) have no emitted files yet — regenerate the pack to emit them.`,
                 ]
               : [`No approved ${label} translations yet.`],
-        tags: [...packTags, ...(approvedFiles.length > 0 ? [SEED_DB_PACK_FILES_TAG] : [])],
+        tags: [
+          ...packTags,
+          // Files emitted ⇒ verbatim carriage (automated); otherwise the story
+          // is a human-blocked gate until a regeneration emits them.
+          ...(approvedFiles.length > 0 ? [SEED_DB_PACK_FILES_TAG] : [MANUAL_EXECUTION_TAG]),
+        ],
         traceabilitySummary: `Pack ${packView.packId} approved-translation emission (${approvedFiles.length} file(s)).`,
         extras: {
           packId: packView.packId,
@@ -1343,7 +1428,12 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
             group.key === 'needs_decision'
               ? 'Resolve the delta-key decisions on the Schema migration tab, regenerate the pack, then spec this story.'
               : 'Generate the focused shape-spec for this story.',
-          tags: [...packTags, ...(group.key !== 'needs_decision' ? [SEED_DB_PACK_FILES_TAG] : [])],
+          tags: [
+            ...packTags,
+            // Keyed/full-reload groups carry runnable delta scripts (automated);
+            // the needs_decision group is a human decision gate.
+            ...(group.key !== 'needs_decision' ? [SEED_DB_PACK_FILES_TAG] : [MANUAL_EXECUTION_TAG]),
+          ],
           traceabilitySummary: `Pack ${packView.packId} delta strategies (${group.key}).`,
           extras: {
             packId: packView.packId,
@@ -1455,7 +1545,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
         workstream: ws,
         sequenceOrder: next(),
         acceptanceCriteria: ['No job runs twice (source + target) after swap-over.'],
-        tags: packTags,
+        tags: [...packTags, MANUAL_EXECUTION_TAG],
         traceabilitySummary: `Pack ${packView.packId} manual_recreation scheduled jobs.`,
       })
     );
@@ -1476,7 +1566,7 @@ export function buildDbEpicStories(args: BuildDbEpicStoriesArgs): MigrationBookO
           'Expected-schema diff reports zero mismatches.',
           'Final reconciliation reports zero drift.',
         ],
-        tags: packTags,
+        tags: [...packTags, MANUAL_EXECUTION_TAG],
         traceabilitySummary: `Pack ${packView.packId} expected_schema baseline.`,
       })
     );

@@ -364,7 +364,7 @@ async function getJson<T>(url: string, fallback: string): Promise<T> {
 
 async function sendJson<T>(
   url: string,
-  method: 'POST' | 'PATCH',
+  method: 'POST' | 'PATCH' | 'PUT',
   body: unknown,
   fallback: string,
 ): Promise<T> {
@@ -849,4 +849,509 @@ export async function reviewDbMigrationPackTranslation(
     { action, ...(notes !== undefined ? { notes } : {}) },
     `Failed to review translation ${translationId}`,
   );
+}
+
+// ============================================================================
+// Structural findings + dispositions (Spec 2026-08-04-2 — Structural findings
+// dispositions)
+//
+// The pack generator emits structured `structural_findings` (suspicious zeros
+// like "no primary keys captured", stable `kind:subject` identities). Every
+// finding must be dispositioned by a human BEFORE plan generation / Migrate:
+//
+//   accepted     — the zero is genuinely true (note REQUIRED); closes it.
+//   fix_upstream — re-capture / fix at source; STAYS OPEN until a regenerated
+//                  pack no longer emits the finding (never manually closed).
+//   known_gap    — accepted debt (note REQUIRED); closes it AND materialises
+//                  a known-gap item in the migration plan.
+//
+// Gateway routes (`gateway/src/routes/dbMigrationPack.ts`):
+//   GET    /:packId/structural-findings                          — merged view.
+//   PUT    /:packId/structural-findings/:findingKey/disposition  — upsert.
+//   DELETE /:packId/structural-findings/:findingKey/disposition  — re-open.
+//
+// Finding keys contain colons (`no_primary_keys:all_tables`) — they ALWAYS
+// ride URL-encoded in the path. Dispositions persist per PROJECT in AMS, so
+// they survive pack regeneration; a regenerated pack that stops emitting a
+// finding auto-clears it (resolution is never a manual flag).
+// ============================================================================
+
+export type DbMigrationPackStructuralFindingDisposition =
+  | 'accepted'
+  | 'fix_upstream'
+  | 'known_gap';
+
+/** One finding joined with its (possibly absent) disposition (gateway `StructuralFindingState`). */
+export interface DbMigrationPackStructuralFinding {
+  /** Stable identity `kind:subject`, e.g. `no_primary_keys:all_tables`. */
+  key: string;
+  kind: string;
+  subject: string;
+  message: string;
+  disposition: DbMigrationPackStructuralFindingDisposition | string | null;
+  note: string | null;
+  /** True while the finding blocks plan generation / Migrate (undispositioned OR fix_upstream). */
+  open: boolean;
+}
+
+export interface ListDbMigrationPackStructuralFindingsResponse {
+  findings: DbMigrationPackStructuralFinding[];
+}
+
+/** One persisted disposition row (AMS `DbStructuralFindingDispositionDto`). */
+export interface DbMigrationPackStructuralFindingDispositionDto {
+  finding_key: string;
+  kind?: string | null;
+  subject?: string | null;
+  disposition: DbMigrationPackStructuralFindingDisposition | string;
+  note?: string | null;
+}
+
+function structuralFindingsBase(projectId: string, packId: string): string {
+  return `${packsBase(projectId)}/${encodeURIComponent(packId)}/structural-findings`;
+}
+
+/** List the pack's current findings merged with the project's dispositions. */
+export async function listDbMigrationPackStructuralFindings(
+  projectId: string,
+  packId: string,
+): Promise<ListDbMigrationPackStructuralFindingsResponse> {
+  return getJson<ListDbMigrationPackStructuralFindingsResponse>(
+    structuralFindingsBase(projectId, packId),
+    `Failed to load structural findings for pack ${packId}`,
+  );
+}
+
+/**
+ * Set/replace one finding's disposition. AMS REQUIRES a note for `accepted`
+ * and `known_gap` (400 otherwise) — callers must collect one before the call
+ * fires. `kind` + `subject` always ride from the finding row (the AMS create
+ * path needs them). The colon-bearing finding key is URL-encoded in the path.
+ */
+export async function setDbMigrationPackStructuralFindingDisposition(
+  projectId: string,
+  packId: string,
+  finding: Pick<DbMigrationPackStructuralFinding, 'key' | 'kind' | 'subject'>,
+  disposition: DbMigrationPackStructuralFindingDisposition,
+  note?: string,
+): Promise<DbMigrationPackStructuralFindingDispositionDto> {
+  return sendJson<DbMigrationPackStructuralFindingDispositionDto>(
+    `${structuralFindingsBase(projectId, packId)}/${encodeURIComponent(
+      finding.key,
+    )}/disposition`,
+    'PUT',
+    {
+      disposition,
+      ...(note !== undefined ? { note } : {}),
+      kind: finding.kind,
+      subject: finding.subject,
+    },
+    `Failed to set disposition on finding ${finding.key}`,
+  );
+}
+
+/** Remove a disposition — the finding RE-OPENS (AMS answers 204 No Content). */
+export async function clearDbMigrationPackStructuralFindingDisposition(
+  projectId: string,
+  packId: string,
+  findingKey: string,
+): Promise<void> {
+  const res = await fetch(
+    `${structuralFindingsBase(projectId, packId)}/${encodeURIComponent(
+      findingKey,
+    )}/disposition`,
+    { method: 'DELETE', headers: { Accept: 'application/json' } },
+  );
+  if (!res.ok) {
+    await throwGatewayError(res, `Failed to clear disposition on finding ${findingKey}`);
+  }
+}
+
+// ============================================================================
+// Sybase schema harvest (Spec 3 — harvest the REAL schema from the live
+// source database, save it back into the model, and regenerate the pack)
+//
+// Gateway routes (`gateway/src/routes/dbMigrationPack.ts`):
+//   POST /test-source-connection — quick credential/driver probe (camelCase
+//                                  body, matching the gateway route contract).
+//   POST /structural-harvest     — LONG request (catalog scan + save-back +
+//                                  regenerate can take up to ~10 minutes);
+//                                  snake_case body. NO client timeout is set
+//                                  (plain fetch, no AbortController) — the
+//                                  call rides the browser default.
+//
+// Credentials are PER-INVOCATION (same rule as refresh-seeds / verify): they
+// ride the request body only and are never stored client-side.
+// ============================================================================
+
+/** camelCase body — mirrors the gateway test-source-connection contract. */
+export interface TestDbSourceConnectionRequest {
+  host: string;
+  port: number;
+  databaseName: string;
+  username: string;
+  password: string;
+  /** Defaults to 'sybase' gateway-side. */
+  dbEngine?: string;
+  /** 'jtds' | 'jconnect'; omitted = gateway auto-selects. */
+  sybaseDriver?: string;
+}
+
+export interface TestDbSourceConnectionResponse {
+  success: boolean;
+  engine: string;
+  serverVersion: string;
+  driverUsed: string;
+}
+
+/** snake_case body — mirrors the gateway structural-harvest contract. */
+export interface RunDbStructuralHarvestRequest {
+  architecture_id: string;
+  target_architecture_id?: string;
+  host: string;
+  port: number;
+  database_name: string;
+  username: string;
+  password: string;
+  sybase_driver?: string;
+  include_schemas?: string[];
+  service_id?: string;
+}
+
+/** How far the harvest pipeline got before stopping. */
+export type DbStructuralHarvestStage =
+  | 'completed'
+  | 'scan_failed'
+  | 'save_failed'
+  | 'regenerate_failed';
+
+/** Save-back summary — present once the scan succeeded and save-back ran. */
+export interface DbStructuralHarvestSavedBack {
+  entitiesCreated: number;
+  entitiesSkipped: number;
+  candidatesCommitted: number;
+}
+
+export interface RunDbStructuralHarvestResponse {
+  runId: string;
+  stage: DbStructuralHarvestStage;
+  runStatus: string;
+  savedBack: DbStructuralHarvestSavedBack | null;
+  packRegenerated: boolean;
+  /** The regenerated pack's findings (same shape the findings panel lists). */
+  findings: DbMigrationPackStructuralFinding[];
+  error?: string;
+}
+
+/**
+ * Probe the source DB connection (engine version + which driver connected).
+ * Failures answer 400 `{ success: false, error: { message } }` — surfaced via
+ * the standard nested-envelope error extraction.
+ */
+export async function testDbSourceConnection(
+  projectId: string,
+  request: TestDbSourceConnectionRequest,
+): Promise<TestDbSourceConnectionResponse> {
+  return sendJson<TestDbSourceConnectionResponse>(
+    `${packsBase(projectId)}/test-source-connection`,
+    'POST',
+    request,
+    'Source connection test failed',
+  );
+}
+
+/**
+ * Run the full structural harvest: scan the live source catalogs, save the
+ * harvested schema back into the model, and regenerate the pack. LONG request
+ * (up to ~10 minutes) — deliberately NO client-side timeout/abort here.
+ */
+export async function runStructuralHarvest(
+  projectId: string,
+  request: RunDbStructuralHarvestRequest,
+): Promise<RunDbStructuralHarvestResponse> {
+  return sendJson<RunDbStructuralHarvestResponse>(
+    `${packsBase(projectId)}/structural-harvest`,
+    'POST',
+    request,
+    'Structural harvest failed',
+  );
+}
+
+// ============================================================================
+// Gap proposals (Spec 4 — LLM gap-proposal queue, 2026-08-04)
+//
+// LLM-drafted structural-metadata proposals for pack structural findings
+// (missing fk_columns join metadata / missing primary keys). Drafts land in
+// the AMS `db_gap_proposals` review queue; NOTHING touches the model until a
+// human approves a row — approval applies additively via the MCP
+// `apply_gap_metadata` tool (populated slots are never overwritten; skips
+// ride back as honest notes).
+//
+// Gateway routes (`gateway/src/routes/dbGapProposals.ts`, base /api/v1):
+//   POST /projects/:projectId/db-gap-proposals/generate
+//   GET  /projects/:projectId/db-gap-proposals?finding_key=
+//   POST /projects/:projectId/db-gap-proposals/:proposalId/review
+//   POST /projects/:projectId/db-gap-proposals/manual
+//
+// Wire is snake_case EXCEPT `unsupportedReason` on the generate response —
+// that field is emitted by the gateway route directly (it never passes
+// through AMS/Jackson), so it stays camelCase on the wire.
+//
+// Review is deliberately NOT routed through `sendJson`: the gateway answers
+// 422/502 with `{ review_status: 'approved', apply_error }` bodies (the
+// human's approval stands; only the model apply failed) — those must reach
+// the caller as DATA, not as a stringified throw. Manual-add 400s carry
+// `error.warnings` (per-drop validation notes) which ride on a typed error.
+// ============================================================================
+
+export type DbGapProposalKind = 'fk_join' | 'primary_key';
+
+export type DbGapProposalOrigin = 'llm' | 'manual';
+
+export type DbGapProposalReviewStatus =
+  | 'unreviewed'
+  | 'approved'
+  | 'rejected'
+  | 'needs_rework';
+
+export type DbGapProposalReviewAction = 'approve' | 'reject' | 'needs_rework';
+
+export type DbGapProposalConfidence = 'high' | 'medium' | 'low';
+
+/** `payload_json` for kind 'fk_join' (generator `FkJoinPayload`). */
+export interface DbGapProposalFkJoinPayload {
+  relationship_id: string;
+  from_table?: string;
+  join_columns: string[];
+  to_table?: string;
+  referenced_columns: string[];
+  [key: string]: unknown;
+}
+
+/** `payload_json` for kind 'primary_key' (generator `PrimaryKeyPayload`). */
+export interface DbGapProposalPrimaryKeyPayload {
+  table: string;
+  entity_id?: string;
+  columns: string[];
+  [key: string]: unknown;
+}
+
+export type DbGapProposalPayload =
+  | DbGapProposalFkJoinPayload
+  | DbGapProposalPrimaryKeyPayload
+  | Record<string, unknown>;
+
+/**
+ * One validated draft as the generate/manual responses carry it (gateway
+ * `GapProposalRow` — no queue identity yet). Queue rows extend this.
+ */
+export interface DbGapProposalDraft {
+  proposal_key: string;
+  finding_key: string;
+  kind: DbGapProposalKind | string;
+  payload_json: DbGapProposalPayload;
+  rationale: string;
+  confidence: DbGapProposalConfidence | string;
+}
+
+/** One persisted queue row (AMS `db_gap_proposals`, snake_case wire). */
+export interface DbGapProposalRow extends DbGapProposalDraft {
+  id: string;
+  origin: DbGapProposalOrigin | string;
+  review_status: DbGapProposalReviewStatus | string;
+  reviewer_notes: string | null;
+  applied_at: string | null;
+  created_at?: string | null;
+}
+
+export interface GenerateDbGapProposalsRequest {
+  architecture_id: string;
+  finding_kind: string;
+  finding_key: string;
+}
+
+export interface GenerateDbGapProposalsResponse {
+  supported: boolean;
+  /** Why generation is unsupported for this finding kind (camelCase — see header note). */
+  unsupportedReason?: string;
+  /** Drafts also persisted server-side to the queue (when supported + non-empty). */
+  proposals: DbGapProposalDraft[];
+  /** Honest per-drop notes (hallucinated names etc.) — rendered verbatim. */
+  warnings: string[];
+}
+
+/** One MCP apply skip — the slot was already populated; nothing overwritten. */
+export interface DbGapProposalApplySkip {
+  delta: unknown;
+  reason: string;
+}
+
+export interface DbGapProposalApplyResult {
+  applied: number;
+  skipped: DbGapProposalApplySkip[];
+}
+
+export interface ReviewDbGapProposalRequest {
+  action: DbGapProposalReviewAction;
+  reviewer_notes?: string;
+  /** REQUIRED for approve (the MCP apply targets this architecture). */
+  architecture_id: string;
+}
+
+export interface ReviewDbGapProposalResponse {
+  review_status: DbGapProposalReviewStatus | string;
+  /** Approve only — the MCP apply outcome (skips carry honest reasons). */
+  apply?: DbGapProposalApplyResult;
+  /** Stamped ONLY when the model actually changed (applied > 0). */
+  applied_at?: string | null;
+  /**
+   * 422/502 approve outcomes: the row is LEFT APPROVED but the model apply
+   * failed — surfaced verbatim, never swallowed.
+   */
+  apply_error?: string;
+}
+
+export interface AddManualDbGapProposalRequest {
+  architecture_id: string;
+  finding_key: string;
+  kind: DbGapProposalKind;
+  payload_json: Record<string, unknown>;
+  rationale?: string;
+}
+
+export interface AddManualDbGapProposalResponse {
+  proposal: DbGapProposalDraft;
+  warnings: string[];
+}
+
+/**
+ * Manual-add validation failure (400): the payload named tables/columns the
+ * committed model does not have. `warnings` carries the gateway's per-drop
+ * notes (`error.warnings`) so callers render them, not just the message.
+ */
+export class DbGapProposalValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly warnings: string[],
+  ) {
+    super(message);
+    this.name = 'DbGapProposalValidationError';
+  }
+}
+
+function gapProposalsBase(projectId: string): string {
+  return `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(
+    projectId,
+  )}/db-gap-proposals`;
+}
+
+/**
+ * LLM-draft proposals for ONE structural finding. Valid drafts are ALSO
+ * persisted server-side to the queue — callers should refetch the list after
+ * this resolves. `supported: false` means this finding kind has no LLM
+ * resolution path (harvest / accept instead) — nothing was written.
+ */
+export async function generateGapProposals(
+  projectId: string,
+  request: GenerateDbGapProposalsRequest,
+): Promise<GenerateDbGapProposalsResponse> {
+  return sendJson<GenerateDbGapProposalsResponse>(
+    `${gapProposalsBase(projectId)}/generate`,
+    'POST',
+    request,
+    'Gap-proposal generation failed',
+  );
+}
+
+/** List the project's queue rows, optionally filtered to one finding. */
+export async function listGapProposals(
+  projectId: string,
+  findingKey?: string,
+): Promise<DbGapProposalRow[]> {
+  const qs = findingKey ? `?finding_key=${encodeURIComponent(findingKey)}` : '';
+  return getJson<DbGapProposalRow[]>(
+    `${gapProposalsBase(projectId)}${qs}`,
+    'Failed to load gap proposals',
+  );
+}
+
+/**
+ * Review one queue row: approve | reject | needs_rework. Approve routes the
+ * additive model write through MCP `apply_gap_metadata`; skip notes and
+ * apply errors come back as DATA on the response (422/502 bodies carrying
+ * `review_status` are returned, NOT thrown — the approval stands even when
+ * the apply failed, and callers must surface that honestly).
+ */
+export async function reviewGapProposal(
+  projectId: string,
+  proposalId: string,
+  request: ReviewDbGapProposalRequest,
+): Promise<ReviewDbGapProposalResponse> {
+  const res = await fetch(
+    `${gapProposalsBase(projectId)}/${encodeURIComponent(proposalId)}/review`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(request),
+    },
+  );
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (
+    body &&
+    typeof body === 'object' &&
+    typeof (body as { review_status?: unknown }).review_status === 'string'
+  ) {
+    // 200, or a 422/502 approve outcome (row approved, apply_error set).
+    return body as ReviewDbGapProposalResponse;
+  }
+  if (!res.ok) {
+    throw new Error(
+      extractGatewayErrorMessage(body) ||
+        `Failed to review gap proposal ${proposalId}: ${res.status} ${res.statusText}`,
+    );
+  }
+  return (body ?? {}) as ReviewDbGapProposalResponse;
+}
+
+/**
+ * Add a human-authored proposal. Validated server-side by round-tripping the
+ * generator's own hallucination guards — a 400 throws
+ * `DbGapProposalValidationError` carrying the per-drop warnings.
+ */
+export async function addManualGapProposal(
+  projectId: string,
+  request: AddManualDbGapProposalRequest,
+): Promise<AddManualDbGapProposalResponse> {
+  const res = await fetch(`${gapProposalsBase(projectId)}/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    let body: unknown = null;
+    try {
+      body = await res.json();
+    } catch {
+      body = null;
+    }
+    const nested =
+      body && typeof body === 'object'
+        ? (body as { error?: { warnings?: unknown } }).error
+        : null;
+    const warnings =
+      nested && typeof nested === 'object' && Array.isArray(nested.warnings)
+        ? nested.warnings.map(String)
+        : [];
+    throw new DbGapProposalValidationError(
+      extractGatewayErrorMessage(body) ||
+        `Failed to add the manual proposal: ${res.status} ${res.statusText}`,
+      warnings,
+    );
+  }
+  return (await res.json()) as AddManualDbGapProposalResponse;
 }

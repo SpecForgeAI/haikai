@@ -179,6 +179,28 @@ export interface SourceSchemaIr {
  * manifest, drive count-tied acceptance criteria on the constraints story,
  * and convert suspicious zeros into explicit prerequisite items in the plan.
  */
+/**
+ * One structured structural finding (Spec 2026-08-04-2). Identity for the
+ * disposition store is `${kind}:${subject}` — counts live only in `message`
+ * so count drift never orphans a recorded disposition.
+ */
+export interface StructuralFinding {
+  /**
+   * Stable machine kind: constraints_metadata_absent | no_primary_keys |
+   * no_indexes | relationships_without_fk_columns | no_code_objects.
+   */
+  kind: string;
+  /** Stable scope token (today always an aggregate like `all_tables`). */
+  subject: string;
+  /** The human warning text (same string as `structural_warnings`). */
+  message: string;
+}
+
+/** The disposition store key for a finding. */
+export function structuralFindingKey(f: { kind: string; subject: string }): string {
+  return `${f.kind}:${f.subject}`;
+}
+
 export interface StructuralAccounting {
   tables_total: number;
   view_entities_total: number;
@@ -333,6 +355,15 @@ export interface PackManifest {
    */
   structural_accounting?: StructuralAccounting;
   structural_warnings?: string[];
+  /**
+   * STRUCTURED twins of `structural_warnings` (Spec 2026-08-04-2): each
+   * warning carries a stable identity (`kind` + `subject`, key `kind:subject`)
+   * so human dispositions (accepted / fix_upstream / known_gap) persist across
+   * pack regenerations even when counts inside the message drift. The legacy
+   * string list is kept for wire back-compat; both are derived from the same
+   * accounting pass. Absent on packs generated earlier.
+   */
+  structural_findings?: StructuralFinding[];
   /**
    * The DECLARED target-database binding (2026-07-20): the plan CREATES the
    * target DB, so the plan states its coordinates — the operator confirms

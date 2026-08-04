@@ -41,7 +41,7 @@ import {
   canonicalSerialize,
   computeInputSnapshotHash,
   defaultInputFetchDeps,
-  deriveStructuralWarnings,
+  deriveStructuralFindings,
   fetchGenerationInputs,
   GenerationInputs,
   InputFetchDeps,
@@ -806,7 +806,8 @@ export function buildDbMigrationPackArtifacts(
   };
 
   const structuralAccounting = ir.structuralAccounting ?? accountingFromIr(ir);
-  const structuralWarnings = deriveStructuralWarnings(structuralAccounting);
+  const structuralFindings = deriveStructuralFindings(structuralAccounting);
+  const structuralWarnings = structuralFindings.map((f) => f.message);
 
   const manifest: PackManifest = {
     manifest_version: 1,
@@ -842,6 +843,10 @@ export function buildDbMigrationPackArtifacts(
     // a prerequisite item. Kills the silent 0-PK/0-FK/0-index/no-code pack.
     structural_accounting: structuralAccounting,
     structural_warnings: structuralWarnings,
+    // Structured twins (Spec 2026-08-04-2): stable kind:subject identities so
+    // per-project dispositions survive regeneration; the findings gate blocks
+    // plan generation / Migrate while any current finding is undispositioned.
+    structural_findings: structuralFindings,
     // The DECLARED target-DB binding (2026-07-20): the plan creates the target
     // database, so the plan states its coordinates — local-machine defaults
     // (data parity runs locally). The seed story's spec text confirms this

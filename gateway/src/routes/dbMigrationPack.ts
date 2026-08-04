@@ -42,10 +42,19 @@
  *   POST  /:packId/verify                — credentialed verification scan ->
  *                                          deterministic diff -> drift report
  *                                          row APPENDED to history.
+ *   POST  /structural-harvest            — Sybase schema harvest (Spec 3,
+ *                                          2026-08-04): metadata-only source
+ *                                          scan -> auto-approve -> additive
+ *                                          save-back -> regenerate -> refreshed
+ *                                          finding states. LONG request (up to
+ *                                          the poll timeout, default 10 min).
+ *   POST  /test-source-connection        — thin discovery-service probe proxy
+ *                                          (dbEngine defaulted to sybase) so
+ *                                          the harvest modal can pre-flight.
  *
- * Credentials (refresh-seeds / verify) live ONLY in the request body and the
- * downstream discovery-service in-process secrets bundle — never persisted,
- * never logged.
+ * Credentials (refresh-seeds / verify / structural-harvest /
+ * test-source-connection) live ONLY in the request body and the downstream
+ * discovery-service in-process secrets bundle — never persisted, never logged.
  */
 
 import { Router, Request, Response } from 'express';
@@ -78,6 +87,11 @@ import {
   TranslationsAmsError,
 } from '../services/dbMigrationPack/translations';
 import { runTranslationEmission } from '../services/dbMigrationPack/translationEmission';
+import {
+  StructuralDispositionRow,
+  resolveStructuralFindingStates,
+} from '../services/migrationStructuralFindings';
+import { runStructuralHarvest } from '../services/dbSchemaHarvest';
 
 export const dbMigrationPackRouter = Router();
 
@@ -958,3 +972,259 @@ dbMigrationPackRouter.post(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// Structural findings + dispositions (Spec 2026-08-04-2). The pack generator
+// emits structured `structural_findings` (stable kind:subject identities);
+// dispositions persist PER PROJECT in AMS so they survive regeneration. This
+// merged view is what the Schema-migration tab's findings panel renders; the
+// disposition writes proxy to AMS. Resolution is never a manual flag — a
+// regenerated pack that stops emitting a finding auto-clears it.
+// ---------------------------------------------------------------------------
+
+/** GET — the pack's current findings joined with the project dispositions. */
+dbMigrationPackRouter.get(`${BASE}/:packId/structural-findings`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const start = Date.now();
+  try {
+    const pack = await amsJson<{ manifest_json?: Record<string, unknown> | null }>(
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-migration-packs/${encodeURIComponent(packId)}`
+    );
+    let dispositions: StructuralDispositionRow[] = [];
+    try {
+      dispositions = await amsJson<StructuralDispositionRow[]>(
+        `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+          `/db-structural-finding-dispositions`
+      );
+    } catch (error) {
+      // Older AMS without the endpoint: findings render as undispositioned.
+      logger.warn('db-migration-pack structural-findings: dispositions read failed', {
+        projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const manifest = (pack.manifest_json ?? {}) as {
+      structural_findings?: Array<{ kind: string; subject: string; message: string }>;
+      structural_warnings?: string[];
+    };
+    const findings = resolveStructuralFindingStates(manifest, dispositions);
+    console.log(
+      `[diag-gw] route=db-migration-pack-structural-findings status=200 ` +
+        `findings=${findings.length} open=${findings.filter((f) => f.open).length} ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({ findings });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-structural-findings status=err ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'structural-findings', { projectId, packId });
+  }
+});
+
+/**
+ * PUT — set/replace one finding's disposition (accepted | fix_upstream |
+ * known_gap; note required for accepted/known_gap — AMS validates). Proxied
+ * to the project-scoped AMS store; the finding key rides URL-encoded.
+ */
+dbMigrationPackRouter.put(
+  `${BASE}/:packId/structural-findings/:findingKey/disposition`,
+  async (req, res) => {
+    const { projectId, findingKey } = req.params;
+    await proxyToAms(
+      res,
+      'structural-finding-disposition',
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-structural-finding-dispositions/${encodeURIComponent(findingKey)}`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(req.body ?? {}),
+      }
+    );
+  }
+);
+
+/** DELETE — remove a disposition (the finding re-opens). */
+dbMigrationPackRouter.delete(
+  `${BASE}/:packId/structural-findings/:findingKey/disposition`,
+  async (req, res) => {
+    const { projectId, findingKey } = req.params;
+    await proxyToAms(
+      res,
+      'structural-finding-disposition-delete',
+      `${amsBase()}/api/projects/${encodeURIComponent(projectId)}` +
+        `/db-structural-finding-dispositions/${encodeURIComponent(findingKey)}`,
+      { method: 'DELETE' }
+    );
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Sybase schema harvest (Spec 3, 2026-08-04). Closes structural findings by
+// harvesting catalog truth from the live SOURCE database: metadata-only
+// discovery scan -> auto-approve -> additive save-back -> regenerate ->
+// refreshed finding states. Full orchestration doc in
+// services/dbSchemaHarvest.ts.
+//
+// TIMEOUT NOTE: this is deliberately a LONG synchronous request — it holds
+// the HTTP connection while polling the discovery run (default cap 10 min via
+// DB_HARVEST_POLL_TIMEOUT_MS). The gateway's Node server uses the platform
+// defaults (`server.timeout` = 0 / disabled since Node 13 — server.ts sets no
+// explicit response timeout, same posture the /verify credentialed-scan route
+// relies on), so the response window is bounded by our own poll deadline, not
+// by the server. Callers (FE fetch) must set their own client timeout ≥ the
+// poll cap.
+//
+// FAILURE CONTRACT: chain failures are DATA, not transport errors — the
+// response is 200 with `stage` ∈ {completed, scan_failed, save_failed,
+// regenerate_failed} + `error`. 4xx is reserved for request-shape problems,
+// 5xx for gateway-side crashes.
+// ---------------------------------------------------------------------------
+
+dbMigrationPackRouter.post(`${BASE}/structural-harvest`, async (req, res) => {
+  const { projectId } = req.params;
+  // snake_case body (FE/gateway wire convention for this route family).
+  const body = (req.body ?? {}) as {
+    architecture_id?: string;
+    target_architecture_id?: string;
+    host?: string;
+    port?: number;
+    database_name?: string;
+    username?: string;
+    password?: string;
+    sybase_driver?: string;
+    include_schemas?: string[];
+    service_id?: string;
+  };
+
+  const missing: string[] = [];
+  if (!body.architecture_id || typeof body.architecture_id !== 'string') {
+    missing.push('architecture_id');
+  }
+  if (!body.host || typeof body.host !== 'string') missing.push('host');
+  if (typeof body.port !== 'number' || body.port <= 0 || body.port > 65535) {
+    missing.push('port');
+  }
+  if (!body.database_name || typeof body.database_name !== 'string') {
+    missing.push('database_name');
+  }
+  if (!body.username || typeof body.username !== 'string') missing.push('username');
+  if (!body.password || typeof body.password !== 'string') missing.push('password');
+  if (missing.length > 0) {
+    res.status(400).json({
+      error: {
+        code: 400,
+        message:
+          `Missing/invalid required field(s): ${missing.join(', ')}. ` +
+          `(password is request-body only; never persisted.)`,
+      },
+    });
+    return;
+  }
+
+  const start = Date.now();
+  try {
+    const result = await runStructuralHarvest({
+      projectId,
+      architectureId: body.architecture_id!,
+      targetArchitectureId:
+        typeof body.target_architecture_id === 'string' &&
+        body.target_architecture_id.length > 0
+          ? body.target_architecture_id
+          : null,
+      serviceId: typeof body.service_id === 'string' ? body.service_id : null,
+      connection: {
+        host: body.host!,
+        port: body.port!,
+        databaseName: body.database_name!,
+        username: body.username!,
+        password: body.password!,
+        sybaseDriver:
+          typeof body.sybase_driver === 'string' ? body.sybase_driver : undefined,
+        includeSchemas: Array.isArray(body.include_schemas)
+          ? body.include_schemas
+          : undefined,
+      },
+    });
+    console.log(
+      `[diag-gw] route=db-migration-pack-structural-harvest status=200 ` +
+        `stage=${result.stage} run=${result.runId ?? 'none'} ` +
+        `findings=${result.findings.length} elapsed_ms=${Date.now() - start}`
+    );
+    // snake_case response envelope around the structured result.
+    res.status(200).json({
+      run_id: result.runId,
+      run_status: result.runStatus,
+      saved_back: result.savedBack
+        ? {
+            entities_created: result.savedBack.entitiesCreated,
+            entities_skipped: result.savedBack.entitiesSkipped,
+            candidates_committed: result.savedBack.candidatesCommitted,
+          }
+        : null,
+      pack_regenerated: result.packRegenerated,
+      findings: result.findings,
+      stage: result.stage,
+      error: result.error ?? null,
+    });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-structural-harvest status=err ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    // runStructuralHarvest only throws on gateway-side programming errors —
+    // mapError's generic branch logs the message (never credentials; the
+    // orchestrator builds errors from HTTP status + upstream text only).
+    mapError(error, res, 'structural-harvest', { projectId });
+  }
+});
+
+/**
+ * POST /test-source-connection — thin pass-through to the discovery-service
+ * connection probe so the harvest modal can pre-flight credentials before
+ * committing to a scan. Body forwarded verbatim except `dbEngine`, which is
+ * defaulted (not forced) to 'sybase' — the harvest flow is Sybase-scoped
+ * today, but an explicit engine in the body wins so the route needs no change
+ * when other source engines arrive. Upstream returns 200 {success:true,...}
+ * or 400 {success:false, error} — both proxied byte-for-byte; credentials
+ * exist only in the request body (discovery-service purges its in-memory
+ * copy after the probe).
+ */
+dbMigrationPackRouter.post(`${BASE}/test-source-connection`, async (req, res) => {
+  const start = Date.now();
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const url = `${discoveryBase()}/discovery/db/test-connection`;
+  try {
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ dbEngine: 'sybase', ...body }),
+    });
+    const text = await upstream.text();
+    console.log(
+      `[diag-gw] route=db-migration-pack-test-source-connection ` +
+        `status=${upstream.status} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(upstream.status);
+    const contentType = upstream.headers.get('content-type');
+    if (contentType) res.setHeader('content-type', contentType);
+    res.send(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    // No request context in the log — the body carries credentials.
+    logger.error('db-migration-pack test-source-connection: upstream fetch failed', {
+      url,
+      error: message,
+    });
+    console.warn(
+      `[diag-gw] route=db-migration-pack-test-source-connection status=503 ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    res.status(503).json({
+      error: { code: 503, message: 'Discovery service unavailable', details: message },
+    });
+  }
+});

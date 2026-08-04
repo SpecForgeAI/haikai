@@ -5005,3 +5005,60 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 215: db_structural_finding_dispositions (Spec 2: Structural findings
+  # dispositions, 2026-08-04). Per-project dispositions for DB structural
+  # findings emitted by the migration pack generator (e.g. "no primary keys
+  # captured"). Keyed by project_id + finding_key (`kind:subject`,
+  # uq_dsfd_project_finding_key) -- NOT by pack -- so dispositions survive
+  # pack regeneration. disposition = accepted | fix_upstream | known_gap
+  # (chk_dsfd_disposition); accepted/known_gap require a note
+  # (service-enforced, the drop_reason analogue from changeset 176).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 214).
+  # ============================================================================
+  - changeSet:
+      id: 215-db-structural-finding-dispositions
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_structural_finding_dispositions
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/215-db-structural-finding-dispositions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
+
+  # ============================================================================
+  # 216: db_gap_proposals (Spec 4: LLM gap-proposal queue, 2026-08-04).
+  # Per-project queue of LLM- (or manually-) proposed fixes for DB structural
+  # findings: missing FK joins (kind=fk_join) and missing primary keys
+  # (kind=primary_key), payload in payload_json (jsonb). Keyed by project_id +
+  # proposal_key (`fk--<relationship_id>` / `pk--<table>`,
+  # uq_dgp_project_proposal_key) -- NOT by pack -- so proposals and their human
+  # review state (review_status = unreviewed | approved | rejected |
+  # needs_rework, chk_dgp_review_status) survive pack regeneration; refresh
+  # upserts only touch rows still `unreviewed` (service-enforced).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 215).
+  # ============================================================================
+  - changeSet:
+      id: 216-db-gap-proposals
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: db_gap_proposals
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/216-db-gap-proposals.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

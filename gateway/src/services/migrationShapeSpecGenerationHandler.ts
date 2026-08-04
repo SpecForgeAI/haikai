@@ -190,6 +190,7 @@ import {
   buildDbPackReviewSpecText,
   plannerDeclaredMissing,
 } from './migrationDbPackReviewRoute';
+import { isManualExecutionItem } from './migrationExecutionClass';
 import { CODE_PREREQUISITE_TAG } from './migrationCodeStreamPlanner';
 import {
   fetchProjectConfigWithDefaults as defaultFetchProjectConfigWithDefaults,
@@ -1346,6 +1347,9 @@ export function resolveBatchSize(input?: number): number {
  *
  * "Eligible" excludes:
  *   - non-story items (initiative / epic / feature)
+ *   - MANUAL-execution items (Spec 2026-08-04-1): human work never generates
+ *     a spec — no hollow "this is human work" text, no insufficient_context
+ *     rows. Their readiness still shows via the preflight routes.
  *   - items without a `workItemId` (story not yet saved to backlog)
  *   - rows already at `status='generated'` (unless `regenerateAll=true`)
  */
@@ -1362,6 +1366,7 @@ export function selectEligibleStories(
   }
   const candidates = bow.items
     .filter((it) => it.type === 'story')
+    .filter((it) => !isManualExecutionItem(it))
     .filter((it) => typeof it.workItemId === 'string' && it.workItemId.length > 0)
     .sort((a, b) => {
       if (a.sequenceOrder !== b.sequenceOrder) return a.sequenceOrder - b.sequenceOrder;

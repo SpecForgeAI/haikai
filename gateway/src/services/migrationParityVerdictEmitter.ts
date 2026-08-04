@@ -40,6 +40,7 @@ import {
 } from './migrationParityVerifier';
 import { defaultConsumerResolverReads } from './dbChangeConsumerResolver';
 import { request as defaultImplRequest } from './implementationLlmProxyClient';
+import { isManualExecutionItem } from './migrationExecutionClass';
 
 // REC-stage predicate emission (predicate run-judging batch — see
 // docs/trace-logging.md §Predicate self-scoring layer). Emission only.
@@ -98,12 +99,12 @@ const API_PARITY_STREAM_TAGS = new Set([
   'stream:target_service_api_implementation',
   'stream:api_soap_integration_compatibility',
 ]);
-const MANUAL_GATE_TAG = 'execution:manual-gate';
-
 function isApiParityCodeStory(item: ReconcileBookOfWorkItem): boolean {
   const tags = item.tags ?? [];
   if (!item.workItemId) return false;
-  if (tags.includes(MANUAL_GATE_TAG)) return false;
+  // Unified execution class (Spec 2026-08-04-1): ALL manual work is out of
+  // parity scope, not just the legacy manual-gate tag.
+  if (isManualExecutionItem(item)) return false;
   if (!tags.some((t) => API_PARITY_STREAM_TAGS.has(t))) return false;
   return (item.apiEndpointIds?.length ?? 0) > 0;
 }

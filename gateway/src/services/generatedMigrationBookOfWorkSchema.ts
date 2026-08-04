@@ -43,6 +43,12 @@ export const MIGRATION_BOOK_OF_WORK_ITEM_TYPES = [
   'epic',
   'feature',
   'story',
+  // Spec 2026-08-04-2: a KNOWN-GAP item — real work the tool cannot perform
+  // yet (a structural finding dispositioned `known_gap`). Manual execution
+  // class by construction: never spec'ed, never dispatched; rendered as a
+  // debt item in the plan. Parent MUST be a feature (the "Known gaps"
+  // feature the DB planner emits).
+  'known_gap',
 ] as const;
 export type MigrationBookOfWorkItemType =
   (typeof MIGRATION_BOOK_OF_WORK_ITEM_TYPES)[number];
@@ -252,6 +258,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  *   epic       -> parent MUST be an initiative
  *   feature    -> parent MUST be an epic
  *   story      -> parent MUST be a feature
+ *   known_gap  -> parent MUST be a feature (leaf debt item, Spec 2026-08-04-2)
  */
 const ALLOWED_PARENT_TYPE: Record<
   MigrationBookOfWorkItemType,
@@ -261,6 +268,7 @@ const ALLOWED_PARENT_TYPE: Record<
   epic: new Set(['initiative']),
   feature: new Set(['epic']),
   story: new Set(['feature']),
+  known_gap: new Set(['feature']),
 };
 
 // ---------------------------------------------------------------------------

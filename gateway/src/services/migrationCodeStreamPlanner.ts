@@ -50,6 +50,7 @@ import {
   MigrationBookOfWorkWorkstream,
 } from './generatedMigrationBookOfWorkSchema';
 import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
+import { MANUAL_EXECUTION_TAG } from './migrationExecutionClass';
 
 // ---------------------------------------------------------------------------
 // Public constants
@@ -1148,7 +1149,7 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
             acceptanceCriteria: [
               `Coverage floor met for all ${ci.apiEndpointIds.length} uncovered endpoint(s) of ${ci.interfaceName}.`,
             ],
-            tags: [...baseTags, MANUAL_GATE_TAG, `interface:${ci.apiInterfaceId}`],
+            tags: [...baseTags, MANUAL_GATE_TAG, MANUAL_EXECUTION_TAG, `interface:${ci.apiInterfaceId}`],
             extras: {
               codeStoryKind: 'capture',
               captureWork: true,
@@ -1299,7 +1300,7 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
               ? 'Every internal process shows identical DB deltas and outputs on current and target.'
               : 'An UNSCOPED diff over the full stream surface is clean or every remaining difference carries an explicit waiver.',
           ],
-          tags: [...baseTags, MANUAL_GATE_TAG],
+          tags: [...baseTags, MANUAL_GATE_TAG, MANUAL_EXECUTION_TAG],
           extras: { codeStoryKind: 'closure' },
         })
       );

@@ -41,6 +41,7 @@ import {
   IrUntranslatedObject,
   SourceSchemaIr,
   StructuralAccounting,
+  StructuralFinding,
   UnsupportedEnginePairError,
 } from './types';
 
@@ -667,39 +668,54 @@ export function accountingFromIr(ir: SourceSchemaIr): StructuralAccounting {
 }
 
 /**
- * Convert suspicious zeros into EXPLICIT warnings. Each one becomes a
- * manifest `structural_warnings` entry and a prerequisite item in the plan —
- * resolve the capture gap and regenerate, or defer the item as an explicit
- * out-of-scope sign-off. Never a silent drop.
+ * Convert suspicious zeros into EXPLICIT structured findings (Spec
+ * 2026-08-04-2). Each carries a stable `kind`/`subject` identity (counts stay
+ * in the message only) so human dispositions — accepted / fix_upstream /
+ * known_gap, stored per project in AMS — survive pack regeneration. The
+ * findings gate blocks plan generation and Migrate until every CURRENT
+ * finding is dispositioned; resolution is only ever "a regenerated pack no
+ * longer emits the finding". Never a silent drop.
  */
-export function deriveStructuralWarnings(acc: StructuralAccounting): string[] {
-  const warnings: string[] = [];
+export function deriveStructuralFindings(acc: StructuralAccounting): StructuralFinding[] {
+  const findings: StructuralFinding[] = [];
   if (acc.tables_total > 0 && acc.tables_with_constraints_metadata === 0) {
-    warnings.push(
-      `constraints_metadata is absent from every committed entity (${acc.tables_total} tables) — ` +
+    findings.push({
+      kind: 'constraints_metadata_absent',
+      subject: 'all_tables',
+      message:
+        `constraints_metadata is absent from every committed entity (${acc.tables_total} tables) — ` +
         'primary keys, unique constraints, check constraints and indexes CANNOT be emitted. ' +
-        'Re-run discovery/commit with constraint capture, then regenerate the pack.'
-    );
+        'Re-run discovery/commit with constraint capture, then regenerate the pack.',
+    });
   } else {
     if (acc.tables_total > 0 && acc.tables_with_primary_key === 0) {
-      warnings.push(
-        `no table carries a primary key (${acc.tables_total} tables) — the target gets 0 PKs, ` +
-          'row identity is lost, and data-parity reconciliation has no reliable ordering.'
-      );
+      findings.push({
+        kind: 'no_primary_keys',
+        subject: 'all_tables',
+        message:
+          `no table carries a primary key (${acc.tables_total} tables) — the target gets 0 PKs, ` +
+          'row identity is lost, and data-parity reconciliation has no reliable ordering.',
+      });
     }
     if (acc.tables_total > 0 && acc.indexes_total === 0) {
-      warnings.push(
-        `no indexes captured across ${acc.tables_total} tables — 030-indexes.sql will be EMPTY. ` +
-          'If the source has indexes, re-run discovery with index capture.'
-      );
+      findings.push({
+        kind: 'no_indexes',
+        subject: 'all_tables',
+        message:
+          `no indexes captured across ${acc.tables_total} tables — 030-indexes.sql will be EMPTY. ` +
+          'If the source has indexes, re-run discovery with index capture.',
+      });
     }
   }
   if (acc.relationships_total > 0 && acc.relationships_with_fk_columns === 0) {
-    warnings.push(
-      `${acc.relationships_total} relationship(s) carry no fk_columns join metadata — ` +
+    findings.push({
+      kind: 'relationships_without_fk_columns',
+      subject: 'all_relationships',
+      message:
+        `${acc.relationships_total} relationship(s) carry no fk_columns join metadata — ` +
         '020-foreign-keys.sql will be EMPTY despite declared relationships. ' +
-        'Re-run discovery/commit with referential-constraint capture.'
-    );
+        'Re-run discovery/commit with referential-constraint capture.',
+    });
   }
   const codeTotal =
     acc.code_objects_captured.stored_procedure +
@@ -708,14 +724,22 @@ export function deriveStructuralWarnings(acc: StructuralAccounting): string[] {
     acc.code_objects_captured.scheduled_job +
     acc.view_entities_total;
   if (codeTotal === 0) {
-    warnings.push(
-      'discovery captured NO stored-procedure / trigger / view / scheduled-job objects — ' +
+    findings.push({
+      kind: 'no_code_objects',
+      subject: 'all_code_objects',
+      message:
+        'discovery captured NO stored-procedure / trigger / view / scheduled-job objects — ' +
         'if the source database contains DB code objects they are MISSING from this pack ' +
         '(no translation, no finding). Re-run discovery with DB code capture, or sign the ' +
-        'absence off explicitly.'
-    );
+        'absence off explicitly.',
+    });
   }
-  return warnings;
+  return findings;
+}
+
+/** Legacy string view of {@link deriveStructuralFindings} (wire back-compat). */
+export function deriveStructuralWarnings(acc: StructuralAccounting): string[] {
+  return deriveStructuralFindings(acc).map((f) => f.message);
 }
 
 // ---------------------------------------------------------------------------

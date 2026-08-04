@@ -113,6 +113,10 @@ import MigrationBookOfWorkSaveToBacklogDialog, {
 } from './MigrationBookOfWorkSaveToBacklogDialog';
 import MigrationBookOfWorkPostSaveView from './MigrationBookOfWorkPostSaveView';
 import { computeFindingsCoverage } from '../../../utils/findingsCoverage';
+// Execution-class oracle mirror (Spec 2026-08-04-1): manual stories are human
+// work — never spec'ed, never dispatched — so they must not count against the
+// per-plane spec gates.
+import { isManualExecutionTags } from '../../../utils/executionClass';
 // Carry-over accounting panel (2026-07-26): replaces the old advisory
 // findings banner with the SERVER gate's truth — behaviour-bearing carry-over
 // items must be cited or dismissed before Stage 2 (Service) can start.
@@ -887,6 +891,14 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     return PLANE_ORDER.filter((p) => (byPlane.get(p) ?? []).length > 0).map(
       (p) => {
         const planeStories = byPlane.get(p)!;
+        // Execution-class split (Spec 2026-08-04-1): MANUAL stories are human
+        // work — the server never specs or dispatches them — so they are
+        // excluded from the spec-gate denominator ("specs X/Y") and never
+        // listed as blockers. Run progress still scans every story (manual
+        // ones simply never appear in run items).
+        const gateStories = planeStories.filter(
+          (s) => !isManualExecutionTags(s.tags),
+        );
         const blockers: Array<{ id: string; title: string }> = [];
         let satisfied = 0;
         let runDone = 0;
@@ -894,6 +906,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         for (const s of planeStories) {
           const wi = (s as { workItemId?: string | null }).workItemId;
           const row = wi ? specRowByWorkItem.get(wi) : undefined;
+          const isManual = isManualExecutionTags(s.tags);
           // A STALE row is NOT satisfied (2026-07-26): the story was amended
           // (e.g. for a carry-over finding) and its spec must regenerate —
           // the server gate refuses stale, so the card must too. Either stale
@@ -904,8 +917,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             (row.manualReady === true ||
               row.status === 'generated' ||
               row.status === 'generated_with_warnings');
-          if (ok) satisfied++;
-          else blockers.push({ id: s.id, title: s.title });
+          if (!isManual) {
+            if (ok) satisfied++;
+            else blockers.push({ id: s.id, title: s.title });
+          }
           if (wi && runItemsByWorkItem.has(wi)) {
             runTotal++;
             const st = runItemsByWorkItem.get(wi)!;
@@ -914,7 +929,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         }
         return {
           plane: p,
-          totalStories: planeStories.length,
+          totalStories: gateStories.length,
           satisfiedStories: satisfied,
           blockers,
           runDone,

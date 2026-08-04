@@ -343,6 +343,81 @@ function extractGatewayErrorMessage(errorBody: unknown): string {
   return '';
 }
 
+/**
+ * One blocking finding echoed by the generate route's 409 envelope
+ * (Spec 2026-08-04-2 — Structural findings dispositions).
+ */
+export interface StructuralFindingsOpenFinding {
+  key: string;
+  message: string;
+  disposition: string | null;
+}
+
+/**
+ * Typed error for the generate route's HTTP 409
+ * `{ error: { code: 409, reason: 'structural_findings_open', message,
+ * findings } }` envelope: undispositioned (or fix-upstream-pending)
+ * structural findings on the DB migration pack block plan generation. The
+ * composed `message` already carries the gateway headline, the finding list,
+ * and the wayfinding hint, so callers that only render `err.message` (the
+ * wizard's submit-error banner) surface the full story with no extra code;
+ * richer callers can read `findings` for structured rendering.
+ */
+export class StructuralFindingsOpenError extends Error {
+  readonly findings: StructuralFindingsOpenFinding[];
+
+  constructor(gatewayMessage: string, findings: StructuralFindingsOpenFinding[]) {
+    const list = findings
+      .map((f) =>
+        f.disposition === 'fix_upstream'
+          ? `${f.message} (fix upstream pending)`
+          : f.message
+      )
+      .join('; ');
+    super(
+      `${gatewayMessage || 'Open structural findings block plan generation.'}` +
+        `${list ? ` Open findings: ${list}.` : ''}` +
+        ' Go to the Schema migration tab → Structural findings and disposition each' +
+        ' (accept with a reason / fix upstream + regenerate / known gap), then retry.'
+    );
+    this.name = 'StructuralFindingsOpenError';
+    this.findings = findings;
+  }
+}
+
+/** Parse the 409 structural-findings envelope; null when it is anything else. */
+function parseStructuralFindingsOpenError(
+  errorBody: unknown
+): StructuralFindingsOpenError | null {
+  if (!errorBody || typeof errorBody !== 'object') return null;
+  const nested = (errorBody as { error?: unknown }).error;
+  if (!nested || typeof nested !== 'object') return null;
+  const envelope = nested as {
+    reason?: unknown;
+    message?: unknown;
+    findings?: unknown;
+  };
+  if (envelope.reason !== 'structural_findings_open') return null;
+  const findings: StructuralFindingsOpenFinding[] = Array.isArray(envelope.findings)
+    ? envelope.findings.map((f) => {
+        const row = (f ?? {}) as {
+          key?: unknown;
+          message?: unknown;
+          disposition?: unknown;
+        };
+        return {
+          key: typeof row.key === 'string' ? row.key : '',
+          message: typeof row.message === 'string' ? row.message : String(row.key ?? ''),
+          disposition: typeof row.disposition === 'string' ? row.disposition : null,
+        };
+      })
+    : [];
+  return new StructuralFindingsOpenError(
+    typeof envelope.message === 'string' ? envelope.message : '',
+    findings
+  );
+}
+
 export async function generateMigrationDeliveryPlan(
   request: GenerateMigrationDeliveryPlanRequest
 ): Promise<GenerateMigrationDeliveryPlanResponse> {
@@ -358,8 +433,17 @@ export async function generateMigrationDeliveryPlan(
   if (!res.ok) {
     let serverMessage = '';
     try {
-      serverMessage = extractGatewayErrorMessage(await res.json());
-    } catch {
+      const errorBody: unknown = await res.json();
+      // 409 structural_findings_open (Spec 2026-08-04-2): open structural
+      // findings on the DB migration pack block plan generation — throw the
+      // typed error whose message carries the finding list + wayfinding hint.
+      if (res.status === 409) {
+        const findingsError = parseStructuralFindingsOpenError(errorBody);
+        if (findingsError) throw findingsError;
+      }
+      serverMessage = extractGatewayErrorMessage(errorBody);
+    } catch (err) {
+      if (err instanceof StructuralFindingsOpenError) throw err;
       // Ignore JSON parse failure -- fall through to generic message.
     }
     throw new Error(

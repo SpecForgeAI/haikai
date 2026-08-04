@@ -16,7 +16,6 @@ import {
   computeTableLayers,
   flaggedTableSet,
   PackView,
-  PREREQUISITE_PROVENANCE_TAG,
   SEED_DB_PACK_FILES_TAG,
 } from '../services/migrationDbPackPlanner';
 import type { PackManifest } from '../services/dbMigrationPack/types';
@@ -634,23 +633,59 @@ describe('structural completeness surfacing (WS3 P1)', () => {
     expect(criteria).toContain('an empty changeset fails this');
   });
 
-  it('converts every structural warning into a prerequisite story', () => {
+  it('THROWS when structural findings are undispositioned (Spec 2026-08-04-2)', () => {
     const packView = makePackView();
-    (packView.manifest as PackManifest).structural_warnings = [
-      'no table carries a primary key (65 tables) — the target gets 0 PKs.',
-      '5 relationship(s) carry no fk_columns join metadata — 020-foreign-keys.sql will be EMPTY.',
+    (packView.manifest as PackManifest).structural_findings = [
+      { kind: 'no_primary_keys', subject: 'all_tables', message: 'no PKs — target gets 0.' },
+      {
+        kind: 'relationships_without_fk_columns',
+        subject: 'all_relationships',
+        message: '5 relationship(s) carry no fk_columns — 020-foreign-keys.sql will be EMPTY.',
+      },
     ];
-    const stories = expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
-    const gaps = stories.filter((s) => s.id.includes('-s-structural-gap-'));
-    expect(gaps).toHaveLength(2);
-    expect(gaps[0].title).toContain('Structural completeness gap');
-    expect(gaps[0].tags).toContain(PREREQUISITE_PROVENANCE_TAG);
-    expect(gaps[0].description).toContain('defer this story');
-    expect(gaps[1].description).toContain('020-foreign-keys.sql will be EMPTY');
+    expect(() => expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM)).toThrow(
+      /Structural findings must be dispositioned/
+    );
   });
 
-  it('emits NO gap stories when the pack has no warnings', () => {
+  it('fix_upstream still blocks; accepted + known_gap unblock, known_gap emits debt items', () => {
+    const packView = makePackView();
+    (packView.manifest as PackManifest).structural_findings = [
+      { kind: 'no_primary_keys', subject: 'all_tables', message: 'no PKs — target gets 0.' },
+      { kind: 'no_indexes', subject: 'all_tables', message: 'no indexes — 030 will be EMPTY.' },
+    ];
+    // fix_upstream on one finding: still OPEN → throw.
+    packView.structuralDispositions = [
+      { finding_key: 'no_primary_keys:all_tables', disposition: 'accepted', note: 'heap tables by design' },
+      { finding_key: 'no_indexes:all_tables', disposition: 'fix_upstream', note: null },
+    ];
+    expect(() => expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM)).toThrow(
+      /fix upstream pending/
+    );
+
+    // known_gap closes the gate and materialises a Known-gaps feature + item.
+    packView.structuralDispositions = [
+      { finding_key: 'no_primary_keys:all_tables', disposition: 'accepted', note: 'heap tables by design' },
+      { finding_key: 'no_indexes:all_tables', disposition: 'known_gap', note: 'DBA will hand-author' },
+    ];
+    const stories = expandEpic(packView, `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
+    const feature = stories.find((s) => s.id.endsWith('-f-known-gaps'));
+    expect(feature).toBeDefined();
+    expect(feature!.type).toBe('feature');
+    const gapItems = stories.filter((s) => s.type === 'known_gap');
+    expect(gapItems).toHaveLength(1);
+    expect(gapItems[0].parentId).toBe(feature!.id);
+    expect(gapItems[0].tags).toContain('execution:manual');
+    expect(gapItems[0].description).toContain('DBA will hand-author');
+    // The ACCEPTED finding leaves no trace in the plan.
+    expect(stories.some((s) => (s.title ?? '').includes('no PKs'))).toBe(false);
+    // Legacy structural-gap stories are GONE.
+    expect(stories.filter((s) => s.id.includes('-s-structural-gap-'))).toHaveLength(0);
+  });
+
+  it('emits NO gap machinery when the pack has no findings', () => {
     const stories = expandEpic(makePackView(), `${SCHEMA_STREAM}-epic-schema`, SCHEMA_STREAM);
     expect(stories.filter((s) => s.id.includes('-s-structural-gap-'))).toHaveLength(0);
+    expect(stories.filter((s) => s.type === 'known_gap')).toHaveLength(0);
   });
 });
