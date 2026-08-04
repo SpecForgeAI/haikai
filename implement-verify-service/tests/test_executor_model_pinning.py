@@ -105,9 +105,9 @@ class TestKiroChatExecutorSpawn:
         return ex
 
     def test_spawn_pins_model(self, tmp_path, capture_popen):
-        ex = self._executor(tmp_path, "claude-opus-4.8")
+        ex = self._executor(tmp_path, "claude-opus-5")
         list(ex.stream_message("hello", is_new_session=False))
-        _assert_model_flag(capture_popen["args"], "claude-opus-4.8")
+        _assert_model_flag(capture_popen["args"], "claude-opus-5")
 
     def test_spawn_omits_flag_when_disabled(self, tmp_path, capture_popen):
         ex = self._executor(tmp_path, None)
@@ -138,9 +138,9 @@ class TestKiroCLIExecutorSpawn:
         return ex
 
     def test_execute_pins_model(self, tmp_path, capture_popen):
-        ex = self._executor(tmp_path, "claude-opus-4.8")
+        ex = self._executor(tmp_path, "claude-opus-5")
         result = ex.execute("/write-spec for x", timeout=5)
-        _assert_model_flag(result["cli_args"], "claude-opus-4.8")
+        _assert_model_flag(result["cli_args"], "claude-opus-5")
 
     def test_execute_omits_flag_when_disabled(self, tmp_path, capture_popen):
         ex = self._executor(tmp_path, None)

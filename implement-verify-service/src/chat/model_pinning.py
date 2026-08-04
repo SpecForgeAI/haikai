@@ -15,7 +15,7 @@ Why this exists (2026-07-30 live shakedown):
 Resolution rules (shared by all four executor spawn sites):
 
 * Kiro executors read ``KIRO_CHAT_MODEL`` and default to
-  ``claude-opus-4.8`` when unset — the migration orchestration must not
+  ``claude-opus-5`` when unset — the migration orchestration must not
   depend on kiro-cli's login-state default.
 * Claude executors read ``LLM_MODEL`` with NO default — when unset the
   CLI's own configured default applies, exactly as before this module.
@@ -32,7 +32,7 @@ import os
 from typing import List, Optional
 
 KIRO_MODEL_ENV = "KIRO_CHAT_MODEL"
-KIRO_MODEL_DEFAULT = "claude-opus-4.8"
+KIRO_MODEL_DEFAULT = "claude-opus-5"
 CLAUDE_MODEL_ENV = "LLM_MODEL"
 
 
@@ -50,7 +50,7 @@ def resolve_pinned_model(env_var: str, default: str = "") -> Optional[str]:
 
 
 def kiro_pinned_model() -> Optional[str]:
-    """The model every kiro-cli chat spawn pins (default claude-opus-4.8)."""
+    """The model every kiro-cli chat spawn pins (default claude-opus-5)."""
     return resolve_pinned_model(KIRO_MODEL_ENV, KIRO_MODEL_DEFAULT)
 
 
