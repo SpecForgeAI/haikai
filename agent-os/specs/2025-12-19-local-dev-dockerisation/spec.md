@@ -64,7 +64,7 @@ Provide a complete Docker-based local development environment with hot-reload ca
 **PostgreSQL Configuration**
 - Use official `postgres:16-alpine` image
 - Expose port 5432
-- Set environment variables: `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=p05tgre5`, `POSTGRES_DB=architecture_model`
+- Set environment variables: `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=postgres`, `POSTGRES_DB=architecture_model`
 - Create named volume `postgres_data` for data persistence
 - Include healthcheck: `pg_isready -U postgres`
 
@@ -87,7 +87,7 @@ Provide a complete Docker-based local development environment with hot-reload ca
 - Create `.env.docker` template file at repository root with all required variables
 - Gateway requires: `OPENAI_API_KEY`, `MCP_BASE_URL=http://mcp-server:8090`, `PORT=8081`, `ALLOWED_ORIGINS=http://localhost:5173`
 - MCP Server requires: `ARCH_MODEL_SERVICE_BASE_URL=http://architecture-model-service:8080`, `PORT=8090`
-- Architecture Model Service requires: `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/architecture_model`, `SPRING_DATASOURCE_USERNAME=postgres`, `SPRING_DATASOURCE_PASSWORD=p05tgre5`
+- Architecture Model Service requires: `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/architecture_model`, `SPRING_DATASOURCE_USERNAME=postgres`, `SPRING_DATASOURCE_PASSWORD=postgres`
 - Document that `OPENAI_API_KEY` must be provided by developer
 
 **Network Configuration**

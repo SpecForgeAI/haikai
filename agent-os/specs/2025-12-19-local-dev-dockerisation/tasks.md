@@ -20,7 +20,7 @@ This task breakdown covers the creation of a complete Docker-based local develop
   - [x] 1.2 Create `.env.docker` template file at repository root
     - Define Gateway variables: `OPENAI_API_KEY`, `MCP_BASE_URL=http://mcp-server:8090`, `PORT=8081`, `ALLOWED_ORIGINS=http://localhost:5173`
     - Define MCP Server variables: `ARCH_MODEL_SERVICE_BASE_URL=http://architecture-model-service:8080`, `PORT=8090`
-    - Define Architecture Model Service variables: `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/architecture_model`, `SPRING_DATASOURCE_USERNAME=postgres`, `SPRING_DATASOURCE_PASSWORD=p05tgre5`
+    - Define Architecture Model Service variables: `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/architecture_model`, `SPRING_DATASOURCE_USERNAME=postgres`, `SPRING_DATASOURCE_PASSWORD=postgres`
     - Add Frontend variables: `VITE_MODEL_API_TARGET=http://architecture-model-service:8080`, `VITE_CHAT_API_TARGET=http://gateway:8081`
     - Include comments documenting that `OPENAI_API_KEY` must be provided by developer
   - [x] 1.3 Verify directory structure is correct
@@ -163,7 +163,7 @@ This task breakdown covers the creation of a complete Docker-based local develop
     - Define named volume `postgres_data` for PostgreSQL persistence
   - [x] 7.2 Configure PostgreSQL service
     - Use `postgres:16-alpine` image
-    - Set environment: `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=p05tgre5`, `POSTGRES_DB=architecture_model`
+    - Set environment: `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=postgres`, `POSTGRES_DB=architecture_model`
     - Expose port `5432:5432`
     - Mount `postgres_data` volume to `/var/lib/postgresql/data`
     - Add healthcheck: `pg_isready -U postgres` with 5s interval, 5s timeout, 5 retries
