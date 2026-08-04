@@ -29,13 +29,19 @@ import logging
 import platform
 import shutil
 import subprocess
+# Imported DIRECTLY so tests that substitute the `subprocess` module handle
+# (SimpleNamespace(run=...)) don't break the except clause below.
+from subprocess import TimeoutExpired
 from pathlib import Path
 from typing import List, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
-# One probe budget: a cold WSL VM can take several seconds to boot.
-_WSL_PROBE_TIMEOUT_SECONDS = 15.0
+# One probe budget. 2026-08-04 live measurement: after `wsl --shutdown`, a
+# real cold-start resolve took 38.8s end-to-end — the old 15s budget was a
+# GUARANTEED failure on any cold distro, and the timeout was then reported
+# as "not installed". 45s covers the measured cold boot with headroom.
+_WSL_PROBE_TIMEOUT_SECONDS = 45.0
 
 # Well-known install locations, probed inside WSL independent of shell PATH.
 _WSL_CANDIDATE_SCRIPT = (
@@ -50,8 +56,34 @@ def _clean_wsl_output(raw: str) -> str:
     return raw.replace("\x00", "").strip()
 
 
-def _probe_wsl(cmd: List[str]) -> str:
-    """Run one WSL probe command; empty string on any failure."""
+def _warm_wsl() -> None:
+    """Best-effort WSL VM warm-up (``wsl -- true``) before the real probes.
+
+    A cold distro charges its whole boot cost to the FIRST command that
+    reaches it; running a no-op first means the probes that must return a
+    path aren't the ones paying it. Never raises — if warm-up fails or times
+    out, the probes simply run cold exactly as before.
+    """
+    try:
+        subprocess.run(
+            ["wsl", "--", "true"],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=_WSL_PROBE_TIMEOUT_SECONDS,
+        )
+    except Exception as e:
+        logger.debug(f"WSL warm-up failed (probes proceed cold): {e}")
+
+
+def _probe_wsl(cmd: List[str]) -> Tuple[str, str]:
+    """Run one WSL probe command; returns ``(stdout, failure_reason)``.
+
+    ``failure_reason`` is empty on success. A TimeoutExpired is reported
+    DISTINCTLY (2026-08-04): swallowing it into an empty string made a
+    cold/stopped distro masquerade as "kiro-cli not installed", pushing the
+    operator toward a reinstall of a binary that was present all along.
+    """
     try:
         result = subprocess.run(
             cmd,
@@ -60,10 +92,16 @@ def _probe_wsl(cmd: List[str]) -> str:
             errors="replace",
             timeout=_WSL_PROBE_TIMEOUT_SECONDS,
         )
+    except TimeoutExpired:
+        logger.warning(
+            f"WSL probe {cmd} TIMED OUT after {_WSL_PROBE_TIMEOUT_SECONDS:.0f}s "
+            "(cold/stopped distro?)"
+        )
+        return "", f"TIMED OUT after {_WSL_PROBE_TIMEOUT_SECONDS:.0f}s"
     except Exception as e:
         logger.debug(f"WSL probe {cmd} failed: {e}")
-        return ""
-    return _clean_wsl_output(result.stdout or "")
+        return "", f"failed: {e}"
+    return _clean_wsl_output(result.stdout or ""), ""
 
 
 def locate_kiro_cli() -> Tuple[str, bool]:
@@ -89,26 +127,48 @@ def locate_kiro_cli() -> Tuple[str, bool]:
             return str(candidate), False
     probes_failed.append("native ~/.local/bin and /usr/local/bin")
 
+    any_probe_timed_out = False
     if platform.system() == "Windows":
         if shutil.which("wsl"):
+            # Warm the VM first so a cold boot isn't charged to a probe that
+            # has to return a path (best-effort; never raises).
+            _warm_wsl()
+
             # LOGIN shell: sources ~/.profile so ~/.local/bin is on PATH —
             # matches what the user's interactive `wsl` session sees.
-            found = _probe_wsl(["wsl", "--", "bash", "-lc", "command -v kiro-cli"])
+            found, reason = _probe_wsl(["wsl", "--", "bash", "-lc", "command -v kiro-cli"])
             if found.startswith("/"):
                 logger.info(f"Using kiro-cli via WSL (login-shell PATH): {found}")
                 return found, True
-            probes_failed.append("WSL login shell (bash -lc 'command -v kiro-cli')")
+            any_probe_timed_out = any_probe_timed_out or "TIMED OUT" in reason
+            probes_failed.append(
+                "WSL login shell (bash -lc 'command -v kiro-cli')"
+                + (f" — {reason}" if reason else "")
+            )
 
-            found = _probe_wsl(["wsl", "--", "sh", "-c", _WSL_CANDIDATE_SCRIPT])
+            found, reason = _probe_wsl(["wsl", "--", "sh", "-c", _WSL_CANDIDATE_SCRIPT])
             if found.startswith("/"):
                 logger.info(f"Using kiro-cli via WSL (well-known dir): {found}")
                 return found, True
+            any_probe_timed_out = any_probe_timed_out or "TIMED OUT" in reason
             probes_failed.append(
                 "WSL well-known dirs ($HOME/.local/bin, /usr/local/bin, /root/.local/bin)"
+                + (f" — {reason}" if reason else "")
             )
         else:
             probes_failed.append("wsl.exe (not on PATH)")
 
+    if any_probe_timed_out:
+        # A timeout is NOT "not installed" (2026-08-04): the old message sent
+        # the operator to reinstall a binary that was present and reachable
+        # the whole time — the distro was just cold/stopped.
+        raise ValueError(
+            "kiro-cli could not be located because a WSL probe TIMED OUT, so "
+            "the distro did not answer in time (most likely cold/stopped, not "
+            "missing). Probed: " + "; ".join(probes_failed) + ". "
+            "Warm the distro with 'wsl -- true' and retry; only reinstall if "
+            "that command reports kiro-cli is absent."
+        )
     raise ValueError(
         "kiro-cli not found. Probed: " + "; ".join(probes_failed) + ". "
         "Install it via the Kiro CLI install script inside your default WSL "

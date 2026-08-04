@@ -20,12 +20,18 @@ from src.kiro_cli_locator import kiro_cli_args, locate_kiro_cli
 
 
 def _patch_env(monkeypatch, *, system="Windows", which=None, run_results=None,
-               calls=None, home=None):
+               calls=None, home=None, warm_calls=None):
     """Substitute the locator's platform/shutil/subprocess module handles.
 
-    run_results: list of stdout strings returned by successive
-    subprocess.run calls; calls (if given) collects each argv; home (if
-    given) pins Path.home() so a real native install can't short-circuit.
+    run_results: list of stdout strings (or exceptions to RAISE) returned by
+    successive PROBE subprocess.run calls; calls (if given) collects each
+    probe argv; home (if given) pins Path.home() so a real native install
+    can't short-circuit.
+
+    The best-effort warm-up call (``wsl -- true``, 2026-08-04) is EXCLUDED
+    from probe accounting — it lands in warm_calls (if given) and consumes
+    no run_results entry — so the existing login-shell ordering pins stay
+    meaningful rather than being weakened to index arithmetic.
     """
     which = which or {}
     run_results = list(run_results or [])
@@ -40,10 +46,16 @@ def _patch_env(monkeypatch, *, system="Windows", which=None, run_results=None,
     )
 
     def fake_run(cmd, **kwargs):
+        if list(cmd) == ["wsl", "--", "true"]:
+            if warm_calls is not None:
+                warm_calls.append(cmd)
+            return types.SimpleNamespace(stdout="", returncode=0)
         if calls is not None:
             calls.append(cmd)
-        stdout = run_results.pop(0) if run_results else ""
-        return types.SimpleNamespace(stdout=stdout, returncode=0)
+        item = run_results.pop(0) if run_results else ""
+        if isinstance(item, BaseException):
+            raise item
+        return types.SimpleNamespace(stdout=item, returncode=0)
 
     monkeypatch.setattr(locator_mod, "subprocess", types.SimpleNamespace(run=fake_run))
 
@@ -121,6 +133,50 @@ def test_not_found_raises_with_probe_diagnostics(monkeypatch, tmp_path):
     assert "ENABLING_KIRO_CLI" in message
     assert "login shell" in message
     assert "wsl kiro-cli whoami" in message
+
+
+def test_warm_up_runs_first_and_is_excluded_from_probe_accounting(monkeypatch, tmp_path):
+    # 2026-08-04: `wsl -- true` warms the VM so a cold boot isn't charged to
+    # a probe that must return a path. It must not consume a run_results
+    # entry or shift the probe order the pins above assert on.
+    calls: list = []
+    warm_calls: list = []
+    _patch_env(
+        monkeypatch,
+        which={"wsl": r"C:\Windows\System32\wsl.exe"},
+        home=tmp_path,
+        run_results=["/home/user/.local/bin/kiro-cli\n"],
+        calls=calls,
+        warm_calls=warm_calls,
+    )
+    assert locate_kiro_cli() == ("/home/user/.local/bin/kiro-cli", True)
+    assert warm_calls == [["wsl", "--", "true"]]
+    assert calls[0][:4] == ["wsl", "--", "bash", "-lc"]
+
+
+def test_probe_timeout_is_reported_as_cold_distro_not_missing_install(monkeypatch, tmp_path):
+    # THE 2026-08-04 regression pin: a cold-WSL timeout must NOT masquerade
+    # as "not installed" — the old message pushed a reinstall of a binary
+    # that was present and reachable the whole time.
+    from subprocess import TimeoutExpired
+
+    _patch_env(
+        monkeypatch,
+        which={"wsl": r"C:\Windows\System32\wsl.exe"},
+        home=tmp_path,
+        run_results=[
+            TimeoutExpired(cmd=["wsl"], timeout=45.0),
+            TimeoutExpired(cmd=["wsl"], timeout=45.0),
+        ],
+    )
+    with pytest.raises(ValueError) as ei:
+        locate_kiro_cli()
+    message = str(ei.value)
+    assert "TIMED OUT" in message
+    assert "cold/stopped" in message
+    assert "wsl -- true" in message
+    # And it does NOT push a reinstall.
+    assert "Install it via" not in message
 
 
 def test_kiro_cli_args_prefixes_wsl_with_posix_path():
