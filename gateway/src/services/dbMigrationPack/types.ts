@@ -194,6 +194,14 @@ export interface StructuralFinding {
   subject: string;
   /** The human warning text (same string as `structural_warnings`). */
   message: string;
+  /**
+   * The affected items behind the aggregate count (2026-08-04 partial-
+   * coverage follow-up): e.g. the join-less relationship pairs or the
+   * PK-less tables. Rendered as an expander on the findings panel so the
+   * human dispositions a VISIBLE list, never a bare number. Optional —
+   * aggregate-by-nature findings (no_indexes, no_code_objects) omit it.
+   */
+  details?: string[];
 }
 
 /** The disposition store key for a finding. */
@@ -211,6 +219,15 @@ export interface StructuralAccounting {
   indexes_total: number;
   relationships_total: number;
   relationships_with_fk_columns: number;
+  /**
+   * Per-item detail lists behind the counts (2026-08-04 partial-coverage
+   * follow-up): which tables lack a PK, and which relationships lack join
+   * metadata ("from -> to" pairs). Feed the findings' `details` so partial
+   * drops are itemised, never just counted. Optional — absent on packs
+   * generated earlier and on the IR-only fixture path.
+   */
+  tables_without_primary_key?: string[];
+  relationships_without_fk_details?: string[];
   /**
    * FINDINGS-channel visibility (2026-08-01): collation hazards, computed
    * columns and sequences reach the IR ONLY via discovery findings (never

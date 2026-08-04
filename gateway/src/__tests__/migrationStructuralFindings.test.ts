@@ -80,6 +80,73 @@ describe('disposition semantics', () => {
   });
 });
 
+describe('partial coverage (2026-08-04 follow-up)', () => {
+  const baseAcc: StructuralAccounting = {
+    tables_total: 62,
+    view_entities_total: 0,
+    tables_with_constraints_metadata: 62,
+    tables_with_primary_key: 62,
+    unique_constraints_total: 3,
+    check_constraints_total: 2,
+    indexes_total: 10,
+    relationships_total: 62,
+    relationships_with_fk_columns: 62,
+    collation_hazard_columns: 0,
+    generated_columns: 0,
+    sequences_captured: 1,
+    code_objects_captured: { stored_procedure: 1, trigger: 0, view: 0, scheduled_job: 0 },
+  };
+
+  it('45-with / 17-without relationships fires a PARTIAL finding with details; captured FKs stay emitted', () => {
+    const findings = deriveStructuralFindings({
+      ...baseAcc,
+      relationships_with_fk_columns: 45,
+      relationships_without_fk_details: ['dbo.a -> dbo.b', 'dbo.c -> dbo.d'],
+    });
+    const fk = findings.find((f) => f.kind === 'relationships_without_fk_columns')!;
+    expect(fk).toBeDefined();
+    // Same stable identity as the total-zero case — dispositions persist.
+    expect(fk.subject).toBe('all_relationships');
+    expect(fk.message).toContain('17 of 62');
+    expect(fk.message).toContain('45 captured FK(s) are emitted normally');
+    expect(fk.details).toEqual(['dbo.a -> dbo.b', 'dbo.c -> dbo.d']);
+  });
+
+  it('partial PK coverage fires with the PK-less table list', () => {
+    const findings = deriveStructuralFindings({
+      ...baseAcc,
+      tables_with_primary_key: 60,
+      tables_without_primary_key: ['dbo.audit_log', 'dbo.staging'],
+    });
+    const pk = findings.find((f) => f.kind === 'no_primary_keys')!;
+    expect(pk).toBeDefined();
+    expect(pk.subject).toBe('all_tables');
+    expect(pk.message).toContain('2 of 62');
+    expect(pk.details).toEqual(['dbo.audit_log', 'dbo.staging']);
+  });
+
+  it('full coverage fires nothing', () => {
+    expect(deriveStructuralFindings(baseAcc)).toEqual([]);
+  });
+
+  it('details survive the state join for the panel', () => {
+    const states = resolveStructuralFindingStates(
+      {
+        structural_findings: [
+          {
+            kind: 'relationships_without_fk_columns',
+            subject: 'all_relationships',
+            message: '17 of 62 …',
+            details: ['dbo.a -> dbo.b'],
+          },
+        ],
+      },
+      []
+    );
+    expect(states[0].details).toEqual(['dbo.a -> dbo.b']);
+  });
+});
+
 describe('deriveStructuralFindings identities', () => {
   it('emits stable kind:subject with counts confined to the message', () => {
     const acc: StructuralAccounting = {

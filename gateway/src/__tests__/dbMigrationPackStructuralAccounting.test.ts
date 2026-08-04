@@ -143,7 +143,10 @@ describe('deriveStructuralWarnings', () => {
       tables_total: 65,
       view_entities_total: 0,
       tables_with_constraints_metadata: 65,
-      tables_with_primary_key: 60,
+      // Full PK coverage: since the 2026-08-04 partial-coverage follow-up,
+      // ANY PK-less table fires a finding (the old 60/65 fixture was
+      // "well-captured" only under the all-or-nothing rule).
+      tables_with_primary_key: 65,
       unique_constraints_total: 3,
       check_constraints_total: 2,
       indexes_total: 61,

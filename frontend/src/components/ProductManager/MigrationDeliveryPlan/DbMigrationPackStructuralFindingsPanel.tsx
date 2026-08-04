@@ -101,6 +101,8 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
   const [error, setError] = useState<string | null>(null);
   /** Finding key an action is in flight for. */
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  /** Per-finding expander for the itemised affected list (details[]). */
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   /** Harvest-from-source-DB modal visibility (credentials live IN the modal). */
   const [harvestOpen, setHarvestOpen] = useState(false);
   /** Rows in note-entry mode: key -> { kind of disposition, draft note }. */
@@ -337,6 +339,36 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
                   >
                     <td>
                       {finding.message}
+                      {finding.details && finding.details.length > 0 && (
+                        <>
+                          {' '}
+                          <button
+                            type="button"
+                            className={styles.actionButton}
+                            onClick={() =>
+                              setExpandedDetails((prev) => ({
+                                ...prev,
+                                [finding.key]: !prev[finding.key],
+                              }))
+                            }
+                            data-testid={`db-pack-structural-finding-details-toggle-${finding.key}`}
+                          >
+                            {expandedDetails[finding.key]
+                              ? 'Hide affected'
+                              : `Show ${finding.details.length} affected`}
+                          </button>
+                          {expandedDetails[finding.key] && (
+                            <ul
+                              className={styles.manifestNote}
+                              data-testid={`db-pack-structural-finding-details-${finding.key}`}
+                            >
+                              {finding.details.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
+                      )}
                       {finding.note && (
                         <p
                           className={styles.manifestNote}

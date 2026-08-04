@@ -579,9 +579,13 @@ export function buildStructuralAccounting(
   let uniqueTotal = 0;
   let checkTotal = 0;
   let indexesTotal = 0;
+  // Per-item detail lists (2026-08-04 partial-coverage follow-up): the
+  // findings itemise WHICH tables/relationships dropped, not just how many.
+  const tablesWithoutPk: string[] = [];
   for (const table of ir.tables) {
     if (table.objectType !== 'table') continue;
     if (table.primaryKey) tablesWithPk++;
+    else tablesWithoutPk.push(`${table.schemaName}.${table.tableName}`);
     uniqueTotal += table.uniqueConstraints.length;
     checkTotal += table.checkConstraints.length;
     indexesTotal += table.indexes.length;
@@ -591,9 +595,34 @@ export function buildStructuralAccounting(
     if (cm && typeof cm === 'object' && Object.keys(cm).length > 0) tablesWithCm++;
   }
   const relationshipsTotal = inputs.model.dataEntityRelationships.length;
-  const relationshipsWithFk = inputs.model.dataEntityRelationships.filter(
-    (r) => r.fk_columns && Array.isArray(r.fk_columns.join_columns) && r.fk_columns.join_columns.length > 0
-  ).length;
+  let relationshipsWithFk = 0;
+  const relationshipsWithoutFk: string[] = [];
+  const pointById = new Map(inputs.model.dataEntityPoints.map((p) => [p.id, p]));
+  const entityNameById = new Map(
+    inputs.model.physicalDataEntities.map((e) => [e.id, e.name])
+  );
+  const endpointName = (pointId: string | null | undefined): string => {
+    const point = pointId ? pointById.get(pointId) : null;
+    const name = point?.physical_entity_id
+      ? entityNameById.get(point.physical_entity_id)
+      : null;
+    return name ?? '(unresolved entity)';
+  };
+  for (const r of inputs.model.dataEntityRelationships) {
+    const hasJoin =
+      !!r.fk_columns &&
+      Array.isArray(r.fk_columns.join_columns) &&
+      r.fk_columns.join_columns.length > 0;
+    if (hasJoin) {
+      relationshipsWithFk++;
+    } else {
+      relationshipsWithoutFk.push(
+        `${endpointName(r.fromDataEntityPointId)} -> ${endpointName(r.toDataEntityPointId)}`
+      );
+    }
+  }
+  relationshipsWithoutFk.sort((a, b) => a.localeCompare(b));
+  tablesWithoutPk.sort((a, b) => a.localeCompare(b));
   const codeCounts = { stored_procedure: 0, trigger: 0, view: 0, scheduled_job: 0 };
   for (const u of ir.untranslated) {
     if (u.kind in codeCounts) codeCounts[u.kind as keyof typeof codeCounts]++;
@@ -624,6 +653,8 @@ export function buildStructuralAccounting(
     indexes_total: indexesTotal,
     relationships_total: relationshipsTotal,
     relationships_with_fk_columns: relationshipsWithFk,
+    tables_without_primary_key: tablesWithoutPk,
+    relationships_without_fk_details: relationshipsWithoutFk,
     collation_hazard_columns: collationHazardColumns,
     generated_columns: generatedColumns,
     sequences_captured: ir.sequences.length,
@@ -688,13 +719,25 @@ export function deriveStructuralFindings(acc: StructuralAccounting): StructuralF
         'Re-run discovery/commit with constraint capture, then regenerate the pack.',
     });
   } else {
-    if (acc.tables_total > 0 && acc.tables_with_primary_key === 0) {
+    // PARTIAL coverage fires too (2026-08-04 follow-up): everything captured
+    // goes into the pack; every PK-less table is itemised in the finding.
+    // The all-or-nothing check silently dropped the partial case — arguably
+    // the MORE suspicious one (specific tables lost their metadata).
+    if (acc.tables_total > 0 && acc.tables_with_primary_key < acc.tables_total) {
+      const missing = acc.tables_total - acc.tables_with_primary_key;
       findings.push({
         kind: 'no_primary_keys',
         subject: 'all_tables',
         message:
-          `no table carries a primary key (${acc.tables_total} tables) — the target gets 0 PKs, ` +
-          'row identity is lost, and data-parity reconciliation has no reliable ordering.',
+          acc.tables_with_primary_key === 0
+            ? `no table carries a primary key (${acc.tables_total} tables) — the target gets 0 PKs, ` +
+              'row identity is lost, and data-parity reconciliation has no reliable ordering.'
+            : `${missing} of ${acc.tables_total} table(s) carry no primary key — those tables get ` +
+              'no PK on the target, losing row identity for data-parity reconciliation. ' +
+              'Captured PKs are emitted normally.',
+        ...(acc.tables_without_primary_key && acc.tables_without_primary_key.length > 0
+          ? { details: acc.tables_without_primary_key }
+          : {}),
       });
     }
     if (acc.tables_total > 0 && acc.indexes_total === 0) {
@@ -707,14 +750,28 @@ export function deriveStructuralFindings(acc: StructuralAccounting): StructuralF
       });
     }
   }
-  if (acc.relationships_total > 0 && acc.relationships_with_fk_columns === 0) {
+  // PARTIAL coverage fires too (2026-08-04 follow-up): relationships WITH
+  // join metadata emit into 020-foreign-keys.sql regardless; each join-less
+  // one is itemised here instead of being silently skipped.
+  if (
+    acc.relationships_total > 0 &&
+    acc.relationships_with_fk_columns < acc.relationships_total
+  ) {
+    const missing = acc.relationships_total - acc.relationships_with_fk_columns;
     findings.push({
       kind: 'relationships_without_fk_columns',
       subject: 'all_relationships',
       message:
-        `${acc.relationships_total} relationship(s) carry no fk_columns join metadata — ` +
-        '020-foreign-keys.sql will be EMPTY despite declared relationships. ' +
-        'Re-run discovery/commit with referential-constraint capture.',
+        acc.relationships_with_fk_columns === 0
+          ? `${acc.relationships_total} relationship(s) carry no fk_columns join metadata — ` +
+            '020-foreign-keys.sql will be EMPTY despite declared relationships. ' +
+            'Re-run discovery/commit with referential-constraint capture.'
+          : `${missing} of ${acc.relationships_total} relationship(s) carry no fk_columns join ` +
+            `metadata — those ${missing} FK(s) will be silently absent from 020-foreign-keys.sql. ` +
+            `The ${acc.relationships_with_fk_columns} captured FK(s) are emitted normally.`,
+      ...(acc.relationships_without_fk_details && acc.relationships_without_fk_details.length > 0
+        ? { details: acc.relationships_without_fk_details }
+        : {}),
     });
   }
   const codeTotal =
