@@ -40,6 +40,7 @@ import {
   resumeMigration,
   haltMigrationRunByOperator,
   retryDbPlaneCompletion,
+  resumeFailedMigrationRun,
   defaultMigrationDriverDeps,
   MigrateScope,
 } from '../services/migrationExecutionDriver';
@@ -522,6 +523,65 @@ migrationExecutionRouter.post(
       return res
         .status(500)
         .json({ status: 'error', message: 'Failed to retry the DB build' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST .../migration-execution-runs/:runId/resume-failed — operator "resume
+// from failure" (Robustness R2, 2026-08-05). A HALTED run re-runs from its
+// failed spec WITHOUT burning the already-implemented items: every
+// non-implemented item is reset to pending (outcome/error/job_id cleared,
+// retry counters zeroed — a human resume grants a fresh auto-retry budget)
+// and the first pending item (or the remaining-batch, for batch runs) is
+// re-dispatched through the same primitive the transient auto-retry uses.
+//   200 { resumed: true, itemsReset: n } | 409 { allowed: false, reason } |
+//   404
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/resume-failed',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as { company?: string; project?: string; book_id?: string };
+    if (!body.company || !body.project) {
+      return res.status(400).json({
+        error: 'body must include company + project (the workspace identifiers)',
+      });
+    }
+    try {
+      const deps = defaultMigrationDriverDeps(buildResultsCallbackUrl());
+      const result = await resumeFailedMigrationRun(
+        {
+          projectId,
+          bookId: body.book_id ?? '',
+          company: body.company,
+          project: body.project,
+        },
+        runId,
+        deps
+      );
+      logger.info('[diag-gateway] migration_execution_driver resume_failed_requested', {
+        projectId,
+        runId,
+        outcome: result.status,
+      });
+      if (result.status === 'resumed') {
+        return res.status(200).json({ resumed: true, itemsReset: result.itemsReset });
+      }
+      if (result.status === 'not_resumable') {
+        return res.status(409).json({ allowed: false, reason: result.reason });
+      }
+      return res.status(404).json({ error: 'Migration execution run not found' });
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver resume_failed_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res
+        .status(500)
+        .json({ status: 'error', message: 'Failed to resume the migration run from failure' });
     }
   }
 );

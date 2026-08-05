@@ -200,6 +200,39 @@ public class MigrationExecutionRunItemEntity {
     @Column(name = "auto_answer_decision_log_json", columnDefinition = "jsonb")
     private List<Map<String, Object>> autoAnswerDecisionLogJson;
 
+    /**
+     * Dispatch attempts already used for this item (Robustness R2 driver-level
+     * spec auto-retry, changeset 217). {@code 0} = never retried; the gateway
+     * increments it when a transient build-results failure is absorbed instead
+     * of halting the run.
+     *
+     * <p>BOXED {@link Integer} (NOT primitive) per
+     * {@code project_primitive_double_dto_overwrite.md}; DB column is
+     * {@code NOT NULL DEFAULT 0}, mirrored in {@code @PrePersist}.</p>
+     */
+    @Column(name = "retry_attempt_count", nullable = false)
+    @Builder.Default
+    private Integer retryAttemptCount = 0;
+
+    /**
+     * When the next automatic re-dispatch is due (Robustness R2). Set (with
+     * status back to {@code pending}) when the gateway schedules a retry;
+     * {@code status=pending} + non-null here + {@code retry_attempt_count>0}
+     * is the boot-recovery sweep's armed-retry predicate, so a scheduled
+     * retry survives a gateway restart. Nullable.
+     */
+    @Column(name = "retry_next_attempt_at")
+    private Instant retryNextAttemptAt;
+
+    /**
+     * Last failure classification for the item:
+     * {@code transient_upstream | real} (from the IVS R1 classifier, or the
+     * gateway's local signature scan when the callback carried no class).
+     * Traceability + run-progress display. Nullable.
+     */
+    @Column(name = "failure_class", columnDefinition = "TEXT")
+    private String failureClass;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();
@@ -224,6 +257,9 @@ public class MigrationExecutionRunItemEntity {
         }
         if (deployOnComplete == null) {
             deployOnComplete = Boolean.FALSE;
+        }
+        if (retryAttemptCount == null) {
+            retryAttemptCount = 0;
         }
     }
 

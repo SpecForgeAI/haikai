@@ -217,6 +217,16 @@ class StepResult(BaseModel):
         default=None,
         description="Error message if the step failed"
     )
+    failure_class: Optional[str] = Field(
+        default=None,
+        description="Failure classification when status='failure': "
+                    "'transient_upstream' (backend blip — retried/retryable) "
+                    "or 'real' (the work itself failed). Robustness R1."
+    )
+    attempts: Optional[int] = Field(
+        default=None,
+        description="How many tries this step consumed (1 = no retry needed)."
+    )
 
 
 class OrchestrationResponse(BaseModel):
@@ -262,6 +272,18 @@ class OrchestrationResponse(BaseModel):
     errors: List[str] = Field(
         default_factory=list,
         description="Non-fatal errors (git push, PR creation, etc.) that occurred during the operation"
+    )
+    failure_class: Optional[str] = Field(
+        default=None,
+        description="When the run failed: 'transient_upstream' | 'real' — the "
+                    "classification of the FIRST fatal step failure. Rides the "
+                    "build-results callback so the gateway's retry policy is "
+                    "informed (Robustness R1)."
+    )
+    failed_step: Optional[int] = Field(
+        default=None,
+        description="The step number of the first fatal failure (enables "
+                    "resume-at-step on retry)."
     )
 
 

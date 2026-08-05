@@ -684,7 +684,7 @@ describe('end-to-end: boot-recovery wiring (runMigrationBootRecovery)', () => {
       async () => [], // the v1 default empty-discovery
       deps,
     );
-    expect(result).toEqual({ recovered: 0, rekicked: 0 });
+    expect(result).toEqual({ recovered: 0, rekicked: 0, retriesRearmed: 0 });
     // Nothing was read / re-kicked.
     expect(store.getRun).not.toHaveBeenCalled();
     expect(deps.submitOrchestration).not.toHaveBeenCalled();
@@ -730,7 +730,7 @@ describe('end-to-end: boot-recovery wiring (runMigrationBootRecovery)', () => {
       },
       deps,
     );
-    // A discovery throw degrades to a clean { 0, 0 } -- the gateway still starts.
-    expect(result).toEqual({ recovered: 0, rekicked: 0 });
+    // A discovery throw degrades to a clean zero result -- the gateway still starts.
+    expect(result).toEqual({ recovered: 0, rekicked: 0, retriesRearmed: 0 });
   });
 });

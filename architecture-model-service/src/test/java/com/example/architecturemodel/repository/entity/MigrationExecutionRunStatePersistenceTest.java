@@ -97,10 +97,11 @@ class MigrationExecutionRunStatePersistenceTest {
     }
 
     /**
-     * A fresh pending run-item DTO. The 18 record components in order are:
+     * A fresh pending run-item DTO. The 21 record components in order are:
      * id, runId, sequencePosition, workItemId, specGenerationId, specName,
      * status, dispatched, jobId, branch, prUrl, outcome, deployOnComplete,
-     * targetBaseUrl, errorDetail, autoAnswerDecisionLogJson, createdAt, updatedAt.
+     * targetBaseUrl, errorDetail, autoAnswerDecisionLogJson, retryAttemptCount,
+     * retryNextAttemptAt, failureClass, createdAt, updatedAt.
      */
     private MigrationExecutionRunItemDto pendingItem(int seq, boolean deployOnComplete) {
         return new MigrationExecutionRunItemDto(
@@ -110,6 +111,7 @@ class MigrationExecutionRunStatePersistenceTest {
             MigrationExecutionRunItemStatus.PENDING,
             Boolean.FALSE, null, null, null, null,
             deployOnComplete, null, null, null,
+            null, null, null,
             null, null);
     }
 
@@ -173,16 +175,17 @@ class MigrationExecutionRunStatePersistenceTest {
         entityManager.clear();
 
         // PATCH: dispatch the spec, correlate the job_id, set the outcome + branch + pr_url.
-        // 18 args: id, runId, seq, workItemId, specGenerationId, specName, status,
+        // 21 args: id, runId, seq, workItemId, specGenerationId, specName, status,
         // dispatched, jobId, branch, prUrl, outcome, deployOnComplete, targetBaseUrl,
-        // errorDetail, autoAnswerDecisionLogJson, createdAt, updatedAt.
+        // errorDetail, autoAnswerDecisionLogJson, retryAttemptCount,
+        // retryNextAttemptAt, failureClass, createdAt, updatedAt.
         MigrationExecutionRunItemDto patch = new MigrationExecutionRunItemDto(
             null, null, null, null, null, null,
             MigrationExecutionRunItemStatus.IMPLEMENTED,
             Boolean.TRUE, "job-abc-123", "feature/migrate-accounts",
             "https://example.test/pr/42",
             MigrationExecutionRunItemStatus.IMPLEMENTED,
-            null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null);
 
         runService.updateRunItem(runItemId, patch);
         entityManager.flush();
@@ -217,7 +220,7 @@ class MigrationExecutionRunStatePersistenceTest {
             null, null, null, null, null, null,
             MigrationExecutionRunItemStatus.SUBMITTED,
             Boolean.TRUE, "job-keep-me", null, null, null,
-            null, null, null, log, null, null);
+            null, null, null, log, null, null, null, null, null);
         runService.updateRunItem(runItemId, first);
         entityManager.flush();
         entityManager.clear();
@@ -227,7 +230,7 @@ class MigrationExecutionRunStatePersistenceTest {
             null, null, null, null, null, null,
             MigrationExecutionRunItemStatus.IMPLEMENTED,
             null, null, null, null, null,
-            null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null);
         runService.updateRunItem(runItemId, second);
         entityManager.flush();
         entityManager.clear();
@@ -266,7 +269,8 @@ class MigrationExecutionRunStatePersistenceTest {
         // PATCH only the decision log (status null = unchanged).
         MigrationExecutionRunItemDto patch = new MigrationExecutionRunItemDto(
             null, null, null, null, null, null, null,
-            null, null, null, null, null, null, null, null, log, null, null);
+            null, null, null, null, null, null, null, null, log,
+            null, null, null, null, null);
         runService.updateRunItem(runItemId, patch);
         entityManager.flush();
         entityManager.clear();

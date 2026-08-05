@@ -68,6 +68,18 @@ export interface BuildResultCallbackBody {
   pr_url?: string | null;
   prUrl?: string | null;
   summary?: string | null;
+  /**
+   * Robustness R1 (IVS-side): the orchestrator's failure classification for a
+   * failed job — 'transient_upstream' (backend blip; the driver may absorb it
+   * with a scheduled retry) | 'real' (the work itself failed; halt). Optional:
+   * older IVS builds simply omit it and the driver falls back to its local
+   * signature scan.
+   */
+  failure_class?: string | null;
+  failureClass?: string | null;
+  /** Robustness R1: the 1-based pipeline step that fataled, when known. */
+  failed_step?: number | null;
+  failedStep?: number | null;
 }
 
 /** The structured outcome of processing a callback (mapped to an HTTP status). */
@@ -146,6 +158,20 @@ export async function processBuildResult(
   const targetBaseUrl = pick(body.target_base_url, body.targetBaseUrl);
   const prUrl = pick(body.pr_url, body.prUrl);
   const summary = pick(body.summary, undefined);
+  // Robustness R1/R2: the failure classification + fatal step, when the IVS
+  // build sends them. Parsed LENIENTLY — an unknown class value is passed as
+  // null (the driver's local signature scan then decides), never a 422:
+  // the door must keep acknowledging callbacks from newer/older IVS builds.
+  const failureClassRaw = pick(body.failure_class, body.failureClass);
+  const failureClass =
+    failureClassRaw === 'transient_upstream' || failureClassRaw === 'real'
+      ? failureClassRaw
+      : null;
+  const failedStepRaw = body.failed_step ?? body.failedStep;
+  const failedStep =
+    typeof failedStepRaw === 'number' && Number.isFinite(failedStepRaw)
+      ? failedStepRaw
+      : null;
 
   // --- validation (422) ---
   if (!company || !project) {
@@ -224,6 +250,8 @@ export async function processBuildResult(
         prUrl,
         targetBaseUrl,
         summary,
+        failureClass,
+        failedStep,
       },
       deps
     );

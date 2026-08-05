@@ -2148,6 +2148,12 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
         # C1/L3: the full per-(spec, repo) branch/PR list — a multi-spec run reports
         # them ALL, not just the last (scalar pr_url above is legacy/last-write).
         "spec_git": list(spec_git or []),
+        # Robustness R1 (2026-08-05): the first fatal step failure's
+        # classification + step, so the gateway's retry policy can distinguish
+        # a transient upstream blip (auto-retry after cool-off) from a real
+        # failure (halt + human), and a resume can start at the failed step.
+        "failure_class": getattr(response, "failure_class", None),
+        "failed_step": getattr(response, "failed_step", None),
     }
     if deploy:
         payload["target_base_url"] = deploy.get("base_url")
