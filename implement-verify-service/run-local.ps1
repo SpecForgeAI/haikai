@@ -130,8 +130,16 @@ python -m src.entrypoints.debug_worker
     
     # Register cleanup on script exit
     try {
-        # Start the API server (this blocks until CTRL+C)
-        uvicorn src.api:app --host 0.0.0.0 --port $port --reload
+        # Start the API server (this blocks until CTRL+C).
+        #
+        # ALWAYS launch via the entrypoint, NEVER bare `uvicorn src.api:app`
+        # (2026-08-05 incident): the bare CLI skips run_api.py's reload
+        # watcher scoping, so uvicorn watched the whole tree including
+        # api_workspace/ — every file the agent wrote tripped WatchFiles,
+        # the reload tore the process down, and the in-flight kiro-cli
+        # subprocess was killed mid-step (exit 0xC000013A). The entrypoint
+        # scopes the watcher to src/templates/config and prints the scope.
+        python -m src.entrypoints.run_api --host 0.0.0.0 --port $port --reload
     }
     finally {
         # Cleanup when API server stops
