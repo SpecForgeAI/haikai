@@ -60,7 +60,7 @@ class MigrationExecutionRunControllerByJobSentinelTest {
         return new MigrationExecutionRunItemDto(
             ITEM_ID, RUN_ID, 0, null, null, "2026-07-28-demo-spec",
             "submitted", Boolean.TRUE, JOB_ID, null, null, null,
-            Boolean.FALSE, null, null, null, null, null);
+            Boolean.FALSE, null, null, null, null, null, null, null, null);
     }
 
     private static MigrationExecutionRunDto run() {

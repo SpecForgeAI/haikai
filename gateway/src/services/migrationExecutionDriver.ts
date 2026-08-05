@@ -120,6 +120,12 @@ import {
   migrationTargetCredentialsStore,
   type TargetServeSpec,
 } from './migrationTargetCredentialsStore';
+import {
+  shouldAutoRetry,
+  maxRetryAttempts,
+  backoffMsBeforeAttempt,
+  FAILURE_CLASS_TRANSIENT,
+} from './migrationSpecRetryPolicy';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -318,6 +324,15 @@ export interface MigrationDriverDeps {
    * re-reconcile is long), inline for `failed`/`rejected` (no replay).
    */
   handleBugCallback?: typeof handleBugCallback;
+  /**
+   * Robustness R2 (2026-08-05): the retry-timer seam. The driver schedules a
+   * transient-failure re-dispatch through THIS instead of a bare setTimeout so
+   * tests can capture/fire timers synchronously. The default unrefs the timer
+   * (a pending retry must never hold the process open); durability across a
+   * restart comes from the persisted retry_next_attempt_at column + the
+   * boot-recovery sweep, NOT from the in-process timer.
+   */
+  scheduleRetryTimer?: (delayMs: number, fn: () => void) => void;
   /**
    * The carry_over completeness-gate AMS reads (D4). The gate gathers
    * behaviour-bearing capabilities + findings for the book's project +
@@ -825,7 +840,19 @@ export function defaultMigrationDriverDeps(
     getTargetServeSpec: (runId: string) => migrationTargetCredentialsStore.getService(runId),
     handleBugCallback,
     carryOverCoverageReads: defaultCarryOverCoverageReadsDeps(),
+    scheduleRetryTimer: defaultScheduleRetryTimer,
   };
+}
+
+/**
+ * Default retry-timer: setTimeout, unref'd so a pending retry never holds the
+ * gateway process open (restart durability is the persisted
+ * retry_next_attempt_at + the boot-recovery sweep, not this timer).
+ */
+function defaultScheduleRetryTimer(delayMs: number, fn: () => void): void {
+  const handle = setTimeout(fn, delayMs);
+  // Node returns a Timeout with unref(); browsers/jest fakes may not.
+  (handle as { unref?: () => void }).unref?.();
 }
 
 /**
@@ -1246,10 +1273,11 @@ export function kickSpecRunner(
   run: MigrationExecutionRun,
   item: MigrationExecutionRunItem,
   descriptor: DispatchDescriptor,
-  deps: MigrationDriverDeps
+  deps: MigrationDriverDeps,
+  opts?: SpecDispatchOpts
 ): void {
   // Detached: do not await. Failures are handled inside runSpecSegment.
-  void runSpecSegment(scope, run, item, descriptor, deps).catch((error) => {
+  void runSpecSegment(scope, run, item, descriptor, deps, opts).catch((error) => {
     logger.error('[diag-gateway] migration_execution_driver spec_runner_crashed', {
       projectId: scope.projectId,
       runId: run.id,
@@ -1334,12 +1362,31 @@ export function requirementsFromGeneratedSpecText(text: string): string {
  * Per-item failure isolation: any failure halts THIS run cleanly and never
  * throws to the caller.
  */
+/**
+ * Dispatch options (Robustness R2, 2026-08-05). `retryAttempt` marks a
+ * driver-scheduled RE-dispatch after a transient failure: attempt 2+ of the
+ * same run-item. It flips two behaviours inside {@link runSpecSegment}:
+ *   - the duplicate-dispatch precheck inverts (the item DOES carry the prior
+ *     attempt's job_id/state — the only valid parked state is `pending`);
+ *   - the spec folder/branch name gains a `-r<attempt>` suffix so the
+ *     re-submit is neither swallowed by the IVS active-job dedup (which keys
+ *     on the sorted spec_name set of QUEUED/RUNNING jobs — the dying prior
+ *     job can still be RUNNING when the backoff elapses) nor killed by the
+ *     worktree "branch is active in another worktree" lock the prior attempt
+ *     may still hold.
+ */
+export interface SpecDispatchOpts {
+  /** 2-based dispatch attempt number for a scheduled retry; absent = first try. */
+  retryAttempt?: number;
+}
+
 export async function runSpecSegment(
   scope: MigrateScope,
   run: MigrationExecutionRun,
   item: MigrationExecutionRunItem,
   descriptor: DispatchDescriptor,
-  deps: MigrationDriverDeps
+  deps: MigrationDriverDeps,
+  opts?: SpecDispatchOpts
 ): Promise<void> {
   const { projectId } = scope;
   const runId = run.id as string;
@@ -1367,12 +1414,25 @@ export async function runSpecSegment(
     const fresh = await deps.getMigrationExecutionRun(projectId, runId);
     const current = (fresh?.items ?? []).find((i) => i.id === runItemId);
     if (current) {
-      const alreadyDispatched =
-        !!current.job_id ||
-        current.status === RUN_ITEM_STATUS.SUBMITTED ||
-        current.status === RUN_ITEM_STATUS.IMPLEMENTED ||
-        current.status === RUN_ITEM_STATUS.DEPLOYED ||
-        !!current.outcome;
+      // Robustness R2: a scheduled RETRY re-dispatch inverts this check — the
+      // item legitimately carries the prior attempt's job_id (unclearable by
+      // design until the new submit replaces it) and was parked back to
+      // `pending` when the retry was armed. The only valid state to retry
+      // FROM is that parked `pending`; anything else means another dispatch
+      // (a duplicate timer, a boot-sweep re-arm racing the in-process timer)
+      // already picked the item up — skip. The IVS active-job dedup keys on
+      // spec_name, and both racers compute the SAME `-r<n>` suffixed name,
+      // so even the residual race window correlates to one job.
+      const alreadyDispatched = opts?.retryAttempt
+        ? current.status !== RUN_ITEM_STATUS.PENDING ||
+          (current.outcome !== null &&
+            current.outcome !== undefined &&
+            current.outcome !== '')
+        : !!current.job_id ||
+          current.status === RUN_ITEM_STATUS.SUBMITTED ||
+          current.status === RUN_ITEM_STATUS.IMPLEMENTED ||
+          current.status === RUN_ITEM_STATUS.DEPLOYED ||
+          !!current.outcome;
       if (alreadyDispatched) {
         logger.info('[diag-gateway] migration_execution_driver spec_segment_skip_duplicate', {
           projectId,
@@ -1380,6 +1440,7 @@ export async function runSpecSegment(
           runItemId,
           status: current.status ?? null,
           jobId: current.job_id ?? null,
+          retryAttempt: opts?.retryAttempt ?? null,
         });
         return;
       }
@@ -1395,7 +1456,15 @@ export async function runSpecSegment(
 
   await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.DISPATCHING });
 
-  const specName = deterministicSpecName(descriptor.title, new Date(), descriptor);
+  // Robustness R2: a retry re-dispatch gets a distinct `-r<attempt>` folder +
+  // branch so the IVS active-job dedup (spec_name-keyed) can never return the
+  // dying prior job, and the prior attempt's worktree branch lock cannot kill
+  // the retry. Attempt 1 keeps the stable deterministic name.
+  const baseSpecName = deterministicSpecName(descriptor.title, new Date(), descriptor);
+  const specName =
+    opts?.retryAttempt && opts.retryAttempt >= 2
+      ? `${baseSpecName}-r${opts.retryAttempt}`
+      : baseSpecName;
   const requirementsText = requirementsFromGeneratedSpecText(
     descriptor.generatedSpecText
   );
@@ -1497,9 +1566,10 @@ export function kickBatchRunner(
   run: MigrationExecutionRun,
   items: MigrationExecutionRunItem[],
   descriptors: DispatchDescriptor[],
-  deps: MigrationDriverDeps
+  deps: MigrationDriverDeps,
+  opts?: SpecDispatchOpts
 ): void {
-  void runBatchSegment(scope, run, items, descriptors, deps).catch((error) => {
+  void runBatchSegment(scope, run, items, descriptors, deps, opts).catch((error) => {
     logger.error('[diag-gateway] migration_execution_driver batch_runner_crashed', {
       projectId: scope.projectId,
       runId: run.id,
@@ -1522,7 +1592,8 @@ export async function runBatchSegment(
   run: MigrationExecutionRun,
   items: MigrationExecutionRunItem[],
   descriptors: DispatchDescriptor[],
-  deps: MigrationDriverDeps
+  deps: MigrationDriverDeps,
+  opts?: SpecDispatchOpts
 ): Promise<void> {
   const { projectId } = scope;
   const runId = run.id as string;
@@ -1550,7 +1621,14 @@ export async function runBatchSegment(
         'Could not resolve generated_spec_text for a batched spec.');
       return;
     }
-    const specName = deterministicSpecName(descriptor.title, new Date(), descriptor);
+    // Robustness R2: same `-r<attempt>` suffix rule as the per-spec path — a
+    // batch retry must not be swallowed by the IVS spec_name-set dedup while
+    // the prior batch job is still winding down.
+    const baseSpecName = deterministicSpecName(descriptor.title, new Date(), descriptor);
+    const specName =
+      opts?.retryAttempt && opts.retryAttempt >= 2
+        ? `${baseSpecName}-r${opts.retryAttempt}`
+        : baseSpecName;
     await safePatchItem(deps, projectId, runItemId, {
       status: RUN_ITEM_STATUS.SUBMITTING,
       spec_name: specName,
@@ -1757,7 +1835,10 @@ export type AdvanceDecision =
   | 'run_item_not_found'
   // WS2 (2026-07-31): the last db-plane item implemented -> the DB execution
   // chain (assemble -> schema apply -> load -> reconcile) was kicked detached.
-  | 'db_completion_chain_started';
+  | 'db_completion_chain_started'
+  // Robustness R2 (2026-08-05): a transient failure was ABSORBED — the run was
+  // NOT halted; a re-dispatch of the same spec is scheduled after the backoff.
+  | 'retry_scheduled';
 
 /**
  * Inbound callback payload the door hands to the advance. The advance correlates
@@ -1797,6 +1878,14 @@ export interface BuildResultAdvanceInput {
   prUrl?: string | null;
   targetBaseUrl?: string | null;
   summary?: string | null;
+  /**
+   * Robustness R1 (2026-08-05): the IVS orchestrator's failure classification
+   * ('transient_upstream' | 'real'), when the callback carried one. Absent on
+   * older IVS builds -> the driver's local signature scan decides.
+   */
+  failureClass?: string | null;
+  /** Robustness R1: the 1-based pipeline step that fataled, when known. */
+  failedStep?: number | null;
 }
 
 /**
@@ -1878,17 +1967,68 @@ export async function advanceRunOnBuildResult(
     return await advanceBatchOnBuildResult(input, scope, run, batchSiblings, deps);
   }
 
-  // Any terminal outcome that is not implemented/deployed halts the run. The
-  // external service reports `error` (build error) on the job path and may report
-  // `fix_unserved` / `not_fixed` on the bug path; all fold here. Only `rejected`
-  // takes the REJECTED status -- everything else is FAILED. The raw outcome is
-  // preserved on the run-item record for traceability.
+  // Any terminal outcome that is not implemented/deployed halts the run —
+  // UNLESS it is a TRANSIENT upstream failure with retry budget left
+  // (Robustness R2, 2026-08-05): then the driver absorbs it and schedules a
+  // re-dispatch of the SAME spec instead of stranding the whole run on a
+  // backend blip. The external service reports `error` (build error) on the
+  // job path and may report `fix_unserved` / `not_fixed` on the bug path; all
+  // fold here. Only `rejected` takes the REJECTED status -- everything else is
+  // FAILED. The raw outcome is preserved on the run-item record for
+  // traceability.
   if (outcome !== 'implemented' && outcome !== 'deployed') {
+    // Duplicate-callback guard for an ALREADY-ARMED retry: the transient
+    // branch deliberately leaves `outcome` NULL (a terminal outcome would
+    // drop the retry's own callback at the CD-6 guard above), so the standard
+    // idempotency check cannot see it. The parked shape (status back to
+    // pending + a scheduled next attempt) identifies it instead.
+    if (
+      item.status === RUN_ITEM_STATUS.PENDING &&
+      !!item.retry_next_attempt_at &&
+      (item.retry_attempt_count ?? 0) > 0
+    ) {
+      logger.info('[diag-gateway] migration_execution_driver advance_noop_retry_armed', {
+        projectId,
+        jobId,
+        runItemId,
+        retryAttemptCount: item.retry_attempt_count ?? 0,
+      });
+      return 'noop_idempotent';
+    }
+
+    // Attempts used INCLUDING the dispatch whose failure we are judging: the
+    // persisted counter records prior transiently-failed attempts, so the
+    // original dispatch's first failure arrives with attemptsUsed = 1.
+    const attemptsUsed = (item.retry_attempt_count ?? 0) + 1;
+    const retryDecision = shouldAutoRetry({
+      outcome,
+      failureClass: input.failureClass ?? null,
+      summary: input.summary ?? null,
+      attemptCount: attemptsUsed,
+    });
+    if (retryDecision.retry) {
+      return await scheduleTransientSpecRetry(
+        input,
+        scope,
+        runId,
+        item,
+        attemptsUsed,
+        retryDecision.reason,
+        deps
+      );
+    }
+
     trace.fail(`build-results: ${outcome}`, {
       run: runId,
       job: jobId,
       project: scope.project,
     });
+    // Exhausted-transient vs real: persist the class for traceability + the
+    // FE. An explicit IVS class wins; otherwise only a positive local
+    // transient match is recorded (an unmatched scan proves nothing).
+    const haltClass =
+      input.failureClass ??
+      (retryDecision.transient ? FAILURE_CLASS_TRANSIENT : null);
     await haltRunForItem(
       deps,
       scope,
@@ -1896,8 +2036,11 @@ export async function advanceRunOnBuildResult(
       runItemId,
       item,
       outcome === 'rejected' ? RUN_ITEM_STATUS.REJECTED : RUN_ITEM_STATUS.FAILED,
-      input.summary ?? `Build-results reported ${outcome}`,
-      outcome
+      retryDecision.transient
+        ? `${input.summary ?? `Build-results reported ${outcome}`} (transient upstream failure; retry budget exhausted after ${attemptsUsed} tries)`
+        : input.summary ?? `Build-results reported ${outcome}`,
+      outcome,
+      haltClass
     );
     return 'halted';
   }
@@ -2025,6 +2168,49 @@ async function advanceBatchOnBuildResult(
   const { outcome, jobId } = input;
 
   if (outcome !== 'implemented' && outcome !== 'deployed') {
+    // Robustness R2: a TRANSIENT batch failure with budget left is absorbed —
+    // the retry re-submits a batch containing ONLY the not-yet-implemented
+    // siblings (the shared remaining-items primitive, the same one manual
+    // resume uses). The duplicate-callback guard mirrors the single-item
+    // path: an armed batch retry has every sibling parked pending with a
+    // scheduled next attempt.
+    const armedAlready = siblings.every(
+      (s) =>
+        s.status === RUN_ITEM_STATUS.PENDING &&
+        !!s.retry_next_attempt_at &&
+        (s.retry_attempt_count ?? 0) > 0
+    );
+    if (armedAlready) {
+      logger.info('[diag-gateway] migration_execution_driver batch_noop_retry_armed', {
+        projectId,
+        runId,
+        jobId,
+      });
+      return 'noop_idempotent';
+    }
+    // The batch shares ONE job -> one attempt counter; take the max across
+    // siblings (they are patched together, so they only diverge if a patch
+    // failed mid-arm — max is the safe, budget-respecting read).
+    const attemptsUsed =
+      Math.max(0, ...siblings.map((s) => s.retry_attempt_count ?? 0)) + 1;
+    const retryDecision = shouldAutoRetry({
+      outcome,
+      failureClass: input.failureClass ?? null,
+      summary: input.summary ?? null,
+      attemptCount: attemptsUsed,
+    });
+    if (retryDecision.retry) {
+      return await scheduleTransientBatchRetry(
+        input,
+        scope,
+        runId,
+        siblings,
+        attemptsUsed,
+        retryDecision.reason,
+        deps
+      );
+    }
+
     trace.fail(`batch build-results: ${outcome}`, {
       run: runId,
       job: jobId,
@@ -2032,12 +2218,16 @@ async function advanceBatchOnBuildResult(
     });
     const status =
       outcome === 'rejected' ? RUN_ITEM_STATUS.REJECTED : RUN_ITEM_STATUS.FAILED;
+    const haltClass =
+      input.failureClass ??
+      (retryDecision.transient ? FAILURE_CLASS_TRANSIENT : null);
     for (const s of siblings) {
       if (!s.id) continue;
       await safePatchItem(deps, projectId, s.id, {
         status,
         outcome,
         error_detail: input.summary ?? `Build-results reported ${outcome}`,
+        ...(haltClass ? { failure_class: haltClass } : {}),
       });
     }
     await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
@@ -2110,6 +2300,445 @@ async function advanceBatchOnBuildResult(
     }
   }
   return 'advanced_run_complete';
+}
+
+// ============================================================================
+// Robustness R2 (2026-08-05): transient auto-retry + resume-from-failure
+// ============================================================================
+
+/**
+ * Arm a driver-level retry for a transiently-failed SINGLE-spec item instead
+ * of halting the run. The item is parked back to `pending` with the persisted
+ * retry state (attempt counter + next-attempt time + failure class) so the
+ * schedule SURVIVES a gateway restart (the boot-recovery sweep re-arms it);
+ * `outcome` is deliberately left NULL — a terminal outcome would make the
+ * retry's own build-results callback hit the CD-6 idempotency no-op and be
+ * dropped. The in-process timer then re-dispatches through the shared
+ * remaining-items primitive.
+ */
+async function scheduleTransientSpecRetry(
+  input: BuildResultAdvanceInput,
+  scope: MigrateScope,
+  runId: string,
+  item: MigrationExecutionRunItem,
+  attemptsUsed: number,
+  reason: string,
+  deps: MigrationDriverDeps
+): Promise<AdvanceDecision> {
+  const runItemId = item.id as string;
+  const nextAttempt = attemptsUsed + 1;
+  const max = maxRetryAttempts();
+  const delayMs = backoffMsBeforeAttempt(nextAttempt);
+  const nextAt = new Date(Date.now() + delayMs).toISOString();
+
+  await safePatchItem(deps, scope.projectId, runItemId, {
+    status: RUN_ITEM_STATUS.PENDING,
+    retry_attempt_count: attemptsUsed,
+    retry_next_attempt_at: nextAt,
+    failure_class: input.failureClass ?? FAILURE_CLASS_TRANSIENT,
+    error_detail:
+      `Transient failure, retry ${nextAttempt}/${max} scheduled ` +
+      `(${reason}; next attempt at ${nextAt}). ` +
+      `Last failure: ${input.summary ?? `build-results reported ${input.outcome}`}`,
+  });
+
+  logger.warn('[diag-gateway] migration_execution_driver transient_retry_scheduled', {
+    projectId: scope.projectId,
+    runId,
+    runItemId,
+    jobId: input.jobId,
+    attemptsUsed,
+    nextAttempt,
+    max,
+    delayMs,
+    reason,
+  });
+  trace.warn(
+    `transient build failure absorbed — retry ${nextAttempt}/${max} in ${Math.round(delayMs / 1000)}s`,
+    { run: runId, job: input.jobId, project: scope.project }
+  );
+
+  const timer = deps.scheduleRetryTimer ?? defaultScheduleRetryTimer;
+  timer(delayMs, () => {
+    void redispatchAfterTransientFailure(scope, runId, nextAttempt, deps).catch((error) => {
+      logger.error('[diag-gateway] migration_execution_driver retry_redispatch_crashed', {
+        projectId: scope.projectId,
+        runId,
+        runItemId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+  });
+  return 'retry_scheduled';
+}
+
+/**
+ * Arm a driver-level retry for a transiently-failed BATCH: every sibling is
+ * parked back to `pending` with the shared retry state (the old shared job_id
+ * is intentionally KEPT — it is how the re-dispatch recognises the batch
+ * shape), and the timer re-submits a batch containing ONLY the items not yet
+ * implemented/deployed via the same shared primitive manual resume uses.
+ */
+async function scheduleTransientBatchRetry(
+  input: BuildResultAdvanceInput,
+  scope: MigrateScope,
+  runId: string,
+  siblings: MigrationExecutionRunItem[],
+  attemptsUsed: number,
+  reason: string,
+  deps: MigrationDriverDeps
+): Promise<AdvanceDecision> {
+  const nextAttempt = attemptsUsed + 1;
+  const max = maxRetryAttempts();
+  const delayMs = backoffMsBeforeAttempt(nextAttempt);
+  const nextAt = new Date(Date.now() + delayMs).toISOString();
+
+  for (const s of siblings) {
+    if (!s.id) continue;
+    await safePatchItem(deps, scope.projectId, s.id, {
+      status: RUN_ITEM_STATUS.PENDING,
+      retry_attempt_count: attemptsUsed,
+      retry_next_attempt_at: nextAt,
+      failure_class: input.failureClass ?? FAILURE_CLASS_TRANSIENT,
+      error_detail:
+        `Transient failure, retry ${nextAttempt}/${max} scheduled ` +
+        `(${reason}; next attempt at ${nextAt}). ` +
+        `Last failure: ${input.summary ?? `build-results reported ${input.outcome}`}`,
+    });
+  }
+
+  logger.warn('[diag-gateway] migration_execution_driver transient_batch_retry_scheduled', {
+    projectId: scope.projectId,
+    runId,
+    jobId: input.jobId,
+    itemCount: siblings.length,
+    attemptsUsed,
+    nextAttempt,
+    max,
+    delayMs,
+    reason,
+  });
+  trace.warn(
+    `transient batch failure absorbed — retry ${nextAttempt}/${max} in ${Math.round(delayMs / 1000)}s (${siblings.length} specs)`,
+    { run: runId, job: input.jobId, project: scope.project }
+  );
+
+  const timer = deps.scheduleRetryTimer ?? defaultScheduleRetryTimer;
+  timer(delayMs, () => {
+    void redispatchAfterTransientFailure(scope, runId, nextAttempt, deps).catch((error) => {
+      logger.error('[diag-gateway] migration_execution_driver batch_retry_redispatch_crashed', {
+        projectId: scope.projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    });
+  });
+  return 'retry_scheduled';
+}
+
+/**
+ * The retry timer/boot-sweep callback: re-read the run FRESH and, if the
+ * armed-retry state still holds, re-dispatch through the shared
+ * remaining-items primitive. Guards (fail-quiet, structured-logged):
+ *   - the run must still exist and be NON-terminal (an operator halt during
+ *     the backoff wins — never resurrect a halted/finished run);
+ *   - at least one item must still be in the parked shape (pending +
+ *     counter > 0 + next-attempt set); anything else means another dispatch
+ *     (a racing timer, a boot re-arm) already took over.
+ */
+async function redispatchAfterTransientFailure(
+  scope: MigrateScope,
+  runId: string,
+  retryAttempt: number,
+  deps: MigrationDriverDeps
+): Promise<void> {
+  const run = await deps.getMigrationExecutionRun(scope.projectId, runId);
+  if (!run) {
+    logger.warn('[diag-gateway] migration_execution_driver retry_run_gone', { runId });
+    return;
+  }
+  if (
+    run.status === RUN_STATUS.HALTED ||
+    run.status === RUN_STATUS.DEPLOYED ||
+    run.status === RUN_STATUS.FAILED
+  ) {
+    logger.info('[diag-gateway] migration_execution_driver retry_skipped_run_terminal', {
+      projectId: scope.projectId,
+      runId,
+      runStatus: run.status,
+    });
+    return;
+  }
+  const armed = (run.items ?? []).filter(
+    (i) =>
+      i.status === RUN_ITEM_STATUS.PENDING &&
+      (i.retry_attempt_count ?? 0) > 0 &&
+      !!i.retry_next_attempt_at
+  );
+  if (armed.length === 0) {
+    logger.info('[diag-gateway] migration_execution_driver retry_skipped_not_armed', {
+      projectId: scope.projectId,
+      runId,
+    });
+    return;
+  }
+  logger.info('[diag-gateway] migration_execution_driver retry_redispatching', {
+    projectId: scope.projectId,
+    runId,
+    retryAttempt,
+    armedCount: armed.length,
+  });
+  await dispatchRemainingRunItems(scope, run, deps, { retryAttempt });
+}
+
+/**
+ * The SHARED re-dispatch primitive (Robustness R2): dispatch everything in a
+ * run that is not yet implemented/deployed. Both the transient auto-retry and
+ * the manual resume-from-failure funnel through here so batch vs sequential
+ * routing lives in exactly one place:
+ *   - BATCH shape (>=2 remaining items sharing one non-null job_id, or an
+ *     explicit `batchName`): ONE re-submitted batch containing only the
+ *     remaining specs (a fresh `feature/<batchName>` branch — the failed
+ *     branch is abandoned).
+ *   - SEQUENTIAL shape: dispatch the FIRST remaining pending item; the normal
+ *     callback-advance chain then walks the rest.
+ * The job_id-sharing heuristic works because a batch submit correlates its
+ * single job_id onto every sibling; the manual resume CLEARS job_ids during
+ * its reset, so it detects batch-ness BEFORE resetting and passes the
+ * explicit `batchName` instead.
+ */
+export async function dispatchRemainingRunItems(
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  deps: MigrationDriverDeps,
+  opts: { retryAttempt?: number; batchName?: string | null } = {}
+): Promise<{ mode: 'batch' | 'single' | 'none'; itemCount: number }> {
+  const runId = run.id as string;
+  const remaining = (run.items ?? [])
+    .filter(
+      (i) =>
+        i.id &&
+        i.status !== RUN_ITEM_STATUS.IMPLEMENTED &&
+        i.status !== RUN_ITEM_STATUS.DEPLOYED &&
+        i.outcome !== 'implemented' &&
+        i.outcome !== 'deployed'
+    )
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+  if (remaining.length === 0) {
+    return { mode: 'none', itemCount: 0 };
+  }
+
+  const sharedJobId = remaining[0].job_id ?? null;
+  const isBatchShape =
+    !!opts.batchName ||
+    (remaining.length > 1 &&
+      !!sharedJobId &&
+      remaining.every((i) => i.job_id === sharedJobId));
+
+  if (isBatchShape) {
+    // Resolve every remaining spec's descriptor up-front (whole-or-halt, the
+    // same posture as the original batch segment).
+    const descriptors: DispatchDescriptor[] = [];
+    for (const item of remaining) {
+      const descriptor = await resolveDescriptorForItem(scope, run, item, deps);
+      if (!descriptor) {
+        await haltRunForItem(deps, scope, runId, item.id as string, item, RUN_ITEM_STATUS.FAILED,
+          'Could not resolve generated_spec_text for a re-dispatched batch spec.');
+        return { mode: 'none', itemCount: 0 };
+      }
+      descriptors.push(descriptor);
+    }
+    const batchName =
+      opts.batchName ??
+      `retry-${(runId || 'run').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()}-r${opts.retryAttempt ?? 2}`;
+    kickBatchRunner(
+      { ...scope, batchName },
+      run,
+      remaining,
+      descriptors,
+      deps,
+      opts.retryAttempt ? { retryAttempt: opts.retryAttempt } : undefined
+    );
+    logger.info('[diag-gateway] migration_execution_driver remaining_batch_redispatched', {
+      projectId: scope.projectId,
+      runId,
+      itemCount: remaining.length,
+      batchName,
+      retryAttempt: opts.retryAttempt ?? null,
+    });
+    return { mode: 'batch', itemCount: remaining.length };
+  }
+
+  // Sequential: dispatch the FIRST remaining pending item only — the ordinary
+  // callback-advance chain (dispatchNext) walks the rest one at a time.
+  const next = remaining.find((i) => i.status === RUN_ITEM_STATUS.PENDING);
+  if (!next || !next.id) {
+    // Someone else is mid-flight on the front item (submitting/submitted) —
+    // nothing for us to do; the in-flight dispatch owns the run.
+    logger.info('[diag-gateway] migration_execution_driver remaining_no_pending_front', {
+      projectId: scope.projectId,
+      runId,
+    });
+    return { mode: 'none', itemCount: 0 };
+  }
+  const descriptor = await resolveDescriptorForItem(scope, run, next, deps);
+  if (!descriptor) {
+    await haltRunForItem(deps, scope, runId, next.id, next, RUN_ITEM_STATUS.FAILED,
+      'Could not resolve generated_spec_text for the re-dispatched spec.');
+    return { mode: 'none', itemCount: 0 };
+  }
+  await safePatchRun(deps, scope.projectId, runId, {
+    status: RUN_STATUS.DISPATCHING,
+    current_sequence_position: next.sequence_position ?? null,
+  });
+  kickSpecRunner(
+    scope,
+    run,
+    next,
+    descriptor,
+    deps,
+    opts.retryAttempt ? { retryAttempt: opts.retryAttempt } : undefined
+  );
+  logger.info('[diag-gateway] migration_execution_driver remaining_single_redispatched', {
+    projectId: scope.projectId,
+    runId,
+    runItemId: next.id,
+    sequencePosition: next.sequence_position,
+    retryAttempt: opts.retryAttempt ?? null,
+  });
+  return { mode: 'single', itemCount: 1 };
+}
+
+/** Outcome of an operator resume-from-failure request (Robustness R2). */
+export type ResumeFailedRunResult =
+  | { status: 'resumed'; runId: string; itemsReset: number }
+  | { status: 'not_found' }
+  | { status: 'not_resumable'; reason: string };
+
+/**
+ * Operator "resume from failure" (Robustness R2, 2026-08-05): re-run a HALTED
+ * run from its failed spec WITHOUT burning the already-implemented items. The
+ * guards mirror {@link retryDbPlaneCompletion}'s posture (fail-closed,
+ * 409-shaped reasons): only a HALTED run resumes — an active run is being
+ * driven by callbacks, a deployed run is done.
+ *
+ * Every item NOT yet implemented/deployed is RESET to a dispatchable pending
+ * state: status pending, outcome/error_detail/job_id/failure_class CLEARED
+ * (via the AMS mapper's empty-string explicit-clear sentinel — a stale
+ * terminal outcome would drop the re-run's callback at the CD-6 idempotency
+ * guard) and the retry counters zeroed (a HUMAN resume grants a fresh
+ * automatic-retry budget). Batch-ness is detected BEFORE the reset clears the
+ * shared job_id; the re-dispatch then flows through the same shared
+ * remaining-items primitive as the transient auto-retry.
+ */
+export async function resumeFailedMigrationRun(
+  scope: MigrateScope,
+  runId: string,
+  deps: MigrationDriverDeps
+): Promise<ResumeFailedRunResult> {
+  scope = normalizeScopeIdentifiers(scope);
+  const projectId = scope.projectId;
+  const run = await deps.getMigrationExecutionRun(projectId, runId);
+  if (!run) return { status: 'not_found' };
+  if (run.status !== RUN_STATUS.HALTED) {
+    return {
+      status: 'not_resumable',
+      reason: `run status is '${run.status}' — only a halted run can resume from failure`,
+    };
+  }
+
+  const items = (run.items ?? [])
+    .slice()
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+  const toReset = items.filter(
+    (i) =>
+      i.id &&
+      i.status !== RUN_ITEM_STATUS.IMPLEMENTED &&
+      i.status !== RUN_ITEM_STATUS.DEPLOYED &&
+      i.outcome !== 'implemented' &&
+      i.outcome !== 'deployed'
+  );
+  if (toReset.length === 0) {
+    return {
+      status: 'not_resumable',
+      reason: 'every item already implemented/deployed — nothing to resume',
+    };
+  }
+
+  // Detect the batch shape BEFORE the reset clears the shared job_id.
+  const sharedJobId = toReset[0].job_id ?? null;
+  const wasBatch =
+    toReset.length > 1 && !!sharedJobId && toReset.every((i) => i.job_id === sharedJobId);
+
+  for (const item of toReset) {
+    await safePatchItem(deps, projectId, item.id as string, {
+      status: RUN_ITEM_STATUS.PENDING,
+      dispatched: false,
+      // Empty string = the AMS explicit-clear sentinel (mapper-documented).
+      outcome: '',
+      error_detail: '',
+      job_id: '',
+      failure_class: '',
+      retry_next_attempt_at: '',
+      // Fresh automatic-retry budget for the manual re-run.
+      retry_attempt_count: 0,
+    });
+  }
+
+  const first = toReset[0];
+  await safePatchRun(deps, projectId, runId, {
+    status: RUN_STATUS.DISPATCHING,
+    current_sequence_position: first.sequence_position ?? null,
+  });
+
+  logger.info('[diag-gateway] migration_execution_driver resume_failed_run', {
+    projectId,
+    runId,
+    itemsReset: toReset.length,
+    wasBatch,
+  });
+  trace.step(`resume-from-failure — ${toReset.length} item(s) reset, re-dispatching`, {
+    run: runId,
+    project: scope.project,
+  });
+
+  // Re-read so the dispatch sees the RESET state (pending, cleared job_ids) —
+  // dispatching off the stale pre-reset snapshot would trip the duplicate
+  // precheck on the old job_id. Fall back to a local projection if the
+  // re-read fails (never leave the run reset-but-undispatched).
+  let freshRun: MigrationExecutionRun | null = null;
+  try {
+    freshRun = await deps.getMigrationExecutionRun(projectId, runId);
+  } catch {
+    freshRun = null;
+  }
+  const resetIds = new Set(toReset.map((i) => i.id));
+  const projected: MigrationExecutionRun = freshRun ?? {
+    ...run,
+    items: items.map((i) =>
+      resetIds.has(i.id)
+        ? {
+            ...i,
+            status: RUN_ITEM_STATUS.PENDING,
+            outcome: null,
+            error_detail: null,
+            job_id: null,
+            dispatched: false,
+            retry_attempt_count: 0,
+            retry_next_attempt_at: null,
+            failure_class: null,
+          }
+        : i
+    ),
+  };
+  const batchName = wasBatch
+    ? `resume-${(runId || 'run').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()}-${Date.now()
+        .toString(36)
+        .slice(-4)}`
+    : null;
+  await dispatchRemainingRunItems(scope, projected, deps, { batchName });
+
+  return { status: 'resumed', runId, itemsReset: toReset.length };
 }
 
 /**
@@ -2771,9 +3400,10 @@ async function resolveDescriptorForItem(
 export async function recoverInFlightRuns(
   runs: Array<{ projectId: string; runId: string; company: string; project: string; bookId: string }>,
   deps: MigrationDriverDeps
-): Promise<{ recovered: number; rekicked: number }> {
+): Promise<{ recovered: number; rekicked: number; retriesRearmed: number }> {
   let recovered = 0;
   let rekicked = 0;
+  let retriesRearmed = 0;
 
   for (const ref of runs) {
     try {
@@ -2823,6 +3453,50 @@ export async function recoverInFlightRuns(
         kickSpecRunner(scope, run, item, descriptor, deps);
         rekicked++;
       }
+
+      // Robustness R2: re-arm SCHEDULED RETRIES lost with the previous
+      // process's timers. The armed-retry predicate is deliberately narrow —
+      // status pending + counter > 0 + a next-attempt time. Ordinary pending
+      // items (waiting their sequential turn) have counter 0 and are NEVER
+      // swept here (dispatching them all in parallel is exactly the bug this
+      // predicate exists to avoid); a manual resume also zeroes the counter,
+      // so its resets cannot be mistaken for armed retries. ONE timer per run
+      // (the redispatch primitive handles batch vs single itself), fired at
+      // the earliest overdue/pending next-attempt time.
+      const armed = items.filter(
+        (i) =>
+          i.status === RUN_ITEM_STATUS.PENDING &&
+          (i.retry_attempt_count ?? 0) > 0 &&
+          !!i.retry_next_attempt_at &&
+          !i.outcome
+      );
+      if (armed.length > 0) {
+        const now = Date.now();
+        const dueTimes = armed.map((i) => Date.parse(i.retry_next_attempt_at as string) || now);
+        const delayMs = Math.max(0, Math.min(...dueTimes) - now);
+        const nextAttempt =
+          Math.max(...armed.map((i) => i.retry_attempt_count ?? 0)) + 1;
+        logger.info('[diag-gateway] migration_execution_driver recovery_retry_rearmed', {
+          projectId: ref.projectId,
+          runId: ref.runId,
+          armedCount: armed.length,
+          delayMs,
+          nextAttempt,
+        });
+        const timer = deps.scheduleRetryTimer ?? defaultScheduleRetryTimer;
+        timer(delayMs, () => {
+          void redispatchAfterTransientFailure(scope, ref.runId, nextAttempt, deps).catch(
+            (error) => {
+              logger.error('[diag-gateway] migration_execution_driver recovery_retry_crashed', {
+                projectId: ref.projectId,
+                runId: ref.runId,
+                error: error instanceof Error ? error.message : 'Unknown error',
+              });
+            }
+          );
+        });
+        retriesRearmed += armed.length;
+      }
     } catch (error) {
       logger.error('[diag-gateway] migration_execution_driver recovery_failed', {
         projectId: ref.projectId,
@@ -2836,8 +3510,9 @@ export async function recoverInFlightRuns(
     runsConsidered: runs.length,
     recovered,
     rekicked,
+    retriesRearmed,
   });
-  return { recovered, rekicked };
+  return { recovered, rekicked, retriesRearmed };
 }
 
 // ============================================================================
@@ -2866,7 +3541,11 @@ async function haltRunForItem(
   errorDetail: string,
   // The raw terminal outcome (`failed` | `error` | `rejected` | `fix_unserved`
   // | `not_fixed`); recorded verbatim on the run-item for traceability.
-  outcome: string = 'failed'
+  outcome: string = 'failed',
+  // Robustness R2: the failure classification to persist alongside the halt
+  // ('transient_upstream' for an exhausted retry budget, 'real' when the IVS
+  // classifier said so, null/omitted when unknown).
+  failureClass: string | null = null
 ): Promise<void> {
   logger.warn('[diag-gateway] migration_execution_driver halt_run', {
     projectId: scope.projectId,
@@ -2875,11 +3554,13 @@ async function haltRunForItem(
     itemStatus,
     outcome,
     errorDetail,
+    failureClass,
   });
   await safePatchItem(deps, scope.projectId, runItemId, {
     status: itemStatus,
     outcome,
     error_detail: errorDetail,
+    ...(failureClass ? { failure_class: failureClass } : {}),
   });
   await safePatchRun(deps, scope.projectId, runId, { status: RUN_STATUS.HALTED });
   // Surface against the work item (human traceability). Best-effort; never throws.

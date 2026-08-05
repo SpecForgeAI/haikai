@@ -46,3 +46,41 @@ User amendments locked in:
   from the failed item.
 - FE rail: halted mid-stage → "Re-start Stage N" + "Resume Stage N";
   retrying item → "retrying (attempt X/3)" chip.
+
+### R2 backend AS BUILT (2026-08-05)
+
+- Policy: `gateway/src/services/migrationSpecRetryPolicy.ts` — transient iff
+  callback `failure_class='transient_upstream'`, or class ABSENT and the
+  local TRANSIENT_SIGNATURES scan (hand-mirrored from IVS
+  `transient_failure.py`) matches summary/errors; `'real'` never retries.
+  Knobs: MIGRATION_SPEC_RETRY_MAX_ATTEMPTS (default 3 total tries),
+  MIGRATION_SPEC_RETRY_BACKOFF_SECONDS (default "60,180", last repeats).
+- Persistence: AMS columns (changeset 217) on
+  `migration_execution_run_item`: `retry_attempt_count` (int, default 0),
+  `retry_next_attempt_at` (timestamptz), `failure_class` (text). Chose
+  columns over riding `auto_answer_decision_log_json` (UI-surfaced log,
+  whole-list-replace PATCH race) — and AMS had to be touched anyway for the
+  NEW explicit-clear sentinel: the item mapper now treats an EMPTY STRING on
+  `job_id`/`outcome`/`error_detail`/`failure_class`/`retry_next_attempt_at`
+  as "clear to NULL" (omitted still = no-op), because resume-from-failure
+  must un-set a stale terminal `outcome` (else the re-run's callback dies at
+  the CD-6 idempotency guard).
+- Retry parks the item back to `pending` (NO outcome written) with counters +
+  next-attempt time; armed-retry predicate = pending + counter>0 +
+  next_attempt_at (boot sweep re-arms exactly that shape — ordinary pending
+  items have counter 0 and are never swept). Re-dispatch reuses
+  runSpecSegment with `retryAttempt` opts: precheck inverts (only a parked
+  `pending` item may dispatch) and the spec folder/branch gains `-r<attempt>`
+  so the IVS active-job dedup (spec_name-set keyed) can't return the dying
+  prior job and the old worktree branch lock can't kill the retry.
+- Batch + resume share ONE primitive (`dispatchRemainingRunItems`): batch
+  shape = ≥2 remaining items sharing a job_id (or explicit batchName);
+  re-submits ONLY not-implemented items on a fresh
+  `feature/retry-…`/`feature/resume-…` branch.
+- Route: POST /api/v1/projects/:projectId/migration-execution-runs/:runId/
+  resume-failed → 200 {resumed, itemsReset} | 409 {allowed:false, reason} |
+  404. Timer seam: deps.scheduleRetryTimer (setTimeout+unref default).
+- Tests: gateway/src/__tests__/migrationExecutionDriverRetry.test.ts (20) +
+  all existing driver/advance/receiver suites green; AMS
+  MigrationExecutionRunStatePersistenceTest +
+  ...ControllerByJobSentinelTest green with the widened DTO.

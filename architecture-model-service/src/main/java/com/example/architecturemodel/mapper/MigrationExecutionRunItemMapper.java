@@ -64,6 +64,9 @@ public final class MigrationExecutionRunItemMapper {
             entity.getTargetBaseUrl(),
             entity.getErrorDetail(),
             entity.getAutoAnswerDecisionLogJson(),
+            entity.getRetryAttemptCount() != null ? entity.getRetryAttemptCount() : 0,
+            entity.getRetryNextAttemptAt() != null ? entity.getRetryNextAttemptAt().toString() : null,
+            entity.getFailureClass(),
             entity.getCreatedAt() != null ? entity.getCreatedAt().toString() : null,
             entity.getUpdatedAt() != null ? entity.getUpdatedAt().toString() : null
         );
@@ -101,9 +104,33 @@ public final class MigrationExecutionRunItemMapper {
             .targetBaseUrl(dto.targetBaseUrl())
             .errorDetail(dto.errorDetail())
             .autoAnswerDecisionLogJson(dto.autoAnswerDecisionLogJson())
+            .retryAttemptCount(dto.retryAttemptCount() != null ? dto.retryAttemptCount() : 0)
+            .retryNextAttemptAt(parseInstantOrNull(dto.retryNextAttemptAt()))
+            .failureClass(emptyToNull(dto.failureClass()))
             .createdAt(now)
             .updatedAt(now)
             .build();
+    }
+
+    /**
+     * Parse an ISO-8601 instant, treating {@code null} / blank as absent.
+     * Defensive: an unparseable timestamp is treated as absent rather than
+     * failing the whole request (the gateway always writes
+     * {@code Instant.toISOString()}-shaped values).
+     */
+    private static Instant parseInstantOrNull(String iso) {
+        if (iso == null || iso.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Instant.parse(iso.trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String emptyToNull(String value) {
+        return (value == null || value.isEmpty()) ? null : value;
     }
 
     /**
@@ -114,10 +141,25 @@ public final class MigrationExecutionRunItemMapper {
      * <p>Editable fields: {@code specName}, {@code status}, {@code dispatched},
      * {@code jobId}, {@code branch}, {@code prUrl}, {@code outcome},
      * {@code deployOnComplete}, {@code targetBaseUrl}, {@code errorDetail},
-     * {@code autoAnswerDecisionLogJson}. NOT editable: {@code id},
-     * {@code runId}, {@code sequencePosition}, {@code workItemId},
+     * {@code autoAnswerDecisionLogJson}, {@code retryAttemptCount},
+     * {@code retryNextAttemptAt}, {@code failureClass}. NOT editable:
+     * {@code id}, {@code runId}, {@code sequencePosition}, {@code workItemId},
      * {@code specGenerationId} (set at create-run), {@code createdAt},
      * {@code updatedAt} (auto-managed by {@code @PreUpdate}).</p>
+     *
+     * <p><b>Explicit-clear sentinel (Robustness R2, 2026-08-05):</b> the
+     * null-guard convention deliberately makes {@code null} mean "leave the
+     * column alone" -- which also made every column WRITE-ONLY (nothing could
+     * ever be un-set). The gateway's resume-from-failure needs to genuinely
+     * RESET failed run-items ({@code outcome}/{@code error_detail}/
+     * {@code job_id} back to NULL -- a stale terminal outcome would make the
+     * retried item's next build-results callback hit the CD-6 idempotency
+     * no-op and be dropped). So for the resettable TEXT fields ({@code jobId},
+     * {@code outcome}, {@code errorDetail}, {@code failureClass},
+     * {@code retryNextAttemptAt}) an EMPTY STRING on the wire clears the
+     * column to NULL. Backward-compatible: no existing caller ever sent an
+     * empty string for these (the gateway either omits the field or sends a
+     * real value), and omitted fields still arrive as {@code null} = no-op.</p>
      *
      * @param entity the existing entity loaded from the DB
      * @param dto    the PATCH DTO
@@ -138,7 +180,8 @@ public final class MigrationExecutionRunItemMapper {
             entity.setDispatched(dto.dispatched());
         }
         if (dto.jobId() != null) {
-            entity.setJobId(dto.jobId());
+            // Empty string = explicit clear (resume-from-failure reset).
+            entity.setJobId(emptyToNull(dto.jobId()));
         }
         if (dto.branch() != null) {
             entity.setBranch(dto.branch());
@@ -147,7 +190,9 @@ public final class MigrationExecutionRunItemMapper {
             entity.setPrUrl(dto.prUrl());
         }
         if (dto.outcome() != null) {
-            entity.setOutcome(dto.outcome());
+            // Empty string = explicit clear (resume-from-failure reset; a stale
+            // terminal outcome would drop the retried item's next callback).
+            entity.setOutcome(emptyToNull(dto.outcome()));
         }
         if (dto.deployOnComplete() != null) {
             entity.setDeployOnComplete(dto.deployOnComplete());
@@ -156,10 +201,23 @@ public final class MigrationExecutionRunItemMapper {
             entity.setTargetBaseUrl(dto.targetBaseUrl());
         }
         if (dto.errorDetail() != null) {
-            entity.setErrorDetail(dto.errorDetail());
+            // Empty string = explicit clear (resume-from-failure reset).
+            entity.setErrorDetail(emptyToNull(dto.errorDetail()));
         }
         if (dto.autoAnswerDecisionLogJson() != null) {
             entity.setAutoAnswerDecisionLogJson(dto.autoAnswerDecisionLogJson());
+        }
+        if (dto.retryAttemptCount() != null) {
+            // 0 is a real value (the manual-resume counter reset), not a clear.
+            entity.setRetryAttemptCount(dto.retryAttemptCount());
+        }
+        if (dto.retryNextAttemptAt() != null) {
+            // Empty string = explicit clear; otherwise ISO-8601 parse.
+            entity.setRetryNextAttemptAt(parseInstantOrNull(dto.retryNextAttemptAt()));
+        }
+        if (dto.failureClass() != null) {
+            // Empty string = explicit clear.
+            entity.setFailureClass(emptyToNull(dto.failureClass()));
         }
     }
 }

@@ -52,6 +52,24 @@ export interface MigrationExecutionRunItem {
   target_base_url?: string | null;
   error_detail?: string | null;
   auto_answer_decision_log_json?: Array<Record<string, unknown>> | null;
+  /**
+   * Robustness R2 (changeset 217): dispatch attempts already used for this
+   * item. 0 = never retried. Persisted so the retry budget survives a
+   * gateway restart.
+   */
+  retry_attempt_count?: number | null;
+  /**
+   * Robustness R2: when the next automatic re-dispatch is due (ISO-8601).
+   * status='pending' + non-null here + retry_attempt_count>0 is the
+   * boot-recovery sweep's armed-retry predicate. PATCHing '' clears it
+   * (the AMS mapper's explicit-clear sentinel).
+   */
+  retry_next_attempt_at?: string | null;
+  /**
+   * Robustness R2: last failure classification for the item
+   * ('transient_upstream' | 'real'). PATCHing '' clears it.
+   */
+  failure_class?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 }

@@ -5062,3 +5062,31 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 217: migration_execution_run_item retry columns (Robustness R2 driver-level
+  # spec auto-retry, 2026-08-05). Durable retry state so a scheduled
+  # re-dispatch survives a gateway restart: retry_attempt_count (attempts used,
+  # NOT NULL DEFAULT 0), retry_next_attempt_at (when the next automatic
+  # re-dispatch is due; status=pending + non-null + count>0 is the boot
+  # sweep's armed-retry predicate), failure_class (transient_upstream | real,
+  # from the IVS R1 classifier / the gateway signature scan).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 216).
+  # ============================================================================
+  - changeSet:
+      id: 217-migration-run-item-retry-columns
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_execution_run_item
+              columnName: retry_attempt_count
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/217-migration-run-item-retry-columns.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

@@ -893,6 +893,17 @@ export interface MigrationExecutionRunItemDto {
   target_base_url?: string | null;
   error_detail?: string | null;
   auto_answer_decision_log_json?: Array<Record<string, unknown>> | null;
+  /**
+   * Robustness R2 (2026-08-05): dispatch attempts already consumed for this
+   * item (0 = never retried). `status='pending'` + this > 0 + a non-null
+   * `retry_next_attempt_at` is the ARMED auto-retry shape — the driver has a
+   * re-dispatch scheduled (the rail shows "retrying (attempt N+1/3)").
+   */
+  retry_attempt_count?: number | null;
+  /** When the next automatic re-dispatch is due (ISO-8601); null = none armed. */
+  retry_next_attempt_at?: string | null;
+  /** Last failure classification: 'transient_upstream' | 'real' | null. */
+  failure_class?: string | null;
 }
 
 /** One Migration Execution Driver run over one book of work (snake_case wire). */
@@ -1656,4 +1667,71 @@ export async function retryRunDbCompletion(
     );
   }
   return { status: body.status ?? (res.ok ? 'retrying' : 'error'), reason: body.reason };
+}
+
+/**
+ * The resume-from-failure response union (Robustness R2, 2026-08-05):
+ *   - `resumed: true`  : non-implemented items were reset and the run
+ *                        re-dispatched from the first failed spec (200).
+ *   - `resumed: false` : the driver's fail-closed guard refused — only a
+ *                        HALTED run resumes; `reason` explains (409).
+ * Any other non-2xx (404 unknown run / 5xx) throws, matching
+ * {@link retryRunDbCompletion}.
+ */
+export type ResumeFailedMigrationRunResult =
+  | { resumed: true; itemsReset: number }
+  | { resumed: false; reason: string };
+
+/**
+ * Operator "resume from failure" (Robustness R2): continue a HALTED run from
+ * its previously-failed spec WITHOUT re-running the already-implemented items.
+ * Every non-implemented item is reset to pending (retry budget refreshed) and
+ * the first pending spec is re-dispatched.
+ *
+ * POST /api/v1/projects/{projectId}/migration-execution-runs/{runId}/resume-failed
+ *
+ * The caller should refresh the latest run on success so the rail's progress
+ * and status lines advance.
+ */
+export async function resumeFailedMigrationRun(
+  projectId: string,
+  runId: string,
+  args: { company: string; project: string; bookId?: string },
+): Promise<ResumeFailedMigrationRunResult> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-execution-runs/${encodeURIComponent(runId)}/resume-failed`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({
+      company: args.company,
+      project: args.project,
+      ...(args.bookId ? { book_id: args.bookId } : {}),
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    resumed?: boolean;
+    itemsReset?: number;
+    allowed?: boolean;
+    reason?: string;
+    error?: string;
+  };
+  if (res.ok && body.resumed === true) {
+    return {
+      resumed: true,
+      itemsReset: typeof body.itemsReset === 'number' ? body.itemsReset : 0,
+    };
+  }
+  if (res.status === 409) {
+    return {
+      resumed: false,
+      reason: body.reason || 'The run is not resumable right now.',
+    };
+  }
+  throw new Error(
+    body.error ||
+      body.reason ||
+      `Failed to resume the migration run from failure: ${res.status} ${res.statusText}`,
+  );
 }

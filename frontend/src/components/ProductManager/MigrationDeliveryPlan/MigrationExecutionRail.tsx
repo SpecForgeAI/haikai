@@ -66,6 +66,12 @@ export const PLANE_META: Record<
   ui: { title: 'UI', subSteps: 'UI build' },
 };
 
+/**
+ * Mirrors the gateway's MIGRATION_SPEC_RETRY_MAX_ATTEMPTS default (Robustness
+ * R2) — display only ("attempt X/3"); the server owns the actual budget.
+ */
+export const RETRY_MAX_ATTEMPTS = 3;
+
 export interface RailPlane {
   plane: RailPlaneId;
   totalStories: number;
@@ -74,6 +80,19 @@ export interface RailPlane {
   /** Run progress (0/0 when no run exists yet). */
   runDone: number;
   runTotal: number;
+  /**
+   * Items of the latest run (this plane) that FAILED (Robustness R2). With
+   * runDone it distinguishes "started and died" (Re-start OR Resume) from a
+   * never-started halted run (plain Start).
+   */
+  runFailed?: number;
+  /**
+   * Armed auto-retry (Robustness R2): the driver has a re-dispatch scheduled
+   * for an item of this plane (status pending + attempts consumed +
+   * retry_next_attempt_at set). The value is the attempt ABOUT TO RUN
+   * (retry_attempt_count + 1); null/absent = nothing armed.
+   */
+  armedRetryAttempt?: number | null;
   /**
    * Carry-over accounting (2026-07-26) — SERVICE card only. The server gate
    * blocks a service start while behaviour-bearing carry-over items are
@@ -138,6 +157,14 @@ export interface MigrationExecutionRailProps {
    * the run's shape does not qualify).
    */
   onRetryDbBuild?: () => void;
+  /**
+   * Operator "Resume stage N" (Robustness R2, 2026-08-05): a HALTED run that
+   * started and died mid-stage continues from its first FAILED spec — the
+   * already-implemented items are never re-run. Rendered NEXT TO "Re-start
+   * stage N" (the existing full-stage start) so the operator explicitly
+   * chooses between "from spec 1 of X" and "from the failed spec up to X".
+   */
+  onResumeFailed?: (plane: RailPlaneId) => void;
 }
 
 function describeBlockReason(r: Record<string, unknown>): string {
@@ -165,6 +192,7 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
   onProvideCreds,
   onHaltRun,
   onRetryDbBuild,
+  onResumeFailed,
 }) => {
   if (planes.length === 0) return null;
 
@@ -357,6 +385,22 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
               {p.runTotal > 0 && (
                 <div data-testid={`execution-rail-progress-${p.plane}`}>
                   run: {p.runDone}/{p.runTotal} done
+                  {/* Armed auto-retry chip (Robustness R2): a transient
+                      upstream failure has a re-dispatch scheduled — the item
+                      is pending with attempts consumed, so "retrying" is more
+                      honest than a silent pending. */}
+                  {typeof p.armedRetryAttempt === 'number' && (
+                    <>
+                      {' '}
+                      <span
+                        className={styles.badge}
+                        data-testid={`execution-rail-retry-chip-${p.plane}`}
+                      >
+                        retrying (attempt {p.armedRetryAttempt}/
+                        {RETRY_MAX_ATTEMPTS})
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
               {p.plane === 'db' && runActive && dbCredsRegistered !== null && (
@@ -389,7 +433,21 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                   data-parity check, so this enablement can never overpromise
                   more than a parity result the dialog will then surface. */}
               {(() => {
-                const prevDeployed = isFirst || runStatus === 'deployed';
+                // Halted MID-STAGE (Robustness R2): the latest run touched
+                // THIS plane's stories and actually started before dying (at
+                // least one item done or failed — a never-started halted run
+                // keeps the plain Start). Two explicit choices render:
+                // Re-start (full stage, spec 1 of X) vs Resume (from the
+                // failed spec up to X).
+                const haltedMidStage =
+                  runStatus === 'halted' &&
+                  p.runTotal > 0 &&
+                  (p.runDone > 0 || (p.runFailed ?? 0) > 0);
+                // A halted mid-stage run PROVES its own stage was startable
+                // (the server's precedence gate passed when it launched), so
+                // it unlocks its stage-N card exactly like deployed does.
+                const prevDeployed =
+                  isFirst || runStatus === 'deployed' || haltedMidStage;
                 const startable = !runActive && prevDeployed;
                 if (!startable) {
                   return !runActive ? (
@@ -431,8 +489,25 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                           : `execution-rail-start-${p.plane}`
                       }
                     >
-                      {busy ? 'Starting…' : `▶ Start stage ${stageNo}`}
+                      {busy
+                        ? 'Starting…'
+                        : haltedMidStage
+                          ? `↻ Re-start stage ${stageNo}`
+                          : `▶ Start stage ${stageNo}`}
                     </button>
+                    {haltedMidStage && onResumeFailed && (
+                      <button
+                        type="button"
+                        className={styles.selectButton}
+                        style={{ marginTop: 8, marginLeft: 8 }}
+                        disabled={!scopeReady || busy}
+                        onClick={() => onResumeFailed(p.plane)}
+                        title="Continues THIS run from the previously-failed spec — already-implemented specs are not re-run"
+                        data-testid={`execution-rail-resume-failed-${p.plane}`}
+                      >
+                        {busy ? 'Working…' : `▶ Resume stage ${stageNo}`}
+                      </button>
+                    )}
                     {!scopeReady && (
                       <div
                         className={styles.coveragePanelNote}

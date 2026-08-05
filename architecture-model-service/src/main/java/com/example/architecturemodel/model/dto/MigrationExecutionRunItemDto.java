@@ -53,6 +53,9 @@ import java.util.UUID;
  * @param targetBaseUrl             Per-item deployed URL echo (final item deployed callback); nullable.
  * @param errorDetail               Failure detail on a {@code failed} / {@code rejected} outcome; nullable.
  * @param autoAnswerDecisionLogJson INLINE per-spec auto-answerer decision log (CD-4): list of {@code {question, answer, rationale}}; nullable.
+ * @param retryAttemptCount         Dispatch attempts already used (Robustness R2 auto-retry, changeset 217); boxed Integer.
+ * @param retryNextAttemptAt        ISO-8601 timestamp when the next automatic re-dispatch is due; nullable.
+ * @param failureClass              Last failure classification ({@code transient_upstream | real}); nullable.
  * @param createdAt                 ISO-8601 timestamp of creation.
  * @param updatedAt                 ISO-8601 timestamp of last update.
  */
@@ -104,6 +107,15 @@ public record MigrationExecutionRunItemDto(
 
     @JsonProperty("auto_answer_decision_log_json")
     List<Map<String, Object>> autoAnswerDecisionLogJson,
+
+    @JsonProperty("retry_attempt_count")
+    Integer retryAttemptCount,
+
+    @JsonProperty("retry_next_attempt_at")
+    String retryNextAttemptAt,
+
+    @JsonProperty("failure_class")
+    String failureClass,
 
     @JsonProperty("created_at")
     String createdAt,

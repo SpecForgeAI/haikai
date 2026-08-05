@@ -101,9 +101,11 @@ import {
   resumeMigrationRun,
   haltMigrationRun,
   MigrationExecutionRunDto,
+  type MigrationExecutionRunItemDto,
   fetchMigrationCredentialsStatus,
   registerRunStageCredentials,
   retryRunDbCompletion,
+  resumeFailedMigrationRun,
   MigrationCredentialsStatus,
   type MigrateBlockReason,
 } from '../../../api/migrationDeliveryDashboardApi';
@@ -884,9 +886,12 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       bucket.push(s);
       byPlane.set(plane, bucket);
     }
-    const runItemsByWorkItem = new Map<string, string>();
+    // Robustness R2: carry the WHOLE item (not just its status) — the rail
+    // needs failed counts (halted-mid-stage detection) + the armed-retry
+    // shape (retry chip) in addition to done progress.
+    const runItemsByWorkItem = new Map<string, MigrationExecutionRunItemDto>();
     for (const it of run?.items ?? []) {
-      if (it.work_item_id) runItemsByWorkItem.set(it.work_item_id, it.status ?? '');
+      if (it.work_item_id) runItemsByWorkItem.set(it.work_item_id, it);
     }
     return PLANE_ORDER.filter((p) => (byPlane.get(p) ?? []).length > 0).map(
       (p) => {
@@ -903,6 +908,8 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
         let satisfied = 0;
         let runDone = 0;
         let runTotal = 0;
+        let runFailed = 0;
+        let armedRetryAttempt: number | null = null;
         for (const s of planeStories) {
           const wi = (s as { workItemId?: string | null }).workItemId;
           const row = wi ? specRowByWorkItem.get(wi) : undefined;
@@ -923,8 +930,24 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           }
           if (wi && runItemsByWorkItem.has(wi)) {
             runTotal++;
-            const st = runItemsByWorkItem.get(wi)!;
+            const item = runItemsByWorkItem.get(wi)!;
+            const st = item.status ?? '';
             if (st === 'implemented' || st === 'deployed') runDone++;
+            if (st === 'failed') runFailed++;
+            // Armed auto-retry (Robustness R2): pending + attempts consumed
+            // + a scheduled next attempt = the driver is in backoff. N
+            // attempts consumed means the NEXT try is attempt N+1 (matching
+            // the error_detail's "retry N+1/3 scheduled").
+            if (
+              st === 'pending' &&
+              (item.retry_attempt_count ?? 0) > 0 &&
+              item.retry_next_attempt_at
+            ) {
+              const attempt = (item.retry_attempt_count ?? 0) + 1;
+              if (armedRetryAttempt === null || attempt > armedRetryAttempt) {
+                armedRetryAttempt = attempt;
+              }
+            }
           }
         }
         return {
@@ -934,6 +957,8 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           blockers,
           runDone,
           runTotal,
+          runFailed,
+          armedRetryAttempt,
           // Carry-over accounting rides ONLY the service card (the server gate
           // blocks service starts on it; DB/UI stages are unaffected —
           // 3b162be). Null until the panel's first coverage read lands.
@@ -1313,6 +1338,33 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       setRailBusy(false);
     }
   }, [projectId, run?.id, refreshRun]);
+
+  // Operator "Resume stage N" (Robustness R2, 2026-08-05): a HALTED run
+  // continues from its first FAILED spec — implemented items are never
+  // re-run. The driver's fail-closed refusal (409) surfaces its reason on
+  // the rail's existing error affordance.
+  const handleRailResumeFailed = useCallback(async () => {
+    if (!companyName || !projectName || !run?.id) return;
+    setRailBusy(true);
+    setRailError(null);
+    try {
+      const result = await resumeFailedMigrationRun(projectId, run.id, {
+        company: companyName,
+        project: projectName,
+        bookId,
+      });
+      if (!result.resumed) {
+        setRailError(`Resume refused: ${result.reason}`);
+      }
+      await refreshRun();
+    } catch (err) {
+      setRailError(
+        err instanceof Error ? err.message : 'Failed to resume the run.',
+      );
+    } finally {
+      setRailBusy(false);
+    }
+  }, [companyName, projectName, projectId, bookId, run?.id, refreshRun]);
 
   const archived = draft?.status === 'archived';
 
@@ -2123,6 +2175,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           onProvideCreds={() => void openStartDialog('register')}
           onHaltRun={() => void handleRailHalt()}
           onRetryDbBuild={() => void openStartDialog('retry-db', 'db', 1)}
+          onResumeFailed={() => void handleRailResumeFailed()}
         />
       )}
 

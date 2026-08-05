@@ -34,6 +34,7 @@ const mockResume = vi.fn();
 const mockHaltRun = vi.fn();
 const mockCredsStatus = vi.fn();
 const mockRegisterStageCreds = vi.fn();
+const mockResumeFailed = vi.fn();
 vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
   const actual = await vi.importActual<
     typeof import('../../../../api/migrationDeliveryDashboardApi')
@@ -48,6 +49,7 @@ vi.mock('../../../../api/migrationDeliveryDashboardApi', async () => {
     registerRunStageCredentials: (...a: unknown[]) =>
       mockRegisterStageCreds(...a),
     retryRunDbCompletion: (...a: unknown[]) => mockRetryDbCompletion(...a),
+    resumeFailedMigrationRun: (...a: unknown[]) => mockResumeFailed(...a),
   };
 });
 const mockRetryDbCompletion = vi.fn();
@@ -227,6 +229,9 @@ beforeEach(() => {
   });
   mockRegisterStageCreds.mockReset().mockResolvedValue(undefined);
   mockRetryDbCompletion.mockReset().mockResolvedValue({ status: 'retrying' });
+  mockResumeFailed
+    .mockReset()
+    .mockResolvedValue({ resumed: true, itemsReset: 1 });
   // Benign default: nothing to account for (the carry-over gate stays clear).
   mockGetCarryOverCoverage.mockReset().mockResolvedValue(coverageOf(0, 0));
 });
@@ -641,5 +646,110 @@ describe('execution rail (Phase 1b)', () => {
     } finally {
       confirmSpy.mockRestore();
     }
+  });
+});
+
+describe('resume-from-failure (Robustness R2, 2026-08-05)', () => {
+  /** Two DB stories, both spec-satisfied (the gate is not under test here). */
+  const twoDbStories = () => [
+    makeItem({ id: 's-1', title: 'Schema A', workItemId: 'wi-1' } as never),
+    makeItem({ id: 's-2', title: 'Schema B', workItemId: 'wi-2' } as never),
+  ];
+  const twoDbRows = () => [
+    generatedRow('wi-1', 's-1'),
+    generatedRow('wi-2', 's-2'),
+  ];
+  /** The halted-mid-stage shape: one item done, one failed. */
+  const haltedMidStageRun = () => ({
+    id: 'run-halted',
+    status: 'halted',
+    items: [
+      { work_item_id: 'wi-1', status: 'implemented' },
+      {
+        work_item_id: 'wi-2',
+        status: 'failed',
+        failure_class: 'real',
+        error_detail: 'build failed',
+      },
+    ],
+  });
+
+  it('halted MID-STAGE: renders BOTH "Re-start stage 1" and "Resume stage 1"; Resume calls the api with runId + company/project and refetches the run', async () => {
+    mockFetchRows.mockResolvedValue(twoDbRows());
+    mockGetRun.mockResolvedValue(haltedMidStageRun());
+    renderWorkspace(draftWith(twoDbStories()));
+
+    // Both buttons, correctly labelled — never a bare "Start stage 1".
+    const resume = await screen.findByTestId('execution-rail-resume-failed-db');
+    expect(resume).toHaveTextContent('▶ Resume stage 1');
+    const restart = screen.getByTestId('execution-rail-start');
+    expect(restart).toHaveTextContent('↻ Re-start stage 1');
+
+    const runReadsBefore = mockGetRun.mock.calls.length;
+    fireEvent.click(resume);
+    await waitFor(() =>
+      expect(mockResumeFailed).toHaveBeenCalledWith(PROJECT_ID, 'run-halted', {
+        company: 'acme',
+        project: 'demo',
+        bookId: BOOK_ID,
+      }),
+    );
+    // On 200 the rail refetches the run state it already polls.
+    await waitFor(() =>
+      expect(mockGetRun.mock.calls.length).toBeGreaterThan(runReadsBefore),
+    );
+    expect(screen.queryByTestId('execution-rail-error')).toBeNull();
+  });
+
+  it('a 409 refusal surfaces the driver reason via the rail error affordance', async () => {
+    mockFetchRows.mockResolvedValue(twoDbRows());
+    mockGetRun.mockResolvedValue(haltedMidStageRun());
+    mockResumeFailed.mockResolvedValue({
+      resumed: false,
+      reason: 'only a halted run can resume from failure',
+    });
+    renderWorkspace(draftWith(twoDbStories()));
+
+    fireEvent.click(await screen.findByTestId('execution-rail-resume-failed-db'));
+    const err = await screen.findByTestId('execution-rail-error');
+    expect(err).toHaveTextContent('only a halted run can resume from failure');
+  });
+
+  it('armed auto-retry: retry_attempt_count=1 + a scheduled next attempt renders the "retrying (attempt 2/3)" chip', async () => {
+    mockFetchRows.mockResolvedValue(twoDbRows());
+    // The backoff shape: pending item with one attempt consumed and the next
+    // re-dispatch scheduled — N consumed means the NEXT try is attempt N+1.
+    mockGetRun.mockResolvedValue({
+      id: 'run-retrying',
+      status: 'dispatching',
+      items: [
+        { work_item_id: 'wi-1', status: 'implemented' },
+        {
+          work_item_id: 'wi-2',
+          status: 'pending',
+          retry_attempt_count: 1,
+          retry_next_attempt_at: '2026-08-05T10:00:00Z',
+          failure_class: 'transient_upstream',
+        },
+      ],
+    });
+    renderWorkspace(draftWith(twoDbStories()));
+
+    const chip = await screen.findByTestId('execution-rail-retry-chip-db');
+    expect(chip).toHaveTextContent('retrying (attempt 2/3)');
+  });
+
+  it('REGRESSION pin: a pristine stage (no prior halted run) keeps the plain "Start stage 1" and no Resume button', async () => {
+    mockFetchRows.mockResolvedValue(twoDbRows());
+    mockGetRun.mockResolvedValue(null);
+    renderWorkspace(draftWith(twoDbStories()));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('execution-rail-start')).toBeEnabled(),
+    );
+    expect(screen.getByTestId('execution-rail-start')).toHaveTextContent(
+      '▶ Start stage 1',
+    );
+    expect(screen.queryByTestId('execution-rail-resume-failed-db')).toBeNull();
   });
 });

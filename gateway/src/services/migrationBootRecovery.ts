@@ -61,22 +61,25 @@ export async function runMigrationBootRecovery(
   buildResultsCallbackUrl: string,
   discovery: InFlightRunDiscovery = defaultInFlightRunDiscovery,
   deps?: MigrationDriverDeps
-): Promise<{ recovered: number; rekicked: number }> {
+): Promise<{ recovered: number; rekicked: number; retriesRearmed: number }> {
   try {
     const runs = await discovery();
     if (runs.length === 0) {
       logger.info('[diag-gateway] migration_execution_driver boot_recovery_no_runs', {});
-      return { recovered: 0, rekicked: 0 };
+      return { recovered: 0, rekicked: 0, retriesRearmed: 0 };
     }
     const effectiveDeps = deps ?? defaultMigrationDriverDeps(buildResultsCallbackUrl);
     logger.info('[diag-gateway] migration_execution_driver boot_recovery_start', {
       runCount: runs.length,
     });
+    // Robustness R2: besides re-kicking stuck mid-segment items, the sweep now
+    // also RE-ARMS persisted transient-retry schedules (retry_next_attempt_at)
+    // whose in-process timers died with the previous gateway process.
     return await recoverInFlightRuns(runs, effectiveDeps);
   } catch (error) {
     logger.error('[diag-gateway] migration_execution_driver boot_recovery_failed', {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
-    return { recovered: 0, rekicked: 0 };
+    return { recovered: 0, rekicked: 0, retriesRearmed: 0 };
   }
 }
