@@ -285,7 +285,9 @@ rm api_workspace/jobs.db
 python -m src.entrypoints.debug_api
 
 # Or using uvicorn directly
-uvicorn src.api:app --reload
+# NOTE: always use the entrypoint (never bare uvicorn) - it scopes the reload
+# watcher to source dirs so agent workspace writes can't kill in-flight runs.
+python -m src.entrypoints.run_api --reload
 ```
 
 API will be available at: http://localhost:8000

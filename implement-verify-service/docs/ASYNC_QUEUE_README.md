@@ -22,7 +22,9 @@ The async job queue system allows long-running API operations to execute in the 
 ```bash
 cd standards-extractor
 source venv/bin/activate
-uvicorn src.api:app --reload --host 0.0.0.0 --port 8000
+# NOTE: always use the entrypoint (never bare uvicorn) - it scopes the reload
+# watcher to source dirs so agent workspace writes can't kill in-flight runs.
+python -m src.entrypoints.run_api --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 2. Start the Worker (separate terminal)
