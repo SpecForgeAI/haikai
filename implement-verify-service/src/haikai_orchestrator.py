@@ -345,7 +345,7 @@ class HaikaiOrchestrator:
                     # fresh session (created in-worktree by step 1).
                     is_new_session = fresh_session_start and step == start_from_step
 
-                    step_result = self._execute_step_with_session(
+                    step_result = self._execute_step_with_retry(
                         chat_executor=chat_executor,
                         step=step,
                         command=command,
@@ -418,13 +418,23 @@ class HaikaiOrchestrator:
                 success=success
             )
 
+            # Robustness R1: surface the FIRST fatal failure's classification
+            # + step so the gateway's retry policy (and resume-at-step) is
+            # informed via the build-results callback.
+            first_fatal = next(
+                (r for r in all_results
+                 if r.status == "failure" and r.step not in non_fatal_steps),
+                None,
+            )
             return OrchestrationResponse(
                 success=success,
                 spec_names=spec_names_generated,
                 session_ids=session_ids,
                 results=all_results,
                 total_execution_time_seconds=total_time,
-                orchestration_log=orchestration_log
+                orchestration_log=orchestration_log,
+                failure_class=first_fatal.failure_class if first_fatal else None,
+                failed_step=first_fatal.step if first_fatal else None,
             )
 
         except Exception as e:
@@ -444,6 +454,110 @@ class HaikaiOrchestrator:
                 total_execution_time_seconds=total_time,
                 orchestration_log=error_log
             )
+
+    def _model_fallback_tracker(self):
+        """Lazy per-run ModelFallbackTracker (Robustness R1).
+
+        Created once per orchestrator instance (= one run): after
+        KIRO_MODEL_FALLBACK_THRESHOLD (default 3) transient failures on the
+        primary model, subsequent kiro spawns pin
+        KIRO_CHAT_MODEL_ALTERNATIVE instead. Kiro-only — the Claude executor
+        has no alternative-model contract.
+        """
+        if getattr(self, "_fallback_tracker", None) is None:
+            from .chat.model_pinning import kiro_alternative_model, kiro_pinned_model
+            from .chat.transient_failure import ModelFallbackTracker
+            self._fallback_tracker = ModelFallbackTracker(
+                primary=kiro_pinned_model(),
+                alternative=kiro_alternative_model(),
+            )
+        return self._fallback_tracker
+
+    def _apply_model_fallback(self, chat_executor) -> None:
+        """Swap the executor onto the alternative model once fallback is active.
+
+        The ONE sanctioned post-construction mutation of ``executor.model``
+        (documented exception to the O4' no-mutation rule): model choice is
+        inherently run-dynamic once upstream availability enters the picture.
+        Kiro executors only.
+        """
+        tracker = self._model_fallback_tracker()
+        if not tracker.fallback_active:
+            return
+        if not type(chat_executor).__name__.startswith("Kiro"):
+            return
+        if getattr(chat_executor, "model", None) != tracker.alternative:
+            logger.warning(
+                "Swapping executor model to the fallback %r (was %r) after "
+                "%d transient failure(s).",
+                tracker.alternative,
+                getattr(chat_executor, "model", None),
+                tracker.transient_failures,
+            )
+            chat_executor.model = tracker.alternative
+
+    def _execute_step_with_retry(
+        self,
+        chat_executor,
+        step: int,
+        command: str,
+        spec_name: str,
+        is_new_session: bool = False,
+    ) -> StepResult:
+        """Execute a step with bounded transient-failure retries (R1).
+
+        Policy: only failures classified ``transient_upstream`` (backend
+        5xx / throttling / timeout signatures — see
+        src/chat/transient_failure.py) are retried, after a cool-off
+        (STEP_RETRY_BACKOFF_SECONDS, default 30s then 120s), up to
+        STEP_RETRY_MAX_RETRIES extra tries (default 2 ⇒ 3 tries). REAL
+        failures (questions in a non-interactive run, unticked tasks,
+        incoherent output) return immediately — retrying would mask them.
+        Each transient failure feeds the model-fallback tracker; retries
+        resume the SAME session (never a fresh one), so partial step work
+        is context the next try builds on.
+        """
+        import time as _time
+
+        from .chat.transient_failure import (
+            FAILURE_CLASS_TRANSIENT,
+            step_retry_backoff_seconds,
+            step_retry_max_retries,
+        )
+
+        max_tries = 1 + step_retry_max_retries()
+        backoff = step_retry_backoff_seconds()
+        result: StepResult = None  # type: ignore[assignment]
+        for attempt in range(1, max_tries + 1):
+            self._apply_model_fallback(chat_executor)
+            result = self._execute_step_with_session(
+                chat_executor=chat_executor,
+                step=step,
+                command=command,
+                spec_name=spec_name,
+                # A retry continues the session the first try created.
+                is_new_session=is_new_session and attempt == 1,
+            )
+            result.attempts = attempt
+            if result.status == "success":
+                return result
+            if result.failure_class == FAILURE_CLASS_TRANSIENT:
+                self._model_fallback_tracker().record_transient_failure()
+            if result.failure_class != FAILURE_CLASS_TRANSIENT or attempt == max_tries:
+                return result
+            delay = backoff[min(attempt - 1, len(backoff) - 1)]
+            logger.warning(
+                "Spec '%s' - Step %d (%s) failed TRANSIENTLY (attempt %d/%d): "
+                "cooling off %.0fs then retrying.",
+                spec_name, step, command, attempt, max_tries, delay,
+            )
+            _trace.warn(
+                f"step {step} transient failure — retrying in {delay:.0f}s "
+                f"(attempt {attempt}/{max_tries})",
+                {"project": self.request.project},
+            )
+            _time.sleep(delay)
+        return result
 
     def _execute_step_with_session(
         self,
@@ -599,6 +713,18 @@ class HaikaiOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to persist session after step {step}: {e}")
 
+        # Classify the failure (Robustness R1): transient upstream signatures
+        # may live in the ERROR events (exit-code-first messages) OR in the
+        # trailing CONTENT (kiro-cli prints its trouble banner to stdout and
+        # exits 0 — the silent-lie shape). The classification drives the
+        # step-retry policy and rides the build-results callback.
+        failure_class = None
+        if not success:
+            from .chat.transient_failure import classify_step_failure
+            failure_class = classify_step_failure(
+                errors, "".join(collected_content)
+            )
+
         # Build step result
         return StepResult(
             step=step,
@@ -607,7 +733,8 @@ class HaikaiOrchestrator:
             output_paths=output_paths,
             execution_time_seconds=execution_time,
             log_file=log_file,
-            error_message="\n".join(errors) if errors else None
+            error_message="\n".join(errors) if errors else None,
+            failure_class=failure_class,
         )
 
     def _determine_output_paths(self, step: int, spec_name: str) -> List[str]:
@@ -827,7 +954,7 @@ class HaikaiOrchestrator:
                 # Execute write-spec and create-tasks only
                 spec_failed = False
                 for cmd_def in self.BRAIN_COMMANDS:
-                    step_result = self._execute_step_with_session(
+                    step_result = self._execute_step_with_retry(
                         chat_executor=chat_executor,
                         step=cmd_def["step"],
                         command=cmd_def["command"],

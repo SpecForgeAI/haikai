@@ -33,6 +33,13 @@ from typing import List, Optional
 
 KIRO_MODEL_ENV = "KIRO_CHAT_MODEL"
 KIRO_MODEL_DEFAULT = "claude-opus-5"
+# Fallback model when the PRIMARY keeps transiently failing (Robustness R1,
+# 2026-08-05): after KIRO_MODEL_FALLBACK_THRESHOLD (default 3) transient
+# upstream failures in one run, spawns pin this instead — e.g. claude-opus-5
+# flapping server-side falls back to claude-opus-4.8 rather than burning the
+# Stage. Empty/`auto` disables the fallback entirely.
+KIRO_MODEL_ALTERNATIVE_ENV = "KIRO_CHAT_MODEL_ALTERNATIVE"
+KIRO_MODEL_ALTERNATIVE_DEFAULT = "claude-opus-4.8"
 CLAUDE_MODEL_ENV = "LLM_MODEL"
 
 
@@ -52,6 +59,16 @@ def resolve_pinned_model(env_var: str, default: str = "") -> Optional[str]:
 def kiro_pinned_model() -> Optional[str]:
     """The model every kiro-cli chat spawn pins (default claude-opus-5)."""
     return resolve_pinned_model(KIRO_MODEL_ENV, KIRO_MODEL_DEFAULT)
+
+
+def kiro_alternative_model() -> Optional[str]:
+    """The transient-failure fallback model (default claude-opus-4.8).
+
+    Consumed by the orchestrator's ModelFallbackTracker (see
+    src/chat/transient_failure.py) — never pinned directly at spawn unless
+    the tracker activated it.
+    """
+    return resolve_pinned_model(KIRO_MODEL_ALTERNATIVE_ENV, KIRO_MODEL_ALTERNATIVE_DEFAULT)
 
 
 def claude_pinned_model() -> Optional[str]:
