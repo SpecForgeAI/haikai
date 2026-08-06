@@ -88,6 +88,20 @@ export interface OrchestrationSubmitInput {
     setup?: string;
     env?: Record<string, string>;
   };
+  /**
+   * Run-branch chaining (2026-08-06): the spec name whose
+   * `feature/<baseSpec>[--<folder>]` branch(es) form the base ref for this
+   * spec's worktree branch — the previous GOOD spec of the run (or the
+   * cross-run `base_spec` persisted at run creation). Omitted = base off the
+   * default branch (IVS fetches origin-fresh).
+   */
+  baseSpec?: string | null;
+  /**
+   * Run-branch chaining: FALSE = commit + push the spec branch but do NOT
+   * open a merge request (only the stage-final branch, which carries the
+   * whole chain's diff, opens the ONE MR). Omitted = IVS default (true).
+   */
+  openMergeRequest?: boolean;
   /** The gateway's build-results URL, sent per-request on every submit (CD-3). */
   callbackUrl: string;
 }
@@ -121,6 +135,12 @@ export interface OrchestrationBatchSubmitInput {
   deployOnComplete: boolean;
   /** Stage-2 (2026-07-31): serve spec for the batch deploy (see the single-spec field). */
   targetServeSpec?: OrchestrationSubmitInput['targetServeSpec'];
+  /**
+   * Run-branch chaining (2026-08-06): base the ONE batch branch off this
+   * spec's branch(es) instead of the default branch (cross-run stage
+   * continuation). Omitted = default-branch base.
+   */
+  baseSpec?: string | null;
   /** The gateway's build-results URL (one callback for the whole batch). */
   callbackUrl: string;
 }
@@ -271,6 +291,13 @@ export async function submitOrchestration(
     ...(input.commitPreparation !== undefined
       ? { commit_preparation: input.commitPreparation }
       : {}),
+    // Run-branch chaining (2026-08-06): base this spec's worktree branch off
+    // the previous GOOD spec's branch; suppress the per-spec MR on non-final
+    // items (the stage-final branch opens the ONE MR for the whole chain).
+    ...(input.baseSpec ? { base_spec: input.baseSpec } : {}),
+    ...(input.openMergeRequest !== undefined
+      ? { open_merge_request: input.openMergeRequest }
+      : {}),
     options: { ...DEFAULT_OPTIONS },
   };
 
@@ -279,6 +306,8 @@ export async function submitOrchestration(
     project: input.project,
     specName: input.specName,
     deployOnComplete: input.deployOnComplete,
+    baseSpec: input.baseSpec ?? null,
+    openMergeRequest: input.openMergeRequest ?? null,
   });
 }
 
@@ -309,6 +338,8 @@ export async function submitOrchestrationBatch(
     callback_url: input.callbackUrl,
     deploy_on_complete: input.deployOnComplete,
     ...(input.targetServeSpec ? { target: toTargetWire(input.targetServeSpec) } : {}),
+    // Run-branch chaining (2026-08-06): cross-run base for the batch branch.
+    ...(input.baseSpec ? { base_spec: input.baseSpec } : {}),
     options: { ...DEFAULT_OPTIONS },
   };
 
@@ -318,5 +349,6 @@ export async function submitOrchestrationBatch(
     specCount: input.specs.length,
     batchName: input.batchName,
     deployOnComplete: input.deployOnComplete,
+    baseSpec: input.baseSpec ?? null,
   });
 }

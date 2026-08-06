@@ -144,6 +144,91 @@ def add_worktree(live_repo: Path, path: Path, branch: str, base: str,
              "--reason", f"job {job_id} active", str(path))
 
 
+def _ref_resolves(live_repo: Path, ref: str) -> bool:
+    """True when `ref` resolves to a commit (branch, origin/branch, sha)."""
+    return _git(live_repo, "rev-parse", "--verify", "--quiet",
+                f"{ref}^{{commit}}").returncode == 0
+
+
+def resolve_base_ref(live_repo: Path, base_spec: str, folder,
+                     default_branch: str) -> str:
+    """Resolve the chaining base for a repo target (run-branch chaining,
+    2026-08-06): the previous GOOD spec's branch for THIS target —
+    `feature/<base_spec>--<folder>` (polyrepo) before `feature/<base_spec>`,
+    local before origin, with one fetch-on-miss (a machine swap may hold the
+    branch only on origin). No resolvable candidate is a FAIL-FAST allocation
+    error (W5): the caller asserted a base that does not exist — silently
+    basing off `default_branch` would rebuild the exact blindness this
+    feature removes."""
+    candidates = ([f"feature/{base_spec}--{folder}"] if folder is not None
+                  else []) + [f"feature/{base_spec}"]
+    for fetched in (False, True):
+        if fetched:
+            _git(live_repo, "fetch", "--all", "--quiet")
+        for candidate in candidates:
+            for ref in (candidate, f"origin/{candidate}"):
+                if _ref_resolves(live_repo, ref):
+                    return ref
+    raise WorktreeAllocationError(
+        f"base_spec '{base_spec}' resolves no branch for repo target "
+        f"{folder or '(root)'} (tried {candidates} locally and on origin) — "
+        "the previous spec's branch was never created or was deleted")
+
+
+def fresh_default_base(live_repo: Path, default_branch: str) -> str:
+    """The base ref for an UNCHAINED run: prefer `origin/<default_branch>`
+    after a best-effort fetch, falling back to the local branch offline.
+    A stage restarted 'fresh from main' (chaining checkbox B) must see the
+    previous stage's MERGED work — the local default branch can be stale
+    (same rule assembly already applies at assemble_run)."""
+    _git(live_repo, "fetch", "origin", default_branch, "--quiet")  # best-effort
+    remote = f"origin/{default_branch}"
+    return remote if _ref_resolves(live_repo, remote) else default_branch
+
+
+def free_branch_holder_if_dead(live_repo: Path, branch: str, storage,
+                               workspace_dir: str) -> bool:
+    """Inline D14-lite reclaim at allocation (run-branch chaining hardening):
+    the build-results callback fires BEFORE the finishing job's worktree is
+    reclaimed, so a follow-on allocation can find the branch still held by a
+    TERMINAL job's tree. Free it iff the full reclaim predicate allows;
+    a live holder stays untouched (the caller's add_worktree then fails
+    loudly, exactly as before). Only paths under `<workspace>/wt/` are ever
+    candidates — the live checkout is never removed. Returns True if freed."""
+    holder = branch_checked_out_at(live_repo, branch)
+    if not holder:
+        return False
+    holder_path = Path(holder)
+    wt_root = Path(workspace_dir).resolve() / "wt"
+    try:
+        rel = holder_path.resolve().relative_to(wt_root)
+    except ValueError:
+        return False  # live checkout or foreign path — never touch
+    run_dir = rel.parts[0] if rel.parts else None
+    if not run_dir:
+        return False
+    job = None
+    if storage is not None:
+        for candidate in storage.list_jobs(limit=1000):
+            root = getattr(candidate, "worktree_root", None)
+            if root and Path(root).name == run_dir:
+                job = candidate
+                break
+    if job is None:
+        return False  # recordless debris is the TTL sweeper's business
+    ok, reason = reclaim_allowed(job, storage)
+    if not ok:
+        logger.info("branch %s held by job %s — not reclaimable (%s)",
+                    branch, job.job_id, reason)
+        return False
+    logs_path = getattr(job, "logs_path", None)
+    copy_observability_out(wt_root / run_dir, logs_path)
+    remove_worktree(live_repo, holder_path)
+    logger.info("freed branch %s: reclaimed dead holder %s (job %s, %s)",
+                branch, holder, job.job_id, reason)
+    return True
+
+
 def create_branch_in_worktree(worktree: Path, branch: str, base: str) -> None:
     """Worktree-safe mid-run branch creation: single command with a
     start-point — never checks out the default branch (the linked-worktree

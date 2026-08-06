@@ -58,6 +58,7 @@ public final class MigrationExecutionRunMapper {
             entity.getCurrentSequencePosition(),
             entity.getPinnedCurrentBaselineId(),
             entity.getTargetBaseUrl(),
+            entity.getBaseSpec(),
             entity.getDecisionLogJson(),
             entity.getCreatedAt() != null ? entity.getCreatedAt().toString() : null,
             entity.getUpdatedAt() != null ? entity.getUpdatedAt().toString() : null
@@ -89,6 +90,7 @@ public final class MigrationExecutionRunMapper {
             entity.getCurrentSequencePosition(),
             entity.getPinnedCurrentBaselineId(),
             entity.getTargetBaseUrl(),
+            entity.getBaseSpec(),
             entity.getDecisionLogJson(),
             entity.getCreatedAt() != null ? entity.getCreatedAt().toString() : null,
             entity.getUpdatedAt() != null ? entity.getUpdatedAt().toString() : null,
@@ -120,6 +122,7 @@ public final class MigrationExecutionRunMapper {
             .currentSequencePosition(dto.currentSequencePosition())
             .pinnedCurrentBaselineId(dto.pinnedCurrentBaselineId())
             .targetBaseUrl(dto.targetBaseUrl())
+            .baseSpec(dto.baseSpec())
             .decisionLogJson(dto.decisionLogJson())
             .createdAt(now)
             .updatedAt(now)
@@ -132,7 +135,7 @@ public final class MigrationExecutionRunMapper {
      * untouched -- per {@code project_primitive_double_dto_overwrite.md}.
      *
      * <p>Editable fields: {@code status}, {@code currentSequencePosition},
-     * {@code pinnedCurrentBaselineId}, {@code targetBaseUrl},
+     * {@code pinnedCurrentBaselineId}, {@code targetBaseUrl}, {@code baseSpec},
      * {@code decisionLogJson}. NOT editable: {@code id}, {@code projectId},
      * {@code bookOfWorkId}, {@code createdAt}, {@code updatedAt} (auto-managed by
      * {@code @PreUpdate}).</p>
@@ -157,6 +160,9 @@ public final class MigrationExecutionRunMapper {
         }
         if (dto.targetBaseUrl() != null) {
             entity.setTargetBaseUrl(dto.targetBaseUrl());
+        }
+        if (dto.baseSpec() != null) {
+            entity.setBaseSpec(dto.baseSpec());
         }
         if (dto.decisionLogJson() != null) {
             entity.setDecisionLogJson(dto.decisionLogJson());

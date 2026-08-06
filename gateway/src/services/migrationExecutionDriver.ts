@@ -211,6 +211,16 @@ export interface MigrateScope {
    * attribution — mirrors the resume-time break-glass.
    */
   parityOverride?: boolean;
+  /**
+   * Run-branch chaining (2026-08-06): where this run's FIRST dispatch bases
+   * its worktree branch. 'chain' (default) = continue from the latest prior
+   * run's last GOOD spec branch — a "Start Stage 2" sees Stage 1's unmerged
+   * work; 'fresh' = start from the default branch (operator ticked "start
+   * from main — the previous stage's changes are already merged" at the
+   * Start-stage dialog). Within a run, later specs always chain off the
+   * previous successful item regardless of this mode.
+   */
+  baseMode?: 'chain' | 'fresh' | null;
 }
 
 /** The injectable dependency surface (the DI seam for tests). */
@@ -1139,6 +1149,38 @@ export async function startMigration(
     };
   }
 
+  // 4f. Run-branch chaining (2026-08-06): resolve where this run's FIRST
+  //     dispatch bases its worktree branch. 'chain' (default) continues from
+  //     the latest prior run's last GOOD spec branch — a "Start Stage 2" sees
+  //     Stage 1's unmerged work in its worktree; 'fresh' starts from the
+  //     default branch (operator declared the previous stage merged). The
+  //     resolved base persists on the run header so retries, resume and the
+  //     boot sweep re-derive the same base after a gateway restart.
+  let runBaseSpec: string | null = null;
+  if (scope.baseMode !== 'fresh') {
+    const fetchLatest =
+      deps.fetchLatestMigrationExecutionRunForBook ??
+      getLatestMigrationExecutionRunForBook;
+    try {
+      runBaseSpec = lastGoodSpecOfRun(await fetchLatest(projectId, bookId));
+    } catch (error) {
+      // Fail-soft: an unreadable prior run degrades to a default-branch base
+      // (the pre-chaining behaviour), never a blocked start.
+      logger.warn('[diag-gateway] migration_execution_driver base_spec_resolve_failed', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      runBaseSpec = null;
+    }
+  }
+  logger.info('[diag-gateway] migration_execution_driver run_base_resolved', {
+    projectId,
+    bookId,
+    baseMode: scope.baseMode ?? 'chain',
+    baseSpec: runBaseSpec,
+  });
+
   // 5. Create the AMS run + ordered items atomically (deploy_on_complete only
   //    on the FINAL item).
   const runRequest = {
@@ -1148,6 +1190,7 @@ export async function startMigration(
       status: RUN_STATUS.STARTED,
       current_sequence_position: 0,
       pinned_current_baseline_id: baseline?.id ?? null,
+      base_spec: runBaseSpec,
     } as MigrationExecutionRun,
     items: dispatchSet.map((d) => ({
       sequence_position: d.sequencePosition,
@@ -1260,6 +1303,54 @@ export async function startMigration(
   }
 
   return { status: 'started', runId, itemCount: dispatchSet.length };
+}
+
+/**
+ * The last GOOD spec of a run: the highest-sequence item that reported
+ * `implemented`/`deployed` and carries a spec_name (the `-r<n>` restamp of a
+ * retried item included — the successful attempt's name IS the branch that
+ * holds the good state). Null when the run has no successful item yet.
+ */
+export function lastGoodSpecOfRun(
+  run: MigrationExecutionRun | null | undefined
+): string | null {
+  const good = (run?.items ?? [])
+    .filter(
+      (i) =>
+        (i.outcome === 'implemented' || i.outcome === 'deployed') &&
+        (i.spec_name ?? '').trim() !== ''
+    )
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+  return good.length > 0 ? (good[good.length - 1].spec_name as string) : null;
+}
+
+/**
+ * Run-branch chaining (2026-08-06): the base spec for ONE item's dispatch.
+ * Prefer the last GOOD item BEFORE this one within the run (so spec N's
+ * worktree starts from spec N-1's commit — and a RETRY of spec N bases off
+ * spec N-1's branch, never the failed attempt's wreckage); fall back to the
+ * run-level `base_spec` persisted at creation (cross-run stage chaining);
+ * null = default-branch base.
+ */
+export function chainBaseSpecForItem(
+  run: MigrationExecutionRun | null | undefined,
+  item: MigrationExecutionRunItem
+): string | null {
+  const pos = item.sequence_position ?? Number.MAX_SAFE_INTEGER;
+  const priorGood = (run?.items ?? [])
+    .filter(
+      (i) =>
+        i.id !== item.id &&
+        (i.sequence_position ?? -1) < pos &&
+        (i.outcome === 'implemented' || i.outcome === 'deployed') &&
+        (i.spec_name ?? '').trim() !== ''
+    )
+    .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
+  if (priorGood.length > 0) {
+    return priorGood[priorGood.length - 1].spec_name as string;
+  }
+  const runBase = (run?.base_spec ?? '').trim();
+  return runBase !== '' ? runBase : null;
 }
 
 /**
@@ -1410,8 +1501,10 @@ export async function runSpecSegment(
   // the IVS-side active-job dedup makes that re-kick safe end-to-end. A
   // failed pre-read falls through and dispatches (never stall on a read
   // hiccup); the IVS dedup + worktree branch lock remain the backstops.
+  let freshRun: MigrationExecutionRun | null = null;
   try {
     const fresh = await deps.getMigrationExecutionRun(projectId, runId);
+    freshRun = fresh;
     const current = (fresh?.items ?? []).find((i) => i.id === runItemId);
     if (current) {
       // Robustness R2: a scheduled RETRY re-dispatch inverts this check — the
@@ -1469,6 +1562,13 @@ export async function runSpecSegment(
     descriptor.generatedSpecText
   );
 
+  // Run-branch chaining (2026-08-06): base this spec's worktree branch off the
+  // last GOOD spec's branch (fresh run-state read; the passed-in `run` snapshot
+  // predates the previous item's outcome patch), falling back to the run-level
+  // base_spec (cross-run stage chaining). A RETRY derives the same base — the
+  // failed attempt has no successful outcome, so its wreckage is never chained.
+  const chainBase = chainBaseSpecForItem(freshRun ?? run, item);
+
   // Stamp the computed spec_name; SUBMITTING (no ANSWERING phase any more —
   // the boot-recovery sweep re-kicks submitting-with-no-job_id as before).
   await safePatchItem(deps, projectId, runItemId, {
@@ -1486,6 +1586,11 @@ export async function runSpecSegment(
   // on every db-plane final item).
   const itemPlane = descriptor.plane ?? planeForWorkstream(descriptor.workstream);
   const wantsHaiboxDeploy = (item.deploy_on_complete ?? false) && itemPlane !== 'db';
+  // Run-branch chaining (2026-08-06): with chained branches the STAGE-FINAL
+  // branch carries the whole chain's diff — only it opens the ONE MR.
+  // Non-final items commit + push MR-less. DB-plane items ALL suppress: the
+  // assembly job (assemble-run) opens the db pack's single MR.
+  const openMergeRequest = (item.deploy_on_complete ?? false) && itemPlane !== 'db';
   // Stage-2 (2026-07-31): a service-plane deploy needs the serve spec the
   // operator registered in the Start-stage dialog. Missing = today's
   // fail-soft (implement + MRs, no deploy) with a LOUD dispatch-time trace.
@@ -1514,6 +1619,8 @@ export async function runSpecSegment(
       commitPreparation: item.deploy_on_complete === true,
       deployOnComplete: wantsHaiboxDeploy,
       ...(targetServeSpec ? { targetServeSpec } : {}),
+      ...(chainBase ? { baseSpec: chainBase } : {}),
+      openMergeRequest,
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {
@@ -1543,13 +1650,19 @@ export async function runSpecSegment(
     jobId: submit.jobId,
     specName,
     deployOnComplete: item.deploy_on_complete ?? false,
+    baseSpec: chainBase,
+    openMergeRequest,
   });
 
-  trace.step(`spec dispatched — ${specName}`, {
-    run: runId,
-    job: submit.jobId,
-    project: scope.project,
-  });
+  trace.step(
+    `spec dispatched — ${specName}` +
+      (chainBase ? ` (chained off ${chainBase})` : ' (base: default branch)'),
+    {
+      run: runId,
+      job: submit.jobId,
+      project: scope.project,
+    }
+  );
 }
 
 // ============================================================================
@@ -1687,6 +1800,10 @@ export async function runBatchSegment(
       batchName,
       deployOnComplete: batchDeploys,
       ...(batchServeSpec ? { targetServeSpec: batchServeSpec } : {}),
+      // Run-branch chaining (2026-08-06): base the ONE batch branch off the
+      // cross-run base resolved at run creation (batch specs already share a
+      // tree/branch within the job — only the cross-run base applies here).
+      ...((run.base_spec ?? '').trim() !== '' ? { baseSpec: run.base_spec } : {}),
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {

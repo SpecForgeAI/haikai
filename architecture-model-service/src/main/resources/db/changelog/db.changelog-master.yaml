@@ -5090,3 +5090,31 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 218: run-branch chaining -- base_spec on migration_execution_run
+  # (2026-08-06). The gateway driver chains each spec dispatch off the last
+  # GOOD spec's branch (spec N's worktree starts from spec N-1's commit, not
+  # pristine default). base_spec persists the CROSS-RUN base chosen at run
+  # creation ("Start Stage 2" continuing Stage 1's unmerged work); NULL =
+  # fresh from the default branch. Within-run chaining derives from the
+  # run-items.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 217).
+  # ============================================================================
+  - changeSet:
+      id: 218-migration-run-base-spec
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_execution_run
+              columnName: base_spec
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/218-migration-run-base-spec.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

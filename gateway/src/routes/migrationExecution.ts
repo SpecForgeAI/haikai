@@ -141,6 +141,7 @@ migrationExecutionRouter.post(
       project?: string;
       plane?: string;
       parityOverride?: boolean;
+      baseMode?: string;
     };
 
     if (!body.company || typeof body.company !== 'string' || body.company.trim() === '') {
@@ -157,6 +158,15 @@ migrationExecutionRouter.post(
         .status(400)
         .json({ status: 'error', message: `plane must be one of db|service|ui` });
     }
+    // Run-branch chaining (2026-08-06): 'chain' (default) = the run's first
+    // dispatch bases off the latest prior run's last GOOD spec branch;
+    // 'fresh' = start from the default branch (Start-stage checkbox: the
+    // previous stage's changes are already merged).
+    if (body.baseMode !== undefined && body.baseMode !== 'chain' && body.baseMode !== 'fresh') {
+      return res
+        .status(400)
+        .json({ status: 'error', message: `baseMode must be one of chain|fresh` });
+    }
 
     const scope: MigrateScope = {
       projectId,
@@ -165,6 +175,7 @@ migrationExecutionRouter.post(
       project: body.project,
       plane: (body.plane as MigrateScope['plane']) ?? null,
       parityOverride: body.parityOverride === true,
+      baseMode: (body.baseMode as MigrateScope['baseMode']) ?? null,
     };
 
     logger.info('[diag-gateway] migration_execution_driver migrate_trigger', {

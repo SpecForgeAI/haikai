@@ -94,6 +94,30 @@ class OrchestrationRequest(BaseModel):
             "per-spec branch/PR behaviour."
         ),
     )
+    # Run-branch chaining (2026-08-06): sequential multi-spec runs previously
+    # branched EVERY spec from pristine default — spec 12 could not see spec
+    # 1's code, shared files add/add-conflicted at assembly, and specs
+    # re-invented each other's scaffolding. The driver now threads the last
+    # GOOD spec's name so each worktree starts from the previous successful
+    # spec's commit instead.
+    base_spec: Optional[str] = Field(
+        default=None,
+        description=(
+            "Spec name whose `feature/<base_spec>[--<folder>]` branch(es) form "
+            "the base ref for this run's worktree branches (per repo target). "
+            "Unset = base off the default branch (freshly fetched from origin "
+            "when reachable). Requires worktree runs (WORKTREE_RUNS=on)."
+        ),
+    )
+    open_merge_request: bool = Field(
+        default=True,
+        description=(
+            "False = commit + push the spec branch but do NOT open a merge "
+            "request (chained runs open ONE MR from the stage-final branch, "
+            "which contains the whole chain's diff). True (default) keeps the "
+            "legacy per-spec MR behaviour."
+        ),
+    )
     context_files: Optional[List[str]] = Field(
         default=None,
         description="List of paths to context files to include in requirements.md"

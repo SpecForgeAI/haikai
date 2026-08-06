@@ -326,6 +326,7 @@ describe('execution rail (Phase 1b)', () => {
         project: 'demo',
         plane: 'db',
         parityOverride: false,
+        baseMode: 'chain', // run-branch chaining default (2026-08-06)
       }),
     );
     await waitFor(() =>
@@ -423,6 +424,52 @@ describe('execution rail (Phase 1b)', () => {
         project: 'demo',
         plane: 'service',
         parityOverride: false,
+        baseMode: 'chain', // run-branch chaining default (2026-08-06)
+      }),
+    );
+  });
+
+  it('run-branch chaining (2026-08-06): the stage-2 dialog offers "start from main"; ticking it sends baseMode=fresh, and stage 1 never shows the checkbox', async () => {
+    const twoPlane = [
+      makeItem({ id: 's-db', title: 'Schema', workItemId: 'wi-db' } as never),
+      makeItem({
+        id: 's-svc',
+        title: 'API',
+        workItemId: 'wi-svc',
+        workstream: 'api_migration',
+      } as never),
+    ];
+    mockFetchRows.mockResolvedValue([
+      generatedRow('wi-db', 's-db'),
+      generatedRow('wi-svc', 's-svc'),
+    ]);
+    mockGetRun.mockResolvedValue({
+      id: 'run-db',
+      status: 'deployed',
+      items: [{ work_item_id: 'wi-db', status: 'deployed' }],
+    });
+    renderWorkspace(draftWith(twoPlane));
+
+    // Stage 1's dialog has NO base-mode checkbox (there is no previous stage).
+    fireEvent.click(await screen.findByTestId('execution-rail-start'));
+    let dialog = await screen.findByTestId('start-stage-dialog');
+    expect(within(dialog).queryByTestId('start-stage-base-mode')).toBeNull();
+    fireEvent.click(within(dialog).getByTestId('start-stage-cancel'));
+
+    // Stage 2's dialog HAS it; ticked -> the migrate POST carries 'fresh'.
+    fireEvent.click(await screen.findByTestId('execution-rail-start-service'));
+    dialog = await screen.findByTestId('start-stage-dialog');
+    fireEvent.click(
+      within(dialog).getByTestId('start-stage-base-mode-checkbox'),
+    );
+    fireEvent.click(within(dialog).getByTestId('start-stage-confirm'));
+    await waitFor(() =>
+      expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
+        company: 'acme',
+        project: 'demo',
+        plane: 'service',
+        parityOverride: false,
+        baseMode: 'fresh',
       }),
     );
   });
@@ -570,6 +617,7 @@ describe('execution rail (Phase 1b)', () => {
         project: 'demo',
         plane: 'service',
         parityOverride: true,
+        baseMode: 'chain', // run-branch chaining default (2026-08-06)
       }),
     );
   });

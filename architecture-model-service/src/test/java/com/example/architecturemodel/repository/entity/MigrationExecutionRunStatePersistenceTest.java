@@ -125,7 +125,8 @@ class MigrationExecutionRunStatePersistenceTest {
         MigrationExecutionRunDto runHeader = new MigrationExecutionRunDto(
             null, projectId, bookOfWorkId,
             MigrationExecutionRunStatus.STARTED,
-            0, pinnedBaselineId, null, null, null, null);
+            0, pinnedBaselineId, null, "2026-08-01-stage1-final-spec",
+            null, null, null);
 
         // Two specs: only the FINAL one carries deploy_on_complete=true (big-bang).
         List<MigrationExecutionRunItemDto> items = List.of(
@@ -141,6 +142,9 @@ class MigrationExecutionRunStatePersistenceTest {
         assertThat(created.pinnedCurrentBaselineId())
             .as("the pinned kind=current baseline id must round-trip (CD-7)")
             .isEqualTo(pinnedBaselineId);
+        assertThat(created.baseSpec())
+            .as("the run-branch chaining base_spec must round-trip (2026-08-06)")
+            .isEqualTo("2026-08-01-stage1-final-spec");
         assertThat(created.items()).hasSize(2);
 
         // Read run-state back fresh from the DB.
@@ -167,7 +171,8 @@ class MigrationExecutionRunStatePersistenceTest {
         UUID projectId = UUID.randomUUID();
         MigrationExecutionRunDto runHeader = new MigrationExecutionRunDto(
             null, projectId, UUID.randomUUID(),
-            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null);
+            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null,
+            null);
         MigrationExecutionRunDto created = runService.createRun(
             projectId, new CreateRunRequest(runHeader, List.of(pendingItem(0, true))));
         UUID runItemId = created.items().get(0).id();
@@ -208,7 +213,8 @@ class MigrationExecutionRunStatePersistenceTest {
         UUID projectId = UUID.randomUUID();
         MigrationExecutionRunDto runHeader = new MigrationExecutionRunDto(
             null, projectId, UUID.randomUUID(),
-            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null);
+            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null,
+            null);
         MigrationExecutionRunDto created = runService.createRun(
             projectId, new CreateRunRequest(runHeader, List.of(pendingItem(0, true))));
         UUID runItemId = created.items().get(0).id();
@@ -258,7 +264,8 @@ class MigrationExecutionRunStatePersistenceTest {
         UUID projectId = UUID.randomUUID();
         MigrationExecutionRunDto runHeader = new MigrationExecutionRunDto(
             null, projectId, UUID.randomUUID(),
-            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null);
+            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null,
+            null);
         MigrationExecutionRunDto created = runService.createRun(
             projectId, new CreateRunRequest(runHeader, List.of(pendingItem(0, true))));
         UUID runItemId = created.items().get(0).id();
@@ -294,7 +301,8 @@ class MigrationExecutionRunStatePersistenceTest {
         UUID projectId = UUID.randomUUID();
         MigrationExecutionRunDto runHeader = new MigrationExecutionRunDto(
             null, projectId, UUID.randomUUID(),
-            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null);
+            MigrationExecutionRunStatus.STARTED, 0, null, null, null, null, null,
+            null);
         MigrationExecutionRunDto created = runService.createRun(
             projectId, new CreateRunRequest(runHeader, List.of(pendingItem(0, true))));
 
@@ -302,7 +310,7 @@ class MigrationExecutionRunStatePersistenceTest {
             decision("Run event", "dispatched spec 0", "first spec kicked off"));
         MigrationExecutionRunDto patch = new MigrationExecutionRunDto(
             null, null, null, MigrationExecutionRunStatus.DISPATCHING,
-            1, null, null, log, null, null);
+            1, null, null, null, log, null, null);
         runService.updateRun(created.id(), patch);
         entityManager.flush();
         entityManager.clear();
