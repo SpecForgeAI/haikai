@@ -1156,13 +1156,42 @@ export async function startMigration(
   //     default branch (operator declared the previous stage merged). The
   //     resolved base persists on the run header so retries, resume and the
   //     boot sweep re-derive the same base after a gateway restart.
+  //
+  //     CROSS-RUN chaining is a STAGE-BOUNDARY continuation ONLY (user ruling
+  //     2026-08-06, live re-start failure): it engages iff the latest prior
+  //     run (a) DEPLOYED and (b) covers DISJOINT work items (a genuinely
+  //     preceding stage). A "Re-start stage N" — any overlap with the items
+  //     being dispatched now, whatever the prior run's status — means the
+  //     operator abandoned that attempt: it gets a CLEAN tree off the default
+  //     branch, never the abandoned attempt's leftover branches (whose
+  //     "implemented" items may not even have surviving branches — the live
+  //     failure shape: base_spec resolved no branch and allocation failed).
+  //     "Resume stage N" is untouched: it continues the SAME run, where
+  //     within-run item chaining applies by design.
   let runBaseSpec: string | null = null;
+  let baseReason = scope.baseMode === 'fresh' ? 'operator_fresh' : 'no_prior_run';
   if (scope.baseMode !== 'fresh') {
     const fetchLatest =
       deps.fetchLatestMigrationExecutionRunForBook ??
       getLatestMigrationExecutionRunForBook;
     try {
-      runBaseSpec = lastGoodSpecOfRun(await fetchLatest(projectId, bookId));
+      const latest = await fetchLatest(projectId, bookId);
+      if (latest) {
+        const dispatchWorkItemIds = new Set(
+          dispatchSet.map((d) => d.workItemId).filter((id): id is string => !!id)
+        );
+        const overlaps = (latest.items ?? []).some(
+          (i) => i.work_item_id && dispatchWorkItemIds.has(i.work_item_id)
+        );
+        if (overlaps) {
+          baseReason = 'restart_of_same_stage';
+        } else if (latest.status !== RUN_STATUS.DEPLOYED) {
+          baseReason = 'prior_run_not_deployed';
+        } else {
+          runBaseSpec = lastGoodSpecOfRun(latest);
+          baseReason = runBaseSpec ? 'stage_chain' : 'prior_run_has_no_good_spec';
+        }
+      }
     } catch (error) {
       // Fail-soft: an unreadable prior run degrades to a default-branch base
       // (the pre-chaining behaviour), never a blocked start.
@@ -1172,6 +1201,7 @@ export async function startMigration(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       runBaseSpec = null;
+      baseReason = 'prior_run_read_failed';
     }
   }
   logger.info('[diag-gateway] migration_execution_driver run_base_resolved', {
@@ -1179,7 +1209,14 @@ export async function startMigration(
     bookId,
     baseMode: scope.baseMode ?? 'chain',
     baseSpec: runBaseSpec,
+    baseReason,
   });
+  trace.step(
+    runBaseSpec
+      ? `run base: chained off ${runBaseSpec} (${baseReason})`
+      : `run base: default branch (${baseReason})`,
+    { project: scope.project }
+  );
 
   // 5. Create the AMS run + ordered items atomically (deploy_on_complete only
   //    on the FINAL item).
