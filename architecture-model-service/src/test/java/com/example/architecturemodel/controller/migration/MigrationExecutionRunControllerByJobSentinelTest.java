@@ -66,7 +66,7 @@ class MigrationExecutionRunControllerByJobSentinelTest {
     private static MigrationExecutionRunDto run() {
         return new MigrationExecutionRunDto(
             RUN_ID, UUID.randomUUID(), UUID.randomUUID(), "dispatching",
-            0, null, null, null, null, null);
+            0, null, null, null, null, null, null);
     }
 
     @Test

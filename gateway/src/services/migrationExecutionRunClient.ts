@@ -83,6 +83,14 @@ export interface MigrationExecutionRun {
   current_sequence_position?: number | null;
   pinned_current_baseline_id?: string | null;
   target_base_url?: string | null;
+  /**
+   * Run-branch chaining (2026-08-06, changeset 218): the spec name whose
+   * `feature/<base_spec>[--<folder>]` branch(es) base this run's FIRST
+   * dispatch — the cross-run continuation resolved at run creation ("Start
+   * Stage 2" continuing Stage 1's unmerged work). NULL = fresh from the
+   * default branch. Within-run chaining derives from the run-items.
+   */
+  base_spec?: string | null;
   decision_log_json?: Array<Record<string, unknown>> | null;
   created_at?: string | null;
   updated_at?: string | null;

@@ -942,7 +942,13 @@ export interface MigrationExecutionRunDto {
  *                  and every gate dimension — to that plane's stories
  *                  ("Start stage N" starts stage N only); `parityOverride`
  *                  is the break-glass past the DB data-parity precedence gate
- *                  when starting the service plane (recorded on the run).
+ *                  when starting the service plane (recorded on the run);
+ *                  `baseMode` (run-branch chaining, 2026-08-06) picks where
+ *                  the stage's first worktree branch starts — 'chain'
+ *                  (default) continues from the previous stage's last good
+ *                  spec branch so this stage sees its unmerged work; 'fresh'
+ *                  starts from the main branch (the Start-stage checkbox, for
+ *                  when the previous stage's MR is already merged).
  */
 export async function triggerMigrate(
   projectId: string,
@@ -952,6 +958,7 @@ export async function triggerMigrate(
     project: string;
     plane?: 'db' | 'service' | 'ui';
     parityOverride?: boolean;
+    baseMode?: 'chain' | 'fresh';
   },
 ): Promise<TriggerMigrateResult> {
   const url =

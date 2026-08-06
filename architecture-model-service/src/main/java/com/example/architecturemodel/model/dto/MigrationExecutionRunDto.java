@@ -42,6 +42,7 @@ import java.util.UUID;
  * @param currentSequencePosition  Run-item sequence position currently in flight; nullable, boxed.
  * @param pinnedCurrentBaselineId  The pinned active {@code kind='current'} ApiBehaviourBaseline id (CD-7); nullable.
  * @param targetBaseUrl            Deployed product base URL (set on the final spec deployed outcome); nullable.
+ * @param baseSpec                 Run-branch chaining (2026-08-06): spec name whose feature branch(es) base this run's first dispatch; null = fresh from the default branch.
  * @param decisionLogJson          Run-level decision / event log (CD-4): list of {@code {question, answer, rationale}}; nullable.
  * @param createdAt                ISO-8601 timestamp of creation.
  * @param updatedAt                ISO-8601 timestamp of last update.
@@ -68,6 +69,9 @@ public record MigrationExecutionRunDto(
 
     @JsonProperty("target_base_url")
     String targetBaseUrl,
+
+    @JsonProperty("base_spec")
+    String baseSpec,
 
     @JsonProperty("decision_log_json")
     List<Map<String, Object>> decisionLogJson,
@@ -96,11 +100,12 @@ public record MigrationExecutionRunDto(
             Integer currentSequencePosition,
             UUID pinnedCurrentBaselineId,
             String targetBaseUrl,
+            String baseSpec,
             List<Map<String, Object>> decisionLogJson,
             String createdAt,
             String updatedAt) {
         this(id, projectId, bookOfWorkId, status, currentSequencePosition,
-            pinnedCurrentBaselineId, targetBaseUrl, decisionLogJson,
+            pinnedCurrentBaselineId, targetBaseUrl, baseSpec, decisionLogJson,
             createdAt, updatedAt, null);
     }
 }

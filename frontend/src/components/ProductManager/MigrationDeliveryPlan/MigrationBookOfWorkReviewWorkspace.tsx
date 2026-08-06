@@ -999,6 +999,11 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   // Parity-only refusal of a service start renders the break-glass option
   // (mirrors the resume-time break-glass; the override is recorded).
   const [showParityBreakGlass, setShowParityBreakGlass] = useState(false);
+  // Run-branch chaining (2026-08-06): unticked (default) = this stage's first
+  // worktree branch CONTINUES from the previous stage's last good spec branch
+  // (sees its unmerged work); ticked = start fresh from the main branch (the
+  // previous stage's MR is already merged). Reset on every dialog open.
+  const [startFromMain, setStartFromMain] = useState(false);
   const [credsStatus, setCredsStatus] =
     useState<MigrationCredentialsStatus | null>(null);
   const [targetDbFields, setTargetDbFields] = useState({
@@ -1121,6 +1126,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           authType: sa.auth_type ?? 'none',
         }));
       }
+      setStartFromMain(false);
       setStartDialog({ open: true, mode, plane, stageNo });
     },
     [refreshCredsStatus],
@@ -1155,6 +1161,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           project: projectName,
           plane: startDialog.plane,
           parityOverride,
+          baseMode: startFromMain ? 'fresh' : 'chain',
         });
         if (result.status === 'blocked') {
           setDialogError(
@@ -1273,6 +1280,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     bookId,
     startDialog.mode,
     startDialog.plane,
+    startFromMain,
     run?.id,
     targetDbFields,
     targetDbPassword,
@@ -2292,6 +2300,25 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                   Runs THIS plane end-to-end (build {'→'} verify {'→'}{' '}
                   reconcile). The next stage unlocks when it completes.
                 </p>
+              )}
+              {startDialog.mode === 'start' && (startDialog.stageNo ?? 1) > 1 && (
+                <label
+                  className={styles.modalHint}
+                  style={{ display: 'block', margin: '8px 0' }}
+                  data-testid="start-stage-base-mode"
+                >
+                  <input
+                    type="checkbox"
+                    checked={startFromMain}
+                    onChange={(e) => setStartFromMain(e.target.checked)}
+                    data-testid="start-stage-base-mode-checkbox"
+                  />{' '}
+                  Start from the main branch — use when the previous
+                  stage&apos;s changes are already merged. Unticked (default),
+                  this stage&apos;s work continues from the previous
+                  stage&apos;s branch so its unmerged code is visible to every
+                  spec.
+                </label>
               )}
               {startDialog.mode === 'retry-db' && (
                 <p className={styles.coveragePanelNote}>

@@ -296,9 +296,25 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                               if folder is not None else f"feature/{spec_scope}")
                 else:
                     branch = _run_branch_for(request, folder)
+                # Run-branch chaining (2026-08-06): base off the previous GOOD
+                # spec's branch when the driver threads one; otherwise a
+                # freshly-fetched default (origin-preferred). Per target —
+                # polyrepo bases carry the `--<folder>` suffix.
+                if getattr(request, "base_spec", None):
+                    base = wr.resolve_base_ref(live_repo, request.base_spec,
+                                               folder, default_branch)
+                else:
+                    base = wr.fresh_default_base(live_repo, default_branch)
+                # The finishing job's callback fires BEFORE its worktree is
+                # reclaimed — free a DEAD holder of this branch inline (full
+                # D14 predicate; a live holder still fails add_worktree loudly).
+                wr.free_branch_holder_if_dead(live_repo, branch, storage,
+                                              workspace_dir)
                 dest = run_product if folder is None else run_product / folder
-                wr.add_worktree(live_repo, dest, branch, default_branch,
+                wr.add_worktree(live_repo, dest, branch, base,
                                 job_id=job.job_id)
+                logger.info("Job %s: worktree for %s -> branch %s from base %s",
+                            job.job_id, folder or "(root)", branch, base)
                 wr.seed_repo_config(live_repo, dest)
                 allocated.append((live_repo, dest))
         run_product.mkdir(parents=True, exist_ok=True)  # polyrepo meta root
@@ -631,7 +647,8 @@ def _graph_completed(ctx: "dict | None", success: bool, detail: "dict | None" = 
 
 def _git_one_spec(git_config, targets, results: list, spec_name: str,
                   batch_name: "str | None" = None, orchestrate_id=None,
-                  repair_of: "dict | None" = None) -> None:
+                  repair_of: "dict | None" = None,
+                  open_mr: bool = True) -> None:
     """Commit ONE spec across all repo targets, appending a per-(spec, repo) record
     to ``results`` (C1/L3: never collapse to one scalar).
 
@@ -659,11 +676,14 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str,
         elif folder is not None:
             branch = f"feature/{spec_name}--{folder}"
             error_label = f"{spec_name}/{folder}"
-            pr_title = f"feature: {spec_name} ({folder})"
+            # Chained runs (2026-08-06): non-final specs push WITHOUT an MR —
+            # the stage-final branch carries the whole chain's diff and opens
+            # the ONE MR. pr_title=None is apply_git_workflow's PR-skip.
+            pr_title = f"feature: {spec_name} ({folder})" if open_mr else None
         else:
             branch = f"feature/{spec_name}"
             error_label = spec_name
-            pr_title = f"feature: {spec_name}"
+            pr_title = f"feature: {spec_name}" if open_mr else None
         gm = GitManager(
             project_dir=str(repo_dir),
             provider=git_config.provider,
@@ -1076,7 +1096,9 @@ def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
                 before = len(git_results)
                 _git_one_spec(git_setup[0], git_setup[1], git_results, sname,
                               batch_name=None, orchestrate_id=job_id,
-                              repair_of=None)
+                              repair_of=None,
+                              open_mr=getattr(sub_request, "open_merge_request",
+                                              True))
                 return any(r.get("error") for r in git_results[before:])
 
             response = orchestrator.run_workflow(
@@ -1221,6 +1243,15 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 job, request, workspace_dir, storage)
             if wt_err:
                 raise ValueError(f"worktree allocation failed: {wt_err}")
+        elif getattr(request, "base_spec", None):
+            # Run-branch chaining bases the worktree branch at allocation; the
+            # legacy live-tree path branches off the default branch and would
+            # SILENTLY drop the chain — the exact spec-blindness this feature
+            # exists to remove. Fail loudly instead.
+            raise ValueError(
+                "base_spec requires worktree runs (WORKTREE_RUNS=on); the "
+                "legacy live-tree path cannot base a run off a prior spec's "
+                "branch")
         ws_for_run = run_workspace or workspace_dir
         start_step = job.resume_from_step or 1
 
@@ -1343,7 +1374,8 @@ def run_orchestration(job_id: str, storage: JobStorage):
             before = len(git_results)
             _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
                           batch_name=batch_name, orchestrate_id=job_id,
-                          repair_of=repair_of)
+                          repair_of=repair_of,
+                          open_mr=getattr(request, "open_merge_request", True))
             new = git_results[before:]
             # DETAIL: per-spec git result (branch/commit/PR/error) — concentrated
             # where the multi-spec branch/PR plumbing fails.

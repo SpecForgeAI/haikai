@@ -111,6 +111,20 @@ public class MigrationExecutionRunEntity {
     private String targetBaseUrl;
 
     /**
+     * Run-branch chaining (2026-08-06): the spec name whose
+     * {@code feature/<base_spec>[--<folder>]} branch(es) form the base ref for
+     * this run's FIRST dispatch -- the cross-run continuation chosen at run
+     * creation (a "Start Stage 2" that must see Stage 1's unmerged work).
+     * {@code NULL} = start fresh from the default branch. Within-run chaining
+     * derives from the run-items (the last successfully implemented item's
+     * {@code spec_name}), not from this column. Persisted so retries,
+     * resume-from-failure and the boot-recovery sweep re-derive the same base
+     * after a gateway restart. Reference type ({@link String}).
+     */
+    @Column(name = "base_spec", columnDefinition = "TEXT")
+    private String baseSpec;
+
+    /**
      * Run-level decision / event log (CD-4): an append-only list of
      * {@code { question, answer, rationale }} maps and lifecycle events. NULL is
      * the valid empty state.
