@@ -61,7 +61,10 @@ export async function runDataMigrationViaAmvs(
   args: DataMigrationClientArgs,
 ): Promise<DataMigrationClientResult> {
   const base = getConfig().apiMigrationValidationServiceBaseUrl;
-  const url = `${base}/api/data-migration/run`;
+  // AMVS mounts its ENTIRE router under /api-migration-validation, so the
+  // route's own /api/data-migration/run path sits BELOW that prefix.
+  // Omitting it 404s (same bug as the schema-apply client, fixed 2026-08-06).
+  const url = `${base}/api-migration-validation/api/data-migration/run`;
   const body = {
     project_id: args.projectId,
     architecture_id: args.architectureId,

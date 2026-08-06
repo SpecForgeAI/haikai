@@ -182,7 +182,12 @@ export async function defaultApplySchema(
   args: SchemaApplyArgs
 ): Promise<SchemaApplyCallResult> {
   const base = getConfig().apiMigrationValidationServiceBaseUrl;
-  const url = `${base}/api/schema-apply/run`;
+  // AMVS mounts its ENTIRE router under /api-migration-validation
+  // (index.ts: app.use('/api-migration-validation', ...)), so the route's
+  // own /api/schema-apply/run path sits BELOW that prefix. Omitting it 404s
+  // (live 2026-08-06: the DB chain halted at "schema-apply structural:
+  // HTTP 404").
+  const url = `${base}/api-migration-validation/api/schema-apply/run`;
   const body = {
     project_id: args.projectId,
     architecture_id: args.architectureId,
