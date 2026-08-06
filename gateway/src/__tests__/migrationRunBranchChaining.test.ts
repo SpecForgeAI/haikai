@@ -322,7 +322,11 @@ describe('startMigration baseMode', () => {
     });
   }
 
-  /** A prior DEPLOYED stage-1 run whose last good spec is the chain base. */
+  /**
+   * A prior DEPLOYED stage-1 run whose last good spec is the chain base.
+   * Its work items (wi-db-*) are DISJOINT from the current dispatch set
+   * (wi-1..3) — the stage-boundary shape cross-run chaining exists for.
+   */
   function priorStageRun(): MigrationExecutionRun {
     return {
       id: 'run-old',
@@ -330,8 +334,8 @@ describe('startMigration baseMode', () => {
       book_of_work_id: BOOK_ID,
       status: RUN_STATUS.DEPLOYED,
       items: [
-        { id: 'old-0', sequence_position: 0, spec_name: '2026-08-01-stage1-schema-cccc3333', status: RUN_ITEM_STATUS.IMPLEMENTED, outcome: 'implemented' },
-        { id: 'old-1', sequence_position: 1, spec_name: '2026-08-01-stage1-final-dddd4444', status: RUN_ITEM_STATUS.DEPLOYED, outcome: 'deployed' },
+        { id: 'old-0', sequence_position: 0, work_item_id: 'wi-db-1', spec_name: '2026-08-01-stage1-schema-cccc3333', status: RUN_ITEM_STATUS.IMPLEMENTED, outcome: 'implemented' },
+        { id: 'old-1', sequence_position: 1, work_item_id: 'wi-db-2', spec_name: '2026-08-01-stage1-final-dddd4444', status: RUN_ITEM_STATUS.DEPLOYED, outcome: 'deployed' },
       ],
     };
   }
@@ -383,6 +387,66 @@ describe('startMigration baseMode', () => {
     const created: { run?: MigrationExecutionRun } = {};
     const deps = startDeps(null, created);
     (deps.fetchLatestMigrationExecutionRunForBook as jest.Mock).mockRejectedValue(new Error('AMS down'));
+
+    const result = await startMigration(scope, deps);
+    await flush();
+
+    expect(result.status).toBe('started');
+    const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
+    expect(req.run.base_spec).toBeNull();
+  });
+
+  it('RE-START of the same stage (overlapping work items, prior run halted) gets a CLEAN default-branch base — never the abandoned attempt (2026-08-06 live failure)', async () => {
+    // The live shape: the abandoned attempt's item reported implemented but
+    // its branch never survived; chaining onto it fail-fasted allocation.
+    const abandoned: MigrationExecutionRun = {
+      id: 'run-abandoned',
+      project_id: PROJECT_ID,
+      book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.HALTED,
+      items: [
+        { id: 'ab-0', sequence_position: 0, work_item_id: 'wi-1', spec_name: '2026-08-06-run-the-final-delta-0b4c5596', status: RUN_ITEM_STATUS.IMPLEMENTED, outcome: 'implemented' },
+        { id: 'ab-1', sequence_position: 1, work_item_id: 'wi-2', spec_name: null, status: RUN_ITEM_STATUS.FAILED, outcome: 'failed' },
+      ],
+    };
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(abandoned, created);
+
+    const result = await startMigration(scope, deps);
+    await flush();
+
+    expect(result.status).toBe('started');
+    const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
+    expect(req.run.base_spec).toBeNull();
+    const submit = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submit.baseSpec).toBeUndefined(); // clean tree off the default branch
+  });
+
+  it('RE-START after a DEPLOYED same-stage run (overlapping items) is also fresh — a redo replaces the old work', async () => {
+    const deployedSameStage: MigrationExecutionRun = {
+      ...priorStageRun(),
+      items: [
+        { id: 'old-0', sequence_position: 0, work_item_id: 'wi-1', spec_name: '2026-08-05-old-attempt-eeee5555', status: RUN_ITEM_STATUS.DEPLOYED, outcome: 'deployed' },
+      ],
+    };
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(deployedSameStage, created);
+
+    const result = await startMigration(scope, deps);
+    await flush();
+
+    expect(result.status).toBe('started');
+    const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
+    expect(req.run.base_spec).toBeNull();
+  });
+
+  it('a DISJOINT prior run that is NOT deployed does not chain either (stage boundary requires a completed stage)', async () => {
+    const inFlight: MigrationExecutionRun = {
+      ...priorStageRun(),
+      status: RUN_STATUS.HALTED,
+    };
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(inFlight, created);
 
     const result = await startMigration(scope, deps);
     await flush();
