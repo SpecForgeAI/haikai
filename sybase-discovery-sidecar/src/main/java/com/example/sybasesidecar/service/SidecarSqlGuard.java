@@ -64,6 +64,9 @@ public final class SidecarSqlGuard {
      * system stored procedures that may have side effects on Sybase.
      */
     private static final List<String> FORBIDDEN_KEYWORDS = List.of(
+            // SELECT ... INTO writes a table (gold standard 2026-08-07): the
+            // SELECT-only prefix check let it through on both layers.
+            "INTO",
             "INSERT",
             "UPDATE",
             "DELETE",

@@ -18,6 +18,11 @@
  */
 
 const FORBIDDEN_KEYWORDS = [
+  // SELECT ... INTO writes a table on BOTH engines (gold standard
+  // 2026-08-07): the SELECT-only prefix check let it straight through.
+  // INTO has no legitimate use in a read-only SELECT (INSERT INTO is
+  // already covered by INSERT).
+  'INTO',
   'INSERT',
   'UPDATE',
   'DELETE',
