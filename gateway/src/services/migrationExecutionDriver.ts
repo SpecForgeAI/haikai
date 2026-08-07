@@ -2033,6 +2033,14 @@ export interface BuildResultAdvanceInput {
   targetBaseUrl?: string | null;
   summary?: string | null;
   /**
+   * The IVS run's error detail list (gold standard 2026-08-07): previously
+   * the callback door had no `errors` field at all, so the exact diagnostics
+   * explaining a failed/stranded run (push failure, missing serve spec, gate
+   * failure) were silently discarded at the door. Folded into the halt
+   * message and the transient-signature scan.
+   */
+  errors?: string[] | null;
+  /**
    * Robustness R1 (2026-08-05): the IVS orchestrator's failure classification
    * ('transient_upstream' | 'real'), when the callback carried one. Absent on
    * older IVS builds -> the driver's local signature scan decides.
@@ -2154,10 +2162,17 @@ export async function advanceRunOnBuildResult(
     // persisted counter records prior transiently-failed attempts, so the
     // original dispatch's first failure arrives with attemptsUsed = 1.
     const attemptsUsed = (item.retry_attempt_count ?? 0) + 1;
+    // Fold the IVS error detail into the failure text (2026-08-07): the
+    // summary is often absent while `errors` carries the real diagnosis —
+    // it feeds both the transient-signature scan and the halt message.
+    const errorDetailText =
+      (input.errors ?? []).filter((e) => typeof e === 'string' && e.trim() !== '').join('; ') ||
+      null;
+    const failureText = input.summary ?? errorDetailText;
     const retryDecision = shouldAutoRetry({
       outcome,
       failureClass: input.failureClass ?? null,
-      summary: input.summary ?? null,
+      summary: failureText,
       attemptCount: attemptsUsed,
     });
     if (retryDecision.retry) {
@@ -2191,8 +2206,8 @@ export async function advanceRunOnBuildResult(
       item,
       outcome === 'rejected' ? RUN_ITEM_STATUS.REJECTED : RUN_ITEM_STATUS.FAILED,
       retryDecision.transient
-        ? `${input.summary ?? `Build-results reported ${outcome}`} (transient upstream failure; retry budget exhausted after ${attemptsUsed} tries)`
-        : input.summary ?? `Build-results reported ${outcome}`,
+        ? `${failureText ?? `Build-results reported ${outcome}`} (transient upstream failure; retry budget exhausted after ${attemptsUsed} tries)`
+        : failureText ?? `Build-results reported ${outcome}`,
       outcome,
       haltClass
     );

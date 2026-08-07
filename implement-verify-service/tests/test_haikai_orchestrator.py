@@ -702,13 +702,17 @@ class TestStep3CompletionGuard:
         assert result.status == "failure"
         assert "unticked" in (result.error_message or "")
 
-    def test_step3_passes_when_completion_unjudgeable(self, test_workspace_dir, test_logs_dir):
+    def test_step3_FAILS_when_completion_unjudgeable(self, test_workspace_dir, test_logs_dir):
+        # Gold standard (2026-08-07): a tasks.md with no checkboxes means the
+        # step's completion CANNOT be judged — that is a failure, not the old
+        # warn-and-pass (which let unjudged work sail on to commit).
         spec = self._spec_dir(test_workspace_dir, "step3-spec")
         (spec / "tasks.md").write_text("no boxes here\n", encoding="utf-8")
         orch = self._orchestrator(test_workspace_dir, test_logs_dir, "step3-spec")
         result = orch._execute_step_with_session(
             self._FakeExec(), 3, "/implement-tasks", "step3-spec")
-        assert result.status == "success"
+        assert result.status == "failure"
+        assert "cannot be judged" in (result.error_message or "")
 
     def test_step3_still_fails_when_tasks_md_missing(self, test_workspace_dir, test_logs_dir):
         self._spec_dir(test_workspace_dir, "step3-spec")

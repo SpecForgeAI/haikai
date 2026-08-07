@@ -15,15 +15,25 @@ from pathlib import Path
 # crashes any downstream import of `import ast`.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-# Load environment variables
-from dotenv import load_dotenv
+def _load_env_files():
+    """Load .env.local (override) or .env — from the RUN path only.
 
-# Load .env.local first (for local development), then .env as fallback
-env_local = Path(__file__).resolve().parents[2] / '.env.local'
-if env_local.exists():
-    load_dotenv(env_local, override=True)
-else:
-    load_dotenv()  # Load .env as fallback
+    2026-08-07: this ran at module import with override=True, so ANY
+    in-process import of this module (tests import
+    `build_reload_watch_config`) stomped the importing process's environment
+    with the developer's real `.env.local` — the full IVS test suite ran
+    under CHAT_EXECUTOR=kiro and 70+ unrelated tests failed. Importing an
+    entrypoint module must have ZERO env side effects (guarded by
+    tests/test_anti_pattern_guards.py); the server run path calls this
+    first thing in main().
+    """
+    from dotenv import load_dotenv
+
+    env_local = Path(__file__).resolve().parents[2] / '.env.local'
+    if env_local.exists():
+        load_dotenv(env_local, override=True)
+    else:
+        load_dotenv()  # Load .env as fallback
 
 
 def build_reload_watch_config(project_root: Path):
@@ -58,6 +68,7 @@ def build_reload_watch_config(project_root: Path):
 
 def main():
     """Run the API server with command-line options."""
+    _load_env_files()
     # Force unbuffered output so print statements appear immediately
     os.environ['PYTHONUNBUFFERED'] = '1'
     

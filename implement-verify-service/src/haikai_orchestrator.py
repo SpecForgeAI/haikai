@@ -664,12 +664,21 @@ class HaikaiOrchestrator:
                 logger.error(msg)
                 errors.append(msg)
             elif unchecked is None:
-                logger.warning(
-                    "Step 3 (%s): completion cannot be judged from tasks.md "
-                    "checkboxes (file unreadable or no checkboxes) — not "
-                    "failing the step on it.",
-                    command,
+                # Gold standard (2026-08-07): unjudgeable = FAILED, never a
+                # warning. A tasks.md with no checkboxes (or unreadable) means
+                # completion CANNOT be verified — treating it as success was
+                # the silent-lie pattern with extra steps: an LLM that wrote
+                # prose instead of a checklist sailed through the gate.
+                success = False
+                msg = (
+                    f"Step {step} ({command}) finished but completion cannot "
+                    "be judged: tasks.md is unreadable or contains no task "
+                    "checkboxes. An unjudgeable implementation is a FAILED "
+                    "implementation — the step must produce a checkable "
+                    "tasks.md."
                 )
+                logger.error(msg)
+                errors.append(msg)
             if not (spec_dir / "verification" / "final-verification.md").exists():
                 logger.warning(
                     "Step 3 (%s): verification/final-verification.md was not "

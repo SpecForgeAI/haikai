@@ -24,7 +24,7 @@ from src.job_queue.job_storage import JobStorage
 from tests._realgit import local_repo_with_base, run_git, set_git_env
 
 
-def _harness(tmp_path, monkeypatch, specs, fail_specs=()):
+def _harness(tmp_path, monkeypatch, specs, fail_specs=(), callback_url=None):
     """Workspace + single-repo product + stubbed LLM steps. The step stub
     writes into self.project_dir â€” exactly where the real CLI session (cwd)
     writes â€” so worktree mode is exercised for real."""
@@ -71,6 +71,7 @@ def _harness(tmp_path, monkeypatch, specs, fail_specs=()):
         company="acme", project="shop",
         spec_intents=[{"spec_name": s} for s in specs],
         options=OrchestrationOptions(stop_on_error=False),
+        callback_url=callback_url,
     )
     job = Job(job_id="wt-job-1", type=JobType.ORCHESTRATION,
               status=JobStatus.QUEUED, company="acme", project="shop",
@@ -181,4 +182,61 @@ def test_per_spec_failure_is_independent(tmp_path, monkeypatch):
         assert f"{s}.txt" in run_git(
             ["ls-tree", "-r", "--name-only", f"feature/{s}"], cwd=product).split()
     assert len(_worktree_registrations(product)) == 1  # everything reclaimed
+
+
+def test_per_spec_gate_failure_blocks_that_specs_commit(tmp_path, monkeypatch):
+    # Gold standard (2026-08-07): the per-spec parallel path runs the SAME
+    # verification gate as batch mode — a spec whose repo tests never go green
+    # is NOT committed, while sibling specs commit independently.
+    monkeypatch.setenv("RUN_SPEC_CONCURRENCY", "2")
+    monkeypatch.setenv("SPEC_VERIFY_GATE", "true")
+    specs = ["spec-a", "spec-b"]
+    ws, product, storage, job = _harness(tmp_path, monkeypatch, specs,
+                                         callback_url="https://cb/x")
+    monkeypatch.setattr(tasks, "_repair_spec",
+                        lambda repo, spec, key, **kw: (spec != "spec-b", 2, "x"))
+    sent: list = []
+    monkeypatch.setattr(tasks, "_post_callback",
+                        lambda url, payload: sent.append((url, payload)) or True)
+    tasks.run_orchestration(job.job_id, storage)
+    got = storage.get_job(job.job_id)
+    assert got.status == JobStatus.COMPLETED
+    assert got.result["failed"] == ["spec-b"]
+    # spec-a passed the gate and committed for real.
+    assert "spec-a.txt" in run_git(
+        ["ls-tree", "-r", "--name-only", "feature/spec-a"], cwd=product).split()
+    # spec-b was gated out: NO commit, and the git record names the gate.
+    sb = got.result["specs"]["spec-b"]
+    assert not any(r.get("commit_sha") for r in (sb.get("git") or []))
+    assert any("verification gate" in (r.get("error") or "")
+               for r in (sb.get("git") or []))
+    # The aggregate build-results callback reports the honest outcome.
+    assert sent, "per-spec parallel mode must emit the build-results callback"
+    url, p = sent[0]
+    assert url == "https://cb/x" and p["outcome"] == "error"
+    assert any("verification gate" in e for e in p["errors"])
+
+
+def test_per_spec_mode_emits_implemented_callback_when_all_green(tmp_path, monkeypatch):
+    # Gold standard (2026-08-07): this mode previously NEVER emitted the
+    # build-results callback — a gateway waiting on callback_url stranded at
+    # 'submitted' forever. All-green run -> one callback, outcome
+    # 'implemented', and the record folded into job.result (poll fallback).
+    monkeypatch.setenv("RUN_SPEC_CONCURRENCY", "2")
+    specs = ["spec-a", "spec-b"]
+    ws, product, storage, job = _harness(tmp_path, monkeypatch, specs,
+                                         callback_url="https://cb/x")
+    sent: list = []
+    monkeypatch.setattr(tasks, "_post_callback",
+                        lambda url, payload: sent.append((url, payload)) or True)
+    tasks.run_orchestration(job.job_id, storage)
+    got = storage.get_job(job.job_id)
+    assert got.status == JobStatus.COMPLETED, got.error
+    assert len(sent) == 1
+    url, p = sent[0]
+    assert url == "https://cb/x"
+    assert p["outcome"] == "implemented"
+    assert p["job_id"] == job.job_id
+    assert sorted(p["spec_names"]) == specs
+    assert got.result["outcome"] == "implemented"  # folded for the poll fallback
 

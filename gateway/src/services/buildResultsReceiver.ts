@@ -80,6 +80,12 @@ export interface BuildResultCallbackBody {
   /** Robustness R1: the 1-based pipeline step that fataled, when known. */
   failed_step?: number | null;
   failedStep?: number | null;
+  /**
+   * The IVS run's error detail list (2026-08-07): previously absent from the
+   * door entirely, so the diagnostics explaining a failed run were discarded.
+   * Parsed leniently — a malformed value degrades to null, never a 422.
+   */
+  errors?: unknown;
 }
 
 /** The structured outcome of processing a callback (mapped to an HTTP status). */
@@ -172,6 +178,11 @@ export async function processBuildResult(
     typeof failedStepRaw === 'number' && Number.isFinite(failedStepRaw)
       ? failedStepRaw
       : null;
+  // Error detail (2026-08-07): lenient array-of-strings parse — the door must
+  // keep acknowledging callbacks from any IVS build.
+  const errors = Array.isArray(body.errors)
+    ? body.errors.filter((e): e is string => typeof e === 'string' && e.trim() !== '').slice(0, 50)
+    : null;
 
   // --- validation (422) ---
   if (!company || !project) {
@@ -252,6 +263,7 @@ export async function processBuildResult(
         summary,
         failureClass,
         failedStep,
+        errors,
       },
       deps
     );
