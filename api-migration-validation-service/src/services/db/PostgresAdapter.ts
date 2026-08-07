@@ -1,4 +1,4 @@
-import { Pool, PoolClient, PoolConfig } from 'pg';
+import { Pool, PoolClient, PoolConfig, types as pgTypes } from 'pg';
 import {
   DbAdapter,
   DbAllowlist,
@@ -30,6 +30,26 @@ import { keysetPredicate } from './keyset';
  *     the connection is reset by `RESET statement_timeout` in the `finally`
  *     block.
  */
+// Datetime OIDs read back as RAW STRINGS, never locale-shifted JS Dates
+// (2026-08-07, the live ±1h BST/GMT parity artifact): node-postgres's default
+// parsers construct `timestamp` (no tz) values as LOCAL-time Date objects, so
+// the same stored instant read on a BST machine landed one hour off the
+// source's ISO-UTC form and every ValidFrom/ValidTo cell "diverged". Raw
+// strings keep the comparison engine-neutral; the pair-rule datetime strategy
+// owns normalization (naive timestamps are interpreted as UTC by policy).
+const RAW_STRING_DATETIME_OIDS = new Set([
+  1082, // date
+  1114, // timestamp without time zone
+  1184, // timestamp with time zone (string carries its offset)
+]);
+export const rawDatetimeTypes = {
+  getTypeParser: (oid: number, format?: string) =>
+    RAW_STRING_DATETIME_OIDS.has(oid)
+      ? (value: string) => value
+      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (pgTypes.getTypeParser as (o: number, f?: string) => any)(oid, format),
+};
+
 export class PostgresAdapter implements DbAdapter {
   private readonly pool: Pool;
 
@@ -46,6 +66,9 @@ export class PostgresAdapter implements DbAdapter {
       // separately via `SET statement_timeout`.
       connectionTimeoutMillis: 10000,
       idleTimeoutMillis: 30000,
+      // Pool-scoped (NOT the global pg.types mutation): the write path
+      // (targetLoader) keeps its own pool untouched.
+      types: rawDatetimeTypes,
     };
     this.pool = new Pool(poolConfig);
   }
