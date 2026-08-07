@@ -49,6 +49,21 @@ function makeDeps(overrides: Partial<MigrationDriverDeps> = {}): MigrationDriver
         .mockResolvedValue({ ok: true, specName: 's', sessionId: null, decisionLog: [] }),
     },
     buildResultsCallbackUrl: 'http://gw/cb',
+    // Serve-spec halt hardening (2026-08-07): a deploying service-plane
+    // submit needs a registered serve spec — provide one by default.
+    getTargetServeSpec: jest.fn().mockReturnValue({
+      command: 'mvn spring-boot:run',
+      healthPath: '/actuator/health',
+    }),
+    // Fail-closed seams (2026-08-07): carry-over reads + chain-base + plane
+    // precedence must RESOLVE in tests (unreadable = blocked in production).
+    carryOverCoverageReads: {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    },
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
     triggerReconcile: jest.fn().mockResolvedValue(undefined),
     triggerDataParityReconcile: jest.fn().mockResolvedValue(undefined),
     triggerDataMigration: jest.fn().mockResolvedValue(undefined),

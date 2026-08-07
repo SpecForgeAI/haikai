@@ -66,6 +66,22 @@ public class MigrationExecutionRunEntity {
     private UUID projectId;
 
     /**
+     * Workspace scope NAMES (changeset 219, 2026-08-07): the gateway's
+     * boot-recovery sweep discovers in-flight runs CROSS-project and must
+     * re-derive the driver scope ({@code company}/{@code project} strings) the
+     * run was created under — the UUID alone cannot be mapped back at boot.
+     * Set once at run creation by the gateway; never PATCHed. Nullable for
+     * rows created before the column existed (the discovery endpoint skips
+     * those with a warning).
+     */
+    @Column(name = "company", columnDefinition = "TEXT")
+    private String company;
+
+    /** Workspace scope project NAME (see {@link #company}). */
+    @Column(name = "project", columnDefinition = "TEXT")
+    private String project;
+
+    /**
      * The {@code generated_migration_books_of_work} row this run executes.
      * Soft reference (no FK) so the run outlives a book edit / regenerate.
      */

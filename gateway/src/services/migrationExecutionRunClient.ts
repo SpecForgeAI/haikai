@@ -78,6 +78,13 @@ export interface MigrationExecutionRunItem {
 export interface MigrationExecutionRun {
   id?: string;
   project_id?: string | null;
+  /**
+   * Workspace scope NAMES (changeset 219, 2026-08-07): recorded at run
+   * creation so the boot-recovery sweep can re-derive its driver scope for
+   * cross-project in-flight discovery. Null on pre-219 rows.
+   */
+  company?: string | null;
+  project?: string | null;
   book_of_work_id?: string | null;
   status?: string | null;
   current_sequence_position?: number | null;
@@ -232,6 +239,42 @@ export async function getLatestMigrationExecutionRunForBook(
     throw new MigrationRunStateError(response.status, body);
   }
   return body as MigrationExecutionRun;
+}
+
+/**
+ * GET /api/migration-execution-runs/in-flight -- CROSS-project in-flight run
+ * headers (started/dispatching), newest first (2026-08-07). The boot-recovery
+ * sweep's discovery source; before this the default discovery returned [] and
+ * the sweep was inert.
+ */
+export async function listInFlightMigrationExecutionRuns(): Promise<MigrationExecutionRun[]> {
+  const url = `${baseUrl()}/api/migration-execution-runs/in-flight`;
+  const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  const body = await readBody(response);
+  if (!response.ok) {
+    throw new MigrationRunStateError(response.status, body);
+  }
+  return Array.isArray(body) ? (body as MigrationExecutionRun[]) : [];
+}
+
+/**
+ * GET .../migration-books-of-work/{bookId}/migration-execution-runs -- ALL
+ * runs of a book WITH their ordered items, newest first (2026-08-07). Powers
+ * the driver's plane-aware precedence (which planes already deployed in
+ * earlier stage runs); the singular latest-run endpoint cannot answer that
+ * once a later plane has its own newer run.
+ */
+export async function getMigrationExecutionRunsForBook(
+  projectId: string,
+  bookId: string
+): Promise<MigrationExecutionRun[]> {
+  const url = `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}/migration-books-of-work/${encodeURIComponent(bookId)}/migration-execution-runs`;
+  const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  const body = await readBody(response);
+  if (!response.ok) {
+    throw new MigrationRunStateError(response.status, body);
+  }
+  return Array.isArray(body) ? (body as MigrationExecutionRun[]) : [];
 }
 
 /**

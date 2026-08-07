@@ -239,6 +239,46 @@ public class MigrationExecutionRunService {
             .map(MigrationExecutionRunItemMapper::toDto);
     }
 
+    /**
+     * CROSS-project in-flight run list (changeset 219, 2026-08-07): every run
+     * whose status is {@code started} or {@code dispatching}, newest first —
+     * the gateway boot-recovery sweep's discovery source. Header shape only
+     * (no nested items); the sweep reads full run-state per run afterwards.
+     * {@code awaiting_approval} is deliberately EXCLUDED: that run is paused
+     * for a human, nothing is stuck.
+     *
+     * @return in-flight run headers, newest first
+     */
+    @Transactional(readOnly = true)
+    public List<MigrationExecutionRunDto> listInFlightRuns() {
+        return runRepository
+            .findByStatusInOrderByCreatedAtDesc(List.of(
+                MigrationExecutionRunStatus.STARTED,
+                MigrationExecutionRunStatus.DISPATCHING))
+            .stream()
+            .map(MigrationExecutionRunMapper::toDto)
+            .toList();
+    }
+
+    /**
+     * ALL runs for a book of work WITH their ordered items, newest first
+     * (2026-08-07): the gateway driver's plane-aware precedence needs the full
+     * run history of a book (which planes already deployed in earlier stage
+     * runs), not just the latest run.
+     *
+     * @param bookOfWorkId the book-of-work UUID
+     * @return runs with items, newest first (empty list when none)
+     */
+    @Transactional(readOnly = true)
+    public List<MigrationExecutionRunDto> getRunsForBook(UUID bookOfWorkId) {
+        return runRepository.findByBookOfWorkIdOrderByCreatedAtDesc(bookOfWorkId)
+            .stream()
+            .map(run -> MigrationExecutionRunMapper.toDtoWithItems(
+                run,
+                runItemRepository.findByRunIdOrderBySequencePositionAsc(run.getId())))
+            .toList();
+    }
+
     // ------------------------------------------------------------------
     // Validation helpers (status-as-TEXT, service-layer validated)
     // ------------------------------------------------------------------

@@ -109,6 +109,37 @@ public class MigrationExecutionRunController {
     }
 
     /**
+     * GET /api/projects/{projectId}/migration-books-of-work/{bookId}/migration-execution-runs
+     *
+     * <p>ALL runs of a book WITH their ordered items, newest first
+     * (2026-08-07): the gateway driver's plane-aware precedence reads the
+     * book's full run history (which planes already deployed in earlier stage
+     * runs). Always {@code 200} with a list (possibly empty).</p>
+     */
+    @GetMapping("/api/projects/{projectId}/migration-books-of-work/{bookId}/migration-execution-runs")
+    public ResponseEntity<?> getRunsForBook(
+            @PathVariable UUID projectId,
+            @PathVariable UUID bookId) {
+        return ResponseEntity.ok(service.getRunsForBook(bookId));
+    }
+
+    /**
+     * GET /api/migration-execution-runs/in-flight
+     *
+     * <p>CROSS-project in-flight run headers ({@code started} /
+     * {@code dispatching}), newest first (2026-08-07): the gateway
+     * boot-recovery sweep's discovery source — before this endpoint the
+     * default discovery returned an empty set and boot recovery was inert, so
+     * a gateway restart stranded any mid-segment run forever. Deliberately
+     * NOT under {@code /api/projects/{projectId}}: recovery runs before the
+     * gateway knows which projects have runs.</p>
+     */
+    @GetMapping("/api/migration-execution-runs/in-flight")
+    public ResponseEntity<?> listInFlightRuns() {
+        return ResponseEntity.ok(service.listInFlightRuns());
+    }
+
+    /**
      * GET /api/projects/{projectId}/migration-execution-run-items/by-job-id/{jobId}
      *
      * <p>The build-results callback correlation lookup (Group 3): the gateway

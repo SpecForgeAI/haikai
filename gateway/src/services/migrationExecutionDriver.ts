@@ -52,6 +52,7 @@ import {
   createMigrationExecutionRun,
   getMigrationExecutionRun,
   getLatestMigrationExecutionRunForBook,
+  getMigrationExecutionRunsForBook,
   patchMigrationExecutionRun,
   patchMigrationExecutionRunItem,
   findMigrationRunItemByJobId,
@@ -235,6 +236,12 @@ export interface MigrationDriverDeps {
    * only consulted for per-plane starts of a NON-first plane.
    */
   fetchLatestMigrationExecutionRunForBook?: typeof getLatestMigrationExecutionRunForBook;
+  /**
+   * ALL runs of a book with items, newest first (2026-08-07): the plane-aware
+   * precedence source. Optional + lazily defaulted so pre-existing deps mocks
+   * keep compiling; only consulted for per-plane starts of a NON-first plane.
+   */
+  fetchMigrationExecutionRunsForBook?: typeof getMigrationExecutionRunsForBook;
   createMigrationExecutionRun: typeof createMigrationExecutionRun;
   getMigrationExecutionRun: typeof getMigrationExecutionRun;
   patchMigrationExecutionRun: typeof patchMigrationExecutionRun;
@@ -822,6 +829,7 @@ export function defaultMigrationDriverDeps(
     fetchWorkItems,
     fetchActiveCurrentBaseline,
     fetchLatestMigrationExecutionRunForBook: getLatestMigrationExecutionRunForBook,
+    fetchMigrationExecutionRunsForBook: getMigrationExecutionRunsForBook,
     createMigrationExecutionRun,
     getMigrationExecutionRun,
     patchMigrationExecutionRun,
@@ -971,12 +979,29 @@ export async function startMigration(
         unaccounted: carryOverCoverage.unaccounted.length,
       });
     } catch (error) {
+      // FAIL-CLOSED (gold standard 2026-08-07): an unreadable accounting used
+      // to degrade to `undefined` — the gate dimension silently vanished and
+      // Migrate started BLIND to unaccounted behaviour-bearing carry-over
+      // (exactly what the gate exists to prevent). An unreadable gate input
+      // is a blocked start, not a skipped check.
       logger.warn('[diag-gateway] migration_execution_driver carry_over_coverage_failed', {
         projectId,
         bookId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      carryOverCoverage = undefined;
+      return {
+        status: 'blocked',
+        reasons: [
+          {
+            code: 'carry_over_unavailable',
+            message:
+              'The carry-over completeness accounting could not be read from AMS — ' +
+              'refusing to start rather than migrating blind to unaccounted ' +
+              `behaviour-bearing work (${error instanceof Error ? error.message : 'read failed'}). ` +
+              'Retry when AMS is reachable.',
+          },
+        ],
+      };
     }
   }
 
@@ -1076,24 +1101,59 @@ export async function startMigration(
     );
     if (earlier.length > 0) {
       const preceding = earlier[earlier.length - 1];
-      const fetchLatest =
-        deps.fetchLatestMigrationExecutionRunForBook ??
-        getLatestMigrationExecutionRunForBook;
-      let latestRun: MigrationExecutionRun | null = null;
-      try {
-        latestRun = await fetchLatest(projectId, bookId);
-      } catch {
-        latestRun = null;
+      // Plane-AWARE precedence (2026-08-07, replaces the latest-run-only v1):
+      // the latest run may be a later attempt of the CURRENT plane, so its
+      // status says nothing about whether the PRECEDING plane ever deployed.
+      // Walk the book's full run history: among runs that contain the
+      // preceding plane's items, the NEWEST attempt is authoritative — it must
+      // be deployed (an old deployed run superseded by a newer failed re-run
+      // of the same plane does NOT satisfy precedence). A history read failure
+      // is fail-closed: precedence unverifiable = blocked, never assumed.
+      const planeByWorkItemId = new Map<string, MigrationPlane>();
+      for (const item of items) {
+        if (!item.workItemId) continue;
+        if (!isDispatchableLeafItem(item)) continue;
+        planeByWorkItemId.set(item.workItemId, planeForItem(item));
       }
-      if (!latestRun || latestRun.status !== RUN_STATUS.DEPLOYED) {
+      const fetchRuns =
+        deps.fetchMigrationExecutionRunsForBook ?? getMigrationExecutionRunsForBook;
+      let precedingRun: MigrationExecutionRun | null = null;
+      let historyUnreadable = false;
+      try {
+        const history = await fetchRuns(projectId, bookId);
+        precedingRun =
+          history.find((r) =>
+            (r.items ?? []).some(
+              (i) =>
+                i.work_item_id &&
+                planeByWorkItemId.get(i.work_item_id) === preceding
+            )
+          ) ?? null;
+      } catch (error) {
+        historyUnreadable = true;
+        logger.warn('[diag-gateway] migration_execution_driver precedence_history_unreadable', {
+          projectId,
+          bookId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+      if (historyUnreadable) {
+        planePrecedenceReasons.push({
+          code: 'precedence_unverifiable',
+          message:
+            `Could not read the book's run history to verify the '${preceding}' plane ` +
+            `deployed before starting the '${plane}' plane — refusing to start on an ` +
+            'unverifiable precedence. Retry when AMS is reachable.',
+        });
+      } else if (!precedingRun || precedingRun.status !== RUN_STATUS.DEPLOYED) {
         planePrecedenceReasons.push({
           code: 'preceding_plane_not_deployed',
           message:
             `The '${preceding}' plane must complete first (its run deployed + ` +
             `reconciled) before the '${plane}' plane can start` +
-            (latestRun
-              ? ` — the latest run is '${latestRun.status ?? 'unknown'}'.`
-              : ' — no run exists yet.'),
+            (precedingRun
+              ? ` — its newest run is '${precedingRun.status ?? 'unknown'}'.`
+              : ' — no run has covered that plane yet.'),
         });
       } else if (preceding === 'db' && !scope.parityOverride) {
         const parity = await evaluateDataParityReadiness({
@@ -1149,6 +1209,55 @@ export async function startMigration(
     };
   }
 
+  // Mixed-plane BATCH refusal (gold standard 2026-08-07): a batch is ONE
+  // job/branch with ONE callback — its `deployed` completes every sibling at
+  // once, so a batch mixing db-plane stories with others would mark the db
+  // items DEPLOYED while their schema-apply → data-migration → parity chain
+  // NEVER ran (the haibox deploy does not apply DB packs). Refuse at start;
+  // the operator runs the DB plane separately (per-plane Starts) or drops the
+  // batch name.
+  const dispatchPlaneOf = (d: (typeof dispatchSet)[number]): MigrationPlane =>
+    d.plane ?? planeForWorkstream(d.workstream);
+  if (isBatch) {
+    const batchPlanes = new Set(dispatchSet.map(dispatchPlaneOf));
+    if (batchPlanes.has('db') && batchPlanes.size > 1) {
+      return {
+        status: 'blocked',
+        reasons: [
+          {
+            code: 'mixed_plane_batch',
+            message:
+              'A batch cannot mix db-plane stories with other planes: the batch ' +
+              "deploys as ONE unit, and its 'deployed' callback would mark the db " +
+              'stories deployed while their schema-apply/data-migration/parity chain ' +
+              'never ran. Start the DB plane separately (per-plane Start) or remove ' +
+              'the batch name.',
+          },
+        ],
+      };
+    }
+  }
+
+  // UI-plane refusal (2026-08-07, pair-scope ruling): this migration pair
+  // (Java 8/Spring Classic + Sybase 15 → Java 21/Spring Boot + Postgres 18)
+  // has NO UI-plane delivery path — dispatching UI stories would "implement"
+  // frontend work with no deploy or verification behind it. Loud block naming
+  // the stories; remedy = defer them (they stay visible in the book).
+  const uiDescriptors = dispatchSet.filter((d) => dispatchPlaneOf(d) === 'ui');
+  if (uiDescriptors.length > 0) {
+    return {
+      status: 'blocked',
+      reasons: uiDescriptors.map((d) => ({
+        code: 'ui_plane_out_of_scope',
+        workItemId: d.workItemId ?? null,
+        message:
+          `UI-plane story '${d.title ?? d.workItemId ?? 'unknown'}' cannot be dispatched: ` +
+          'the ui plane is out of scope for this migration pair (no deploy/verification ' +
+          'path). Defer the story to proceed with the db/service planes.',
+      })),
+    };
+  }
+
   // 4f. Run-branch chaining (2026-08-06): resolve where this run's FIRST
   //     dispatch bases its worktree branch. 'chain' (default) continues from
   //     the latest prior run's last GOOD spec branch — a "Start Stage 2" sees
@@ -1193,15 +1302,30 @@ export async function startMigration(
         }
       }
     } catch (error) {
-      // Fail-soft: an unreadable prior run degrades to a default-branch base
-      // (the pre-chaining behaviour), never a blocked start.
+      // FAIL-CLOSED (gold standard 2026-08-07, was fail-soft): the operator
+      // asked to CHAIN (the default) — silently starting from the default
+      // branch instead would discard the preceding stage's unmerged work from
+      // every worktree in this run, invisibly. Unreadable prior-run state =
+      // blocked start; the operator either retries or explicitly chooses
+      // 'fresh' in the Start-stage dialog.
       logger.warn('[diag-gateway] migration_execution_driver base_spec_resolve_failed', {
         projectId,
         bookId,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      runBaseSpec = null;
-      baseReason = 'prior_run_read_failed';
+      return {
+        status: 'blocked',
+        reasons: [
+          {
+            code: 'chain_base_unresolvable',
+            message:
+              'Could not read the prior run to resolve the chained branch base ' +
+              `(${error instanceof Error ? error.message : 'read failed'}). Refusing to ` +
+              'silently start from the default branch — retry, or choose "fresh from ' +
+              'main" in the Start-stage dialog to opt out of chaining explicitly.',
+          },
+        ],
+      };
     }
   }
   logger.info('[diag-gateway] migration_execution_driver run_base_resolved', {
@@ -1223,6 +1347,10 @@ export async function startMigration(
   const runRequest = {
     run: {
       project_id: projectId,
+      // Scope NAMES (changeset 219): persisted so the boot-recovery sweep can
+      // re-derive the driver scope for cross-project in-flight discovery.
+      company: scope.company,
+      project: scope.project,
       book_of_work_id: bookId,
       status: RUN_STATUS.STARTED,
       current_sequence_position: 0,
@@ -1628,9 +1756,13 @@ export async function runSpecSegment(
   // Non-final items commit + push MR-less. DB-plane items ALL suppress: the
   // assembly job (assemble-run) opens the db pack's single MR.
   const openMergeRequest = (item.deploy_on_complete ?? false) && itemPlane !== 'db';
-  // Stage-2 (2026-07-31): a service-plane deploy needs the serve spec the
-  // operator registered in the Start-stage dialog. Missing = today's
-  // fail-soft (implement + MRs, no deploy) with a LOUD dispatch-time trace.
+  // Stage-2 (2026-07-31; hardened 2026-08-07): a service-plane deploy needs
+  // the serve spec the operator registered in the Start-stage dialog. This
+  // used to fail-SOFT (implement + MRs, no deploy) — the plane then finished
+  // 'implemented', the deploy/reconcile silently never happened, and the run
+  // stranded with nothing telling the operator why. A missing serve spec on
+  // the plane-final service item now HALTS at dispatch, before an implement
+  // is wasted, with the exact remedy (register it, then Resume failed).
   let targetServeSpec: TargetServeSpec | undefined;
   if (wantsHaiboxDeploy && itemPlane === 'service') {
     const getServeSpec =
@@ -1638,12 +1770,12 @@ export async function runSpecSegment(
       ((id: string) => migrationTargetCredentialsStore.getService(id));
     targetServeSpec = getServeSpec(runId);
     if (!targetServeSpec) {
-      trace.warn(
-        'target-service serve spec is NOT registered for this run — the plane will ' +
-          'implement and open MRs but will NOT deploy or run the API reconcile. ' +
-          'Register it in the Start-stage dialog (Target service section).',
-        { run: runId, project: scope.project }
-      );
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        'The target-service serve spec is NOT registered for this run: the plane-final ' +
+          'service item must deploy and run the API reconcile, which is impossible ' +
+          'without it. Register the Target service (command + health path) in the ' +
+          'Start-stage dialog, then use Resume failed — nothing was dispatched.');
+      return;
     }
   }
   let submit: OrchestrationSubmitResult;
@@ -1807,9 +1939,11 @@ export async function runBatchSegment(
   const batchHasServicePlane = descriptors.some(
     (d) => (d.plane ?? planeForWorkstream(d.workstream)) === 'service'
   );
-  // Stage-2 (2026-07-31): attach the operator-registered serve spec so the
-  // batch deploy can actually launch the service. Missing = fail-soft +
-  // loud trace (mirrors the per-spec path).
+  // Stage-2 (2026-07-31; hardened 2026-08-07): attach the operator-registered
+  // serve spec so the batch deploy can actually launch the service. Missing =
+  // HALT before the submit (mirrors the per-spec path) — a batch that
+  // implements but can never deploy/reconcile is a silent strand, not a
+  // migration.
   let batchServeSpec: TargetServeSpec | undefined;
   if (batchDeploys && batchHasServicePlane) {
     const getServeSpec =
@@ -1817,12 +1951,12 @@ export async function runBatchSegment(
       ((id: string) => migrationTargetCredentialsStore.getService(id));
     batchServeSpec = getServeSpec(runId);
     if (!batchServeSpec) {
-      trace.warn(
-        'target-service serve spec is NOT registered for this run — the batch will ' +
-          'implement and open its MR but will NOT deploy or run the API reconcile. ' +
-          'Register it in the Start-stage dialog (Target service section).',
-        { run: runId, project: scope.project }
-      );
+      await haltBatch(deps, scope, runId, resolved.map((r) => r.item),
+        'The target-service serve spec is NOT registered for this run: the batch must ' +
+          'deploy and run the API reconcile, which is impossible without it. Register ' +
+          'the Target service (command + health path) in the Start-stage dialog, then ' +
+          'use Resume failed — nothing was dispatched.');
+      return;
     }
   }
   let submit: OrchestrationSubmitResult;
@@ -2230,7 +2364,20 @@ export async function advanceRunOnBuildResult(
     const hasPendingLater = (run.items ?? []).some(
       (i) => i.id !== runItemId && i.status === RUN_ITEM_STATUS.PENDING
     );
-    const completedPlane = await resolveItemPlane(scope, run, item, deps);
+    let completedPlane: MigrationPlane;
+    try {
+      completedPlane = await resolveItemPlane(scope, run, item, deps);
+    } catch (error) {
+      // Fail-closed (2026-08-07): guessing 'service' here picked the WRONG
+      // reconcile (or skipped the DB chain) silently. The deploy itself
+      // succeeded — halt the run with the reason; Resume failed re-dispatches.
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        `The deployed item's plane could not be resolved — the driver cannot choose the ` +
+          `plane's reconcile/pause semantics (${error instanceof Error ? error.message : 'unknown'}). ` +
+          'The deploy itself succeeded; fix the AMS book/run consistency, then Resume failed.',
+        'deployed');
+      return 'halted';
+    }
 
     if (hasPendingLater) {
       // HARD PAUSE (Spec W §2.9): run the completed plane's reconcile, then set
@@ -2301,7 +2448,21 @@ export async function advanceRunOnBuildResult(
   // branches + pack, apply the schema, load the data, reconcile, then pause
   // on the parity report. Detached; failures land on the run state.
   if (item.deploy_on_complete === true) {
-    const plane = await resolveItemPlane(scope, run, item, deps);
+    let plane: MigrationPlane;
+    try {
+      plane = await resolveItemPlane(scope, run, item, deps);
+    } catch (error) {
+      // Fail-closed (2026-08-07): the old 'service' default SKIPPED the DB
+      // execution chain when the plane read hiccuped — the run then completed
+      // with the schema never applied. The implement succeeded; halt with the
+      // reason so the operator resumes once AMS is consistent.
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        `The implemented item's plane could not be resolved — the driver cannot decide ` +
+          `whether the DB execution chain owns completion (${error instanceof Error ? error.message : 'unknown'}). ` +
+          'The implement itself succeeded; fix the AMS book/run consistency, then Resume failed.',
+        'implemented');
+      return 'halted';
+    }
     if (plane === 'db') {
       kickDbPlaneCompletion(scope, run, item, deps);
       return 'db_completion_chain_started';
@@ -2411,6 +2572,51 @@ async function advanceBatchOnBuildResult(
   }
 
   if (outcome === 'deployed') {
+    // Belt-and-braces (2026-08-07, behind the mixed_plane_batch start refusal):
+    // a deployed batch containing db-plane items means the haibox deploy ran
+    // while the schema-apply → data-migration → parity chain NEVER did — the
+    // old code marked those items DEPLOYED over an empty database. Halt loudly
+    // instead (legacy in-flight runs predating the refusal can still arrive
+    // here). Plane resolution failure is fail-closed too.
+    let batchHasDbItems: boolean;
+    try {
+      batchHasDbItems = false;
+      for (const s of siblings) {
+        if ((await resolveItemPlane(scope, run, s, deps)) === 'db') {
+          batchHasDbItems = true;
+          break;
+        }
+      }
+    } catch (error) {
+      batchHasDbItems = true; // unresolvable = cannot prove it is safe
+      logger.warn('[diag-gateway] migration_execution_driver batch_deploy_plane_unresolvable', {
+        projectId,
+        runId,
+        jobId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+    if (batchHasDbItems) {
+      for (const s of siblings) {
+        if (!s.id) continue;
+        await safePatchItem(deps, projectId, s.id, {
+          status: RUN_ITEM_STATUS.FAILED,
+          outcome: 'deployed',
+          error_detail:
+            'The batch deployed via haibox but contains db-plane stories (or stories whose ' +
+            'plane could not be resolved) — their schema-apply/data-migration/parity chain ' +
+            'never ran, so the deployed state is NOT trustworthy. Re-run the DB plane as its ' +
+            'own per-plane Start.',
+        });
+      }
+      await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
+      trace.fail('batch deployed with db-plane items — DB chain was bypassed; run halted', {
+        run: runId,
+        job: jobId,
+        project: scope.project,
+      });
+      return 'halted';
+    }
     for (const s of siblings) {
       if (!s.id) continue;
       await safePatchItem(deps, projectId, s.id, {
@@ -2462,7 +2668,26 @@ async function advanceBatchOnBuildResult(
   const finalItem =
     siblings.find((s) => s.deploy_on_complete === true) ?? siblings[siblings.length - 1];
   if (finalItem) {
-    const plane = await resolveItemPlane(scope, run, finalItem, deps);
+    let plane: MigrationPlane;
+    try {
+      plane = await resolveItemPlane(scope, run, finalItem, deps);
+    } catch (error) {
+      // Fail-closed (2026-08-07): guessing 'service' here silently skipped the
+      // DB execution chain for a db-plane batch. The implement succeeded —
+      // halt with the reason so the operator resumes once AMS is consistent.
+      for (const s of siblings) {
+        if (!s.id) continue;
+        await safePatchItem(deps, projectId, s.id, {
+          status: RUN_ITEM_STATUS.FAILED,
+          error_detail:
+            `The batch's plane could not be resolved — the driver cannot decide whether ` +
+            `the DB execution chain owns completion (${error instanceof Error ? error.message : 'unknown'}). ` +
+            'The implement itself succeeded; fix the AMS book/run consistency, then Resume failed.',
+        });
+      }
+      await safePatchRun(deps, projectId, runId, { status: RUN_STATUS.HALTED });
+      return 'halted';
+    }
     if (plane === 'db') {
       kickDbPlaneCompletion(scope, run, finalItem, deps);
       return 'db_completion_chain_started';
@@ -3008,7 +3233,17 @@ export async function retryDbPlaneCompletion(
   if (!finalItem?.id) {
     return { status: 'not_retryable', reason: 'the run has no final item' };
   }
-  const plane = await resolveItemPlane(scope, run, finalItem, deps);
+  let plane: MigrationPlane;
+  try {
+    plane = await resolveItemPlane(scope, run, finalItem, deps);
+  } catch (error) {
+    return {
+      status: 'not_retryable',
+      reason:
+        `the final item's plane could not be resolved ` +
+        `(${error instanceof Error ? error.message : 'unknown'}) — refusing to retry blind`,
+    };
+  }
   if (plane !== 'db') {
     return {
       status: 'not_retryable',
@@ -3082,22 +3317,54 @@ export async function retryDbPlaneCompletion(
  * Resolve the plane of a run-item by mapping its work item to the book item's
  * workstream (Spec W). Fail-soft to `service` (the default plane).
  */
+/**
+ * Thrown when a run-item's plane cannot be determined (gold standard
+ * 2026-08-07). The old shape defaulted to 'service' on ANY failure — a
+ * db-plane item whose book read hiccuped would then SKIP its schema-apply /
+ * data-migration chain and the run completed with an empty database, silently.
+ * Callers catch this and fail CLOSED (halt / refuse) with the reason.
+ */
+export class PlaneResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlaneResolutionError';
+  }
+}
+
 async function resolveItemPlane(
   scope: MigrateScope,
   run: MigrationExecutionRun,
   item: MigrationExecutionRunItem,
   deps: MigrationDriverDeps
 ): Promise<MigrationPlane> {
-  try {
-    const bookId = run.book_of_work_id ?? scope.bookId;
-    if (!bookId || !item.work_item_id) return 'service';
-    const book = await deps.fetchBookOfWork(scope.projectId, bookId);
-    const items = book?.book_of_work_json?.items ?? [];
-    const bookItem = items.find((bi) => bi.workItemId === item.work_item_id);
-    return bookItem ? planeForItem(bookItem) : 'service';
-  } catch {
-    return 'service';
+  const bookId = run.book_of_work_id ?? scope.bookId;
+  if (!bookId) {
+    throw new PlaneResolutionError(
+      `run ${run.id ?? 'unknown'} carries no book_of_work_id — its item's plane cannot be resolved`
+    );
   }
+  if (!item.work_item_id) {
+    throw new PlaneResolutionError(
+      `run-item ${item.id ?? 'unknown'} carries no work_item_id — its plane cannot be resolved`
+    );
+  }
+  let book;
+  try {
+    book = await deps.fetchBookOfWork(scope.projectId, bookId);
+  } catch (error) {
+    throw new PlaneResolutionError(
+      `book ${bookId} could not be read to resolve the item's plane: ` +
+        `${error instanceof Error ? error.message : 'read failed'}`
+    );
+  }
+  const items = book?.book_of_work_json?.items ?? [];
+  const bookItem = items.find((bi) => bi.workItemId === item.work_item_id);
+  if (!bookItem) {
+    throw new PlaneResolutionError(
+      `work item ${item.work_item_id} is not in book ${bookId} — the item's plane cannot be resolved`
+    );
+  }
+  return planeForItem(bookItem);
 }
 
 /**
@@ -3223,9 +3490,28 @@ export async function resumeMigration(
   // plane begins. Persistence-conditional: only fires at a DB-plane pause.
   const deployedItems = items.filter((i) => i.status === RUN_ITEM_STATUS.DEPLOYED);
   const lastDeployed = deployedItems[deployedItems.length - 1];
-  const completedPlane = lastDeployed
-    ? await resolveItemPlane(scope, run, lastDeployed, deps)
-    : 'service';
+  let completedPlane: MigrationPlane;
+  try {
+    completedPlane = lastDeployed
+      ? await resolveItemPlane(scope, run, lastDeployed, deps)
+      : 'service';
+  } catch (error) {
+    // Fail-closed (2026-08-07): guessing 'service' here SKIPPED the DB-plane
+    // data-parity gate when the plane read hiccuped — the next plane then
+    // started on unverified data. Unresolvable = blocked resume.
+    return {
+      status: 'blocked',
+      reasons: [
+        {
+          code: 'plane_unresolvable',
+          message:
+            `The completed plane could not be resolved ` +
+            `(${error instanceof Error ? error.message : 'unknown'}) — refusing to resume ` +
+            'past a gate that cannot be evaluated. Retry when AMS is consistent.',
+        },
+      ],
+    };
+  }
   if (completedPlane === 'db' && !opts?.override) {
     const book = run.book_of_work_id
       ? await deps.fetchBookOfWork(scope.projectId, run.book_of_work_id)
@@ -3297,7 +3583,16 @@ export async function resumeMigration(
     return { status: 'error', message: 'Next spec text could not be resolved.' };
   }
 
-  const nextPlane = await resolveItemPlane(scope, run, next, deps);
+  let nextPlane: MigrationPlane;
+  try {
+    nextPlane = await resolveItemPlane(scope, run, next, deps);
+  } catch (error) {
+    await haltRunForItem(deps, scope, runId, next.id, next, RUN_ITEM_STATUS.FAILED,
+      `The next item's plane could not be resolved on resume ` +
+        `(${error instanceof Error ? error.message : 'unknown'}) — refusing to dispatch ` +
+        'blind. Fix the AMS book/run consistency, then Resume failed.');
+    return { status: 'error', message: 'Next plane could not be resolved.' };
+  }
   await safePatchRun(deps, scope.projectId, runId, {
     status: RUN_STATUS.DISPATCHING,
     current_sequence_position: next.sequence_position ?? null,
@@ -3746,6 +4041,12 @@ async function haltRunForItem(
   }
 }
 
+/** One in-process retry after a short pause (2026-08-07): a single AMS blip
+ * during a state PATCH used to silently drop the write — the run-item then
+ * carried stale status/outcome and the next advance mis-decided. One retry
+ * absorbs the blip class; a second failure still logs loudly. */
+const PATCH_RETRY_DELAY_MS = 400;
+
 async function safePatchItem(
   deps: MigrationDriverDeps,
   projectId: string,
@@ -3754,12 +4055,23 @@ async function safePatchItem(
 ): Promise<void> {
   try {
     await deps.patchMigrationExecutionRunItem(projectId, runItemId, patch);
-  } catch (error) {
-    logger.error('[diag-gateway] migration_execution_driver patch_item_failed', {
+  } catch (firstError) {
+    logger.warn('[diag-gateway] migration_execution_driver patch_item_retrying', {
       projectId,
       runItemId,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: firstError instanceof Error ? firstError.message : 'Unknown error',
     });
+    await new Promise((resolve) => setTimeout(resolve, PATCH_RETRY_DELAY_MS));
+    try {
+      await deps.patchMigrationExecutionRunItem(projectId, runItemId, patch);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver patch_item_failed', {
+        projectId,
+        runItemId,
+        retried: true,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 }
 
@@ -3771,11 +4083,22 @@ async function safePatchRun(
 ): Promise<void> {
   try {
     await deps.patchMigrationExecutionRun(projectId, runId, patch);
-  } catch (error) {
-    logger.error('[diag-gateway] migration_execution_driver patch_run_failed', {
+  } catch (firstError) {
+    logger.warn('[diag-gateway] migration_execution_driver patch_run_retrying', {
       projectId,
       runId,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: firstError instanceof Error ? firstError.message : 'Unknown error',
     });
+    await new Promise((resolve) => setTimeout(resolve, PATCH_RETRY_DELAY_MS));
+    try {
+      await deps.patchMigrationExecutionRun(projectId, runId, patch);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution_driver patch_run_failed', {
+        projectId,
+        runId,
+        retried: true,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
 }

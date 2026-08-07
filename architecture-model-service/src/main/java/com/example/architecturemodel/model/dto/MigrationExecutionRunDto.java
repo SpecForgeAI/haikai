@@ -55,6 +55,17 @@ public record MigrationExecutionRunDto(
     @JsonProperty("project_id")
     UUID projectId,
 
+    /**
+     * Workspace scope NAMES (changeset 219, 2026-08-07): recorded at run
+     * creation so the gateway boot-recovery sweep can re-derive its driver
+     * scope for CROSS-project in-flight discovery. Nullable on legacy rows.
+     */
+    @JsonProperty("company")
+    String company,
+
+    @JsonProperty("project")
+    String project,
+
     @JsonProperty("book_of_work_id")
     UUID bookOfWorkId,
 
@@ -95,6 +106,8 @@ public record MigrationExecutionRunDto(
     public MigrationExecutionRunDto(
             UUID id,
             UUID projectId,
+            String company,
+            String project,
             UUID bookOfWorkId,
             String status,
             Integer currentSequencePosition,
@@ -104,8 +117,30 @@ public record MigrationExecutionRunDto(
             List<Map<String, Object>> decisionLogJson,
             String createdAt,
             String updatedAt) {
-        this(id, projectId, bookOfWorkId, status, currentSequencePosition,
-            pinnedCurrentBaselineId, targetBaseUrl, baseSpec, decisionLogJson,
-            createdAt, updatedAt, null);
+        this(id, projectId, company, project, bookOfWorkId, status,
+            currentSequencePosition, pinnedCurrentBaselineId, targetBaseUrl,
+            baseSpec, decisionLogJson, createdAt, updatedAt, null);
+    }
+
+    /**
+     * Back-compat convenience constructor (pre-changeset-219 shape, no scope
+     * names): keeps the existing positional construction sites compiling;
+     * {@code company}/{@code project} default to {@code null}.
+     */
+    public MigrationExecutionRunDto(
+            UUID id,
+            UUID projectId,
+            UUID bookOfWorkId,
+            String status,
+            Integer currentSequencePosition,
+            UUID pinnedCurrentBaselineId,
+            String targetBaseUrl,
+            String baseSpec,
+            List<Map<String, Object>> decisionLogJson,
+            String createdAt,
+            String updatedAt) {
+        this(id, projectId, null, null, bookOfWorkId, status,
+            currentSequencePosition, pinnedCurrentBaselineId, targetBaseUrl,
+            baseSpec, decisionLogJson, createdAt, updatedAt, null);
     }
 }

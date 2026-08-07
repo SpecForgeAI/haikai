@@ -157,6 +157,21 @@ function statefulDeps(
     recordWorkItemImplementationError: jest.fn().mockResolvedValue(undefined),
     autoAnswerer: { driveAndAnswer: jest.fn() },
     buildResultsCallbackUrl: 'http://gw/api/implementation/build-results',
+    // Serve-spec halt hardening (2026-08-07): a deploying service-plane
+    // submit needs a registered serve spec — provide one by default.
+    getTargetServeSpec: jest.fn().mockReturnValue({
+      command: 'mvn spring-boot:run',
+      healthPath: '/actuator/health',
+    }),
+    // Fail-closed seams (2026-08-07): carry-over reads + chain-base + plane
+    // precedence must RESOLVE in tests (unreadable = blocked in production).
+    carryOverCoverageReads: {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    },
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
     scheduleRetryTimer: (delayMs: number, fn: () => void) => {
       timers.push({ delayMs, fn });
     },
@@ -383,12 +398,28 @@ describe('startMigration baseMode', () => {
     expect(req.run.base_spec).toBeNull();
   });
 
-  it("a prior-run read FAILURE degrades to a default-branch base, never a blocked start", async () => {
+  it('a prior-run read FAILURE BLOCKS a chained start — silently falling back to the default branch would discard the previous stage (2026-08-07)', async () => {
     const created: { run?: MigrationExecutionRun } = {};
     const deps = startDeps(null, created);
     (deps.fetchLatestMigrationExecutionRunForBook as jest.Mock).mockRejectedValue(new Error('AMS down'));
 
     const result = await startMigration(scope, deps);
+    await flush();
+
+    expect(result.status).toBe('blocked');
+    if (result.status === 'blocked') {
+      expect(result.reasons.some((r) => r.code === 'chain_base_unresolvable')).toBe(true);
+      expect(result.reasons[0].message).toContain('fresh');
+    }
+    expect(deps.createMigrationExecutionRun).not.toHaveBeenCalled();
+  });
+
+  it("an explicit 'fresh' baseMode never reads the prior run — a dead AMS cannot block it", async () => {
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(null, created);
+    (deps.fetchLatestMigrationExecutionRunForBook as jest.Mock).mockRejectedValue(new Error('AMS down'));
+
+    const result = await startMigration({ ...scope, baseMode: 'fresh' }, deps);
     await flush();
 
     expect(result.status).toBe('started');

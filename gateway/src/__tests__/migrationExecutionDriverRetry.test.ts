@@ -175,6 +175,21 @@ function statefulDeps(
     recordWorkItemImplementationError: jest.fn().mockResolvedValue(undefined),
     autoAnswerer: { driveAndAnswer: jest.fn() },
     buildResultsCallbackUrl: 'http://gw/api/implementation/build-results',
+    // Serve-spec halt hardening (2026-08-07): a deploying service-plane
+    // submit needs a registered serve spec — provide one by default.
+    getTargetServeSpec: jest.fn().mockReturnValue({
+      command: 'mvn spring-boot:run',
+      healthPath: '/actuator/health',
+    }),
+    // Fail-closed seams (2026-08-07): carry-over reads + chain-base + plane
+    // precedence must RESOLVE in tests (unreadable = blocked in production).
+    carryOverCoverageReads: {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    },
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
     scheduleRetryTimer: (delayMs: number, fn: () => void) => {
       timers.push({ delayMs, fn });
     },

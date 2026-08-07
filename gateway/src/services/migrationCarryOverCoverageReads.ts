@@ -91,27 +91,44 @@ function baseUrl(): string {
   return getConfig().architectureModelServiceBaseUrl;
 }
 
-async function getJsonOrNull<T>(url: string, label: string): Promise<T | null> {
+/**
+ * A carry-over gate input that could not be read (2026-08-07). The old
+ * `getJsonOrNull` swallowed every failure into `null` → `[]` → the coverage
+ * computed "nothing to account for" and the gate read CLEAR — fail-open on
+ * exactly the input it exists to check. Reads now THROW; the caller
+ * (startMigration) fails CLOSED with a `carry_over_unavailable` block.
+ */
+export class CarryOverReadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CarryOverReadError';
+  }
+}
+
+async function getJsonOrThrow<T>(url: string, label: string): Promise<T> {
+  let response: Response;
   try {
-    const response = await fetch(url, {
+    response = await fetch(url, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
-    if (!response.ok) {
-      logger.warn(`[diag-gateway] carry_over_coverage ${label} AMS non-OK`, {
-        status: response.status,
-        url,
-      });
-      return null;
-    }
-    return (await response.json()) as T;
   } catch (error) {
     logger.warn(`[diag-gateway] carry_over_coverage ${label} AMS read failed`, {
       url,
       error: error instanceof Error ? error.message : 'Unknown error',
     });
-    return null;
+    throw new CarryOverReadError(
+      `${label}: AMS unreachable (${error instanceof Error ? error.message : 'fetch failed'})`
+    );
   }
+  if (!response.ok) {
+    logger.warn(`[diag-gateway] carry_over_coverage ${label} AMS non-OK`, {
+      status: response.status,
+      url,
+    });
+    throw new CarryOverReadError(`${label}: AMS returned HTTP ${response.status}`);
+  }
+  return (await response.json()) as T;
 }
 
 const FINDINGS_PAGE_SIZE = 200;
@@ -132,7 +149,7 @@ export async function fetchCapabilitiesForArchitecture(
   const url =
     `${baseUrl()}/api/model/projects/${encodeURIComponent(projectId)}` +
     `/architectures/${encodeURIComponent(architectureId)}/discovery/capabilities`;
-  const rows = await getJsonOrNull<DiscoveryCapabilityWire[]>(url, 'fetch_capabilities');
+  const rows = await getJsonOrThrow<DiscoveryCapabilityWire[]>(url, 'fetch_capabilities');
   return Array.isArray(rows) ? rows : [];
 }
 
@@ -155,7 +172,7 @@ export async function fetchFindingsForRun(
       `/architectures/${encodeURIComponent(architectureId)}` +
       `/discovery/runs/${encodeURIComponent(runId)}/findings` +
       `?page=${page}&size=${FINDINGS_PAGE_SIZE}`;
-    const result = await getJsonOrNull<DiscoveryFindingSearchResponseWire>(url, 'fetch_findings');
+    const result = await getJsonOrThrow<DiscoveryFindingSearchResponseWire>(url, 'fetch_findings');
     const items = result?.items ?? [];
     for (const item of items) out.push(item);
     if (items.length < FINDINGS_PAGE_SIZE) break;
@@ -180,7 +197,7 @@ export async function fetchDiscoveryRunsForArchitecture(
   const url =
     `${baseUrl()}/api/model/projects/${encodeURIComponent(projectId)}` +
     `/architectures/${encodeURIComponent(architectureId)}/discovery/runs`;
-  const rows = await getJsonOrNull<DiscoveryRunWire[]>(url, 'fetch_runs');
+  const rows = await getJsonOrThrow<DiscoveryRunWire[]>(url, 'fetch_runs');
   return Array.isArray(rows) ? rows : [];
 }
 

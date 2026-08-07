@@ -53,6 +53,8 @@ public final class MigrationExecutionRunMapper {
         return new MigrationExecutionRunDto(
             entity.getId(),
             entity.getProjectId(),
+            entity.getCompany(),
+            entity.getProject(),
             entity.getBookOfWorkId(),
             entity.getStatus(),
             entity.getCurrentSequencePosition(),
@@ -85,6 +87,8 @@ public final class MigrationExecutionRunMapper {
         return new MigrationExecutionRunDto(
             entity.getId(),
             entity.getProjectId(),
+            entity.getCompany(),
+            entity.getProject(),
             entity.getBookOfWorkId(),
             entity.getStatus(),
             entity.getCurrentSequencePosition(),
@@ -117,6 +121,10 @@ public final class MigrationExecutionRunMapper {
         return MigrationExecutionRunEntity.builder()
             .id(dto.id() != null ? dto.id() : UUID.randomUUID())
             .projectId(projectId)
+            // Scope NAMES (changeset 219): set once at creation for the
+            // cross-project boot-recovery discovery; never PATCHed.
+            .company(dto.company())
+            .project(dto.project())
             .bookOfWorkId(dto.bookOfWorkId())
             .status(dto.status())
             .currentSequencePosition(dto.currentSequencePosition())

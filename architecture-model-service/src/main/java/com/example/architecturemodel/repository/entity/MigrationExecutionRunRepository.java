@@ -48,4 +48,17 @@ public interface MigrationExecutionRunRepository
      * @return list of runs
      */
     List<MigrationExecutionRunEntity> findByProjectId(UUID projectId);
+
+    /**
+     * CROSS-project status-scoped list (changeset 219, 2026-08-07): the
+     * gateway boot-recovery sweep discovers every in-flight run
+     * ({@code started} / {@code dispatching}) so a gateway restart re-kicks
+     * stuck mid-segment items instead of stranding the run forever. Uses the
+     * existing {@code idx_mer_status} index.
+     *
+     * @param statuses the run statuses to match
+     * @return matching runs, newest first
+     */
+    List<MigrationExecutionRunEntity> findByStatusInOrderByCreatedAtDesc(
+        java.util.Collection<String> statuses);
 }
