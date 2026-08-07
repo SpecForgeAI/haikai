@@ -1018,12 +1018,50 @@ function buildExpectedSchema(
         generationExpression: t.emitted.generationExpression,
       });
     }
-    if (table.primaryKey && table.primaryKey.columns.every((c) => presentColumns.has(c))) {
-      keysAndIndexes.push(keyEntry(table, 'primary_key', table.primaryKey.name, table.primaryKey.columns, { isUnique: true }));
+    // Mirror the EMITTER's pk_composition semantics (2026-08-07): the
+    // expected schema must reflect what the DDL actually contains — a
+    // resolved 'emit_over_present_members' key appears with its PRESENT
+    // members; an unresolved/dropped key is absent (and the open decision
+    // blocks Migrate anyway).
+    const droppedKeys = detectDroppedKeyConstraints(table, presentColumns);
+    const keyResolution = (name: string): string | null => {
+      const res = ir.resolvedDecisions[`pk_composition--${qn}--${name}`];
+      return res && typeof res['option'] === 'string' ? (res['option'] as string) : null;
+    };
+    if (table.primaryKey) {
+      const pkDropped = droppedKeys.find(
+        (d) => d.kind === 'primary_key' && d.name === table.primaryKey!.name
+      );
+      if (!pkDropped) {
+        keysAndIndexes.push(keyEntry(table, 'primary_key', table.primaryKey.name, table.primaryKey.columns, { isUnique: true }));
+      } else if (keyResolution(table.primaryKey.name) === 'emit_over_present_members') {
+        const kept = table.primaryKey.columns.filter((c) => presentColumns.has(c));
+        if (kept.length > 0) {
+          keysAndIndexes.push(keyEntry(table, 'primary_key', table.primaryKey.name, kept, { isUnique: true }));
+        }
+      }
     }
     for (const u of table.uniqueConstraints) {
-      if (!u.columns.every((c) => presentColumns.has(c))) continue;
-      keysAndIndexes.push(keyEntry(table, 'unique_constraint', u.name, u.columns, { isUnique: true }));
+      const uDropped = droppedKeys.find((d) => d.kind === 'unique' && d.name === u.name);
+      if (!uDropped) {
+        keysAndIndexes.push(keyEntry(table, 'unique_constraint', u.name, u.columns, { isUnique: true }));
+        continue;
+      }
+      if (keyResolution(u.name) === 'emit_over_present_members') {
+        const kept = u.columns.filter((c) => presentColumns.has(c));
+        if (kept.length > 0) {
+          keysAndIndexes.push(keyEntry(table, 'unique_constraint', u.name, kept, { isUnique: true }));
+        }
+      }
+    }
+    // Emitted (translated) CHECK constraints ride the expected schema too
+    // (2026-08-07) so the drift check can verify them on the live target;
+    // queue-routed non-portable checks join once approved + applied.
+    for (const ck of table.checkConstraints) {
+      if (!ck.expression) continue;
+      if (translateCheckExpression(ck.expression).kind === 'translated') {
+        keysAndIndexes.push(keyEntry(table, 'check_constraint', ck.name, [], {}));
+      }
     }
     for (const idx of table.indexes) {
       keysAndIndexes.push(
