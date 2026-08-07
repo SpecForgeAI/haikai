@@ -107,6 +107,128 @@ interface PackManifestView {
   };
 }
 
+export interface IncrementalSyncClientResult {
+  ok: boolean;
+  status: string | null;
+  rowsApplied: number | null;
+  rowsDeleted: number | null;
+  report: unknown | null;
+  error?: string;
+}
+
+/**
+ * POST the AMVS incremental-sync route (gold-standard C4, 2026-08-07): the
+ * side-by-side DAILY sync — keyed keyset deltas above the stored high-water
+ * upsert into the shadow target; full_reload tables truncate+reload. The
+ * pack's old bash runner was a comment stub; this is the real capability.
+ * Never logs credentials.
+ */
+export async function runIncrementalSyncViaAmvs(
+  args: DataMigrationClientArgs & {
+    deleteModes?: Record<string, string>;
+    pkDiffMaxRows?: number;
+  },
+): Promise<IncrementalSyncClientResult> {
+  const base = getConfig().apiMigrationValidationServiceBaseUrl;
+  const url = `${base}/api-migration-validation/api/data-migration/run-incremental`;
+  const body = {
+    project_id: args.projectId,
+    architecture_id: args.architectureId,
+    source_db: toDbBlock(args.sourceDb),
+    target_db: toDbBlock(args.targetDb),
+    manifest: args.manifest,
+    ...(args.bulkManifest ? { bulk_manifest: args.bulkManifest } : {}),
+    ...(args.deleteModes ? { delete_modes: args.deleteModes } : {}),
+    ...(args.pkDiffMaxRows ? { pk_diff_max_rows: args.pkDiffMaxRows } : {}),
+  };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = (await resp.json().catch(() => ({}))) as {
+    report?: unknown;
+    summary?: { status?: string; rows_applied?: number; rows_deleted?: number };
+    error?: string;
+    detail?: string;
+  };
+  if (!resp.ok) {
+    return {
+      ok: false,
+      status: null,
+      rowsApplied: null,
+      rowsDeleted: null,
+      report: null,
+      error: json.error || json.detail || `HTTP ${resp.status}`,
+    };
+  }
+  return {
+    ok: true,
+    status: json.summary?.status ?? null,
+    rowsApplied: json.summary?.rows_applied ?? null,
+    rowsDeleted: json.summary?.rows_deleted ?? null,
+    report: json.report ?? null,
+  };
+}
+
+/**
+ * Gather the incremental-sync inputs for an operator-triggered run (the same
+ * credential stores + pack view the DB-plane trigger uses) and run it.
+ * Returns a structured refusal naming EVERY missing input — never a silent
+ * partial run.
+ */
+export async function runOperatorIncrementalSync(args: {
+  projectId: string;
+  architectureId: string | null;
+  runId: string;
+  deleteModes?: Record<string, string>;
+  pkDiffMaxRows?: number;
+  subDeps?: DataMigrationTriggerDeps;
+}): Promise<
+  | { status: 'blocked'; missing: string[] }
+  | { status: 'ran'; sync: IncrementalSyncClientResult }
+> {
+  const getTargetDb =
+    args.subDeps?.getTargetDb ?? ((runId: string) => migrationTargetCredentialsStore.getDb(runId));
+  const getSourceDb =
+    args.subDeps?.getSourceDb ??
+    ((projectId: string) => currentSystemCredentialsStore.get(projectId)?.db);
+  const fetchPackView = args.subDeps?.fetchPackView ?? defaultFetchPackView;
+
+  const targetDb = getTargetDb(args.runId);
+  const sourceDb = getSourceDb(args.projectId);
+  const packView = args.architectureId
+    ? await fetchPackView(args.projectId, args.architectureId)
+    : null;
+  const manifest = packView?.manifest as (PackManifestView & { sync?: unknown }) | undefined;
+
+  const missing: string[] = [];
+  if (!args.architectureId) missing.push('current architecture id');
+  if (!sourceDb) missing.push('source DB creds (register via baseline-drift-watch)');
+  if (!targetDb) missing.push('target DB creds (register at Migrate confirm)');
+  if (!manifest?.expected_schema) missing.push('DB pack manifest (expected_schema)');
+  if (!manifest?.sync) missing.push('pack sync section (regenerate the pack)');
+  if (missing.length > 0) {
+    return { status: 'blocked', missing };
+  }
+
+  const bulk = manifest!.bulk_load;
+  const result = await runIncrementalSyncViaAmvs({
+    projectId: args.projectId,
+    architectureId: args.architectureId as string,
+    sourceDb: sourceDb as TargetDbSecret,
+    targetDb: targetDb as TargetDbSecret,
+    manifest,
+    bulkManifest:
+      bulk && bulk.table_order
+        ? { table_order: bulk.table_order, expected_source_row_counts: bulk.expected_row_counts ?? {} }
+        : undefined,
+    deleteModes: args.deleteModes,
+    pkDiffMaxRows: args.pkDiffMaxRows,
+  });
+  return { status: 'ran', sync: result };
+}
+
 /** Injectable sub-dependencies (all real by default; mocked in tests). */
 export interface DataMigrationTriggerDeps {
   getTargetDb?: (runId: string) => TargetDbSecret | undefined;

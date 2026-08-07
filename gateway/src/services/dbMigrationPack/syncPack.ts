@@ -21,7 +21,7 @@
  */
 
 import type { DeltaStrategy, IrSequence } from './types';
-import { SEQUENCES_SEED_CHANGESET_PATH } from './liquibase';
+import { SEQUENCES_SEED_CHANGESET_PATH, quoteIdent } from './liquibase';
 
 export const SYNC_STATE_TABLE = 'haikai_sync_state';
 export const SYNC_STATE_PATH = 'sync/000-sync-state.sql';
@@ -101,75 +101,69 @@ export function emitSyncRunner(args: { strategies: DeltaStrategy[] }): string {
   lines.push('# target runs as a SHADOW. This runner tops it up once a day until');
   lines.push('# swap-over. ONE-WAY only — never write back to the source.');
   lines.push('#');
+  lines.push('# EXECUTION MODEL (2026-08-07 — replaces the old comment-stub runner that');
+  lines.push('# executed NOTHING): the sync is AMVS-DRIVEN. The gateway endpoint below');
+  lines.push('# dispatches the real capability — keyed keyset deltas STRICTLY ABOVE the');
+  lines.push(`# stored high-water (${SYNC_STATE_TABLE} on the TARGET) are UPSERTed`);
+  lines.push('# (insert_only -> ON CONFLICT DO NOTHING; insert_update -> DO UPDATE),');
+  lines.push('# full_reload tables truncate+reload, and pk-diff delete propagation is a');
+  lines.push('# bounded per-table opt-in (delete_modes in the request body). Credentials');
+  lines.push("# come from the gateway's registered stores — NEVER from this script.");
+  lines.push('#');
   lines.push('# Environment (set all before running):');
-  lines.push('#   SYBASE_HOST SYBASE_PORT SYBASE_DB SYBASE_USER SYBASE_PASSWORD   (isql/bcp)');
-  lines.push('#   PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD                       (psql)');
-  lines.push('#   STAGING_DIR   — writable directory for extracted delta files');
+  lines.push('#   GATEWAY_BASE_URL — e.g. http://localhost:8081');
+  lines.push('#   PROJECT_ID       — the workspace project UUID');
+  lines.push('#   RUN_ID           — the migration execution run whose registered');
+  lines.push('#                      source/target DB credentials the gateway holds');
+  lines.push('#                      (register at Migrate confirm / baseline drift watch)');
   lines.push('#');
-  lines.push('# Per-table mechanics live in the pack:');
-  lines.push('#   data/incremental/<schema>.<table>.sql  — the delta extract/apply template');
-  lines.push(`#   ${SYNC_STATE_PATH}                    — the high-water state table (apply once)`);
-  lines.push('#');
-  lines.push('# Exit codes: 0 = synced + reconciliation clean; 2 = reconciliation drift;');
-  lines.push('#             1 = any table failed (state row marked error, run halted).');
+  lines.push('# Exit codes: 0 = sync clean; 2 = attention (errors / open decisions /');
+  lines.push('#             dispatch refused) — inspect the printed report.');
   lines.push('');
   lines.push('set -euo pipefail');
+  lines.push(': "${GATEWAY_BASE_URL:?GATEWAY_BASE_URL must be set}"');
+  lines.push(': "${PROJECT_ID:?PROJECT_ID must be set}"');
+  lines.push(': "${RUN_ID:?RUN_ID must be set}"');
   lines.push('');
-  lines.push(': "${STAGING_DIR:?STAGING_DIR must be set}"');
-  lines.push('RUN_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"');
-  lines.push('echo "haikai daily sync run ${RUN_STAMP}"');
-  lines.push('');
-  lines.push('psql_cmd() { psql -v ON_ERROR_STOP=1 -qAt "$@"; }');
-  lines.push('');
-  lines.push('get_high_water() {');
+  lines.push('resp="$(curl -sS -X POST \\');
   lines.push(
-    `  psql_cmd -c "SELECT high_water FROM ${SYNC_STATE_TABLE} WHERE table_name = '\$1'";`
+    '  "${GATEWAY_BASE_URL}/api/v1/projects/${PROJECT_ID}/migration-execution-runs/${RUN_ID}/run-incremental-sync" \\'
   );
-  lines.push('}');
+  lines.push("  -H 'Content-Type: application/json' -d '{}')\"");
+  lines.push('echo "${resp}"');
+  lines.push('status="$(printf \'%s\' "${resp}" | sed -n \'s/.*"status":"\\([a-z_]*\\)".*/\\1/p\' | head -1)"');
+  lines.push('if [ "${status}" = "clean" ]; then');
+  lines.push('  echo "sync CLEAN"');
+  lines.push('  exit 0');
+  lines.push('fi');
+  lines.push('echo "sync ATTENTION (status=${status:-unknown}) — see the report above"');
+  lines.push('exit 2');
   lines.push('');
-  lines.push('set_high_water() {');
-  lines.push(
-    `  psql_cmd -c "INSERT INTO ${SYNC_STATE_TABLE}(table_name, high_water, last_run_at, last_status) VALUES ('\$1', '\$2', now(), 'ok') ON CONFLICT (table_name) DO UPDATE SET high_water = EXCLUDED.high_water, last_run_at = now(), last_status = 'ok'";`
-  );
-  lines.push('}');
-  lines.push('');
-  lines.push('sync_table() {');
-  lines.push('  local qn="$1" delta_key="$2"');
-  lines.push('  local hw; hw="$(get_high_water "${qn}")"');
-  lines.push('  echo "-- ${qn}: high-water ${hw:-<none>} (key ${delta_key})"');
-  lines.push('  # 1) Extract rows > high-water on the SOURCE (see the per-table');
-  lines.push('  #    data/incremental/<qn>.sql for the exact SELECT + cast pipeline;');
-  lines.push('  #    bcp/isql it into "${STAGING_DIR}/${qn}.delta.csv").');
-  lines.push('  # 2) Apply on the TARGET with :last_high_water bound to ${hw}');
-  lines.push('  #    (INSERT ... OVERRIDING SYSTEM VALUE / INSERT ... ON CONFLICT DO UPDATE');
-  lines.push('  #    exactly as the per-table script states).');
-  lines.push('  # 3) Read the new max(delta_key) from the TARGET and advance the state:');
-  lines.push('  #    set_high_water "${qn}" "${new_hw}"');
-  lines.push('}');
-  lines.push('');
+  lines.push('# ---------------------------------------------------------------------');
+  lines.push('# Per-table posture at pack-generation time (the LIVE truth is the');
+  lines.push("# manifest's sync.tables section + the run report):");
   if (synced.length === 0) {
-    lines.push('echo "No keyed tables to sync (see manifest delta_strategies)."');
+    lines.push('#   (no keyed tables)');
   } else {
-    lines.push(`# ---- keyed tables, FK order (${synced.length}) ----`);
+    lines.push(`#   keyed tables (${synced.length}):`);
     for (const s of synced) {
-      lines.push(`sync_table '${s.table}' '${s.deltaKey ?? ''}'   # ${s.strategy}`);
+      lines.push(`#     ${s.table}  key=${s.deltaKey ?? '?'}  ${s.strategy}`);
     }
   }
-  lines.push('');
   if (fullReload.length > 0) {
-    lines.push(`# ---- full-reload tables (${fullReload.length}) — no delta key; TRUNCATE + re-run`);
-    lines.push('#      the bulk extract for each (see data/incremental/<qn>.sql):');
-    for (const s of fullReload) lines.push(`#   ${s.table}`);
-    lines.push('');
+    lines.push(`#   full-reload tables (${fullReload.length}) — the delete-catching mechanism:`);
+    for (const s of fullReload) lines.push(`#     ${s.table}`);
   }
   if (pending.length > 0) {
-    lines.push(`# ---- BLOCKED: ${pending.length} table(s) awaiting a delta-key decision — NOT synced:`);
-    for (const s of pending) lines.push(`#   ${s.table}  (resolve delta_key--${s.table} in the pack decision queue)`);
-    lines.push('');
+    lines.push(`#   BLOCKED (${pending.length}) — open delta-key decision, NOT synced until resolved:`);
+    for (const s of pending) {
+      lines.push(`#     ${s.table}  (resolve delta_key--${s.table} in the pack decision queue)`);
+    }
   }
-  lines.push('# ---- per-run reconciliation gate ----');
-  lines.push(`# Run ${RECONCILIATION_SQL_PATH} on BOTH engines, then:`);
-  lines.push(`bash "$(dirname "$0")/../${RECONCILIATION_REPORT_PATH}" "\${STAGING_DIR}" "\${RUN_STAMP}"`);
+  lines.push('#');
+  lines.push(`# Reference SQL for a manual audit: ${RECONCILIATION_SQL_PATH} +`);
+  lines.push(`# ${RECONCILIATION_REPORT_PATH}; the state table DDL is ${SYNC_STATE_PATH}`);
+  lines.push('# (the AMVS runner creates it automatically when absent).');
   lines.push('');
   return lines.join('\n');
 }
@@ -195,9 +189,17 @@ export function emitReconciliationSql(args: {
   lines.push('-- ===== PostgreSQL (TARGET) — psql -qAt -F, ===== ');
   for (const qn of args.tableOrder) {
     const key = keyByTable.get(qn) ?? null;
-    const maxExpr = key ? `max(${key})::text` : 'NULL';
+    // Target-side statements QUOTE every identifier (source case preserved),
+    // matching the quoted DDL (2026-08-07): the unquoted form silently
+    // lower-cased mixed-case tables/columns and the reconciliation query
+    // failed — or worse, hit a different relation.
+    const quotedQn = qn
+      .split('.')
+      .map((part) => quoteIdent(part))
+      .join('.');
+    const maxExpr = key ? `max(${quoteIdent(key)})::text` : 'NULL';
     lines.push(
-      `SELECT '${qn}', count(*)::text, ${maxExpr} FROM ${qn};`
+      `SELECT '${qn}', count(*)::text, ${maxExpr} FROM ${quotedQn};`
     );
   }
   lines.push('');

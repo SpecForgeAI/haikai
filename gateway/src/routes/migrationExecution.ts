@@ -94,6 +94,7 @@ import type {
 } from '../services/migrationTargetCredentialsStore';
 import { deriveServeSpecDefaults } from '../services/migrationServeSpecDefaults';
 import { defaultFetchPackView } from '../services/migrationDbPackPlanner';
+import { runOperatorIncrementalSync } from '../services/migrationDataRunnerDispatch';
 
 export const migrationExecutionRouter = Router();
 
@@ -1753,6 +1754,69 @@ migrationExecutionRouter.post(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Carry-over apply-triage failed' });
+    }
+  }
+);
+
+/**
+ * POST .../migration-execution-runs/:runId/run-incremental-sync — the
+ * operator-triggered side-by-side DAILY sync (gold-standard C4, 2026-08-07).
+ * The pack's old bash runner was a comment stub that executed nothing; this
+ * dispatches the REAL AMVS incremental-sync capability: keyed keyset deltas
+ * above the stored high-water upsert into the shadow target, full_reload
+ * tables truncate+reload, `haikai_sync_state` advances per clean table, and
+ * pk-diff delete propagation is a bounded per-table opt-in.
+ *
+ * Body (all optional): { delete_modes?: { "<schema>.<table>": "pk_diff" },
+ *                        pk_diff_max_rows?: number }
+ * Credentials come from the run's registered stores (never the body).
+ * 409 with the full missing-input list when the run cannot execute.
+ */
+migrationExecutionRouter.post(
+  '/projects/:projectId/migration-execution-runs/:runId/run-incremental-sync',
+  async (req: Request, res: Response) => {
+    const { projectId, runId } = req.params;
+    const body = (req.body ?? {}) as {
+      delete_modes?: Record<string, string>;
+      pk_diff_max_rows?: number;
+    };
+    try {
+      const run = await getMigrationExecutionRun(projectId, runId);
+      if (!run) {
+        return res.status(404).json({ error: `run ${runId} not found` });
+      }
+      const bookId = run.book_of_work_id ?? null;
+      const book = bookId ? await fetchBookOfWork(projectId, bookId) : null;
+      const result = await runOperatorIncrementalSync({
+        projectId,
+        architectureId: book?.current_architecture_id ?? null,
+        runId,
+        deleteModes: body.delete_modes,
+        pkDiffMaxRows: body.pk_diff_max_rows,
+      });
+      if (result.status === 'blocked') {
+        return res.status(409).json({
+          error: 'incremental sync cannot run — missing inputs',
+          missing: result.missing,
+        });
+      }
+      if (!result.sync.ok) {
+        return res.status(502).json({ error: result.sync.error ?? 'incremental sync failed' });
+      }
+      return res.status(200).json({
+        ok: true,
+        status: result.sync.status,
+        rows_applied: result.sync.rowsApplied,
+        rows_deleted: result.sync.rowsDeleted,
+        report: result.sync.report,
+      });
+    } catch (error) {
+      logger.error('[diag-gateway] migration_execution incremental_sync_error', {
+        projectId,
+        runId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'incremental sync dispatch failed' });
     }
   }
 );

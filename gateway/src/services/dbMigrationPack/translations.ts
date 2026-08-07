@@ -49,7 +49,20 @@ import {
 // Wire types (AMS snake_case — Group 2 endpoints)
 // ---------------------------------------------------------------------------
 
-export const TRANSLATION_KINDS = ['stored_procedure', 'trigger', 'view'] as const;
+/**
+ * 2026-08-07 (gold standard C4): + `check_constraint` (non-portable CHECK
+ * expressions used to die as "translate manually and ALTER TABLE after
+ * review" comments — manual residue) and + `scheduled_job` (DB-resident jobs
+ * used to land in `manual_recreation` — same residue; they now translate to
+ * pg_cron schedules). AMS chk_dmpt_kind extended by changeset 220.
+ */
+export const TRANSLATION_KINDS = [
+  'stored_procedure',
+  'trigger',
+  'view',
+  'check_constraint',
+  'scheduled_job',
+] as const;
 export type TranslationKind = (typeof TRANSLATION_KINDS)[number];
 export type TranslationDisposition = 'translate' | 'rewrite_in_app' | 'drop';
 export type TranslationPipelineState =
@@ -113,6 +126,13 @@ export interface RequiresTranslationEntry {
   kind: string;
   object_ref: string;
   finding_ids: string[];
+  /**
+   * DIRECT source body (2026-08-07): kinds whose bodies live in the pack IR
+   * rather than findings (check_constraint) carry the body on the entry
+   * itself; when present it wins over the findings lookup and the seed is
+   * full-fidelity (never truncated / legacy-redacted).
+   */
+  source_body?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +219,10 @@ const FINDING_TYPE_BY_KIND: Record<TranslationKind, string> = {
   stored_procedure: 'stored_procedure_logic',
   trigger: 'trigger_logic',
   view: 'view_definition',
+  scheduled_job: 'db_resident_scheduled_job',
+  // check_constraint bodies ride the entry itself (`source_body`), never a
+  // finding — the sentinel can never match a real finding_type.
+  check_constraint: '__direct_source_body__',
 };
 
 /**
@@ -217,6 +241,22 @@ export function resolveSeedSources(
   for (const entry of entries) {
     if (!(TRANSLATION_KINDS as readonly string[]).includes(entry.kind)) continue;
     const kind = entry.kind as TranslationKind;
+    // DIRECT source body (2026-08-07): the entry carries its own body (check
+    // constraints — the expression lives in the pack IR, not a finding).
+    // Full fidelity by construction.
+    if (typeof entry.source_body === 'string' && entry.source_body.length > 0) {
+      seeds.push({
+        translation_key: translationKey(kind, entry.object_ref),
+        kind,
+        object_ref: entry.object_ref,
+        source_body: entry.source_body,
+        source_body_hash: computeSourceBodyHash(entry.source_body),
+        truncated: false,
+        legacy_redacted: false,
+        terminal_needs_manual: false,
+      });
+      continue;
+    }
     const candidates = (entry.finding_ids ?? [])
       .map((id) => findingsById.get(id))
       .filter(
@@ -229,11 +269,26 @@ export function resolveSeedSources(
     let legacyRedacted = true; // marker ABSENCE = legacy
     for (const finding of candidates) {
       const detail = finding.detail_json ?? {};
-      const raw = kind === 'stored_procedure' ? detail['bodySnippet'] : detail['body'];
+      // Body field per kind: procs snippet, scheduled jobs carry `command`
+      // (2026-08-07 — the schedule cadence is prefixed so the translator can
+      // produce the matching cron expression), everything else `body`.
+      const raw =
+        kind === 'stored_procedure'
+          ? detail['bodySnippet']
+          : kind === 'scheduled_job'
+            ? (detail['command'] ?? detail['body'])
+            : detail['body'];
       if (typeof raw === 'string' && raw.length > 0) {
-        body = raw;
+        const schedule =
+          kind === 'scheduled_job' && typeof detail['schedule'] === 'string'
+            ? `-- source schedule: ${detail['schedule']}\n`
+            : '';
+        body = `${schedule}${raw}`;
         truncated = detail['truncated'] === true;
-        legacyRedacted = detail['literal_policy'] !== TARGETED_LITERAL_POLICY;
+        legacyRedacted =
+          kind === 'scheduled_job'
+            ? false // job commands are captured verbatim (no literal policy)
+            : detail['literal_policy'] !== TARGETED_LITERAL_POLICY;
         break;
       }
     }
@@ -703,6 +758,20 @@ const KIND_INSTRUCTIONS: Record<TranslationKind, string> = {
   view:
     'Translate the Sybase ASE T-SQL view definition into PostgreSQL SQL ' +
     '(CREATE OR REPLACE VIEW ...).',
+  check_constraint:
+    'Translate the Sybase ASE CHECK constraint into PostgreSQL. The source body is the ' +
+    'complete ALTER TABLE ... ADD CONSTRAINT ... CHECK (<T-SQL expression>) statement; ' +
+    'produce the equivalent PostgreSQL ALTER TABLE ... ADD CONSTRAINT ... CHECK ' +
+    '(<PostgreSQL boolean expression>); — QUOTE the table/constraint identifiers ' +
+    '(double quotes, source case preserved) and translate T-SQL built-ins to their ' +
+    'PostgreSQL equivalents. The semantics of the check must be preserved exactly.',
+  scheduled_job:
+    'Translate the Sybase DB-resident scheduled job into PostgreSQL pg_cron. Produce: ' +
+    '(1) ONE PL/pgSQL function (CREATE OR REPLACE FUNCTION ... LANGUAGE plpgsql) holding ' +
+    "the job's translated body, and (2) the matching SELECT cron.schedule('<job-name>', " +
+    "'<cron expression derived from the source schedule comment>', $$SELECT <function>()$$); " +
+    'statement. Note in `notes` that the pg_cron extension must be installed on the target ' +
+    'and that the source job must be disabled at swap-over (no job may run twice).',
 };
 
 export function buildTranslationPrompt(args: {

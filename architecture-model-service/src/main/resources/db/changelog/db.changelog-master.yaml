@@ -5147,3 +5147,23 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 220: db-pack discrete-bucket extensions (2026-08-07, gold-standard C4).
+  # chk_dmpd_category + 'pk_composition' (silently-dropped PK/UNIQUE
+  # constraints now raise pack decisions that gate Migrate) and chk_dmpt_kind
+  # + 'check_constraint' + 'scheduled_job' (non-portable CHECKs and DB
+  # scheduled jobs now ride the translation queue instead of dying as manual
+  # residue). Drop-and-recreate in a NEW changeset (the 177 idiom).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 219).
+  # ============================================================================
+  - changeSet:
+      id: 220-db-pack-decision-and-translation-kind-extensions
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/220-db-pack-decision-and-translation-kind-extensions.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

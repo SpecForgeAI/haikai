@@ -60,14 +60,21 @@ public class DbMigrationPackDecisionEntity {
     public static final String CATEGORY_COMPUTED_COLUMN = "computed_column";
     public static final String CATEGORY_COLLATION = "collation";
     public static final String CATEGORY_DELTA_KEY = "delta_key";
+    /**
+     * 2026-08-07 (gold-standard C4, changeset 220): a PK/UNIQUE constraint
+     * whose member column(s) are omitted/dropped raises this decision — it
+     * used to be dropped silently by the pack generator.
+     */
+    public static final String CATEGORY_PK_COMPOSITION = "pk_composition";
     public static final String CATEGORY_OTHER = "other";
 
-    /** All allowed decision categories, mirroring chk_dmpd_category. */
+    /** All allowed decision categories, mirroring chk_dmpd_category (changeset 220). */
     public static final Set<String> ALL_CATEGORIES = Set.of(
         CATEGORY_TYPE_MAPPING,
         CATEGORY_COMPUTED_COLUMN,
         CATEGORY_COLLATION,
         CATEGORY_DELTA_KEY,
+        CATEGORY_PK_COMPOSITION,
         CATEGORY_OTHER
     );
 

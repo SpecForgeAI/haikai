@@ -63,12 +63,23 @@ public class DbMigrationPackTranslationEntity {
     public static final String KIND_STORED_PROCEDURE = "stored_procedure";
     public static final String KIND_TRIGGER = "trigger";
     public static final String KIND_VIEW = "view";
+    /**
+     * 2026-08-07 (gold-standard C4, changeset 220): non-portable CHECK
+     * expressions ride the queue as {@code check_constraint} (approved =
+     * ALTER TABLE in 050-translations) and DB-resident jobs as
+     * {@code scheduled_job} (approved = PL/pgSQL function + pg_cron
+     * cron.schedule) — both previously died as manual residue.
+     */
+    public static final String KIND_CHECK_CONSTRAINT = "check_constraint";
+    public static final String KIND_SCHEDULED_JOB = "scheduled_job";
 
-    /** All allowed object kinds, mirroring chk_dmpt_kind. */
+    /** All allowed object kinds, mirroring chk_dmpt_kind (changeset 220). */
     public static final Set<String> ALL_KINDS = Set.of(
         KIND_STORED_PROCEDURE,
         KIND_TRIGGER,
-        KIND_VIEW
+        KIND_VIEW,
+        KIND_CHECK_CONSTRAINT,
+        KIND_SCHEDULED_JOB
     );
 
     public static final String DISPOSITION_TRANSLATE = "translate";

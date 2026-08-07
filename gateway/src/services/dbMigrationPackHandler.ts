@@ -50,11 +50,13 @@ import {
   COLLATION_OPTIONS,
   collationDecisionQuestion,
   mapSourceType,
+  translateCheckExpression,
   translateComputedExpression,
   translateDefault,
   TYPE_MAPPING_VERSION,
 } from './dbMigrationPack/typeMapping';
 import {
+  detectDroppedKeyConstraints,
   emitForeignKeysChangeset,
   emitIndexesChangeset,
   emitMasterChangelog,
@@ -62,6 +64,7 @@ import {
   emitSequencesSeedChangeset,
   emitTableChangeset,
   EmittableColumn,
+  PK_COMPOSITION_OPTIONS,
   FOREIGN_KEYS_CHANGESET_PATH,
   foreignKeyName,
   INDEXES_CHANGESET_PATH,
@@ -638,6 +641,36 @@ export function buildDbMigrationPackArtifacts(
     emittedColumnsByTable.set(qn, emittedColumns);
     emittedTableNames.add(qn);
 
+    // PK/UNIQUE member-drop (gold standard 2026-08-07): every key constraint
+    // that cannot emit whole raises a `pk_composition` decision — an OPEN one
+    // blocks Migrate via the db-pack gate; the resolution controls the
+    // emitter (emit over present members / drop on record).
+    const droppedKeys = detectDroppedKeyConstraints(
+      table,
+      new Set(emittedColumns.map((c) => c.columnName))
+    );
+    const keyDecisionKeys: string[] = [];
+    for (const dk of droppedKeys) {
+      const dkKey = `pk_composition--${qn}--${dk.name}`;
+      if (!ir.resolvedDecisions[dkKey]) {
+        decisions.push({
+          decisionKey: dkKey,
+          objectRef: qn,
+          category: 'pk_composition',
+          question:
+            `${dk.kind === 'primary_key' ? 'PRIMARY KEY' : 'UNIQUE'} constraint ` +
+            `'${dk.name}' on ${qn} cannot be emitted whole: member column(s) ` +
+            `${dk.missingColumns.join(', ')} are omitted/dropped. Choose ` +
+            `resolve_member_columns_first (fix the member columns, regenerate — ` +
+            `the key then emits automatically), emit_over_present_members ` +
+            `(PARTIAL key — uniqueness semantics change), or drop_constraint ` +
+            `(uniqueness/identity is lost on the target, on record).`,
+          options: PK_COMPOSITION_OPTIONS,
+        });
+        keyDecisionKeys.push(dkKey);
+      }
+    }
+
     tableChangesets.push({
       path: tableChangesetPath(table),
       content: emitTableChangeset({
@@ -646,6 +679,7 @@ export function buildDbMigrationPackArtifacts(
         omitted: translated.filter((t) => t.omitted !== null).map((t) => t.omitted!),
         skipped: translated.filter((t) => t.skippedNote !== null).map((t) => t.skippedNote!),
         relationNames,
+        resolvedDecisions: ir.resolvedDecisions,
       }),
     });
 
@@ -654,7 +688,7 @@ export function buildDbMigrationPackArtifacts(
     const detection = detectDeltaKey(table);
     const strategy = resolveDeltaStrategy(table, detection, ir.resolvedDecisions[deltaKey]);
     deltaStrategies.push(strategy);
-    const tableDecisionKeys: string[] = [];
+    const tableDecisionKeys: string[] = [...keyDecisionKeys];
     if (strategy.strategy === 'needs_decision') {
       decisions.push(deltaKeyDecision(table));
       tableDecisionKeys.push(deltaKey);
@@ -669,26 +703,46 @@ export function buildDbMigrationPackArtifacts(
   }
 
   // --- untranslated objects from findings (procs/triggers/views/jobs) -----
+  // Scheduled jobs (gold standard 2026-08-07): previously parked in
+  // `manual_recreation` — manual residue by construction. They now enter the
+  // SAME translation queue (kind scheduled_job → PL/pgSQL function +
+  // pg_cron cron.schedule on approval); `manual_recreation` stays only for
+  // genuinely untranslatable leftovers (currently none by default).
   for (const u of ir.untranslated) {
-    if (u.kind === 'scheduled_job') {
-      manualRecreation.push({
-        kind: 'scheduled_job',
+    const existing = requiresTranslation.find(
+      (r) => r.kind === u.kind && r.object_ref === u.objectRef
+    );
+    if (existing) {
+      existing.finding_ids.push(...u.findingIds);
+    } else {
+      requiresTranslation.push({
+        kind: u.kind,
         object_ref: u.objectRef,
         finding_ids: [...u.findingIds],
       });
-    } else {
-      const existing = requiresTranslation.find(
-        (r) => r.kind === u.kind && r.object_ref === u.objectRef
-      );
-      if (existing) {
-        existing.finding_ids.push(...u.findingIds);
-      } else {
-        requiresTranslation.push({
-          kind: u.kind,
-          object_ref: u.objectRef,
-          finding_ids: [...u.findingIds],
-        });
-      }
+    }
+  }
+
+  // --- non-portable CHECK constraints → translation queue (2026-08-07) ----
+  // The table changesets SKIP checks whose expressions the deterministic
+  // translator refuses; each one used to end as a "translate manually and
+  // ALTER TABLE after review" comment. They now seed the queue DIRECTLY
+  // (source_body carried on the entry — the expression lives in the IR, not
+  // findings); the approved ALTER TABLE emits in 050-translations.
+  for (const table of orderedTables) {
+    const qn = qualifiedName(table.schemaName, table.tableName);
+    for (const ck of [...table.checkConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!ck.expression) continue;
+      const t = translateCheckExpression(ck.expression);
+      if (t.kind === 'translated') continue;
+      requiresTranslation.push({
+        kind: 'check_constraint',
+        object_ref: `${qn}.${ck.name}`,
+        finding_ids: [...table.findingIds],
+        source_body:
+          `-- Non-portable CHECK on ${qn} (deterministic translator: ${t.reason})\n` +
+          `ALTER TABLE ${qn} ADD CONSTRAINT ${ck.name} CHECK (${ck.expression});`,
+      });
     }
   }
 
@@ -794,7 +848,14 @@ export function buildDbMigrationPackArtifacts(
       sourceEngine: ir.sourceEngine,
       targetEngine: ir.targetEngine,
       sequences: ir.sequences,
-      scheduledJobs: manualRecreation.map((m) => m.object_ref),
+      // Jobs now ride the translation queue (2026-08-07); the runbook's
+      // re-homing step lists them from there (+ any manual leftovers).
+      scheduledJobs: [
+        ...requiresTranslation
+          .filter((r) => r.kind === 'scheduled_job')
+          .map((r) => r.object_ref),
+        ...manualRecreation.map((m) => m.object_ref),
+      ],
       pendingDecisionTables: deltaStrategies
         .filter((s) => s.strategy === 'needs_decision')
         .map((s) => s.table),

@@ -289,6 +289,53 @@ export interface SkippedColumnNote {
 }
 
 /**
+ * A PK/UNIQUE constraint that cannot be emitted whole because member
+ * column(s) are omitted/dropped (gold standard 2026-08-07). Detected purely
+ * so the handler can raise the matching `pk_composition` pack decision and
+ * flag the table's coverage; the emitter uses the same detection to write
+ * the loud NEEDS DECISION comment (or honour the resolution).
+ */
+export interface DroppedKeyConstraint {
+  kind: 'primary_key' | 'unique';
+  name: string;
+  columns: string[];
+  missingColumns: string[];
+}
+
+/** The resolution options for a `pk_composition` decision. */
+export const PK_COMPOSITION_OPTIONS = [
+  'resolve_member_columns_first',
+  'emit_over_present_members',
+  'drop_constraint',
+];
+
+export function detectDroppedKeyConstraints(
+  table: IrTable,
+  presentColumns: Set<string>
+): DroppedKeyConstraint[] {
+  const out: DroppedKeyConstraint[] = [];
+  if (table.primaryKey && !table.primaryKey.columns.every((c) => presentColumns.has(c))) {
+    out.push({
+      kind: 'primary_key',
+      name: table.primaryKey.name,
+      columns: [...table.primaryKey.columns],
+      missingColumns: table.primaryKey.columns.filter((c) => !presentColumns.has(c)),
+    });
+  }
+  for (const u of [...table.uniqueConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!u.columns.every((c) => presentColumns.has(c))) {
+      out.push({
+        kind: 'unique',
+        name: u.name,
+        columns: [...u.columns],
+        missingColumns: u.columns.filter((c) => !presentColumns.has(c)),
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Emit the ONE structural changeset for a table: CREATE TABLE with columns,
  * PK, unique + check constraints, and comments. FKs and non-PK indexes are
  * NOT here — they land in the consolidated post-load changesets.
@@ -303,6 +350,12 @@ export function emitTableChangeset(args: {
    * verbatim (legacy behaviour, safe only for single-table use in tests).
    */
   relationNames?: ResolvedRelationNames;
+  /**
+   * Resolved pack decisions (2026-08-07) — consulted for `pk_composition`
+   * resolutions (`pk_composition--<schema.table>--<constraint>`). Omitted =
+   * every dropped key constraint stays a NEEDS DECISION comment.
+   */
+  resolvedDecisions?: Record<string, Record<string, unknown> | undefined>;
 }): string {
   const { table, columns, omitted, skipped } = args;
   const qn = qualifiedName(table.schemaName, table.tableName);
@@ -332,17 +385,55 @@ export function emitTableChangeset(args: {
 
   const constraintDefs: string[] = [];
   const presentColumns = new Set(columns.map((c) => c.columnName));
-  if (table.primaryKey && table.primaryKey.columns.every((c) => presentColumns.has(c))) {
-    constraintDefs.push(
-      `    CONSTRAINT ${quoteIdent(relName(table.primaryKey.name))} PRIMARY KEY ` +
-        `(${table.primaryKey.columns.map(quoteIdent).join(', ')})`
+  // PK/UNIQUE member-drop (gold standard 2026-08-07): a key constraint whose
+  // member column is omitted/dropped used to VANISH silently — uniqueness /
+  // identity semantics disappeared from the target with zero signal. Every
+  // dropped key now raises a `pk_composition` pack decision (the handler
+  // persists it; an open decision blocks Migrate via the db-pack gate) and
+  // leaves a loud NEEDS DECISION comment here. A resolved decision either
+  // emits the constraint over the PRESENT members only or drops it on record.
+  const droppedKeys = detectDroppedKeyConstraints(table, presentColumns);
+  const keyResolution = (name: string): string | null => {
+    const key = `pk_composition--${qn}--${name}`;
+    const res = args.resolvedDecisions?.[key];
+    const option = res && typeof res['option'] === 'string' ? (res['option'] as string) : null;
+    return option;
+  };
+  if (table.primaryKey) {
+    const pkDropped = droppedKeys.find(
+      (d) => d.kind === 'primary_key' && d.name === table.primaryKey!.name
     );
+    if (!pkDropped) {
+      constraintDefs.push(
+        `    CONSTRAINT ${quoteIdent(relName(table.primaryKey.name))} PRIMARY KEY ` +
+          `(${table.primaryKey.columns.map(quoteIdent).join(', ')})`
+      );
+    } else if (keyResolution(table.primaryKey.name) === 'emit_over_present_members') {
+      const kept = table.primaryKey.columns.filter((c) => presentColumns.has(c));
+      if (kept.length > 0) {
+        constraintDefs.push(
+          `    CONSTRAINT ${quoteIdent(relName(table.primaryKey.name))} PRIMARY KEY ` +
+            `(${kept.map(quoteIdent).join(', ')})`
+        );
+      }
+    }
   }
   for (const u of [...table.uniqueConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!u.columns.every((c) => presentColumns.has(c))) continue;
-    constraintDefs.push(
-      `    CONSTRAINT ${quoteIdent(relName(u.name))} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
-    );
+    const uDropped = droppedKeys.find((d) => d.kind === 'unique' && d.name === u.name);
+    if (!uDropped) {
+      constraintDefs.push(
+        `    CONSTRAINT ${quoteIdent(relName(u.name))} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
+      );
+      continue;
+    }
+    if (keyResolution(u.name) === 'emit_over_present_members') {
+      const kept = u.columns.filter((c) => presentColumns.has(c));
+      if (kept.length > 0) {
+        constraintDefs.push(
+          `    CONSTRAINT ${quoteIdent(relName(u.name))} UNIQUE (${kept.map(quoteIdent).join(', ')})`
+        );
+      }
+    }
   }
   // Check expressions are TRANSLATED deterministically (2026-08-01) --
   // mirroring the default/computed-column pipelines. The previous verbatim
@@ -379,6 +470,29 @@ export function emitTableChangeset(args: {
   for (const s of skipped) {
     lines.push(`-- SKIPPED column ${qn}.${s.columnName}: ${s.reason}`);
   }
+  for (const dk of droppedKeys) {
+    const resolution = keyResolution(dk.name);
+    const label = dk.kind === 'primary_key' ? 'PRIMARY KEY' : 'UNIQUE';
+    if (resolution === 'emit_over_present_members') {
+      lines.push(
+        `-- ${label} '${dk.name}': emitted over PRESENT members only per resolved decision ` +
+          `'pk_composition--${qn}--${dk.name}' (missing: ${dk.missingColumns.join(', ')}).`
+      );
+    } else if (resolution === 'drop_constraint') {
+      lines.push(
+        `-- ${label} '${dk.name}' DROPPED per resolved decision ` +
+          `'pk_composition--${qn}--${dk.name}' (members missing: ${dk.missingColumns.join(', ')}).`
+      );
+    } else {
+      lines.push(
+        `-- NEEDS DECISION (pk_composition): ${label} '${dk.name}' ` +
+          `(${dk.columns.join(', ')}) NOT emitted — member column(s) ` +
+          `${dk.missingColumns.join(', ')} are omitted/dropped. Resolve decision ` +
+          `'pk_composition--${qn}--${dk.name}' and regenerate — the generator never ` +
+          `silently drops a key constraint.`
+      );
+    }
+  }
   for (const rc of rewrittenChecks) {
     lines.push(
       `-- CHECK ${qn}.${rc.name}: expression rewritten deterministically from Sybase ` +
@@ -387,9 +501,11 @@ export function emitTableChangeset(args: {
   }
   for (const sc of skippedChecks) {
     lines.push(
-      `-- SKIPPED CHECK ${qn}.${sc.name}: non-portable expression (${sc.reason}). ` +
+      `-- CHECK ${qn}.${sc.name}: non-portable expression (${sc.reason}) — routed to the ` +
+        `translation queue (kind check_constraint, object ${qn}.${sc.name}). ` +
         `Source (Sybase, verbatim): CHECK (${oneLine(sc.expression)}). ` +
-        `Translate manually and add via ALTER TABLE after review.`
+        `Approve its translation in the Translation Reviewer; the approved ALTER TABLE ` +
+        `emits in the 050-translations changeset — nothing is left to manual work.`
     );
   }
   for (const r of (args.relationNames?.renames ?? []).filter(
@@ -535,6 +651,30 @@ export function emitIndexesChangeset(args: {
     const qq = quotedQualifiedName(table.schemaName, table.tableName);
     const sortedIndexes = [...table.indexes].sort((a, b) => a.name.localeCompare(b.name));
     for (const idx of sortedIndexes) {
+      // Filtered/exotic index guard (gold standard 2026-08-07): Sybase ASE 15
+      // has NO filtered (partial) indexes and no non-btree access-method
+      // vocabulary beyond clustered/nonclustered — a predicate or unknown
+      // method in the IR means the upstream data is corrupt or hand-edited.
+      // Emitting the index WITHOUT its predicate would silently change
+      // uniqueness/coverage semantics, so generation FAILS loudly instead.
+      const predicate = (idx.predicate ?? '').trim();
+      if (predicate !== '') {
+        throw new Error(
+          `index ${qn}.${idx.name} carries a filter predicate (${predicate}) — ` +
+            `Sybase ASE 15 has no filtered indexes, so this IR is not trustworthy. ` +
+            `Fix the constraints_metadata at source and regenerate; the generator ` +
+            `never drops a predicate silently.`
+        );
+      }
+      const method = (idx.method ?? '').trim().toLowerCase();
+      if (method !== '' && !['clustered', 'nonclustered', 'btree'].includes(method)) {
+        throw new Error(
+          `index ${qn}.${idx.name} declares unknown access method '${idx.method}' — ` +
+            `not in the Sybase ASE 15 vocabulary (clustered|nonclustered). Fix the ` +
+            `constraints_metadata at source and regenerate; the generator never ` +
+            `guesses an access method.`
+        );
+      }
       // Column ordering from constraints_metadata.indexes[]; directions are
       // guarded to the portable ASC/DESC pair (2026-08-01) -- any other
       // directive from the source engine is dropped with a note instead of

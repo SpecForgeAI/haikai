@@ -42,16 +42,24 @@ describe('sync emitters (pure)', () => {
     expect(ddl).toContain('Idempotence');
   });
 
-  it('runner lists keyed tables in order, documents full-reload, BLOCKS pending-decision tables, and gates on reconciliation', () => {
+  it('runner EXECUTES the AMVS-driven sync via the gateway (2026-08-07 — the old comment stub executed nothing) and documents every table posture', () => {
     const runner = emitSyncRunner({ strategies: STRATEGIES });
     expect(runner).toContain('#!/usr/bin/env bash');
-    expect(runner).toContain("sync_table 'dbo.orders' 'order_id'");
-    expect(runner).toContain("sync_table 'dbo.customers' 'updated_at'");
+    // The REAL dispatch — never a pretend sync_table() body.
+    expect(runner).toContain('run-incremental-sync');
+    expect(runner).toContain('curl -sS -X POST');
+    expect(runner).toContain('GATEWAY_BASE_URL');
+    expect(runner).not.toContain('sync_table()');
+    // Per-table posture is documented for the operator.
+    expect(runner).toContain('dbo.orders  key=order_id  insert_only');
+    expect(runner).toContain('dbo.customers  key=updated_at  insert_update');
     expect(runner).toContain('full-reload tables (1)');
-    expect(runner).toContain('BLOCKED: 1 table(s) awaiting a delta-key decision');
+    expect(runner).toContain('BLOCKED (1)');
     expect(runner).toContain('delta_key--dbo.audit_log');
     expect(runner).toContain(RECONCILIATION_REPORT_PATH);
     expect(runner).toContain('ONE-WAY only');
+    // Honest exit semantics: clean = 0, anything else = attention.
+    expect(runner).toContain('exit 2');
   });
 
   it('reconciliation SQL emits BOTH engine sections with max(delta_key) where keyed', () => {
@@ -61,9 +69,14 @@ describe('sync emitters (pure)', () => {
     });
     expect(sql).toContain('PostgreSQL (TARGET)');
     expect(sql).toContain('Sybase ASE (SOURCE)');
-    expect(sql).toContain("SELECT 'dbo.orders', count(*)::text, max(order_id)::text FROM dbo.orders;");
-    expect(sql).toContain("SELECT 'dbo.products', count(*)::text, NULL FROM dbo.products;");
-    expect(sql).toContain('convert(varchar(40), max(order_id))');
+    // Target-side statements are QUOTED, source case preserved (2026-08-07):
+    // the unquoted form silently lower-cased mixed-case identifiers.
+    expect(sql).toContain(
+      `SELECT 'dbo.orders', count(*)::text, max("order_id")::text FROM "dbo"."orders";`
+    );
+    expect(sql).toContain(`SELECT 'dbo.products', count(*)::text, NULL FROM "dbo"."products";`);
+    // The Sybase section stays UNQUOTED (source-engine semantics).
+    expect(sql).toContain('convert(varchar(40), max(order_id)) FROM dbo.orders');
   });
 
   it('report builder exits 2 on drift (the cutover gate contract)', () => {
