@@ -214,6 +214,14 @@ export function planBulkColumns(columns: IrColumn[]): BulkColumnPlan[] {
         extractExpression = `convert(char(23), ${c.columnName}, 23) AS ${c.columnName}`;
       } else if (base === 'bit') {
         extractExpression = `${c.columnName} /* 0/1 -> boolean */`;
+      } else if (base === 'binary' || base === 'varbinary' || base === 'image') {
+        // bytea alignment (2026-08-07): the AMVS-driven load carries binary as
+        // '\x'-prefixed lowercase hex (the PG bytea text form — the sidecar
+        // wire renders byte[] that way). A manual bcp extract must match:
+        // bigint-safe hex via bintostr(), prefixed for the COPY.
+        extractExpression =
+          `'\\x' + lower(bintostr(${c.columnName})) AS ${c.columnName} ` +
+          `/* bytea hex form: matches the AMVS wire ('\\x' + lowercase hex) */`;
       }
     }
     return {

@@ -830,6 +830,29 @@ export async function setDbMigrationPackTranslationDisposition(
 }
 
 /**
+ * Supply the FULL source body for a truncated capture (2026-08-07): the
+ * terminal needs_manual dead-end is gone — pasting the complete source
+ * recomputes the hash, clears the fidelity flags, and returns the row to
+ * `pending` for a fresh translate (prior draft/approval demotes to
+ * needs_rework; emission re-runs when an approved row is affected).
+ */
+export async function supplyDbMigrationPackTranslationBody(
+  projectId: string,
+  packId: string,
+  translationId: string,
+  sourceBody: string,
+): Promise<DbMigrationPackTranslationActionResponse> {
+  return sendJson<DbMigrationPackTranslationActionResponse>(
+    `${translationsBase(projectId, packId)}/${encodeURIComponent(
+      translationId,
+    )}/supply-body`,
+    'POST',
+    { source_body: sourceBody },
+    `Failed to supply the source body for translation ${translationId}`,
+  );
+}
+
+/**
  * Review action: approve / reject / needs_rework with optional notes.
  * Approve is gated server-side on a drafted row carrying its judge verdict;
  * approve / un-approve re-run the approved-only emission.

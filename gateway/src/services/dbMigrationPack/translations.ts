@@ -105,6 +105,16 @@ export interface TranslationPatch {
   drop_reason?: string;
   review_status?: TranslationReviewStatus;
   reviewer_notes?: string;
+  /**
+   * Supply-body path (2026-08-07): a TRUNCATED capture used to be a terminal
+   * needs_manual dead-end. The operator can now paste the full source body;
+   * the route recomputes the hash, clears the fidelity flags, and returns
+   * the row to `pending` for a fresh translate.
+   */
+  source_body?: string;
+  source_body_hash?: string;
+  truncated?: boolean;
+  legacy_redacted?: boolean;
 }
 
 /** One row of the bulk upsert-by-translation_key batch (sparse per row). */

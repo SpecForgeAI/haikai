@@ -514,7 +514,7 @@ describe('DbMigrationPackTranslationsTab (Task 5.1)', () => {
     await waitFor(() =>
       expect(
         screen.getByTestId('db-pack-translation-truncated-banner'),
-      ).toHaveTextContent('body truncated at capture'),
+      ).toHaveTextContent('Body truncated at capture'),
     );
     expect(
       screen.queryByTestId('db-pack-translation-approve'),
