@@ -114,7 +114,10 @@ async function main(): Promise<number> {
       plan,
       ruleset,
       knobs: {
-        readCap: intEnv('DATA_MIGRATION_READ_CAP', 50000),
+        // 0 = uncapped (2026-08-07): read_cap is an explicit operator valve
+        // only; the paginated load handles any table size.
+        readCap: intEnv('DATA_MIGRATION_READ_CAP', 0),
+        pageRows: Math.min(10_000, Math.max(1, intEnv('DATA_MIGRATION_PAGE_ROWS', 5000))),
         timeoutSeconds: intEnv('DATA_MIGRATION_TIMEOUT_SECONDS', 120),
       },
     });

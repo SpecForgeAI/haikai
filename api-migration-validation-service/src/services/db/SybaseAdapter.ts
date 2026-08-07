@@ -7,6 +7,7 @@ import {
   DbTableMetadata,
 } from './DbAdapter';
 import { assertReadonlySelect } from './sqlGuard';
+import { keysetPredicate } from './keyset';
 import { SYBASE_SIDECAR_URL } from '../../config';
 
 /**
@@ -172,6 +173,11 @@ export class SybaseAdapter implements DbAdapter {
       ...this.commonCredsBody(),
       sql: rawSql,
       queryTimeoutSeconds: Math.max(1, Math.min(300, limits.timeoutSeconds)),
+      // PAGE-SIZE guard, not a table cap (2026-08-07): the sidecar buffers a
+      // whole result set as one JSON response, so a single read is bounded —
+      // full tables are read via keyset PAGINATION (fetchOrderedRows.after),
+      // never one giant fetch. Callers requesting more than the guard per
+      // page get a truncated=true result they MUST treat as an error.
       maxRows: Math.max(1, Math.min(10_000, limits.maxRows)),
     });
     if (!resp.ok) {
@@ -235,18 +241,27 @@ export class SybaseAdapter implements DbAdapter {
     table: string;
     orderBy: string[];
     limits: DbQueryLimits;
+    after?: unknown[] | null;
   }): Promise<DbReadResult> {
     if (args.orderBy.length === 0) {
       throw new Error('fetchOrderedRows requires at least one order column');
     }
     const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
     const orderBy = args.orderBy.map((c) => quoteIdent(c)).join(', ');
+    // Keyset continuation (2026-08-07): rows strictly AFTER the previous
+    // page's last key tuple. Literal SQL — the sidecar's /query endpoint
+    // takes no params; values are literalised via sybLiteral (NULL-aware,
+    // NULLS-LOW: `col IS NOT NULL` stands in for `col > NULL`). ASE has no
+    // row-value comparison, so the tuple predicate is expanded.
+    const where = args.after && args.after.length > 0
+      ? `WHERE ${keysetPredicate(args.orderBy.map(quoteIdent), args.after, sybLiteral)} `
+      : '';
     // Ascending sort places NULLs low natively on this engine — the
     // cross-engine NULLS-LOW ordering contract (the sibling appends
     // NULLS FIRST to match).
     const sql =
       `SELECT TOP ${Math.max(1, args.limits.maxRows)} * ` +
-      `FROM ${qSchema}${quoteIdent(args.table)} ORDER BY ${orderBy}`;
+      `FROM ${qSchema}${quoteIdent(args.table)} ${where}ORDER BY ${orderBy}`;
     return this.runReadonlySelect(sql, [], args.limits);
   }
 
@@ -312,3 +327,21 @@ function quoteIdent(name: string): string {
   }
   return `"${name.replace(/"/g, '""')}"`;
 }
+
+/**
+ * Literalise one keyset value for the sidecar's literal-SQL /query endpoint.
+ * Numbers pass through validated; booleans map to ASE bit literals; Dates
+ * and strings become single-quoted literals with embedded quotes doubled
+ * (ASE converts string datetime literals natively). NULL never reaches here
+ * — the predicate builder maps NULLs to IS [NOT] NULL forms.
+ */
+function sybLiteral(value: unknown): string {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('keyset value must be a finite number');
+    return String(value);
+  }
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  const s = value instanceof Date ? value.toISOString().replace('T', ' ').replace('Z', '') : String(value);
+  return `'${s.replace(/'/g, "''")}'`;
+}
+

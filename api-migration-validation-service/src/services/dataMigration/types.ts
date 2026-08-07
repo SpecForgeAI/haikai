@@ -15,6 +15,14 @@ export interface TableLoadSpec {
   table: string;
   /** Deterministic read order (primary key preferred). */
   orderBy: string[];
+  /**
+   * TRUE when `orderBy` is the table's primary key (2026-08-07): keyset
+   * pagination over a UNIQUE key is exact; a non-unique fallback key can
+   * skip rows exactly duplicating a page-boundary tuple — the runner names
+   * that cause on any reconcile mismatch. Optional so hand-built specs in
+   * tests stay valid (absent = unknown).
+   */
+  orderKeyIsPrimaryKey?: boolean;
   /** Non-generated target columns to load (== source column names; like-for-like). */
   loadColumns: string[];
   /**

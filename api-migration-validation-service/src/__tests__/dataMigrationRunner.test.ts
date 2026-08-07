@@ -12,8 +12,24 @@ interface TableFixture {
   rows: Record<string, unknown>[];
 }
 
+/** NULLS-LOW tuple comparison mirroring the adapters' keyset contract. */
+function tupleAfter(candidate: unknown[], after: unknown[]): boolean {
+  for (let i = 0; i < after.length; i++) {
+    const c = candidate[i] ?? null;
+    const a = after[i] ?? null;
+    if (c === a) continue;
+    if (a === null) return c !== null; // anything non-null is after NULL
+    if (c === null) return false;
+    return (c as never) > (a as never);
+  }
+  return false; // equal tuple is NOT after
+}
+
 class FakeAdapter implements DbAdapter {
   throwOnFetch = false;
+  /** Simulates a broken keyset implementation: `after` is ignored. */
+  ignoreAfter = false;
+  fetchCalls = 0;
   constructor(
     private counts: Record<string, number> = {},
     private fixtures: Record<string, TableFixture> = {},
@@ -64,10 +80,19 @@ class FakeAdapter implements DbAdapter {
     table: string;
     orderBy: string[];
     limits: DbQueryLimits;
+    after?: unknown[] | null;
   }): Promise<DbReadResult> {
     if (this.throwOnFetch) throw new Error('sidecar down');
+    this.fetchCalls += 1;
     const fx = this.fixtures[this.k(args.schema, args.table)];
-    return { rows: fx?.rows ?? [], rowCount: fx?.rows.length ?? 0, truncated: false };
+    let rows = fx?.rows ?? [];
+    if (!this.ignoreAfter && args.after && args.after.length > 0) {
+      rows = rows.filter((r) =>
+        tupleAfter(args.orderBy.map((c) => r[c] ?? null), args.after as unknown[]),
+      );
+    }
+    const page = rows.slice(0, Math.max(1, args.limits.maxRows));
+    return { rows: page, rowCount: page.length, truncated: page.length < rows.length };
   }
 
   async dispose(): Promise<void> {
@@ -76,17 +101,22 @@ class FakeAdapter implements DbAdapter {
 }
 
 class FakeLoader implements TargetLoader {
+  /** Pages APPEND (the paginated-load contract) — prepare truncates once. */
   loaded: Record<string, unknown[][]> = {};
   prepared: string[] = [];
+  loadCalls = 0;
   async prepareTable(spec: TableLoadSpec): Promise<void> {
-    this.prepared.push(`${spec.schema ?? ''}.${spec.table}`);
+    const key = `${spec.schema ?? ''}.${spec.table}`;
+    this.prepared.push(key);
+    this.loaded[key] = [];
   }
   async loadTable(spec: TableLoadSpec, rows: unknown[][]): Promise<number> {
     const key = `${spec.schema ?? ''}.${spec.table}`;
     if (!this.prepared.includes(key)) {
       throw new Error(`loadTable called before prepareTable for ${key}`);
     }
-    this.loaded[key] = rows;
+    this.loadCalls += 1;
+    this.loaded[key].push(...rows);
     return rows.length;
   }
   async dispose(): Promise<void> {
@@ -118,7 +148,8 @@ function recordingTracer(): { tracer: Tracer; calls: { kind: string; args: unkno
 }
 
 const ruleset = loadPairRuleset();
-const knobs = { readCap: 1000, timeoutSeconds: 30 };
+/** Uncapped (the default posture): read_cap is an explicit valve only. */
+const knobs = { readCap: 0, pageRows: 1000, timeoutSeconds: 30 };
 function planFor(tables: TableLoadSpec[]): LoadPlan {
   return { tables, issues: [] };
 }
@@ -126,6 +157,7 @@ function spec(partial: Partial<TableLoadSpec> & { table: string }): TableLoadSpe
   return {
     schema: 'dbo',
     orderBy: ['id'],
+    orderKeyIsPrimaryKey: true,
     loadColumns: ['id'],
     identityColumns: [],
     expectedSourceRowCount: null,
@@ -169,6 +201,78 @@ describe('runDataMigration (Spec Y)', () => {
     expect(report.tables[0].rulesCited).toContain('SYBPG.BIT.001');
   });
 
+  it('PAGINATES a table larger than one page and loads EVERY row (the old caps loaded 0 or 10k)', async () => {
+    const rows = Array.from({ length: 7 }, (_, i) => ({ id: i + 1 }));
+    const source = new FakeAdapter({}, {
+      'dbo.big': { count: 7, columns: [{ column: 'id', dataType: 'int' }], rows },
+    });
+    const target = new FakeAdapter({ 'dbo.big': 7 });
+    const loader = new FakeLoader();
+
+    const report = await runDataMigration({
+      source,
+      target,
+      targetLoader: loader,
+      plan: planFor([spec({ table: 'big', expectedSourceRowCount: 7 })]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 3, timeoutSeconds: 30 },
+    });
+
+    expect(report.tables[0].status).toBe('loaded');
+    expect(report.tables[0].loadedCount).toBe(7);
+    expect(loader.loaded['dbo.big']).toEqual(rows.map((r) => [r.id]));
+    // 3 + 3 + 1 rows over three pages; truncate exactly once.
+    expect(loader.loadCalls).toBe(3);
+    expect(loader.prepared).toEqual(['dbo.big']);
+    expect(report.summary.rows_loaded).toBe(7);
+    expect(report.summary.status).toBe('clean');
+  });
+
+  it('paginates NULLS-LOW across a page boundary landing on a NULL key value', async () => {
+    const rows = [
+      { id: null, v: 'a' },
+      { id: null, v: 'b' },
+      { id: 1, v: 'c' },
+      { id: 2, v: 'd' },
+    ];
+    const source = new FakeAdapter({}, {
+      'dbo.n': { count: 4, columns: [{ column: 'id', dataType: 'int' }, { column: 'v', dataType: 'varchar' }], rows },
+    });
+    const target = new FakeAdapter({ 'dbo.n': 4 });
+    const loader = new FakeLoader();
+    const report = await runDataMigration({
+      source,
+      target,
+      targetLoader: loader,
+      plan: planFor([
+        spec({ table: 'n', orderBy: ['id', 'v'], orderKeyIsPrimaryKey: false, loadColumns: ['id', 'v'] }),
+      ]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 2, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('loaded');
+    expect(report.tables[0].loadedCount).toBe(4);
+  });
+
+  it('a STUCK cursor (adapter ignoring `after`) is a loud unverifiable, never a silent partial load', async () => {
+    const rows = Array.from({ length: 4 }, (_, i) => ({ id: i + 1 }));
+    const source = new FakeAdapter({}, {
+      'dbo.stuck': { count: 4, columns: [{ column: 'id', dataType: 'int' }], rows },
+    });
+    source.ignoreAfter = true; // every page returns the FIRST page again
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter(),
+      targetLoader: new FakeLoader(),
+      plan: planFor([spec({ table: 'stuck', expectedSourceRowCount: 4 })]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 2, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('unverifiable');
+    expect(report.tables[0].reason).toContain('did not advance');
+    expect(report.summary.status).toBe('unverifiable');
+  });
+
   it('flags a reconcile mismatch when the post-load target count differs', async () => {
     const source = new FakeAdapter({}, {
       'dbo.t': { count: 3, columns: [{ column: 'id', dataType: 'int' }], rows: [{ id: 1 }, { id: 2 }, { id: 3 }] },
@@ -186,7 +290,24 @@ describe('runDataMigration (Spec Y)', () => {
     expect(report.summary.status).toBe('divergent');
   });
 
-  it('marks an oversize table unverifiable without loading partial data', async () => {
+  it('a mismatch on a NON-primary-key order key names the duplicate-boundary cause', async () => {
+    const source = new FakeAdapter({}, {
+      'dbo.nopk': { count: 3, columns: [{ column: 'id', dataType: 'int' }], rows: [{ id: 1 }, { id: 2 }, { id: 3 }] },
+    });
+    const target = new FakeAdapter({ 'dbo.nopk': 2 });
+    const report = await runDataMigration({
+      source,
+      target,
+      targetLoader: new FakeLoader(),
+      plan: planFor([spec({ table: 'nopk', orderKeyIsPrimaryKey: false })]),
+      ruleset,
+      knobs,
+    });
+    expect(report.tables[0].status).toBe('reconciled_mismatch');
+    expect(report.tables[0].reason).toContain('NOT a primary key');
+  });
+
+  it('an OPERATOR-SET read cap marks an oversize table unverifiable, visibly naming the cap', async () => {
     const source = new FakeAdapter({}, {
       'dbo.big': { count: 10, columns: [{ column: 'id', dataType: 'int' }], rows: [] },
     });
@@ -197,11 +318,31 @@ describe('runDataMigration (Spec Y)', () => {
       targetLoader: loader,
       plan: planFor([spec({ table: 'big', expectedSourceRowCount: 10 })]),
       ruleset,
-      knobs: { readCap: 5, timeoutSeconds: 30 },
+      knobs: { readCap: 5, pageRows: 1000, timeoutSeconds: 30 },
     });
     expect(report.tables[0].status).toBe('unverifiable');
+    expect(report.tables[0].reason).toContain('OPERATOR-SET read cap 5');
     expect(loader.loaded['dbo.big']).toBeUndefined();
     expect(report.summary.status).toBe('unverifiable');
+  });
+
+  it('readCap 0 = UNCAPPED: a table above any historic default loads fully', async () => {
+    const rows = Array.from({ length: 12 }, (_, i) => ({ id: i + 1 }));
+    const source = new FakeAdapter({}, {
+      'dbo.huge': { count: 12, columns: [{ column: 'id', dataType: 'int' }], rows },
+    });
+    const target = new FakeAdapter({ 'dbo.huge': 12 });
+    const loader = new FakeLoader();
+    const report = await runDataMigration({
+      source,
+      target,
+      targetLoader: loader,
+      plan: planFor([spec({ table: 'huge' })]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 5, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('loaded');
+    expect(report.tables[0].loadedCount).toBe(12);
   });
 
   it('treats an empty source table as loaded/empty', async () => {

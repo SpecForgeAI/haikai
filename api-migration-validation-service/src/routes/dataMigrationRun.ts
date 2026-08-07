@@ -22,7 +22,7 @@
  *   target_db: { ... same (postgres) },
  *   manifest: { expected_schema: { tables, columns, keysAndIndexes } },  // pack main manifest
  *   bulk_manifest?: { table_order, expected_source_row_counts },          // optional
- *   read_cap?, batch_rows?, timeout_seconds?                              // knob overrides
+ *   read_cap?, batch_rows?, page_rows?, timeout_seconds?                  // knob overrides
  * }
  */
 import { Router, Request, Response } from 'express';
@@ -41,8 +41,18 @@ import { createTracer } from '../trace';
 
 const trace = createTracer('data-migrate');
 
-const DEFAULT_READ_CAP = Number(process.env.DATA_MIGRATION_READ_CAP ?? 50000);
+// UNCAPPED by default (2026-08-07): the old 50k default silently loaded ZERO
+// rows for every larger table. read_cap survives ONLY as an explicit operator
+// valve (env/body, 0 = no cap); the load itself is keyset-paginated so table
+// size no longer needs a protective cap.
+const DEFAULT_READ_CAP = Number(process.env.DATA_MIGRATION_READ_CAP ?? 0);
 const DEFAULT_BATCH_ROWS = Number(process.env.DATA_MIGRATION_BATCH_ROWS ?? 500);
+// Rows per keyset page — must stay at or under the Sybase sidecar's 10k
+// per-response guard (the sidecar buffers each page as one JSON response).
+const DEFAULT_PAGE_ROWS = Math.min(
+  10_000,
+  Math.max(1, Number(process.env.DATA_MIGRATION_PAGE_ROWS ?? 5000)),
+);
 const DEFAULT_TIMEOUT_SECONDS = Number(process.env.DATA_MIGRATION_TIMEOUT_SECONDS ?? 120);
 
 interface DbBlock {
@@ -64,6 +74,7 @@ interface RunBody {
   bulk_manifest?: unknown;
   read_cap?: number;
   batch_rows?: number;
+  page_rows?: number;
   timeout_seconds?: number;
 }
 
@@ -138,6 +149,7 @@ export function buildDataMigrationRunRouter(deps: DataMigrationRunDeps = {}): Ro
     const corr = { project: projectId, arch: body.architecture_id };
     const knobs = {
       readCap: body.read_cap ?? DEFAULT_READ_CAP,
+      pageRows: Math.min(10_000, Math.max(1, body.page_rows ?? DEFAULT_PAGE_ROWS)),
       timeoutSeconds: body.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS,
     };
 

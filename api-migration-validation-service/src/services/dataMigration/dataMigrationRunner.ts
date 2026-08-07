@@ -3,12 +3,22 @@
  *
  * Per table, in the plan's (FK-topological) order:
  *   1. count the source;
- *   2. empty => nothing to load; oversize (> readCap) => unverifiable (v1 does
- *      not stream large tables — it never loads partial data silently);
- *   3. read source column types + an ordered page of rows;
+ *   2. empty => nothing to load;
+ *   3. read source column types + the source rows via KEYSET-PAGINATED
+ *      ordered reads (2026-08-07) — EVERY row loads, whatever the table
+ *      size; pages are bounded by `pageRows` (kept under the Sybase
+ *      sidecar's per-response guard);
  *   4. forward-transform each row through the pair ruleset (rule-cited);
- *   5. write the rows via the TargetLoader;
- *   6. reconcile: post-load target count == source count.
+ *   5. write each page via the TargetLoader (truncate once, then append);
+ *   6. reconcile: post-load target count == source count == rows read.
+ *
+ * The old v1 caps are GONE: the readCap skip-or-load gate (tables > 50k
+ * loaded ZERO rows) and the single-read shape that silently truncated at the
+ * sidecar's 10k clamp (tables 10k-50k loaded exactly 10k). `readCap` remains
+ * ONLY as an explicit operator valve (0/absent = uncapped); a capped-out
+ * table is a visible unverifiable, never a silent skip. Any read that cannot
+ * make progress (stuck cursor) is a loud unverifiable — partial data is
+ * NEVER reported as loaded.
  *
  * NEVER throws — a per-table failure becomes unverifiable(reason) and the run
  * continues (mirrors the data-parity comparator, Spec P). Predicate emission is
@@ -26,9 +36,26 @@ import {
 } from './types';
 
 export interface DataMigrationKnobs {
-  /** Max rows read + loaded per table in v1. Larger tables => unverifiable. */
+  /**
+   * EXPLICIT operator valve ONLY (2026-08-07): 0 or negative = uncapped (the
+   * default — a migration loads every row). When set > 0, a table whose
+   * source exceeds it is reported unverifiable, visibly.
+   */
   readCap: number;
+  /** Rows per keyset page (bounded by the Sybase sidecar per-response guard). */
+  pageRows: number;
+  /** Per-QUERY timeout (each page/count runs under its own budget). */
   timeoutSeconds: number;
+}
+
+/** Case-insensitive row-value lookup (engines case-fold result keys differently). */
+function rowValue(row: Record<string, unknown>, column: string): unknown {
+  if (column in row) return row[column];
+  const wanted = column.trim().toLowerCase();
+  for (const key of Object.keys(row)) {
+    if (key.trim().toLowerCase() === wanted) return row[key];
+  }
+  return undefined;
 }
 
 async function safeCount(
@@ -76,10 +103,12 @@ async function migrateOneTable(
   if (sourceCount === 0) {
     return { ...base, status: 'empty', targetCount: await safeCount(target, spec, knobs.timeoutSeconds) };
   }
-  if (sourceCount > knobs.readCap) {
+  if (knobs.readCap > 0 && sourceCount > knobs.readCap) {
     return {
       ...base,
-      reason: `source has ${sourceCount} rows > read cap ${knobs.readCap}; large-table streaming is a v1 follow-up`,
+      reason:
+        `source has ${sourceCount} rows > the OPERATOR-SET read cap ${knobs.readCap} ` +
+        `(read_cap / DATA_MIGRATION_READ_CAP) — raise or unset the cap to load this table`,
     };
   }
 
@@ -97,29 +126,71 @@ async function migrateOneTable(
     sourceType: typeByColumn.get(name.trim().toLowerCase()) ?? '',
   }));
 
-  const read = await source.fetchOrderedRows({
-    schema: spec.schema,
-    table: spec.table,
-    orderBy: spec.orderBy,
-    limits: { maxRows: Math.max(1, knobs.readCap), timeoutSeconds: knobs.timeoutSeconds },
-  });
-
-  const rulesCited = new Set<string>();
-  const tuples: unknown[][] = [];
-  for (const row of read.rows) {
-    const transformed = forwardTransformRow(row, columns, ruleset);
-    for (const id of transformed.appliedRuleIds) rulesCited.add(id);
-    tuples.push(transformed.values);
-  }
-
-  // Idempotent load (WS3 P2, 2026-07-31): truncate before load so a re-run
-  // (duplicate dispatch, retry, chain re-fire) can NEVER double the rows —
-  // live: `view_tag` 864 -> 1,728 (exactly 2x) from a duplicated run.
+  // Idempotent load (WS3 P2, 2026-07-31): truncate ONCE before the first
+  // page so a re-run (duplicate dispatch, retry, chain re-fire) can NEVER
+  // double the rows — live: `view_tag` 864 -> 1,728 (exactly 2x) from a
+  // duplicated run. Pages then APPEND.
   await loader.prepareTable(spec);
 
-  const loadedCount = await loader.loadTable(spec, tuples);
+  const pageRows = Math.max(1, knobs.pageRows);
+  const rulesCited = new Set<string>();
+  let readTotal = 0;
+  let loadedCount = 0;
+  let after: unknown[] | null = null;
+  let pages = 0;
+  // Hard page budget: the exact page count + slack. Only a broken cursor
+  // could exceed it; the guard converts an infinite loop into a loud failure.
+  const maxPages = Math.ceil(sourceCount / pageRows) + 10;
+
+  for (;;) {
+    if (pages >= maxPages) {
+      return {
+        ...base,
+        loadedCount,
+        reason:
+          `paginated read exceeded the page budget (${maxPages} pages of ${pageRows}) without ` +
+          `finishing — the order key is not advancing; loaded rows are PARTIAL and the table is ` +
+          `unverifiable`,
+      };
+    }
+    const read = await source.fetchOrderedRows({
+      schema: spec.schema,
+      table: spec.table,
+      orderBy: spec.orderBy,
+      limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
+      after,
+    });
+    pages += 1;
+    if (read.rows.length === 0) break;
+
+    const tuples: unknown[][] = [];
+    for (const row of read.rows) {
+      const transformed = forwardTransformRow(row, columns, ruleset);
+      for (const id of transformed.appliedRuleIds) rulesCited.add(id);
+      tuples.push(transformed.values);
+    }
+    loadedCount += await loader.loadTable(spec, tuples);
+    readTotal += read.rows.length;
+
+    if (read.rows.length < pageRows) break; // final page
+
+    const lastRow = read.rows[read.rows.length - 1];
+    const cursor = spec.orderBy.map((c) => rowValue(lastRow, c) ?? null);
+    if (after !== null && JSON.stringify(cursor) === JSON.stringify(after)) {
+      return {
+        ...base,
+        loadedCount,
+        reason:
+          `keyset cursor did not advance after page ${pages} (order key ` +
+          `[${spec.orderBy.join(', ')}] repeats across a full page) — loaded rows are PARTIAL ` +
+          `and the table is unverifiable; a unique order key (primary key) is required`,
+      };
+    }
+    after = cursor;
+  }
+
   const targetCount = await safeCount(target, spec, knobs.timeoutSeconds);
-  const reconciled = targetCount === sourceCount && loadedCount === read.rows.length;
+  const reconciled = targetCount === sourceCount && loadedCount === readTotal && readTotal === sourceCount;
 
   // In-loader manifest check: the pack's expected source count is the
   // generation-time truth — drift is worth a visible note even on a clean
@@ -128,6 +199,13 @@ async function migrateOneTable(
   const driftNote =
     expected !== null && expected !== sourceCount
       ? ` (source count ${sourceCount} differs from the pack manifest expectation ${expected} — source drifted since generation)`
+      : '';
+  // A non-unique order key can skip rows that exactly duplicate a page
+  // boundary tuple — name the cause when the reconcile is off on such a key.
+  const keyNote =
+    spec.orderKeyIsPrimaryKey === false
+      ? ' (order key is NOT a primary key: rows exactly duplicating a page-boundary key tuple ' +
+        'are skipped by keyset pagination — add/propose a primary key for an exact load)'
       : '';
 
   return {
@@ -140,7 +218,8 @@ async function migrateOneTable(
       ? driftNote !== ''
         ? driftNote.trim()
         : null
-      : `post-load reconcile off: source=${sourceCount} loaded=${loadedCount} target=${targetCount ?? '?'}${driftNote}`,
+      : `post-load reconcile off: source=${sourceCount} read=${readTotal} loaded=${loadedCount} ` +
+        `target=${targetCount ?? '?'}${keyNote}${driftNote}`,
   };
 }
 
