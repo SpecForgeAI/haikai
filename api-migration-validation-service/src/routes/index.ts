@@ -5,7 +5,7 @@ import { diffActionsRouter } from './diffActions';
 import { testConnectionActionRouter } from './testConnectionAction';
 import { dataParityRunRouter } from './dataParityRun';
 import { dataMigrationRunRouter } from './dataMigrationRun';
-import { schemaApplyRunRouter } from './schemaApplyRun';
+import { schemaApplyRunRouter, schemaDriftRouter } from './schemaApplyRun';
 
 /**
  * API Migration Validation Routes Barrel
@@ -68,5 +68,6 @@ apiMigrationValidationRouter.use(dataMigrationRunRouter);
 // (structural before the load, post-load after); credentials request-scoped
 // only; applied ids tracked in haikai_schema_apply_log on the target.
 apiMigrationValidationRouter.use(schemaApplyRunRouter);
+apiMigrationValidationRouter.use(schemaDriftRouter);
 
 export { apiMigrationValidationRouter };
