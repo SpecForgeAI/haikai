@@ -106,7 +106,65 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
     }
   }
 
-  // 4) Every JSON pack file parses and carries no BOM.
+  // 4) Per-schema RELATION-namespace uniqueness (2026-08-06, the live
+  //    `relation "hir_book_ak1" already exists` schema-apply halt): Postgres
+  //    backs PK/UNIQUE constraints with indexes, and indexes share ONE
+  //    per-schema namespace with tables and other indexes. Sybase scopes
+  //    these names per table, so source-verbatim emission collides on copied
+  //    tables (temp_*, load_*). The generator renames colliders
+  //    deterministically; this check is the independent backstop — a pack
+  //    that would fail its first clean apply FAILS generation instead.
+  //    FK/CHECK constraint names are exempt: pg_constraint scopes them per
+  //    table, like Sybase.
+  const relationOwners = new Map<string, string>(); // "schema\0name" -> declaring site
+  const claimRelation = (
+    schema: string,
+    name: string,
+    site: string
+  ): void => {
+    const k = `${schema}\0${name}`;
+    const owner = relationOwners.get(k);
+    if (owner === undefined) {
+      relationOwners.set(k, site);
+      return;
+    }
+    problems.push(
+      `schema "${schema}": relation name "${name}" is declared by both ${owner} ` +
+        `and ${site} — Postgres scopes table/PK/UNIQUE/index names per SCHEMA ` +
+        `(one relation namespace), so the second CREATE fails ` +
+        `'relation "${name}" already exists' at schema-apply`
+    );
+  };
+  const CREATE_TABLE_RE = /CREATE TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)"\s*\(([\s\S]*?)\n\);/g;
+  const TABLE_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"\s+(PRIMARY KEY|UNIQUE)/g;
+  const CREATE_INDEX_RE = /CREATE (?:UNIQUE )?INDEX "((?:[^"]|"")+)" ON "((?:[^"]|"")+)"\./g;
+  const unq = (s: string): string => s.replace(/""/g, '"');
+  for (const f of files) {
+    if (!pathOf(f).endsWith('.sql')) continue;
+    let tbl: RegExpExecArray | null;
+    CREATE_TABLE_RE.lastIndex = 0;
+    while ((tbl = CREATE_TABLE_RE.exec(f.content)) !== null) {
+      const schema = unq(tbl[1]);
+      const table = unq(tbl[2]);
+      claimRelation(schema, table, `table ${schema}.${table} (${pathOf(f)})`);
+      let con: RegExpExecArray | null;
+      TABLE_CONSTRAINT_RE.lastIndex = 0;
+      while ((con = TABLE_CONSTRAINT_RE.exec(tbl[3])) !== null) {
+        claimRelation(
+          schema,
+          unq(con[1]),
+          `${con[2] === 'PRIMARY KEY' ? 'PK' : 'UNIQUE'} constraint on ${schema}.${table} (${pathOf(f)})`
+        );
+      }
+    }
+    let idx: RegExpExecArray | null;
+    CREATE_INDEX_RE.lastIndex = 0;
+    while ((idx = CREATE_INDEX_RE.exec(f.content)) !== null) {
+      claimRelation(unq(idx[2]), unq(idx[1]), `index on schema ${unq(idx[2])} (${pathOf(f)})`);
+    }
+  }
+
+  // 5) Every JSON pack file parses and carries no BOM.
   for (const f of files) {
     if (!pathOf(f).endsWith('.json')) continue;
     if (f.content.charCodeAt(0) === 0xfeff) {

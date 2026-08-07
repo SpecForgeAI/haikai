@@ -33,6 +33,8 @@
  * NO LLM — pure deterministic code.
  */
 
+import { createHash } from 'crypto';
+
 import { IrForeignKey, IrTable } from './types';
 import { translateCheckExpression } from './typeMapping';
 
@@ -66,6 +68,121 @@ export function quoteIdent(name: string): string {
 /** `"schema"."table"` — the quoted form EVERY emitted SQL statement uses. */
 export function quotedQualifiedName(schemaName: string, tableName: string): string {
   return `${quoteIdent(schemaName)}.${quoteIdent(tableName)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Schema-scoped relation-name resolution (Sybase -> Postgres name scoping)
+// ---------------------------------------------------------------------------
+
+/** One PK/UNIQUE/index name renamed to fit Postgres's per-schema scoping. */
+export interface RelationRename {
+  schemaName: string;
+  tableName: string;
+  kind: 'primary_key' | 'unique_constraint' | 'index';
+  from: string;
+  to: string;
+}
+
+/** The resolved (collision-free) relation names for a table set. */
+export interface ResolvedRelationNames {
+  renames: RelationRename[];
+  /** The name to EMIT for (schema, table, original name); identity when unrenamed. */
+  nameFor(schemaName: string, tableName: string, originalName: string): string;
+}
+
+/**
+ * Postgres truncates identifiers at 63 BYTES (NAMEDATALEN-1) — quoted or not —
+ * so a rename that overflows must be clamped OURSELVES with a stable hash
+ * suffix, or two long renames could silently truncate to the same relation.
+ */
+function clampIdent(name: string): string {
+  if (Buffer.byteLength(name, 'utf8') <= 63) return name;
+  const hash = createHash('sha256').update(name).digest('hex').slice(0, 8);
+  let head = name;
+  while (Buffer.byteLength(head, 'utf8') > 54) head = head.slice(0, -1);
+  return `${head}_${hash}`;
+}
+
+/**
+ * Resolve every PK / UNIQUE-constraint / index name to be unique within its
+ * schema's RELATION namespace (2026-08-06, the live `hir_book_ak1` failure).
+ *
+ * Sybase scopes constraint/index names PER TABLE, so a copied table
+ * (`temp_hir_book`) legitimately carries the same auto-generated names as its
+ * original. Postgres backs PK/UNIQUE constraints with indexes, and indexes
+ * are RELATIONS — one per-schema namespace shared with tables and other
+ * indexes — so the verbatim copy fails `relation "hir_book_ak1" already
+ * exists` on the first clean apply. FK and CHECK constraint names stay
+ * verbatim: `pg_constraint` scopes them per table, exactly like Sybase.
+ *
+ * Deterministic: tables walk in lexicographic qualified-name order, names
+ * within a table in sorted order, so the lexicographically-first table keeps
+ * its source name verbatim (the `temp_*`/`load_*` copies sort after their
+ * originals and take the rename). The registry is seeded with the TABLE
+ * names themselves — a constraint named like a table collides identically.
+ * Renames are `<table>_<name>`, clamped to Postgres's 63-byte limit.
+ */
+export function resolveRelationNames(tables: IrTable[]): ResolvedRelationNames {
+  const bySchema = new Map<string, Set<string>>();
+  const claimed = (schema: string): Set<string> => {
+    let set = bySchema.get(schema);
+    if (!set) {
+      set = new Set();
+      bySchema.set(schema, set);
+    }
+    return set;
+  };
+
+  const sorted = [...tables].sort((a, b) =>
+    qualifiedName(a.schemaName, a.tableName).localeCompare(qualifiedName(b.schemaName, b.tableName))
+  );
+  for (const t of sorted) claimed(t.schemaName).add(t.tableName);
+
+  const renames: RelationRename[] = [];
+  const resolved = new Map<string, string>(); // "schema\0table\0name" -> emitted name
+  const key = (s: string, t: string, n: string): string => `${s}\0${t}\0${n}`;
+
+  const claim = (
+    table: IrTable,
+    kind: RelationRename['kind'],
+    originalName: string
+  ): void => {
+    const names = claimed(table.schemaName);
+    let candidate = originalName;
+    if (names.has(candidate)) {
+      candidate = clampIdent(`${table.tableName}_${originalName}`);
+      let n = 2;
+      while (names.has(candidate)) {
+        candidate = clampIdent(`${table.tableName}_${originalName}_${n}`);
+        n += 1;
+      }
+      renames.push({
+        schemaName: table.schemaName,
+        tableName: table.tableName,
+        kind,
+        from: originalName,
+        to: candidate,
+      });
+    }
+    names.add(candidate);
+    resolved.set(key(table.schemaName, table.tableName, originalName), candidate);
+  };
+
+  for (const t of sorted) {
+    if (t.primaryKey) claim(t, 'primary_key', t.primaryKey.name);
+    for (const u of [...t.uniqueConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
+      claim(t, 'unique_constraint', u.name);
+    }
+    for (const idx of [...t.indexes].sort((a, b) => a.name.localeCompare(b.name))) {
+      claim(t, 'index', idx.name);
+    }
+  }
+
+  return {
+    renames,
+    nameFor: (schemaName, tableName, originalName) =>
+      resolved.get(key(schemaName, tableName, originalName)) ?? originalName,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -181,11 +298,18 @@ export function emitTableChangeset(args: {
   columns: EmittableColumn[];
   omitted: OmittedColumnNote[];
   skipped: SkippedColumnNote[];
+  /**
+   * Schema-scoped relation-name resolution (2026-08-06). Omitted = names emit
+   * verbatim (legacy behaviour, safe only for single-table use in tests).
+   */
+  relationNames?: ResolvedRelationNames;
 }): string {
   const { table, columns, omitted, skipped } = args;
   const qn = qualifiedName(table.schemaName, table.tableName);
   const qq = quotedQualifiedName(table.schemaName, table.tableName);
   const path = tableChangesetPath(table);
+  const relName = (original: string): string =>
+    args.relationNames?.nameFor(table.schemaName, table.tableName, original) ?? original;
 
   const lines: string[] = [];
   lines.push(formattedSqlHeader(path).trimEnd());
@@ -210,14 +334,14 @@ export function emitTableChangeset(args: {
   const presentColumns = new Set(columns.map((c) => c.columnName));
   if (table.primaryKey && table.primaryKey.columns.every((c) => presentColumns.has(c))) {
     constraintDefs.push(
-      `    CONSTRAINT ${quoteIdent(table.primaryKey.name)} PRIMARY KEY ` +
+      `    CONSTRAINT ${quoteIdent(relName(table.primaryKey.name))} PRIMARY KEY ` +
         `(${table.primaryKey.columns.map(quoteIdent).join(', ')})`
     );
   }
   for (const u of [...table.uniqueConstraints].sort((a, b) => a.name.localeCompare(b.name))) {
     if (!u.columns.every((c) => presentColumns.has(c))) continue;
     constraintDefs.push(
-      `    CONSTRAINT ${quoteIdent(u.name)} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
+      `    CONSTRAINT ${quoteIdent(relName(u.name))} UNIQUE (${u.columns.map(quoteIdent).join(', ')})`
     );
   }
   // Check expressions are TRANSLATED deterministically (2026-08-01) --
@@ -266,6 +390,19 @@ export function emitTableChangeset(args: {
       `-- SKIPPED CHECK ${qn}.${sc.name}: non-portable expression (${sc.reason}). ` +
         `Source (Sybase, verbatim): CHECK (${oneLine(sc.expression)}). ` +
         `Translate manually and add via ALTER TABLE after review.`
+    );
+  }
+  for (const r of (args.relationNames?.renames ?? []).filter(
+    (r) =>
+      r.schemaName === table.schemaName &&
+      r.tableName === table.tableName &&
+      r.kind !== 'index'
+  )) {
+    lines.push(
+      `-- RENAMED ${r.kind === 'primary_key' ? 'PK' : 'UNIQUE'} constraint ` +
+        `'${r.from}' -> '${r.to}': Postgres scopes PK/UNIQUE names per SCHEMA ` +
+        `(index-backed relations), Sybase per table — the source name is ` +
+        `already taken in "${table.schemaName}".`
     );
   }
 
@@ -354,6 +491,8 @@ export function foreignKeyName(fk: IrForeignKey): string {
 export function emitIndexesChangeset(args: {
   tables: IrTable[];
   emittedTables: Set<string>;
+  /** Schema-scoped relation-name resolution (2026-08-06); omitted = verbatim. */
+  relationNames?: ResolvedRelationNames;
 }): { content: string; clusterNotes: string[] } {
   const lines: string[] = [];
   const clusterNotes: string[] = [];
@@ -390,7 +529,15 @@ export function emitIndexesChangeset(args: {
           return quoteIdent(c);
         })
         .join(', ');
-      let sql = `CREATE ${idx.isUnique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(idx.name)} ON ${qq} (${cols});`;
+      const emittedName =
+        args.relationNames?.nameFor(table.schemaName, table.tableName, idx.name) ?? idx.name;
+      let sql = `CREATE ${idx.isUnique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(emittedName)} ON ${qq} (${cols});`;
+      if (emittedName !== idx.name) {
+        sql +=
+          `\n-- RENAMED index '${idx.name}' -> '${emittedName}': Postgres scopes index` +
+          ` names per SCHEMA (they are relations), Sybase per table — the source` +
+          ` name is already taken in "${table.schemaName}".`;
+      }
       if (droppedDirections.length > 0) {
         sql += `\n-- NOTE: index ${idx.name}: dropped non-portable column direction(s) ${droppedDirections.join(', ')}.`;
       }
@@ -400,7 +547,7 @@ export function emitIndexesChangeset(args: {
         sql +=
           `\n-- CLUSTER: source index ${idx.name} was CLUSTERED on Sybase. Postgres does not` +
           ` maintain clustering; this is a plain btree index. Optionally run` +
-          ` \`CLUSTER ${qq} USING ${quoteIdent(idx.name)};\` once after load.`;
+          ` \`CLUSTER ${qq} USING ${quoteIdent(emittedName)};\` once after load.`;
         clusterNotes.push(
           `${qn}.${idx.name}: clustered on source; emitted as plain btree (see indexes changeset).`
         );
