@@ -8,6 +8,7 @@
 import {
   createDataParityReconcileTrigger,
   defaultResolveDataParityTables,
+  runDataParityReconcileViaAmvs,
 } from '../services/migrationDataParityReconcile';
 import { MigrateScope, MigrationDriverDeps } from '../services/migrationExecutionDriver';
 
@@ -61,6 +62,56 @@ describe('defaultResolveDataParityTables', () => {
       jest.fn().mockResolvedValue(null) as never,
     );
     expect(tables).toEqual([]);
+  });
+
+  it('attaches each table\'s PRIMARY KEY from expected_schema (keyed-join threading, 2026-08-07)', async () => {
+    const fetchPackView = jest.fn().mockResolvedValue({
+      manifest: {
+        bulk_load: { table_order: ['dbo.customers', 'dbo.orders'] },
+        expected_schema: {
+          keysAndIndexes: [
+            { kind: 'primary_key', schemaName: 'dbo', tableName: 'orders', columns: ['order_id'] },
+            { kind: 'index', schemaName: 'dbo', tableName: 'orders', columns: ['amount'] },
+            // customers has NO pk entry — stays keyless.
+          ],
+        },
+      },
+    });
+    const tables = await defaultResolveDataParityTables('p1', 'arch-1', fetchPackView as never);
+    expect(tables).toEqual([
+      { schema: 'dbo', table: 'customers' },
+      { schema: 'dbo', table: 'orders', primaryKey: ['order_id'] },
+    ]);
+  });
+});
+
+describe('runDataParityReconcileViaAmvs wire body', () => {
+  it('serialises primaryKey as order_by + key_is_unique; keyless tables omit both', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ report_persisted: true, report: { summary: { status: 'clean' } } }),
+    });
+    const originalFetch = global.fetch;
+    global.fetch = fetchMock as never;
+    try {
+      await runDataParityReconcileViaAmvs({
+        projectId: 'p1',
+        architectureId: 'arch-1',
+        sourceDb,
+        targetDb,
+        tables: [
+          { schema: 'dbo', table: 'orders', primaryKey: ['order_id'] },
+          { schema: 'dbo', table: 'notes' },
+        ],
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.tables).toEqual([
+      { schema: 'dbo', table: 'orders', order_by: ['order_id'], key_is_unique: true },
+      { schema: 'dbo', table: 'notes' },
+    ]);
   });
 });
 
