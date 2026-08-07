@@ -5118,3 +5118,32 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 219: boot-recovery discovery scope names -- company + project on
+  # migration_execution_run (2026-08-07, gold-standard campaign C3). The
+  # gateway's boot-recovery sweep was inert (default discovery = empty set);
+  # the new cross-project GET /api/migration-execution-runs/in-flight endpoint
+  # powers it, and the driver re-derives its workspace scope from these NAME
+  # columns (the project UUID alone cannot be mapped back at boot). Set once
+  # at run creation; never PATCHed; NULL on pre-219 rows (skipped with a
+  # warning by the discovery consumer).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 218).
+  # ============================================================================
+  - changeSet:
+      id: 219-migration-run-scope-names
+      author: architecture-tool
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            columnExists:
+              tableName: migration_execution_run
+              columnName: company
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/219-migration-run-scope-names.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

@@ -21,6 +21,7 @@
  */
 
 import { logger } from './logger';
+import { listInFlightMigrationExecutionRuns } from './migrationExecutionRunClient';
 import {
   recoverInFlightRuns,
   defaultMigrationDriverDeps,
@@ -40,11 +41,46 @@ export interface InFlightRunRef {
 export type InFlightRunDiscovery = () => Promise<InFlightRunRef[]>;
 
 /**
- * The default discovery: the gateway has no cross-project in-flight-run index in
- * v1, so it returns an empty set. The sweep then logs a structured no-op. This
- * is the clean extension point for a future AMS cross-project list endpoint.
+ * The default discovery (LIVE since 2026-08-07 / AMS changeset 219): reads the
+ * cross-project in-flight list (`GET /api/migration-execution-runs/in-flight`,
+ * status started/dispatching) and maps each run to a sweep ref. Before this it
+ * returned a hard-coded empty set — boot recovery was structurally INERT and a
+ * gateway restart stranded any mid-segment run forever.
+ *
+ * A run missing its scope names (pre-219 row) or ids is SKIPPED with a loud
+ * warning — the operator resumes those from the UI; every run created after
+ * 219 carries them. A discovery read failure propagates to the sweep's own
+ * never-throw guard (logged, boot continues).
  */
-export const defaultInFlightRunDiscovery: InFlightRunDiscovery = async () => [];
+export const defaultInFlightRunDiscovery: InFlightRunDiscovery = async () => {
+  const runs = await listInFlightMigrationExecutionRuns();
+  const refs: InFlightRunRef[] = [];
+  for (const run of runs) {
+    const projectId = run.project_id ?? null;
+    const runId = run.id ?? null;
+    const bookId = run.book_of_work_id ?? null;
+    const company = run.company ?? null;
+    const project = run.project ?? null;
+    if (!projectId || !runId || !bookId || !company || !project) {
+      logger.warn(
+        '[diag-gateway] migration_execution_driver boot_recovery_run_skipped_missing_scope',
+        {
+          runId,
+          projectId,
+          bookId,
+          hasCompany: !!company,
+          hasProject: !!project,
+          hint:
+            'pre-changeset-219 run (no scope names persisted) — resume it from the UI; ' +
+            'runs created after the upgrade are recoverable automatically',
+        }
+      );
+      continue;
+    }
+    refs.push({ projectId, runId, bookId, company, project });
+  }
+  return refs;
+};
 
 /**
  * Run the boot-recovery sweep (CD-2). Never throws -- a discovery / reconcile

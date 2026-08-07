@@ -262,6 +262,21 @@ function wireDeps(
     recordWorkItemImplementationError: jest.fn().mockResolvedValue(undefined),
     autoAnswerer: fakeAutoAnswerer(),
     buildResultsCallbackUrl: CALLBACK_URL,
+    // Serve-spec halt hardening (2026-08-07): a deploying service-plane
+    // submit needs a registered serve spec — provide one by default.
+    getTargetServeSpec: jest.fn().mockReturnValue({
+      command: 'mvn spring-boot:run',
+      healthPath: '/actuator/health',
+    }),
+    // Fail-closed seams (2026-08-07): carry-over reads + chain-base + plane
+    // precedence must RESOLVE in tests (unreadable = blocked in production).
+    carryOverCoverageReads: {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    },
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
     // Spec-4 reconcile seams stubbed: the final-spec `deployed` advance kicks
     // the full-baseline reconcile fire-and-forget. Stub the trigger so the
     // end-to-end run stays hermetic (no validation-service / AMS network), while

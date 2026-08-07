@@ -145,6 +145,20 @@ function mockDeps(overrides: Partial<MigrationDriverDeps> = {}): MigrationDriver
     recordWorkItemImplementationError: jest.fn().mockResolvedValue(undefined),
     autoAnswerer: passingAutoAnswerer(),
     buildResultsCallbackUrl: 'http://gw/api/implementation/build-results',
+    // Carry-over gate reads are FAIL-CLOSED since 2026-08-07 (an unreadable
+    // accounting blocks the start), so the mock surface must resolve — empty
+    // inputs are the honest "nothing to account for" state.
+    carryOverCoverageReads: {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    },
+    // Plane-aware precedence source (2026-08-07): empty history by default.
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
+    // Chain-base resolution is FAIL-CLOSED since 2026-08-07 (an unreadable
+    // prior run blocks a chained start), so the mock must resolve — null =
+    // no prior run (default-branch base).
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
     ...overrides,
   };
 }
@@ -459,6 +473,11 @@ describe('startMigration', () => {
       fetchLatestMigrationExecutionRunForBook: jest
         .fn()
         .mockResolvedValue({ id: 'run-db', status: 'deployed' }),
+      // Plane-aware precedence (2026-08-07): the deployed db-plane run must
+      // appear in the book's run HISTORY with items mapping to the db plane.
+      fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([
+        { id: 'run-db', status: 'deployed', items: [{ work_item_id: 'wi-db' }] },
+      ]),
       // No parity report exists -> data_parity_unverified (fail-closed).
       dataParityGateReads: {
         fetchLatestDataParityReport: jest.fn().mockResolvedValue(null),
@@ -1039,6 +1058,12 @@ describe('DB-plane completion handover', () => {
     };
     const deps = mockDeps({
       getMigrationExecutionRun: jest.fn().mockResolvedValue(run),
+      // A service-plane final item needs a registered serve spec since the
+      // 2026-08-07 halt-on-missing hardening.
+      getTargetServeSpec: jest.fn().mockReturnValue({
+        command: 'mvn spring-boot:run',
+        healthPath: '/actuator/health',
+      }),
     });
 
     await runSpecSegment(scope, run, item, descriptor, deps);
@@ -1090,14 +1115,21 @@ describe('service-plane serve-spec threading', () => {
     expect(submitArg.targetServeSpec).toEqual(serveSpec);
   });
 
-  it('missing serve spec: fail-soft, deploy flag stays true with no target attached', async () => {
+  it('missing serve spec HALTS at dispatch with the remedy — never a silent no-deploy strand (2026-08-07)', async () => {
     const { item, run, descriptor, deps } = serviceSegment(
       jest.fn().mockReturnValue(undefined)
     );
     await runSpecSegment(scope, run, item, descriptor, deps);
-    const submitArg = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
-    expect(submitArg.deployOnComplete).toBe(true);
-    expect(submitArg.targetServeSpec).toBeUndefined();
+    // Nothing dispatched: the plane-final service item cannot deploy/reconcile
+    // without the serve spec, so implementing it would strand the run.
+    expect(deps.submitOrchestration).not.toHaveBeenCalled();
+    const itemPatches = (deps.patchMigrationExecutionRunItem as jest.Mock).mock.calls;
+    const failed = itemPatches.find((c) => c[2]?.status === RUN_ITEM_STATUS.FAILED);
+    expect(failed).toBeTruthy();
+    expect(failed?.[2]?.error_detail).toContain('serve spec');
+    expect(failed?.[2]?.error_detail).toContain('Resume failed');
+    const runPatches = (deps.patchMigrationExecutionRun as jest.Mock).mock.calls;
+    expect(runPatches.some((c) => c[2]?.status === RUN_STATUS.HALTED)).toBe(true);
   });
 
   it('a db-plane final item never gets a serve spec nor the deploy flag', async () => {

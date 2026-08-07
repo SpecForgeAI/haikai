@@ -359,4 +359,58 @@ class MigrationExecutionRunStatePersistenceTest {
         Optional<MigrationExecutionRunDto> none = runService.getLatestRunForBook(UUID.randomUUID());
         assertThat(none).isEmpty();
     }
+
+    @Test
+    @DisplayName("changeset 219: scope names persist at create; in-flight list is cross-project + status-scoped; runs-for-book returns full history with items")
+    void scopeNamesAndInFlightDiscovery() {
+        UUID projectA = UUID.randomUUID();
+        UUID projectB = UUID.randomUUID();
+        UUID bookA = UUID.randomUUID();
+        UUID bookB = UUID.randomUUID();
+
+        // Run 1 (project A): dispatching + scope names -> IN FLIGHT.
+        MigrationExecutionRunDto inFlightHeader = new MigrationExecutionRunDto(
+            null, projectA, "acme", "order-mig", bookA,
+            MigrationExecutionRunStatus.DISPATCHING,
+            0, null, null, null, null, null, null);
+        MigrationExecutionRunDto inFlight = runService.createRun(
+            projectA, new CreateRunRequest(inFlightHeader, List.of(pendingItem(0, true))));
+
+        // Run 2 (project B): deployed -> NOT in flight.
+        MigrationExecutionRunDto deployedHeader = new MigrationExecutionRunDto(
+            null, projectB, "acme", "other-proj", bookB,
+            MigrationExecutionRunStatus.DEPLOYED,
+            0, null, null, null, null, null, null);
+        runService.createRun(
+            projectB, new CreateRunRequest(deployedHeader, List.of(pendingItem(0, true))));
+
+        // Run 3 (book A, older attempt): halted -> not in flight, but IS history.
+        MigrationExecutionRunDto haltedHeader = new MigrationExecutionRunDto(
+            null, projectA, "acme", "order-mig", bookA,
+            MigrationExecutionRunStatus.HALTED,
+            0, null, null, null, null, null, null);
+        runService.createRun(
+            projectA, new CreateRunRequest(haltedHeader, List.of(pendingItem(0, false))));
+
+        entityManager.flush();
+        entityManager.clear();
+
+        // Scope names round-trip on the create read.
+        MigrationExecutionRunDto reread = runService.getRunState(inFlight.id());
+        assertThat(reread.company()).isEqualTo("acme");
+        assertThat(reread.project()).isEqualTo("order-mig");
+
+        // In-flight list: ONLY the dispatching run, cross-project by design.
+        List<MigrationExecutionRunDto> inFlightRuns = runService.listInFlightRuns();
+        assertThat(inFlightRuns).extracting(MigrationExecutionRunDto::id)
+            .containsExactly(inFlight.id());
+        assertThat(inFlightRuns.get(0).company()).isEqualTo("acme");
+
+        // Runs-for-book: BOTH of book A's runs, newest first, WITH items.
+        List<MigrationExecutionRunDto> history = runService.getRunsForBook(bookA);
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).items()).isNotNull();
+        assertThat(history.get(1).items()).isNotNull();
+        assertThat(history).allSatisfy(r -> assertThat(r.bookOfWorkId()).isEqualTo(bookA));
+    }
 }

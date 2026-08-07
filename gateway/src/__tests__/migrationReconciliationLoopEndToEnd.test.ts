@@ -364,7 +364,22 @@ function buildHarness(opts: {
   const detached: Promise<unknown>[] = [];
 
   const deps: MigrationDriverDeps = {
-    fetchBookOfWork: jest.fn(),
+    // Plane resolution is FAIL-CLOSED since 2026-08-07 (an unresolvable item
+    // plane halts instead of guessing 'service'), so the book must really
+    // contain the run's work item — mapped to the service plane, preserving
+    // the deployed → full-baseline-reconcile semantics under test.
+    fetchBookOfWork: jest.fn().mockResolvedValue({
+      id: 'book-1',
+      project_id: PROJECT_ID,
+      book_of_work_json: {
+        items: [
+          {
+            id: 'b-final', parentId: null, type: 'story', title: 'Final',
+            sequenceOrder: 0, workItemId: 'wi-final', workstream: 'api_migration',
+          },
+        ],
+      },
+    }),
     fetchSpecGenerationsForBook: jest.fn().mockResolvedValue([]),
     fetchWorkItems: jest.fn().mockResolvedValue([]),
     fetchActiveCurrentBaseline: jest.fn(),
@@ -397,6 +412,15 @@ function buildHarness(opts: {
         .mockResolvedValue({ ok: false, specName: null, sessionId: null, decisionLog: [] }),
     },
     buildResultsCallbackUrl: CALLBACK_URL,
+    // Fail-closed seams (2026-08-07): carry-over reads + chain-base + plane
+    // precedence must RESOLVE in tests (unreadable = blocked in production).
+    carryOverCoverageReads: {
+      fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([]),
+      fetchFindingsForRun: jest.fn().mockResolvedValue([]),
+      fetchDiscoveryRunsForArchitecture: jest.fn().mockResolvedValue([]),
+    },
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
     reconciliationDeps,
     // The REAL trigger / handler -- wrapped only to capture the detached promise.
     triggerReconcile: ((run: MigrationExecutionRun, rDeps: ReconciliationDriverDeps) => {

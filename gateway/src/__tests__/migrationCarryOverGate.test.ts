@@ -163,6 +163,10 @@ function mockDeps(over: Partial<MigrationDriverDeps> = {}): MigrationDriverDeps 
       fetchCapabilitiesForArchitecture: jest.fn().mockResolvedValue([capWire({ id: 'capA' })]),
       fetchFindingsForRun: jest.fn().mockResolvedValue([]),
     },
+    // Fail-closed seams (2026-08-07): chain-base + plane-precedence reads
+    // must RESOLVE in tests (unreadable = blocked in production).
+    fetchLatestMigrationExecutionRunForBook: jest.fn().mockResolvedValue(null),
+    fetchMigrationExecutionRunsForBook: jest.fn().mockResolvedValue([]),
     ...over,
   };
 }
