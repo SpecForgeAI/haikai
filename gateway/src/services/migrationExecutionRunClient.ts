@@ -127,6 +127,12 @@ export const RUN_STATUS = {
 /** Per-spec run-item status values (mirror MigrationExecutionRunItemStatus). */
 export const RUN_ITEM_STATUS = {
   PENDING: 'pending',
+  /**
+   * LEGACY READ-ONLY (2026-08-07): no code has SET 'answering' since the
+   * deterministic Option-A dispatch removed the shaping phase — the value
+   * stays only so the boot-recovery sweep can rescue pre-Option-A runs
+   * persisted mid-answer. Never produce it in new code.
+   */
   ANSWERING: 'answering',
   SUBMITTING: 'submitting',
   SUBMITTED: 'submitted',

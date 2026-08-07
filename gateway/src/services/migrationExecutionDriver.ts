@@ -1409,7 +1409,7 @@ export async function startMigration(
         const divergentTables = [
           ...new Set(parity.reasons.flatMap((r) => r.tables ?? [])),
         ];
-        await deps.patchMigrationExecutionRun(projectId, runId, {
+        await patchRunWithRetry(deps, projectId, runId, {
           decision_log_json: [
             ...(run.decision_log_json ?? []),
             {
@@ -3560,7 +3560,7 @@ export async function resumeMigration(
           "plane's API reconcile runs under KNOWN data divergence — its breaks " +
           'are echo-classified against these tables.',
       };
-      await deps.patchMigrationExecutionRun(scope.projectId, runId, {
+      await patchRunWithRetry(deps, scope.projectId, runId, {
         decision_log_json: [...(run.decision_log_json ?? []), entry],
       });
       trace.warn(
@@ -4038,6 +4038,24 @@ async function haltRunForItem(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+  }
+}
+
+/** Retry-once wrapper for the break-glass decision-log PATCH (2026-08-07):
+ * the override audit trail (which divergent tables were waived past) is what
+ * the downstream reconcile uses for echo attribution — a single AMS blip
+ * must not silently lose it. */
+async function patchRunWithRetry(
+  deps: MigrationDriverDeps,
+  projectId: string,
+  runId: string,
+  patch: MigrationExecutionRun
+): Promise<void> {
+  try {
+    await deps.patchMigrationExecutionRun(projectId, runId, patch);
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, PATCH_RETRY_DELAY_MS));
+    await deps.patchMigrationExecutionRun(projectId, runId, patch);
   }
 }
 

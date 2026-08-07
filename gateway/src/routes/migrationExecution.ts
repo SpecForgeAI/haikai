@@ -77,6 +77,7 @@ import {
 import {
   runCarryOverTriage,
   draftSingleSuggestion,
+  fetchTriageCapturedDecisions,
   applyTriageSuggestions,
   TriageItemInput,
   TriageStoryIndexEntry,
@@ -1603,11 +1604,15 @@ migrationExecutionRouter.post(
       if (ctx.items.length === 0) {
         return res.status(200).json({ suggestions: [] });
       }
+      // Decisions stack (2026-08-07): drafts must align with the decisions
+      // already made — fetched fail-soft (null = triage still runs).
+      const capturedDecisions = await fetchTriageCapturedDecisions(projectId);
       const suggestions = await runCarryOverTriage({
         projectId,
         bookId,
         items: ctx.items,
         storyIndex: ctx.storyIndex,
+        capturedDecisions,
       });
       return res.status(200).json({ suggestions });
     } catch (error) {
@@ -1679,6 +1684,7 @@ migrationExecutionRouter.post(
         storyIndex,
         forcedDisposition: forced,
         guidance: body.guidance ?? null,
+        capturedDecisions: await fetchTriageCapturedDecisions(projectId),
       });
       return res.status(200).json({ suggestion });
     } catch (error) {
