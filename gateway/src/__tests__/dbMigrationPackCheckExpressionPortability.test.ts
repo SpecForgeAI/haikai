@@ -128,12 +128,15 @@ describe('emitTableChangeset check-constraint handling', () => {
     expect(ddl).not.toContain('CHECK (start_dt <= getdate())');
   });
 
-  it('SKIPS non-portable checks with a loud comment carrying the verbatim source', () => {
+  it('routes non-portable checks to the translation queue with a loud comment — never manual work (2026-08-07)', () => {
     expect(ddl).not.toContain('CONSTRAINT "trade_code_ck"');
     expect(ddl).toContain(
-      "-- SKIPPED CHECK dbo.trade.trade_code_ck: non-portable expression (function 'datalength')."
+      "-- CHECK dbo.trade.trade_code_ck: non-portable expression (function 'datalength') — " +
+        'routed to the translation queue (kind check_constraint, object dbo.trade.trade_code_ck).'
     );
     expect(ddl).toContain('Source (Sybase, verbatim): CHECK (datalength(code) > 0).');
+    expect(ddl).toContain('nothing is left to manual work');
+    expect(ddl).not.toContain('Translate manually');
   });
 });
 
@@ -160,5 +163,107 @@ describe('emitIndexesChangeset direction guard', () => {
     expect(content).toContain(
       "-- NOTE: index trade_ix: dropped non-portable column direction(s) 'DBMS:HASH' on b."
     );
+  });
+});
+
+// ===========================================================================
+// PK/UNIQUE member-drop -> pk_composition decision (gold standard 2026-08-07)
+// ===========================================================================
+
+describe('emitTableChangeset pk_composition (silently-dropped key constraints)', () => {
+  const tableWithPk = () =>
+    makeTable({
+      primaryKey: { name: 'trade_pk', columns: ['id', 'legacy_blob'] },
+      uniqueConstraints: [{ name: 'trade_ak1', columns: ['code'] }],
+    });
+  // legacy_blob is OMITTED (pending its own decision) — only id/code emit.
+  const emittedColumns = [makeColumn('id'), makeColumn('code', 'varchar(10)')];
+
+  it('an unresolved dropped PK emits NO constraint and a NEEDS DECISION comment naming pk_composition', () => {
+    const ddl = emitTableChangeset({
+      table: tableWithPk(),
+      columns: emittedColumns,
+      omitted: [],
+      skipped: [],
+    });
+    expect(ddl).not.toContain('PRIMARY KEY (');
+    expect(ddl).toContain('NEEDS DECISION (pk_composition)');
+    expect(ddl).toContain("pk_composition--dbo.trade--trade_pk");
+    expect(ddl).toContain('legacy_blob');
+    // The intact UNIQUE still emits.
+    expect(ddl).toContain('CONSTRAINT "trade_ak1" UNIQUE ("code")');
+  });
+
+  it("resolution 'emit_over_present_members' emits the PARTIAL key + an audit comment", () => {
+    const ddl = emitTableChangeset({
+      table: tableWithPk(),
+      columns: emittedColumns,
+      omitted: [],
+      skipped: [],
+      resolvedDecisions: {
+        'pk_composition--dbo.trade--trade_pk': { option: 'emit_over_present_members' },
+      },
+    });
+    expect(ddl).toContain('CONSTRAINT "trade_pk" PRIMARY KEY ("id")');
+    expect(ddl).toContain("emitted over PRESENT members only per resolved decision");
+    expect(ddl).not.toContain('NEEDS DECISION (pk_composition)');
+  });
+
+  it("resolution 'drop_constraint' drops it ON RECORD (audit comment, no constraint)", () => {
+    const ddl = emitTableChangeset({
+      table: tableWithPk(),
+      columns: emittedColumns,
+      omitted: [],
+      skipped: [],
+      resolvedDecisions: {
+        'pk_composition--dbo.trade--trade_pk': { option: 'drop_constraint' },
+      },
+    });
+    expect(ddl).not.toContain('PRIMARY KEY (');
+    expect(ddl).toContain("DROPPED per resolved decision 'pk_composition--dbo.trade--trade_pk'");
+  });
+});
+
+// ===========================================================================
+// Filtered/exotic index guard (2026-08-07): ASE 15 has no filtered indexes
+// ===========================================================================
+
+describe('emitIndexesChangeset filtered-index guard', () => {
+  it('THROWS on a filter predicate — never emits the index without it', () => {
+    const table = makeTable({
+      indexes: [
+        {
+          name: 'trade_ix',
+          columns: ['id'],
+          isUnique: false,
+          isClustered: false,
+          columnDirections: null,
+          method: null,
+          predicate: "status = 'A'",
+        },
+      ],
+    });
+    expect(() =>
+      emitIndexesChangeset({ tables: [table], emittedTables: new Set(['dbo.trade']) })
+    ).toThrow(/filtered indexes/);
+  });
+
+  it('THROWS on an unknown access method — never guesses', () => {
+    const table = makeTable({
+      indexes: [
+        {
+          name: 'trade_ix',
+          columns: ['id'],
+          isUnique: false,
+          isClustered: false,
+          columnDirections: null,
+          method: 'hash',
+          predicate: null,
+        },
+      ],
+    });
+    expect(() =>
+      emitIndexesChangeset({ tables: [table], emittedTables: new Set(['dbo.trade']) })
+    ).toThrow(/access method/);
   });
 });

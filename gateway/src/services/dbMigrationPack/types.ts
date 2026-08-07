@@ -290,6 +290,14 @@ export type PackDecisionCategory =
   | 'computed_column'
   | 'collation'
   | 'delta_key'
+  /**
+   * A PRIMARY KEY / UNIQUE constraint whose member column(s) are omitted or
+   * dropped (2026-08-07): the constraint used to be dropped SILENTLY —
+   * uniqueness/identity semantics vanished from the target with zero signal.
+   * The open decision blocks Migrate via the db-pack gate until resolved
+   * (AMS chk_dmpd_category extended by changeset 220).
+   */
+  | 'pk_composition'
   | 'other';
 
 export interface PackDecision {
@@ -355,6 +363,12 @@ export interface PackManifest {
     kind: string;
     object_ref: string;
     finding_ids: string[];
+    /**
+     * DIRECT source body (2026-08-07): kinds whose bodies live in the pack IR
+     * rather than findings (check_constraint) carry it on the entry; the seed
+     * pass uses it verbatim (full fidelity).
+     */
+    source_body?: string;
   }>;
   manual_recreation: Array<{
     kind: string;

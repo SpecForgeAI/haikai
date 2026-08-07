@@ -347,7 +347,7 @@ describe('dbMigrationPack generation core (Group 2)', () => {
   });
 
   // (f) -----------------------------------------------------------------
-  it('lists procs/triggers/views as requires_translation_spec_2 and scheduled jobs as manual recreation — with finding provenance, never as changesets', () => {
+  it('lists procs/triggers/views AND scheduled jobs as requires_translation_spec_2 (jobs joined the queue 2026-08-07) — with finding provenance, never as changesets', () => {
     const inputs = makeInputs({
       extraFindings: [
         {
@@ -390,11 +390,15 @@ describe('dbMigrationPack generation core (Group 2)', () => {
       object_ref: 'dbo.v_order_totals',
       finding_ids: ['f-view'],
     });
-    expect(artifacts.manifest.manual_recreation).toContainEqual({
+    // Scheduled jobs ride the SAME translation queue since 2026-08-07 (kind
+    // scheduled_job -> PL/pgSQL + pg_cron on approval) — manual_recreation is
+    // reserved for genuinely untranslatable leftovers and stays empty here.
+    expect(rt).toContainEqual({
       kind: 'scheduled_job',
       object_ref: 'dbo.nightly_purge',
       finding_ids: ['f-job'],
     });
+    expect(artifacts.manifest.manual_recreation).toEqual([]);
 
     // NEVER emitted as changesets.
     const changesetContent = artifacts.files
