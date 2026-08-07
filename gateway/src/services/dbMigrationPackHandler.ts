@@ -70,6 +70,7 @@ import {
   qualifiedName,
   quotedQualifiedName,
   quoteIdent,
+  resolveRelationNames,
   SCHEMAS_CHANGESET_PATH,
   SEQUENCES_SEED_CHANGESET_PATH,
   SequenceSeedStatement,
@@ -570,6 +571,15 @@ export function buildDbMigrationPackArtifacts(
     ir.foreignKeys
   );
 
+  // --- schema-scoped relation names (2026-08-06) ----------------------------
+  // Sybase scopes constraint/index names per TABLE; Postgres backs PK/UNIQUE
+  // with indexes, which are per-SCHEMA relations — so a copied table
+  // (temp_hir_book) carrying its original's auto-generated names fails
+  // `relation "hir_book_ak1" already exists` on the first clean apply (the
+  // live 2026-08-06 schema-apply halt). Resolve ONCE across all emitted
+  // tables; colliders rename deterministically to <table>_<name>.
+  const relationNames = resolveRelationNames(realTables);
+
   // --- per-table translation + structural changesets ----------------------
   const files: PackFile[] = [];
   let sortOrder = 0;
@@ -635,6 +645,7 @@ export function buildDbMigrationPackArtifacts(
         columns: emittedColumns,
         omitted: translated.filter((t) => t.omitted !== null).map((t) => t.omitted!),
         skipped: translated.filter((t) => t.skippedNote !== null).map((t) => t.skippedNote!),
+        relationNames,
       }),
     });
 
@@ -691,6 +702,7 @@ export function buildDbMigrationPackArtifacts(
   const indexResult = emitIndexesChangeset({
     tables: orderedTables,
     emittedTables: emittedTableNames,
+    relationNames,
   });
   const seedContent = emitSequencesSeedChangeset({ statements: seedStatements, seedMargin });
 
@@ -830,6 +842,16 @@ export function buildDbMigrationPackArtifacts(
     manual_recreation: manualRecreation,
     cycle_breaks: cycleBreaks,
     cluster_notes: indexResult.clusterNotes,
+    // Schema-scoped relation renames (2026-08-06): PK/UNIQUE/index names that
+    // collided within their schema's relation namespace and were renamed
+    // <table>_<name>. Provenance for constraints_metadata consumers.
+    relation_name_renames: relationNames.renames.map((r) => ({
+      schema: r.schemaName,
+      table: r.tableName,
+      kind: r.kind,
+      from: r.from,
+      to: r.to,
+    })),
     collation_notes: collationNotes,
     delta_strategies: deltaStrategies,
     bulk_load: {

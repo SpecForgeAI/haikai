@@ -354,6 +354,22 @@ export interface PackManifest {
   }>;
   cycle_breaks: string[];
   cluster_notes: string[];
+  /**
+   * Schema-scoped relation renames (2026-08-06): Sybase scopes constraint and
+   * index names per TABLE; Postgres backs PK/UNIQUE with indexes — per-SCHEMA
+   * relations — so source-verbatim names on copied tables (temp_*, load_*)
+   * collide at schema-apply (`relation "hir_book_ak1" already exists`).
+   * Colliders rename deterministically to <table>_<name>; this is the
+   * old->new provenance for constraints_metadata consumers. Absent on packs
+   * generated earlier.
+   */
+  relation_name_renames?: Array<{
+    schema: string;
+    table: string;
+    kind: 'primary_key' | 'unique_constraint' | 'index';
+    from: string;
+    to: string;
+  }>;
   collation_notes: string[];
   delta_strategies: DeltaStrategy[];
   bulk_load: {
