@@ -62,7 +62,13 @@ interface RunBody {
   architecture_id?: string;
   source_db?: DbBlock;
   target_db?: DbBlock;
-  tables?: Array<{ table?: string; schema?: string | null; order_by?: string[] }>;
+  tables?: Array<{
+    table?: string;
+    schema?: string | null;
+    order_by?: string[];
+    /** TRUE when order_by is a UNIQUE key (PK) — enables keyed-join comparison. */
+    key_is_unique?: boolean;
+  }>;
   sample_rows?: number;
   full_scan_max_rows?: number;
   timeout_seconds?: number;
@@ -115,9 +121,17 @@ export function buildDataParityRunRouter(deps: DataParityRunDeps = {}): Router {
     const targetError = dbBlockError('target_db', body.target_db);
     if (targetError) return res.status(400).json({ error: targetError });
     const tables: DataParityTableSpec[] = (body.tables ?? [])
-      .filter((t): t is { table: string; schema?: string | null; order_by?: string[] } =>
-        typeof t?.table === 'string' && t.table.trim() !== '')
-      .map((t) => ({ table: t.table, schema: t.schema ?? null, orderBy: t.order_by }));
+      .filter(
+        (t): t is { table: string; schema?: string | null; order_by?: string[]; key_is_unique?: boolean } =>
+          typeof t?.table === 'string' && t.table.trim() !== '',
+      )
+      .map((t) => ({
+        table: t.table,
+        schema: t.schema ?? null,
+        orderBy: t.order_by,
+        // Keyed-join comparison (2026-08-07): true when order_by is the PK.
+        keyIsUnique: t.key_is_unique === true,
+      }));
     if (tables.length === 0) {
       return res
         .status(400)

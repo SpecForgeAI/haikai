@@ -28,6 +28,7 @@
 import { DbAdapter, DbColumnMetadata } from '../db/DbAdapter';
 import {
   MigrationPairRuleset,
+  canonicalize,
   compareWithRules,
   rulesForColumnType,
 } from '../../migrationPairRules';
@@ -37,6 +38,14 @@ export interface DataParityTableSpec {
   table: string;
   /** Explicit deterministic order key (e.g. the primary key). Optional. */
   orderBy?: string[];
+  /**
+   * TRUE when `orderBy` is a UNIQUE key (the primary key) — rows are then
+   * compared by KEYED JOIN, never positional zip (2026-08-07): the engines
+   * disagree on string/datetime collation order, so index-zipping two
+   * differently-ordered fetches misaligned one row and counted essentially
+   * every cell divergent (the live filter_tag 26,508-divergence artifact).
+   */
+  keyIsUnique?: boolean;
 }
 
 export interface DataParityKnobs {
@@ -62,7 +71,7 @@ export interface TableParityResult {
   verdict: 'match' | 'divergent' | 'unverifiable';
   /** How deep the verification went — the honesty bound on `match`. */
   depth: 'none' | 'counts' | 'sampled' | 'full';
-  divergence_class: 'count_mismatch' | 'column_set' | 'cell_values' | null;
+  divergence_class: 'count_mismatch' | 'column_set' | 'cell_values' | 'row_set' | null;
   reason: string | null;
   source_count: number | null;
   target_count: number | null;
@@ -194,7 +203,28 @@ async function compareOneTable(
     sourceColumns.map((c) => [normalizeColumnKey(c.column), c.dataType ?? '']),
   );
 
-  // ---- Rung 3: ordered row comparison --------------------------------------
+  // ---- Rung 3: row comparison ----------------------------------------------
+  // KEYED JOIN when a unique key is declared (2026-08-07); canonical-sorted
+  // multiset comparison for keyless tables under the full-scan bound; honest
+  // unverifiable above it. Positional index-zipping across two engines'
+  // fetch orders is GONE — Sybase's binary-ish collation and Postgres's
+  // locale collation disagree on string/datetime order, so a one-row shift
+  // counted essentially every cell divergent (the live filter_tag /
+  // ghr_entity artifact: equal counts, 26,508 false cell divergences).
+  const rulesFor = (column: string) => {
+    const sourceType = sourceTypeByColumn.get(normalizeColumnKey(column)) ?? '';
+    return ruleset ? rulesForColumnType(ruleset, sourceType) : [];
+  };
+  const canonicalCell = (row: Record<string, unknown>, column: string): string => {
+    let v: unknown = cellValue(row, column) ?? null;
+    for (const rule of rulesFor(column)) {
+      if (rule.comparison) v = canonicalize(v, rule.comparison);
+    }
+    if (v === null || v === undefined) return ' ';
+    return `${typeof v}:${String(v)}`;
+  };
+
+  const keyed = spec.keyIsUnique === true && (spec.orderBy?.length ?? 0) > 0;
   const orderBy = spec.orderBy && spec.orderBy.length > 0
     ? spec.orderBy
     : defaultOrderKey(sourceColumns);
@@ -205,36 +235,40 @@ async function compareOneTable(
     };
   }
   const full = sourceCount <= knobs.fullScanMaxRows;
+  if (!keyed && !full) {
+    // A keyless positional sample across two collations is noise, not
+    // verification — depth-honest refusal naming the fix.
+    return {
+      ...base,
+      reason:
+        `table has no unique comparison key and exceeds the full-scan bound ` +
+        `(${sourceCount} > ${knobs.fullScanMaxRows}) — keyed comparison needs a primary key; ` +
+        `add/propose one (PK gap proposals) or raise full_scan_max_rows`,
+    };
+  }
   const maxRows = full ? sourceCount : knobs.sampleRows;
   const rowLimits = { maxRows, timeoutSeconds: knobs.timeoutSeconds };
   const [sourceRows, targetRows] = await Promise.all([
     source.fetchOrderedRows({ schema: spec.schema, table: spec.table, orderBy, limits: rowLimits }),
     target.fetchOrderedRows({ schema: spec.schema, table: spec.table, orderBy, limits: rowLimits }),
   ]);
-  if (sourceRows.rows.length !== targetRows.rows.length) {
-    return {
-      ...base,
-      reason: `equal counts but unequal fetched row sets ` +
-        `(source=${sourceRows.rows.length} target=${targetRows.rows.length}) — fetch truncated?`,
-    };
-  }
 
   const rulesCited = new Set<string>();
   let cellDivergences = 0;
   const examples: CellDivergenceExample[] = [];
-  for (let i = 0; i < sourceRows.rows.length; i++) {
-    const sRow = sourceRows.rows[i];
-    const tRow = targetRows.rows[i];
+  const compareCells = (
+    sRow: Record<string, unknown>,
+    tRow: Record<string, unknown>,
+    rowIndex: number,
+  ): void => {
     for (const column of comparedColumns) {
-      const sourceType = sourceTypeByColumn.get(normalizeColumnKey(column)) ?? '';
-      const rules = ruleset ? rulesForColumnType(ruleset, sourceType) : [];
-      const result = compareWithRules(cellValue(sRow, column), cellValue(tRow, column), rules);
+      const result = compareWithRules(cellValue(sRow, column), cellValue(tRow, column), rulesFor(column));
       for (const id of result.appliedRuleIds) rulesCited.add(id);
       if (!result.equal) {
         cellDivergences++;
         if (examples.length < EXAMPLES_CAP) {
           examples.push({
-            row_index: i,
+            row_index: rowIndex,
             column,
             source_value: excerpt(cellValue(sRow, column)),
             target_value: excerpt(cellValue(tRow, column)),
@@ -243,14 +277,92 @@ async function compareOneTable(
         }
       }
     }
+  };
+
+  if (keyed) {
+    // ---- keyed join: rows correspond by KEY VALUES, never by position ------
+    const keyOf = (row: Record<string, unknown>): string =>
+      JSON.stringify(orderBy.map((c) => canonicalCell(row, c)));
+    const targetByKey = new Map<string, Record<string, unknown>>();
+    for (const row of targetRows.rows) targetByKey.set(keyOf(row), row);
+
+    const sourceOnly: string[] = [];
+    let rowsCompared = 0;
+    for (const sRow of sourceRows.rows) {
+      const k = keyOf(sRow);
+      const tRow = targetByKey.get(k);
+      if (tRow === undefined) {
+        sourceOnly.push(excerpt(orderBy.map((c) => cellValue(sRow, c) ?? '∅').join('|')));
+        continue;
+      }
+      targetByKey.delete(k);
+      compareCells(sRow, tRow, rowsCompared);
+      rowsCompared++;
+    }
+    const targetOnlyCount = targetByKey.size;
+
+    // At FULL depth an unmatched key is real row-set divergence; at SAMPLED
+    // depth the two first-N pages can legitimately cover different key ranges
+    // — exclusive keys are a sampling note, never a divergence.
+    if (full && (sourceOnly.length > 0 || targetOnlyCount > 0)) {
+      return {
+        ...base,
+        verdict: 'divergent',
+        divergence_class: 'row_set',
+        depth: 'full',
+        rows_compared: rowsCompared,
+        cell_divergences: cellDivergences,
+        divergence_examples: examples,
+        rules_cited: [...rulesCited].sort(),
+        reason:
+          `key sets differ: ${sourceOnly.length} key(s) only on source, ${targetOnlyCount} only ` +
+          `on target (e.g. ${sourceOnly.slice(0, 5).join(', ') || 'target-only keys'})`,
+      };
+    }
+    return {
+      ...base,
+      verdict: cellDivergences > 0 ? 'divergent' : 'match',
+      depth: full ? 'full' : 'sampled',
+      divergence_class: cellDivergences > 0 ? 'cell_values' : null,
+      rows_compared: rowsCompared,
+      cell_divergences: cellDivergences,
+      divergence_examples: examples,
+      rules_cited: [...rulesCited].sort(),
+      reason:
+        !full && (sourceOnly.length > 0 || targetOnlyCount > 0)
+          ? `sampled pages covered partly different key ranges (${sourceOnly.length}/${targetOnlyCount} ` +
+            `exclusive keys skipped) — compared the ${rowsCompared}-row intersection`
+          : null,
+    };
+  }
+
+  // ---- keyless full scan: canonical-sorted multiset comparison -------------
+  // Both row sets are re-sorted in JS by their rule-canonicalized cell
+  // projections, so the engines' collation orders are irrelevant — identical
+  // multisets align row-for-row regardless of fetch order.
+  if (sourceRows.rows.length !== targetRows.rows.length) {
+    return {
+      ...base,
+      reason: `equal counts but unequal fetched row sets ` +
+        `(source=${sourceRows.rows.length} target=${targetRows.rows.length}) — fetch truncated?`,
+    };
+  }
+  const projection = (row: Record<string, unknown>): string =>
+    JSON.stringify(comparedColumns.map((c) => canonicalCell(row, c)));
+  const byProjection = (a: Record<string, unknown>, b: Record<string, unknown>): number =>
+    projection(a) < projection(b) ? -1 : projection(a) > projection(b) ? 1 : 0;
+  const sortedSource = [...sourceRows.rows].sort(byProjection);
+  const sortedTarget = [...targetRows.rows].sort(byProjection);
+  for (let i = 0; i < sortedSource.length; i++) {
+    compareCells(sortedSource[i], sortedTarget[i], i);
   }
 
   return {
     ...base,
     verdict: cellDivergences > 0 ? 'divergent' : 'match',
-    depth: full ? 'full' : 'sampled',
+    depth: 'full',
     divergence_class: cellDivergences > 0 ? 'cell_values' : null,
-    rows_compared: sourceRows.rows.length,
+    rows_compared: sortedSource.length,
     cell_divergences: cellDivergences,
     divergence_examples: examples,
     rules_cited: [...rulesCited].sort(),

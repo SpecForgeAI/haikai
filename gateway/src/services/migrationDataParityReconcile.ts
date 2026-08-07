@@ -34,6 +34,15 @@ const trace = createTracer('gateway');
 export interface DataParityTable {
   schema: string | null;
   table: string;
+  /**
+   * The table's PRIMARY KEY columns from the pack manifest (2026-08-07):
+   * threaded to AMVS as order_by + key_is_unique so the comparator joins
+   * rows BY KEY instead of positional index-zipping — the zip across two
+   * engines' collation orders manufactured the live filter_tag mass false
+   * divergence. Null/absent = no PK known (AMVS falls back to canonical
+   * multiset comparison under its full-scan bound).
+   */
+  primaryKey?: string[] | null;
 }
 
 export interface DataParityReconcileClientArgs {
@@ -82,7 +91,13 @@ export async function runDataParityReconcileViaAmvs(
     architecture_id: args.architectureId,
     source_db: toDbBlock(args.sourceDb),
     target_db: toDbBlock(args.targetDb),
-    tables: args.tables.map((t) => ({ table: t.table, schema: t.schema ?? null })),
+    tables: args.tables.map((t) => ({
+      table: t.table,
+      schema: t.schema ?? null,
+      ...(t.primaryKey && t.primaryKey.length > 0
+        ? { order_by: t.primaryKey, key_is_unique: true }
+        : {}),
+    })),
   };
   const resp = await fetch(url, {
     method: 'POST',
@@ -125,11 +140,23 @@ export async function defaultResolveDataParityTables(
 ): Promise<DataParityTable[]> {
   const packView = await fetchPackView(projectId, architectureId);
   if (!packView) return [];
+  // Per-table PRIMARY KEY columns from the manifest's expected schema — the
+  // comparator's keyed-join anchor (2026-08-07).
+  const pkByTable = new Map<string, string[]>();
+  for (const key of packView.manifest.expected_schema?.keysAndIndexes ?? []) {
+    const k = key as { kind?: string; schemaName?: string; tableName?: string; columns?: string[] };
+    if (k.kind !== 'primary_key' || !Array.isArray(k.columns) || k.columns.length === 0) continue;
+    pkByTable.set(`${k.schemaName ?? ''}.${k.tableName ?? ''}`.toLowerCase(), k.columns);
+  }
   return orderedTables(packView.manifest).map((qn) => {
     const dot = qn.indexOf('.');
-    return dot > 0
-      ? { schema: qn.slice(0, dot), table: qn.slice(dot + 1) }
-      : { schema: null, table: qn };
+    const entry: DataParityTable =
+      dot > 0
+        ? { schema: qn.slice(0, dot), table: qn.slice(dot + 1) }
+        : { schema: null, table: qn };
+    const pk = pkByTable.get(`${entry.schema ?? ''}.${entry.table}`.toLowerCase());
+    if (pk) entry.primaryKey = pk;
+    return entry;
   });
 }
 
