@@ -840,6 +840,13 @@ export function buildDbMigrationPackArtifacts(
     },
     requires_translation_spec_2: requiresTranslation,
     manual_recreation: manualRecreation,
+    // Sybase system catalogs are NEVER migrated (2026-08-07): excluded from
+    // emission/translation/load entirely, listed here so the exclusion is
+    // visible accounting, not a silent drop.
+    sybase_system_exclusions: (ir.sybaseSystemExclusions ?? []).map((e) => ({
+      kind: e.kind,
+      object_ref: e.objectRef,
+    })),
     cycle_breaks: cycleBreaks,
     cluster_notes: indexResult.clusterNotes,
     // Schema-scoped relation renames (2026-08-06): PK/UNIQUE/index names that

@@ -153,6 +153,15 @@ export interface SourceSchemaIr {
   foreignKeys: IrForeignKey[];
   sequences: IrSequence[];
   untranslated: IrUntranslatedObject[];
+  /**
+   * Sybase ASE system-catalog objects EXCLUDED from the pack (2026-08-07):
+   * harvested system tables/views/procs (sysobjects, sysquerymetrics, ...)
+   * are engine infrastructure, never migrated app schema — a translated
+   * system view failed the live run's final post-load changeset because its
+   * sysqueryplans source can never exist on the target. Optional so IR
+   * literals in tests stay valid.
+   */
+  sybaseSystemExclusions?: Array<{ kind: string; objectRef: string }>;
   dbDecisions: IrDbDecision[];
   /**
    * Resolved pack decisions keyed by `decision_key` — a MANDATORY generation
@@ -352,6 +361,13 @@ export interface PackManifest {
     object_ref: string;
     finding_ids: string[];
   }>;
+  /**
+   * Sybase system-catalog objects excluded from the pack entirely
+   * (2026-08-07): engine infrastructure, never migrated — not emitted, not
+   * translated, not loaded. Visible accounting so an exclusion is never a
+   * silent drop. Absent on packs generated earlier.
+   */
+  sybase_system_exclusions?: Array<{ kind: string; object_ref: string }>;
   cycle_breaks: string[];
   cluster_notes: string[];
   /**

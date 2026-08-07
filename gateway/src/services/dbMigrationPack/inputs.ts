@@ -27,6 +27,7 @@
 import * as crypto from 'crypto';
 import { getConfig } from '../../config';
 import { logger } from '../logger';
+import { isSybaseSystemObject } from './sybaseSystemObjects';
 import {
   fetchActiveTargetArchitectureId,
   fetchLatestCapturedDecisions,
@@ -293,8 +294,23 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
   const sortedEntities = [...inputs.model.physicalDataEntities].sort((a, b) =>
     a.name.localeCompare(b.name)
   );
+  // Sybase system-catalog objects are ENGINE INFRASTRUCTURE, never migrated
+  // app schema (2026-08-07: a harvested dbo.sysquerymetrics system view was
+  // translated + emitted and failed the final post-load changeset — its
+  // sysqueryplans source can never exist on the target). Excluded here, with
+  // every exclusion recorded for the manifest.
+  const sybaseSystemExclusions: SourceSchemaIr['sybaseSystemExclusions'] = [];
+
   for (const entity of sortedEntities) {
     const { schemaName, tableName } = parseQualifiedName(entity.name);
+    if (isSybaseSystemObject(tableName)) {
+      const physicalType = entity.physical_type ?? '';
+      sybaseSystemExclusions.push({
+        kind: /view/i.test(physicalType) ? 'view' : 'table',
+        objectRef: `${schemaName}.${tableName}`,
+      });
+      continue;
+    }
     const cm = (entity.constraints_metadata ?? {}) as {
       primary_key?: { name: string; columns: string[] } | null;
       unique_constraints?: Array<{ name: string; columns: string[] }>;
@@ -494,6 +510,15 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
           asString(detail['objectName']) ??
           'unknown';
         const objectRef = `${schema}.${objectName}`;
+        // ASE system objects (2026-08-07): a system view/proc finding must
+        // never enter the translation queue — it references Sybase-internal
+        // catalogs that cannot exist on the target.
+        if (isSybaseSystemObject(objectName)) {
+          if (!sybaseSystemExclusions.some((e) => e.kind === kind && e.objectRef === objectRef)) {
+            sybaseSystemExclusions.push({ kind, objectRef });
+          }
+          break;
+        }
         const existing = untranslated.find((u) => u.kind === kind && u.objectRef === objectRef);
         if (existing) {
           existing.findingIds.push(finding.id);
@@ -551,6 +576,9 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
       `${a.schemaName}.${a.sequenceName}`.localeCompare(`${b.schemaName}.${b.sequenceName}`)
     ),
     untranslated: untranslated.sort(
+      (a, b) => a.kind.localeCompare(b.kind) || a.objectRef.localeCompare(b.objectRef)
+    ),
+    sybaseSystemExclusions: sybaseSystemExclusions.sort(
       (a, b) => a.kind.localeCompare(b.kind) || a.objectRef.localeCompare(b.objectRef)
     ),
     dbDecisions: inputs.dbDecisions,

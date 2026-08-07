@@ -40,6 +40,7 @@ import {
   formattedSqlHeader,
 } from './liquibase';
 import { assertPackFilesValid } from './packValidation';
+import { isSybaseSystemObjectRef } from './sybaseSystemObjects';
 import {
   TranslationRow,
   TranslationsAmsError,
@@ -70,6 +71,14 @@ export function translationChangesetId(kind: string, objectRef: string): string 
 /**
  * The approved set: disposition `translate` AND review_status `approved`
  * AND a draft exists. Everything else is excluded from BOTH outputs.
+ *
+ * Sybase SYSTEM objects are additionally refused here regardless of review
+ * state (2026-08-07): an approved translation of `dbo.sysquerymetrics` — a
+ * harvested ASE system view — was emitted as the pack's final changeset and
+ * failed because its `sysqueryplans` source can never exist on the target.
+ * The IR builder no longer queues system objects, but PERSISTED queue rows
+ * from earlier packs survive regeneration; this is the choke point every
+ * emission path (files, changeset, manifest section) flows through.
  */
 export function selectApprovedTranslations(rows: TranslationRow[]): TranslationRow[] {
   return rows
@@ -80,6 +89,14 @@ export function selectApprovedTranslations(rows: TranslationRow[]): TranslationR
         typeof r.draft_content === 'string' &&
         r.draft_content.length > 0
     )
+    .filter((r) => {
+      if (!isSybaseSystemObjectRef(r.object_ref)) return true;
+      logger.warn(
+        '[diag-gateway] db_pack_translation_emission sybase_system_object_excluded',
+        { kind: r.kind, objectRef: r.object_ref, translationKey: r.translation_key }
+      );
+      return false;
+    })
     .sort((a, b) => a.translation_key.localeCompare(b.translation_key));
 }
 
