@@ -159,4 +159,34 @@ describe('PostgresAdapter', () => {
     ).rejects.toBeInstanceOf(SqlGuardError);
     expect(mockPool.connect).not.toHaveBeenCalled();
   });
+
+  // ---- countRows honesty (gold standard 2026-08-07) ------------------------
+
+  it('countRows parses node-pg string counts (int8 comes back as a string)', async () => {
+    const adapter = buildAdapter();
+    mockSelectResult.rows = [{ row_count: '77' } as never];
+    mockSelectResult.rowCount = 1;
+    try {
+      await expect(
+        adapter.countRows({ schema: 'public', table: 'orders', limits: { maxRows: 5, timeoutSeconds: 5 } }),
+      ).resolves.toBe(77);
+    } finally {
+      mockSelectResult.rows = [{ id: 1 }, { id: 2 }];
+      mockSelectResult.rowCount = 2;
+    }
+  });
+
+  it('countRows THROWS on an unparseable count — a garbled count must never read as 0', async () => {
+    const adapter = buildAdapter();
+    mockSelectResult.rows = [{ row_count: 'not-a-number' } as never];
+    mockSelectResult.rowCount = 1;
+    try {
+      await expect(
+        adapter.countRows({ schema: 'public', table: 'orders', limits: { maxRows: 5, timeoutSeconds: 5 } }),
+      ).rejects.toThrow(/unparseable count/);
+    } finally {
+      mockSelectResult.rows = [{ id: 1 }, { id: 2 }];
+      mockSelectResult.rowCount = 2;
+    }
+  });
 });

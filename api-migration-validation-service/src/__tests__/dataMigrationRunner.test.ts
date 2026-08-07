@@ -1,5 +1,5 @@
 import { DbAdapter, DbAllowlist, DbQueryLimits, DbReadResult, DbTableMetadata } from '../services/db/DbAdapter';
-import { TargetLoader } from '../services/dataMigration/targetLoader';
+import { TableLoadError, TargetLoader } from '../services/dataMigration/targetLoader';
 import { LoadPlan, TableLoadSpec } from '../services/dataMigration/types';
 import { runDataMigration } from '../services/dataMigration/dataMigrationRunner';
 import { emitDataMigrationPredicates } from '../services/dataMigration/dataMigrationPredicates';
@@ -30,6 +30,8 @@ class FakeAdapter implements DbAdapter {
   /** Simulates a broken keyset implementation: `after` is ignored. */
   ignoreAfter = false;
   fetchCalls = 0;
+  /** Every maxRows the runner asked for (asserts the page-size clamp). */
+  maxRowsSeen: number[] = [];
   constructor(
     private counts: Record<string, number> = {},
     private fixtures: Record<string, TableFixture> = {},
@@ -84,6 +86,7 @@ class FakeAdapter implements DbAdapter {
   }): Promise<DbReadResult> {
     if (this.throwOnFetch) throw new Error('sidecar down');
     this.fetchCalls += 1;
+    this.maxRowsSeen.push(args.limits.maxRows);
     const fx = this.fixtures[this.k(args.schema, args.table)];
     let rows = fx?.rows ?? [];
     if (!this.ignoreAfter && args.after && args.after.length > 0) {
@@ -376,6 +379,89 @@ describe('runDataMigration (Spec Y)', () => {
     });
     expect(report.tables[0].status).toBe('unverifiable');
     expect(report.tables[0].reason).toContain('sidecar down');
+  });
+
+  it('a MID-TABLE load failure reports the rows actually written, never loadedCount 0 (2026-08-07)', async () => {
+    const rows = Array.from({ length: 5 }, (_, i) => ({ id: i + 1 }));
+    const source = new FakeAdapter({}, {
+      'dbo.mid': { count: 5, columns: [{ column: 'id', dataType: 'int' }], rows },
+    });
+    class MidFailLoader extends FakeLoader {
+      async loadTable(s: TableLoadSpec, r: unknown[][]): Promise<number> {
+        if (this.loadCalls === 1) {
+          // Second page: 1 row of the page lands, then the insert dies.
+          this.loadCalls += 1;
+          throw new TableLoadError('insert into "dbo"."mid" failed: disk full', 1);
+        }
+        return super.loadTable(s, r);
+      }
+    }
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter(),
+      targetLoader: new MidFailLoader(),
+      plan: planFor([spec({ table: 'mid', expectedSourceRowCount: 5 })]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 2, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('unverifiable');
+    // Page 1 (2 rows) + the failing page's 1 written row = 3, not 0.
+    expect(report.tables[0].loadedCount).toBe(3);
+    expect(report.tables[0].reason).toContain('after 3 row(s)');
+    expect(report.tables[0].reason).toContain('PARTIAL');
+  });
+
+  it('clamps operator pageRows to the adapter single-fetch cap (a clipped page must not read as final)', async () => {
+    const source = new FakeAdapter({}, {
+      'dbo.small': { count: 2, columns: [{ column: 'id', dataType: 'int' }], rows: [{ id: 1 }, { id: 2 }] },
+    });
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter({ 'dbo.small': 2 }),
+      targetLoader: new FakeLoader(),
+      plan: planFor([spec({ table: 'small', expectedSourceRowCount: 2 })]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 50_000, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('loaded');
+    expect(source.maxRowsSeen.every((n) => n <= 10_000)).toBe(true);
+  });
+
+  it('keeps paging when an adapter CLIPS a page (truncated=true short page is not "final")', async () => {
+    const rows = Array.from({ length: 5 }, (_, i) => ({ id: i + 1 }));
+    class ClippingAdapter extends FakeAdapter {
+      async fetchOrderedRows(args: {
+        schema?: string | null;
+        table: string;
+        orderBy: string[];
+        limits: DbQueryLimits;
+        after?: unknown[] | null;
+      }): Promise<DbReadResult> {
+        // The adapter guard clips every page at 2 rows regardless of maxRows.
+        const clipped = await super.fetchOrderedRows({
+          ...args,
+          limits: { ...args.limits, maxRows: Math.min(2, args.limits.maxRows) },
+        });
+        return args.limits.maxRows > 2 ? clipped : { ...clipped, truncated: false };
+      }
+    }
+    const source = new ClippingAdapter({}, {
+      'dbo.clip': { count: 5, columns: [{ column: 'id', dataType: 'int' }], rows },
+    });
+    const loader = new FakeLoader();
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter({ 'dbo.clip': 5 }),
+      targetLoader: loader,
+      plan: planFor([spec({ table: 'clip', expectedSourceRowCount: 5 })]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 1000, timeoutSeconds: 30 },
+    });
+    // The old break condition (rows < pageRows = final) would have stopped
+    // after 2 rows; honoring `truncated` pages through all 5.
+    expect(report.tables[0].status).toBe('loaded');
+    expect(report.tables[0].loadedCount).toBe(5);
+    expect(loader.loaded['dbo.clip']).toEqual(rows.map((r) => [r.id]));
   });
 
   it('emits EXEC.DATA predicates + an EXEC scorecard', async () => {

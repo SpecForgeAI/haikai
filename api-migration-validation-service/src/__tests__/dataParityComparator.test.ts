@@ -49,6 +49,8 @@ class FakeAdapter implements DbAdapter {
       countRowsThrows?: string[];
       /** Simulate a DIFFERENT engine collation: fetch order comes back reversed. */
       reverseFetchOrder?: boolean;
+      /** Simulate an adapter guard clipping every fetch at N rows. */
+      clipFetchAt?: number;
     } = {},
   ) {}
 
@@ -97,7 +99,8 @@ class FakeAdapter implements DbAdapter {
     if (!table) throw new Error(`unknown table ${args.table}`);
     let ordered = orderRows(table.rows, args.orderBy);
     if (this.failures.reverseFetchOrder) ordered = ordered.reverse();
-    const rows = ordered.slice(0, args.limits.maxRows);
+    const cap = Math.min(args.limits.maxRows, this.failures.clipFetchAt ?? Infinity);
+    const rows = ordered.slice(0, cap);
     return { rows, rowCount: rows.length, truncated: rows.length < table.rows.length };
   }
 
@@ -303,6 +306,46 @@ describe('data-parity comparator', () => {
     expect(report.tables[0].depth).toBe('sampled');
     expect(report.tables[0].rows_compared).toBe(2);
     expect(report.summary.match_sampled).toBe(1);
+  });
+
+  // ---- 2026-08-07: single-fetch honesty ------------------------------------
+
+  test('a FULL-depth fetch coming back truncated is unverifiable, never compared as complete', async () => {
+    const columns = [ID_COL];
+    const rows = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const report = await runDataParityComparison({
+      // The source adapter clips every fetch at 2 rows (guard behavior) while
+      // the count says 3 — comparing the clipped set as "full" would
+      // under-report divergence.
+      source: new FakeAdapter({ t: { columns, rows } }, { clipFetchAt: 2 }),
+      target: new FakeAdapter({ t: { columns, rows: [...rows] } }),
+      tables: [{ table: 't', orderBy: ['id'], keyIsUnique: true }],
+      ruleset: null,
+      knobs: KNOBS,
+    });
+    expect(report.tables[0].verdict).toBe('unverifiable');
+    expect(report.tables[0].reason).toContain('truncated');
+  });
+
+  test('the full-scan bound clamps to the adapter single-fetch cap (keyless refusal names it)', async () => {
+    const columns = [ID_COL];
+    // Keyless table whose count exceeds the 10k single-fetch cap while the
+    // operator knob claims a 50k full-scan bound — the comparator must refuse
+    // (single fetch cannot hold the table), not fetch-and-clip.
+    const bigRows = [{ id: 1 }];
+    const source = new FakeAdapter({ t: { columns, rows: bigRows } });
+    const target = new FakeAdapter({ t: { columns, rows: bigRows } });
+    source.countRows = async () => 10_001;
+    target.countRows = async () => 10_001;
+    const report = await runDataParityComparison({
+      source,
+      target,
+      tables: [{ table: 't', orderBy: ['id'], keyIsUnique: false }],
+      ruleset: null,
+      knobs: { sampleRows: 100, fullScanMaxRows: 50_000, timeoutSeconds: 5 },
+    });
+    expect(report.tables[0].verdict).toBe('unverifiable');
+    expect(report.tables[0].reason).toContain('single-fetch cap 10000');
   });
 
   // ---- 2026-08-07: keyed join replaces positional zip ----------------------

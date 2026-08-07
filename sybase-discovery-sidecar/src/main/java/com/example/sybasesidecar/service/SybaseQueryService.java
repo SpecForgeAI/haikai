@@ -419,7 +419,13 @@ public class SybaseQueryService {
                     st.setQueryTimeout(queryTimeoutSeconds);
                 }
                 if (maxRows > 0) {
-                    st.setMaxRows(maxRows);
+                    // maxRows + 1 (2026-08-07): with setMaxRows(maxRows) the
+                    // driver never yields row maxRows+1, so the walk below could
+                    // NEVER observe a clipped result and `truncated` was always
+                    // false — a capped page was indistinguishable from a final
+                    // page. Fetch ONE sentinel row beyond the cap; the walk
+                    // keeps maxRows rows and flags `truncated` on the sentinel.
+                    st.setMaxRows(maxRows + 1);
                 }
                 final List<Map<String, Object>> rows = new ArrayList<>();
                 boolean truncated = false;
@@ -435,7 +441,7 @@ public class SybaseQueryService {
                         for (int i = 1; i <= cols; i++) {
                             final String name = md.getColumnLabel(i);
                             final Object value = rs.getObject(i);
-                            row.put(name, value);
+                            row.put(name, normalizeWireValue(value));
                         }
                         rows.add(row);
                     }
@@ -471,6 +477,82 @@ public class SybaseQueryService {
         return this.query(
                 SybaseDriverChoice.AUTO, host, port, database, username, password,
                 sql, queryTimeoutSeconds, maxRows);
+    }
+
+    /** Wire datetime shape: naive local timestamp, no zone offset, millis. */
+    static final java.time.format.DateTimeFormatter WIRE_DATETIME =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    /** Wire time-of-day shape. */
+    static final java.time.format.DateTimeFormatter WIRE_TIME =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
+
+    /**
+     * Typed wire normalisation for {@code /query} row values (gold standard
+     * 2026-08-07). Raw JDBC objects previously went straight to Jackson, whose
+     * defaults silently corrupt migration data at the Node consumer:
+     * <ul>
+     *   <li>{@code BigDecimal} / {@code long} serialised as JSON numbers lose
+     *       precision at {@code JSON.parse} (IEEE double, 2^53) — exactly the
+     *       values a data migration must carry exactly. Now decimal / bigint
+     *       render as STRINGS ({@code toPlainString}), matching node-pg's own
+     *       string parsing of {@code numeric} / {@code int8}, so the two sides
+     *       of a parity comparison align.</li>
+     *   <li>{@code java.sql.Timestamp} serialised as epoch millis re-interprets
+     *       a zoneless ASE datetime through the JVM default zone. Now datetimes
+     *       render as the naive wall-clock string the engine stored
+     *       ({@code yyyy-MM-dd HH:mm:ss.SSS}; the Dockerfile pins
+     *       {@code -Duser.timezone=UTC} so DST gaps cannot corrupt the
+     *       round-trip). Dates / times render as {@code yyyy-MM-dd} /
+     *       {@code HH:mm:ss}.</li>
+     *   <li>{@code byte[]} serialised as base64 while Postgres renders bytea as
+     *       {@code \x}-prefixed hex — the same bytes compared as unequal
+     *       strings. Now binary renders as {@code \x} + lowercase hex.</li>
+     *   <li>{@code Clob} serialised as an object graph. Now the full character
+     *       content (a Clob read failure propagates as {@link SQLException} —
+     *       a LOUD query failure, never a garbled cell).</li>
+     * </ul>
+     * Integers/booleans/strings/floats pass through untouched (both engines
+     * agree on their JSON shapes). Package-visible + pure for unit tests.
+     */
+    static Object normalizeWireValue(final Object value) throws SQLException {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof java.math.BigDecimal) {
+            return ((java.math.BigDecimal) value).toPlainString();
+        }
+        if (value instanceof java.math.BigInteger || value instanceof Long) {
+            return value.toString();
+        }
+        if (value instanceof java.sql.Timestamp) {
+            return ((java.sql.Timestamp) value).toLocalDateTime().format(WIRE_DATETIME);
+        }
+        if (value instanceof java.sql.Date) {
+            return ((java.sql.Date) value).toLocalDate().toString();
+        }
+        if (value instanceof java.sql.Time) {
+            return ((java.sql.Time) value).toLocalTime().format(WIRE_TIME);
+        }
+        if (value instanceof java.util.Date) {
+            // Defensive: an exotic driver returning a plain java.util.Date.
+            return new java.sql.Timestamp(((java.util.Date) value).getTime())
+                    .toLocalDateTime().format(WIRE_DATETIME);
+        }
+        if (value instanceof byte[]) {
+            final byte[] bytes = (byte[]) value;
+            final StringBuilder sb = new StringBuilder(2 + bytes.length * 2).append("\\x");
+            for (final byte b : bytes) {
+                sb.append(HEX_DIGITS[(b >> 4) & 0xF]).append(HEX_DIGITS[b & 0xF]);
+            }
+            return sb.toString();
+        }
+        if (value instanceof java.sql.Clob) {
+            final java.sql.Clob clob = (java.sql.Clob) value;
+            final long length = clob.length();
+            return length == 0 ? "" : clob.getSubString(1, (int) Math.min(length, Integer.MAX_VALUE));
+        }
+        return value;
     }
 
     /**

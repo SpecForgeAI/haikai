@@ -31,6 +31,24 @@ function quoteIdent(name: string): string {
 }
 
 /**
+ * A mid-table load failure that CARRIES the rows already written (gold
+ * standard 2026-08-07): a plain throw lost the count, so the runner reported
+ * `loadedCount: 0` for a table that had real partial data on the target —
+ * the report then under-stated what a cleanup/re-run must deal with.
+ */
+export class TableLoadError extends Error {
+  constructor(
+    message: string,
+    /** Rows successfully written by THIS loadTable call before the failure. */
+    public readonly rowsWritten: number,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'TableLoadError';
+  }
+}
+
+/**
  * Writes rows to a PostgreSQL target via batched, parameterised multi-row
  * INSERTs. OVERRIDING SYSTEM VALUE is emitted when the target table has identity
  * columns, preserving source-assigned ids (like-for-like).
@@ -89,8 +107,17 @@ export class PostgresTargetLoader implements TargetLoader {
           params.push(...row);
         }
         const sql = `INSERT INTO ${qn} (${colList}) ${overriding}VALUES ${tuples.join(', ')}`;
-        const res = await client.query(sql, params);
-        total += res.rowCount ?? batch.length;
+        try {
+          const res = await client.query(sql, params);
+          total += res.rowCount ?? batch.length;
+        } catch (err) {
+          throw new TableLoadError(
+            `insert into ${qn} failed after ${total} row(s) of this page were written: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+            total,
+            err,
+          );
+        }
       }
     } finally {
       client.release();

@@ -21,6 +21,8 @@
  * logged and never persisted.
  */
 
+import { createHash } from 'crypto';
+
 import {
   ParsedChangeset,
   normalisePackPath,
@@ -96,10 +98,26 @@ export interface SchemaApplyResult {
 
 const LOG_TABLE = 'haikai_schema_apply_log';
 
+/** Body checksum recorded per applied changeset (Liquibase-style validation). */
+function bodyChecksum(body: string): string {
+  return createHash('sha256').update(body, 'utf8').digest('hex');
+}
+
+const sqlString = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+
 /**
  * Execute the plan. Each changeset runs as `BEGIN; <body>; INSERT log; COMMIT`
  * so a failure rolls the changeset AND its log row back together; execution
  * stops at the first failure (the chain halts the run with the changeset id).
+ *
+ * Checksum validation (gold standard 2026-08-07): the skip decision was
+ * id-ONLY, so a changeset whose BODY changed under an unchanged id silently
+ * skipped — the live schema and the pack drift apart with zero signal. The
+ * log now records a sha256 body checksum; a skip whose stored checksum
+ * differs from the current body is a LOUD failure telling the author to cut
+ * a NEW changeset for the delta. Rows logged by pre-checksum runners (NULL
+ * checksum) adopt the current body's checksum on first sight — id-match was
+ * their era's whole trust basis, and adopting pins them from now on.
  */
 export async function runSchemaApply(
   plan: ParsedChangeset[],
@@ -107,18 +125,48 @@ export async function runSchemaApply(
 ): Promise<SchemaApplyResult> {
   await exec.query(
     `CREATE TABLE IF NOT EXISTS ${LOG_TABLE} (` +
-      `changeset_id text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`
+      `changeset_id text PRIMARY KEY, checksum text, ` +
+      `applied_at timestamptz NOT NULL DEFAULT now())`
   );
-  const already = new Set<string>(
-    (await exec.query(`SELECT changeset_id FROM ${LOG_TABLE}`)).rows.map((r) =>
-      String(r.changeset_id)
-    )
+  // Legacy log tables predate the checksum column.
+  await exec.query(`ALTER TABLE ${LOG_TABLE} ADD COLUMN IF NOT EXISTS checksum text`);
+  const alreadyChecksum = new Map<string, string | null>(
+    (await exec.query(`SELECT changeset_id, checksum FROM ${LOG_TABLE}`)).rows.map((r) => [
+      String(r.changeset_id),
+      r.checksum === null || r.checksum === undefined ? null : String(r.checksum),
+    ])
   );
 
   const applied: string[] = [];
   const skipped: string[] = [];
   for (const cs of plan) {
-    if (already.has(cs.id)) {
+    const currentChecksum = bodyChecksum(cs.body);
+    if (alreadyChecksum.has(cs.id)) {
+      const stored = alreadyChecksum.get(cs.id) ?? null;
+      if (stored === null) {
+        // Pre-checksum log row: adopt the current body as the pinned truth.
+        await exec.query(
+          `UPDATE ${LOG_TABLE} SET checksum = ${sqlString(currentChecksum)} ` +
+            `WHERE changeset_id = ${sqlString(cs.id)} AND checksum IS NULL`
+        );
+        skipped.push(cs.id);
+        continue;
+      }
+      if (stored !== currentChecksum) {
+        return {
+          applied,
+          skipped,
+          failed: {
+            id: cs.id,
+            filePath: cs.filePath,
+            error:
+              `changeset '${cs.id}' was already applied with a DIFFERENT body ` +
+              `(applied checksum ${stored.slice(0, 12)}…, pack checksum ${currentChecksum.slice(0, 12)}…) — ` +
+              `the pack changed under an applied changeset; author a NEW changeset id for the ` +
+              `delta instead of editing an applied one`,
+          },
+        };
+      }
       skipped.push(cs.id);
       continue;
     }
@@ -128,7 +176,8 @@ export async function runSchemaApply(
         await exec.query(cs.body);
       }
       await exec.query(
-        `INSERT INTO ${LOG_TABLE} (changeset_id) VALUES ('${cs.id.replace(/'/g, "''")}')`
+        `INSERT INTO ${LOG_TABLE} (changeset_id, checksum) ` +
+          `VALUES (${sqlString(cs.id)}, ${sqlString(currentChecksum)})`
       );
       await exec.query('COMMIT');
       applied.push(cs.id);

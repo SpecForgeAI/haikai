@@ -24,9 +24,9 @@
  * continues (mirrors the data-parity comparator, Spec P). Predicate emission is
  * the caller's job (see dataMigrationPredicates.ts).
  */
-import { DbAdapter } from '../db/DbAdapter';
+import { DbAdapter, MAX_SINGLE_FETCH_ROWS } from '../db/DbAdapter';
 import { MigrationPairRuleset } from '../../migrationPairRules';
-import { TargetLoader } from './targetLoader';
+import { TableLoadError, TargetLoader } from './targetLoader';
 import { ForwardColumn, forwardTransformRow } from './pairRuleForwardTransform';
 import {
   DataMigrationReportBody,
@@ -132,7 +132,11 @@ async function migrateOneTable(
   // duplicated run. Pages then APPEND.
   await loader.prepareTable(spec);
 
-  const pageRows = Math.max(1, knobs.pageRows);
+  // Clamp to the adapter seam's single-fetch bound (2026-08-07): an operator
+  // pageRows above it would be silently clipped by the adapter/sidecar guard,
+  // and the short page would read as "final page" — ending the walk early
+  // with a silent partial load.
+  const pageRows = Math.max(1, Math.min(knobs.pageRows, MAX_SINGLE_FETCH_ROWS));
   const rulesCited = new Set<string>();
   let readTotal = 0;
   let loadedCount = 0;
@@ -142,51 +146,71 @@ async function migrateOneTable(
   // could exceed it; the guard converts an infinite loop into a loud failure.
   const maxPages = Math.ceil(sourceCount / pageRows) + 10;
 
-  for (;;) {
-    if (pages >= maxPages) {
-      return {
-        ...base,
-        loadedCount,
-        reason:
-          `paginated read exceeded the page budget (${maxPages} pages of ${pageRows}) without ` +
-          `finishing — the order key is not advancing; loaded rows are PARTIAL and the table is ` +
-          `unverifiable`,
-      };
-    }
-    const read = await source.fetchOrderedRows({
-      schema: spec.schema,
-      table: spec.table,
-      orderBy: spec.orderBy,
-      limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
-      after,
-    });
-    pages += 1;
-    if (read.rows.length === 0) break;
+  try {
+    for (;;) {
+      if (pages >= maxPages) {
+        return {
+          ...base,
+          loadedCount,
+          reason:
+            `paginated read exceeded the page budget (${maxPages} pages of ${pageRows}) without ` +
+            `finishing — the order key is not advancing; loaded rows are PARTIAL and the table is ` +
+            `unverifiable`,
+        };
+      }
+      const read = await source.fetchOrderedRows({
+        schema: spec.schema,
+        table: spec.table,
+        orderBy: spec.orderBy,
+        limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
+        after,
+      });
+      pages += 1;
+      if (read.rows.length === 0) break;
 
-    const tuples: unknown[][] = [];
-    for (const row of read.rows) {
-      const transformed = forwardTransformRow(row, columns, ruleset);
-      for (const id of transformed.appliedRuleIds) rulesCited.add(id);
-      tuples.push(transformed.values);
-    }
-    loadedCount += await loader.loadTable(spec, tuples);
-    readTotal += read.rows.length;
+      const tuples: unknown[][] = [];
+      for (const row of read.rows) {
+        const transformed = forwardTransformRow(row, columns, ruleset);
+        for (const id of transformed.appliedRuleIds) rulesCited.add(id);
+        tuples.push(transformed.values);
+      }
+      loadedCount += await loader.loadTable(spec, tuples);
+      readTotal += read.rows.length;
 
-    if (read.rows.length < pageRows) break; // final page
+      // A short page ends the walk ONLY when the adapter did not clip it
+      // (belt-and-braces: with the clamp above a truncated page should not
+      // occur, but a clipped page mistaken for the final page is silent
+      // data loss — keep paging while the adapter says there is more).
+      if (read.rows.length < pageRows && !read.truncated) break; // final page
 
-    const lastRow = read.rows[read.rows.length - 1];
-    const cursor = spec.orderBy.map((c) => rowValue(lastRow, c) ?? null);
-    if (after !== null && JSON.stringify(cursor) === JSON.stringify(after)) {
-      return {
-        ...base,
-        loadedCount,
-        reason:
-          `keyset cursor did not advance after page ${pages} (order key ` +
-          `[${spec.orderBy.join(', ')}] repeats across a full page) — loaded rows are PARTIAL ` +
-          `and the table is unverifiable; a unique order key (primary key) is required`,
-      };
+      const lastRow = read.rows[read.rows.length - 1];
+      const cursor = spec.orderBy.map((c) => rowValue(lastRow, c) ?? null);
+      if (after !== null && JSON.stringify(cursor) === JSON.stringify(after)) {
+        return {
+          ...base,
+          loadedCount,
+          reason:
+            `keyset cursor did not advance after page ${pages} (order key ` +
+            `[${spec.orderBy.join(', ')}] repeats across a full page) — loaded rows are PARTIAL ` +
+            `and the table is unverifiable; a unique order key (primary key) is required`,
+        };
+      }
+      after = cursor;
     }
-    after = cursor;
+  } catch (err) {
+    // Mid-table failure (2026-08-07): report the rows ACTUALLY written before
+    // the failure — the target genuinely holds them (truncate ran first, pages
+    // appended). The old shape lost the count to the outer catch, which
+    // recorded loadedCount: 0 for a table with real partial data.
+    const partial = err instanceof TableLoadError ? err.rowsWritten : 0;
+    return {
+      ...base,
+      loadedCount: loadedCount + partial,
+      reason:
+        `load failed mid-table after ${loadedCount + partial} row(s) were written ` +
+        `(source has ${sourceCount}): ${err instanceof Error ? err.message.slice(0, 300) : 'unknown'} ` +
+        `— loaded rows are PARTIAL and the table is unverifiable`,
+    };
   }
 
   const targetCount = await safeCount(target, spec, knobs.timeoutSeconds);

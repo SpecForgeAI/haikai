@@ -25,7 +25,7 @@
  * 80 chars and live only in the persisted report (like captured raw
  * bodies); trace predicates must carry counts + rule ids ONLY.
  */
-import { DbAdapter, DbColumnMetadata } from '../db/DbAdapter';
+import { DbAdapter, DbColumnMetadata, MAX_SINGLE_FETCH_ROWS } from '../db/DbAdapter';
 import {
   MigrationPairRuleset,
   canonicalize,
@@ -234,7 +234,12 @@ async function compareOneTable(
       reason: 'no totally-orderable columns available for a deterministic order key',
     };
   }
-  const full = sourceCount <= knobs.fullScanMaxRows;
+  // The full-scan bound is CLAMPED to the adapter seam's single-fetch cap
+  // (2026-08-07): the comparator fetches each side in ONE call, so a
+  // full_scan_max_rows above the cap would silently compare a clipped fetch
+  // as if it were the whole table.
+  const fullBound = Math.min(knobs.fullScanMaxRows, MAX_SINGLE_FETCH_ROWS);
+  const full = sourceCount <= fullBound;
   if (!keyed && !full) {
     // A keyless positional sample across two collations is noise, not
     // verification — depth-honest refusal naming the fix.
@@ -242,16 +247,32 @@ async function compareOneTable(
       ...base,
       reason:
         `table has no unique comparison key and exceeds the full-scan bound ` +
-        `(${sourceCount} > ${knobs.fullScanMaxRows}) — keyed comparison needs a primary key; ` +
-        `add/propose one (PK gap proposals) or raise full_scan_max_rows`,
+        `(${sourceCount} > ${fullBound}; single-fetch cap ${MAX_SINGLE_FETCH_ROWS}) — keyed ` +
+        `comparison needs a primary key; add/propose one (PK gap proposals) or raise full_scan_max_rows`,
     };
   }
-  const maxRows = full ? sourceCount : knobs.sampleRows;
+  const maxRows = full ? sourceCount : Math.min(knobs.sampleRows, MAX_SINGLE_FETCH_ROWS);
   const rowLimits = { maxRows, timeoutSeconds: knobs.timeoutSeconds };
   const [sourceRows, targetRows] = await Promise.all([
     source.fetchOrderedRows({ schema: spec.schema, table: spec.table, orderBy, limits: rowLimits }),
     target.fetchOrderedRows({ schema: spec.schema, table: spec.table, orderBy, limits: rowLimits }),
   ]);
+  if (full && (sourceRows.truncated || targetRows.truncated)) {
+    // FULL depth promised the whole table in one fetch; a truncation flag
+    // here means more rows exist than the count claimed (source drifted
+    // mid-comparison) or the fetch was clipped — comparing the partial set
+    // as "full" would under-report divergence (gold standard 2026-08-07).
+    // At SAMPLED depth truncation is the expected shape of a deliberate
+    // partial fetch and the depth label already carries the honesty.
+    return {
+      ...base,
+      reason:
+        `full-depth fetch came back truncated ` +
+        `(source truncated=${!!sourceRows.truncated}, target truncated=${!!targetRows.truncated}) — ` +
+        `the table changed under the comparison or the fetch was clipped; a partial fetch ` +
+        `cannot verify the table at full depth`,
+    };
+  }
 
   const rulesCited = new Set<string>();
   let cellDivergences = 0;

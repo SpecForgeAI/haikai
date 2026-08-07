@@ -148,7 +148,10 @@ describe('buildApplyPlan', () => {
 describe('runSchemaApply', () => {
   class FakeExec {
     executed: string[] = [];
+    /** Legacy shape: ids only — the SELECT returns rows with NULL checksum. */
     alreadyApplied: string[] = [];
+    /** Full log rows (id + checksum) when a test needs checksum content. */
+    logRows: Array<{ changeset_id: string; checksum: string | null }> | null = null;
     failOnSqlContaining: string | null = null;
 
     async query(sql: string): Promise<{ rows: Array<Record<string, unknown>> }> {
@@ -158,6 +161,7 @@ describe('runSchemaApply', () => {
       }
       this.executed.push(sql);
       if (sql.startsWith('SELECT changeset_id')) {
+        if (this.logRows) return { rows: this.logRows };
         return { rows: this.alreadyApplied.map((id) => ({ changeset_id: id })) };
       }
       return { rows: [] };
@@ -201,5 +205,67 @@ describe('runSchemaApply', () => {
     expect(result.failed?.id).toBe('foreign-keys');
     expect(result.failed?.error).toContain('does not exist');
     expect(exec.executed).toContain('ROLLBACK');
+  });
+
+  // ---- checksum validation (gold standard 2026-08-07): the skip decision
+  // was id-ONLY — a changeset whose BODY changed under an unchanged id
+  // silently skipped, drifting the live schema from the pack. -----------------
+
+  const sha256 = (s: string): string =>
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('crypto').createHash('sha256').update(s, 'utf8').digest('hex');
+
+  it('records a body checksum with every applied changeset', async () => {
+    const exec = new FakeExec();
+    const { plan } = buildApplyPlan(packFiles(), ['structural']);
+
+    await runSchemaApply(plan, exec);
+
+    const inserts = exec.executed.filter((s) => s.startsWith('INSERT INTO haikai_schema_apply_log'));
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0]).toContain(sha256(plan[0].body));
+    // And the legacy-table upgrade path runs unconditionally.
+    expect(exec.executed.some((s) => s.includes('ADD COLUMN IF NOT EXISTS checksum'))).toBe(true);
+  });
+
+  it('a skip with a MATCHING stored checksum stays an idempotent skip', async () => {
+    const exec = new FakeExec();
+    const { plan } = buildApplyPlan(packFiles(), ['structural']);
+    exec.logRows = [{ changeset_id: 'schemas', checksum: sha256(plan[0].body) }];
+
+    const result = await runSchemaApply(plan, exec);
+
+    expect(result.failed).toBeNull();
+    expect(result.skipped).toEqual(['schemas']);
+    expect(result.applied).toEqual(['table-dbo.orders']);
+  });
+
+  it('a skip whose stored checksum DIFFERS is a LOUD failure, never a silent skip', async () => {
+    const exec = new FakeExec();
+    const { plan } = buildApplyPlan(packFiles(), ['structural']);
+    exec.logRows = [{ changeset_id: 'schemas', checksum: sha256('the body as ORIGINALLY applied') }];
+
+    const result = await runSchemaApply(plan, exec);
+
+    expect(result.failed?.id).toBe('schemas');
+    expect(result.failed?.error).toContain('DIFFERENT body');
+    expect(result.failed?.error).toContain('NEW changeset id');
+    // Nothing after the mismatch runs.
+    expect(result.applied).toEqual([]);
+  });
+
+  it('a pre-checksum log row (NULL) ADOPTS the current body and pins it', async () => {
+    const exec = new FakeExec();
+    const { plan } = buildApplyPlan(packFiles(), ['structural']);
+    exec.logRows = [{ changeset_id: 'schemas', checksum: null }];
+
+    const result = await runSchemaApply(plan, exec);
+
+    expect(result.failed).toBeNull();
+    expect(result.skipped).toEqual(['schemas']);
+    const adopt = exec.executed.find((s) => s.startsWith(`UPDATE haikai_schema_apply_log SET checksum`));
+    expect(adopt).toBeDefined();
+    expect(adopt).toContain(sha256(plan[0].body));
+    expect(adopt).toContain('checksum IS NULL');
   });
 });
