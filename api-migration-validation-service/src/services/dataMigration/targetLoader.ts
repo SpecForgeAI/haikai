@@ -35,9 +35,10 @@ function quoteIdent(name: string): string {
  * INSERTs. OVERRIDING SYSTEM VALUE is emitted when the target table has identity
  * columns, preserving source-assigned ids (like-for-like).
  *
- * v1 loads the rows it is handed in batches; large-table streaming is a
- * follow-up (the runner caps per-table reads and reports oversize tables as
- * unverifiable rather than loading partial data).
+ * The runner calls `prepareTable` ONCE per table (truncate), then `loadTable`
+ * once per keyset PAGE — pages append, so full tables of any size load with
+ * bounded memory (2026-08-07; the old single-call shape is gone with the
+ * read caps).
  */
 export class PostgresTargetLoader implements TargetLoader {
   private readonly pool: Pool;

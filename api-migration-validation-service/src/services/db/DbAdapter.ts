@@ -85,12 +85,22 @@ export interface DbAdapter {
    * ascending order so both sides of a parity comparison enumerate rows
    * identically. Adapter-owned SQL construction + quoting; throws when
    * `orderBy` is empty (a total order is the whole point).
+   *
+   * KEYSET PAGINATION (2026-08-07, the full-table bulk load): when `after`
+   * is supplied it is the ORDER-KEY VALUE TUPLE of the last row of the
+   * previous page — the fetch returns rows strictly AFTER that tuple under
+   * the same NULLS-LOW ascending order. Implementations expand the tuple
+   * predicate NULL-aware ((a > x) OR (a = x AND b > y) ..., with `col IS
+   * NOT NULL` standing in for `col > NULL` and `col IS NULL` for
+   * `col = NULL`), because neither engine's row-value comparison covers the
+   * NULLS-LOW contract. `after.length` must equal `orderBy.length`.
    */
   fetchOrderedRows(args: {
     schema?: string | null;
     table: string;
     orderBy: string[];
     limits: DbQueryLimits;
+    after?: unknown[] | null;
   }): Promise<DbReadResult>;
 
   /**

@@ -8,6 +8,7 @@ import {
   DbTableMetadata,
 } from './DbAdapter';
 import { assertReadonlySelect, ensureLimit } from './sqlGuard';
+import { keysetPredicate } from './keyset';
 
 /**
  * `PostgresAdapter` -- v1 implementation of `DbAdapter` using the `pg`
@@ -186,6 +187,7 @@ export class PostgresAdapter implements DbAdapter {
     table: string;
     orderBy: string[];
     limits: DbQueryLimits;
+    after?: unknown[] | null;
   }): Promise<DbReadResult> {
     if (args.orderBy.length === 0) {
       throw new Error('fetchOrderedRows requires at least one order column');
@@ -196,10 +198,20 @@ export class PostgresAdapter implements DbAdapter {
     const orderBy = args.orderBy
       .map((c) => `${quoteIdent(c)} ASC NULLS FIRST`)
       .join(', ');
+    // Keyset continuation (2026-08-07): rows strictly AFTER the previous
+    // page's last key tuple, parameterised (this adapter supports params;
+    // the tuple predicate is expanded NULL-aware in the shared builder).
+    const params: unknown[] = [];
+    const where = args.after && args.after.length > 0
+      ? `WHERE ${keysetPredicate(args.orderBy.map(quoteIdent), args.after, (v) => {
+          params.push(v);
+          return `$${params.length}`;
+        })} `
+      : '';
     const sql =
-      `SELECT * FROM ${qSchema}${quoteIdent(args.table)} ` +
+      `SELECT * FROM ${qSchema}${quoteIdent(args.table)} ${where}` +
       `ORDER BY ${orderBy} LIMIT ${Math.max(1, args.limits.maxRows)}`;
-    return this.runReadonlySelect(sql, [], args.limits);
+    return this.runReadonlySelect(sql, params, args.limits);
   }
 
   async dispose(): Promise<void> {

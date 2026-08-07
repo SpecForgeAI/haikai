@@ -92,6 +92,7 @@ export function buildLoadPlan(mainManifest: unknown, bulkManifest?: unknown): Lo
         k.columns.length > 0,
     );
     let orderBy = pk?.columns ?? [];
+    const orderKeyIsPrimaryKey = orderBy.length > 0;
     if (orderBy.length === 0) {
       orderBy = cols
         .filter(
@@ -106,6 +107,7 @@ export function buildLoadPlan(mainManifest: unknown, bulkManifest?: unknown): Lo
       schema,
       table,
       orderBy,
+      orderKeyIsPrimaryKey,
       loadColumns,
       identityColumns,
       expectedSourceRowCount: typeof expected === 'number' ? expected : null,
