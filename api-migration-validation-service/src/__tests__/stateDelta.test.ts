@@ -173,8 +173,8 @@ test('GUARD: snapshotEffectTables counts via SELECT, refuses unsafe identifiers,
   // Only SELECTs, only for the safe table.
   expect(adapter.calls).toHaveLength(2);
   expect(adapter.calls[0].sql).toBe('SELECT COUNT(*) AS row_count FROM things');
-  expect(adapter.calls[1].sql).toBe('SELECT * FROM things WHERE id = ?');
-  expect(adapter.calls[1].params).toEqual(['42']);
+  expect(adapter.calls[1].sql).toBe("SELECT * FROM things WHERE id = '42'");
+  expect(adapter.calls[1].params).toEqual([]); // literal predicate — params work on NEITHER adapter (2026-08-07)
 });
 
 test('GUARD: keyHintFromResponse extracts id-ish values, rejects non-id shapes', () => {
@@ -875,7 +875,7 @@ test('REPLAY-SEQUENCE: act step snapshotted (pre/post + keyed), setup/cleanup un
   expect(adapter.calls).toHaveLength(3);
   expect(adapter.calls[0].sql).toBe('SELECT COUNT(*) AS row_count FROM things');
   expect(adapter.calls[1].sql).toBe('SELECT COUNT(*) AS row_count FROM things');
-  expect(adapter.calls[2].sql).toBe('SELECT * FROM things WHERE id = ?');
+  expect(adapter.calls[2].sql).toBe("SELECT * FROM things WHERE id = '42'");
 
   const captureDelta = capturesCreated[0].state_delta_json as StateDeltaJson;
   expect(captureDelta.strategy).toBe('counts+keyed');

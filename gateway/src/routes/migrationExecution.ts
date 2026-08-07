@@ -723,6 +723,11 @@ migrationExecutionRouter.post(
       if (result.status === 'sent') {
         return res.status(200).json(result);
       }
+      if (result.status === 'sent_mark_failed') {
+        // The bug POSTED but the sent stamp failed (2026-08-07): 207-ish
+        // partial truth — the FE must show BOTH facts, not a clean success.
+        return res.status(502).json(result);
+      }
       if (result.status === 'no_breaks') {
         return res.status(409).json(result);
       }
