@@ -257,6 +257,36 @@ export function canonicalize(value: unknown, comparison: PairComparison): unknow
       const n = Number(value);
       return Number.isFinite(n) ? n : value;
     }
+    case 'numeric-canonical': {
+      // Exact decimal canonical form (2026-08-07): both wires render
+      // numeric/decimal as STRINGS with engine-dependent trailing zeros
+      // ('123.40' vs '123.4'). Normalise sign + strip insignificant zeros
+      // WITHOUT parsing to a float (precision preserved). Unparseable
+      // values pass through (strictness lives in the final comparison).
+      const s = String(value).trim();
+      const m = /^([+-]?)(\d+)(?:\.(\d+))?$/.exec(s);
+      if (!m) return value;
+      const sign = m[1] === '-' ? '-' : '';
+      const intPart = m[2].replace(/^0+(?=\d)/, '');
+      const fracPart = (m[3] ?? '').replace(/0+$/, '');
+      const canonical = fracPart.length > 0 ? `${intPart}.${fracPart}` : intPart;
+      return canonical === '0' ? '0' : `${sign}${canonical}`;
+    }
+    case 'bytes-hex': {
+      // Byte-exact binary canonical form (2026-08-07): the Sybase wire
+      // renders binary as '\x'+lowercase hex; node-pg renders bytea as a
+      // Buffer. Canonicalise BOTH to the same '\x'-hex string.
+      if (typeof value === 'object' && value !== null && 'length' in (value as object)) {
+        const buf = value as { length: number; [i: number]: number };
+        let hex = '';
+        for (let i = 0; i < buf.length; i++) {
+          hex += (buf[i] & 0xff).toString(16).padStart(2, '0');
+        }
+        return `\\x${hex}`;
+      }
+      const s = String(value);
+      return s.startsWith('\\x') ? `\\x${s.slice(2).toLowerCase()}` : s;
+    }
     case 'charset-normalize': {
       const form = typeof params?.form === 'string' ? params.form : 'NFC';
       try {
@@ -289,6 +319,9 @@ const KNOWN_STRATEGIES = new Set([
   'numeric-epsilon',
   'charset-normalize',
   'collation-case',
+  // 2026-08-07 (gold standard C5): exact-decimal + binary canonical forms.
+  'numeric-canonical',
+  'bytes-hex',
 ]);
 
 /**
@@ -347,6 +380,11 @@ export function compareWithRules(
       epsilon.relative * Math.max(Math.abs(ca), Math.abs(cb)),
     );
     equal = diff <= bound;
+  } else if (typeof ca !== typeof cb) {
+    // STRICT cross-type (gold standard 2026-08-07): the old String()
+    // coercion silently equated 1 with '1' and true with 'true' — a type
+    // divergence IS a divergence unless a rule canonicalised it away.
+    equal = false;
   } else {
     equal = ca === cb || String(ca as Primitive) === String(cb as Primitive);
   }

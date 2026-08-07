@@ -133,6 +133,11 @@ export async function evaluateDataParityReadiness(params: {
         const status = (report.status ?? '').toLowerCase();
         if (status === 'clean') {
           actual = 'status=clean';
+        } else if (status === 'clean_sampled') {
+          // Depth-honest pass (2026-08-07): no divergence found, but some
+          // tables were verified by SAMPLE only — the gate passes with the
+          // depth on record instead of collapsing it into plain 'clean'.
+          actual = 'status=clean_sampled (some tables verified by sample only)';
         } else if (status === 'divergent') {
           const tables = report.report_json?.tables ?? [];
           const divergent = tables.filter((t) => (t.verdict ?? '') === 'divergent');

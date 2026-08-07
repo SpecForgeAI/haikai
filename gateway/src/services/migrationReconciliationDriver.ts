@@ -433,13 +433,30 @@ export async function triggerFullBaselineReconcile(
   }
   try {
     const existing = await deps.getReconciliationBreaksForRun(projectId, runId);
-    if (existing.length > 0) {
+    // UNLATCH when every existing break is TERMINAL (gold standard
+    // 2026-08-07): `existing.length > 0` used to latch the run as
+    // already_reconciled FOREVER — after the operator worked every break to
+    // a terminal state (fixed_confirmed / accepted / ...), a fresh
+    // full-verification pass was impossible without a new run. Non-terminal
+    // breaks still latch (the bug loop owns them).
+    const nonTerminal = existing.filter(
+      (b) => !TERMINAL_DISPOSITIONS.includes(b.disposition_status ?? BREAK_DISPOSITION.OPEN)
+    );
+    if (nonTerminal.length > 0) {
       logger.info('[diag-gateway] migration_reconciliation already_reconciled', {
         projectId,
         runId,
         existingBreaks: existing.length,
+        nonTerminal: nonTerminal.length,
       });
       return { status: 'already_reconciled' };
+    }
+    if (existing.length > 0) {
+      logger.info('[diag-gateway] migration_reconciliation relatch_lifted_all_terminal', {
+        projectId,
+        runId,
+        terminalBreaks: existing.length,
+      });
     }
   } catch (error) {
     // A read failure here should not block the reconcile; log + continue.
@@ -1222,7 +1239,15 @@ export interface CreateBugRequestBody {
 export type SendBugResult =
   | { status: 'sent'; bugId: string; breakCount: number }
   | { status: 'no_breaks' }
-  | { status: 'send_failed'; error: string };
+  | { status: 'send_failed'; error: string }
+  /**
+   * 2026-08-07 (gold standard C5): the bug POSTED but stamping sent_as_bug
+   * on the breaks failed even after a retry. Reporting plain 'sent' here
+   * hid a state where the bug's eventual deployed callback resolves ZERO
+   * breaks (correlation is by the stamped bug_id) and the operator can
+   * double-send the same breaks. Both facts are surfaced.
+   */
+  | { status: 'sent_mark_failed'; bugId: string; breakCount: number; error: string };
 
 /** Build one BreakEvidence entry from a break's persisted detail snapshot. */
 function breakToEvidence(b: MigrationReconciliationBreak): Record<string, unknown> {
@@ -1354,13 +1379,45 @@ export async function sendBugForBreaks(
       bugId,
       sendable.map((b) => b.id as string)
     );
-  } catch (error) {
-    logger.error('[diag-gateway] migration_reconciliation mark_sent_failed', {
+  } catch (firstError) {
+    // One retry (2026-08-07): a single AMS blip must not desynchronise the
+    // bug loop — without the stamp the bug's deployed callback resolves
+    // zero breaks and the operator can double-send.
+    logger.warn('[diag-gateway] migration_reconciliation mark_sent_retrying', {
       projectId: args.projectId,
       bugId,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: firstError instanceof Error ? firstError.message : 'Unknown error',
     });
-    // The bug WAS sent; surface the persistence failure but report sent.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    try {
+      await deps.markReconciliationBreaksSent(
+        args.projectId,
+        bugId,
+        sendable.map((b) => b.id as string)
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('[diag-gateway] migration_reconciliation mark_sent_failed', {
+        projectId: args.projectId,
+        bugId,
+        retried: true,
+        error: message,
+      });
+      trace.fail(
+        `bug ${bugId} POSTED but the sent_as_bug stamp FAILED — the fix callback ` +
+          'cannot correlate these breaks; re-stamp via the breaks API before anything else',
+        { bug: bugId, project: args.project },
+      );
+      return {
+        status: 'sent_mark_failed',
+        bugId,
+        breakCount: sendable.length,
+        error:
+          `The bug was submitted (bug ${bugId}) but marking the ${sendable.length} break(s) ` +
+          `sent_as_bug failed after a retry: ${message}. Until the stamp lands, the bug's ` +
+          'fix callback cannot correlate these breaks and a re-send would duplicate the bug.',
+      };
+    }
   }
 
   logger.info('[diag-gateway] migration_reconciliation bug_sent', {
@@ -1608,6 +1665,74 @@ export async function handleBugCallback(
       .filter((v): v is string => typeof v === 'string' && affectedSourceItemIds.has(v))
   );
 
+  // OUT-OF-SCOPE fresh breaks (gold standard 2026-08-07): the scoped replay
+  // exercises the WHOLE baseline but the judgement above only looks at the
+  // bug's operations — a REGRESSION the fix introduced elsewhere was visible
+  // in the diff and then DISCARDED. Persist genuinely-new out-of-scope drift
+  // as fresh open breaks on the run (deduped against every existing break's
+  // source op), attributed to this bug's replay. Failure-isolated.
+  const runIdForBreaks = args.runId ?? nonTerminal.find((b) => b.run_id)?.run_id ?? null;
+  if (runIdForBreaks) {
+    try {
+      const existingForRun = await deps.getReconciliationBreaksForRun(projectId, runIdForBreaks);
+      const knownSourceOps = new Set(
+        existingForRun
+          .map((b) => b.source_baseline_item_id)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0)
+      );
+      const freshOutOfScope = result.diffItems
+        .filter(isDiffItemABreak)
+        .filter((item) => {
+          const sid = item.source_baseline_item_id;
+          if (typeof sid !== 'string' || sid.length === 0) return false;
+          if (affectedSourceItemIds.has(sid)) return false; // in-scope: judged above
+          return !knownSourceOps.has(sid); // genuinely NEW drift only
+        })
+        .map((item) => {
+          const row = diffItemToBreak(item, runIdForBreaks, pinnedBaselineId);
+          const detail = (row.detail_json ?? {}) as Record<string, unknown>;
+          detail.out_of_scope_regression_from_bug = bugId;
+          detail.note =
+            'Fresh drift observed during a bug-scoped re-reconcile on an operation ' +
+            'OUTSIDE the bug scope — a possible regression introduced by the fix.';
+          row.detail_json = detail;
+          return row;
+        });
+      if (freshOutOfScope.length > 0) {
+        await deps.createReconciliationBreaks(projectId, runIdForBreaks, freshOutOfScope);
+        logger.warn('[diag-gateway] migration_reconciliation out_of_scope_regressions_persisted', {
+          projectId,
+          bugId,
+          runId: runIdForBreaks,
+          freshBreaks: freshOutOfScope.length,
+        });
+        trace.warn(
+          `scoped re-reconcile surfaced ${freshOutOfScope.length} fresh OUT-OF-SCOPE break(s) — ` +
+            'possible regression from the fix; persisted for review',
+          { run: runIdForBreaks, bug: bugId, project: projectId },
+        );
+      }
+    } catch (error) {
+      logger.warn('[diag-gateway] migration_reconciliation out_of_scope_persist_failed', {
+        projectId,
+        bugId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // Ordering-drift re-derivation guard (gold standard 2026-08-07): the
+  // replay result carries a row for EVERY replayed operation (match or
+  // break). If an affected break's source item id appears in NO replay row
+  // at all, the correlation basis has DRIFTED (the baseline item was
+  // re-derived/renamed since the original reconcile) — the old code read
+  // that absence as "clean" and FALSELY confirmed the fix.
+  const replayItemIds = new Set(
+    result.diffItems
+      .map((item) => item.source_baseline_item_id)
+      .filter((v): v is string => typeof v === 'string' && v.length > 0)
+  );
+
   let anyStillBroken = false;
   let anyTripped = false;
 
@@ -1615,6 +1740,28 @@ export async function handleBugCallback(
     if (!b.id) continue;
     const sourceItemId = b.source_baseline_item_id ?? '';
     const stillBroken = !sourceItemId || stillDriftingSourceItemIds.has(sourceItemId);
+
+    // Guard fires only against a NON-EMPTY replay universe: production diffs
+    // carry a row per compared operation (match or break), so absence there
+    // is meaningful; a degenerate empty result cannot distinguish anything.
+    if (
+      !stillBroken &&
+      sourceItemId &&
+      result.diffItems.length > 0 &&
+      !replayItemIds.has(sourceItemId)
+    ) {
+      // Absent from the replay universe: cannot verify EITHER way.
+      anyStillBroken = true;
+      await safePatchBreak(deps, projectId, b.id, {
+        needs_human: true,
+        error_detail:
+          `The scoped re-reconcile could not verify this break: its source baseline ` +
+          `item (${sourceItemId}) appears in NO replay row — the baseline item set ` +
+          'drifted since the original reconcile (re-derivation/rename). Run a full ' +
+          'reconcile to re-establish correlation; the fix is NOT auto-confirmed.',
+      });
+      continue;
+    }
 
     if (!stillBroken) {
       // The scoped re-reconcile is now clean for this break -> confirm the fix.

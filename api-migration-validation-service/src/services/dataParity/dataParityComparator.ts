@@ -94,7 +94,7 @@ export interface DataParityReportBody {
     divergent: number;
     unverifiable: number;
     rules_cited: string[];
-    status: 'clean' | 'divergent' | 'unverifiable' | 'empty';
+    status: 'clean' | 'clean_sampled' | 'divergent' | 'unverifiable' | 'empty';
   };
 }
 
@@ -431,11 +431,16 @@ export async function runDataParityComparison(args: {
   const unverifiable = results.filter((r) => r.verdict === 'unverifiable').length;
   const matchFull = results.filter((r) => r.verdict === 'match' && r.depth === 'full').length;
   const matchSampled = results.filter((r) => r.verdict === 'match' && r.depth === 'sampled').length;
+  // clean_sampled (gold standard 2026-08-07): a run whose only verification
+  // depth for some tables was a SAMPLE is not the same claim as full-depth
+  // clean — the status now says so; the gate passes it with the depth note
+  // and the FE shows it distinctly.
   const status: DataParityReportBody['summary']['status'] =
     results.length === 0 ? 'empty'
       : divergent > 0 ? 'divergent'
         : unverifiable > 0 ? 'unverifiable'
-          : 'clean';
+          : matchSampled > 0 ? 'clean_sampled'
+            : 'clean';
 
   return {
     pair_id: args.ruleset?.pair_id ?? null,

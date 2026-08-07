@@ -203,9 +203,17 @@ export async function snapshotEffectTables(
     let keyedRow: Record<string, unknown> | null = null;
     if (keyHint && SAFE_IDENTIFIER.test(keyHint.column) && error === null) {
       try {
+        // ENGINE-PORTABLE literal predicate (gold standard 2026-08-07): the
+        // old `?` placeholder worked on NEITHER adapter — the Sybase adapter
+        // REFUSES params outright and Postgres expects `$1` — so the keyed
+        // rung silently degraded to counts-only everywhere. The id-ish value
+        // is embedded as a quote-doubled literal (both engines coerce a
+        // quoted literal against numeric key columns); the SELECT-only guard
+        // still applies.
+        const literal = `'${String(keyHint.value).replace(/'/g, "''")}'`;
         const result = await adapter.runReadonlySelect(
-          `SELECT * FROM ${table} WHERE ${keyHint.column} = ?`,
-          [keyHint.value],
+          `SELECT * FROM ${table} WHERE ${keyHint.column} = ${literal}`,
+          [],
           SNAPSHOT_LIMITS,
         );
         keyedRow = result.rows?.[0] ?? null;
