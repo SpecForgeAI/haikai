@@ -202,7 +202,16 @@ export class PostgresAdapter implements DbAdapter {
     const first = res.rows[0] ?? {};
     const raw = (first as Record<string, unknown>).row_count ?? Object.values(first)[0];
     const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
+    if (!Number.isFinite(n)) {
+      // Gold standard (2026-08-07): an unparseable COUNT(*) used to degrade
+      // to 0 — downstream then "verified" a table as empty or skipped its
+      // load entirely. A garbled count is a loud failure, never a zero.
+      throw new Error(
+        `countRows(${args.schema ?? ''}.${args.table}) returned an unparseable count: ` +
+          `${JSON.stringify(raw)}`,
+      );
+    }
+    return n;
   }
 
   async fetchOrderedRows(args: {

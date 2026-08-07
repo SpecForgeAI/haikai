@@ -5,6 +5,7 @@ import {
   DbQueryLimits,
   DbReadResult,
   DbTableMetadata,
+  MAX_SINGLE_FETCH_ROWS,
 } from './DbAdapter';
 import { assertReadonlySelect } from './sqlGuard';
 import { keysetPredicate } from './keyset';
@@ -178,7 +179,7 @@ export class SybaseAdapter implements DbAdapter {
       // full tables are read via keyset PAGINATION (fetchOrderedRows.after),
       // never one giant fetch. Callers requesting more than the guard per
       // page get a truncated=true result they MUST treat as an error.
-      maxRows: Math.max(1, Math.min(10_000, limits.maxRows)),
+      maxRows: Math.max(1, Math.min(MAX_SINGLE_FETCH_ROWS, limits.maxRows)),
     });
     if (!resp.ok) {
       throw new Error(
@@ -233,7 +234,16 @@ export class SybaseAdapter implements DbAdapter {
       (first as Record<string, unknown>).ROW_COUNT ??
       Object.values(first)[0];
     const n = Number(raw);
-    return Number.isFinite(n) ? n : 0;
+    if (!Number.isFinite(n)) {
+      // Gold standard (2026-08-07): an unparseable COUNT(*) used to degrade
+      // to 0 — downstream then "verified" a table as empty or skipped its
+      // load entirely. A garbled count is a loud failure, never a zero.
+      throw new Error(
+        `countRows(${args.schema ?? ''}.${args.table}) returned an unparseable count: ` +
+          `${JSON.stringify(raw)}`,
+      );
+    }
+    return n;
   }
 
   async fetchOrderedRows(args: {

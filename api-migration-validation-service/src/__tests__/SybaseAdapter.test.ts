@@ -180,4 +180,22 @@ describe('SybaseAdapter (sidecar-backed)', () => {
     const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
     await expect(adapter.dispose()).resolves.toBeUndefined();
   });
+
+  // ---- countRows honesty (gold standard 2026-08-07) ------------------------
+
+  it('countRows parses a numeric-string count (the sidecar wire renders bigints as strings)', async () => {
+    installFetchMock([{ body: { ok: true, rows: [{ row_count: '12345' }], rowCount: 1 } }]);
+    const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
+    await expect(
+      adapter.countRows({ schema: 'dbo', table: 'orders', limits: { maxRows: 5, timeoutSeconds: 5 } }),
+    ).resolves.toBe(12345);
+  });
+
+  it('countRows THROWS on an unparseable count — a garbled count must never read as 0', async () => {
+    installFetchMock([{ body: { ok: true, rows: [{ row_count: 'garble' }], rowCount: 1 } }]);
+    const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
+    await expect(
+      adapter.countRows({ schema: 'dbo', table: 'orders', limits: { maxRows: 5, timeoutSeconds: 5 } }),
+    ).rejects.toThrow(/unparseable count/);
+  });
 });

@@ -671,6 +671,63 @@ class SybaseQueryServiceTest {
     }
 
     // ----------------------------------------------------------------------
+    // normalizeWireValue — typed /query wire (gold standard 2026-08-07)
+    // ----------------------------------------------------------------------
+
+    /**
+     * Exact-precision types render as STRINGS: BigDecimal via toPlainString
+     * (no scientific notation, scale preserved) and bigint via toString —
+     * a JSON number would round through IEEE double at the Node consumer.
+     */
+    @Test
+    void normalizeWireValueRendersExactPrecisionTypesAsStrings() throws SQLException {
+        assertEquals("123.40", SybaseQueryService.normalizeWireValue(new java.math.BigDecimal("123.40")));
+        assertEquals("0.0000001", SybaseQueryService.normalizeWireValue(new java.math.BigDecimal("1E-7")));
+        assertEquals("9007199254740993",
+                SybaseQueryService.normalizeWireValue(9007199254740993L)); // 2^53 + 1
+        assertEquals("18446744073709551617",
+                SybaseQueryService.normalizeWireValue(new java.math.BigInteger("18446744073709551617")));
+    }
+
+    /**
+     * Datetimes render as the NAIVE wall-clock string the engine stored —
+     * never epoch millis (which re-interpret a zoneless value through the JVM
+     * zone). Dates and times take their own shapes.
+     */
+    @Test
+    void normalizeWireValueRendersTemporalsAsNaiveStrings() throws SQLException {
+        final java.sql.Timestamp ts = java.sql.Timestamp.valueOf("2026-03-29 02:30:00.997");
+        assertEquals("2026-03-29 02:30:00.997", SybaseQueryService.normalizeWireValue(ts));
+        assertEquals("2026-01-31", SybaseQueryService.normalizeWireValue(java.sql.Date.valueOf("2026-01-31")));
+        assertEquals("13:05:09", SybaseQueryService.normalizeWireValue(java.sql.Time.valueOf("13:05:09")));
+    }
+
+    /**
+     * Binary renders as {@code \x}-prefixed lowercase hex — the SAME textual
+     * shape Postgres renders bytea in, so byte-equal values compare equal.
+     */
+    @Test
+    void normalizeWireValueRendersBinaryAsPostgresStyleHex() throws SQLException {
+        assertEquals("\\xdeadbeef",
+                SybaseQueryService.normalizeWireValue(new byte[] {(byte) 0xDE, (byte) 0xAD, (byte) 0xBE, (byte) 0xEF}));
+        assertEquals("\\x00ff", SybaseQueryService.normalizeWireValue(new byte[] {0x00, (byte) 0xFF}));
+        assertEquals("\\x", SybaseQueryService.normalizeWireValue(new byte[0]));
+    }
+
+    /**
+     * Pass-through types are untouched (both engines agree on their JSON
+     * shapes), and null stays null.
+     */
+    @Test
+    void normalizeWireValuePassesThroughAgreedShapes() throws SQLException {
+        assertNull(SybaseQueryService.normalizeWireValue(null));
+        assertEquals(42, SybaseQueryService.normalizeWireValue(42));
+        assertEquals(Boolean.TRUE, SybaseQueryService.normalizeWireValue(Boolean.TRUE));
+        assertEquals("plain", SybaseQueryService.normalizeWireValue("plain"));
+        assertEquals(1.5d, SybaseQueryService.normalizeWireValue(1.5d));
+    }
+
+    // ----------------------------------------------------------------------
     // Test doubles
     // ----------------------------------------------------------------------
 

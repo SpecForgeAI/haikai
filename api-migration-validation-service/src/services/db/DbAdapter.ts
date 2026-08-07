@@ -110,6 +110,16 @@ export interface DbAdapter {
 }
 
 /**
+ * Adapter-seam contract (2026-08-07): NO adapter guarantees more than this
+ * many rows from ONE `runReadonlySelect` / `fetchOrderedRows` call — the
+ * Sybase path buffers a whole result set as one sidecar JSON response, so a
+ * single fetch is bounded and larger requests come back `truncated: true`.
+ * Anything needing more rows must PAGE via `fetchOrderedRows.after`. Callers
+ * sizing pages or full-scan bounds must clamp to this.
+ */
+export const MAX_SINGLE_FETCH_ROWS = 10_000;
+
+/**
  * Re-export the underlying types so adapter consumers don't need a separate
  * import.
  */

@@ -37,4 +37,8 @@ RUN useradd --create-home --shell /usr/sbin/nologin sidecar \
     && chown -R sidecar:sidecar /app
 USER sidecar
 
-ENTRYPOINT ["java", "-jar", "/app/sidecar.jar"]
+# user.timezone=UTC (2026-08-07): zoneless ASE datetimes round-trip through
+# java.sql.Timestamp via the JVM default zone. Any zone with DST would corrupt
+# wall-clock values inside spring-forward gaps; UTC has no gaps, so the
+# read-format round trip in SybaseQueryService.normalizeWireValue is exact.
+ENTRYPOINT ["java", "-Duser.timezone=UTC", "-jar", "/app/sidecar.jar"]
