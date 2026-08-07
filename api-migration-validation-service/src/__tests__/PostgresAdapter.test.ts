@@ -40,12 +40,15 @@ const mockPool = {
   end: jest.fn(async () => undefined),
 };
 
+const mockDefaultParser = jest.fn((v: string) => `default-parsed:${v}`);
 jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => mockPool),
+  types: { getTypeParser: jest.fn(() => mockDefaultParser) },
 }));
 
 // Imports MUST come after the mock setup so the mocked Pool is used.
-import { PostgresAdapter } from '../services/db/PostgresAdapter';
+import { Pool } from 'pg';
+import { PostgresAdapter, rawDatetimeTypes } from '../services/db/PostgresAdapter';
 import { SqlGuardError } from '../services/db/sqlGuard';
 
 describe('PostgresAdapter', () => {
@@ -67,6 +70,38 @@ describe('PostgresAdapter', () => {
       password: 'pw',
     });
   }
+
+  it('reads datetime OIDs as RAW STRINGS, never locale-shifted Dates (2026-08-07 ±1h artifact)', () => {
+    buildAdapter();
+    const poolConfig = (Pool as unknown as jest.Mock).mock.calls[0][0] as {
+      types?: { getTypeParser: (oid: number) => (v: string) => unknown };
+    };
+    expect(poolConfig.types).toBe(rawDatetimeTypes);
+    // date / timestamp / timestamptz come back verbatim...
+    for (const oid of [1082, 1114, 1184]) {
+      expect(poolConfig.types!.getTypeParser(oid)('2014-05-15 23:00:00')).toBe(
+        '2014-05-15 23:00:00',
+      );
+    }
+    // ...every other OID keeps the default pg parser.
+    expect(poolConfig.types!.getTypeParser(23)('42')).toBe('default-parsed:42');
+  });
+
+  it('fetchOrderedRows with `after` appends the NULL-aware keyset predicate as params', async () => {
+    const adapter = buildAdapter();
+    await adapter.fetchOrderedRows({
+      schema: 'dbo',
+      table: 't',
+      orderBy: ['a', 'b'],
+      limits: { maxRows: 10, timeoutSeconds: 5 },
+      after: [1, null],
+    });
+    const select = mockClientQueries.find((q) => /SELECT \* FROM/.test(q.sql));
+    expect(select).toBeDefined();
+    expect(select!.sql).toContain('WHERE (("a" > $1) OR ("a" = $2 AND "b" IS NOT NULL))');
+    expect(select!.params).toEqual([1, 1]);
+    expect(select!.sql).toMatch(/ORDER BY "a" ASC NULLS FIRST, "b" ASC NULLS FIRST/);
+  });
 
   it('runReadonlySelect injects LIMIT when SQL lacks one and sets statement_timeout', async () => {
     const adapter = buildAdapter();

@@ -185,14 +185,38 @@ export function rulesForColumnType(
 
 type Primitive = string | number | boolean | null;
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Canonical instant (epoch ms) with an EXPLICIT naive-timestamp-is-UTC policy
+ * (2026-08-07): a datetime string with no timezone designator (the raw
+ * `timestamp without time zone` wire form) is interpreted as UTC — never the
+ * process's locale. `Date.parse` on a naive string uses LOCAL time, which is
+ * exactly the ±1h BST/GMT artifact that made SYBPG.DT.001 "fail" on every
+ * ValidFrom/ValidTo cell: the rule was fine, its inputs were locale-shifted.
+ * Handles every wire form both adapters emit: ISO with offset
+ * (`2014-05-15T23:00:00.000+00:00`), raw Postgres timestamptz with a SHORT
+ * offset and space separator (`2014-05-15 23:00:00+00`), naive timestamp
+ * (`2014-05-15 23:00:00` → UTC by policy), and date-only (`2014-05-15` →
+ * UTC midnight).
+ */
 function toEpochMs(value: unknown): number | null {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string') {
-    const parsed = Date.parse(value);
-    if (!Number.isNaN(parsed)) return parsed;
+  if (typeof value !== 'string') return null;
+  let s = value.trim();
+  if (/^\d{4}-\d{2}-\d{2} \d/.test(s)) s = s.replace(' ', 'T');
+  if (DATE_ONLY_RE.test(s)) {
+    s = `${s}T00:00:00Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    if (/[+-]\d{2}$/.test(s)) {
+      s = `${s}:00`; // pg short offset "+00" -> ISO "+00:00"
+    } else if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+      s = `${s}Z`; // NAIVE -> UTC by policy (never the process locale)
+    }
   }
-  return null;
+  const parsed = Date.parse(s);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function num(params: Record<string, unknown> | undefined, key: string): number | null {
