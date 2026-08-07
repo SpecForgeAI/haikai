@@ -296,6 +296,20 @@ describe('validatePackFiles relation-namespace backstop', () => {
     expect(problems[0]).toContain('already exists');
   });
 
+  it('refuses two INDEXES sharing one name in a schema (the live 2026-08-07 temp-table shape — index-vs-index, no CONSTRAINT keyword involved)', () => {
+    const indexes = {
+      filePath: 'liquibase/changesets/030-indexes.sql',
+      content:
+        '--liquibase formatted sql logicalFilePath:liquibase/changesets/030-indexes.sql\n' +
+        '--changeset db-migration-pack:indexes context:post-load splitStatements:false\n' +
+        'CREATE INDEX "hir_book_ie3" ON "dbo"."hir_book" ("a");\n' +
+        'CREATE INDEX "hir_book_ie3" ON "dbo"."temp_hir_book" ("a");\n',
+    };
+    const problems = validatePackFiles([master, indexes]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('relation name "hir_book_ie3" is declared by both');
+  });
+
   it('refuses an index name colliding with a constraint name', () => {
     const indexes = {
       filePath: 'liquibase/changesets/030-indexes.sql',
