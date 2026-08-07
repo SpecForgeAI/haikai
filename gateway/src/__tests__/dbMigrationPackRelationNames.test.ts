@@ -17,11 +17,12 @@
 import {
   emitIndexesChangeset,
   emitTableChangeset,
+  foreignKeyName,
   resolveRelationNames,
   EmittableColumn,
 } from '../services/dbMigrationPack/liquibase';
 import { validatePackFiles } from '../services/dbMigrationPack/packValidation';
-import { IrTable } from '../services/dbMigrationPack/types';
+import { IrForeignKey, IrTable } from '../services/dbMigrationPack/types';
 
 function makeTable(overrides: Partial<IrTable> = {}): IrTable {
   return {
@@ -157,6 +158,50 @@ describe('resolveRelationNames', () => {
   });
 });
 
+describe('foreignKeyName (per-table pg_constraint scope)', () => {
+  function makeFk(overrides: Partial<IrForeignKey> = {}): IrForeignKey {
+    return {
+      relationshipId: 'rel-1',
+      fromSchema: 'dbo',
+      fromTable: 'orders',
+      toSchema: 'dbo',
+      toTable: 'customers',
+      joinColumns: ['customer_id'],
+      referencedColumns: ['customer_id'],
+      onDelete: null,
+      onUpdate: null,
+      ...overrides,
+    };
+  }
+
+  it('folds both schemas in — same-named parents in different schemas derive DISTINCT names', () => {
+    const toDbo = foreignKeyName(makeFk());
+    const toArch = foreignKeyName(makeFk({ toSchema: 'arch' }));
+    expect(toDbo).toBe('fk_dbo_orders__dbo_customers__customer_id');
+    expect(toArch).toBe('fk_dbo_orders__arch_customers__customer_id');
+    expect(toDbo).not.toBe(toArch);
+  });
+
+  it('appends referenced columns ONLY when they differ from the join columns', () => {
+    expect(foreignKeyName(makeFk())).not.toContain('__ref_');
+    const variant = foreignKeyName(makeFk({ referencedColumns: ['id'] }));
+    expect(variant).toBe('fk_dbo_orders__dbo_customers__customer_id__ref_id');
+    expect(variant).not.toBe(foreignKeyName(makeFk()));
+  });
+
+  it('clamps long derived names to 63 bytes, keeping distinct FKs distinct', () => {
+    const longA = foreignKeyName(
+      makeFk({ fromTable: 'a'.repeat(40), toTable: 'b'.repeat(40) })
+    );
+    const longB = foreignKeyName(
+      makeFk({ fromTable: 'a'.repeat(40), toTable: 'b'.repeat(40), toSchema: 'arch' })
+    );
+    expect(Buffer.byteLength(longA, 'utf8')).toBeLessThanOrEqual(63);
+    expect(Buffer.byteLength(longB, 'utf8')).toBeLessThanOrEqual(63);
+    expect(longA).not.toBe(longB);
+  });
+});
+
 describe('emitters apply resolved names', () => {
   it('emitTableChangeset emits the renamed UNIQUE constraint + a RENAMED provenance comment', () => {
     const tables = hirBookPair();
@@ -262,6 +307,60 @@ describe('validatePackFiles relation-namespace backstop', () => {
     const problems = validatePackFiles([master, tableFile('hir_book', 'hir_book_ak1'), indexes]);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain('"hir_book_ak1"');
+  });
+
+  it('refuses an identifier over Postgres\'s 63-byte truncation limit, naming it', () => {
+    const longName = 'l'.repeat(70);
+    const problems = validatePackFiles([master, tableFile('hir_book', longName)]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('70 bytes');
+    expect(problems[0]).toContain('truncates');
+    // Exactly 63 bytes is fine.
+    expect(validatePackFiles([master, tableFile('hir_book', 'k'.repeat(63))])).toEqual([]);
+  });
+
+  it('refuses a duplicate constraint name on ONE table (per-table pg_constraint scope)', () => {
+    const twoChecksSameName = {
+      filePath: 'liquibase/changesets/010-tables/dbo.trade.sql',
+      content:
+        '--liquibase formatted sql logicalFilePath:liquibase/changesets/010-tables/dbo.trade.sql\n' +
+        '--changeset db-migration-pack:table-dbo.trade context:structural splitStatements:false\n' +
+        'CREATE TABLE "dbo"."trade" (\n' +
+        '    "id" numeric(19,0),\n' +
+        '    CONSTRAINT "trade_ck" CHECK (id > 0),\n' +
+        '    CONSTRAINT "trade_ck" CHECK (id < 100)\n' +
+        ');\n',
+    };
+    const problems = validatePackFiles([master, twoChecksSameName]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('constraint name "trade_ck" is declared twice');
+  });
+
+  it('refuses duplicate FK constraint names landing on one child table via ALTER TABLE', () => {
+    const fks = {
+      filePath: 'liquibase/changesets/020-foreign-keys.sql',
+      content:
+        '--liquibase formatted sql logicalFilePath:liquibase/changesets/020-foreign-keys.sql\n' +
+        '--changeset db-migration-pack:foreign-keys context:post-load splitStatements:false\n' +
+        'ALTER TABLE "dbo"."orders" ADD CONSTRAINT "fk_same" FOREIGN KEY ("a") REFERENCES "dbo"."x" ("a");\n' +
+        'ALTER TABLE "dbo"."orders" ADD CONSTRAINT "fk_same" FOREIGN KEY ("a") REFERENCES "ref"."x" ("a");\n',
+    };
+    const problems = validatePackFiles([master, fks]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('"fk_same" is declared twice');
+  });
+
+  it('claims CREATE VIEW names in the relation namespace (spec-2 future-proofing)', () => {
+    const view = {
+      filePath: 'liquibase/changesets/050-views.sql',
+      content:
+        '--liquibase formatted sql logicalFilePath:liquibase/changesets/050-views.sql\n' +
+        '--changeset db-migration-pack:views context:post-load splitStatements:false\n' +
+        'CREATE VIEW "dbo"."hir_book" AS SELECT 1;\n',
+    };
+    const problems = validatePackFiles([master, tableFile('hir_book', 'hir_book_ak1'), view]);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('relation name "hir_book" is declared by both');
   });
 
   it('accepts distinct names, and the SAME name across different schemas', () => {

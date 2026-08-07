@@ -416,8 +416,10 @@ describe('dbMigrationPack generation core (Group 2)', () => {
     expect(master.indexOf('dbo.customers.sql')).toBeLessThan(master.indexOf('dbo.orders.sql'));
 
     const fks = fileByPath(artifacts.files, 'liquibase/changesets/020-foreign-keys.sql');
+    // FK name shape (2026-08-07): both SCHEMAS folded in — the old
+    // schema-less shape collided on same-named parents across schemas.
     expect(fks).toContain(
-      'ALTER TABLE "dbo"."orders" ADD CONSTRAINT "fk_orders__customers__customer_id" ' +
+      'ALTER TABLE "dbo"."orders" ADD CONSTRAINT "fk_dbo_orders__dbo_customers__customer_id" ' +
         'FOREIGN KEY ("customer_id") REFERENCES "dbo"."customers" ("customer_id") ' +
         'ON DELETE SET NULL ON UPDATE NO ACTION;'
     );

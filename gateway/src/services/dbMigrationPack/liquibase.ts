@@ -483,9 +483,33 @@ export function emitForeignKeysChangeset(args: {
   return lines.join('\n') + '\n';
 }
 
-/** Deterministic FK constraint name from object identity. */
+/**
+ * Deterministic FK constraint name from object identity (2026-08-07 rev).
+ *
+ * Postgres scopes constraint names per TABLE, so two FKs on ONE child table
+ * must never derive the same name. The previous shape
+ * (`fk_<fromTable>__<toTable>__<joinCols>`) omitted the schemas — two FKs
+ * from one table to same-named parents in DIFFERENT schemas (`dbo.customer`
+ * vs `arch.customer`, common in estates full of temp_ and copy tables)
+ * collided, and the second `ADD CONSTRAINT` failed `constraint already
+ * exists`. Both schemas
+ * are now folded in; the referenced columns are appended ONLY when they
+ * differ from the join columns (disambiguating same-table same-join-column
+ * FK variants without bloating every name); the result is clamped to
+ * Postgres's 63-byte identifier limit with a stable hash suffix. Stateless
+ * per FK — identical output for identical FK identity, no cross-FK
+ * emission-order dependence. The pack-validation gate independently refuses
+ * any residual per-table duplicate.
+ */
 export function foreignKeyName(fk: IrForeignKey): string {
-  return `fk_${fk.fromTable}__${fk.toTable}__${fk.joinColumns.join('_')}`.toLowerCase();
+  const joins = fk.joinColumns.join('_');
+  const refs = fk.referencedColumns.join('_');
+  const refSuffix =
+    refs !== '' && refs.toLowerCase() !== joins.toLowerCase() ? `__ref_${refs}` : '';
+  const base =
+    `fk_${fk.fromSchema}_${fk.fromTable}__${fk.toSchema}_${fk.toTable}` +
+    `__${joins}${refSuffix}`;
+  return clampIdent(base.toLowerCase());
 }
 
 export function emitIndexesChangeset(args: {

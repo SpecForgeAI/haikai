@@ -135,9 +135,39 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
         `'relation "${name}" already exists' at schema-apply`
     );
   };
+  // Per-TABLE constraint-name uniqueness (2026-08-07): Postgres scopes ALL
+  // constraint names (PK/UNIQUE/CHECK/FK) per table — a CHECK named like the
+  // PK on the same table, or two derived FK names colliding on one child
+  // table, fails `constraint already exists` at apply time.
+  const constraintOwners = new Map<string, string>(); // "schema\0table\0name" -> site
+  const claimConstraint = (
+    schema: string,
+    table: string,
+    name: string,
+    site: string
+  ): void => {
+    const k = `${schema}\0${table}\0${name}`;
+    const owner = constraintOwners.get(k);
+    if (owner === undefined) {
+      constraintOwners.set(k, site);
+      return;
+    }
+    problems.push(
+      `table "${schema}"."${table}": constraint name "${name}" is declared twice ` +
+        `(${owner} and ${site}) — Postgres scopes constraint names per table, so ` +
+        `the second declaration fails 'constraint "${name}" ... already exists'`
+    );
+  };
   const CREATE_TABLE_RE = /CREATE TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)"\s*\(([\s\S]*?)\n\);/g;
-  const TABLE_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"\s+(PRIMARY KEY|UNIQUE)/g;
+  const RELATION_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"\s+(PRIMARY KEY|UNIQUE)/g;
+  const ANY_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"/g;
   const CREATE_INDEX_RE = /CREATE (?:UNIQUE )?INDEX "((?:[^"]|"")+)" ON "((?:[^"]|"")+)"\./g;
+  // Views are relations too (2026-08-07): dormant until spec-2 translation
+  // emission produces CREATE VIEW DDL, but the backstop is already standing.
+  const CREATE_VIEW_RE =
+    /CREATE (?:OR REPLACE )?(?:MATERIALIZED )?VIEW "((?:[^"]|"")+)"\."((?:[^"]|"")+)"/g;
+  const ALTER_ADD_CONSTRAINT_RE =
+    /ALTER TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)" ADD CONSTRAINT "((?:[^"]|"")+)"/g;
   const unq = (s: string): string => s.replace(/""/g, '"');
   for (const f of files) {
     if (!pathOf(f).endsWith('.sql')) continue;
@@ -148,19 +178,69 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
       const table = unq(tbl[2]);
       claimRelation(schema, table, `table ${schema}.${table} (${pathOf(f)})`);
       let con: RegExpExecArray | null;
-      TABLE_CONSTRAINT_RE.lastIndex = 0;
-      while ((con = TABLE_CONSTRAINT_RE.exec(tbl[3])) !== null) {
+      RELATION_CONSTRAINT_RE.lastIndex = 0;
+      while ((con = RELATION_CONSTRAINT_RE.exec(tbl[3])) !== null) {
         claimRelation(
           schema,
           unq(con[1]),
           `${con[2] === 'PRIMARY KEY' ? 'PK' : 'UNIQUE'} constraint on ${schema}.${table} (${pathOf(f)})`
         );
       }
+      ANY_CONSTRAINT_RE.lastIndex = 0;
+      while ((con = ANY_CONSTRAINT_RE.exec(tbl[3])) !== null) {
+        claimConstraint(schema, table, unq(con[1]), `in CREATE TABLE (${pathOf(f)})`);
+      }
     }
     let idx: RegExpExecArray | null;
     CREATE_INDEX_RE.lastIndex = 0;
     while ((idx = CREATE_INDEX_RE.exec(f.content)) !== null) {
       claimRelation(unq(idx[2]), unq(idx[1]), `index on schema ${unq(idx[2])} (${pathOf(f)})`);
+    }
+    let view: RegExpExecArray | null;
+    CREATE_VIEW_RE.lastIndex = 0;
+    while ((view = CREATE_VIEW_RE.exec(f.content)) !== null) {
+      claimRelation(
+        unq(view[1]),
+        unq(view[2]),
+        `view ${unq(view[1])}.${unq(view[2])} (${pathOf(f)})`
+      );
+    }
+    let alter: RegExpExecArray | null;
+    ALTER_ADD_CONSTRAINT_RE.lastIndex = 0;
+    while ((alter = ALTER_ADD_CONSTRAINT_RE.exec(f.content)) !== null) {
+      claimConstraint(
+        unq(alter[1]),
+        unq(alter[2]),
+        unq(alter[3]),
+        `ALTER TABLE ADD CONSTRAINT (${pathOf(f)})`
+      );
+    }
+  }
+
+  // 4b) Identifier byte-length (2026-08-07): Sybase allows identifiers up to
+  //     255 chars; Postgres TRUNCATES every identifier — quoted or not — at
+  //     63 bytes, silently. A >63-byte name silently diverges from the
+  //     manifest/bulk-loader/diff baseline, and two long names sharing a
+  //     63-byte prefix MERGE into one relation — a collision neither engine's
+  //     own rules contain. Fail loudly naming the identifier instead.
+  const QUOTED_IDENT_RE = /"((?:[^"]|"")+)"/g;
+  const flaggedLong = new Set<string>();
+  for (const f of files) {
+    if (!pathOf(f).endsWith('.sql')) continue;
+    let q: RegExpExecArray | null;
+    QUOTED_IDENT_RE.lastIndex = 0;
+    while ((q = QUOTED_IDENT_RE.exec(f.content)) !== null) {
+      const name = unq(q[1]);
+      if (Buffer.byteLength(name, 'utf8') > 63 && !flaggedLong.has(name)) {
+        flaggedLong.add(name);
+        problems.push(
+          `${pathOf(f)}: identifier "${name.slice(0, 80)}${name.length > 80 ? '…' : ''}" is ` +
+            `${Buffer.byteLength(name, 'utf8')} bytes — Postgres silently truncates ` +
+            `identifiers at 63 bytes (quoted or not), so the created object would not ` +
+            `match the manifest/bulk-loader/diff baseline, and long names sharing a ` +
+            `63-byte prefix merge into one relation`
+        );
+      }
     }
   }
 
