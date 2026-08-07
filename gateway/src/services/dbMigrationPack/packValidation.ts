@@ -16,6 +16,8 @@
  * NO LLM — pure deterministic code.
  */
 
+import { findSybaseSystemReferences } from './sybaseSystemObjects';
+
 /**
  * Accepts BOTH pack-file shapes: the generation-side camelCase `PackFile`
  * (`filePath`) and the AMS-wire snake_case row (`file_path`).
@@ -241,6 +243,27 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
             `63-byte prefix merge into one relation`
         );
       }
+    }
+  }
+
+  // 4c) No Sybase system-catalog references in executable SQL (2026-08-07):
+  //     a translated system view (dbo.sysquerymetrics selecting from
+  //     sysqueryplans) was emitted as the live run's final post-load
+  //     changeset and can NEVER build — ASE system catalogs are engine
+  //     infrastructure, not app schema. The IR builder and the translation
+  //     emission both exclude them; this is the independent backstop over
+  //     whatever DDL any path produced. Comment lines are ignored (exclusion
+  //     NOTES may mention a system object; executable statements may not).
+  for (const f of files) {
+    if (!pathOf(f).endsWith('.sql')) continue;
+    const refs = findSybaseSystemReferences(f.content);
+    if (refs.length > 0) {
+      problems.push(
+        `${pathOf(f)}: executable SQL references Sybase system catalog object(s) ` +
+          `${refs.join(', ')} — ASE system tables/views are engine infrastructure ` +
+          `and can never exist on the Postgres target; the object must be excluded ` +
+          `from the pack, not translated`
+      );
     }
   }
 
