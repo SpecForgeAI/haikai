@@ -76,6 +76,7 @@ import { evaluatePackStaleness } from '../services/dbMigrationPack/staleness';
 import { buildZipArchive } from '../services/dbMigrationPack/zip';
 import {
   computeCoverageSummary,
+  computeSourceBodyHash,
   defaultFetchTranslations,
   defaultPatchTranslation,
   runTranslationPipeline,
@@ -756,6 +757,79 @@ dbMigrationPackRouter.post(
         `[diag-gw] route=db-migration-pack-translation-disposition status=err elapsed_ms=${Date.now() - start}`
       );
       mapError(error, res, 'translation-disposition', { projectId, packId, translationId });
+    }
+  }
+);
+
+/**
+ * POST — supply the FULL source body for a truncated capture (gold standard
+ * 2026-08-07). `needs_manual (truncated)` used to be a terminal dead-end —
+ * the only remedy was manual work outside the tool. The operator pastes the
+ * complete T-SQL body; the row's hash recomputes, the fidelity flags clear,
+ * and the pipeline returns to `pending` for a fresh translate. A previously
+ * approved/drafted row demotes to needs_rework (approval NEVER silently
+ * survives a source change) and the emission re-runs to drop it from the
+ * executable path until re-approved.
+ */
+dbMigrationPackRouter.post(
+  `${BASE}/:packId/translations/:translationId/supply-body`,
+  async (req, res) => {
+    const { projectId, packId, translationId } = req.params;
+    const body = (req.body ?? {}) as { source_body?: string };
+    const start = Date.now();
+    try {
+      const sourceBody = typeof body.source_body === 'string' ? body.source_body : '';
+      if (sourceBody.trim().length === 0) {
+        throw new TranslationActionError(400, 'source_body is required (the complete source text).');
+      }
+      const rows = await defaultFetchTranslations(projectId, packId);
+      const row = rows.find((r) => r.id === translationId);
+      if (!row) {
+        throw new TranslationActionError(
+          404,
+          `Translation ${translationId} not found on pack ${packId}.`
+        );
+      }
+      const patch: TranslationPatch = {
+        source_body: sourceBody,
+        source_body_hash: computeSourceBodyHash(sourceBody),
+        truncated: false,
+        legacy_redacted: false,
+        pipeline_state: 'pending',
+      };
+      const hadWork =
+        (typeof row.draft_content === 'string' && row.draft_content.length > 0) ||
+        row.review_status === 'approved' ||
+        row.review_status === 'rejected';
+      if (hadWork) {
+        patch.review_status = 'needs_rework';
+        patch.reviewer_notes =
+          `${row.reviewer_notes ? `${row.reviewer_notes}
+` : ''}` +
+          '[auto] Full source body supplied by the operator (was truncated); prior ' +
+          'draft/review demoted to needs_rework — re-translate and re-review against ' +
+          'the complete source. Approval never silently survives a source change.';
+      }
+      const updated = await defaultPatchTranslation(projectId, packId, translationId, patch);
+      let emission = null;
+      if (row.review_status === 'approved') {
+        const emissionResult = await runTranslationEmission(projectId, packId);
+        emission = {
+          approved_count: emissionResult.approvedCount,
+          emitted_file_paths: emissionResult.emittedFilePaths,
+          changed: emissionResult.changed,
+        };
+      }
+      console.log(
+        `[diag-gw] route=db-migration-pack-translation-supply-body status=200 ` +
+          `elapsed_ms=${Date.now() - start}`
+      );
+      res.status(200).json({ translation: updated, emission });
+    } catch (error) {
+      console.warn(
+        `[diag-gw] route=db-migration-pack-translation-supply-body status=err elapsed_ms=${Date.now() - start}`
+      );
+      mapError(error, res, 'translation-supply-body', { projectId, packId, translationId });
     }
   }
 );

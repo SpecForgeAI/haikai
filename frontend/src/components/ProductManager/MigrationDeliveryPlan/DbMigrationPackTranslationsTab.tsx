@@ -34,6 +34,7 @@ import {
   listDbMigrationPackTranslations,
   retryDbMigrationPackTranslation,
   reviewDbMigrationPackTranslation,
+  supplyDbMigrationPackTranslationBody,
   setDbMigrationPackTranslationDisposition,
   translateAllDbMigrationPackTranslations,
   translateDbMigrationPackTranslation,
@@ -327,6 +328,40 @@ export const DbMigrationPackTranslationsTab: React.FC<
     [reviewerRow, busyId, projectId, packId, loadTranslations, handleEmission],
   );
 
+  // --- supply full source body (2026-08-07: truncated is no longer terminal) ----
+
+  const handleSupplyBody = useCallback(
+    async (sourceBody: string) => {
+      if (!reviewerRow || busyId) return;
+      setBusyId(reviewerRow.id);
+      setError(null);
+      setNotice(null);
+      try {
+        const result = await supplyDbMigrationPackTranslationBody(
+          projectId,
+          packId,
+          reviewerRow.id,
+          sourceBody,
+        );
+        setRows((prev) =>
+          prev.map((r) => (r.id === result.translation.id ? result.translation : r)),
+        );
+        handleEmission(result.emission);
+        setNotice(
+          'Full source body supplied — the row returned to pending; run Translate to draft it.',
+        );
+        await loadTranslations().catch(() => {
+          /* chips refresh is best-effort; the row itself is already updated */
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Supplying the source body failed');
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [reviewerRow, busyId, projectId, packId, loadTranslations, handleEmission],
+  );
+
   // -------------------------------------------------------------------------------
 
   if (loading) {
@@ -607,6 +642,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
           busy={busyId !== null}
           onReview={(action, notes) => void handleReview(action, notes)}
           onClose={() => setReviewerId(null)}
+          onSupplyBody={(sourceBody) => void handleSupplyBody(sourceBody)}
         />
       )}
     </div>

@@ -40,6 +40,11 @@ export interface DbMigrationPackTranslationReviewerProps {
     notes: string,
   ) => void;
   onClose: () => void;
+  /**
+   * Supply the FULL source body for a truncated capture (2026-08-07): the
+   * old terminal "translate it by hand in your IDE" dead-end is gone.
+   */
+  onSupplyBody?: (sourceBody: string) => void;
 }
 
 interface AlignedLine {
@@ -50,8 +55,9 @@ interface AlignedLine {
 
 export const DbMigrationPackTranslationReviewer: React.FC<
   DbMigrationPackTranslationReviewerProps
-> = ({ translation, busy, onReview, onClose }) => {
+> = ({ translation, busy, onReview, onClose, onSupplyBody }) => {
   const [notes, setNotes] = useState<string>(translation.reviewer_notes ?? '');
+  const [suppliedBody, setSuppliedBody] = useState<string>('');
 
   const sourceBody = translation.source_body ?? '';
   const draftContent = translation.draft_content ?? '';
@@ -113,9 +119,35 @@ export const DbMigrationPackTranslationReviewer: React.FC<
           className={styles.errorBanner}
           data-testid="db-pack-translation-truncated-banner"
         >
-          Needs manual translation — body truncated at capture (64KB cap). No
-          review is possible for this object; translate it by hand in your
-          IDE from the original source.
+          Body truncated at capture (64KB cap) — no review is possible for
+          this object until the FULL source body is supplied. Paste it below
+          (from the original source) and the pipeline re-translates it; no
+          manual translation outside the tool.
+        </div>
+      )}
+      {translation.truncated === true && onSupplyBody && (
+        <div
+          className={styles.manifestSection}
+          data-testid="db-pack-translation-supply-body"
+        >
+          <textarea
+            className={styles.reviewerNotesInput}
+            rows={10}
+            placeholder="Paste the COMPLETE source body (T-SQL) here…"
+            value={suppliedBody}
+            onChange={(e) => setSuppliedBody(e.target.value)}
+            disabled={busy}
+            data-testid="db-pack-translation-supply-body-input"
+          />
+          <button
+            type="button"
+            className={styles.actionButton}
+            disabled={busy || suppliedBody.trim().length === 0}
+            onClick={() => onSupplyBody(suppliedBody)}
+            data-testid="db-pack-translation-supply-body-submit"
+          >
+            Supply full source body
+          </button>
         </div>
       )}
       {translation.legacy_redacted === true && (
