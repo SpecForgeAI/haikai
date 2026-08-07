@@ -12,3 +12,9 @@ def pytest_configure(config):
     setting the env var or monkeypatching.
     """
     os.environ.setdefault("CHAT_EXECUTOR", "claude")
+    # The per-spec verification gate (SPEC_VERIFY_GATE, default ON in
+    # production — gold standard 2026-08-07) drives a real /haikai:debug +
+    # /haikai:fix LLM loop per spec. Unit suites exercising git plumbing /
+    # API endpoints must not spawn LLM executors, so the suite default is
+    # OFF; gate-specific tests opt back in via monkeypatch.setenv.
+    os.environ.setdefault("SPEC_VERIFY_GATE", "false")

@@ -6,16 +6,18 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-# Load environment variables
-from dotenv import load_dotenv
-load_dotenv()
-
 # Import FastAPI app
 from src.api import app
 
 if __name__ == "__main__":
     import uvicorn
-    
+
+    # Load environment variables — RUN path only (2026-08-07): a module-level
+    # load_dotenv() poisons any process that merely imports an entrypoint
+    # module (guarded by tests/test_anti_pattern_guards.py).
+    from dotenv import load_dotenv
+    load_dotenv()
+
     # Configuration
     host = os.getenv("API_HOST", "localhost")
     port = int(os.getenv("API_PORT", "8000"))

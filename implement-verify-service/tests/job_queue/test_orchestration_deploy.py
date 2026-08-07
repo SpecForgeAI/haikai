@@ -70,10 +70,18 @@ def _req(**over):
     return OrchestrationRequest(**base)
 
 
+def _clean_git(spec="s1"):
+    """A committed, pushed, error-free per-spec git record."""
+    return [{"spec": spec, "repo": None, "branch": f"feature/{spec}",
+             "commit_sha": "aaa", "pr_url": None, "error": None}]
+
+
 def test_callback_deployed_when_deploy_has_url(monkeypatch):
     sent = _capture(monkeypatch)
     deploy = {"base_url": "http://127.0.0.1:9", "box_id": "box-1", "merged": ["feature/a", "feature/b"]}
-    tasks._emit_orchestration_callback(_req(deploy_on_complete=True), "job-1", _resp(pr_url="http://pr/1"), deploy)
+    tasks._emit_orchestration_callback(_req(deploy_on_complete=True), "job-1",
+                                       _resp(pr_url="http://pr/1"), deploy,
+                                       spec_git=_clean_git())
     _, p = sent[0]
     assert p["outcome"] == "deployed"
     assert p["target_base_url"] == "http://127.0.0.1:9" and p["box_id"] == "box-1"
@@ -87,22 +95,36 @@ def test_c3_record_always_has_outcome_for_folding(monkeypatch):
     # (which run_orchestration now ALWAYS folds into job.result) still carries
     # `outcome` — a poller can always read it, not present-or-absent by config.
     _capture(monkeypatch)
-    rec = tasks._emit_orchestration_callback(_req(callback_url=None), "job-x", _resp(), None)
+    rec = tasks._emit_orchestration_callback(_req(callback_url=None), "job-x",
+                                             _resp(), None, spec_git=_clean_git())
     assert rec["outcome"] == "implemented"
     assert {"job_id", "company", "project", "outcome", "spec_names", "errors"}.issubset(rec)
 
 
-def test_c4_committed_with_nonfatal_error_is_implemented_not_error(monkeypatch):
-    # C4: specs were built + committed but a non-fatal git step failed (e.g. PR
-    # push) -> IMPLEMENTED with the error attached as a warning, NOT ERROR.
+def test_committed_with_git_error_is_ERROR_not_implemented(monkeypatch):
+    # Gold standard (2026-08-07, replaces the old C4 committed-wins pin): a
+    # push/MR failure means the deliverable does not exist remotely — the old
+    # precedence reported `implemented` and the gateway chained the next spec
+    # onto a branch with no remote. Now: any git error -> error, detail carried.
     sent = _capture(monkeypatch)
     spec_git = [{"spec": "s1", "repo": None, "branch": "feature/s1",
                  "commit_sha": "aaa", "pr_url": None, "error": "PR creation failed"}]
     tasks._emit_orchestration_callback(_req(), "job-1", _resp(errors=["PR creation failed"]),
                                        None, spec_git=spec_git)
     _, p = sent[0]
-    assert p["outcome"] == "implemented"
-    assert p["errors"] == ["PR creation failed"]  # carried as a warning
+    assert p["outcome"] == "error"
+    assert p["errors"] == ["PR creation failed"]  # detail still carried
+
+
+def test_clean_run_with_zero_commits_is_ERROR_with_named_reason(monkeypatch):
+    # Gold standard (2026-08-07): a run that "succeeded" but committed NOTHING
+    # is a zero-diff migration unit — an error with a loud diagnosis, never a
+    # silent implemented.
+    sent = _capture(monkeypatch)
+    tasks._emit_orchestration_callback(_req(), "job-1", _resp(), None, spec_git=[])
+    _, p = sent[0]
+    assert p["outcome"] == "error"
+    assert any("NOTHING was committed" in e for e in p["errors"])
 
 
 def test_c4_nothing_built_with_errors_is_error(monkeypatch):
@@ -131,7 +153,8 @@ def test_callback_carries_per_spec_git_list(monkeypatch):
 
 def test_callback_implemented_when_no_deploy(monkeypatch):
     sent = _capture(monkeypatch)
-    tasks._emit_orchestration_callback(_req(), "job-1", _resp(pr_url="http://pr/1"), None)
+    tasks._emit_orchestration_callback(_req(), "job-1", _resp(pr_url="http://pr/1"),
+                                       None, spec_git=_clean_git())
     _, p = sent[0]
     assert p["outcome"] == "implemented" and "target_base_url" not in p
 
@@ -157,7 +180,8 @@ def test_no_post_when_url_absent_but_record_returned(monkeypatch):
     # C5: with no callback_url we DON'T POST, but we still RETURN the build-results
     # record (so the caller can fold it into job.result for the poll fallback).
     sent = _capture(monkeypatch)
-    rec = tasks._emit_orchestration_callback(_req(callback_url=None), "job-1", _resp(), None)
+    rec = tasks._emit_orchestration_callback(_req(callback_url=None), "job-1",
+                                             _resp(), None, spec_git=_clean_git())
     assert sent == []
     assert rec["outcome"] == "implemented" and rec["callback_delivered"] is None
 

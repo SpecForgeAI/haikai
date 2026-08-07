@@ -848,6 +848,22 @@ def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
     return False, cap, summary
 
 
+def _verify_gate_config() -> "tuple[bool, int]":
+    """Unified verification-gate knobs (gold standard 2026-08-07).
+
+    ``SPEC_VERIFY_GATE`` (default ON) gates EVERY implement path — the
+    sequential single-spec path the migration driver actually uses, batch
+    mode, and per-spec parallel mode. The legacy ``BATCH_VERIFY_GATE`` name
+    is honored as a fallback so a deployment that explicitly disabled the
+    batch gate keeps its setting. ``SPEC_REPAIR_CAP`` (fallback
+    ``BATCH_REPAIR_CAP``, default 10) bounds the repair loop.
+    """
+    legacy = os.getenv("BATCH_VERIFY_GATE")
+    enabled = os.getenv("SPEC_VERIFY_GATE", legacy if legacy is not None else "true")
+    cap = int(os.getenv("SPEC_REPAIR_CAP", os.getenv("BATCH_REPAIR_CAP", "10")))
+    return enabled.strip().lower() == "true", cap
+
+
 def _resolve_request_context(job) -> tuple[OrchestrationRequest, str, str, str]:
     """Pull request, API key, workspace dir, session id from env + job payload.
 
@@ -1093,6 +1109,30 @@ def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
             def on_spec_complete(sname: str, sidx: int) -> bool:
                 if git_setup is None:
                     return False
+                # Verification gate (gold standard 2026-08-07): the per-spec
+                # parallel path gates on the repo's own tests too — no path
+                # commits an unverified spec.
+                gate_on, gate_cap = _verify_gate_config()
+                if gate_on:
+                    for _folder, _repo_dir in git_setup[1]:
+                        passed, attempts, _ = _repair_spec(
+                            _repo_dir, sname, anthropic_api_key, cap=gate_cap)
+                        _trace.detail("orchestration.gate",
+                                      {"spec": sname, "repo": _folder,
+                                       "passed": passed, "attempts": attempts},
+                                      _corr)
+                        _graph_gate_evidence(graph_ctx, sname, _folder, passed,
+                                             attempts)
+                        if not passed:
+                            git_results.append({
+                                "spec": sname, "repo": _folder, "branch": None,
+                                "commit_sha": None, "pr_url": None,
+                                "error": (
+                                    "verification gate: the repo test suite did "
+                                    f"not pass after {attempts} repair "
+                                    "attempt(s) — spec NOT committed"),
+                            })
+                            return True
                 before = len(git_results)
                 _git_one_spec(git_setup[0], git_setup[1], git_results, sname,
                               batch_name=None, orchestrate_id=job_id,
@@ -1172,6 +1212,40 @@ def _run_per_spec_orchestration(job_id: str, job, storage: JobStorage,
         job.error = (f"specs failed (independent semantics): {failed}"
                      if failed else None)
     storage.save_job(job)
+
+    # Completion contract (gold standard 2026-08-07): this mode previously
+    # NEVER emitted the build-results callback — a gateway waiting on
+    # callback_url stranded at 'submitted' forever. Emit the aggregate record
+    # under the same honest outcome precedence as the sequential path (the
+    # per-spec truth rides in spec_git) and fold it into job.result so the
+    # poll fallback can always recover the outcome.
+    import types as _types
+    all_git: list = []
+    agg_errors: list = []
+    for sname in sorted(results):
+        r = results[sname]
+        all_git.extend(r.get("git") or [])
+        if r.get("error"):
+            agg_errors.append(f"{sname}: {r['error']}")
+        agg_errors.extend(f"{sname}: {e}" for e in (r.get("errors") or []))
+    response_ns = _types.SimpleNamespace(
+        success=bool(ok) and not failed,
+        errors=agg_errors,
+        spec_names=sorted(results),
+        pr_url=next((r.get("pr_url") for r in results.values()
+                     if r.get("pr_url")), None),
+        commit_sha=None,
+        branch=None,
+    )
+    try:
+        build_results = _emit_orchestration_callback(
+            request, job_id, response_ns, None, spec_git=all_git)
+        job.result = {**(job.result or {}), **build_results}
+        storage.save_job(job)
+    except Exception:
+        logger.warning("per-spec build-results emission failed (job %s)",
+                       job_id, exc_info=True)
+
     _graph_completed(graph_ctx, bool(ok) and not failed,
                      {"mode": "per_spec_parallel",
                       "succeeded": ok, "failed": failed})
@@ -1345,19 +1419,23 @@ def run_orchestration(job_id: str, storage: JobStorage):
         # {orchestrate_id, task_group_id, repo} so its commit's CI binding re-enters
         # that gate (see _git_one_spec). Read from the raw payload — no model change.
         repair_of = (job.request_payload or {}).get("repair_of")
-        # Option C: in batch mode, gate each spec on its own tests passing (repair
-        # via /haikai:debug+/haikai:fix) BEFORE committing it, so a red spec never
-        # reaches the single MR. Opt-out via BATCH_VERIFY_GATE=false.
-        gate_enabled = bool(batch_name) and os.getenv("BATCH_VERIFY_GATE", "true").lower() == "true"
-        repair_cap = int(os.getenv("BATCH_REPAIR_CAP", "10"))
-        batch_repair_failed: list = []
+        # Verification gate (gold standard 2026-08-07): EVERY implement path —
+        # the sequential single-spec path (the migration driver's live path),
+        # batch mode, and per-spec parallel — gates each spec on the repo's
+        # OWN test suite passing (repair via /haikai:debug + /haikai:fix)
+        # BEFORE that spec commits. Previously batch-only: driver submits were
+        # judged solely on LLM-self-ticked tasks.md checkboxes and NOTHING on
+        # the live path ever ran the tests. A spec whose suite cannot be made
+        # green within the cap FAILS: no commit, no MR, outcome error.
+        gate_enabled, repair_cap = _verify_gate_config()
+        gate_failed_specs: list = []
 
         def on_spec_complete(spec_name: str, spec_idx: int) -> bool:
             # Returns True if THIS spec's git failed (L4: lets run_workflow stop
             # further generation under stop_on_error).
             if git_setup is None:
                 return False
-            # Gate+repair this spec before it commits onto the batch branch.
+            # Gate+repair this spec before it commits (batch AND sequential).
             if gate_enabled:
                 for _folder, _repo_dir in git_setup[1]:
                     passed, attempts, _ = _repair_spec(
@@ -1367,10 +1445,19 @@ def run_orchestration(job_id: str, storage: JobStorage):
                                    "passed": passed, "attempts": attempts}, _corr)
                     _graph_gate_evidence(graph_ctx, spec_name, _folder, passed, attempts)
                     if not passed:
-                        batch_repair_failed.append(spec_name)
-                        logger.error("Batch gate fail-stop: spec %s did not pass "
-                                     "after %d attempts — no MR", spec_name, attempts)
-                        return True  # stop the batch: no commit for this spec, no MR
+                        gate_failed_specs.append(spec_name)
+                        git_results.append({
+                            "spec": spec_name, "repo": _folder, "branch": None,
+                            "commit_sha": None, "pr_url": None,
+                            "error": (
+                                "verification gate: the repo test suite did not "
+                                f"pass after {attempts} repair attempt(s) — spec "
+                                "NOT committed"),
+                        })
+                        logger.error("Verification gate fail-stop: spec %s did not "
+                                     "pass after %d attempts — not committed, no MR",
+                                     spec_name, attempts)
+                        return True  # stop: no commit for this spec, no MR
             before = len(git_results)
             _git_one_spec(git_setup[0], git_setup[1], git_results, spec_name,
                           batch_name=batch_name, orchestrate_id=job_id,
@@ -1411,7 +1498,7 @@ def run_orchestration(job_id: str, storage: JobStorage):
             # push it + open exactly ONE PR per repo target. Inside the lock (R8) so
             # a concurrent same-project job can't move the branch before we push.
             # Gate (Option C): skip the MR entirely if any spec failed its gate.
-            if batch_name and git_setup is not None and not batch_repair_failed:
+            if batch_name and git_setup is not None and not gate_failed_specs:
                 _finalize_batch_git(
                     git_setup[0], git_setup[1], git_results, batch_name,
                     [si.spec_name for si in request.spec_intents],
@@ -1420,10 +1507,11 @@ def run_orchestration(job_id: str, storage: JobStorage):
 
         # Fold the interleaved per-spec git results into the response.
         response.errors = list(response.errors or [])
-        if batch_repair_failed:
+        if gate_failed_specs:
             response.errors.append(
-                f"Batch verification gate (Option C): spec(s) {batch_repair_failed} did "
-                f"not pass after {repair_cap} repair attempts — no MR opened."
+                f"Verification gate: spec(s) {gate_failed_specs} did not pass the "
+                f"repo test suite after {repair_cap} repair attempt(s) — nothing "
+                "was committed for them and no MR was opened."
             )
         if git_err:
             response.errors.append(git_err)
@@ -2139,36 +2227,47 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
     poll fallback must be able to recover outcome + target_base_url when the
     callback is dropped (C5).
 
-    Shared outcome enum (C3, snake_case — F6):
-      deployed    — integrated deploy yielded a target_base_url -> reconcile
-      implemented — specs were built + committed (errors, if any, are non-fatal
-                    warnings like a PR/push failure, carried in `errors`)
-      error       — nothing was built (genuine failure)
+    Shared outcome enum (C3, snake_case — F6; precedence hardened 2026-08-07):
+      deployed    — clean run, committed, pushed/MR'd cleanly, AND the
+                    integrated deploy yielded a target_base_url -> reconcile
+      implemented — clean run: committed with ZERO git errors (push + MR
+                    succeeded where requested) and no deploy was attempted
+      error       — anything else: workflow failure, nothing committed, a
+                    push/MR failure, a gate failure, or a failed deploy —
+                    detail always in `errors`
     """
     from ..verification import outcomes
 
-    # C4: don't collapse "built but a non-fatal git step failed" into ERROR.
-    # DEPLOYED wins on a base_url; if any spec was committed the run IMPLEMENTED
-    # (errors attached as warnings); ERROR is reserved for nothing-built.
+    # Gold standard (2026-08-07): `implemented`/`deployed` are CLEAN claims.
+    # The old committed-wins precedence let a run whose push failed (branch
+    # exists only locally), whose MR failed, whose deploy failed, or whose
+    # batch gate fail-stopped still report `implemented` — the gateway then
+    # chained the next spec onto it and opened the stage-final MR from a
+    # deliverable that did not exist. Now: any error, any git failure, or a
+    # zero-commit run reports `error`; the detail always rides in `errors`.
     committed = bool(spec_git) and any(r.get("commit_sha") for r in spec_git)
+    git_errors = [str(r.get("error")) for r in (spec_git or []) if r.get("error")]
     # A failed run must NEVER report IMPLEMENTED just because no per-spec git
     # error was recorded: a workflow step failure (e.g. /write-spec producing no
-    # spec.md) lives on `response.success`, not on `response.errors`. The old
-    # else-branch masked that as IMPLEMENTED — the callback then told the UI the
-    # feature was built when nothing was. Surfaced by the single-spec worktree
-    # write-spec landing in the live tree. Fold a reason in so `error` isn't blank.
+    # spec.md) lives on `response.success`, not on `response.errors`. Fold a
+    # reason in so `error` isn't blank.
     run_ok = getattr(response, "success", True) is not False
     if not run_ok and not response.errors:
         response.errors = ["orchestration did not complete successfully "
                            "(a workflow step failed — see orchestration logs)"]
-    if deploy and deploy.get("base_url"):
-        outcome = outcomes.DEPLOYED
-    elif committed:
-        outcome = outcomes.IMPLEMENTED
-    elif response.errors or not run_ok:
-        outcome = outcomes.ERROR
+    deploy_ok = bool(deploy and deploy.get("base_url"))
+    if run_ok and committed and not git_errors:
+        outcome = outcomes.DEPLOYED if deploy_ok else outcomes.IMPLEMENTED
     else:
-        outcome = outcomes.IMPLEMENTED
+        outcome = outcomes.ERROR
+        if run_ok and not committed and not response.errors and not git_errors:
+            # Loud zero-diff diagnosis: an implement step that changed nothing
+            # is a failure, not a success (the live shape: the LLM wrote files
+            # outside the worktree, or produced an empty diff).
+            response.errors = [
+                "orchestration completed but NOTHING was committed — the "
+                "implement step produced no repository changes (a zero-diff "
+                "migration unit is a failure, not a success)"]
     payload = {
         "job_id": job_id,
         "company": request.company,

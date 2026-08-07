@@ -1418,3 +1418,78 @@ class TestNoSubstringAskQuestionsDetection:
             "src/chat/ask_questions_detection.py (line-start command rule):\n  "
             + "\n  ".join(offenders)
         )
+
+
+class TestEntrypointImportsHaveNoEnvSideEffects:
+    """Importing an entrypoint module must have ZERO environment side effects.
+
+    2026-08-07 live failure: `src/entrypoints/run_api.py` ran
+    `load_dotenv('.env.local', override=True)` at MODULE level. The reload-scope
+    test imports `build_reload_watch_config` from it, so COLLECTION stomped the
+    test process's environment with the developer's real `.env.local` —
+    CHAT_EXECUTOR became the developer's real backend and 70+ unrelated tests
+    (every executor-stubbed suite) failed in full-suite runs while passing in
+    isolation. The dotenv load belongs on the RUN path (main() / __main__),
+    never in module scope.
+
+    Guard: AST-walk every src/entrypoints/*.py MODULE body (recursing through
+    top-level If/Try/With — the historical shapes — but never into function or
+    class bodies) and assert ZERO load_dotenv calls. count == 0, per the
+    guard-test rules at the top of this file.
+    """
+
+    @staticmethod
+    def _module_level_dotenv_calls(tree):
+        import ast as _ast
+
+        offenders = []
+
+        def is_main_guard(node):
+            # `if __name__ == "__main__":` never executes on import — it IS
+            # the run path, so loads inside it are sanctioned.
+            if not isinstance(node, _ast.If):
+                return False
+            t = node.test
+            return (
+                isinstance(t, _ast.Compare)
+                and isinstance(t.left, _ast.Name)
+                and t.left.id == "__name__"
+                and any(
+                    isinstance(c, _ast.Constant) and c.value == "__main__"
+                    for c in t.comparators
+                )
+            )
+
+        def scan(node):
+            for child in _ast.iter_child_nodes(node):
+                if isinstance(
+                    child,
+                    (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef, _ast.Lambda),
+                ):
+                    continue  # function/class bodies are the sanctioned home
+                if is_main_guard(child):
+                    continue
+                if isinstance(child, _ast.Call):
+                    fn = child.func
+                    name = getattr(fn, "id", None) or getattr(fn, "attr", None)
+                    if name == "load_dotenv":
+                        offenders.append(child.lineno)
+                scan(child)
+
+        scan(tree)
+        return offenders
+
+    def test_no_module_level_load_dotenv_in_entrypoints(self):
+        import ast as _ast
+
+        offenders: list[str] = []
+        for path in sorted((SRC / "entrypoints").glob("*.py")):
+            tree = _ast.parse(_read_text(path))
+            for lineno in self._module_level_dotenv_calls(tree):
+                offenders.append(f"{path.name}:{lineno}")
+        assert offenders == [], (
+            "Module-level load_dotenv found in an entrypoint — importing these "
+            "modules must not mutate os.environ (the 2026-08-07 CHAT_EXECUTOR "
+            "suite-poisoning bug). Move the load into main()/__main__:\n  "
+            + "\n  ".join(offenders)
+        )

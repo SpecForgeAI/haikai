@@ -247,6 +247,82 @@ describe('processBuildResult reconciled outcome enum', () => {
 });
 
 // ===========================================================================
+// IVS error-detail threading (2026-08-07): the run's `errors` list previously
+// never crossed the door — a failed run halted with an empty diagnosis. The
+// door parses it leniently and the driver folds it into the halt detail.
+// ===========================================================================
+
+describe('processBuildResult errors[] threading', () => {
+  it('threads the IVS errors list into the halt detail when summary is absent', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    const out = await processBuildResult(
+      {
+        company: 'acme',
+        project: 'p',
+        outcome: 'error',
+        job_id: 'job-1',
+        errors: [
+          'verification gate: the repo test suite did not pass after 3 repair attempt(s) — spec NOT committed',
+          'orchestration completed but NOTHING was committed',
+        ],
+      },
+      deps
+    );
+    expect(out.status).toBe(202);
+    expect(out.decision).toBe('halted');
+    expect(deps.patchMigrationExecutionRunItem).toHaveBeenCalledWith(
+      'proj-1',
+      'ri-0',
+      expect.objectContaining({
+        error_detail: expect.stringContaining('NOTHING was committed'),
+      })
+    );
+    // The work-item sink gets the same diagnosis (human traceability).
+    expect(deps.recordWorkItemImplementationError).toHaveBeenCalledWith(
+      'proj-1',
+      'wi-1',
+      expect.stringContaining('verification gate')
+    );
+  });
+
+  it('an explicit summary still wins over the errors detail', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    await processBuildResult(
+      {
+        company: 'acme',
+        project: 'p',
+        outcome: 'error',
+        job_id: 'job-1',
+        summary: 'top-line summary',
+        errors: ['detail 1'],
+      },
+      deps
+    );
+    expect(deps.patchMigrationExecutionRunItem).toHaveBeenCalledWith(
+      'proj-1',
+      'ri-0',
+      expect.objectContaining({ error_detail: 'top-line summary' })
+    );
+  });
+
+  it('a malformed errors value degrades to null — never a 422', async () => {
+    const { deps } = depsWithAdvance('advanced_next_dispatched');
+    const out = await processBuildResult(
+      {
+        company: 'acme',
+        project: 'p',
+        outcome: 'error',
+        job_id: 'job-1',
+        errors: 'not-an-array' as unknown,
+      },
+      deps
+    );
+    expect(out.status).toBe(202);
+    expect(out.decision).toBe('halted');
+  });
+});
+
+// ===========================================================================
 // Route-level: the inbound token guard rejects before dispatch
 // ===========================================================================
 

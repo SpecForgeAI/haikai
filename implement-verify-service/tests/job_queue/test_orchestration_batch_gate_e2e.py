@@ -31,7 +31,10 @@ def _drive(tmp_path, monkeypatch, repair_results: dict):
     (ws / "acme").mkdir(parents=True)
     monkeypatch.setenv("API_WORKSPACE_DIR", str(ws))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-    monkeypatch.setenv("BATCH_VERIFY_GATE", "true")
+    # Opt in explicitly: the suite-wide conftest default is SPEC_VERIFY_GATE=false
+    # (the new env supersedes BATCH_VERIFY_GATE, whose legacy-alias handling is
+    # unit-tested in test_orchestration_batch_gate.py).
+    monkeypatch.setenv("SPEC_VERIFY_GATE", "true")
 
     product = ws / "acme" / "shop"
     local_repo_with_base(product)                      # single-repo target (product_root/.git)
