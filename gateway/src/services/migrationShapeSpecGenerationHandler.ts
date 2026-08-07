@@ -2848,6 +2848,15 @@ async function runSinglePassBatch(
   let resultsCouldNotPersist = 0;
   let unpersistedResults: SpecGenerationResult[] = [];
   if (perStoryResults.length > 0) {
+    // confirmOverwrite must ride the rows INTO the persist call (gold
+    // standard 2026-08-07): it used to be stamped AFTER persistBatchResults
+    // returned — a pure no-op that silently ignored the user's overwrite
+    // confirmation.
+    if (confirmOverwrite) {
+      for (const r of perStoryResults) {
+        (r as unknown as Record<string, unknown>)['_confirmOverwrite'] = true;
+      }
+    }
     try {
       const persistResult = await persistBatchResults(
         projectId,
@@ -2870,7 +2879,18 @@ async function runSinglePassBatch(
         }
       }
       if (resultsCouldNotPersist > 0) {
-        unpersistedResults = perStoryResults.slice(perStoryResults.length - resultsCouldNotPersist);
+        // Identify unpersisted rows by the ABSENT hydrated id (gold standard
+        // 2026-08-07) — the old tail-slice assumed failures were the LAST N
+        // rows and reported the WRONG stories on any other distribution.
+        unpersistedResults = perStoryResults.filter((r) => !r.id);
+        if (unpersistedResults.length !== resultsCouldNotPersist) {
+          logger.warn('Spec generation unpersisted-count mismatch', {
+            projectId,
+            bookOfWorkId,
+            reported: resultsCouldNotPersist,
+            derivedById: unpersistedResults.length,
+          });
+        }
       }
     } catch (e) {
       // Persistence call itself failed — all results are unpersisted (R-12).
@@ -2882,12 +2902,6 @@ async function runSinglePassBatch(
       persistedCount = 0;
       resultsCouldNotPersist = perStoryResults.length;
       unpersistedResults = [...perStoryResults];
-    }
-    // Forward confirmOverwrite hint to AMS via a marker on each result.
-    if (confirmOverwrite) {
-      for (const r of perStoryResults) {
-        (r as unknown as Record<string, unknown>)['_confirmOverwrite'] = true;
-      }
     }
   }
 

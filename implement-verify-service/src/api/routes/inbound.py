@@ -328,12 +328,15 @@ async def reconciliation_intake(request: Request,
                 # both supersede + both release. The box to release is the one the
                 # SERVER recorded on the pending verdict (never the caller's
                 # box_id), returned by the recorder.
-                recorded, owned_box = recorder.supersede_pending(
+                # Gold standard 2026-08-07: this tuple used to SHADOW the
+                # batch-level recorded COUNTER with a bool - after the first
+                # verdict finding every subsequent count was corrupted.
+                verdict_recorded, owned_box = recorder.supersede_pending(
                     conn, f["orchestrate_id"], f["task_group_id"], f["repo"], verifier, v,
                     detail=(f.get("detail") if isinstance(f.get("detail"), dict)
                             else {"source": source}),
                 )
-                if recorded:
+                if verdict_recorded:
                     verdicts += 1
                     if owned_box:  # F1: a verdict closes the reconciliation -> release
                         boxes_to_release.append(owned_box)
