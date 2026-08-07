@@ -214,6 +214,13 @@ export function buildTriageUserPrompt(params: {
   storyIndex: TriageStoryIndexEntry[];
   forcedDisposition?: TriageDisposition | null;
   guidance?: string | null;
+  /**
+   * Captured decisions in force for the plan (gold standard 2026-08-07):
+   * the triage draft must ALIGN with decisions already made — the prompt
+   * previously omitted them and the model re-derived (or contradicted)
+   * settled questions.
+   */
+  capturedDecisions?: Array<{ question: string; answer: string }> | null;
 }): string {
   const { item, storyIndex } = params;
   const detail = item.detail;
@@ -234,6 +241,13 @@ export function buildTriageUserPrompt(params: {
     lines.push(
       'This is a CAPABILITY: allowed dispositions are "new_story" or "dismiss" ONLY.'
     );
+  }
+  if (params.capturedDecisions && params.capturedDecisions.length > 0) {
+    lines.push('DECISIONS ALREADY MADE (align with these — never contradict them):');
+    for (const d of params.capturedDecisions.slice(0, 20)) {
+      lines.push(`- ${d.question}: ${d.answer}`);
+    }
+    lines.push('');
   }
   lines.push('ALLOWED WORKSTREAMS (for draft_story.workstream):');
   lines.push(MIGRATION_BOOK_OF_WORK_WORKSTREAMS.join(', '));
@@ -428,11 +442,40 @@ export function validateTriagePayload(
 // Batch triage + single re-draft
 // ============================================================================
 
+/**
+ * Fetch the captured decisions the triage drafts must align with (gold
+ * standard 2026-08-07). Fail-soft: any read hiccup yields null — the triage
+ * still runs, just without the decision stack (the drafts remain reviewable).
+ */
+export async function fetchTriageCapturedDecisions(
+  projectId: string
+): Promise<Array<{ question: string; answer: string }> | null> {
+  try {
+    const { fetchMostRecentSavedTargetArchitectureId, fetchLatestCapturedDecisions } =
+      await import('./targetStateCapturedDecisionsClient');
+    const saved = await fetchMostRecentSavedTargetArchitectureId(projectId);
+    const targetId = saved?.savedTargetArchitectureId ?? null;
+    if (!targetId) return null;
+    const decisions = await fetchLatestCapturedDecisions(projectId, targetId);
+    const rows = (decisions ?? [])
+      .map((d) => ({
+        question: String((d as { question?: unknown }).question ?? '').trim(),
+        answer: String((d as { answer?: unknown }).answer ?? '').trim(),
+      }))
+      .filter((d) => d.question.length > 0 && d.answer.length > 0);
+    return rows.length > 0 ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface RunTriageParams {
   projectId: string;
   bookId: string;
   items: TriageItemInput[];
   storyIndex: TriageStoryIndexEntry[];
+  /** Captured decisions the drafts must align with (2026-08-07). */
+  capturedDecisions?: Array<{ question: string; answer: string }> | null;
 }
 
 /**
@@ -448,6 +491,7 @@ export async function draftSingleSuggestion(
     storyIndex: TriageStoryIndexEntry[];
     forcedDisposition?: TriageDisposition | null;
     guidance?: string | null;
+    capturedDecisions?: Array<{ question: string; answer: string }> | null;
   },
   callLlm: TriageLlmCaller = defaultTriageLlmCaller
 ): Promise<TriageSuggestion> {
@@ -459,6 +503,7 @@ export async function draftSingleSuggestion(
         storyIndex: params.storyIndex,
         forcedDisposition: params.forcedDisposition ?? null,
         guidance: params.guidance ?? null,
+        capturedDecisions: params.capturedDecisions ?? null,
       }),
       projectId: params.projectId,
       label: params.item.id,
@@ -516,7 +561,12 @@ export async function runCarryOverTriage(
   for (const item of params.items) {
     suggestions.push(
       await draftSingleSuggestion(
-        { projectId: params.projectId, item, storyIndex: params.storyIndex },
+        {
+          projectId: params.projectId,
+          item,
+          storyIndex: params.storyIndex,
+          capturedDecisions: params.capturedDecisions ?? null,
+        },
         callLlm
       )
     );

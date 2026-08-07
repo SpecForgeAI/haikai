@@ -322,6 +322,38 @@ export class RoadmapSummaryContextResolver implements ContextResolver {
 }
 
 /**
+ * Live resolver for the 'existing-roadmap' context key (gold standard
+ * 2026-08-07). This key was the ONE remaining stub — the migration delivery
+ * plan and roadmap tasks declare it in contextNeeds and silently received an
+ * EMPTY STRING, so plan generation never saw the roadmap it was asked to
+ * align with. Reads the saved roadmap document from the project workspace
+ * (the mission/tech-stack file idiom); falls back to the condensed
+ * roadmap summary when no file exists so the context is never silently
+ * empty while a roadmap is known to AMS.
+ */
+export class ExistingRoadmapContextResolver implements ContextResolver {
+  async resolve(projectId: string, threadKey: string): Promise<string> {
+    const projectFolder = await fetchProjectFolder(projectId);
+    const basePath = projectFolder || process.cwd();
+    for (const candidate of [
+      path.join(basePath, 'agent-os', 'product', 'ROADMAP.MD'),
+      path.join(basePath, 'agent-os', 'product', 'roadmap.md'),
+      path.join(basePath, 'haikai', 'product', 'roadmap.md'),
+    ]) {
+      try {
+        const content = await fs.readFile(candidate, 'utf-8');
+        if (content.trim().length > 0) return content;
+      } catch {
+        /* try the next candidate */
+      }
+    }
+    // No roadmap file — fall back to the condensed summary rather than an
+    // empty string (the summary resolver already degrades gracefully).
+    return new RoadmapSummaryContextResolver().resolve(projectId, threadKey);
+  }
+}
+
+/**
  * Maximum length (in characters) of the prompt-ready text produced by
  * {@link MigrationDiscoveryContextResolver}. Count-based bound only per
  * shaping decision D7 -- token-budget-aware trimming is a v2 enhancement.
@@ -1245,6 +1277,8 @@ export function initializeContextResolverRegistry(): void {
   // Live resolvers (Increment 9)
   contextResolverRegistry.set('product-summary', new ProductSummaryContextResolver());
   contextResolverRegistry.set('roadmap-summary', new RoadmapSummaryContextResolver());
+  // 2026-08-07: 'existing-roadmap' was the last stub key — now live.
+  contextResolverRegistry.set('existing-roadmap', new ExistingRoadmapContextResolver());
 
   // Live resolvers (Spec 2026-05-16 Migration Discovery Context Integration)
   contextResolverRegistry.set(
