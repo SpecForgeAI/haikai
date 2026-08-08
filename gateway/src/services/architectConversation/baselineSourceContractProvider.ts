@@ -9,7 +9,13 @@
  * (`fetchActiveCurrentBaseline` in `migrationDriverAmsReads.ts`).
  *
  * --------------------------------------------------------------------------
- * DATA-SOURCE REALITY (read carefully before extending) — why this DEGRADES
+ * DATA-SOURCE REALITY (updated 2026-08-08 — the lock is LIVE)
+ * --------------------------------------------------------------------------
+ * The six Group B values now DERIVE deterministically from the baseline's
+ * raw captured samples via apiSurfaceDerivation.ts (content-types, paths,
+ * auth headers, 4xx bodies, rate-limit headers) — evidence-counted, with
+ * provenance on every value; ambiguous codes are OMITTED so their questions
+ * are still asked. The historical context below records the original gap.
  * --------------------------------------------------------------------------
  * The lock needs TWO things from the source contract:
  *
@@ -52,8 +58,11 @@
 
 import {
   fetchActiveCurrentBaseline as defaultFetchActiveCurrentBaseline,
+  fetchBaselineItems as defaultFetchBaselineItems,
   type ApiBehaviourBaseline,
 } from '../migrationDriverAmsReads';
+import { resolveDefaultArchitectureId as defaultResolveDefaultArchitectureId } from '../architectureModelClient';
+import { deriveGroupBValues } from './apiSurfaceDerivation';
 import { logger } from '../logger';
 import { LOCKABLE_GROUP_B_CODES } from '../../config/architect-conversation/apiSurfaceMode';
 import type {
@@ -84,10 +93,21 @@ export interface BaselineSourceContractSnapshot {
 /** Injectable deps for the snapshot resolver (test seam). */
 export interface ResolveBaselineSourceContractDeps {
   fetchActiveCurrentBaseline: typeof defaultFetchActiveCurrentBaseline;
+  /** 2026-08-08: the raw-sample read feeding the deterministic derivation. */
+  fetchBaselineItems?: typeof defaultFetchBaselineItems;
+  /**
+   * 2026-08-08: baselines hang off the CURRENT-state architecture; the
+   * conversation route only carries the TARGET id. The Default architecture
+   * (oldest non-archived — the established dashboard/discovery rule) IS the
+   * current-state model.
+   */
+  resolveCurrentArchitectureId?: typeof defaultResolveDefaultArchitectureId;
 }
 
 export const defaultResolveBaselineSourceContractDeps: ResolveBaselineSourceContractDeps = {
   fetchActiveCurrentBaseline: defaultFetchActiveCurrentBaseline,
+  fetchBaselineItems: defaultFetchBaselineItems,
+  resolveCurrentArchitectureId: defaultResolveDefaultArchitectureId,
 };
 
 /**
@@ -102,7 +122,14 @@ export async function resolveBaselineSourceContractSnapshot(
 ): Promise<BaselineSourceContractSnapshot> {
   let baseline: ApiBehaviourBaseline | null = null;
   try {
-    baseline = await deps.fetchActiveCurrentBaseline(projectId, architectureId);
+    // Baselines hang off the CURRENT-state architecture; the conversation
+    // passes the TARGET id (2026-08-08 fix — the read previously looked up
+    // the wrong architecture and always found nothing). Resolve the Default
+    // (oldest non-archived = current-state) and fall back to the passed id.
+    const resolveCurrent =
+      deps.resolveCurrentArchitectureId ?? defaultResolveDefaultArchitectureId;
+    const currentArchitectureId = (await resolveCurrent(projectId)) ?? architectureId;
+    baseline = await deps.fetchActiveCurrentBaseline(projectId, currentArchitectureId);
   } catch (err) {
     // Fail-soft: a baseline-read failure must never crash the conversation; it
     // degrades to asking Group B as today.
@@ -119,14 +146,41 @@ export async function resolveBaselineSourceContractSnapshot(
 
   const baselinePresent = baseline !== null;
 
-  // GAP (see file header): no read yields the six DERIVED Group B values, so the
-  // value map is empty and the lock degrades. This is the single line to change
-  // when a derived-values AMS read is specced.
-  const groupBValues: Record<string, SourceContractValue> = {};
+  // CONV.07 CLOSED (2026-08-08): the six Group B values derive
+  // DETERMINISTICALLY from the baseline's raw captured samples (see
+  // apiSurfaceDerivation.ts) — no LLM, no new AMS endpoint. Codes without
+  // positive observation are OMITTED (their questions are asked normally),
+  // never guessed. Fail-soft: a derivation failure degrades to ASK.
+  let groupBValues: Record<string, SourceContractValue> = {};
+  if (baselinePresent && baseline?.id) {
+    try {
+      const fetchItems = deps.fetchBaselineItems ?? defaultFetchBaselineItems;
+      const items = await fetchItems(projectId, baseline.id);
+      const derivation = deriveGroupBValues(items, baseline.id);
+      groupBValues = derivation.values;
+      logger.info('api-surface-lock: Group B values derived from the baseline samples', {
+        projectId,
+        baselineId: baseline.id,
+        itemCount: derivation.itemCount,
+        derivedCodes: Object.keys(derivation.values).sort(),
+        omitted: derivation.omitted,
+      });
+    } catch (err) {
+      logger.warn(
+        'api-surface-lock: Group B derivation failed; degrading to ASK (Group B unchanged)',
+        {
+          projectId,
+          baselineId: baseline?.id ?? null,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+      groupBValues = {};
+    }
+  }
 
   if (baselinePresent && Object.keys(groupBValues).length === 0) {
     logger.info(
-      'api-surface-lock: current baseline present but NO derived Group B value read exists; degrading to ASK (needs an AMS derived-values spec)',
+      'api-surface-lock: current baseline present but no Group B value could be derived from its samples; degrading to ASK',
       {
         projectId,
         architectureId,

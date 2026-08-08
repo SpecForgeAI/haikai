@@ -204,3 +204,37 @@ export async function fetchActiveCurrentBaseline(
   );
   return active ?? null;
 }
+
+/** A captured baseline item (the raw-sample subset the derivers read). */
+export interface ApiBehaviourBaselineItemWire {
+  id?: string;
+  method?: string | null;
+  path?: string | null;
+  scenario_name?: string | null;
+  request_json?: {
+    query?: Record<string, unknown> | null;
+    headers?: Record<string, unknown> | null;
+    body?: unknown;
+  } | null;
+  response_status?: number | null;
+  response_json?: {
+    headers?: Record<string, unknown> | null;
+    body?: unknown;
+  } | null;
+}
+
+/**
+ * GET the captured items of ONE baseline (2026-08-08): feeds the deterministic
+ * Group B API-surface derivation that lights up the like-for-like lock
+ * (CONV.07). Same fail-soft posture as the sibling reads.
+ */
+export async function fetchBaselineItems(
+  projectId: string,
+  baselineId: string
+): Promise<ApiBehaviourBaselineItemWire[]> {
+  const url =
+    `${baseUrl()}/api/projects/${encodeURIComponent(projectId)}/api-behaviour/baseline-items` +
+    `?baselineId=${encodeURIComponent(baselineId)}`;
+  const rows = await getJsonOrNull<ApiBehaviourBaselineItemWire[]>(url, 'fetch_baseline_items');
+  return Array.isArray(rows) ? rows : [];
+}

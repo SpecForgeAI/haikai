@@ -1031,15 +1031,46 @@ export async function generateMigrationBookOfWork(
         `unresolvedDecisionTasks=${ctxView.unresolvedDecisionTasks?.length ?? 0}`,
       planCorr,
     );
-    // CONV.07: KNOWN-OPEN, fails by design — api-lock derived decision values
-    // have no consumer in this build (tracked since 2026-06-27). Derived
-    // rows, when created, appear as ordinary CONV.01 lines.
-    trace.predicate(
-      'CONV.07', 'api-lock derived decision values consumed by the plan', false,
-      'plan consumption of api-lock derived values',
-      'no consumer exists in this build (known-open since 2026-06-27)',
-      planCorr,
-    );
+    // CONV.07 LIVE (2026-08-08, closed after 2026-06-27): the api-lock now
+    // derives the six Group B values deterministically from the baseline
+    // samples and captures them as locked decisions; the plan reads them
+    // through the same captured-decision channel as every other decision.
+    // The predicate verifies locked api.* rows actually reached the plan's
+    // decision inputs for this target. Fail-soft: an unreadable decisions
+    // list reports false with the read error, never crashes plan generation.
+    try {
+      const { fetchLatestCapturedDecisions: fetchDecisionsForConv07 } = await import(
+        './targetStateCapturedDecisionsClient'
+      );
+      const { LOCKABLE_GROUP_B_CODES: lockableCodes } = await import(
+        '../config/architect-conversation/apiSurfaceMode'
+      );
+      const targetDecisions = await fetchDecisionsForConv07(
+        projectId,
+        targetArchitectureId,
+      );
+      const lockedApiRows = (targetDecisions ?? []).filter(
+        (d) => !d.supersededById && lockableCodes.includes(d.decisionCode),
+      );
+      trace.predicate(
+        'CONV.07', 'api-lock derived decision values consumed by the plan',
+        lockedApiRows.length > 0,
+        'locked api.* captured decisions present in the plan target decision inputs',
+        lockedApiRows.length > 0
+          ? `codes=[${lockedApiRows.map((d) => d.decisionCode).sort().join(',')}]`
+          : 'no locked api.* decisions captured for this target — no current ' +
+            'baseline exists, or the conversation predates the live lock ' +
+            '(re-open it to auto-answer Group B from the baseline)',
+        planCorr,
+      );
+    } catch (conv07Err) {
+      trace.predicate(
+        'CONV.07', 'api-lock derived decision values consumed by the plan', false,
+        'locked api.* captured decisions present in the plan target decision inputs',
+        `decisions read failed: ${conv07Err instanceof Error ? conv07Err.message.slice(0, 150) : 'unknown'}`,
+        planCorr,
+      );
+    }
   }
 
   // ----- Stage 2: token-budget cascade (Q-4) -----
