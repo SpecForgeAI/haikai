@@ -48,6 +48,8 @@ const CATEGORY_OPTIONS = [
   'computed_column',
   'collation',
   'delta_key',
+  'pk_composition',
+  'surrogate_pk',
   'other',
 ] as const;
 

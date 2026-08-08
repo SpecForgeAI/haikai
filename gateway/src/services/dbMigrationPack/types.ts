@@ -63,6 +63,16 @@ export interface IrColumn {
   entityId: string;
   /** Finding ids that contributed merged facts to this column. */
   findingIds: string[];
+  /**
+   * TRUE for the synthetic surrogate-PK column injected by the resolved
+   * `surrogate_pk` decision (2026-08-08 — the "modern DBA" target fix for
+   * tables with no source primary key). The column exists ONLY in target
+   * DDL + expected schema: every source-facing consumer (bulk-load column
+   * lists, delta-key detection, parity keying, sync ordering) MUST treat
+   * the table as if the column were absent — the source has no such column
+   * and the target generates its values independently.
+   */
+  isSurrogate?: boolean;
 }
 
 /** Index entry mirrored from `constraints_metadata.indexes[]` (verbatim). */
@@ -87,7 +97,8 @@ export interface IrTable {
   /** Normalised object type: views are skipped (requires translation spec 2). */
   objectType: 'table' | 'view';
   columns: IrColumn[];
-  primaryKey: { name: string; columns: string[] } | null;
+  /** `isSurrogate` marks a target-only surrogate identity PK (2026-08-08). */
+  primaryKey: { name: string; columns: string[]; isSurrogate?: boolean } | null;
   uniqueConstraints: Array<{ name: string; columns: string[] }>;
   checkConstraints: Array<{ name: string; expression: string | null }>;
   indexes: IrIndex[];
@@ -298,6 +309,14 @@ export type PackDecisionCategory =
    * (AMS chk_dmpd_category extended by changeset 220).
    */
   | 'pk_composition'
+  /**
+   * ONE pack-wide decision for tables with NO source primary key
+   * (2026-08-08): add a target-only surrogate identity PK per table
+   * (the modern-DBA fix — isSurrogate-flagged so load/parity/sync never
+   * read or key on it) or explicitly leave them without a PK. AMS
+   * chk_dmpd_category extended by changeset 221.
+   */
+  | 'surrogate_pk'
   | 'other';
 
 export interface PackDecision {
@@ -500,6 +519,12 @@ export interface ExpectedSchemaColumn {
   isIdentity: boolean;
   isGenerated: boolean;
   generationExpression: string | null;
+  /**
+   * TRUE for a target-only surrogate identity column (2026-08-08). Source
+   * data does NOT carry it: the load plan must exclude it from insert lists
+   * and ordering, and parity must never key on it.
+   */
+  isSurrogate?: boolean;
 }
 
 export interface ExpectedSchemaKeyOrIndex {
@@ -520,6 +545,12 @@ export interface ExpectedSchemaKeyOrIndex {
   onUpdate: string | null;
   isUnique: boolean;
   columnDirections: string[] | null;
+  /**
+   * TRUE for a surrogate primary key that exists ONLY on the target
+   * (2026-08-08). The drift-check verifies it like any PK, but parity/sync
+   * must NOT key on it — its values are generated independently per side.
+   */
+  isSurrogate?: boolean;
 }
 
 export interface ExpectedSchemaSequence {

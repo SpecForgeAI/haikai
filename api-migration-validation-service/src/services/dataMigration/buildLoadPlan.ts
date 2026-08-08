@@ -27,12 +27,16 @@ interface RawColumn {
   dataType?: string;
   isIdentity?: boolean;
   isGenerated?: boolean;
+  /** Target-only surrogate-PK column (2026-08-08) — never source-loadable. */
+  isSurrogate?: boolean;
 }
 interface RawKeyIndex {
   schemaName?: string;
   tableName?: string;
   kind?: string;
   columns?: string[];
+  /** Surrogate PK (2026-08-08) — never a load order key. */
+  isSurrogate?: boolean;
 }
 interface RawTable {
   schemaName?: string;
@@ -69,7 +73,13 @@ export function buildLoadPlan(mainManifest: unknown, bulkManifest?: unknown): Lo
     const schema = t.schemaName ?? '';
     const table = t.tableName ?? '';
     if (!table) continue;
-    const cols = columns.filter((c) => c.schemaName === schema && c.tableName === table);
+    // Surrogate-PK columns (2026-08-08) exist ONLY on the target — they must
+    // never appear in insert lists, identity handling, or ordering, so drop
+    // them from the working set entirely (the source SELECT would fail on
+    // the missing column, and the identity is target-generated anyway).
+    const cols = columns.filter(
+      (c) => c.schemaName === schema && c.tableName === table && c.isSurrogate !== true,
+    );
     if (cols.length === 0) {
       issues.push(`no columns for ${qn(schema, table)} — skipped`);
       continue;
@@ -88,6 +98,11 @@ export function buildLoadPlan(mainManifest: unknown, bulkManifest?: unknown): Lo
         k.schemaName === schema &&
         k.tableName === table &&
         k.kind === 'primary_key' &&
+        // A surrogate PK (2026-08-08) cannot order the SOURCE read — the
+        // column does not exist there. The table falls back to the keyless
+        // all-orderable-columns ordering below, exactly as before the
+        // surrogate was added.
+        k.isSurrogate !== true &&
         Array.isArray(k.columns) &&
         k.columns.length > 0,
     );

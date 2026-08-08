@@ -325,12 +325,14 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
               {findings.map((finding) => {
                 const chip = statusChip(finding);
                 const draft = noteDrafts[finding.key] ?? null;
-                // Spec 4: AI drafting is offered ONLY while the finding is
-                // actionable (open = undispositioned or fix_upstream).
+                // Spec 4 + 2026-08-08: AI drafting stays offered on
+                // known_gap rows too — accepted debt is exactly the row an
+                // operator comes back to fix intelligently, and hiding the
+                // affordance behind "Clear disposition" buried it. Only
+                // `accepted` (the zero is genuinely true) drops the action.
                 const gapEligible =
                   GAP_PROPOSAL_FINDING_KINDS.has(finding.kind) &&
-                  (finding.disposition === null ||
-                    finding.disposition === 'fix_upstream');
+                  finding.disposition !== 'accepted';
                 const gapSection = gapSections[finding.key] ?? null;
                 return (
                   <React.Fragment key={finding.key}>
@@ -493,10 +495,10 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
                               className={styles.actionButton}
                               onClick={() => draftGapProposals(finding.key)}
                               disabled={busyKey !== null}
-                              title="AI drafts the missing metadata from the committed model into a review queue — nothing is applied without your approval"
+                              title="AI drafts the missing PK/FK metadata from the committed model into a review queue — nothing is applied without your approval"
                               data-testid={`db-gap-proposals-draft-${finding.key}`}
                             >
-                              Draft proposals with AI
+                              Fix with AI
                             </button>
                           )}
                           {gapEligible && gapSection && (

@@ -5167,3 +5167,22 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 221: db-pack decision category + 'surrogate_pk' (2026-08-08). ONE
+  # pack-wide decision offers the modern-DBA target fix for no-PK tables: a
+  # target-only BIGINT GENERATED ALWAYS AS IDENTITY primary key per table
+  # (isSurrogate-flagged so load/parity/sync never read or key on it), or an
+  # explicit leave_without_pk. Drop-and-recreate (the 177 idiom).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 220).
+  # ============================================================================
+  - changeSet:
+      id: 221-db-pack-decision-surrogate-pk-category
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/221-db-pack-decision-surrogate-pk-category.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

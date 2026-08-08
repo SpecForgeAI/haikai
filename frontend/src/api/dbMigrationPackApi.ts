@@ -71,6 +71,9 @@ export type DbMigrationPackDecisionCategory =
   | 'computed_column'
   | 'collation'
   | 'delta_key'
+  | 'pk_composition'
+  /** Target-only surrogate identity PK for no-PK tables (2026-08-08). */
+  | 'surrogate_pk'
   | 'other';
 
 export type DbMigrationPackDecisionStatus = 'open' | 'resolved';
