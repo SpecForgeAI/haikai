@@ -567,6 +567,13 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
     }
   }
 
+  // Surrogate-PK injection (2026-08-08): a resolved `surrogate_pk` decision
+  // gives every no-PK table a target-only identity PK BEFORE the structural
+  // accounting below, so the no_primary_keys finding stops firing for the
+  // tables the decision covered — the generator stays the only resolution
+  // oracle.
+  applySurrogatePkDecision(tables, resolvedDecisions);
+
   const ir: SourceSchemaIr = {
     sourceEngine,
     targetEngine,
@@ -586,6 +593,98 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
   };
   ir.structuralAccounting = buildStructuralAccounting(inputs, ir);
   return ir;
+}
+
+// ---------------------------------------------------------------------------
+// Surrogate primary keys (2026-08-08 — the "modern DBA" target fix)
+// ---------------------------------------------------------------------------
+
+/** The single pack-wide surrogate-PK decision key. */
+export const SURROGATE_PK_DECISION_KEY = 'surrogate_pk--tables_without_pk';
+/** Its options: add a target-only identity PK to every no-PK table, or not. */
+export const SURROGATE_PK_OPTIONS = [
+  'add_surrogate_identity_pk',
+  'leave_without_pk',
+] as const;
+
+/** Deterministic surrogate column-name cascade (first non-colliding wins). */
+const SURROGATE_COLUMN_CANDIDATES = ['id', 'row_id', 'haikai_row_id'];
+
+/** Clamp an identifier to PostgreSQL's 63-byte limit (ASCII-safe slice). */
+function clampIdent(name: string): string {
+  return name.length > 63 ? name.slice(0, 63) : name;
+}
+
+/**
+ * Apply a resolved `surrogate_pk` decision to the IR tables IN PLACE: every
+ * `objectType === 'table'` row with NO primary key gains a synthetic
+ * `BIGINT GENERATED ALWAYS AS IDENTITY` column + PK, both flagged
+ * `isSurrogate` so every source-facing consumer (load column lists,
+ * delta-key detection, parity keying, sync ordering) can exclude them — the
+ * SOURCE has no such column and target values are generated independently.
+ *
+ * The column name cascades `id` -> `row_id` -> `haikai_row_id` to the first
+ * name not colliding (case-insensitively) with an existing column; a table
+ * colliding on all three (pathological) is left untouched and reported so
+ * the caller can surface it — never a silent partial.
+ *
+ * Returns the per-table outcome for manifest/warning surfaces. A missing or
+ * `leave_without_pk` resolution is a no-op (`{added: [], skipped: []}`).
+ */
+export function applySurrogatePkDecision(
+  tables: IrTable[],
+  resolvedDecisions: Record<string, Record<string, unknown>>,
+): { added: string[]; skipped: string[] } {
+  const added: string[] = [];
+  const skipped: string[] = [];
+  const resolution = resolvedDecisions[SURROGATE_PK_DECISION_KEY];
+  if (!resolution || resolution['option'] !== 'add_surrogate_identity_pk') {
+    return { added, skipped };
+  }
+  for (const table of tables) {
+    if (table.objectType !== 'table' || table.primaryKey) continue;
+    const taken = new Set(table.columns.map((c) => c.columnName.toLowerCase()));
+    const columnName = SURROGATE_COLUMN_CANDIDATES.find((n) => !taken.has(n));
+    const qn = `${table.schemaName}.${table.tableName}`;
+    if (!columnName) {
+      skipped.push(qn);
+      continue;
+    }
+    table.columns.push({
+      schemaName: table.schemaName,
+      tableName: table.tableName,
+      columnName,
+      dataType: 'bigint',
+      maxLength: null,
+      scale: null,
+      precision: null,
+      isNullable: false,
+      isPrimaryKey: true,
+      defaultExpression: null,
+      // After every source column so DDL appends it last, deterministically.
+      ordinalPosition:
+        Math.max(0, ...table.columns.map((c) => c.ordinalPosition ?? 0)) + 1,
+      isIdentity: true,
+      collation: null,
+      collationCaseInsensitive: false,
+      isGenerated: false,
+      generationExpression: null,
+      nonPortableDefault: null,
+      attributeId: `surrogate:${qn}.${columnName}`,
+      entityId: table.entityId,
+      findingIds: [],
+      isSurrogate: true,
+    });
+    table.primaryKey = {
+      name: clampIdent(`pk_${table.tableName}_surrogate`),
+      columns: [columnName],
+      isSurrogate: true,
+    };
+    added.push(qn);
+  }
+  added.sort((a, b) => a.localeCompare(b));
+  skipped.sort((a, b) => a.localeCompare(b));
+  return { added, skipped };
 }
 
 // ---------------------------------------------------------------------------

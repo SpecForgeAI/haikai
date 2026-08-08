@@ -45,6 +45,8 @@ import {
   fetchGenerationInputs,
   GenerationInputs,
   InputFetchDeps,
+  SURROGATE_PK_DECISION_KEY,
+  SURROGATE_PK_OPTIONS,
 } from './dbMigrationPack/inputs';
 import {
   COLLATION_OPTIONS,
@@ -440,6 +442,10 @@ export function buildSequenceSeeds(
     const qq = quotedQualifiedName(table.schemaName, table.tableName);
     for (const column of table.columns) {
       if (!column.isIdentity) continue;
+      // Surrogate identity columns (2026-08-08) need NO seed: no source
+      // values are ever loaded into them, so the identity starts at 1 —
+      // deriving a restart from source high-water would be meaningless.
+      if (column.isSurrogate === true) continue;
       const colRef = `${qn}.${column.columnName}`;
       const seq = findSequenceForColumn(table, column);
       const seedKey = `sequence_seed--${colRef}`;
@@ -573,6 +579,35 @@ export function buildDbMigrationPackArtifacts(
     realTables,
     ir.foreignKeys
   );
+
+  // --- surrogate-PK decision (2026-08-08, the "modern DBA" target fix) -----
+  // Tables with no source primary key lose row identity on the target. ONE
+  // pack-wide decision offers the intelligent fix: add a target-only
+  // `BIGINT GENERATED ALWAYS AS IDENTITY` PK to every such table (applied
+  // by `applySurrogatePkDecision` inside the IR build on regenerate — the
+  // no_primary_keys finding then stops firing for them), or record
+  // `leave_without_pk` and keep the finding's known-gap path. Raised only
+  // while unresolved and while at least one table still lacks a PK.
+  const tablesStillWithoutPk = realTables
+    .filter((t) => !t.primaryKey)
+    .map((t) => qualifiedName(t.schemaName, t.tableName))
+    .sort((a, b) => a.localeCompare(b));
+  if (tablesStillWithoutPk.length > 0 && !ir.resolvedDecisions[SURROGATE_PK_DECISION_KEY]) {
+    decisions.push({
+      decisionKey: SURROGATE_PK_DECISION_KEY,
+      objectRef: 'tables_without_pk',
+      category: 'surrogate_pk',
+      question:
+        `${tablesStillWithoutPk.length} table(s) carry no primary key — they get no ` +
+        `PK on the target, losing row identity. Choose add_surrogate_identity_pk ` +
+        `(each gains a target-only BIGINT GENERATED ALWAYS AS IDENTITY column — ` +
+        `id / row_id / haikai_row_id, first non-colliding — with a primary key; ` +
+        `source data is unaffected, and parity/sync deliberately never key on the ` +
+        `surrogate) or leave_without_pk (the no-PK finding stays for its ` +
+        `accept/known-gap dispositions). Affected: ${tablesStillWithoutPk.join(', ')}.`,
+      options: [...SURROGATE_PK_OPTIONS],
+    });
+  }
 
   // --- schema-scoped relation names (2026-08-06) ----------------------------
   // Sybase scopes constraint/index names per TABLE; Postgres backs PK/UNIQUE
@@ -1003,6 +1038,11 @@ function buildExpectedSchema(
     const presentColumns = new Set(
       translated.filter((t) => t.emitted !== null).map((t) => t.emitted!.columnName)
     );
+    // Surrogate-PK members (2026-08-08): the columns exist ONLY on the
+    // target, so the load plan / parity / sync must be able to exclude them.
+    const surrogateColumns = new Set(
+      table.primaryKey?.isSurrogate === true ? table.primaryKey.columns : []
+    );
     for (const t of translated) {
       if (!t.emitted) continue;
       columns.push({
@@ -1016,6 +1056,7 @@ function buildExpectedSchema(
         isIdentity: t.emitted.isIdentity,
         isGenerated: t.emitted.generationExpression !== null,
         generationExpression: t.emitted.generationExpression,
+        ...(surrogateColumns.has(t.emitted.columnName) ? { isSurrogate: true } : {}),
       });
     }
     // Mirror the EMITTER's pk_composition semantics (2026-08-07): the
@@ -1033,7 +1074,9 @@ function buildExpectedSchema(
         (d) => d.kind === 'primary_key' && d.name === table.primaryKey!.name
       );
       if (!pkDropped) {
-        keysAndIndexes.push(keyEntry(table, 'primary_key', table.primaryKey.name, table.primaryKey.columns, { isUnique: true }));
+        const pkEntry = keyEntry(table, 'primary_key', table.primaryKey.name, table.primaryKey.columns, { isUnique: true });
+        if (table.primaryKey.isSurrogate === true) pkEntry.isSurrogate = true;
+        keysAndIndexes.push(pkEntry);
       } else if (keyResolution(table.primaryKey.name) === 'emit_over_present_members') {
         const kept = table.primaryKey.columns.filter((c) => presentColumns.has(c));
         if (kept.length > 0) {

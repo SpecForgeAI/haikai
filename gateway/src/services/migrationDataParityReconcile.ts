@@ -144,8 +144,19 @@ export async function defaultResolveDataParityTables(
   // comparator's keyed-join anchor (2026-08-07).
   const pkByTable = new Map<string, string[]>();
   for (const key of packView.manifest.expected_schema?.keysAndIndexes ?? []) {
-    const k = key as { kind?: string; schemaName?: string; tableName?: string; columns?: string[] };
+    const k = key as {
+      kind?: string;
+      schemaName?: string;
+      tableName?: string;
+      columns?: string[];
+      isSurrogate?: boolean;
+    };
     if (k.kind !== 'primary_key' || !Array.isArray(k.columns) || k.columns.length === 0) continue;
+    // A SURROGATE PK (2026-08-08) exists only on the target with values
+    // generated independently per side — keying the parity join on it would
+    // match nothing and manufacture total divergence. Treat the table as
+    // keyless: AMVS falls back to canonical multiset comparison.
+    if (k.isSurrogate === true) continue;
     pkByTable.set(`${k.schemaName ?? ''}.${k.tableName ?? ''}`.toLowerCase(), k.columns);
   }
   return orderedTables(packView.manifest).map((qn) => {

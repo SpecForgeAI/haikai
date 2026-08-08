@@ -104,7 +104,10 @@ export function detectDeltaKey(table: IrTable): DeltaKeyDetection {
     (a, b) => (a.ordinalPosition ?? 0) - (b.ordinalPosition ?? 0) ||
       a.columnName.localeCompare(b.columnName)
   );
-  const identity = sorted.find((c) => c.isIdentity);
+  // Surrogate identity columns (2026-08-08) are TARGET-only: the source has
+  // no such column, so a delta read `WHERE <surrogate> > high-water` would
+  // fail at the source. Never a delta key.
+  const identity = sorted.find((c) => c.isIdentity && c.isSurrogate !== true);
   if (identity) {
     return { strategy: 'insert_only', deltaKey: identity.columnName, source: 'identity_column' };
   }

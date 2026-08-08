@@ -49,4 +49,32 @@ describe('buildLoadPlan (Spec Y)', () => {
     expect(plan.tables).toEqual([]);
     expect(plan.issues.length).toBeGreaterThan(0);
   });
+  it('surrogate PK (2026-08-08): the target-only column never loads, never orders, never counts as identity', () => {
+    const surrogateManifest = {
+      expected_schema: {
+        tables: [{ schemaName: 'dbo', tableName: 'heap1' }],
+        columns: [
+          { schemaName: 'dbo', tableName: 'heap1', columnName: 'payload', dataType: 'varchar' },
+          { schemaName: 'dbo', tableName: 'heap1', columnName: 'amount', dataType: 'numeric' },
+          // Target-only surrogate: bulk load must behave as if it did not exist.
+          { schemaName: 'dbo', tableName: 'heap1', columnName: 'id', dataType: 'bigint', isIdentity: true, isSurrogate: true },
+        ],
+        keysAndIndexes: [
+          { schemaName: 'dbo', tableName: 'heap1', kind: 'primary_key', columns: ['id'], isSurrogate: true },
+        ],
+      },
+    };
+    const plan = buildLoadPlan(surrogateManifest);
+    expect(plan.issues).toEqual([]);
+    const heap = plan.tables[0];
+    // Insert list = source columns only (a SELECT naming `id` would fail at
+    // the source, and GENERATED ALWAYS rejects explicit values anyway).
+    expect(heap.loadColumns).toEqual(['payload', 'amount']);
+    expect(heap.identityColumns).toEqual([]);
+    // The surrogate PK cannot order the source read: keyless fallback
+    // ordering over the real columns, orderKeyIsPrimaryKey stays false.
+    expect(heap.orderKeyIsPrimaryKey).toBe(false);
+    expect(heap.orderBy).toEqual(['payload', 'amount']);
+  });
 });
+

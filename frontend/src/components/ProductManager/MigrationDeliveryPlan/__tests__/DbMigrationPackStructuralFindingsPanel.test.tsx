@@ -276,4 +276,39 @@ describe('DbMigrationPackStructuralFindingsPanel', () => {
       screen.queryByTestId(`db-pack-structural-finding-details-${withDetails.key}`),
     ).not.toBeInTheDocument();
   });
+  it('keeps "Fix with AI" available on known_gap rows of eligible kinds; drops it only on accepted (2026-08-08)', async () => {
+    mockListFindings.mockResolvedValue({
+      findings: [
+        {
+          key: 'no_primary_keys:all_tables',
+          kind: 'no_primary_keys',
+          subject: 'all_tables',
+          message: '57 of 65 table(s) carry no primary key.',
+          disposition: 'known_gap',
+          note: 'Please add PK in target',
+          open: false,
+        },
+        {
+          key: 'relationships_without_fk_columns:all',
+          kind: 'relationships_without_fk_columns',
+          subject: 'all',
+          message: '12 relationship(s) carry no fk_columns join metadata.',
+          disposition: 'accepted',
+          note: 'Genuinely joinless.',
+          open: false,
+        },
+      ],
+    });
+    renderPanel();
+    // known_gap keeps the intelligent-fix affordance (accepted debt is
+    // exactly the row an operator comes back to fix).
+    expect(
+      await screen.findByTestId('db-gap-proposals-draft-no_primary_keys:all_tables'),
+    ).toBeInTheDocument();
+    // accepted = "the zero is genuinely true" — no fix offered.
+    expect(
+      screen.queryByTestId('db-gap-proposals-draft-relationships_without_fk_columns:all'),
+    ).toBeNull();
+  });
 });
+
