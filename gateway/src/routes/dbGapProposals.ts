@@ -171,17 +171,25 @@ export function createDbGapProposalsRouter(
     return (text ? JSON.parse(text) : null) as T;
   }
 
-  /** PUT the bulk upsert (by proposal_key) with the provenance origin. */
+  /**
+   * PUT the bulk upsert (by proposal_key) with the provenance origin.
+   *
+   * Wire shape (2026-08-08 fix): AMS's `UpsertDbGapProposalsRequest` is a
+   * WRAPPER object `{ proposals: [...] }` — this helper originally sent the
+   * bare array (both sides were built in parallel), so every live upsert
+   * died with Jackson's "Required request body is missing or malformed"
+   * AFTER the LLM had drafted successfully.
+   */
   async function upsertProposals(
     projectId: string,
     rows: GapProposalRow[],
     origin: 'llm' | 'manual'
   ): Promise<unknown> {
-    const body: GapProposalUpsertRow[] = rows.map((row) => ({ ...row, origin }));
+    const proposals: GapProposalUpsertRow[] = rows.map((row) => ({ ...row, origin }));
     return amsJson(queueUrl(projectId), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ proposals }),
     });
   }
 
