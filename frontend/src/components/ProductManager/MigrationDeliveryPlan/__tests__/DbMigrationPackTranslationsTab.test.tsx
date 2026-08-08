@@ -65,6 +65,7 @@ const mockTranslateOne = vi.fn();
 const mockRetry = vi.fn();
 const mockSetDisposition = vi.fn();
 const mockReview = vi.fn();
+const mockApproveAll = vi.fn();
 
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
   const actual = await vi.importActual<
@@ -87,6 +88,8 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
       mockSetDisposition(...args),
     reviewDbMigrationPackTranslation: (...args: unknown[]) =>
       mockReview(...args),
+    approveAllDbMigrationPackTranslations: (...args: unknown[]) =>
+      mockApproveAll(...args),
   };
 });
 
@@ -556,12 +559,17 @@ describe('DbMigrationPackTranslationsTab (Task 5.1)', () => {
     // Legacy-redacted is reviewable (warned, not blocked).
     expect(screen.getByTestId('db-pack-translation-approve')).toBeInTheDocument();
   });
-  it('Approve all (2026-08-08): approves only drafted UNREVIEWED translate rows; count reflects eligibility', async () => {
+  it('Approve all (2026-08-08): ONE bulk call; count mirrors the approve gate; not-approvable rows surface honestly', async () => {
     // Fixture ROWS: tr-drafted is the ONLY drafted+unreviewed translate row
-    // (pending/failed/needs_manual have no draft_content).
-    mockReview.mockResolvedValue({
-      translation: buildTranslation({ review_status: 'approved' }),
-      emission: { approved_count: 1, changed: true },
+    // carrying a judge verdict (pending/failed/needs_manual are ineligible).
+    mockApproveAll.mockResolvedValue({
+      approved_count: 1,
+      eligible_count: 1,
+      not_approvable: [
+        { translation_key: 'view--dbo.v_orders', pipeline_state: 'pending', reason: "pipeline state 'pending' — translate it first" },
+      ],
+      failed: [],
+      emission: { approved_count: 1, emitted_file_paths: [], changed: true },
     });
     renderTab();
 
@@ -569,12 +577,13 @@ describe('DbMigrationPackTranslationsTab (Task 5.1)', () => {
     expect(button.textContent).toContain('Approve all (1)');
     fireEvent.click(button);
 
-    await waitFor(() => expect(mockReview).toHaveBeenCalledTimes(1));
-    expect(mockReview).toHaveBeenCalledWith(PROJECT_ID, PACK_ID, 'tr-drafted', 'approve');
-    // The approved-only emission outcome surfaces like a single approve.
-    expect(
-      (await screen.findByTestId('db-pack-translations-notice')).textContent,
-    ).toContain('1 approved');
+    await waitFor(() => expect(mockApproveAll).toHaveBeenCalledTimes(1));
+    expect(mockApproveAll).toHaveBeenCalledWith(PROJECT_ID, PACK_ID);
+    // Bulk = one call, never a per-row review loop.
+    expect(mockReview).not.toHaveBeenCalled();
+    const notice = await screen.findByTestId('db-pack-translations-notice');
+    expect(notice.textContent).toContain('Approved 1 translation(s)');
+    expect(notice.textContent).toContain('1 unreviewed row(s) are not approvable');
   });
 });
 

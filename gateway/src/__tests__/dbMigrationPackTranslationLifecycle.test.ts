@@ -722,3 +722,138 @@ describe('Group 6 — coverage-assertion violation through the real translate-al
     expect(mockSendChatRequest).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Approve-all (2026-08-08): server-side bulk approval — the exact single-
+// review approve gate per row, ONE emission for the whole batch, and honest
+// not_approvable reporting for rows the gate rejects.
+// ---------------------------------------------------------------------------
+
+describe('POST translations/approve-all — bulk approve through the real route', () => {
+  it('approves only drafted+verdict rows, reports the rest in not_approvable, and runs ONE emission', async () => {
+    const PROC_BODY = 'CREATE PROCEDURE dbo.usp_ok AS SELECT 1';
+    const VIEW_BODY = 'CREATE VIEW dbo.v_no_verdict AS SELECT 1 AS x';
+    const TRIG_BODY = 'CREATE TRIGGER dbo.trg_pending ON dbo.t FOR INSERT AS SELECT 1';
+    const state: AmsState = {
+      manifest: {
+        manifest_version: 1,
+        requires_translation_spec_2: [
+          { kind: 'stored_procedure', object_ref: 'dbo.usp_ok', finding_ids: [] },
+          { kind: 'view', object_ref: 'dbo.v_no_verdict', finding_ids: [] },
+          { kind: 'trigger', object_ref: 'dbo.trg_pending', finding_ids: [] },
+        ],
+      },
+      rows: [
+        {
+          // APPROVABLE: drafted + draft content + judge verdict.
+          id: 't-ok',
+          translation_key: 'stored_procedure--dbo.usp_ok',
+          object_ref: 'dbo.usp_ok',
+          kind: 'stored_procedure',
+          disposition: 'translate',
+          drop_reason: null,
+          pipeline_state: 'drafted',
+          source_body: PROC_BODY,
+          source_body_hash: computeSourceBodyHash(PROC_BODY),
+          truncated: false,
+          legacy_redacted: false,
+          draft_content: 'CREATE OR REPLACE FUNCTION dbo.usp_ok() RETURNS void AS $$ SELECT 1 $$ LANGUAGE sql;',
+          judge_verdict_json: { verdict: 'equivalent', confidence: 0.9, flags: [] },
+          review_status: 'unreviewed',
+          reviewer_notes: null,
+        },
+        {
+          // NOT approvable: drafted but NO judge verdict (the exact row class
+          // the first client-side loop 400'd on).
+          id: 't-no-verdict',
+          translation_key: 'view--dbo.v_no_verdict',
+          object_ref: 'dbo.v_no_verdict',
+          kind: 'view',
+          disposition: 'translate',
+          drop_reason: null,
+          pipeline_state: 'drafted',
+          source_body: VIEW_BODY,
+          source_body_hash: computeSourceBodyHash(VIEW_BODY),
+          truncated: false,
+          legacy_redacted: false,
+          draft_content: 'CREATE OR REPLACE VIEW dbo.v_no_verdict AS SELECT 1 AS x;',
+          judge_verdict_json: null,
+          review_status: 'unreviewed',
+          reviewer_notes: null,
+        },
+        {
+          // NOT approvable: still pending (no draft at all).
+          id: 't-pending',
+          translation_key: 'trigger--dbo.trg_pending',
+          object_ref: 'dbo.trg_pending',
+          kind: 'trigger',
+          disposition: 'translate',
+          drop_reason: null,
+          pipeline_state: 'pending',
+          source_body: TRIG_BODY,
+          source_body_hash: computeSourceBodyHash(TRIG_BODY),
+          truncated: false,
+          legacy_redacted: false,
+          draft_content: null,
+          judge_verdict_json: null,
+          review_status: 'unreviewed',
+          reviewer_notes: null,
+        },
+      ],
+      files: baseFiles(),
+      packPuts: [],
+      upsertBodies: [],
+      patches: [],
+    };
+    installAmsStub(state);
+    const app = createTestApp();
+
+    const res = await request(app).post(T('pack-1', '/approve-all')).send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.approved_count).toBe(1);
+    expect(res.body.eligible_count).toBe(1);
+    expect(res.body.failed).toEqual([]);
+    // Honest gate reporting for the two ineligible unreviewed rows.
+    const reasons = Object.fromEntries(
+      (res.body.not_approvable as Array<{ translation_key: string; reason: string }>).map(
+        (n) => [n.translation_key, n.reason],
+      ),
+    );
+    expect(reasons['view--dbo.v_no_verdict']).toContain('no judge verdict');
+    expect(reasons['trigger--dbo.trg_pending']).toContain("pipeline state 'pending'");
+
+    // Exactly ONE review patch (the approvable row) and ONE emission pack PUT.
+    expect(state.patches).toEqual([
+      { id: 't-ok', patch: { review_status: 'approved' } },
+    ]);
+    expect(state.packPuts).toHaveLength(1);
+    // The emitted 050 changeset carries ONLY the approved object.
+    const changeset = fileOf(state.packPuts[0], TRANSLATIONS_CHANGESET_PATH);
+    expect(changeset).toBeDefined();
+    expect(changeset!.content).toContain('dbo.usp_ok');
+    expect(changeset!.content).not.toContain('v_no_verdict');
+    expect(res.body.emission).toMatchObject({ approved_count: 1, changed: true });
+  });
+
+  it('with NOTHING approvable: no patches, no emission, honest zero counts', async () => {
+    const state: AmsState = {
+      manifest: { manifest_version: 1, requires_translation_spec_2: [] },
+      rows: [],
+      files: baseFiles(),
+      packPuts: [],
+      upsertBodies: [],
+      patches: [],
+    };
+    installAmsStub(state);
+    const app = createTestApp();
+
+    const res = await request(app).post(T('pack-1', '/approve-all')).send({});
+    expect(res.status).toBe(200);
+    expect(res.body.approved_count).toBe(0);
+    expect(res.body.not_approvable).toEqual([]);
+    expect(res.body.emission).toBeNull();
+    expect(state.patches).toHaveLength(0);
+    expect(state.packPuts).toHaveLength(0);
+  });
+});
