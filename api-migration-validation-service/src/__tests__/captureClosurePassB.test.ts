@@ -13,6 +13,7 @@ import {
   MAX_REPAIR_ATTEMPTS,
   MUTATING_ATTEMPTS_CAP,
   EndpointDiagnosis,
+  deriveLoopBudget,
 } from '../services/captureClosurePassB';
 
 function diag(partial: Partial<EndpointDiagnosis>): EndpointDiagnosis {
@@ -98,5 +99,82 @@ describe('buildRepairDirective', () => {
     const d = buildRepairDirective(diag({ last_status: null }));
     expect(d.failure_mode).toBe('transport');
     expect(d.directive).toMatch(/status transport failure \(no response\)/);
+  });
+});
+
+// --------------------------------------------------------------------------
+// 2026-08-08 budget/seed fix: attempts = FIRED requests at the target; the
+// loop limits derive from the budget; the directive carries the budget
+// explanation, the deterministic seeds, and the known-failed candidates.
+// --------------------------------------------------------------------------
+
+describe('deriveLoopBudget', () => {
+  it('scales rounds and wall clock from the fired-attempt budget', () => {
+    expect(deriveLoopBudget(15)).toEqual({
+      roundLimit: 15 * 4 + 8,
+      wallClockMs: 15 * 60_000 + 240_000,
+    });
+    // Mutating cap of 5 fired attempts still buys a real loop.
+    expect(deriveLoopBudget(5)).toEqual({ roundLimit: 28, wallClockMs: 540_000 });
+  });
+
+  it('floors at one attempt and ceilings the wall clock at 45 minutes', () => {
+    expect(deriveLoopBudget(0).roundLimit).toBe(12);
+    expect(deriveLoopBudget(50).wallClockMs).toBe(45 * 60_000);
+  });
+});
+
+describe('buildRepairDirective -- budget explanation + deterministic seeds', () => {
+  const diag: EndpointDiagnosis = {
+    operation_id: 'getOrder',
+    method: 'GET',
+    path: '/orders/{orderId}',
+    last_status: 404,
+    last_error_summary: 'not found',
+    last_request_summary: 'GET /orders/1',
+  };
+
+  it('states that research is free and only fired requests consume the budget', () => {
+    const d = buildRepairDirective(diag, { attempts: 10 });
+    expect(d.directive).toContain('Budget: 10 request(s) fired at this target operation');
+    expect(d.directive).toContain('Research is FREE');
+    expect(d.directive).toContain('search_source_files');
+  });
+
+  it('seeds mined table values, the session id pool, and the failed candidates (never repeated)', () => {
+    const d = buildRepairDirective(diag, null, {
+      minedIdsByTable: { orders: ['12345', '67890'] },
+      sessionIdPool: ['abc-1'],
+      triedAndFailed: [
+        { path: '/orders/12345', status: 404 },
+        { path: '/orders/67890', status: null },
+      ],
+    });
+    expect(d.directive).toContain('mined from source table orders: 12345, 67890');
+    expect(d.directive).toContain('Identifier values already seen in this session: abc-1');
+    expect(d.directive).toContain('do NOT repeat these');
+    expect(d.directive).toContain('/orders/12345 -> 404');
+    expect(d.directive).toContain('/orders/67890 -> no response');
+  });
+
+  it('caps rendered seed values and omits empty seed sections', () => {
+    const many = Array.from({ length: 40 }, (_v, i) => `id-${i}`);
+    const capped = buildRepairDirective(diag, null, { minedIdsByTable: { orders: many } });
+    expect(capped.directive).toContain('id-14');
+    expect(capped.directive).not.toContain('id-15,');
+    const bare = buildRepairDirective(diag, null, {});
+    expect(bare.directive).not.toContain('mined from source table');
+    expect(bare.directive).not.toContain('Already tried WITHOUT success');
+  });
+
+  it('keeps operator notes LAST (highest signal) even with seeds present', () => {
+    const d = buildRepairDirective(
+      diag,
+      { notes: 'use type=Core' },
+      { sessionIdPool: ['abc-1'] },
+    );
+    const notesIdx = d.directive.indexOf('Operator hint');
+    const seedIdx = d.directive.indexOf('Identifier values already seen');
+    expect(notesIdx).toBeGreaterThan(seedIdx);
   });
 });

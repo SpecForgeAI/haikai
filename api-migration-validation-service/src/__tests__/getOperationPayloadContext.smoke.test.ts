@@ -195,6 +195,7 @@ function buildContext(): ToolExecutionContext {
   // No DTO classes -> no source fetches expected. Provide a stub that
   // throws if called so any accidental call is loud.
   const discoveryClient: DiscoveryServiceClient = {
+    searchSourceFiles: async () => ({ kind: 'ok' as const, files: [], truncated: false }),
     fetchSourceFile: async (): Promise<FetchSourceResult> => {
       throw new Error(
         'fetchSourceFile should not be invoked for a WSDL-only operation',

@@ -598,3 +598,127 @@ describe('captureLoopRunner -- LLM per-day quota (Spec 2026-07-22)', () => {
     expect(outcome.reason).toBe('llm_relay_error');
   });
 });
+
+// --------------------------------------------------------------------------
+// Fired-attempt budget (2026-08-08 Retry-uncovered budget fix): the budget
+// counts ONLY execute_http_request calls at the TARGET operation; research
+// tools and other endpoints are free; the over-budget call is refused (never
+// fired) and the loop ends with `attempt_budget_exhausted`.
+// --------------------------------------------------------------------------
+
+describe('captureLoopRunner -- fired-attempt budget', () => {
+  function budgetFakes(): {
+    fakeHttp: ToolRegistryEntry;
+    fakeList: ToolRegistryEntry;
+    firedPaths: string[];
+    listCalls: number[];
+  } {
+    const firedPaths: string[] = [];
+    const listCalls: number[] = [];
+    const fakeHttp: ToolRegistryEntry = {
+      name: 'execute_http_request',
+      description: 'fake http',
+      parameters: { type: 'object', properties: {} },
+      handler: async (args) => {
+        firedPaths.push(String(args.path));
+        return { status: 404 };
+      },
+    };
+    const fakeList: ToolRegistryEntry = {
+      name: 'list_oas_operations',
+      description: 'fake research',
+      parameters: { type: 'object', properties: {} },
+      handler: async () => {
+        listCalls.push(1);
+        return { operations: [] };
+      },
+    };
+    return { fakeHttp, fakeList, firedPaths, listCalls };
+  }
+
+  const httpCall = (id: string, method: string, path: string) => ({
+    id,
+    type: 'function' as const,
+    function: {
+      name: 'execute_http_request',
+      arguments: JSON.stringify({ method, path }),
+    },
+  });
+  const listCall = (id: string) => ({
+    id,
+    type: 'function' as const,
+    function: { name: 'list_oas_operations', arguments: '{}' },
+  });
+
+  it('research and other-endpoint requests are FREE; only target hits count; the over-budget call is refused', async () => {
+    const { fakeHttp, fakeList, firedPaths, listCalls } = budgetFakes();
+    const gateway = buildStubGateway([
+      // Round 1: research + a NON-target request (a list fetch) — both free.
+      makeAssistant([listCall('c1'), httpCall('c2', 'GET', '/orders')]),
+      // Round 2: first fired attempt at the target (template match).
+      makeAssistant([httpCall('c3', 'GET', '/orders/123')]),
+      // Round 3: second fired attempt — budget (2) now exhausted.
+      makeAssistant([httpCall('c4', 'GET', '/orders/456')]),
+      // Round 4: third attempt must be REFUSED and end the loop.
+      makeAssistant([httpCall('c5', 'GET', '/orders/789')]),
+    ]);
+
+    const outcome = await runScenarioLoop({
+      context: buildContext(),
+      initialMessages: [{ role: 'user', content: 'repair' }],
+      tools: [fakeHttp, fakeList],
+      gatewayClient: gateway,
+      archModelClient: buildMockArchClient(),
+      roundLimit: 50,
+      firedAttemptBudget: {
+        method: 'GET',
+        pathTemplate: '/orders/{orderId}',
+        maxAttempts: 2,
+      },
+    });
+
+    expect(outcome.reason).toBe('attempt_budget_exhausted');
+    expect(outcome.firedAttempts).toBe(2);
+    // The refused call was NEVER executed: only the free /orders fetch and
+    // the two in-budget target hits reached the tool.
+    expect(firedPaths).toEqual(['/orders', '/orders/123', '/orders/456']);
+    expect(listCalls).toHaveLength(1);
+    expect(outcome.errorMessage).toContain('budget exhausted');
+    // 4 LLM rounds were issued (the refusal happens IN round 4, then ends).
+    expect(gateway.recordedRequests).toHaveLength(4);
+  });
+
+  it('a loop WITHOUT a firedAttemptBudget never counts or refuses (firedAttempts stays 0)', async () => {
+    const { fakeHttp, firedPaths } = budgetFakes();
+    const terminal: ToolRegistryEntry = {
+      name: 'record_capture_note',
+      description: 'fake terminal',
+      parameters: { type: 'object', properties: {} },
+      handler: async () => ({ ok: true }),
+      terminal: true,
+    };
+    const gateway = buildStubGateway([
+      makeAssistant([httpCall('c1', 'GET', '/orders/123')]),
+      makeAssistant([
+        {
+          id: 'c2',
+          type: 'function' as const,
+          function: { name: 'record_capture_note', arguments: '{}' },
+        },
+      ]),
+    ]);
+
+    const outcome = await runScenarioLoop({
+      context: buildContext(),
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [fakeHttp, terminal],
+      gatewayClient: gateway,
+      archModelClient: buildMockArchClient(),
+      roundLimit: 10,
+    });
+
+    expect(outcome.reason).toBe('completed');
+    expect(outcome.firedAttempts).toBe(0);
+    expect(firedPaths).toEqual(['/orders/123']);
+  });
+});

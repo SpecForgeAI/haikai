@@ -175,6 +175,139 @@ async function resolveCloneRoot(
   return { kind: 'ok', cloneRoot };
 }
 
+// ---------------------------------------------------------------------------
+// Source-index search (2026-08-08 — Retry-uncovered budget/context fix)
+// ---------------------------------------------------------------------------
+
+/** Directories never worth indexing (VCS internals, deps, build output). */
+const INDEX_SKIP_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'target',
+  'build',
+  'dist',
+  'out',
+  '.idea',
+  '.gradle',
+  '.mvn',
+  'coverage',
+  '__pycache__',
+]);
+
+/** Source/config extensions worth surfacing to the capture LLM tools. */
+const INDEX_EXTENSIONS = new Set([
+  'java', 'kt', 'groovy', 'scala', 'jsp',
+  'ts', 'tsx', 'js', 'jsx', 'py',
+  'xml', 'yml', 'yaml', 'properties', 'json', 'sql',
+  'wsdl', 'xsd', 'gradle', 'md', 'cfg', 'conf', 'txt',
+]);
+
+/** Bound the walk so a pathological clone cannot pin the event loop. */
+const INDEX_MAX_ENTRIES_WALKED = 60_000;
+const INDEX_DEFAULT_LIMIT = 50;
+const INDEX_MAX_LIMIT = 200;
+
+/**
+ * GET /projects/:projectId/architectures/:architectureId/runs/:runId/source-index?q=&limit=
+ *
+ * Case-insensitive substring search over the clone's repo-relative file
+ * paths. Companion to the `/source/*` file fetch: downstream LLM tools
+ * (`search_source_files`) locate handler/validator/DTO files here, then
+ * fetch contents by path. Same clone-resolution + eviction semantics as the
+ * file route (410 Gone when the clone is off-disk; never auto-reclones).
+ * Returns `{ files: string[], truncated: boolean }`.
+ */
+sourceRouter.get('/:runId/source-index', async (req: Request, res: Response): Promise<void> => {
+  const { projectId, architectureId, runId } = req.params as {
+    projectId: string;
+    architectureId: string;
+    runId: string;
+  };
+  const runShort = shortId(runId);
+  const q = typeof req.query.q === 'string' ? req.query.q.trim().toLowerCase() : '';
+  if (q.length < 2) {
+    res.status(400).json({
+      error: 'invalid_query',
+      message: "query parameter 'q' must be at least 2 characters",
+    });
+    return;
+  }
+  const limitRaw = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : NaN;
+  const limit = Number.isFinite(limitRaw)
+    ? Math.max(1, Math.min(INDEX_MAX_LIMIT, limitRaw))
+    : INDEX_DEFAULT_LIMIT;
+
+  let resolution: Awaited<ReturnType<typeof resolveCloneRoot>>;
+  try {
+    resolution = await resolveCloneRoot(projectId, architectureId, runId);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[diag-runs] source_index run=${runShort} q=${q} result=error msg=${msg}`);
+    res.status(500).json({ error: 'resolve_failed', message: msg });
+    return;
+  }
+  if (resolution.kind === 'no_run') {
+    res.status(404).json({ error: 'run_not_found', message: `Discovery run ${runId} not found` });
+    return;
+  }
+  if (resolution.kind === 'no_repo') {
+    res.status(404).json({ error: 'no_repo', message: resolution.reason });
+    return;
+  }
+  if (resolution.kind === 'evicted') {
+    console.log(`[diag-runs] source_index run=${runShort} q=${q} result=gone`);
+    res.status(410).json({
+      error: 'clone_evicted',
+      runId,
+      message: 'The cached clone for this run is no longer on disk.',
+    });
+    return;
+  }
+
+  const cloneRoot = resolution.cloneRoot;
+  const files: string[] = [];
+  let walked = 0;
+  let truncated = false;
+
+  // Iterative BFS keeps the stack flat; every yielded path is repo-relative
+  // with `/` separators (the exact shape the `/source/*` fetch expects).
+  const queue: string[] = [''];
+  while (queue.length > 0) {
+    const rel = queue.shift() as string;
+    const abs = rel === '' ? cloneRoot : path.join(cloneRoot, rel);
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await fs.readdir(abs, { withFileTypes: true });
+    } catch {
+      continue; // unreadable directory — skip, never fail the search
+    }
+    for (const entry of entries) {
+      if (walked >= INDEX_MAX_ENTRIES_WALKED || files.length >= limit) {
+        truncated = true;
+        break;
+      }
+      walked += 1;
+      const entryRel = rel === '' ? entry.name : `${rel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!INDEX_SKIP_DIRS.has(entry.name)) queue.push(entryRel);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = entry.name.includes('.')
+        ? entry.name.slice(entry.name.lastIndexOf('.') + 1).toLowerCase()
+        : '';
+      if (!INDEX_EXTENSIONS.has(ext)) continue;
+      if (entryRel.toLowerCase().includes(q)) files.push(entryRel);
+    }
+    if (truncated) break;
+  }
+
+  console.log(
+    `[diag-runs] source_index run=${runShort} q=${q} result=ok files=${files.length} truncated=${truncated}`,
+  );
+  res.status(200).json({ files, truncated });
+});
+
 /**
  * GET /projects/:projectId/architectures/:architectureId/runs/:runId/source/...
  *

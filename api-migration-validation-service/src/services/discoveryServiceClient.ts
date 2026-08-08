@@ -32,6 +32,12 @@ export type FetchSourceResult =
   | { kind: 'not_found' }
   | { kind: 'error'; status: number | null; message: string };
 
+export type SearchSourceResult =
+  | { kind: 'ok'; files: string[]; truncated: boolean }
+  | { kind: 'evicted' }
+  | { kind: 'not_found' }
+  | { kind: 'error'; status: number | null; message: string };
+
 export interface DiscoveryServiceClient {
   fetchSourceFile(args: {
     projectId: string;
@@ -39,6 +45,19 @@ export interface DiscoveryServiceClient {
     runId: string;
     repoPath: string;
   }): Promise<FetchSourceResult>;
+  /**
+   * Search the run's cached clone for repo-relative file paths containing
+   * `query` (case-insensitive). Mirrors the discovery-service
+   * `GET .../runs/:runId/source-index?q=...&limit=...` route (2026-08-08 —
+   * REST source access for the capture repair loop).
+   */
+  searchSourceFiles(args: {
+    projectId: string;
+    architectureId: string;
+    runId: string;
+    query: string;
+    limit?: number;
+  }): Promise<SearchSourceResult>;
 }
 
 class DefaultDiscoveryServiceClient implements DiscoveryServiceClient {
@@ -98,6 +117,42 @@ class DefaultDiscoveryServiceClient implements DiscoveryServiceClient {
       // Transport failure (no HTTP response at all -- e.g. DNS, connection
       // refused). Surface as a structured error so the caller can decide
       // how to fall back.
+      const axiosErr = err as AxiosError;
+      const status = axiosErr.response?.status ?? null;
+      const msg = axiosErr.message || 'discovery-service request failed';
+      return { kind: 'error', status, message: msg };
+    }
+  }
+
+  async searchSourceFiles(args: {
+    projectId: string;
+    architectureId: string;
+    runId: string;
+    query: string;
+    limit?: number;
+  }): Promise<SearchSourceResult> {
+    const url =
+      `/discovery/projects/${args.projectId}/architectures/${args.architectureId}` +
+      `/runs/${args.runId}/source-index`;
+    try {
+      const res = await this.client.get<unknown>(url, {
+        params: { q: args.query, ...(args.limit ? { limit: args.limit } : {}) },
+        responseType: 'json',
+      });
+      const status = res.status;
+      if (status === 200) {
+        const body = (res.data ?? {}) as { files?: unknown; truncated?: unknown };
+        const files = Array.isArray(body.files)
+          ? body.files.filter((f): f is string => typeof f === 'string')
+          : [];
+        return { kind: 'ok', files, truncated: body.truncated === true };
+      }
+      if (status === 410) return { kind: 'evicted' };
+      if (status === 404) return { kind: 'not_found' };
+      const msg =
+        typeof res.data === 'string' ? (res.data as string).slice(0, 200) : `HTTP ${status}`;
+      return { kind: 'error', status, message: msg };
+    } catch (err) {
       const axiosErr = err as AxiosError;
       const status = axiosErr.response?.status ?? null;
       const msg = axiosErr.message || 'discovery-service request failed';

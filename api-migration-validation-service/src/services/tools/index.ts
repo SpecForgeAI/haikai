@@ -30,7 +30,13 @@ import { executeHttpRequestTool } from './execute_http_request';
 import { recordScenarioCandidateTool } from './record_scenario_candidate';
 import { recordCaptureNoteTool } from './record_capture_note';
 import { pinSequenceTool } from './pin_sequence';
+import { searchSourceFilesTool } from './search_source_files';
+import { getSourceFileTool } from './get_source_file';
 
+// 2026-08-08 (Retry-uncovered budget/context fix): `search_source_files` +
+// `get_source_file` give the loop code access for REST operations (SOAP
+// already had DTO source via the payload-context tool). Both degrade with a
+// structured note when no discovery run is bound or the clone was evicted.
 export const ALL_TOOLS: ReadonlyArray<ToolRegistryEntry> = [
   listOasOperationsTool,
   getOasOperationDetailTool,
@@ -42,6 +48,8 @@ export const ALL_TOOLS: ReadonlyArray<ToolRegistryEntry> = [
   recordScenarioCandidateTool,
   recordCaptureNoteTool,
   pinSequenceTool,
+  searchSourceFilesTool,
+  getSourceFileTool,
 ];
 
 export function buildToolRegistry(

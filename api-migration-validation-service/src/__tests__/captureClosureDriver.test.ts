@@ -385,3 +385,45 @@ describe('runClosureOrchestration', () => {
     expect(res.gate.unresolved.map((u) => u.operation_id)).toEqual(['op1']);
   });
 });
+
+// --------------------------------------------------------------------------
+// 2026-08-08 seed fix: Pass B's directive carries what Pass A already holds —
+// the endpoint's mined table values and its fired-without-success candidates.
+// --------------------------------------------------------------------------
+
+describe('runClosureOrchestration -- Pass B seeded from Pass A', () => {
+  it('threads mined DB values and failed Pass A candidates into the repair directive', async () => {
+    const s = summaryOf([ep('op1', 'GET', '/orders/{orderId}', false)]);
+    // Every Pass A candidate fails → op1 survives to Pass B.
+    const firer: ClosureFirer = { fireCandidate: async () => ({ status: 404, captureId: null }) };
+    const sampler: ClosureDbSampler = {
+      sampleIds: async () => new Map([['dbo.orders', ['12345', '67890']]]),
+    };
+    const seen: string[] = [];
+    const repairer: ClosureRepairer = {
+      repair: async (_d, directive) => {
+        seen.push(directive);
+        return { closed: false, captureId: null };
+      },
+    };
+    await runClosureOrchestration(
+      {
+        summary: s,
+        tablesByOperationId: new Map([['op1', ['dbo.orders']]]),
+        configByOperationId: new Map(),
+        diagnosisByOperationId: new Map(),
+      },
+      firer,
+      repairer,
+      sampler,
+    );
+    expect(seen).toHaveLength(1);
+    // Mined values ride into the directive…
+    expect(seen[0]).toContain('mined from source table dbo.orders: 12345, 67890');
+    // …and the candidates Pass A fired without success are listed as do-not-repeat.
+    expect(seen[0]).toContain('do NOT repeat these');
+    expect(seen[0]).toContain('/orders/12345 -> 404');
+    // The budget semantics line is present for the LLM.
+    expect(seen[0]).toContain('Research is FREE');
+  });
+});

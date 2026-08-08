@@ -443,6 +443,7 @@ function buildDiscoveryStub(files: Record<string, string>): DiscoveryServiceClie
   const calls: string[] = [];
   return {
     calls,
+    searchSourceFiles: async () => ({ kind: 'ok' as const, files: [], truncated: false }),
     async fetchSourceFile(args: {
       projectId: string;
       architectureId: string;

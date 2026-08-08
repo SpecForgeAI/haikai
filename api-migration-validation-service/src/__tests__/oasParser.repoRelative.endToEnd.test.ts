@@ -82,6 +82,7 @@ function buildClientStub(
 ): DiscoveryServiceClientStub {
   const calls: StubCallArgs[] = [];
   const stub: DiscoveryServiceClientStub = {
+    searchSourceFiles: async () => ({ kind: 'ok' as const, files: [], truncated: false }),
     calls,
     fetchSourceFile: async (args) => {
       calls.push({ ...args });
