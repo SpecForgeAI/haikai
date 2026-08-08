@@ -901,6 +901,91 @@ dbMigrationPackRouter.post(
 );
 
 // ---------------------------------------------------------------------------
+// POST /:packId/translations/approve-all — bulk approve (2026-08-08).
+//
+// The first Approve-all shipped as a CLIENT-side loop over the single review
+// route: it admitted rows the approve gate always rejects (drafted content
+// but no judge verdict) so the run ended in a wall of 400s, and it re-ran
+// the approved-only emission PER approve — punishing on an 800-row pack.
+// Server-side instead: filter to the truly approvable rows ONCE (the exact
+// gate the single-review route enforces), PATCH each fail-soft, then run ONE
+// emission at the end. Rows an operator must handle individually are
+// reported honestly in `not_approvable` (never silently skipped).
+// ---------------------------------------------------------------------------
+dbMigrationPackRouter.post(`${BASE}/:packId/translations/approve-all`, async (req, res) => {
+  const { projectId, packId } = req.params;
+  const start = Date.now();
+  try {
+    const rows = await defaultFetchTranslations(projectId, packId);
+    const unreviewedTranslate = rows.filter(
+      (r) => r.disposition === 'translate' && r.review_status === 'unreviewed'
+    );
+    // The single-review approve gate, verbatim: drafted + draft + verdict.
+    const eligible = unreviewedTranslate.filter(
+      (r) => r.pipeline_state === 'drafted' && !!r.draft_content && !!r.judge_verdict_json
+    );
+    const notApprovable = unreviewedTranslate
+      .filter((r) => !eligible.includes(r))
+      .map((r) => ({
+        translation_key: r.translation_key,
+        pipeline_state: r.pipeline_state,
+        reason:
+          r.pipeline_state !== 'drafted'
+            ? `pipeline state '${r.pipeline_state}' — translate it first`
+            : !r.draft_content
+              ? 'no draft content'
+              : 'no judge verdict — re-run Translate to judge the draft',
+      }));
+
+    const failed: Array<{ translation_key: string; reason: string }> = [];
+    let approvedCount = 0;
+    for (const row of eligible) {
+      try {
+        await defaultPatchTranslation(projectId, packId, row.id, {
+          review_status: 'approved',
+        });
+        approvedCount += 1;
+      } catch (error) {
+        failed.push({
+          translation_key: row.translation_key,
+          reason: error instanceof Error ? error.message : 'patch failed',
+        });
+      }
+    }
+
+    // ONE emission for the whole batch (vs one per approve on the old path).
+    let emission = null;
+    if (approvedCount > 0) {
+      const emissionResult = await runTranslationEmission(projectId, packId);
+      emission = {
+        approved_count: emissionResult.approvedCount,
+        emitted_file_paths: emissionResult.emittedFilePaths,
+        changed: emissionResult.changed,
+      };
+    }
+
+    console.log(
+      `[diag-gw] route=db-migration-pack-translations-approve-all status=200 ` +
+        `approved=${approvedCount} not_approvable=${notApprovable.length} ` +
+        `failed=${failed.length} elapsed_ms=${Date.now() - start}`
+    );
+    res.status(200).json({
+      approved_count: approvedCount,
+      eligible_count: eligible.length,
+      not_approvable: notApprovable,
+      failed,
+      emission,
+    });
+  } catch (error) {
+    console.warn(
+      `[diag-gw] route=db-migration-pack-translations-approve-all status=err ` +
+        `elapsed_ms=${Date.now() - start}`
+    );
+    mapError(error, res, 'translations-approve-all', { projectId, packId });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /:packId/verify — credentialed verification scan -> deterministic
 // diff -> drift-report row APPENDED to history (Task Group 5).
 // ---------------------------------------------------------------------------

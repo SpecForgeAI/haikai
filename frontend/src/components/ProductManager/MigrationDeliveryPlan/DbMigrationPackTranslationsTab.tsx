@@ -33,6 +33,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   listDbMigrationPackTranslations,
   retryDbMigrationPackTranslation,
+  approveAllDbMigrationPackTranslations,
   reviewDbMigrationPackTranslation,
   supplyDbMigrationPackTranslationBody,
   setDbMigrationPackTranslationDisposition,
@@ -328,22 +329,23 @@ export const DbMigrationPackTranslationsTab: React.FC<
     [reviewerRow, busyId, projectId, packId, loadTranslations, handleEmission],
   );
 
-  // --- approve all (2026-08-08) --------------------------------------------------
-  // Approves every drafted, UNREVIEWED translate-disposition row sequentially.
-  // Fail-soft per row: server-side approve gates (e.g. a missing judge
-  // verdict) surface as collected failures and the loop continues. Rejected /
-  // needs_rework rows carry human notes and are excluded. The approved-only
-  // emission re-runs server-side per approve; the final notice reflects the
-  // last emission's approved count.
-  const [approveAllProgress, setApproveAllProgress] = useState<string | null>(null);
+  // --- approve all (2026-08-08, server-side bulk) -------------------------------
+  // ONE call: the gateway filters to the truly approvable rows (the exact
+  // single-review approve gate — drafted + draft + JUDGE VERDICT; the first
+  // client-side loop admitted verdict-less rows and ended in a wall of
+  // 400s), approves them fail-soft, and runs ONE approved-only emission.
+  // Rows the gate rejects come back in `not_approvable` and are summarised
+  // honestly. The button count mirrors the same gate.
   const approveAllEligible = useMemo(
     () =>
       rows.filter(
         (r) =>
           r.disposition === 'translate' &&
           r.review_status === 'unreviewed' &&
+          r.pipeline_state === 'drafted' &&
           typeof r.draft_content === 'string' &&
-          r.draft_content.length > 0,
+          r.draft_content.length > 0 &&
+          r.judge_verdict_json !== null,
       ),
     [rows],
   );
@@ -352,40 +354,41 @@ export const DbMigrationPackTranslationsTab: React.FC<
     setBusyId('approve-all');
     setError(null);
     setNotice(null);
-    const failures: string[] = [];
-    let lastEmission: DbMigrationPackTranslationEmission | null = null;
-    for (let i = 0; i < approveAllEligible.length; i++) {
-      const row = approveAllEligible[i];
-      setApproveAllProgress(`Approving ${i + 1} of ${approveAllEligible.length}…`);
-      try {
-        const result = await reviewDbMigrationPackTranslation(
-          projectId,
-          packId,
-          row.id,
-          'approve',
-        );
-        setRows((prev) =>
-          prev.map((r) => (r.id === result.translation.id ? result.translation : r)),
-        );
-        lastEmission = result.emission ?? lastEmission;
-      } catch (err) {
-        failures.push(
-          `${row.object_ref}: ${err instanceof Error ? err.message : 'approve failed'}`,
+    try {
+      const result = await approveAllDbMigrationPackTranslations(projectId, packId);
+      // handleEmission FIRST (fires onEmissionChanged + its own notice), then
+      // the composed summary overwrites the notice with the full picture.
+      if (result.emission) handleEmission(result.emission);
+      const parts: string[] = [`Approved ${result.approved_count} translation(s).`];
+      if (result.emission?.changed) parts.push('Pack files updated on the executable path.');
+      if (result.not_approvable.length > 0) {
+        const preview = result.not_approvable
+          .slice(0, 3)
+          .map((n) => `${n.translation_key} (${n.reason})`)
+          .join('; ');
+        parts.push(
+          `${result.not_approvable.length} unreviewed row(s) are not approvable: ` +
+            `${preview}${result.not_approvable.length > 3 ? ` (+${result.not_approvable.length - 3} more)` : ''}.`,
         );
       }
+      setNotice(parts.join(' '));
+      if (result.failed.length > 0) {
+        const preview = result.failed
+          .slice(0, 3)
+          .map((f) => `${f.translation_key}: ${f.reason}`)
+          .join('; ');
+        setError(
+          `Approve all: ${result.failed.length} approval(s) failed — ` +
+            `${preview}${result.failed.length > 3 ? ` (+${result.failed.length - 3} more)` : ''}`,
+        );
+      }
+      await loadTranslations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Approve-all failed');
+    } finally {
+      setBusyId(null);
     }
-    setApproveAllProgress(null);
-    if (lastEmission) handleEmission(lastEmission);
-    if (failures.length > 0) {
-      setError(
-        `Approve all: ${failures.length} of ${approveAllEligible.length} failed — ${failures.join('; ')}`,
-      );
-    }
-    await loadTranslations().catch(() => {
-      /* rows already updated per-approve; the chips refetch is best-effort */
-    });
-    setBusyId(null);
-  }, [busyId, approveAllEligible, projectId, packId, loadTranslations, handleEmission]);
+  }, [busyId, approveAllEligible.length, projectId, packId, loadTranslations, handleEmission]);
 
   // --- supply full source body (2026-08-07: truncated is no longer terminal) ----
 
@@ -509,7 +512,7 @@ export const DbMigrationPackTranslationsTab: React.FC<
           title="Approve every drafted, unreviewed translation — rejected / needs-rework rows are excluded (they carry reviewer notes); each approve re-runs the approved-only emission"
           data-testid="db-pack-approve-all"
         >
-          {approveAllProgress ?? `Approve all (${approveAllEligible.length})`}
+          {busyId === 'approve-all' ? 'Approving…' : `Approve all (${approveAllEligible.length})`}
         </button>
         <span className={styles.manifestNote}>
           Translate-all processes pending + failed objects only; Approve-all

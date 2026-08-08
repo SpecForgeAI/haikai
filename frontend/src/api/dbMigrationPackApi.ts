@@ -855,6 +855,38 @@ export async function supplyDbMigrationPackTranslationBody(
   );
 }
 
+/** Response of the bulk approve-all route (2026-08-08). */
+export interface DbMigrationPackApproveAllResponse {
+  approved_count: number;
+  eligible_count: number;
+  /** Unreviewed translate rows the approve gate rejects (no draft / no judge verdict / not drafted). */
+  not_approvable: Array<{
+    translation_key: string;
+    pipeline_state: string;
+    reason: string;
+  }>;
+  failed: Array<{ translation_key: string; reason: string }>;
+  emission: DbMigrationPackTranslationEmission | null;
+}
+
+/**
+ * Bulk-approve every drafted UNREVIEWED translate row server-side
+ * (2026-08-08): one call, the exact single-review approve gate applied per
+ * row, ONE approved-only emission at the end. Rows the gate rejects come
+ * back in `not_approvable` with reasons — never silently skipped.
+ */
+export async function approveAllDbMigrationPackTranslations(
+  projectId: string,
+  packId: string,
+): Promise<DbMigrationPackApproveAllResponse> {
+  return sendJson<DbMigrationPackApproveAllResponse>(
+    `${translationsBase(projectId, packId)}/approve-all`,
+    'POST',
+    {},
+    'Approve-all failed',
+  );
+}
+
 /**
  * Review action: approve / reject / needs_rework with optional notes.
  * Approve is gated server-side on a drafted row carrying its judge verdict;
