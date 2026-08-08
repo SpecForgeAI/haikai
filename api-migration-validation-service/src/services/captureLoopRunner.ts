@@ -51,12 +51,21 @@ export type LoopOutcomeReason =
   // The provider's per-DAY token quota is exhausted (Spec 2026-07-22). Terminal
   // and non-retryable: the orchestrator stops the whole capture on this.
   | 'llm_daily_limit'
+  // The fired-attempt budget against the TARGET operation is exhausted
+  // (2026-08-08 closure budget fix): the operator's "attempts" number counts
+  // requests actually fired at the target, never research tool calls.
+  | 'attempt_budget_exhausted'
   | 'cancelled';
 
 export interface LoopOutcome {
   reason: LoopOutcomeReason;
   /** Number of LLM round-trips actually issued before termination. */
   roundsUsed: number;
+  /**
+   * Number of `execute_http_request` calls fired at the target operation
+   * (always 0 when no `firedAttemptBudget` was configured).
+   */
+  firedAttempts: number;
   /** Wall-clock duration of the scenario in milliseconds. */
   durationMs: number;
   /** Final assistant message (if any -- absent if loop never reached one). */
@@ -90,6 +99,39 @@ export interface RunScenarioArgs {
    * with a `cancelled` diagnostic and returns `LoopOutcome.reason='cancelled'`.
    */
   abortSignal?: AbortSignal;
+  /**
+   * Optional fired-attempt budget (2026-08-08 closure budget fix): counts
+   * ONLY `execute_http_request` calls whose method + path hit the TARGET
+   * operation (template match — `/orders/12345` counts against
+   * `/orders/{id}`). Research tools (contract reading, DB sampling, source
+   * search) and requests at OTHER endpoints (list fetches, create-then-act
+   * prerequisites) are free. When the (max+1)th matching call arrives it is
+   * refused with an explanatory tool error and the loop terminates with
+   * `attempt_budget_exhausted` after the round completes.
+   */
+  firedAttemptBudget?: {
+    method: string;
+    pathTemplate: string;
+    maxAttempts: number;
+  };
+}
+
+/**
+ * Segment-wise template match for the fired-attempt budget: a `{param}` /
+ * `:param` template segment matches exactly one non-empty concrete segment;
+ * literal segments compare case-insensitively. An exact string match short
+ * circuits (covers non-templated operations).
+ */
+export function pathHitsTemplate(concretePath: string, templatePath: string): boolean {
+  const norm = (p: string): string[] =>
+    (p || '').split('?')[0].split('/').filter((s) => s.length > 0);
+  const concrete = norm(concretePath);
+  const template = norm(templatePath);
+  if (concrete.length !== template.length) return false;
+  return template.every((tSeg, i) => {
+    if (/^\{.+\}$/.test(tSeg) || tSeg.startsWith(':')) return concrete[i].length > 0;
+    return tSeg.toLowerCase() === concrete[i].toLowerCase();
+  });
 }
 
 /**
@@ -129,6 +171,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
     scenarioWallClockMs = LLM_SCENARIO_WALL_CLOCK_MS,
     model,
     abortSignal,
+    firedAttemptBudget,
   } = args;
 
   const registry = buildToolRegistry(tools);
@@ -137,7 +180,19 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
   const startedAt = Date.now();
   const messages: ChatMessage[] = [...initialMessages];
   let roundsUsed = 0;
+  let firedAttempts = 0;
   let finalMessage: AssistantMessage | null = null;
+
+  /** True when a tool call fires at the budget's target operation. */
+  const hitsTarget = (parsedArgs: Record<string, unknown>): boolean => {
+    if (!firedAttemptBudget) return false;
+    const method = typeof parsedArgs.method === 'string' ? parsedArgs.method : '';
+    const path = typeof parsedArgs.path === 'string' ? parsedArgs.path : '';
+    return (
+      method.toUpperCase() === firedAttemptBudget.method.toUpperCase() &&
+      pathHitsTemplate(path, firedAttemptBudget.pathTemplate)
+    );
+  };
 
   while (true) {
     // ---- Cancellation: per-session abort signal raised between rounds ----
@@ -150,6 +205,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'cancelled',
         roundsUsed,
+        firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId,
@@ -168,6 +224,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'wall_clock_exceeded',
         roundsUsed,
+        firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId,
@@ -185,6 +242,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'round_limit_exhausted',
         roundsUsed,
+        firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId,
@@ -226,6 +284,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: isDailyLimit ? 'llm_daily_limit' : 'llm_relay_error',
         roundsUsed: roundsUsed + 1,
+        firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId,
@@ -247,6 +306,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'completed',
         roundsUsed,
+        firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId: null,
@@ -256,6 +316,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
 
     // ---- Dispatch each tool call ----
     let terminalCalled = false;
+    let attemptBudgetExhausted = false;
     for (const call of toolCalls) {
       const tool = registry.get(call.function.name);
       let resultText: string;
@@ -280,6 +341,32 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
           });
           messages.push(buildToolMessage(call, resultText));
           continue;
+        }
+
+        // ---- Fired-attempt budget (2026-08-08): only requests fired at the
+        // TARGET operation consume the budget; research stays free. The over-
+        // budget call is refused (never silently fired) and ends the loop
+        // after this round so every tool call still gets a response.
+        if (
+          firedAttemptBudget &&
+          tool.name === 'execute_http_request' &&
+          hitsTarget(parsedArgs)
+        ) {
+          if (firedAttempts >= firedAttemptBudget.maxAttempts) {
+            attemptBudgetExhausted = true;
+            resultText = JSON.stringify({
+              error: {
+                reason: 'attempt_budget_exhausted',
+                message:
+                  `The fired-attempt budget (${firedAttemptBudget.maxAttempts}) for ` +
+                  `${firedAttemptBudget.method.toUpperCase()} ${firedAttemptBudget.pathTemplate} ` +
+                  'is exhausted; this request was NOT sent.',
+              },
+            });
+            messages.push(buildToolMessage(call, resultText));
+            continue;
+          }
+          firedAttempts += 1;
         }
 
         try {
@@ -307,6 +394,7 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
             return {
               reason: 'tool_call_timeout',
               roundsUsed,
+              firedAttempts,
               durationMs: Date.now() - startedAt,
               finalMessage,
               diagnosticId,
@@ -332,10 +420,36 @@ export async function runScenarioLoop(args: RunScenarioArgs): Promise<LoopOutcom
       return {
         reason: 'completed',
         roundsUsed,
+        firedAttempts,
         durationMs: Date.now() - startedAt,
         finalMessage,
         diagnosticId: null,
         errorMessage: null,
+      };
+    }
+
+    if (attemptBudgetExhausted && firedAttemptBudget) {
+      const diagnosticId = await safeRecordDiagnostic(archModelClient, context, {
+        diagnostic_type: 'retry_exhausted',
+        message:
+          `Fired-attempt budget (${firedAttemptBudget.maxAttempts}) for ` +
+          `${firedAttemptBudget.method.toUpperCase()} ${firedAttemptBudget.pathTemplate} ` +
+          `exhausted after ${roundsUsed} rounds.`,
+        detail_json: {
+          reason: 'attempt_budget_exhausted',
+          roundsUsed,
+          firedAttempts,
+          maxAttempts: firedAttemptBudget.maxAttempts,
+        },
+      });
+      return {
+        reason: 'attempt_budget_exhausted',
+        roundsUsed,
+        firedAttempts,
+        durationMs: Date.now() - startedAt,
+        finalMessage,
+        diagnosticId,
+        errorMessage: `Fired-attempt budget exhausted after ${firedAttempts} attempts.`,
       };
     }
   }

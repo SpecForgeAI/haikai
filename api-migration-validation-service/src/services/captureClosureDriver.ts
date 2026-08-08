@@ -37,6 +37,7 @@ import {
   buildRepairDirective,
   type EndpointDiagnosis,
   type RepairConfig,
+  type RepairSeed,
 } from './captureClosurePassB';
 import {
   computeHappyPathGate,
@@ -196,7 +197,10 @@ export async function runClosureOrchestration(
     dbValuesByTable,
   });
 
-  // Fire in order; stop firing for an endpoint once it is closed.
+  // Fire in order; stop firing for an endpoint once it is closed. Failed
+  // candidates are recorded per endpoint so Pass B's directive can say
+  // "already tried without success" (2026-08-08 seed fix).
+  const triedByOperationId = new Map<string, Array<{ path: string; status: number | null }>>();
   for (const candidate of candidates) {
     if (closedBy.has(candidate.operation_id)) continue;
     passAFired += 1;
@@ -205,6 +209,10 @@ export async function runClosureOrchestration(
       if (isHappyStatus(status) && captureId) {
         closedBy.set(candidate.operation_id, captureId);
         passAClosed.push(candidate.operation_id);
+      } else {
+        const tried = triedByOperationId.get(candidate.operation_id) ?? [];
+        tried.push({ path: candidate.path, status });
+        triedByOperationId.set(candidate.operation_id, tried);
       }
     } catch {
       // fail-soft: this candidate is skipped; the endpoint may still close on a
@@ -228,7 +236,20 @@ export async function runClosureOrchestration(
       };
     const cfg = input.configByOperationId.get(ep.operation_id);
     const repairConfig: RepairConfig = { attempts: cfg?.attempts ?? null, notes: cfg?.notes ?? null };
-    const directive = buildRepairDirective(diag, repairConfig);
+    // Seed the directive with what Pass A already holds for THIS endpoint:
+    // its tables' mined values, the session id pool, and its failed candidates.
+    const epTables = input.tablesByOperationId.get(ep.operation_id) ?? [];
+    const minedIdsByTable: Record<string, ReadonlyArray<string>> = {};
+    for (const table of epTables) {
+      const values = dbValuesByTable.get(table);
+      if (values && values.length > 0) minedIdsByTable[table] = values;
+    }
+    const seed: RepairSeed = {
+      minedIdsByTable,
+      sessionIdPool: input.sessionIdPool ?? [],
+      triedAndFailed: triedByOperationId.get(ep.operation_id) ?? [],
+    };
+    const directive = buildRepairDirective(diag, repairConfig, seed);
     passBAttempted += 1;
     try {
       const { closed, captureId } = await repairer.repair(diag, directive.directive, directive.attempts);

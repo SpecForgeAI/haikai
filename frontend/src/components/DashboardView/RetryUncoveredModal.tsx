@@ -19,7 +19,11 @@ import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
 import type { FailedDimensionItem } from './CoverageSummaryPanel';
 import modal from './RetryUncoveredModal.module.css';
 
-/** Default per-endpoint LLM attempts (mirrors service DEFAULT_REPAIR_ATTEMPTS). */
+/**
+ * Default per-endpoint FIRED attempts (mirrors service DEFAULT_REPAIR_ATTEMPTS).
+ * 2026-08-08: the budget counts requests fired at the endpoint; the LLM's
+ * research (contract reading, DB sampling, source search) is free.
+ */
 export const DEFAULT_ATTEMPTS = 15;
 
 /** Per-endpoint Pass B config the user confirms in the modal. */
@@ -193,7 +197,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
                   <tr>
                     <th>Operation</th>
                     <th>Type</th>
-                    <th>LLM attempts</th>
+                    <th title="Requests fired at the endpoint. Research (contract, database, source code) is free and does not consume this budget.">Fired attempts</th>
                     <th>Notes / reason to the LLM</th>
                     {onExclude && <th className={modal.notPossibleCell}>Not possible</th>}
                   </tr>

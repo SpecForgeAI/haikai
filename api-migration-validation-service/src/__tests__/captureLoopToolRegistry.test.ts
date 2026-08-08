@@ -128,6 +128,7 @@ function buildContext(opts: {
     version: null,
   };
   const discoveryClient: DiscoveryServiceClient = {
+    searchSourceFiles: async () => ({ kind: 'ok' as const, files: [], truncated: false }),
     fetchSourceFile: opts.fetchSourceFile,
   };
   const arch: ArchModelToolWriteSurface = {

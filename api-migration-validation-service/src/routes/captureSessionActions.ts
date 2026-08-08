@@ -89,6 +89,7 @@ import {
   type ClosureConfigEntry,
 } from '../services/captureClosureDriver';
 import type { EndpointDiagnosis } from '../services/captureClosurePassB';
+import { deriveLoopBudget } from '../services/captureClosurePassB';
 import { fetchEffectScopeIndex, effectTablesFor } from '../services/stateDelta';
 import {
   expandInventoryOperationsForFormats,
@@ -2557,6 +2558,28 @@ export function buildCaptureSessionActionsRouter(
         createDiagnostic: archModelClient.createDiagnostic.bind(archModelClient),
         createCapture: archModelClient.createCapture.bind(archModelClient),
       };
+      // Resolve the discovery run whose cached clone serves source files to
+      // the repair loop's code tools (2026-08-08 budget/context fix — the
+      // repairers previously hard-coded discoveryRunId: null, so even the
+      // SOAP payload-context tool had no source access here). Latest
+      // completed run wins; fail-soft null (the tools degrade with a note).
+      let closureDiscoveryRunId: string | null = null;
+      try {
+        const discoveryRuns = await archModelClient.listDiscoveryRuns(
+          projectId,
+          session.architectureId,
+        );
+        const completedRuns = discoveryRuns.filter(
+          (r) => (r.status || '').toLowerCase() === 'completed',
+        );
+        closureDiscoveryRunId =
+          (completedRuns.length > 0
+            ? completedRuns[completedRuns.length - 1]
+            : discoveryRuns[discoveryRuns.length - 1]
+          )?.id ?? null;
+      } catch {
+        closureDiscoveryRunId = null;
+      }
       const repairer: ClosureRepairer = {
         repair: async (diagnosis, directive, attempts) => {
           if (!passBAvailable || !oasInventory || !httpExec) {
@@ -2584,10 +2607,14 @@ export function buildCaptureSessionActionsRouter(
             dbAdapter,
             archModelClient: archWriteSurface,
             discoveryServiceClient: defaultDiscoveryServiceClient,
-            discoveryRunId: null,
+            discoveryRunId: closureDiscoveryRunId,
             currentScenarioId: scenarioRow.id,
           };
           runManager.beginScenario(session.id);
+          // 2026-08-08 budget fix: "attempts" counts requests FIRED at the
+          // target (enforced below); the round limit and wall clock derive
+          // from it so research never starves the corrective iterations.
+          const loopBudget = deriveLoopBudget(attempts);
           await runScenarioLoop({
             context: ctx,
             initialMessages: buildScenarioPrompt(
@@ -2602,7 +2629,13 @@ export function buildCaptureSessionActionsRouter(
               directive,
               session.dataTypeDefaultsJson,
             ),
-            roundLimit: attempts,
+            roundLimit: loopBudget.roundLimit,
+            scenarioWallClockMs: loopBudget.wallClockMs,
+            firedAttemptBudget: {
+              method: diagnosis.method,
+              pathTemplate: diagnosis.path,
+              maxAttempts: attempts,
+            },
           });
           const caps = runManager.getScenarioCaptures(session.id);
           const happy = caps.find((c) => c.status !== null && c.status >= 200 && c.status < 300);
@@ -2644,10 +2677,13 @@ export function buildCaptureSessionActionsRouter(
             dbAdapter,
             archModelClient: archWriteSurface,
             discoveryServiceClient: defaultDiscoveryServiceClient,
-            discoveryRunId: null,
+            discoveryRunId: closureDiscoveryRunId,
             currentScenarioId: scenarioRow.id,
           };
           runManager.beginScenario(session.id);
+          // Same fired-attempt semantics as Pass B (2026-08-08): the budget
+          // counts requests at the dimension's operation; research is free.
+          const loopBudget = deriveLoopBudget(attempts);
           await runScenarioLoop({
             context: ctx,
             initialMessages: buildScenarioPrompt(
@@ -2662,7 +2698,13 @@ export function buildCaptureSessionActionsRouter(
               directive,
               session.dataTypeDefaultsJson,
             ),
-            roundLimit: attempts,
+            roundLimit: loopBudget.roundLimit,
+            scenarioWallClockMs: loopBudget.wallClockMs,
+            firedAttemptBudget: {
+              method: dim.method,
+              pathTemplate: dim.path,
+              maxAttempts: attempts,
+            },
           });
           const caps = runManager.getScenarioCaptures(session.id);
           const closing = selectDimensionClosingCapture(
