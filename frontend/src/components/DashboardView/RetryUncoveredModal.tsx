@@ -67,8 +67,17 @@ export interface RetryUncoveredModalProps {
   /**
    * Launch closure with the per-endpoint Pass B config for the NON-excluded
    * happy-path rows. `includeOtherDimensions` reflects the checkbox.
+   * `contractFiles` (2026-08-08, optional): an API contract (OAS doc, or
+   * WADL + sibling XSDs) the operator chose to provide — the parent refreshes
+   * the service's parse cache with it BEFORE launching. The retry works
+   * without one (the service rebuilds context from the session's persisted
+   * operations); this is enrichment only, never a prerequisite.
    */
-  onLaunch?: (config: EndpointRetryConfig[], includeOtherDimensions: boolean) => void;
+  onLaunch?: (
+    config: EndpointRetryConfig[],
+    includeOtherDimensions: boolean,
+    contractFiles?: File[],
+  ) => void;
   /**
    * Exclude-with-reason. `scenarioName` present → dimension-level exclusion of
    * an `other` row; absent → the whole endpoint (happy-path row). When omitted
@@ -117,6 +126,8 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
     return [...happy, ...other];
   }, [unresolved, failedDimensions]);
 
+  // Optional API contract (2026-08-08): forwarded to onLaunch; never required.
+  const [contractFiles, setContractFiles] = useState<File[]>([]);
   const [config, setConfig] = useState<Record<string, { attempts: number; notes: string }>>(() =>
     Object.fromEntries(rows.map((r) => [r.key, { attempts: DEFAULT_ATTEMPTS, notes: '' }])),
   );
@@ -163,7 +174,11 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
         attempts: config[r.key]?.attempts ?? DEFAULT_ATTEMPTS,
         notes: (config[r.key]?.notes ?? '').trim(),
       }));
-    onLaunch(happyConfig, dimensionalOnly || (includeOtherDimensions && otherCount > 0));
+    const includeOthers = dimensionalOnly || (includeOtherDimensions && otherCount > 0);
+    // Two-arg call when no contract was chosen keeps the common path (and its
+    // consumers) byte-identical; the third argument exists only when real.
+    if (contractFiles.length > 0) onLaunch(happyConfig, includeOthers, contractFiles);
+    else onLaunch(happyConfig, includeOthers);
   };
 
   const panelClass = `${classes.panel} ${modal.wide}`;
@@ -191,6 +206,25 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
               scenario is failing.
             </p>
           ) : (
+            <>
+            <div className={modal.contractRow} data-testid={`${testId}-contract-row`}>
+              <label>
+                API contract (optional):{' '}
+                <input
+                  type="file"
+                  multiple
+                  accept=".json,.yaml,.yml,.wadl,.xsd,.xml,application/json"
+                  disabled={busy}
+                  data-testid={`${testId}-contract-file`}
+                  onChange={(e) => setContractFiles(Array.from(e.target.files ?? []))}
+                />
+              </label>
+              <span className={modal.contractHint}>
+                Provide the API contract if you have one — it refreshes the
+                repair context. Without it, the retry rebuilds context from
+                this session&apos;s captured operations automatically.
+              </span>
+            </div>
             <div className={modal.tableWrap}>
               <table className={modal.table} data-testid={`${testId}-table`}>
                 <thead>
@@ -286,6 +320,7 @@ export const RetryUncoveredModal: React.FC<RetryUncoveredModalProps> = ({
                 </tbody>
               </table>
             </div>
+            </>
           )}
 
           <div className={modal.footerRow}>

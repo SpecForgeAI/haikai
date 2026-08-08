@@ -203,4 +203,38 @@ describe('RetryUncoveredModal (table)', () => {
     fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
     expect(onLaunch.mock.calls[0][0][0].attempts).toBe(DEFAULT_ATTEMPTS);
   });
+  it('forwards a chosen API contract to onLaunch; omits the argument entirely when none chosen (2026-08-08)', () => {
+    const onLaunch = vi.fn();
+    render(
+      <RetryUncoveredModal
+        unresolved={[unresolved[0]]}
+        classes={classes}
+        onClose={vi.fn()}
+        onLaunch={onLaunch}
+      />,
+    );
+    const file = new File(['{"openapi":"3.0.0"}'], 'contract.json', {
+      type: 'application/json',
+    });
+    fireEvent.change(screen.getByTestId('retry-uncovered-modal-contract-file'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByTestId('retry-uncovered-modal-launch'));
+    expect(onLaunch.mock.calls[0][2]).toEqual([file]);
+
+    // No file chosen -> the two-arg call (back-compat with all consumers).
+    const bare = vi.fn();
+    render(
+      <RetryUncoveredModal
+        unresolved={[unresolved[0]]}
+        classes={classes}
+        onClose={vi.fn()}
+        onLaunch={bare}
+        testId="retry-bare"
+      />,
+    );
+    fireEvent.click(screen.getByTestId('retry-bare-launch'));
+    expect(bare.mock.calls[0]).toHaveLength(2);
+  });
 });
+

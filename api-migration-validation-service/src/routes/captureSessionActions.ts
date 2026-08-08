@@ -11,6 +11,7 @@ import type {
 import { secretsStore } from '../services/secretsStore';
 import { runManager } from '../services/runManager';
 import { oasInventoryStore } from '../services/oasInventoryStore';
+import { rebuildInventoryFromOperations } from '../services/oasInventoryRebuild';
 import {
   parseOasFromFile,
   parseOasFromObject,
@@ -1393,6 +1394,71 @@ export function buildCaptureSessionActionsRouter(
   );
 
   // ----------------------------------------------------------------------
+  // POST /api/capture-sessions/:id/refresh-oas-cache
+  // ----------------------------------------------------------------------
+  // Parse-ONLY contract refresh (2026-08-08). Repopulates the in-memory
+  // `oasInventoryStore` from an uploaded OAS/WADL(+XSD) set WITHOUT touching
+  // the persisted operation rows (`persistInventory` blindly creates rows, so
+  // re-running full parse-oas on a session that already has them would
+  // duplicate every operation). This is the OPTIONAL "provide the API
+  // contract if you have one" seam for the retry flow — the repair pass works
+  // without it via `rebuildInventoryFromOperations`, and a fresh contract
+  // simply replaces the cached view the LLM tools read. The same uniquify +
+  // per-format expansion pipeline as parse-oas runs so the cached operation
+  // ids line up with the persisted (already uniquified/expanded) rows.
+  router.post(
+    '/api/capture-sessions/:id/refresh-oas-cache',
+    upload.array('file'),
+    async (req: Request, res: Response) => {
+      const sessionId = req.params.id;
+      const projectId = extractProjectId(req);
+      if (!projectId) {
+        return fail(res, 400, 'projectId is required (query param or body field)');
+      }
+      const uploadedFiles =
+        (req as Request & { files?: Array<{ buffer: Buffer; originalname?: string; mimetype?: string }> })
+          .files ?? [];
+      if (uploadedFiles.length === 0) {
+        return fail(res, 400, 'refresh-oas-cache requires a multipart `file` upload.');
+      }
+      try {
+        const session = await archModelClient.getCaptureSession(projectId, sessionId);
+        const inv = await parseUploadedContract(uploadedFiles, res);
+        if (inv === null) return; // parseUploadedContract already wrote the 4xx.
+
+        let merged = uniquifyOperationIds(inv).inventory;
+        try {
+          const committedEndpoints = await archModelClient.listEndpointsForArchitecture(
+            projectId,
+            session.architecture_id,
+          );
+          merged = expandInventoryOperationsForFormats(merged, committedEndpoints);
+        } catch (expandErr) {
+          console.warn(
+            `[refresh-oas-cache] format expansion skipped (endpoint read failed): ` +
+              `${expandErr instanceof Error ? expandErr.message : String(expandErr)}`,
+          );
+        }
+
+        oasInventoryStore.set(sessionId, merged);
+        console.log(
+          `[refresh-oas-cache] session=${sessionId.slice(0, 8)} cached ` +
+            `${merged.operations.length} operation(s) from upload (no rows persisted)`,
+        );
+        return res.status(200).json({
+          sessionId,
+          operationCount: merged.operations.length,
+          title: merged.title,
+          version: merged.version,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'refresh-oas-cache failed';
+        return fail(res, 500, message);
+      }
+    },
+  );
+
+  // ----------------------------------------------------------------------
   // POST /api/capture-sessions/:id/data-type-defaults-preview
   // ----------------------------------------------------------------------
   // Data-type format-defaults preview (spec 2026-06-20 Capture data-type
@@ -2540,9 +2606,24 @@ export function buildCaptureSessionActionsRouter(
         },
       };
 
-      // ---- Pass B repairer: per-endpoint LLM repair loop (needs the cached OAS
-      // inventory; degrades to unavailable when it is no longer in memory).
-      const oasInventory = oasInventoryStore.get(sessionId) ?? null;
+      // ---- Pass B repairer: per-endpoint LLM repair loop. The in-memory
+      // inventory cache dies with every AMVS restart, and Pass B used to
+      // hard-require it (the "re-parse the OAS" dead end, fixed 2026-08-08):
+      // the PERSISTED operation rows carry the full parsed contract
+      // (oas_operation_json + dereferenced schemas), so rebuild from them and
+      // re-cache. No contract upload is ever a prerequisite for repair —
+      // Pass B is unavailable only when the session has no operation rows.
+      let oasInventory = oasInventoryStore.get(sessionId) ?? null;
+      if (!oasInventory) {
+        oasInventory = rebuildInventoryFromOperations(operations);
+        if (oasInventory) {
+          oasInventoryStore.set(sessionId, oasInventory);
+          console.log(
+            `[retry-uncovered] OAS inventory rebuilt from ${operations.length} ` +
+              `persisted operation rows (session ${sessionId})`,
+          );
+        }
+      }
       const passBAvailable = oasInventory !== null;
       if (passBAvailable) {
         runManager.start({

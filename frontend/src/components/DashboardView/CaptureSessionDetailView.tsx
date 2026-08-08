@@ -95,7 +95,7 @@ import {
   minePathParamValues,
   type ExportCapture,
 } from './postmanExport';
-import { retryUncoveredApis, listCaptures, excludeEndpoint } from '../../api/apiBehaviourClient';
+import { retryUncoveredApis, listCaptures, excludeEndpoint, refreshOasCache } from '../../api/apiBehaviourClient';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
@@ -272,10 +272,31 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   // the user can adjust attempts/notes and retry the remainder (or move to the
   // Postman/exclude wizard, CC4).
   const handleRunClosure = useCallback(
-    async (config: EndpointRetryConfig[], includeOtherDimensions = false) => {
+    async (
+      config: EndpointRetryConfig[],
+      includeOtherDimensions = false,
+      contractFiles?: File[],
+    ) => {
       setClosureBusy(true);
       setClosureNote(null);
       try {
+        // Optional contract refresh (2026-08-08): when the operator supplied
+        // a contract, repopulate the service's parse cache first (parse-only,
+        // no rows persisted). The retry itself works WITHOUT a contract — the
+        // service rebuilds context from the session's persisted operations.
+        if (contractFiles && contractFiles.length > 0) {
+          try {
+            await refreshOasCache(projectId, architectureId, sessionId, contractFiles);
+          } catch (refreshErr) {
+            setClosureNote(
+              `Contract refresh failed: ${
+                refreshErr instanceof Error ? refreshErr.message : 'unknown error'
+              } — fix the file or clear it to retry from the session's captured operations.`,
+            );
+            setClosureBusy(false);
+            return;
+          }
+        }
         const result = await retryUncoveredApis(
           projectId,
           architectureId,
@@ -318,7 +339,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           );
           const passBNote = result.passB.available
             ? ''
-            : ' (Pass B unavailable — re-parse the OAS to enable LLM repair)';
+            : ' (LLM repair unavailable — this session has no captured operations; provide the API contract in this dialog if you have one)';
           setClosureNote(
             `Closed ${closed} endpoint${closed === 1 ? '' : 's'}; ${result.gate.unresolved.length} still unresolved${passBNote}.${dimsNote}${authNote}`,
           );
