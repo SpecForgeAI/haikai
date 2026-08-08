@@ -556,4 +556,25 @@ describe('DbMigrationPackTranslationsTab (Task 5.1)', () => {
     // Legacy-redacted is reviewable (warned, not blocked).
     expect(screen.getByTestId('db-pack-translation-approve')).toBeInTheDocument();
   });
+  it('Approve all (2026-08-08): approves only drafted UNREVIEWED translate rows; count reflects eligibility', async () => {
+    // Fixture ROWS: tr-drafted is the ONLY drafted+unreviewed translate row
+    // (pending/failed/needs_manual have no draft_content).
+    mockReview.mockResolvedValue({
+      translation: buildTranslation({ review_status: 'approved' }),
+      emission: { approved_count: 1, changed: true },
+    });
+    renderTab();
+
+    const button = await screen.findByTestId('db-pack-approve-all');
+    expect(button.textContent).toContain('Approve all (1)');
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mockReview).toHaveBeenCalledTimes(1));
+    expect(mockReview).toHaveBeenCalledWith(PROJECT_ID, PACK_ID, 'tr-drafted', 'approve');
+    // The approved-only emission outcome surfaces like a single approve.
+    expect(
+      (await screen.findByTestId('db-pack-translations-notice')).textContent,
+    ).toContain('1 approved');
+  });
 });
+

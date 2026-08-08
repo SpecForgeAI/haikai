@@ -276,6 +276,55 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
     [busyId, projectId, architectureId, loadRows],
   );
 
+  /**
+   * Approve every UNREVIEWED proposal sequentially (2026-08-08). Fail-soft
+   * per row: a failed approve is collected and surfaced, the loop continues.
+   * needs_rework rows are deliberately excluded — they carry a human note
+   * asking for changes and must be re-reviewed individually.
+   */
+  const [bulkProgress, setBulkProgress] = useState<string | null>(null);
+  const approveAll = useCallback(async () => {
+    if (busyId) return;
+    const targets = rows.filter((r) => r.review_status === 'unreviewed');
+    if (targets.length === 0) return;
+    setBusyId('approve-all');
+    setError(null);
+    const notices: string[] = [];
+    const failures: string[] = [];
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i];
+      setBulkProgress(`Approving ${i + 1} of ${targets.length}…`);
+      try {
+        const response = await reviewGapProposal(projectId, row.id, {
+          action: 'approve',
+          architecture_id: architectureId,
+        });
+        if (response.apply_error) notices.push(response.apply_error);
+        for (const skip of response.apply?.skipped ?? []) {
+          notices.push(`Apply skipped: ${skip.reason}`);
+        }
+      } catch (err) {
+        failures.push(
+          `${summarizeGapProposalPayload(String(row.kind), row.payload_json)}: ${
+            err instanceof Error ? err.message : 'approve failed'
+          }`,
+        );
+      }
+    }
+    setBulkProgress(null);
+    setApproveReminder(true);
+    setApplyNotices(notices);
+    if (failures.length > 0) {
+      setError(
+        `Approve all: ${failures.length} of ${targets.length} failed — ${failures.join('; ')}`,
+      );
+    }
+    await loadRows().catch(() => {
+      /* per-row outcomes already surfaced; the refetch is best-effort */
+    });
+    setBusyId(null);
+  }, [busyId, rows, projectId, architectureId, loadRows]);
+
   const confirmReviewDraft = useCallback(
     (row: DbGapProposalRow) => {
       const draft = reviewDrafts[row.id];
@@ -424,6 +473,22 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
         >
           No proposals queued for this finding yet.
         </p>
+      )}
+
+      {rows.some((r) => r.review_status === 'unreviewed') && (
+        <div className={styles.actionsBar}>
+          <button
+            type="button"
+            className={styles.actionButton}
+            onClick={() => void approveAll()}
+            disabled={busyId !== null}
+            title="Approve every unreviewed proposal — each writes its metadata into the model additively; needs-rework rows are excluded (they carry a note and must be re-reviewed individually)"
+            data-testid={`db-gap-proposals-approve-all-${findingKey}`}
+          >
+            {bulkProgress ??
+              `Approve all (${rows.filter((r) => r.review_status === 'unreviewed').length})`}
+          </button>
+        </div>
       )}
 
       {rows.length > 0 && (

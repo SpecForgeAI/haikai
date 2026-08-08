@@ -323,4 +323,47 @@ describe('DbMigrationPack gap proposals (Spec 4)', () => {
       'dropped pk proposal for orders: hallucinated column(s) ghost_col',
     );
   });
+  it('Approve all (2026-08-08): approves every UNREVIEWED proposal sequentially; approved/needs-rework rows untouched', async () => {
+    const reworkRow: DbGapProposalRow = {
+      ...PK_ROW,
+      id: 'gp-rework-1',
+      proposal_key: 'pk--lines',
+      review_status: 'needs_rework',
+      reviewer_notes: 'wrong column',
+    };
+    const approvedRow: DbGapProposalRow = {
+      ...PK_ROW,
+      id: 'gp-done-1',
+      proposal_key: 'pk--done',
+      review_status: 'approved',
+      applied_at: '2026-08-08T10:00:00Z',
+    };
+    mockListFindings.mockResolvedValue({ findings: [FK_FINDING] });
+    mockListProposals.mockResolvedValue([FK_ROW, PK_ROW, reworkRow, approvedRow]);
+    mockGenerate.mockResolvedValue({ supported: true, proposals: [], warnings: [] });
+    mockReview.mockResolvedValue({ review_status: 'approved', apply: { applied: 1, skipped: [] } });
+    renderPanel();
+
+    fireEvent.click(
+      await screen.findByTestId(`db-gap-proposals-draft-${FK_FINDING.key}`),
+    );
+
+    const button = await screen.findByTestId(
+      `db-gap-proposals-approve-all-${FK_FINDING.key}`,
+    );
+    expect(button.textContent).toContain('Approve all (2)');
+    fireEvent.click(button);
+
+    await waitFor(() => expect(mockReview).toHaveBeenCalledTimes(2));
+    // Only the two UNREVIEWED rows were approved, in list order.
+    expect(mockReview.mock.calls.map((c) => c[1])).toEqual([FK_ROW.id, PK_ROW.id]);
+    for (const call of mockReview.mock.calls) {
+      expect(call[2]).toMatchObject({ action: 'approve', architecture_id: ARCH_ID });
+    }
+    // The regenerate reminder renders after a bulk approve like a single one.
+    expect(
+      await screen.findByTestId(`db-gap-proposals-regenerate-reminder-${FK_FINDING.key}`),
+    ).toBeInTheDocument();
+  });
 });
+
