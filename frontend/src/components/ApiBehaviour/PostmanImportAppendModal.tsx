@@ -240,6 +240,12 @@ export function PostmanImportAppendModal({
             the review flow. Items that do not match a committed architecture
             endpoint are flagged below and must be resolved before they run.
           </p>
+          <p className={styles.helperText}>
+            Tip: save the exact working request on each Postman request as an
+            example (send it, then &ldquo;Save as example&rdquo;). The import
+            reads concrete IDs and values from saved examples, so parameterised
+            URLs resolve without re-entering values here.
+          </p>
 
           <div className={styles.fieldGroup}>
             <label className={styles.label}>Postman collection (.json)</label>

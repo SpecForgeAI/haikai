@@ -205,3 +205,218 @@ describe('parsePostmanCollection', () => {
     expect(serialized).not.toContain('item-secret');
   });
 });
+
+/**
+ * Example mining (2026-08-08): unresolved tokens backfill from the item's
+ * saved response examples (`response[].originalRequest` — the exact request as
+ * actually sent). Pins the honesty rules: variables WIN over the example, a
+ * literal-segment divergence (technically an invalid file) discards the
+ * example, and provenance names what the example supplied.
+ */
+describe('parsePostmanCollection — example mining', () => {
+  const templatedItem = (over: Record<string, unknown> = {}) => ({
+    name: 'Get order line',
+    request: {
+      method: 'GET',
+      url: { raw: '{{baseUrl}}/orders/{{orderId}}/lines/:lineId' },
+    },
+    ...over,
+  });
+
+  it('backfills unresolved path params from the 2xx example originalRequest (concrete send path, provenance, runnable-ready)', () => {
+    const result = parsePostmanCollection({
+      item: [
+        templatedItem({
+          response: [
+            {
+              name: 'Not found',
+              code: 404,
+              originalRequest: { method: 'GET', url: '{{baseUrl}}/orders/999999/lines/0' },
+            },
+            {
+              name: 'OK',
+              code: 200,
+              originalRequest: { method: 'GET', url: 'https://api.example.com/orders/12345/lines/7' },
+            },
+          ],
+        }),
+      ],
+    });
+    expect(result).toHaveLength(1);
+    const req = result[0];
+    // The 2xx example wins over the earlier 4xx one.
+    expect(req.path).toBe('/orders/12345/lines/7');
+    expect(req.pathTemplate).toBe('/orders/{orderId}/lines/{lineId}');
+    expect(req.unresolvedParams).toBeUndefined();
+    expect(req.exampleProvenance).toEqual({
+      exampleName: 'OK',
+      resolvedNames: ['orderId', 'lineId'],
+    });
+  });
+
+  it('variables WIN over the example — the example only fills what they could not', () => {
+    const result = parsePostmanCollection({
+      variable: [{ key: 'orderId', value: 'from-collection-var' }],
+      item: [
+        templatedItem({
+          response: [
+            {
+              name: 'OK',
+              code: 200,
+              originalRequest: { method: 'GET', url: '{{baseUrl}}/orders/12345/lines/7' },
+            },
+          ],
+        }),
+      ],
+    });
+    const req = result[0];
+    expect(req.path).toBe('/orders/from-collection-var/lines/7');
+    expect(req.exampleProvenance).toEqual({ exampleName: 'OK', resolvedNames: ['lineId'] });
+  });
+
+  it('a literal-segment divergence (technically an invalid file) discards the example — top-level stands, params stay unresolved', () => {
+    const result = parsePostmanCollection({
+      item: [
+        templatedItem({
+          response: [
+            {
+              name: 'OK',
+              code: 200,
+              // `invoices` disagrees with the top-level `orders` literal.
+              originalRequest: { method: 'GET', url: '{{baseUrl}}/invoices/12345/lines/7' },
+            },
+          ],
+        }),
+      ],
+    });
+    const req = result[0];
+    expect(req.path).toBe('/orders/{{orderId}}/lines/:lineId');
+    expect(req.unresolvedParams).toEqual(['orderId', 'lineId']);
+    expect(req.exampleProvenance).toBeUndefined();
+  });
+
+  it('backfills a query token from the example same-key value and a body token by JSON-path alignment', () => {
+    const result = parsePostmanCollection({
+      item: [
+        {
+          name: 'Create line',
+          request: {
+            method: 'POST',
+            url: { raw: '{{baseUrl}}/lines?orderRef={{orderRef}}' },
+            body: {
+              mode: 'raw',
+              raw: '{"orderId":"{{orderId}}","qty":2}',
+              options: { raw: { language: 'json' } },
+            },
+          },
+          response: [
+            {
+              name: 'Created',
+              code: 201,
+              originalRequest: {
+                method: 'POST',
+                url: '{{baseUrl}}/lines?orderRef=ORD-88',
+                body: { mode: 'raw', raw: '{"orderId":"12345","qty":9}' },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const req = result[0];
+    expect(req.query).toEqual({ orderRef: 'ORD-88' });
+    // Token leaf takes the example's value; token-free leaves keep top-level.
+    expect(req.body).toEqual({ orderId: '12345', qty: 2 });
+    expect(req.exampleProvenance?.resolvedNames).toEqual(
+      expect.arrayContaining(['orderRef', 'orderId']),
+    );
+  });
+
+  it('a body that only fails to parse because of tokens takes the example body wholesale; token-free non-JSON stays flagged', () => {
+    const tokenBody = parsePostmanCollection({
+      item: [
+        {
+          name: 'Tokenised body',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/orders',
+            // Bare token -> not JSON until it resolves.
+            body: { mode: 'raw', raw: '{"id": {{orderId}}}' },
+          },
+          response: [
+            {
+              name: 'Created',
+              code: 201,
+              originalRequest: {
+                method: 'POST',
+                url: '{{baseUrl}}/orders',
+                body: { mode: 'raw', raw: '{"id": 12345}' },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect(tokenBody[0].unsupportedReason).toBeUndefined();
+    expect(tokenBody[0].body).toEqual({ id: 12345 });
+    expect(tokenBody[0].exampleProvenance?.resolvedNames).toContain('body');
+
+    const garbage = parsePostmanCollection({
+      item: [
+        {
+          name: 'Plain non-JSON',
+          request: {
+            method: 'POST',
+            url: '{{baseUrl}}/orders',
+            body: { mode: 'raw', raw: 'not json at all' },
+          },
+          response: [
+            {
+              name: 'Created',
+              code: 201,
+              originalRequest: {
+                method: 'POST',
+                url: '{{baseUrl}}/orders',
+                body: { mode: 'raw', raw: '{"id": 12345}' },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    // No tokens -> the non-JSON body is honestly flagged, never masked.
+    expect(garbage[0].unsupportedReason).toBeDefined();
+    expect(garbage[0].body).toBeNull();
+  });
+
+  it('with no saved example the behaviour is unchanged — params stay unresolved for the manual ask', () => {
+    const result = parsePostmanCollection({ item: [templatedItem()] });
+    const req = result[0];
+    expect(req.path).toBe('/orders/{{orderId}}/lines/:lineId');
+    expect(req.unresolvedParams).toEqual(['orderId', 'lineId']);
+    expect(req.exampleProvenance).toBeUndefined();
+  });
+
+  it('an example that is itself unresolved at a param position contributes no value there', () => {
+    const result = parsePostmanCollection({
+      item: [
+        templatedItem({
+          response: [
+            {
+              name: 'Half-resolved',
+              code: 200,
+              originalRequest: { method: 'GET', url: '{{baseUrl}}/orders/12345/lines/:lineId' },
+            },
+          ],
+        }),
+      ],
+    });
+    const req = result[0];
+    expect(req.path).toBe('/orders/12345/lines/:lineId');
+    expect(req.unresolvedParams).toEqual(['lineId']);
+    expect(req.exampleProvenance).toEqual({
+      exampleName: 'Half-resolved',
+      resolvedNames: ['orderId'],
+    });
+  });
+});

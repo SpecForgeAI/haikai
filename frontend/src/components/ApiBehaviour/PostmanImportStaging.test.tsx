@@ -244,4 +244,34 @@ describe('PostmanImportStaging -- per-item mapping + status', () => {
       screen.getByTestId('postman-import-staging-item-0-unsupported').textContent,
     ).toContain('Unsupported body');
   });
+  it('shows which values were resolved from a saved example (example-mining provenance, 2026-08-08)', () => {
+    render(
+      <PostmanImportStaging
+        importedRequests={[
+          imported({
+            method: 'GET',
+            path: '/orders/12345',
+            pathTemplate: '/orders/{orderId}',
+            exampleProvenance: {
+              exampleName: 'OK',
+              resolvedNames: ['orderId', 'body'],
+            },
+          }),
+        ]}
+        operations={[operation({ id: 'op-1', method: 'GET', path: '/orders/{orderId}' })]}
+        reconciliation={reconciliation()}
+      />,
+    );
+
+    const provenance = screen.getByTestId(
+      'postman-import-staging-item-0-example-provenance',
+    );
+    expect(provenance.textContent).toContain('{orderId}');
+    expect(provenance.textContent).toContain('body');
+    expect(provenance.textContent).toContain('saved example "OK"');
+    // A fully-resolved item is runnable — no unresolved-param editor renders.
+    expect(
+      screen.queryByTestId('postman-import-staging-item-0-params'),
+    ).toBeNull();
+  });
 });

@@ -180,6 +180,12 @@ export function PostmanImportWizardStep({
         <>
           <div className={styles.fieldGroup}>
             <label className={styles.label}>Postman collection (.json)</label>
+            <p className={styles.helperText}>
+              Tip: save the exact working request on each Postman request as an
+              example (send it, then &ldquo;Save as example&rdquo;). The import
+              reads concrete IDs and values from saved examples, so
+              parameterised URLs resolve without re-entering values here.
+            </p>
             <input
               type="file"
               accept=".json,application/json"
