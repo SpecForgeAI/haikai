@@ -23,6 +23,18 @@
  *     than `raw`, or a `raw` body whose language is not JSON, or raw text that
  *     does not parse as JSON) is NOT silently sent: the item is emitted with an
  *     `unsupportedReason` and a `null` body so the staging UI can flag it.
+ *   - EXAMPLE MINING (2026-08-08): unresolved `{{var}}` / `:param` / `{param}`
+ *     tokens are backfilled from the item's saved response examples
+ *     (`response[].originalRequest` -- the EXACT request as actually sent,
+ *     which is where curated collections keep the concrete working IDs).
+ *     The top-level request stays AUTHORITATIVE: URL variables and collection
+ *     variables win over example values, and a literal path segment that
+ *     DISAGREES with the example (technically an invalid file) means the
+ *     example is ignored for that item and the top-level values stand. Only
+ *     tokens the variables could not resolve are sucked out of the example --
+ *     path params by template alignment, query values by same-key fallback,
+ *     body values by same-JSON-path alignment. `exampleProvenance` records
+ *     which example supplied which names so staging can show it.
  *   - ALL collection-level and item-level Postman `auth` blocks are IGNORED --
  *     the session's in-memory secrets are the sole auth source.
  *   - Folders (`item[]` nesting) and multi-step / `sequence` items are recursed
@@ -104,6 +116,15 @@ export interface ImportedRequest {
    * NEVER be sent — the literal token would fire at the server (2026-08-02).
    */
   unresolvedParams?: string[];
+  /**
+   * Present when unresolved tokens were backfilled from one of the item's
+   * saved response examples (`response[].originalRequest` — the exact request
+   * as actually sent). `resolvedNames` lists the param / token / query names
+   * the example supplied (`body` when the whole body came from the example).
+   * Variables always win over the example; the example only fills what they
+   * could not (2026-08-08).
+   */
+  exampleProvenance?: { exampleName: string; resolvedNames: string[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -266,16 +287,23 @@ function resolveUrl(
     .filter((seg): seg is string => seg !== null && seg.length > 0);
 
   let parts: ResolvedPathParts;
+  // Query recovered from the raw string when no structured `query` array
+  // exists (2026-08-08 — previously silently dropped in that shape).
+  let queryFromRaw: Record<string, string> = {};
   if (pathSegments.length > 0) {
     parts = processPathSegments(pathSegments, urlVars, collectionVars);
   } else if (typeof url.raw === 'string') {
-    // No usable path array -- recover the path from the raw string.
-    parts = resolveUrlString(url.raw, collectionVars, urlVars);
+    // No usable path array -- recover the path (and query) from the raw string.
+    const fromRaw = resolveUrlString(url.raw, collectionVars, urlVars);
+    parts = fromRaw;
+    queryFromRaw = fromRaw.query;
   } else {
     parts = { path: '/', pathTemplate: '/', unresolvedParams: [] };
   }
 
-  const query: Record<string, string> = {};
+  // The structured `query` array is authoritative; raw-derived entries only
+  // fill keys the array does not carry.
+  const query: Record<string, string> = { ...queryFromRaw };
   for (const entry of asArray(url.query)) {
     const q = asRecord(entry);
     if (!q) continue;
@@ -384,64 +412,306 @@ const NON_JSON_BODY_REASON =
  *     `options.raw.language === 'json'`) -> `{ body: <parsed JSON> }`.
  *   - anything else (`formdata`, `urlencoded`, `file`, `graphql`, or raw text
  *     that is not JSON) -> `{ body: null, unsupportedReason }`.
+ *
+ * When `vars` is provided, `{{var}}` tokens in the raw text substitute BEFORE
+ * the JSON parse (2026-08-08) — a body template like `{"id": {{orderId}}}` only
+ * parses once its tokens resolve. `hadTokens` reports whether the raw text
+ * carried any `{{...}}` token at all, so the caller can distinguish "not JSON"
+ * from "JSON once the tokens resolve" and fall back to a saved example body.
  */
-function resolveBody(rawBody: unknown): {
+function resolveBody(
+  rawBody: unknown,
+  vars: Record<string, string> = {},
+): {
   body: unknown;
   unsupportedReason?: string;
+  hadTokens: boolean;
 } {
   const body = asRecord(rawBody);
-  if (!body) return { body: null };
+  if (!body) return { body: null, hadTokens: false };
 
   const mode = asString(body.mode);
 
   // No mode at all and no raw text -> treat as bodiless.
-  if (mode === null && body.raw === undefined) return { body: null };
+  if (mode === null && body.raw === undefined) return { body: null, hadTokens: false };
 
   if (mode !== null && mode !== 'raw') {
     // formdata / urlencoded / file / graphql -- explicitly unsupported in v1.
-    return { body: null, unsupportedReason: NON_JSON_BODY_REASON };
+    return { body: null, unsupportedReason: NON_JSON_BODY_REASON, hadTokens: false };
   }
 
   const raw = asString(body.raw);
   if (raw === null || raw.trim().length === 0) {
     // A `raw` mode with no text is effectively bodiless.
-    return { body: null };
+    return { body: null, hadTokens: false };
   }
+  const hadTokens = raw.includes('{{');
 
   // Honour an explicit non-JSON language hint.
   const options = asRecord(body.options);
   const rawOptions = asRecord(options?.raw);
   const language = asString(rawOptions?.language);
   if (language !== null && language !== 'json') {
-    return { body: null, unsupportedReason: NON_JSON_BODY_REASON };
+    return { body: null, unsupportedReason: NON_JSON_BODY_REASON, hadTokens };
   }
 
   // Parse the raw text as JSON; non-JSON raw text is flagged, never sent.
   try {
-    return { body: JSON.parse(raw) };
+    return { body: JSON.parse(substituteTokens(raw, vars)), hadTokens };
   } catch {
-    return { body: null, unsupportedReason: NON_JSON_BODY_REASON };
+    return { body: null, unsupportedReason: NON_JSON_BODY_REASON, hadTokens };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Example mining (2026-08-08): backfill unresolved tokens from saved examples
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace `{{name}}` tokens with values from `vars`; unknown names keep the
+ * literal token (the caller decides what an unresolved token means).
+ */
+function substituteTokens(text: string, vars: Record<string, string>): string {
+  if (!text.includes('{{')) return text;
+  return text.replace(/\{\{([^}]+)\}\}/g, (match, rawName: string) => {
+    const v = vars[rawName.trim()];
+    return typeof v === 'string' && v.trim() !== '' ? v.trim() : match;
+  });
+}
+
+/** A picked saved example: its display name + the exact request it recorded. */
+interface PickedExample {
+  name: string;
+  originalRequest: Record<string, unknown>;
+}
+
+/**
+ * Pick the item's best saved example: only entries carrying an
+ * `originalRequest` qualify; prefer ones whose method matches the top-level
+ * request, and among those the first 2xx (`code`) — the request that is KNOWN
+ * to have worked. Falls back to the first qualifying example.
+ */
+function pickExample(rawResponses: unknown, method: string): PickedExample | null {
+  interface Candidate extends PickedExample {
+    code: number | null;
+    methodMatches: boolean;
+  }
+  const candidates: Candidate[] = [];
+  for (const entry of asArray(rawResponses)) {
+    const r = asRecord(entry);
+    if (!r) continue;
+    const originalRequest = asRecord(r.originalRequest);
+    if (!originalRequest) continue;
+    const code =
+      typeof r.code === 'number' && Number.isFinite(r.code) ? r.code : null;
+    const exMethod = (asString(originalRequest.method) ?? '').toUpperCase();
+    candidates.push({
+      name: asString(r.name) ?? 'saved example',
+      originalRequest,
+      code,
+      methodMatches: exMethod === '' || exMethod === method,
+    });
+  }
+  const sameMethod = candidates.filter((c) => c.methodMatches);
+  const pool = sameMethod.length > 0 ? sameMethod : candidates;
+  const twoXx = pool.find((c) => c.code !== null && c.code >= 200 && c.code < 300);
+  const picked = twoXx ?? pool[0] ?? null;
+  return picked ? { name: picked.name, originalRequest: picked.originalRequest } : null;
+}
+
+/**
+ * Align the top-level `pathTemplate` (canonical `{param}` tokens) against the
+ * example's CONCRETE path, segment by segment, and extract the value each
+ * param position carries. Honesty rules:
+ *   - segment counts must match, and every LITERAL template segment must equal
+ *     the example's segment (case-insensitive) — a divergence means the file
+ *     is technically invalid, so the example is ignored ENTIRELY (`{}`; the
+ *     top-level request stands);
+ *   - a param position whose example segment is itself an unresolved token
+ *     (`{{var}}`, `{param}`, `:param`) contributes no value;
+ *   - partial-token segments (`order-{id}`) match by anchored regex.
+ * Extracted values are URL-decoded (fail-soft to the raw segment).
+ */
+function extractExampleParamValues(
+  pathTemplate: string,
+  examplePath: string,
+): Record<string, string> {
+  const template = pathTemplate.split('/').filter((s) => s.length > 0);
+  const concrete = examplePath.split('/').filter((s) => s.length > 0);
+  if (template.length === 0 || template.length !== concrete.length) return {};
+
+  const out: Record<string, string> = {};
+  for (let i = 0; i < template.length; i++) {
+    const tSeg = template[i];
+    const cSeg = concrete[i];
+    if (!tSeg.includes('{')) {
+      if (tSeg.toLowerCase() !== cSeg.toLowerCase()) return {};
+      continue;
+    }
+    // Build an anchored regex from the template segment: `{name}` positions
+    // capture, literal runs are escaped verbatim.
+    const names: string[] = [];
+    const pattern = tSeg.replace(
+      /\{([^}]+)\}|([^{}]+)/g,
+      (_m, name: string | undefined, literal: string | undefined) => {
+        if (name !== undefined) {
+          names.push(name);
+          return '(.+?)';
+        }
+        return (literal ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      },
+    );
+    const match = new RegExp(`^${pattern}$`).exec(cSeg);
+    if (!match) return {};
+    names.forEach((name, j) => {
+      const rawValue = match[j + 1];
+      // The example itself unresolved at this position -> no value from it.
+      if (rawValue.includes('{{') || /^[:{]/.test(rawValue)) return;
+      let decoded = rawValue;
+      try {
+        decoded = decodeURIComponent(rawValue);
+      } catch {
+        /* keep raw */
+      }
+      out[name] = decoded;
+    });
+  }
+  return out;
+}
+
+/**
+ * Walk the top-level body and the example body IN PARALLEL: a string leaf that
+ * still carries an unresolved `{{token}}` takes the example's PRIMITIVE value
+ * at the same JSON path (objects by key, arrays by index). Structure mismatch
+ * at a node leaves the top-level value untouched — the top-level request is
+ * authoritative; the example only fills its holes. Resolved token names
+ * accumulate into `resolvedNames`.
+ */
+function backfillBodyFromExample(
+  node: unknown,
+  exampleNode: unknown,
+  resolvedNames: string[],
+): unknown {
+  if (typeof node === 'string' && node.includes('{{')) {
+    if (
+      exampleNode !== undefined &&
+      exampleNode !== null &&
+      typeof exampleNode !== 'object'
+    ) {
+      for (const m of node.matchAll(/\{\{([^}]+)\}\}/g)) {
+        resolvedNames.push(m[1].trim());
+      }
+      return exampleNode;
+    }
+    return node;
+  }
+  if (Array.isArray(node) && Array.isArray(exampleNode)) {
+    return node.map((child, i) =>
+      backfillBodyFromExample(child, exampleNode[i], resolvedNames),
+    );
+  }
+  const rec = asRecord(node);
+  const exampleRec = asRecord(exampleNode);
+  if (rec && exampleRec) {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(rec)) {
+      out[key] = backfillBodyFromExample(child, exampleRec[key], resolvedNames);
+    }
+    return out;
+  }
+  return node;
 }
 
 // ---------------------------------------------------------------------------
 // Item resolution + flatten
 // ---------------------------------------------------------------------------
 
-/** Resolve a single request-bearing Postman item to one `ImportedRequest`. */
+/**
+ * Resolve a single request-bearing Postman item to one `ImportedRequest`.
+ *
+ * Example mining (2026-08-08): after the variable pass, any still-unresolved
+ * token is backfilled from the item's best saved example (the exact request as
+ * actually sent). Resolution priority is URL variables -> collection variables
+ * -> example; a literal-segment divergence between the top-level URL and the
+ * example (technically an invalid file) discards the example's path values and
+ * the top-level request stands.
+ */
 function resolveItem(
   itemRecord: Record<string, unknown>,
   request: Record<string, unknown>,
   collectionVars: Record<string, string> = {},
 ): ImportedRequest {
   const method = (asString(request.method) ?? 'GET').toUpperCase();
-  const { path, pathTemplate, unresolvedParams, query } = resolveUrl(
+  let { path, pathTemplate, unresolvedParams, query } = resolveUrl(
     request.url,
     collectionVars,
   );
   const headers = resolveHeaders(request.header);
-  const { body, unsupportedReason } = resolveBody(request.body);
   const sourceItemName = asString(itemRecord.name) ?? 'Imported request';
+
+  const example = pickExample(itemRecord.response, method);
+  const exampleUrl = example ? resolveUrl(example.originalRequest.url) : null;
+  const resolvedNames: string[] = [];
+  let exampleVars: Record<string, string> = {};
+
+  // Path params: align the template against the example's concrete path and
+  // re-resolve with the example's values at the LOWEST priority (the spread
+  // order keeps collection variables — and, inside resolveUrl, URL variables —
+  // ahead of the example).
+  if (unresolvedParams.length > 0 && exampleUrl) {
+    exampleVars = extractExampleParamValues(pathTemplate, exampleUrl.path);
+    if (Object.keys(exampleVars).length > 0) {
+      const rerun = resolveUrl(request.url, { ...exampleVars, ...collectionVars });
+      const nowResolved = unresolvedParams.filter(
+        (name) => !rerun.unresolvedParams.includes(name),
+      );
+      if (nowResolved.length > 0) {
+        ({ path, pathTemplate, unresolvedParams, query } = rerun);
+        resolvedNames.push(...nowResolved);
+      }
+    }
+  }
+
+  // Query values: substitute known variables, then fall back to the example's
+  // same-key value when a token survives.
+  const exampleQuery = exampleUrl?.query ?? {};
+  for (const [key, rawValue] of Object.entries(query)) {
+    if (!rawValue.includes('{{')) continue;
+    let next = substituteTokens(rawValue, { ...exampleVars, ...collectionVars });
+    if (next.includes('{{')) {
+      const fromExample = exampleQuery[key];
+      if (fromExample !== undefined && !fromExample.includes('{{')) {
+        for (const m of rawValue.matchAll(/\{\{([^}]+)\}\}/g)) {
+          resolvedNames.push(m[1].trim());
+        }
+        next = fromExample;
+      }
+    }
+    if (next !== rawValue) query = { ...query, [key]: next };
+  }
+
+  // Body: variables substitute inside the raw text before the JSON parse; a
+  // parsed body's surviving tokens backfill from the example body at the same
+  // JSON path. A body that only FAILS to parse because of its tokens takes the
+  // example body wholesale (`body` provenance) — never a token-free non-JSON
+  // body, which stays honestly flagged.
+  const bodyResolution = resolveBody(request.body, {
+    ...exampleVars,
+    ...collectionVars,
+  });
+  let { body, unsupportedReason } = bodyResolution;
+  if (example) {
+    const exampleBody = resolveBody(example.originalRequest.body);
+    if (exampleBody.unsupportedReason === undefined && exampleBody.body !== null) {
+      if (unsupportedReason !== undefined && bodyResolution.hadTokens) {
+        body = exampleBody.body;
+        unsupportedReason = undefined;
+        resolvedNames.push('body');
+      } else if (body !== null) {
+        body = backfillBodyFromExample(body, exampleBody.body, resolvedNames);
+      }
+    }
+  }
 
   const result: ImportedRequest = {
     method,
@@ -456,6 +726,12 @@ function resolveItem(
   // (and their existing consumers/fixtures) are byte-identical.
   if (pathTemplate !== path) result.pathTemplate = pathTemplate;
   if (unresolvedParams.length > 0) result.unresolvedParams = unresolvedParams;
+  if (example && resolvedNames.length > 0) {
+    result.exampleProvenance = {
+      exampleName: example.name,
+      resolvedNames: [...new Set(resolvedNames)],
+    };
+  }
   return result;
 }
 

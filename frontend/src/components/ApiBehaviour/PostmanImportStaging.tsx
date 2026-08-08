@@ -222,6 +222,16 @@ function StagedItemRow({
           <span className={styles.path}>{request.path}</span>
         </div>
         <span className={styles.sourceName}>{request.sourceItemName}</span>
+        {request.exampleProvenance && (
+          <span
+            className={styles.sourceName}
+            data-testid={`postman-import-staging-item-${item.index}-example-provenance`}
+          >
+            {`Resolved ${request.exampleProvenance.resolvedNames
+              .map((n) => (n === 'body' ? 'body' : `{${n}}`))
+              .join(', ')} from saved example "${request.exampleProvenance.exampleName}"`}
+          </span>
+        )}
         {request.unsupportedReason !== undefined && (
           <span
             className={styles.unsupported}
