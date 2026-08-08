@@ -194,7 +194,7 @@ export function buildSchemaApplyRunRouter(): Router {
  * expected-schema diff is green against the live target" — this is that
  * capability (it did not exist before). Reads the target catalogs and diffs:
  *   - tables + columns present (with identity flags),
- *   - primary_key / unique_constraint / index / check_constraint NAMES,
+ *   - primary_key / unique_constraint / foreign_key / index / check_constraint NAMES,
  *   - identity/sequence-backed columns.
  * Body: { project_id, target_db, manifest } (the pack main manifest with
  * expected_schema). Never throws; a catalog failure is a structured
@@ -292,7 +292,7 @@ export function buildSchemaDriftRouter(): Router {
           await pool.query(
             `SELECT n.nspname AS s, cl.relname AS t, c.conname AS n2 FROM pg_constraint c ` +
               `JOIN pg_class cl ON cl.oid = c.conrelid JOIN pg_namespace n ON n.oid = cl.relnamespace ` +
-              `WHERE c.contype IN ('p','u','c')`,
+              `WHERE c.contype IN ('p','u','c','f')`,
           )
         ).rows.map((r: { s: string; t: string; n2: string }) => `${r.s}.${r.t}.${r.n2}`),
       );
@@ -333,7 +333,9 @@ export function buildSchemaDriftRouter(): Router {
       }
       for (const k of es.keysAndIndexes ?? []) {
         if (!k.schemaName || !k.tableName || !k.name || !k.kind) continue;
-        if (k.kind === 'foreign_key') continue; // FK presence is v2 scope
+        // Foreign keys verify like every other constraint (2026-08-08 —
+        // the initial skip was an unauthorised deferral): presence by name
+        // in pg_constraint contype='f'.
         const qn = `${k.schemaName}.${k.tableName}`;
         if (!liveTables.has(qn)) continue;
         const ref = `${qn}.${k.name}`;
