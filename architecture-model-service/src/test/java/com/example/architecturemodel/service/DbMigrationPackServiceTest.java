@@ -233,11 +233,15 @@ class DbMigrationPackServiceTest {
             List.of(
                 decision("type_mapping:dbo.orders.rowver", "type_mapping", "rowversion?"),
                 decision("collation:dbo.orders.name", "collation", "case-insensitive collation?"),
-                decision("delta_key:dbo.audit_log", "delta_key", "no usable delta key"))));
+                decision("delta_key:dbo.audit_log", "delta_key", "no usable delta key"),
+                // 2026-08-08 (changeset 221): the surrogate-PK category must
+                // pass validateDecisions — the first live Regenerate 400d here.
+                decision("surrogate_pk--tables_without_pk", "surrogate_pk",
+                    "57 tables carry no primary key — add surrogate identity PKs?"))));
 
         List<DbMigrationPackDecisionDto> open =
             service.listDecisions(projectId, pack.id(), "open", null);
-        assertThat(open).hasSize(3);
+        assertThat(open).hasSize(4);
 
         // Invalid resolve: missing resolution_json -> 400 path.
         UUID firstId = open.get(0).id();
@@ -261,15 +265,15 @@ class DbMigrationPackServiceTest {
         assertThat(stale.staleReason()).isEqualTo(
             DbMigrationPackService.STALE_REASON_DECISION_RESOLVED);
 
-        // Bulk resolve with the same option flips the remaining two.
+        // Bulk resolve with the same option flips the remaining three.
         List<DbMigrationPackDecisionDto> bulk = service.resolveDecisionsBulk(
             projectId, pack.id(),
             new BulkResolveDbMigrationPackDecisionsRequest(
-                List.of(open.get(1).id(), open.get(2).id()),
+                List.of(open.get(1).id(), open.get(2).id(), open.get(3).id()),
                 Map.of("choice", "accept_case_sensitive")));
-        assertThat(bulk).hasSize(2);
+        assertThat(bulk).hasSize(3);
         assertThat(service.listDecisions(projectId, pack.id(), "open", null)).isEmpty();
-        assertThat(service.listDecisions(projectId, pack.id(), "resolved", null)).hasSize(3);
+        assertThat(service.listDecisions(projectId, pack.id(), "resolved", null)).hasSize(4);
 
         // A foreign decision id rejects the WHOLE bulk (atomic).
         assertThatThrownBy(() -> service.resolveDecisionsBulk(

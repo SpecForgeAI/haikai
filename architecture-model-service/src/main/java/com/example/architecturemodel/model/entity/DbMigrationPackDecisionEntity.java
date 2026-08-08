@@ -66,15 +66,23 @@ public class DbMigrationPackDecisionEntity {
      * used to be dropped silently by the pack generator.
      */
     public static final String CATEGORY_PK_COMPOSITION = "pk_composition";
+    /**
+     * 2026-08-08 (changeset 221): ONE pack-wide decision for tables with NO
+     * source primary key — add a target-only surrogate identity PK per table
+     * (isSurrogate-flagged so load/parity/sync never read or key on it), or
+     * explicitly leave them without a PK.
+     */
+    public static final String CATEGORY_SURROGATE_PK = "surrogate_pk";
     public static final String CATEGORY_OTHER = "other";
 
-    /** All allowed decision categories, mirroring chk_dmpd_category (changeset 220). */
+    /** All allowed decision categories, mirroring chk_dmpd_category (changeset 221). */
     public static final Set<String> ALL_CATEGORIES = Set.of(
         CATEGORY_TYPE_MAPPING,
         CATEGORY_COMPUTED_COLUMN,
         CATEGORY_COLLATION,
         CATEGORY_DELTA_KEY,
         CATEGORY_PK_COMPOSITION,
+        CATEGORY_SURROGATE_PK,
         CATEGORY_OTHER
     );
 
