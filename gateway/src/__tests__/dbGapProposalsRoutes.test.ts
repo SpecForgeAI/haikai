@@ -141,7 +141,9 @@ describe('POST generate', () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe('http://localhost:8080/api/projects/p-1/db-gap-proposals');
     expect(init.method).toBe('PUT');
-    const rows = JSON.parse(init.body);
+    // AMS's UpsertDbGapProposalsRequest is a WRAPPER object (2026-08-08 fix —
+    // the bare-array shape this test originally pinned 400'd on the live AMS).
+    const rows = JSON.parse(init.body).proposals;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       proposal_key: 'fk--rel-1',
@@ -339,7 +341,8 @@ describe('POST manual', () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(url).toBe('http://localhost:8080/api/projects/p-1/db-gap-proposals');
     expect(init.method).toBe('PUT');
-    const rows = JSON.parse(init.body);
+    // Wrapper object per AMS UpsertDbGapProposalsRequest (2026-08-08 fix).
+    const rows = JSON.parse(init.body).proposals;
     expect(rows[0]).toMatchObject({
       proposal_key: 'pk--customer',
       kind: 'primary_key',
