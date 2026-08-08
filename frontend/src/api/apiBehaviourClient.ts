@@ -1557,6 +1557,28 @@ export async function parseOas(
   });
 }
 
+/**
+ * Parse-ONLY contract refresh (2026-08-08): repopulate the service's
+ * in-memory OAS inventory cache for a session from an uploaded contract
+ * (OAS doc, or WADL + sibling XSDs) WITHOUT persisting operation rows.
+ * Optional enrichment for "Retry uncovered APIs" — the repair pass works
+ * without it by rebuilding from the session's persisted operations.
+ */
+export async function refreshOasCache(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+  files: File[],
+): Promise<{ sessionId: string; operationCount: number }> {
+  const url = actionUrl(projectId, architectureId, sessionId, 'refresh-oas-cache');
+  const fd = new FormData();
+  for (const f of files) fd.append('file', f, f.name);
+  return jsonRequest<{ sessionId: string; operationCount: number }>(url, {
+    method: 'POST',
+    body: fd,
+  });
+}
+
 export async function testApiConnection(
   projectId: string,
   architectureId: string,
