@@ -509,6 +509,27 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
     lines.push(`**Flagged endpoint** — reason: \`${story.flagReason}\`.`);
   }
 
+  // Baseline-grounded story (2026-08-09): no endpoint carries a committed
+  // formal contract (capture-reconciled endpoints never do) — say so ONCE and
+  // point at the authoritative grounding, the captured behaviour below.
+  const anyCommittedContract = facts.endpoints.some(
+    (e) =>
+      e.requestContract != null ||
+      e.responseContract != null ||
+      (isInternalEndpointFact(e) && e.protocolMetadata != null)
+  );
+  const exampleCount = [...examplesByEndpoint.values()].reduce((n, v) => n + v.length, 0);
+  if (!anyCommittedContract && exampleCount > 0) {
+    lines.push('');
+    lines.push(
+      `**Contract source: captured baseline behaviour.** No committed formal ` +
+        `request/response contract exists for this story's endpoint(s) — the ` +
+        `${exampleCount} accepted baseline capture(s) below ARE the contract. ` +
+        `Reproduce the observed request/response shapes exactly; behavioural ` +
+        `parity with those captures is the acceptance bar.`
+    );
+  }
+
   for (const endpoint of facts.endpoints) {
     lines.push('');
     lines.push(`## Endpoint: ${endpoint.verb ?? ''} ${endpoint.path ?? endpoint.name}`.trim());
@@ -952,6 +973,12 @@ export async function runCodeSpecCarriage(args: {
     };
   }
 
+  const canonicalByEndpoint = new Map<string, CarriageBaselineExample[]>();
+  for (const endpoint of facts.endpoints) {
+    canonicalByEndpoint.set(endpoint.id, selectCanonicalExamples(facts.examples, endpoint.id));
+  }
+  const totalExamples = [...canonicalByEndpoint.values()].reduce((n, v) => n + v.length, 0);
+
   // Internal endpoints ground on their committed process metadata instead of
   // HTTP contracts (they can never have contracts — the re-run-contract-
   // capture remedy would be a dead end for a mixed HTTP+internal story).
@@ -961,7 +988,16 @@ export async function runCodeSpecCarriage(args: {
       e.responseContract != null ||
       (isInternalEndpointFact(e) && e.protocolMetadata != null)
   );
-  if (!anyContract) {
+  // Contract grounding (2026-08-09 fix): accepted BASELINE CAPTURES are a
+  // valid contract source — the story's acceptance criteria ARE behavioural
+  // parity with those captures, and endpoints that entered the model through
+  // capture reconciliation (discovered late, captured in the closure loop)
+  // legitimately carry no code-discovered contract JSON. The old gate fired
+  // before even looking at the examples it had already loaded, blocking
+  // stories on a 100%-covered baseline with a remedy (re-run code discovery)
+  // that could never produce contracts for capture-sourced endpoints. Block
+  // ONLY when a story has NEITHER a committed contract NOR a single capture.
+  if (!anyContract && totalExamples === 0) {
     return {
       ...baseRow,
       status: 'insufficient_context',
@@ -969,20 +1005,16 @@ export async function runCodeSpecCarriage(args: {
         {
           input: 'no_committed_contracts',
           reason:
-            'None of this story\'s endpoints carry a committed request or response ' +
-            'contract — re-run code discovery (contract capture) and commit, then ' +
+            'None of this story\'s endpoints carry a committed request/response ' +
+            'contract AND no accepted baseline captures matched them — either ' +
+            're-run code discovery (contract capture) and commit, or capture the ' +
+            'endpoints in the API Behaviour baseline (Retry uncovered APIs), then ' +
             'regenerate the spec.',
         },
       ],
       errorMessage: null,
     };
   }
-
-  const canonicalByEndpoint = new Map<string, CarriageBaselineExample[]>();
-  for (const endpoint of facts.endpoints) {
-    canonicalByEndpoint.set(endpoint.id, selectCanonicalExamples(facts.examples, endpoint.id));
-  }
-  const totalExamples = [...canonicalByEndpoint.values()].reduce((n, v) => n + v.length, 0);
   const isFlaggedMissingBaseline = (story.flagReason ?? '').includes('missing_baseline');
   // No HTTP baseline can exist when every endpoint is internal — the
   // all-internal case routes to the internal carriage above, but guard here
