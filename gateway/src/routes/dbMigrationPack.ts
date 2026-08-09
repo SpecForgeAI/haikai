@@ -88,6 +88,7 @@ import {
   TranslationsAmsError,
 } from '../services/dbMigrationPack/translations';
 import { runTranslationEmission } from '../services/dbMigrationPack/translationEmission';
+import { findSybaseSystemReferences } from '../services/dbMigrationPack/sybaseSystemObjects';
 import {
   StructuralDispositionRow,
   resolveStructuralFindingStates,
@@ -745,6 +746,7 @@ dbMigrationPackRouter.post(
           approved_count: emissionResult.approvedCount,
           emitted_file_paths: emissionResult.emittedFilePaths,
           changed: emissionResult.changed,
+          demoted: emissionResult.demoted,
         };
       }
       console.log(
@@ -818,6 +820,7 @@ dbMigrationPackRouter.post(
           approved_count: emissionResult.approvedCount,
           emitted_file_paths: emissionResult.emittedFilePaths,
           changed: emissionResult.changed,
+          demoted: emissionResult.demoted,
         };
       }
       console.log(
@@ -872,6 +875,20 @@ dbMigrationPackRouter.post(
           `Only a drafted translation carrying its judge verdict can be approved (${row.translation_key} is '${row.pipeline_state}').`
         );
       }
+      // 2026-08-09: a draft that still references ASE system catalogs can
+      // never run on the target — refuse the approval up front (the emission
+      // gate would only demote it straight back to needs_rework).
+      if (newStatus === 'approved') {
+        const systemRefs = findSybaseSystemReferences(String(row.draft_content ?? ''));
+        if (systemRefs.length > 0) {
+          throw new TranslationActionError(
+            400,
+            `Draft for ${row.translation_key} references ASE system catalog object(s) ` +
+              `${systemRefs.join(', ')} — these can never exist on Postgres. Rework the ` +
+              `draft against pg_catalog/information_schema, or disposition rewrite-in-app.`
+          );
+        }
+      }
       const patch: TranslationPatch = { review_status: newStatus };
       if (typeof body.notes === 'string') patch.reviewer_notes = body.notes;
       const updated = await defaultPatchTranslation(projectId, packId, translationId, patch);
@@ -884,6 +901,7 @@ dbMigrationPackRouter.post(
           approved_count: emissionResult.approvedCount,
           emitted_file_paths: emissionResult.emittedFilePaths,
           changed: emissionResult.changed,
+          demoted: emissionResult.demoted,
         };
       }
       console.log(
@@ -922,7 +940,13 @@ dbMigrationPackRouter.post(`${BASE}/:packId/translations/approve-all`, async (re
     );
     // The single-review approve gate, verbatim: drafted + draft + verdict.
     const eligible = unreviewedTranslate.filter(
-      (r) => r.pipeline_state === 'drafted' && !!r.draft_content && !!r.judge_verdict_json
+      (r) =>
+        r.pipeline_state === 'drafted' &&
+        !!r.draft_content &&
+        !!r.judge_verdict_json &&
+        // 2026-08-09: ASE system-catalog references can never run on the
+        // target — reported below, never bulk-approved.
+        findSybaseSystemReferences(String(r.draft_content)).length === 0
     );
     const notApprovable = unreviewedTranslate
       .filter((r) => !eligible.includes(r))
@@ -934,7 +958,11 @@ dbMigrationPackRouter.post(`${BASE}/:packId/translations/approve-all`, async (re
             ? `pipeline state '${r.pipeline_state}' — translate it first`
             : !r.draft_content
               ? 'no draft content'
-              : 'no judge verdict — re-run Translate to judge the draft',
+              : !r.judge_verdict_json
+                ? 'no judge verdict — re-run Translate to judge the draft'
+                : `draft references ASE system catalog(s) ` +
+                  `${findSybaseSystemReferences(String(r.draft_content)).join(', ')} — ` +
+                  `rework against pg_catalog/information_schema or disposition rewrite-in-app`,
       }));
 
     const failed: Array<{ translation_key: string; reason: string }> = [];
@@ -961,6 +989,7 @@ dbMigrationPackRouter.post(`${BASE}/:packId/translations/approve-all`, async (re
         approved_count: emissionResult.approvedCount,
         emitted_file_paths: emissionResult.emittedFilePaths,
         changed: emissionResult.changed,
+        demoted: emissionResult.demoted,
       };
     }
 

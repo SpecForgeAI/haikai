@@ -734,6 +734,8 @@ export interface DbMigrationPackTranslationEmission {
   approved_count: number;
   emitted_file_paths: string[];
   changed: boolean;
+  /** Approved rows auto-demoted to needs_rework by the emission gate (2026-08-09). */
+  demoted?: Array<{ translation_key: string; object_ref: string; reason: string }>;
 }
 
 export interface DbMigrationPackTranslationActionResponse {

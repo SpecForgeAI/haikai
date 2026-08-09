@@ -857,3 +857,111 @@ describe('POST translations/approve-all — bulk approve through the real route'
     expect(state.packPuts).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Emission demotion through the REAL routes (2026-08-09): a PERSISTED
+// approved row whose draft references sysobjects (approved before the
+// approve gate existed — the live CreateGrants shape) demotes to
+// needs_rework when emission runs, and approve-all refuses to bulk-approve
+// a fresh sysobjects draft with the honest reason.
+// ---------------------------------------------------------------------------
+
+describe('approve-all + emission — sysobjects drafts refuse/demote instead of bricking', () => {
+  it('bulk approves the clean row, reports the sysobjects draft not_approvable, and demotes the stale approval', async () => {
+    const GOOD_BODY = 'CREATE PROCEDURE dbo.usp_ok AS SELECT 1';
+    const BAD_BODY = 'CREATE PROCEDURE dbo.CreateGrants AS SELECT name FROM sysobjects';
+    const rowBase = {
+      disposition: 'translate' as const,
+      drop_reason: null,
+      truncated: false,
+      legacy_redacted: false,
+      reviewer_notes: null,
+    };
+    const state: AmsState = {
+      manifest: {
+        manifest_version: 1,
+        requires_translation_spec_2: [
+          { kind: 'stored_procedure', object_ref: 'dbo.usp_ok', finding_ids: [] },
+          { kind: 'stored_procedure', object_ref: 'dbo.CreateGrants', finding_ids: [] },
+          { kind: 'stored_procedure', object_ref: 'dbo.NewGrants', finding_ids: [] },
+        ],
+      },
+      rows: [
+        {
+          ...rowBase,
+          id: 't-good',
+          translation_key: 'stored_procedure--dbo.usp_ok',
+          object_ref: 'dbo.usp_ok',
+          kind: 'stored_procedure',
+          pipeline_state: 'drafted',
+          source_body: GOOD_BODY,
+          source_body_hash: computeSourceBodyHash(GOOD_BODY),
+          draft_content:
+            'CREATE OR REPLACE FUNCTION dbo.usp_ok() RETURNS void AS $$ SELECT 1 $$ LANGUAGE sql;',
+          judge_verdict_json: { verdict: 'equivalent', confidence: 0.9, flags: [] },
+          review_status: 'unreviewed',
+        },
+        {
+          // PERSISTED approval from before the approve gate — the live shape.
+          ...rowBase,
+          id: 't-stale-approved',
+          translation_key: 'stored_procedure--dbo.CreateGrants',
+          object_ref: 'dbo.CreateGrants',
+          kind: 'stored_procedure',
+          pipeline_state: 'drafted',
+          source_body: BAD_BODY,
+          source_body_hash: computeSourceBodyHash(BAD_BODY),
+          draft_content:
+            'CREATE OR REPLACE FUNCTION dbo.creategrants() RETURNS void AS $$ ' +
+            'SELECT name FROM sysobjects $$ LANGUAGE sql;',
+          judge_verdict_json: { verdict: 'equivalent', confidence: 0.7, flags: [] },
+          review_status: 'approved',
+        },
+        {
+          // Fresh unreviewed sysobjects draft — approve-all must refuse it.
+          ...rowBase,
+          id: 't-bad-unreviewed',
+          translation_key: 'stored_procedure--dbo.NewGrants',
+          object_ref: 'dbo.NewGrants',
+          kind: 'stored_procedure',
+          pipeline_state: 'drafted',
+          source_body: BAD_BODY,
+          source_body_hash: computeSourceBodyHash(BAD_BODY),
+          draft_content:
+            'CREATE OR REPLACE FUNCTION dbo.newgrants() RETURNS void AS $$ ' +
+            'SELECT id FROM syscolumns $$ LANGUAGE sql;',
+          judge_verdict_json: { verdict: 'equivalent', confidence: 0.7, flags: [] },
+          review_status: 'unreviewed',
+        },
+      ],
+      files: baseFiles(),
+      packPuts: [],
+      upsertBodies: [],
+      patches: [],
+    };
+    installAmsStub(state);
+    const app = createTestApp();
+
+    const res = await request(app).post(T('pack-1', '/approve-all')).send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.approved_count).toBe(1);
+    // The fresh sysobjects draft was REFUSED with the honest reason.
+    const refused = (res.body.not_approvable as Array<{ translation_key: string; reason: string }>)
+      .find((n) => n.translation_key === 'stored_procedure--dbo.NewGrants');
+    expect(refused?.reason).toContain('syscolumns');
+    // The STALE approval was demoted by the emission gate…
+    expect(res.body.emission.demoted).toHaveLength(1);
+    expect(res.body.emission.demoted[0].object_ref).toBe('dbo.CreateGrants');
+    // …with the needs_rework patch persisted carrying the reason.
+    const demotionPatch = state.patches.find((p) => p.id === 't-stale-approved');
+    expect(demotionPatch?.patch.review_status).toBe('needs_rework');
+    expect(String(demotionPatch?.patch.reviewer_notes)).toContain('[auto-demoted at emission]');
+    expect(String(demotionPatch?.patch.reviewer_notes)).toContain('sysobjects');
+    // The executable path carries ONLY the clean row — and the pack persisted.
+    expect(state.packPuts).toHaveLength(1);
+    const changeset = fileOf(state.packPuts[0], TRANSLATIONS_CHANGESET_PATH);
+    expect(changeset!.content).toContain('dbo.usp_ok');
+    expect(changeset!.content).not.toContain('CreateGrants');
+  });
+});

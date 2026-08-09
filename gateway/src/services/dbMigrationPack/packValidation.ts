@@ -51,19 +51,76 @@ function normalisePath(p: string): string {
   return out.join('/');
 }
 
+const CREATE_TABLE_RE = /CREATE TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)"\s*\(([\s\S]*?)\n\);/g;
+const RELATION_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"\s+(PRIMARY KEY|UNIQUE)/g;
+const ANY_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"/g;
+const CREATE_INDEX_RE = /CREATE (?:UNIQUE )?INDEX "((?:[^"]|"")+)" ON "((?:[^"]|"")+)"\./g;
+// Views are relations too (2026-08-07): dormant until spec-2 translation
+// emission produces CREATE VIEW DDL, but the backstop is already standing.
+const CREATE_VIEW_RE =
+  /CREATE (?:OR REPLACE )?(?:MATERIALIZED )?VIEW "((?:[^"]|"")+)"\."((?:[^"]|"")+)"/g;
+const ALTER_ADD_CONSTRAINT_RE =
+  /ALTER TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)" ADD CONSTRAINT "((?:[^"]|"")+)"/g;
+const unq = (s: string): string => s.replace(/""/g, '"');
+
+/** One relation (schema-namespace object) declared by a SQL text. */
+export interface DeclaredRelation {
+  schema: string;
+  name: string;
+  kind: 'table' | 'view' | 'index';
+}
+
+/**
+ * Extract the per-schema RELATIONS a SQL text declares (tables, views,
+ * indexes — quoted-identifier DDL, the pack emitters' canonical form).
+ * Shared by the pack validator and the translation-emission gate so an
+ * approved draft's namespace claims are judged by EXACTLY the rules the
+ * validator enforces (2026-08-09).
+ */
+export function extractDeclaredRelations(sql: string): DeclaredRelation[] {
+  const out: DeclaredRelation[] = [];
+  let m: RegExpExecArray | null;
+  CREATE_TABLE_RE.lastIndex = 0;
+  while ((m = CREATE_TABLE_RE.exec(sql)) !== null) {
+    out.push({ schema: unq(m[1]), name: unq(m[2]), kind: 'table' });
+  }
+  CREATE_VIEW_RE.lastIndex = 0;
+  while ((m = CREATE_VIEW_RE.exec(sql)) !== null) {
+    out.push({ schema: unq(m[1]), name: unq(m[2]), kind: 'view' });
+  }
+  CREATE_INDEX_RE.lastIndex = 0;
+  while ((m = CREATE_INDEX_RE.exec(sql)) !== null) {
+    out.push({ schema: unq(m[2]), name: unq(m[1]), kind: 'index' });
+  }
+  return out;
+}
+
 /**
  * Validate the assembled pack file set. Returns the list of problems —
  * empty means the pack is structurally runnable.
+ *
+ * SCOPE (2026-08-09): the apply-time invariants (parser-safe changeset ids,
+ * relation/constraint namespaces, identifier length, no ASE system-catalog
+ * references) are asserted over the EXECUTABLE path only — the master
+ * changelog plus the files it includes. Provenance copies (the per-object
+ * `translations/<kind>.<object>.sql` files, docs) are never applied, so the
+ * same approved view appearing in BOTH `050-translations.sql` and its
+ * provenance copy is NOT a collision (the first live approved-view emission
+ * failed exactly there). With no master present, every .sql file is checked
+ * (fail-loud posture for structurally broken packs). JSON well-formedness
+ * still covers every file — provenance must parse too.
  */
 export function validatePackFiles(files: ValidatablePackFile[]): string[] {
   const problems: string[] = [];
   const byPath = new Map(files.map((f) => [normalisePath(pathOf(f)), f]));
 
   const master = files.find((f) => pathOf(f).endsWith('db.changelog-master.xml'));
+  const executablePaths = new Set<string>();
   if (!master) {
     problems.push('pack has no db.changelog-master.xml (liquibase master changelog)');
   } else {
     const masterPath = pathOf(master);
+    executablePaths.add(normalisePath(masterPath));
     // 1) XML comments must never contain a double-dash (illegal XML).
     let comment: RegExpExecArray | null;
     XML_COMMENT_RE.lastIndex = 0;
@@ -88,13 +145,29 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
         problems.push(
           `${masterPath}: dangling include '${include[1]}' — no generated file at '${resolved}'`
         );
+      } else {
+        executablePaths.add(resolved);
       }
     }
   }
 
-  // 3) Changeset ids must be parser-safe in every formatted-SQL file.
+  /**
+   * Apply-time checks cover the executable path only: the whole `liquibase/`
+   * tree (the executable area by construction — every changeset lives there)
+   * plus any resolved include target outside it. Provenance .sql files
+   * (`translations/<kind>.<object>.sql` copies, docs) are never applied.
+   * Without a master, EVERY .sql file is checked (fail-loud fallback).
+   */
+  const isExecutableSql = (f: ValidatablePackFile): boolean => {
+    const p = normalisePath(pathOf(f));
+    if (!p.endsWith('.sql')) return false;
+    if (!master) return true;
+    return p.startsWith('liquibase/') || executablePaths.has(p);
+  };
+
+  // 3) Changeset ids must be parser-safe in every EXECUTABLE formatted-SQL file.
   for (const f of files) {
-    if (!pathOf(f).endsWith('.sql')) continue;
+    if (!isExecutableSql(f)) continue;
     let header: RegExpExecArray | null;
     CHANGESET_HEADER_RE.lastIndex = 0;
     while ((header = CHANGESET_HEADER_RE.exec(f.content)) !== null) {
@@ -160,19 +233,8 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
         `the second declaration fails 'constraint "${name}" ... already exists'`
     );
   };
-  const CREATE_TABLE_RE = /CREATE TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)"\s*\(([\s\S]*?)\n\);/g;
-  const RELATION_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"\s+(PRIMARY KEY|UNIQUE)/g;
-  const ANY_CONSTRAINT_RE = /CONSTRAINT "((?:[^"]|"")+)"/g;
-  const CREATE_INDEX_RE = /CREATE (?:UNIQUE )?INDEX "((?:[^"]|"")+)" ON "((?:[^"]|"")+)"\./g;
-  // Views are relations too (2026-08-07): dormant until spec-2 translation
-  // emission produces CREATE VIEW DDL, but the backstop is already standing.
-  const CREATE_VIEW_RE =
-    /CREATE (?:OR REPLACE )?(?:MATERIALIZED )?VIEW "((?:[^"]|"")+)"\."((?:[^"]|"")+)"/g;
-  const ALTER_ADD_CONSTRAINT_RE =
-    /ALTER TABLE "((?:[^"]|"")+)"\."((?:[^"]|"")+)" ADD CONSTRAINT "((?:[^"]|"")+)"/g;
-  const unq = (s: string): string => s.replace(/""/g, '"');
   for (const f of files) {
-    if (!pathOf(f).endsWith('.sql')) continue;
+    if (!isExecutableSql(f)) continue;
     let tbl: RegExpExecArray | null;
     CREATE_TABLE_RE.lastIndex = 0;
     while ((tbl = CREATE_TABLE_RE.exec(f.content)) !== null) {
@@ -228,7 +290,7 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
   const QUOTED_IDENT_RE = /"((?:[^"]|"")+)"/g;
   const flaggedLong = new Set<string>();
   for (const f of files) {
-    if (!pathOf(f).endsWith('.sql')) continue;
+    if (!isExecutableSql(f)) continue;
     let q: RegExpExecArray | null;
     QUOTED_IDENT_RE.lastIndex = 0;
     while ((q = QUOTED_IDENT_RE.exec(f.content)) !== null) {
@@ -255,7 +317,7 @@ export function validatePackFiles(files: ValidatablePackFile[]): string[] {
   //     whatever DDL any path produced. Comment lines are ignored (exclusion
   //     NOTES may mention a system object; executable statements may not).
   for (const f of files) {
-    if (!pathOf(f).endsWith('.sql')) continue;
+    if (!isExecutableSql(f)) continue;
     const refs = findSybaseSystemReferences(f.content);
     if (refs.length > 0) {
       problems.push(

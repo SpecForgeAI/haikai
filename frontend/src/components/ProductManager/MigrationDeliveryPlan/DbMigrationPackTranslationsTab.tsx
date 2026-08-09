@@ -211,10 +211,19 @@ export const DbMigrationPackTranslationsTab: React.FC<
   const handleEmission = useCallback(
     (emission: DbMigrationPackTranslationEmission | null) => {
       if (emission) {
+        const demoted = emission.demoted ?? [];
+        const demotedNote =
+          demoted.length > 0
+            ? ` ${demoted.length} approval(s) were auto-demoted to needs-rework ` +
+              `(unrunnable on the target — see the reviewer notes): ` +
+              `${demoted.slice(0, 3).map((d) => d.object_ref).join(', ')}` +
+              `${demoted.length > 3 ? ` (+${demoted.length - 3} more)` : ''}.`
+            : '';
         setNotice(
           `Approved-only emission re-ran: ${emission.approved_count} approved ` +
             `translation(s) on the executable path` +
-            `${emission.changed ? ' (pack files updated)' : ' (no change)'}.`,
+            `${emission.changed ? ' (pack files updated)' : ' (no change)'}.` +
+            demotedNote,
         );
         if (emission.changed) onEmissionChanged?.();
       }
