@@ -812,8 +812,53 @@ def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
             _record_ci_binding(git_config, orchestrate_id, batch_name, folder, head_sha)
 
 
+# --- verification-gate suite detection (2026-08-09, work-machine port) ------
+# Shallow and cheap by design: a runner manifest at the repo ROOT, or a
+# top-level test directory that actually contains files. No recursion — the
+# gate must never spend real IO deciding whether to spend LLM money.
+TEST_SUITE_MARKERS = (
+    "package.json", "pom.xml", "build.gradle", "build.gradle.kts",
+    "pyproject.toml", "setup.py", "setup.cfg", "tox.ini", "pytest.ini",
+    "Cargo.toml", "go.mod", "Makefile", "Rakefile", "composer.json",
+    "mix.exs", "build.sbt", "Gemfile",
+)
+TEST_DIR_MARKERS = ("tests", "test", "spec", "__tests__", "src/test")
+
+
+def repo_has_test_suite(repo_dir) -> bool:
+    """True when the repo plausibly carries a RUNNABLE test suite: a runner
+    manifest at the root (``package.json``, ``pom.xml``, …) or a top-level
+    test directory that is non-empty. An empty ``tests/`` does NOT count —
+    a scaffold directory is not a suite."""
+    root = Path(repo_dir)
+    for marker in TEST_SUITE_MARKERS:
+        if (root / marker).is_file():
+            return True
+    for d in TEST_DIR_MARKERS:
+        p = root / d
+        try:
+            if p.is_dir() and any(p.iterdir()):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _spec_repair_timeout() -> int:
+    """Per-attempt repair timeout (seconds). ``SPEC_REPAIR_TIMEOUT_SECONDS``,
+    default 7200 (2 hours) — read at CALL time so ``.env.local`` can retune
+    without a code change; defensive fallback on a non-numeric value."""
+    raw = os.getenv("SPEC_REPAIR_TIMEOUT_SECONDS", "7200")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "SPEC_REPAIR_TIMEOUT_SECONDS=%r is not numeric; using 7200", raw)
+        return 7200
+
+
 def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
-                 cap: int = 10, timeout: int = 1800) -> tuple:
+                 cap: int = 10, timeout: "int | None" = None) -> tuple:
     """Option C — per-spec verification gate + repair. Drive `/haikai:debug` →
     `/haikai:fix` in ``repo_dir`` until the repo's own test suite is green, or the
     cap is hit. `/haikai:fix` is TEST-GATED (keeps a change only if tests pass,
@@ -822,8 +867,28 @@ def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
 
     Returns ``(passed: bool, attempts: int, summary: str)``. The LLM executor is a
     true external (stubbed in tests).
+
+    2026-08-09 (work-machine port):
+      - NO-SUITE SKIP: a repo with no runnable test suite returns
+        ``(True, 0, …)`` immediately — passed=True deliberately, so a repo
+        with nothing to run never blocks its spec from committing, and the
+        LLM is never invoked.
+      - ``timeout=None`` resolves to :func:`_spec_repair_timeout` (env-tunable,
+        default 2h).
+      - NO RETRY ON TIMEOUT: a timed-out attempt returns immediately —
+        re-issuing the identical command into the same wall wastes hours.
+        A ``VERDICT=FAIL`` still retries; that is genuinely worth another
+        attempt.
     """
     from src.backend_registry import _build_cli_executor
+
+    if not repo_has_test_suite(repo_dir):
+        msg = "gate skipped: repository has no runnable test suite"
+        logger.info("repair %s: %s (%s)", spec_name, msg, repo_dir)
+        return True, 0, msg
+
+    if timeout is None:
+        timeout = _spec_repair_timeout()
 
     executor = _build_cli_executor(str(repo_dir), anthropic_api_key)
     summary = ""
@@ -845,6 +910,15 @@ def _repair_spec(repo_dir, spec_name: str, anthropic_api_key: str, *,
         summary = (result.get("stdout") or "")[-2000:]
         if result.get("success") and "VERDICT=PASS" in summary:
             return True, attempt, summary
+        # Timeout: the explicit marker, with a stderr sniff as the fallback
+        # for older executors that predate it.
+        timed_out = bool(result.get("timed_out")) or (
+            "timed out" in (result.get("stderr") or "").lower())
+        if timed_out:
+            summary = (f"repair attempt {attempt} timed out after {timeout}s — "
+                       "not retried (an identical command would hit the same wall)")
+            logger.warning("repair %s: %s", spec_name, summary)
+            return False, attempt, summary
     return False, cap, summary
 
 
