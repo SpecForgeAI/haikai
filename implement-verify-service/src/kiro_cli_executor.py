@@ -225,6 +225,11 @@ class KiroCLIExecutor:
             logger.error(f"Command timed out after {timeout}s: {command}")
             return {
                 "success": False,
+                # Explicit timeout marker (2026-08-09): callers with retry
+                # loops must be able to tell "the clock ran out" from "the
+                # work failed" — a timeout retry re-issues an identical
+                # command into the same wall, so it is never retried.
+                "timed_out": True,
                 "return_code": -1,
                 "stdout": "",
                 "stderr": f"Command timed out after {timeout} seconds",
