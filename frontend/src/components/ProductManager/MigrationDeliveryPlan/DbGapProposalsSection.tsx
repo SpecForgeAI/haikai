@@ -50,6 +50,13 @@ export interface DbGapProposalsSectionProps {
    * "list only, never generated from here". Each bump runs ONE generate.
    */
   generateSeq: number;
+  /**
+   * Invoked after an approval WROTE to the committed model (2026-08-09) —
+   * single approve or Approve-all with at least one success. The pack's
+   * generation inputs changed; the parent re-reads the pack so the
+   * staleness banner appears without a manual reload.
+   */
+  onModelChanged?: () => void;
 }
 
 /** "orders.customer_id" / "orders.(a, b)" — one side of the fk summary. */
@@ -157,6 +164,7 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
   findingKey,
   findingKind,
   generateSeq,
+  onModelChanged,
 }) => {
   const [rows, setRows] = useState<DbGapProposalRow[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -261,6 +269,7 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
           }
           setApplyNotices(notices);
         }
+        if (action === 'approve') onModelChanged?.();
         setReviewDrafts((prev) => {
           const next = { ...prev };
           delete next[row.id];
@@ -273,7 +282,7 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
         setBusyId(null);
       }
     },
-    [busyId, projectId, architectureId, loadRows],
+    [busyId, projectId, architectureId, loadRows, onModelChanged],
   );
 
   /**
@@ -314,6 +323,7 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
     setBulkProgress(null);
     setApproveReminder(true);
     setApplyNotices(notices);
+    if (failures.length < targets.length) onModelChanged?.();
     if (failures.length > 0) {
       setError(
         `Approve all: ${failures.length} of ${targets.length} failed — ${failures.join('; ')}`,
@@ -323,7 +333,7 @@ export const DbGapProposalsSection: React.FC<DbGapProposalsSectionProps> = ({
       /* per-row outcomes already surfaced; the refetch is best-effort */
     });
     setBusyId(null);
-  }, [busyId, rows, projectId, architectureId, loadRows]);
+  }, [busyId, rows, projectId, architectureId, loadRows, onModelChanged]);
 
   const confirmReviewDraft = useCallback(
     (row: DbGapProposalRow) => {

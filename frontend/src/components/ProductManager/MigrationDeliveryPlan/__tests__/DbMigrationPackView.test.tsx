@@ -527,4 +527,21 @@ describe('DbMigrationPackView (Task 6.1)', () => {
     );
     expect(onDownload).toHaveBeenCalledWith(PACK_ID);
   });
+  it('Regenerate stays ENABLED on a non-stale pack (2026-08-09 — staleness is a signal, never a lock)', async () => {
+    mockListPacks.mockResolvedValue([buildPack()]);
+    mockGetPack.mockResolvedValue(buildPack());
+    mockListFiles.mockResolvedValue(FILES);
+
+    renderView();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('db-pack-regenerate-button')).toBeInTheDocument(),
+    );
+    // buildPack() is is_stale: false — the button is enabled regardless; the
+    // stale BANNER (absent here) is the change signal, not button state.
+    expect(screen.getByTestId('db-pack-regenerate-button')).toBeEnabled();
+    expect(screen.queryByTestId('db-pack-stale-banner')).toBeNull();
+    expect(mockRegenerate).not.toHaveBeenCalled();
+  });
 });
+

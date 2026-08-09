@@ -58,6 +58,13 @@ export interface DbMigrationPackStructuralFindingsPanelProps {
   /** Invoked after any successful disposition change (parents may refresh gates). */
   onChanged?: () => void;
   /**
+   * Invoked when a gap-proposal approval WROTE to the committed model
+   * (2026-08-09): the pack's generation inputs changed, so the parent should
+   * re-read the pack — AMS recomputes staleness on GET and the banner
+   * appears without a manual reload.
+   */
+  onModelChanged?: () => void;
+  /**
    * Invoked when a harvest completed (stage 'completed'): the pack was
    * REGENERATED server-side, so the parent should re-read the pack + files
    * (the same refetch it does after an explicit Regenerate).
@@ -94,6 +101,7 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
   architectureId,
   targetArchitectureId,
   onChanged,
+  onModelChanged,
   onPackRegenerated,
 }) => {
   const [findings, setFindings] = useState<DbMigrationPackStructuralFinding[]>([]);
@@ -542,6 +550,7 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
                           findingKey={finding.key}
                           findingKind={finding.kind}
                           generateSeq={gapSection.generateSeq}
+                          onModelChanged={onModelChanged}
                         />
                       </td>
                     </tr>
