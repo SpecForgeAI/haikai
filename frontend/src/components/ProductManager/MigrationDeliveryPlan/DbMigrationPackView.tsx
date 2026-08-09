@@ -366,12 +366,8 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
           type="button"
           className={`${styles.actionButton} ${styles.actionButtonPrimary}`}
           onClick={() => void runGeneration('regenerate')}
-          disabled={generating || !pack.is_stale}
-          title={
-            pack.is_stale
-              ? 'Regenerate the pack from current inputs (explicit action)'
-              : 'Regenerate enables when the pack is stale or decisions are resolved'
-          }
+          disabled={generating}
+          title="Regenerate the pack from current inputs (explicit action — the staleness banner tells you when inputs changed)"
           data-testid="db-pack-regenerate-button"
         >
           {generating ? 'Regenerating…' : 'Regenerate'}
@@ -444,6 +440,8 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
         projectId={projectId}
         packId={pack.id}
         architectureId={architectureId}
+        onChanged={handleDecisionResolved}
+        onModelChanged={handleDecisionResolved}
         onPackRegenerated={() => {
           // A completed harvest REGENERATED the pack server-side — reuse the
           // post-Regenerate refetch (pack row incl. staleness + file rows).

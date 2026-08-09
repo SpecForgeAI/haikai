@@ -365,5 +365,28 @@ describe('DbMigrationPack gap proposals (Spec 4)', () => {
       await screen.findByTestId(`db-gap-proposals-regenerate-reminder-${FK_FINDING.key}`),
     ).toBeInTheDocument();
   });
+  it('approvals bubble onModelChanged so the parent re-reads pack staleness (2026-08-09)', async () => {
+    const onModelChanged = vi.fn();
+    mockListFindings.mockResolvedValue({ findings: [FK_FINDING] });
+    mockGenerate.mockResolvedValue({ supported: true, proposals: [], warnings: [] });
+    mockListProposals.mockResolvedValue([FK_ROW]);
+    mockReview.mockResolvedValue({ review_status: 'approved', apply: { applied: 1, skipped: [] } });
+    render(
+      <DbMigrationPackStructuralFindingsPanel
+        projectId={PROJECT_ID}
+        packId={PACK_ID}
+        architectureId={ARCH_ID}
+        onModelChanged={onModelChanged}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByTestId(`db-gap-proposals-draft-${FK_FINDING.key}`),
+    );
+    fireEvent.click(
+      await screen.findByTestId(`db-gap-proposal-approve-${FK_ROW.id}`),
+    );
+    await waitFor(() => expect(onModelChanged).toHaveBeenCalledTimes(1));
+  });
 });
 
