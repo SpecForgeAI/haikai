@@ -294,7 +294,28 @@ describe('BUDGET pin (trim ladder)', () => {
 });
 
 describe('HONESTY pins', () => {
-  it('no committed contracts anywhere -> insufficient_context(no_committed_contracts)', async () => {
+  it('no committed contracts + no captures -> insufficient_context; WITH captures the baseline IS the contract (2026-08-09)', async () => {
+    // Neither contracts NOR captures: blocked, with BOTH remedies named.
+    const empty = facts();
+    empty.endpoints[0].requestContract = null;
+    empty.endpoints[0].responseContract = null;
+    empty.examples = [];
+    const blocked = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story(),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(empty) },
+    });
+    expect(blocked.status).toBe('insufficient_context');
+    const missing = JSON.stringify(blocked.missingInputsJson);
+    expect(missing).toContain('no_committed_contracts');
+    expect(missing).toContain('Retry uncovered APIs');
+
+    // No contracts but accepted captures exist (a capture-reconciled
+    // endpoint, e.g. discovered late and closed in the baseline loop):
+    // the spec generates, grounded on the captures — the story is never
+    // blocked behind a code-discovery remedy that cannot produce contracts.
     const bare = facts();
     bare.endpoints[0].requestContract = null;
     bare.endpoints[0].responseContract = null;
@@ -305,8 +326,10 @@ describe('HONESTY pins', () => {
       baseRow: baseRow(),
       deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(bare) },
     });
-    expect(row.status).toBe('insufficient_context');
-    expect(JSON.stringify(row.missingInputsJson)).toContain('no_committed_contracts');
+    expect(row.status).toBe('generated');
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('Contract source: captured baseline behaviour.');
+    expect(text).toContain('_No committed request contract._');
   });
 
   it('zero baseline examples on an UNFLAGGED story -> insufficient_context; flagged missing_baseline proceeds', async () => {
