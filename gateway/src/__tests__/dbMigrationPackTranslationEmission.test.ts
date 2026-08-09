@@ -50,6 +50,7 @@ import {
   translationFilePath,
   TRANSLATIONS_CHANGESET_PATH,
 } from '../services/dbMigrationPack/translationEmission';
+import { validatePackFiles } from '../services/dbMigrationPack/packValidation';
 import {
   computeSourceBodyHash,
   TranslationRow,
@@ -403,3 +404,113 @@ describe('dbMigrationPack translation emission — review-route trigger (4.3)', 
     expect(packPuts).toHaveLength(2);
   });
 });
+// ---------------------------------------------------------------------------
+// Emission gate (2026-08-09): approved drafts that cannot apply are DEMOTED —
+// excluded from the executable path and reported — never allowed to brick the
+// pack (the first live approved batch carried a proc still SELECTing from
+// sysobjects, and the emission validator failed the WHOLE regenerate).
+// ---------------------------------------------------------------------------
+
+describe('translation emission — approved-but-unrunnable drafts demote instead of bricking', () => {
+  it('sysobjects-referencing draft: excluded from 050, reported as a demotion with the honest reason', () => {
+    const rows = [
+      makeRow({
+        translation_key: 'stored_procedure--dbo.CreateGrants',
+        review_status: 'approved',
+        draft_content:
+          'CREATE OR REPLACE FUNCTION dbo.creategrants() RETURNS void LANGUAGE plpgsql AS $$ ' +
+          'BEGIN PERFORM name FROM sysobjects; END $$;',
+      }),
+      makeRow({
+        translation_key: 'stored_procedure--dbo.usp_calc',
+        review_status: 'approved',
+      }),
+    ];
+    const result = applyTranslationEmission({
+      files: baseFiles(),
+      manifest: baseManifest(),
+      rows,
+    });
+    expect(result.demotions).toHaveLength(1);
+    expect(result.demotions[0].row.translation_key).toBe('stored_procedure--dbo.CreateGrants');
+    expect(result.demotions[0].reason).toContain('sysobjects');
+    const changeset = result.files.find((f) => f.file_path === TRANSLATIONS_CHANGESET_PATH)!;
+    expect(changeset.content).toContain('dbo.usp_calc');
+    expect(changeset.content).not.toContain('CreateGrants');
+    // The pack validator passes — the bad draft never reached the executable path.
+    expect(validatePackFiles(result.files)).toEqual([]);
+  });
+
+  it('a draft declaring a relation the structural pack already owns demotes with the collision named', () => {
+    const files = baseFiles();
+    // Structural changeset owns dbo.orders.
+    files.push({
+      file_path: 'liquibase/changesets/010-tables/dbo.orders.sql',
+      file_kind: 'liquibase_changeset',
+      content:
+        '--liquibase formatted sql logicalFilePath:liquibase/changesets/010-tables/dbo.orders.sql\n' +
+        '--changeset db-migration-pack:table-dbo.orders context:structural splitStatements:false\n' +
+        'CREATE TABLE "dbo"."orders" (\n  "id" bigint\n);\n',
+      sort_order: 90,
+    });
+    const rows = [
+      makeRow({
+        translation_key: 'view--dbo.orders',
+        review_status: 'approved',
+        draft_content: 'CREATE OR REPLACE VIEW "dbo"."orders" AS SELECT 1 AS x;',
+      }),
+    ];
+    const result = applyTranslationEmission({ files, manifest: baseManifest(), rows });
+    expect(result.demotions).toHaveLength(1);
+    expect(result.demotions[0].reason).toContain('already owned by');
+    expect(result.files.some((f) => f.file_path === TRANSLATIONS_CHANGESET_PATH)).toBe(false);
+  });
+
+  it('two approved drafts claiming ONE view: the first emits, the second demotes', () => {
+    const rows = [
+      makeRow({
+        translation_key: 'view--dbo.v_a',
+        review_status: 'approved',
+        draft_content: 'CREATE OR REPLACE VIEW "dbo"."v_shared" AS SELECT 1;',
+      }),
+      makeRow({
+        translation_key: 'view--dbo.v_b',
+        review_status: 'approved',
+        draft_content: 'CREATE OR REPLACE VIEW "dbo"."v_shared" AS SELECT 2;',
+      }),
+    ];
+    const result = applyTranslationEmission({
+      files: baseFiles(),
+      manifest: baseManifest(),
+      rows,
+    });
+    expect(result.demotions).toHaveLength(1);
+    expect(result.demotions[0].row.translation_key).toBe('view--dbo.v_b');
+    const changeset = result.files.find((f) => f.file_path === TRANSLATIONS_CHANGESET_PATH)!;
+    expect(changeset.content).toContain('SELECT 1');
+    expect(changeset.content).not.toContain('SELECT 2');
+  });
+
+  it('a clean approved view emits with ZERO demotions (the provenance copy is not a self-collision)', () => {
+    const rows = [
+      makeRow({
+        translation_key: 'view--dbo.ext_hierarchy_org_vw',
+        review_status: 'approved',
+        draft_content: 'CREATE OR REPLACE VIEW "dbo"."ext_hierarchy_org_vw" AS SELECT 1 AS x;',
+      }),
+    ];
+    const result = applyTranslationEmission({
+      files: baseFiles(),
+      manifest: baseManifest(),
+      rows,
+    });
+    expect(result.demotions).toEqual([]);
+    // Both the 050 changeset AND the provenance copy exist — and validate.
+    expect(result.files.some((f) => f.file_path === TRANSLATIONS_CHANGESET_PATH)).toBe(true);
+    expect(
+      result.files.some((f) => f.file_path === 'translations/view.dbo.ext_hierarchy_org_vw.sql'),
+    ).toBe(true);
+    expect(validatePackFiles(result.files)).toEqual([]);
+  });
+});
+

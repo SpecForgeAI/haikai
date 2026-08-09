@@ -795,6 +795,10 @@ export function buildTranslationPrompt(args: {
     'Produce a faithful, reviewable PostgreSQL DRAFT — semantic equivalence over style.',
     'Where a construct has no PostgreSQL equivalent, translate conservatively and add a note;',
     'NEVER invent behaviour the source does not have.',
+    'NEVER reference ASE system catalogs (sysobjects, syscolumns, sysindexes, ...) in the draft —',
+    'they do not exist on PostgreSQL. Rewrite catalog/metadata queries against',
+    'pg_catalog/information_schema equivalents; if the object is inherently ASE-administrative,',
+    'say so in the notes instead of emitting unrunnable SQL.',
     'Respond with ONLY a JSON object: { "draft_sql": "<the complete PostgreSQL SQL>", "notes": ["..."] }.',
   ].join('\n');
   const lines: string[] = [];

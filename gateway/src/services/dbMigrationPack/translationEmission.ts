@@ -39,14 +39,16 @@ import {
   changesetHeader,
   formattedSqlHeader,
 } from './liquibase';
-import { assertPackFilesValid } from './packValidation';
-import { isSybaseSystemObjectRef } from './sybaseSystemObjects';
+import { assertPackFilesValid, extractDeclaredRelations } from './packValidation';
+import { findSybaseSystemReferences, isSybaseSystemObjectRef } from './sybaseSystemObjects';
 import {
   TranslationRow,
   TranslationsAmsError,
   translationKey,
   defaultFetchTranslations,
+  defaultPatchTranslation,
   FetchTranslationsFn,
+  PatchTranslationFn,
 } from './translations';
 
 export const TRANSLATIONS_CHANGESET_PATH = 'liquibase/changesets/050-translations.sql';
@@ -212,10 +214,83 @@ export function buildManifestTranslationsSection(
   };
 }
 
+/** An approved row EXCLUDED from emission because its draft cannot apply. */
+export interface EmissionDemotion {
+  row: TranslationRow;
+  reason: string;
+}
+
+/**
+ * Partition the approved set into emittable rows and DEMOTIONS (2026-08-09):
+ * a pack must never be brickable by approved CONTENT. An approved draft that
+ * would fail the runnable-pack validator on the executable path — it
+ * references ASE system catalogs, or declares a relation the structural pack
+ * (or an earlier approved draft) already owns — is excluded from emission
+ * with an honest reason; the caller returns it to `needs_rework` carrying
+ * that reason (the re-link/demote idiom). The first live approved batch
+ * carried a proc still SELECTing from sysobjects: the emission validator
+ * failed the WHOLE regenerate with no UI path out.
+ */
+export function partitionEmittableTranslations(
+  approved: TranslationRow[],
+  structuralFiles: ReadonlyArray<{ file_path: string; content: string }>
+): { emittable: TranslationRow[]; demotions: EmissionDemotion[] } {
+  // The structural pack's relation namespace ("schema\0name" -> owner site).
+  const owners = new Map<string, string>();
+  for (const f of structuralFiles) {
+    if (!f.file_path.endsWith('.sql')) continue;
+    for (const rel of extractDeclaredRelations(f.content)) {
+      const k = `${rel.schema}\0${rel.name}`;
+      if (!owners.has(k)) owners.set(k, `${rel.kind} ${rel.schema}.${rel.name} (${f.file_path})`);
+    }
+  }
+  const emittable: TranslationRow[] = [];
+  const demotions: EmissionDemotion[] = [];
+  for (const row of approved) {
+    const draft = String(row.draft_content ?? '');
+    const systemRefs = findSybaseSystemReferences(draft);
+    if (systemRefs.length > 0) {
+      demotions.push({
+        row,
+        reason:
+          `draft references ASE system catalog object(s) ${systemRefs.join(', ')} — ` +
+          `these can never exist on the Postgres target. Rewrite the logic against ` +
+          `pg_catalog/information_schema, or disposition the object rewrite-in-app.`,
+      });
+      continue;
+    }
+    const collision = extractDeclaredRelations(draft)
+      .map((rel) => ({ rel, owner: owners.get(`${rel.schema}\0${rel.name}`) }))
+      .find((c) => c.owner !== undefined);
+    if (collision) {
+      demotions.push({
+        row,
+        reason:
+          `draft declares ${collision.rel.kind} "${collision.rel.schema}"."${collision.rel.name}" ` +
+          `but that relation name is already owned by ${collision.owner} — Postgres scopes ` +
+          `table/view/index names per schema, so the CREATE would fail at apply. Rename ` +
+          `the relation in the draft or resolve the conflict at source.`,
+      });
+      continue;
+    }
+    // This draft now OWNS its declared relations for later rows in the batch.
+    for (const rel of extractDeclaredRelations(draft)) {
+      const k = `${rel.schema}\0${rel.name}`;
+      if (!owners.has(k)) {
+        owners.set(k, `${rel.kind} ${rel.schema}.${rel.name} (approved translation ${row.translation_key})`);
+      }
+    }
+    emittable.push(row);
+  }
+  return { emittable, demotions };
+}
+
 export interface ApplyTranslationEmissionResult {
   files: EmissionFileRow[];
   manifest: Record<string, unknown> | null;
   emittedFilePaths: string[];
+  /** Approved rows excluded from this emission — return them to needs_rework. */
+  demotions: EmissionDemotion[];
 }
 
 /**
@@ -229,11 +304,16 @@ export function applyTranslationEmission(args: {
   manifest: Record<string, unknown> | null;
   rows: TranslationRow[];
 }): ApplyTranslationEmissionResult {
-  const approved = selectApprovedTranslations(args.rows);
-
   // 1) Strip prior emission artifacts (idempotent re-emission).
   const base = args.files.filter(
     (f) => f.file_kind !== 'translation' && f.file_path !== TRANSLATIONS_CHANGESET_PATH
+  );
+
+  // 1b) Emission gate (2026-08-09): approved drafts that cannot apply are
+  // DEMOTED (excluded + reported), never allowed to brick the pack.
+  const { emittable: approved, demotions } = partitionEmittableTranslations(
+    selectApprovedTranslations(args.rows),
+    base
   );
 
   // 2) Master changelog include list: 050 present ONLY with >=1 approved.
@@ -280,7 +360,7 @@ export function applyTranslationEmission(args: {
       emittedFilePaths.push(path);
     }
   }
-  return { files, manifest, emittedFilePaths };
+  return { files, manifest, emittedFilePaths, demotions };
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +386,8 @@ export interface TranslationEmissionDeps {
   fetchPackFiles?: (projectId: string, packId: string) => Promise<EmissionFileRow[]>;
   fetchTranslations?: FetchTranslationsFn;
   putPack?: (projectId: string, body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** Writes emission demotions back to needs_rework (2026-08-09). */
+  patchTranslation?: PatchTranslationFn;
 }
 
 async function amsJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -347,6 +429,8 @@ export interface RunTranslationEmissionResult {
   approvedCount: number;
   emittedFilePaths: string[];
   changed: boolean;
+  /** Approved rows auto-demoted to needs_rework by the emission gate. */
+  demoted: Array<{ translation_key: string; object_ref: string; reason: string }>;
 }
 
 /**
@@ -364,6 +448,7 @@ export async function runTranslationEmission(
   const fetchPackFiles = deps.fetchPackFiles ?? defaultFetchPackFiles;
   const fetchTranslations = deps.fetchTranslations ?? defaultFetchTranslations;
   const putPack = deps.putPack ?? defaultPutPack;
+  const patchTranslation = deps.patchTranslation ?? defaultPatchTranslation;
 
   logger.info(
     `[diag-gateway] db_translation stage=emission projectId=${projectId} packId=${packId}`
@@ -385,9 +470,36 @@ export async function runTranslationEmission(
     rows,
   });
 
+  // Emission-gate demotions (2026-08-09): return each excluded approval to
+  // needs_rework CARRYING the reason — the reviewer sees exactly why in the
+  // queue. Fail-soft per row: a failed patch is logged, never blocks the
+  // emission (the row is excluded from the executable path either way).
+  const demoted: RunTranslationEmissionResult['demoted'] = [];
+  for (const d of result.demotions) {
+    demoted.push({
+      translation_key: d.row.translation_key,
+      object_ref: d.row.object_ref,
+      reason: d.reason,
+    });
+    try {
+      await patchTranslation(projectId, packId, d.row.id, {
+        review_status: 'needs_rework',
+        reviewer_notes: `[auto-demoted at emission] ${d.reason}`,
+      });
+    } catch (err) {
+      logger.warn('[diag-gateway] db_translation emission demotion patch failed', {
+        packId,
+        translationKey: d.row.translation_key,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Runnable-pack gate (WS3 P0): the emission rewrites the master changelog
   // include list — a dangling 050 include (the live 2026-07-30 parse
-  // blocker) must fail HERE, before the pack is persisted.
+  // blocker) must fail HERE, before the pack is persisted. After the
+  // demotion gate above, anything this catches is a GENERATOR bug, so the
+  // hard failure is correct.
   assertPackFilesValid(result.files, 'translation emission');
 
   const changed =
@@ -407,10 +519,11 @@ export async function runTranslationEmission(
     files: result.files,
   });
 
-  const approvedCount = selectApprovedTranslations(rows).length;
+  const approvedCount =
+    selectApprovedTranslations(rows).length - result.demotions.length;
   logger.info(
     `[diag-gateway] db_translation stage=emission-complete packId=${packId} ` +
-      `approved=${approvedCount} changed=${changed}`
+      `approved=${approvedCount} demoted=${demoted.length} changed=${changed}`
   );
-  return { approvedCount, emittedFilePaths: result.emittedFilePaths, changed };
+  return { approvedCount, emittedFilePaths: result.emittedFilePaths, changed, demoted };
 }
