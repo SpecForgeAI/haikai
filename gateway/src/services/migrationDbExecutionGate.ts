@@ -203,7 +203,17 @@ export async function evaluateDbPackReadiness(params: {
     });
   }
 
-  const openDecisions = packView.decisions.filter((d) => d.status === 'open');
+  // Open decisions block Migrate because their objects are EXCLUDED from the
+  // pack until resolved (type_mapping, pk_composition, delta_key, …). The
+  // `surrogate_pk` decision (2026-08-09) is the one exception: it is an
+  // OFFER — add target-only identity PKs to no-PK tables — and while it is
+  // open those tables still emit COMPLETELY, just keyless, which is exactly
+  // the state the no_primary_keys structural finding's dispositions already
+  // govern. Blocking Migrate on an open offer re-locked a plan the operator
+  // had already dispositioned (user ruling: signals, never locks).
+  const openDecisions = packView.decisions.filter(
+    (d) => d.status === 'open' && d.category !== 'surrogate_pk'
+  );
   if (openDecisions.length > 0) {
     const sample = openDecisions
       .slice(0, 5)

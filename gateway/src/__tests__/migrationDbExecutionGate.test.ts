@@ -155,7 +155,7 @@ describe('evaluateDbPackReadiness', () => {
     expect(result.reasons[0].message).toContain('regenerate the migration plan');
   });
 
-  it('blocks with db_pack_decisions_unresolved listing sample keys', async () => {
+  it('blocks with db_pack_decisions_unresolved listing sample keys — but an open surrogate_pk OFFER never blocks (2026-08-09)', async () => {
     const result = await evaluateDbPackReadiness({
       ...PARAMS,
       reads: reads({
@@ -165,6 +165,10 @@ describe('evaluateDbPackReadiness', () => {
               { decision_key: 'type_mapping--dbo.orders.legacy_ts', object_ref: 'x', category: 'type_mapping', status: 'open' },
               { decision_key: 'delta_key--dbo.audit_log', object_ref: 'y', category: 'delta_key', status: 'open' },
               { decision_key: 'collation--dbo.names.name', object_ref: 'z', category: 'collation', status: 'resolved' },
+              // Open surrogate_pk is an OFFER (no-PK tables emit completely,
+              // just keyless — governed by the finding dispositions): it must
+              // never count toward the block.
+              { decision_key: 'surrogate_pk--tables_without_pk', object_ref: 'tables_without_pk', category: 'surrogate_pk', status: 'open' },
             ],
           }),
       }),
@@ -173,6 +177,22 @@ describe('evaluateDbPackReadiness', () => {
     expect(result.reasons.map((r) => r.code)).toEqual(['db_pack_decisions_unresolved']);
     expect(result.reasons[0].message).toContain('2 DB pack decision(s)');
     expect(result.reasons[0].message).toContain('type_mapping--dbo.orders.legacy_ts');
+    expect(result.reasons[0].message).not.toContain('surrogate_pk');
+  });
+
+  it('an open surrogate_pk decision ALONE does not block Migrate', async () => {
+    const result = await evaluateDbPackReadiness({
+      ...PARAMS,
+      reads: reads({
+        fetchPackView: async () =>
+          packView({
+            decisions: [
+              { decision_key: 'surrogate_pk--tables_without_pk', object_ref: 'tables_without_pk', category: 'surrogate_pk', status: 'open' },
+            ],
+          }),
+      }),
+    });
+    expect(result.reasons.map((r) => r.code)).not.toContain('db_pack_decisions_unresolved');
   });
 
   it('blocks with db_translations_unapproved for unreviewed/needs_rework translate rows ONLY', async () => {
