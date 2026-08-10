@@ -23,6 +23,9 @@ import {
 import { currentSystemCredentialsStore } from './baselineDriftScheduler';
 import { defaultFetchPackView } from './migrationDbPackPlanner';
 import type { MigrateScope, MigrationDriverDeps } from './migrationExecutionDriver';
+// Long-running DB-plane wiring (2026-08-10): 6h cap + undici agent with
+// per-request timeouts disabled — a bare fetch dies at 300s (headersTimeout).
+import { longRunningPostJson } from './longRunningFetch';
 
 const trace = createTracer('gateway');
 
@@ -73,11 +76,7 @@ export async function runDataMigrationViaAmvs(
     manifest: args.manifest,
     ...(args.bulkManifest ? { bulk_manifest: args.bulkManifest } : {}),
   };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const resp = await longRunningPostJson(url, body);
   const json = (await resp.json().catch(() => ({}))) as {
     summary?: { status?: string; rows_loaded?: number };
     error?: string;
@@ -141,11 +140,7 @@ export async function runIncrementalSyncViaAmvs(
     ...(args.deleteModes ? { delete_modes: args.deleteModes } : {}),
     ...(args.pkDiffMaxRows ? { pk_diff_max_rows: args.pkDiffMaxRows } : {}),
   };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const resp = await longRunningPostJson(url, body);
   const json = (await resp.json().catch(() => ({}))) as {
     report?: unknown;
     summary?: { status?: string; rows_applied?: number; rows_deleted?: number };

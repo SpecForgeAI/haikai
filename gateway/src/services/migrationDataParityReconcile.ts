@@ -28,6 +28,9 @@ import {
 import { currentSystemCredentialsStore } from './baselineDriftScheduler';
 import { defaultFetchPackView, orderedTables } from './migrationDbPackPlanner';
 import type { MigrateScope, MigrationDriverDeps } from './migrationExecutionDriver';
+// Long-running DB-plane wiring (2026-08-10): 6h cap + undici agent with
+// per-request timeouts disabled — a bare fetch dies at 300s (headersTimeout).
+import { longRunningPostJson } from './longRunningFetch';
 
 const trace = createTracer('gateway');
 
@@ -99,11 +102,7 @@ export async function runDataParityReconcileViaAmvs(
         : {}),
     })),
   };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const resp = await longRunningPostJson(url, body);
   const json = (await resp.json().catch(() => ({}))) as {
     report_id?: string | null;
     report_persisted?: boolean;

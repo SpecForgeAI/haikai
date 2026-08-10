@@ -735,6 +735,9 @@ def _git_one_spec(git_config, targets, results: list, spec_name: str,
             "spec": spec_name, "repo": folder, "branch": one.branch,
             "commit_sha": one.commit_sha, "pr_url": one.pr_url,
             "error": one.errors[0] if one.errors else None,
+            # Zero-diff no-op verification (2026-08-10): the outcome fold
+            # checks HEAD in this exact working tree.
+            "repo_dir": str(repo_dir),
         })
         # Legacy per-spec: this spec has its OWN branch+push+pipeline, so link its
         # pushed commit to the run keyed by the spec. (Batch defers push -> the
@@ -802,6 +805,7 @@ def _finalize_batch_git(git_config, targets, results: list, batch_name: str,
             "spec": batch_name, "repo": folder, "branch": branch,
             "commit_sha": None, "pr_url": one.pr_url,
             "error": one.errors[0] if one.errors else None,
+            "repo_dir": str(repo_dir),
         })
         # Link the pushed batch-branch HEAD for THIS repo to the run (per-repo, so
         # polyrepo links each repo's own pipeline). The HEAD = the last per-spec
@@ -2294,6 +2298,44 @@ def _emit_failure_callback(job, job_id: str, request, error_message: str) -> Non
         )
 
 
+def _all_targets_carry_committed_artefacts(spec_git: "list | None") -> bool:
+    """True when EVERY repo named in the per-spec git records already holds
+    committed work: HEAD resolves to a REAL commit AND that repo tracks at
+    least one file (2026-08-10, work-machine port).
+
+    The zero-diff no-op test: an implement step that changed nothing is a
+    legitimate SUCCESS only when the repository already contains the
+    deliverable (e.g. an earlier spec in the chain committed the identical
+    changeset — the live 20/21 halt). An empty/unborn HEAD means nothing was
+    ever delivered — that stays an error. Records without ``repo_dir``
+    (older records, fabricated failure rows) make the check fail CLOSED.
+    """
+    records = list(spec_git or [])
+    if not records:
+        return False
+    dirs = set()
+    for r in records:
+        d = r.get("repo_dir")
+        if not d:
+            return False  # a record we cannot verify -> fail CLOSED
+        dirs.add(d)
+    for d in dirs:
+        try:
+            head = subprocess.run(
+                ["git", "rev-parse", "--verify", "HEAD"],
+                cwd=d, capture_output=True, text=True, timeout=30)
+            if head.returncode != 0:
+                return False
+            tracked = subprocess.run(
+                ["git", "ls-files"],
+                cwd=d, capture_output=True, text=True, timeout=30)
+            if tracked.returncode != 0 or not tracked.stdout.strip():
+                return False
+        except (OSError, subprocess.SubprocessError):
+            return False
+    return True
+
+
 def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, response, deploy,
                                  spec_git: list | None = None) -> dict:
     """W3/C5: build the build-results record, POST it to ``request.callback_url``
@@ -2332,16 +2374,31 @@ def _emit_orchestration_callback(request: OrchestrationRequest, job_id: str, res
     deploy_ok = bool(deploy and deploy.get("base_url"))
     if run_ok and committed and not git_errors:
         outcome = outcomes.DEPLOYED if deploy_ok else outcomes.IMPLEMENTED
+    elif (run_ok and not committed and not response.errors and not git_errors
+          and _all_targets_carry_committed_artefacts(spec_git)):
+        # Zero-diff SPLIT (2026-08-10): a clean run with an empty diff whose
+        # target repo(s) ALREADY hold committed work is a legitimate NO-OP —
+        # the deliverable exists (the live 20/21 halt: the sequences changeset
+        # had been committed byte-identical by the post-load spec). Only this
+        # exact shape qualifies: git errors and failed workflow steps can
+        # NEVER become no-ops, and an empty/unborn HEAD stays an error below.
+        outcome = outcomes.DEPLOYED if deploy_ok else outcomes.IMPLEMENTED
+        logger.info(
+            "job %s: zero-diff NO-OP — nothing new to commit and every target "
+            "repo already carries committed artefacts; reporting %s",
+            job_id, outcome)
     else:
         outcome = outcomes.ERROR
         if run_ok and not committed and not response.errors and not git_errors:
             # Loud zero-diff diagnosis: an implement step that changed nothing
-            # is a failure, not a success (the live shape: the LLM wrote files
-            # outside the worktree, or produced an empty diff).
+            # is a failure when the repo holds NO committed work either (the
+            # live shape: the LLM wrote files outside the worktree, or the
+            # HEAD is empty/unborn — nothing was ever delivered).
             response.errors = [
                 "orchestration completed but NOTHING was committed — the "
-                "implement step produced no repository changes (a zero-diff "
-                "migration unit is a failure, not a success)"]
+                "implement step produced no repository changes and the target "
+                "repo(s) carry no committed artefacts (a zero-diff unit is only "
+                "a no-op when the work already exists on HEAD)"]
     payload = {
         "job_id": job_id,
         "company": request.company,
