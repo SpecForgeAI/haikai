@@ -8,6 +8,7 @@
 import {
   LONG_FETCH_TIMEOUT_MS,
   longFetchTimeoutMs,
+  longRunningDispatcher,
   longRunningPostJson,
 } from '../services/longRunningFetch';
 
@@ -54,3 +55,27 @@ describe('longRunningPostJson', () => {
     expect(init.dispatcher).toBeDefined();
   });
 });
+describe('longRunningDispatcher', () => {
+  it('constructs a real undici Agent and caches it (one shared dispatcher)', () => {
+    const a = longRunningDispatcher();
+    const b = longRunningDispatcher();
+    expect(a).toBeDefined();
+    expect(b).toBe(a);
+  });
+
+  it('THROWS an actionable error when the agent cannot be constructed — broken, never degraded', () => {
+    // The cache is per-module; exercise the failure path via the injectable
+    // builder on a fresh isolated module registry.
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fresh = require('../services/longRunningFetch') as
+        typeof import('../services/longRunningFetch');
+      expect(() =>
+        fresh.longRunningDispatcher(() => {
+          throw new Error('MODULE_NOT_FOUND (simulated)');
+        }),
+      ).toThrow(/could not be constructed[\s\S]*npm install[\s\S]*MODULE_NOT_FOUND/);
+    });
+  });
+});
+
