@@ -55,6 +55,9 @@ import {
   MigrationExecutionRunItem,
 } from './migrationExecutionRunClient';
 import type { MigrateScope, MigrationDriverDeps } from './migrationExecutionDriver';
+// Long-running DB-plane wiring (2026-08-10): 6h cap + undici agent with
+// per-request timeouts disabled — a bare fetch dies at 300s (headersTimeout).
+import { longRunningPostJson } from './longRunningFetch';
 
 const trace = createTracer('gateway');
 
@@ -203,11 +206,7 @@ export async function defaultApplySchema(
     files: args.files.map((f) => ({ path: f.path, content: f.content })),
     contexts: args.contexts,
   };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const resp = await longRunningPostJson(url, body);
   let parseFailed = false;
   const json = (await resp.json().catch(() => {
     parseFailed = true;
