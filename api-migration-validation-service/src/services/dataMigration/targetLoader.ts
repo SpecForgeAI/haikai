@@ -108,6 +108,13 @@ export class PostgresTargetLoader implements TargetLoader {
       application_name: 'haikai-data-migrate',
       connectionTimeoutMillis: 10000,
       idleTimeoutMillis: 30000,
+      // Session zone pinned to UTC (2026-08-11): a naive datetime string
+      // inserted into a `timestamptz` column is interpreted in the SESSION
+      // zone — the server default shifted every summer-dated value 1h on a
+      // BST/GMT server (the live parity key-miss class). UTC on every
+      // write session matches the read side's identical pin and the
+      // comparator's naive-is-UTC policy. (`timestamp` columns unaffected.)
+      options: '-c TimeZone=UTC',
     };
     this.pool = new Pool(poolConfig);
     this.batchRows = Math.max(1, opts?.batchRows ?? 500);
@@ -189,6 +196,8 @@ export class PostgresSyncTargetLoader extends PostgresTargetLoader implements Sy
       application_name: 'haikai-incremental-sync',
       connectionTimeoutMillis: 10000,
       idleTimeoutMillis: 30000,
+      // Same UTC session pin as the bulk-write pool (see above).
+      options: '-c TimeZone=UTC',
     });
   }
 

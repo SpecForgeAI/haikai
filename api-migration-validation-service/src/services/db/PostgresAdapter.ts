@@ -69,6 +69,14 @@ export class PostgresAdapter implements DbAdapter {
       // Pool-scoped (NOT the global pg.types mutation): the write path
       // (targetLoader) keeps its own pool untouched.
       types: rawDatetimeTypes,
+      // Session zone pinned to UTC (2026-08-11): for any `timestamptz`
+      // column the SERVER default zone otherwise decides how a naive insert
+      // is interpreted and how a read renders — on a BST/GMT server that
+      // shifted every summer-dated value 1h against the comparator's
+      // naive-is-UTC policy (the live 1000/1000 parity key-miss class). UTC
+      // makes naive-insert = UTC and renders `+00`, matching the policy on
+      // every session, every server. (`timestamp` columns are unaffected.)
+      options: '-c TimeZone=UTC',
     };
     this.pool = new Pool(poolConfig);
   }

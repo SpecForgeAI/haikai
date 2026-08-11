@@ -98,8 +98,11 @@ describe('PostgresAdapter', () => {
     });
     const select = mockClientQueries.find((q) => /SELECT \* FROM/.test(q.sql));
     expect(select).toBeDefined();
-    expect(select!.sql).toContain('WHERE (("a" > $1) OR ("a" = $2 AND "b" IS NOT NULL))');
-    expect(select!.params).toEqual([1, 1]);
+    // Sargable leading bound (2026-08-11) ahead of the OR expansion.
+    expect(select!.sql).toContain(
+      'WHERE ("a" >= $1 AND (("a" > $2) OR ("a" = $3 AND "b" IS NOT NULL)))',
+    );
+    expect(select!.params).toEqual([1, 1, 1]);
     expect(select!.sql).toMatch(/ORDER BY "a" ASC NULLS FIRST, "b" ASC NULLS FIRST/);
   });
 

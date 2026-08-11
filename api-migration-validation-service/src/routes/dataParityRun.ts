@@ -45,7 +45,10 @@ const trace = createTracer('capture-svc');
 /** Env-tunable defaults (program decision 3). */
 const DEFAULT_SAMPLE_ROWS = Number(process.env.DATA_PARITY_SAMPLE_ROWS ?? 1000);
 const DEFAULT_FULLSCAN_MAX_ROWS = Number(process.env.DATA_PARITY_FULLSCAN_MAX_ROWS ?? 10000);
-const DEFAULT_TIMEOUT_SECONDS = Number(process.env.DATA_PARITY_TIMEOUT_SECONDS ?? 60);
+// Raised 60s -> 6h (2026-08-11, with the data-migration sibling): parity
+// counts/fetches on big ASE tables run for minutes legitimately; a 60s
+// budget turned slow-but-verifiable tables into unverifiable(timeout).
+const DEFAULT_TIMEOUT_SECONDS = Number(process.env.DATA_PARITY_TIMEOUT_SECONDS ?? 21_600);
 
 interface DbBlock {
   db_type?: string;

@@ -198,7 +198,11 @@ describe('dbMigrationPack generation core (Group 2)', () => {
     const orders = fileByPath(artifacts.files, 'liquibase/changesets/010-tables/dbo.orders.sql');
 
     expect(customers).toContain('"balance" numeric(19,4) NOT NULL');
-    expect(customers).toContain('"created_at" timestamptz NOT NULL');
+    // `timestamp` WITHOUT time zone (2026-08-11): zoneless ASE datetime maps
+    // to the zoneless target type — timestamptz let the session zone shift
+    // every naive-inserted summer value by an hour (live parity key-miss).
+    expect(customers).toContain('"created_at" timestamp NOT NULL');
+    expect(customers).not.toContain('"created_at" timestamptz');
     expect(customers).toContain('"active" boolean NOT NULL');
     expect(customers).toContain('"last_name" varchar(50) NOT NULL');
     expect(customers).toContain('"customer_id" integer GENERATED ALWAYS AS IDENTITY NOT NULL');
@@ -241,7 +245,7 @@ describe('dbMigrationPack generation core (Group 2)', () => {
 
     // Non-portable default with a safe equivalent -> deterministic rewrite.
     const customers = fileByPath(artifacts.files, 'liquibase/changesets/010-tables/dbo.customers.sql');
-    expect(customers).toContain('"created_at" timestamptz NOT NULL DEFAULT now()');
+    expect(customers).toContain('"created_at" timestamp NOT NULL DEFAULT now()');
     expect(customers).not.toContain('getdate');
 
     // Captured high-water (5000) + margin (1000) -> RESTART WITH 6000.

@@ -60,7 +60,14 @@ const DEFAULT_PAGE_ROWS = Math.min(
   10_000,
   Math.max(1, Number(process.env.DATA_MIGRATION_PAGE_ROWS ?? 5000)),
 );
-const DEFAULT_TIMEOUT_SECONDS = Number(process.env.DATA_MIGRATION_TIMEOUT_SECONDS ?? 120);
+// Per-QUERY budget raised 120s -> 6h (2026-08-11): deep keyset pages on big
+// unindexed ASE tables legitimately run for many minutes (the sort/seek cost
+// is the engine's, not ours), and the 120s default deterministically killed
+// page N of the same 13 tables every run — truncation at clean multiples of
+// pageRows misread as a transport bug. A migration load's honesty bound is
+// completeness, not latency; the env valve remains for operators who want a
+// tighter budget.
+const DEFAULT_TIMEOUT_SECONDS = Number(process.env.DATA_MIGRATION_TIMEOUT_SECONDS ?? 21_600);
 
 interface DbBlock {
   db_type?: string;

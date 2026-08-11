@@ -156,9 +156,18 @@ export function mapSourceType(column: {
     case 'datetime':
     case 'smalldatetime':
     case 'bigdatetime':
+      // `timestamp` WITHOUT time zone (2026-08-11): ASE datetimes are
+      // zoneless wall-clock values, and the load/parity wire carries them as
+      // naive strings. The previous `timestamptz` mapping made PostgreSQL
+      // re-interpret every naive insert in the SESSION time zone and render
+      // it back offset-shifted — on a BST/GMT server that shifted every
+      // summer-dated value one hour (the live 1000/1000 parity key-miss
+      // class) while winter values passed. A zoneless source maps to the
+      // zoneless target type; no session zone can then touch the value.
       return mapped(
-        'timestamptz',
-        `${base} -> timestamptz: extract with convert(char(23), <col>, 23) (ISO 8601); confirm source server timezone`
+        'timestamp',
+        `${base} -> timestamp (without time zone): zoneless wall-clock, like-for-like; ` +
+          `extract with convert(char(23), <col>, 23) (ISO 8601)`
       );
     case 'date':
       return mapped('date');
