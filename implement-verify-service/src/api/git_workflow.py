@@ -42,6 +42,7 @@ def apply_git_workflow(
     commit_only: bool = False,
     checkout_back_to_default: bool = False,
     push_pr_only: bool = False,
+    force_push: bool = False,
     error_label: Optional[str] = None,
 ) -> None:
     """Run the create-branch → commit → push → PR sequence.
@@ -98,7 +99,7 @@ def apply_git_workflow(
                 response_obj.branch = branch
             push_ok = False
             if git_config is not None and git_config.auto_push:
-                gm.push_branch(branch)
+                gm.push_branch(branch, force=force_push)
                 push_ok = True
             if push_ok and git_config is not None and git_config.auto_pr and pr_title:
                 pr_url = gm.create_pull_request(
@@ -132,7 +133,7 @@ def apply_git_workflow(
 
         push_ok = False
         if not commit_only and git_config is not None and git_config.auto_push and sha:
-            gm.push_branch(branch)
+            gm.push_branch(branch, force=force_push)
             push_ok = True
 
         if push_ok and git_config is not None and git_config.auto_pr and pr_title:
