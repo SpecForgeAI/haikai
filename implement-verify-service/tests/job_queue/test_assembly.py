@@ -209,9 +209,10 @@ def wired(monkeypatch, tmp_path):
     def _fake_apply(gm, git_config, branch, commit_msg, pr_title=None, pr_body=None,
                     response_obj=None, *, commit_only=False,
                     checkout_back_to_default=False, push_pr_only=False,
-                    error_label=None):
+                    force_push=False, error_label=None):
         holder["push_pr_calls"].append(
-            {"branch": branch, "pr_title": pr_title, "push_pr_only": push_pr_only}
+            {"branch": branch, "pr_title": pr_title, "push_pr_only": push_pr_only,
+             "force_push": force_push}
         )
         if holder["push_errors"]:
             response_obj.errors.extend(holder["push_errors"])
@@ -244,9 +245,13 @@ def test_assemble_happy_path(wired, tmp_path):
     assert result["overlaid_files"] == 3
     gm = holder["gm"]
     # Push + MR routed through apply_git_workflow(push_pr_only=True).
+    # force_push=True (2026-08-11): the assembly branch is tool-owned and
+    # rebuilt each re-assembly — force-with-lease updates the prior round's
+    # branch in place (the MR follows it).
     assert holder["push_pr_calls"] == [
         {"branch": "db-migration/run1234", "pr_title":
-         "DB migration pack — assembled run (2 specs)", "push_pr_only": True}
+         "DB migration pack — assembled run (2 specs)", "push_pr_only": True,
+         "force_push": True}
     ]
     assert gm.commits and gm.commits[0].startswith("Assemble DB migration pack")
     assert gm.default_checkouts == 1  # tree restored even on success

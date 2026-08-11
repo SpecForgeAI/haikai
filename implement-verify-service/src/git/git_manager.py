@@ -431,13 +431,24 @@ class GitManager:
         logger.info("Committed: %s (%s)", message, sha[:8])
         return sha
 
-    def push_branch(self, branch: str):
-        """Push branch to origin (refreshing the authenticated remote first)."""
+    def push_branch(self, branch: str, *, force: bool = False):
+        """Push branch to origin (refreshing the authenticated remote first).
+
+        ``force=True`` pushes ``--force-with-lease`` (2026-08-11): TOOL-OWNED
+        branches (the ``db-migration/*`` assembly branches) are rebuilt from
+        scratch on re-assembly, so their history legitimately rewrites and a
+        plain push dies non-fast-forward against the previous assembly. The
+        lease pins the remote to what this workspace last fetched, so a
+        concurrent push from elsewhere still refuses. NEVER used for spec
+        feature branches.
+        """
         self._refresh_origin_auth_url()
-        self._run_git(
-            ["git", "push", "origin", branch], check=True
-        )
-        logger.info("Pushed branch: %s", branch)
+        args = ["git", "push"]
+        if force:
+            args.append("--force-with-lease")
+        args += ["origin", branch]
+        self._run_git(args, check=True)
+        logger.info("Pushed branch: %s%s", branch, " (force-with-lease)" if force else "")
 
     def _refresh_origin_auth_url(self) -> None:
         """Rewrite `origin` to the current authenticated URL before pushing.

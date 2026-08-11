@@ -136,6 +136,21 @@ class GitHubStrategy:
                 return resp.json()["html_url"]
         except httpx.HTTPStatusError as e:
             detail = e.response.text[:500] if e.response.text else ""
+            # PR-exists idempotency (2026-08-11) — mirror of the GitLab path.
+            if e.response.status_code == 422 and "already exists" in detail.lower():
+                try:
+                    with httpx.Client(timeout=30.0) as client:
+                        lookup = client.get(
+                            url,
+                            params={"head": f"{owner}:{branch}", "state": "open"},
+                            headers=headers,
+                        )
+                        lookup.raise_for_status()
+                        rows = lookup.json()
+                        if isinstance(rows, list) and rows:
+                            return rows[0]["html_url"]
+                except (httpx.HTTPError, KeyError, ValueError):
+                    pass
             raise GitProviderStrategyError(
                 f"GitHub API error {e.response.status_code}: {detail}"
             ) from e
@@ -191,6 +206,21 @@ class BitbucketStrategy:
                 return resp.json()["links"]["html"]["href"]
         except httpx.HTTPStatusError as e:
             detail = e.response.text[:500] if e.response.text else ""
+            # PR-exists idempotency (2026-08-11) — mirror of the GitLab path.
+            if "already" in detail.lower() and "pull request" in detail.lower():
+                try:
+                    with httpx.Client(timeout=30.0) as client:
+                        lookup = client.get(
+                            url,
+                            params={"q": f'source.branch.name="{branch}" AND state="OPEN"'},
+                            auth=auth,
+                        )
+                        lookup.raise_for_status()
+                        rows = lookup.json().get("values", [])
+                        if rows:
+                            return rows[0]["links"]["html"]["href"]
+                except (httpx.HTTPError, KeyError, ValueError):
+                    pass
             raise GitProviderStrategyError(
                 f"Bitbucket API error {e.response.status_code}: {detail}"
             ) from e
@@ -261,6 +291,26 @@ class GitLabStrategy:
                 return resp.json()["web_url"]
         except httpx.HTTPStatusError as e:
             detail = e.response.text[:500] if e.response.text else ""
+            # MR-exists idempotency (2026-08-11): re-assembly force-updates a
+            # tool-owned branch whose MR from the previous round is still
+            # open — GitLab then 409s the create. The EXISTING MR is the
+            # correct answer (it tracks the branch and now shows the new
+            # content); look it up and return it. Any lookup failure
+            # re-raises the ORIGINAL error.
+            if e.response.status_code == 409 or "already exists" in detail.lower():
+                try:
+                    with httpx.Client(timeout=30.0) as client:
+                        lookup = client.get(
+                            url,
+                            params={"source_branch": branch, "state": "opened"},
+                            headers=headers,
+                        )
+                        lookup.raise_for_status()
+                        rows = lookup.json()
+                        if isinstance(rows, list) and rows:
+                            return rows[0]["web_url"]
+                except (httpx.HTTPError, KeyError, ValueError):
+                    pass
             raise GitProviderStrategyError(
                 f"GitLab API error {e.response.status_code}: {detail}"
             ) from e

@@ -286,6 +286,10 @@ def assemble_run(request: AssembleRunRequest, workspace_dir: str) -> dict:
             pr_body=body,
             response_obj=outcome,
             push_pr_only=True,
+            # The assembly branch is TOOL-OWNED and rebuilt from scratch each
+            # re-assembly — force-with-lease updates the prior assembly in
+            # place (the MR follows its branch; never delete it).
+            force_push=True,
             error_label=f"assembly {request.branch_name}",
         )
         if outcome.errors:
