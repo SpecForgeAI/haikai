@@ -17,19 +17,19 @@ describe('longFetchTimeoutMs', () => {
     delete process.env.DB_PLANE_FETCH_TIMEOUT_MS;
   });
 
-  it('defaults to 6 hours', () => {
+  it('defaults to 24 hours', () => {
     delete process.env.DB_PLANE_FETCH_TIMEOUT_MS;
-    expect(longFetchTimeoutMs()).toBe(21_600_000);
-    expect(LONG_FETCH_TIMEOUT_MS).toBe(21_600_000);
+    expect(longFetchTimeoutMs()).toBe(86_400_000);
+    expect(LONG_FETCH_TIMEOUT_MS).toBe(86_400_000);
   });
 
   it('honours the env override at CALL time and falls back on garbage', () => {
     process.env.DB_PLANE_FETCH_TIMEOUT_MS = '90000';
     expect(longFetchTimeoutMs()).toBe(90_000);
     process.env.DB_PLANE_FETCH_TIMEOUT_MS = 'not-a-number';
-    expect(longFetchTimeoutMs()).toBe(21_600_000);
+    expect(longFetchTimeoutMs()).toBe(86_400_000);
     process.env.DB_PLANE_FETCH_TIMEOUT_MS = '-5';
-    expect(longFetchTimeoutMs()).toBe(21_600_000);
+    expect(longFetchTimeoutMs()).toBe(86_400_000);
   });
 });
 

@@ -15,8 +15,11 @@
  */
 import { Agent } from 'undici';
 
-/** Default overall cap for one long-running DB-plane call: 6 hours. */
-export const LONG_FETCH_TIMEOUT_MS = 21_600_000;
+/** Default overall cap for one long-running DB-plane call: 24 hours
+ * (2026-08-11, raised from 6h — a real-volume bulk load or post-load index
+ * build is allowed to take the night; the cap exists only so an orphaned
+ * call cannot hang a run forever). */
+export const LONG_FETCH_TIMEOUT_MS = 86_400_000;
 
 /** The effective cap — `DB_PLANE_FETCH_TIMEOUT_MS` override, read at call
  * time so a deployment can retune without a code change; defensive fallback

@@ -251,48 +251,6 @@ async function compareOneTable(
         `comparison needs a primary key; add/propose one (PK gap proposals) or raise full_scan_max_rows`,
     };
   }
-  const maxRows = full ? sourceCount : Math.min(knobs.sampleRows, MAX_SINGLE_FETCH_ROWS);
-  const rowLimits = { maxRows, timeoutSeconds: knobs.timeoutSeconds };
-  // KEY-ANCHORED sampling (2026-08-11): at sampled depth, fetching "first N
-  // by key" from each side independently only intersects when both engines
-  // order identically — they don't (collation + datetime rendering), so the
-  // live 13-table shape was near-zero overlap "compared". When the target
-  // adapter can fetch BY KEYS, anchor its fetch on the source's sampled key
-  // tuples: the intersection is the sample by construction, and a sampled
-  // source key with NO target row is genuine row-set evidence.
-  const anchored =
-    keyed && !full && typeof target.fetchRowsByKeys === 'function';
-  const sourceRows = await source.fetchOrderedRows({
-    schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
-  });
-  const targetRows = anchored
-    ? await target.fetchRowsByKeys!({
-        schema: spec.schema,
-        table: spec.table,
-        keyColumns: orderBy,
-        keys: sourceRows.rows.map((r) => orderBy.map((c) => cellValue(r, c) ?? null)),
-        limits: rowLimits,
-      })
-    : await target.fetchOrderedRows({
-        schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
-      });
-  if (full && (sourceRows.truncated || targetRows.truncated)) {
-    // FULL depth promised the whole table in one fetch; a truncation flag
-    // here means more rows exist than the count claimed (source drifted
-    // mid-comparison) or the fetch was clipped — comparing the partial set
-    // as "full" would under-report divergence (gold standard 2026-08-07).
-    // At SAMPLED depth truncation is the expected shape of a deliberate
-    // partial fetch and the depth label already carries the honesty.
-    return {
-      ...base,
-      reason:
-        `full-depth fetch came back truncated ` +
-        `(source truncated=${!!sourceRows.truncated}, target truncated=${!!targetRows.truncated}) — ` +
-        `the table changed under the comparison or the fetch was clipped; a partial fetch ` +
-        `cannot verify the table at full depth`,
-    };
-  }
-
   const rulesCited = new Set<string>();
   let cellDivergences = 0;
   const examples: CellDivergenceExample[] = [];
@@ -318,11 +276,153 @@ async function compareOneTable(
       }
     }
   };
+  const keyOf = (row: Record<string, unknown>): string =>
+    JSON.stringify(orderBy.map((c) => canonicalCell(row, c)));
+
+  if (keyed && typeof target.fetchRowsByKeys === 'function') {
+    // ---- PAGINATED FULL-DEPTH KEYED COMPARISON (2026-08-11) ----------------
+    // The sampling ceiling is GONE for keyed tables on a key-capable target:
+    // the source is walked page by page with the same keyset cursor the bulk
+    // load uses, and each page's rows are joined against a target fetch
+    // ANCHORED on exactly that page's key tuples. Every row of every table
+    // is compared regardless of size — `sampled` depth survives only for
+    // targets that cannot fetch by keys. Memory stays bounded per page; a
+    // source key with no target row is genuine row-set divergence (the
+    // target was asked for exactly those keys). The count rung has already
+    // guaranteed equal cardinality, so zero source-only misses at full walk
+    // implies no target-only extras either.
+    const pageRows = fullBound;
+    const pageLimits = { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds };
+    const maxPages = Math.ceil(sourceCount / pageRows) + 10;
+    let after: unknown[] | null = null;
+    let pages = 0;
+    let rowsCompared = 0;
+    let fetchedTotal = 0;
+    let sourceOnlyCount = 0;
+    const sourceOnlyExamples: string[] = [];
+    for (;;) {
+      if (pages >= maxPages) {
+        return {
+          ...base,
+          rows_compared: rowsCompared,
+          reason:
+            `paginated comparison exceeded the page budget (${maxPages} pages of ${pageRows}) ` +
+            `without finishing — the order key is not advancing; the table is unverifiable`,
+        };
+      }
+      const src = await source.fetchOrderedRows({
+        schema: spec.schema, table: spec.table, orderBy, limits: pageLimits, after,
+      });
+      pages += 1;
+      if (src.rows.length === 0) break;
+      fetchedTotal += src.rows.length;
+      const tgt = await target.fetchRowsByKeys({
+        schema: spec.schema,
+        table: spec.table,
+        keyColumns: orderBy,
+        keys: src.rows.map((r) => orderBy.map((c) => cellValue(r, c) ?? null)),
+        limits: pageLimits,
+      });
+      const targetByKey = new Map<string, Record<string, unknown>>();
+      for (const row of tgt.rows) targetByKey.set(keyOf(row), row);
+      for (const sRow of src.rows) {
+        const tRow = targetByKey.get(keyOf(sRow));
+        if (tRow === undefined) {
+          sourceOnlyCount += 1;
+          if (sourceOnlyExamples.length < 5) {
+            sourceOnlyExamples.push(
+              excerpt(orderBy.map((c) => cellValue(sRow, c) ?? '∅').join('|')),
+            );
+          }
+          continue;
+        }
+        compareCells(sRow, tRow, rowsCompared);
+        rowsCompared++;
+      }
+      if (src.rows.length < pageRows && !src.truncated) break; // final page
+      const lastRow = src.rows[src.rows.length - 1];
+      const cursor = orderBy.map((c) => cellValue(lastRow, c) ?? null);
+      if (after !== null && JSON.stringify(cursor) === JSON.stringify(after)) {
+        return {
+          ...base,
+          rows_compared: rowsCompared,
+          reason:
+            `keyset cursor did not advance after page ${pages} (comparison key ` +
+            `[${orderBy.join(', ')}] repeats across a full page) — a unique key is required`,
+        };
+      }
+      after = cursor;
+    }
+    if (sourceOnlyCount > 0) {
+      return {
+        ...base,
+        verdict: 'divergent',
+        divergence_class: 'row_set',
+        depth: 'full',
+        rows_compared: rowsCompared,
+        cell_divergences: cellDivergences,
+        divergence_examples: examples,
+        rules_cited: [...rulesCited].sort(),
+        reason:
+          `${sourceOnlyCount} of ${fetchedTotal} source key(s) have no target row ` +
+          `(key-anchored paginated fetch; e.g. ${sourceOnlyExamples.join(', ')})`,
+      };
+    }
+    if (rowsCompared === 0 && sourceCount > 0) {
+      // A comparison that compared NOTHING can never claim match.
+      return {
+        ...base,
+        depth: 'full',
+        rows_compared: 0,
+        cell_divergences: 0,
+        reason:
+          `no rows were actually compared (source fetch returned ${fetchedTotal} row(s) for a ` +
+          `count of ${sourceCount}) — a 0-row comparison is unverifiable, never a match`,
+      };
+    }
+    return {
+      ...base,
+      verdict: cellDivergences > 0 ? 'divergent' : 'match',
+      depth: 'full',
+      divergence_class: cellDivergences > 0 ? 'cell_values' : null,
+      rows_compared: rowsCompared,
+      cell_divergences: cellDivergences,
+      divergence_examples: examples,
+      rules_cited: [...rulesCited].sort(),
+    };
+  }
+
+  // ---- legacy single-fetch paths (keyed-without-key-fetch, keyless) --------
+  const maxRows = full ? sourceCount : Math.min(knobs.sampleRows, MAX_SINGLE_FETCH_ROWS);
+  const rowLimits = { maxRows, timeoutSeconds: knobs.timeoutSeconds };
+  const sourceRows = await source.fetchOrderedRows({
+    schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
+  });
+  const targetRows = await target.fetchOrderedRows({
+    schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
+  });
+  if (full && (sourceRows.truncated || targetRows.truncated)) {
+    // FULL depth promised the whole table in one fetch; a truncation flag
+    // here means more rows exist than the count claimed (source drifted
+    // mid-comparison) or the fetch was clipped — comparing the partial set
+    // as "full" would under-report divergence (gold standard 2026-08-07).
+    // At SAMPLED depth truncation is the expected shape of a deliberate
+    // partial fetch and the depth label already carries the honesty.
+    return {
+      ...base,
+      reason:
+        `full-depth fetch came back truncated ` +
+        `(source truncated=${!!sourceRows.truncated}, target truncated=${!!targetRows.truncated}) — ` +
+        `the table changed under the comparison or the fetch was clipped; a partial fetch ` +
+        `cannot verify the table at full depth`,
+    };
+  }
 
   if (keyed) {
     // ---- keyed join: rows correspond by KEY VALUES, never by position ------
-    const keyOf = (row: Record<string, unknown>): string =>
-      JSON.stringify(orderBy.map((c) => canonicalCell(row, c)));
+    // (Target adapter without fetchRowsByKeys — both sides fetched "first N
+    // by key" independently, so at sampled depth the pages may only partly
+    // overlap; exclusive keys are a sampling note, never a divergence.)
     const targetByKey = new Map<string, Record<string, unknown>>();
     for (const row of targetRows.rows) targetByKey.set(keyOf(row), row);
 
@@ -341,9 +441,7 @@ async function compareOneTable(
     }
     const targetOnlyCount = targetByKey.size;
 
-    // At FULL depth an unmatched key is real row-set divergence; at SAMPLED
-    // depth the two first-N pages can legitimately cover different key ranges
-    // — exclusive keys are a sampling note, never a divergence.
+    // At FULL depth an unmatched key is real row-set divergence.
     if (full && (sourceOnly.length > 0 || targetOnlyCount > 0)) {
       return {
         ...base,
@@ -357,24 +455,6 @@ async function compareOneTable(
         reason:
           `key sets differ: ${sourceOnly.length} key(s) only on source, ${targetOnlyCount} only ` +
           `on target (e.g. ${sourceOnly.slice(0, 5).join(', ') || 'target-only keys'})`,
-      };
-    }
-    // ANCHORED sampled depth: a sampled source key with no target row is
-    // genuine row-set divergence (the target was asked for exactly those
-    // keys), never page drift (2026-08-11).
-    if (anchored && sourceOnly.length > 0) {
-      return {
-        ...base,
-        verdict: 'divergent',
-        divergence_class: 'row_set',
-        depth: 'sampled',
-        rows_compared: rowsCompared,
-        cell_divergences: cellDivergences,
-        divergence_examples: examples,
-        rules_cited: [...rulesCited].sort(),
-        reason:
-          `${sourceOnly.length} of ${sourceRows.rows.length} sampled source key(s) have no ` +
-          `target row (key-anchored fetch; e.g. ${sourceOnly.slice(0, 5).join(', ')})`,
       };
     }
     // A comparison that compared NOTHING can never claim match (2026-08-11 —
