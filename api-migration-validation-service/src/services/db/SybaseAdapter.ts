@@ -10,7 +10,7 @@ import {
 import { assertReadonlySelect } from './sqlGuard';
 import { keysetPredicate } from './keyset';
 import { SYBASE_SIDECAR_URL } from '../../config';
-import { longRunningFetch } from '../longRunningFetch';
+import { longFetchTimeoutMs, longRunningFetch } from '../longRunningFetch';
 
 /**
  * `SybaseAdapter` -- Node-side adapter that proxies through the
@@ -174,7 +174,17 @@ export class SybaseAdapter implements DbAdapter {
     }>('/query', {
       ...this.commonCredsBody(),
       sql: rawSql,
-      queryTimeoutSeconds: Math.max(1, Math.min(300, limits.timeoutSeconds)),
+      // JDBC query-timeout ceiling = the long-fetch transport budget
+      // (2026-08-11): the old hard 300s clamp silently overrode the caller's
+      // timeout and killed every deep keyset page at the same wall-clock
+      // point the transport fix had just raised — the byte-identical
+      // 13-table truncated-load shape. The caller's budget now passes
+      // through, bounded only by the transport's own ceiling (a JDBC query
+      // outliving its HTTP response can never be observed anyway).
+      queryTimeoutSeconds: Math.max(
+        1,
+        Math.min(Math.floor(longFetchTimeoutMs() / 1000), limits.timeoutSeconds),
+      ),
       // PAGE-SIZE guard, not a table cap (2026-08-07): the sidecar buffers a
       // whole result set as one JSON response, so a single read is bounded —
       // full tables are read via keyset PAGINATION (fetchOrderedRows.after),

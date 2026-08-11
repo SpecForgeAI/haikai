@@ -19,6 +19,16 @@
  * Value rendering is engine-owned via `render` (Sybase literalises — the
  * sidecar takes no params; Postgres appends a parameter placeholder), so this
  * module stays engine-agnostic.
+ *
+ * SARGABLE leading bound (2026-08-11): the OR expansion alone is unsargable
+ * on both engines — the optimiser scans from the table start and discards
+ * rows before the cursor, so page cost grows LINEARLY with page number and
+ * deep pages deterministically cross the per-query timeout (the live
+ * 13-table truncated-load shape: clean multiples of pageRows, byte-identical
+ * across runs). A redundant `c1 >= v1` conjunct (implied by every OR branch,
+ * so semantics are untouched) gives the optimiser an index range seek on the
+ * leading key column. Omitted when v1 is NULL (NULLS-LOW: the branch forms
+ * already handle it, and `>= NULL` has no useful bound).
  */
 
 /** Build the predicate. `quotedColumns` are already engine-quoted. */
@@ -39,10 +49,14 @@ export function keysetPredicate(
     v === null || v === undefined ? `${col} IS NOT NULL` : `${col} > ${render(v)}`;
   const eq = (col: string, v: unknown): string =>
     v === null || v === undefined ? `${col} IS NULL` : `${col} = ${render(v)}`;
+  const bound =
+    quotedColumns.length > 1 && after[0] !== null && after[0] !== undefined
+      ? `${quotedColumns[0]} >= ${render(after[0])} AND `
+      : '';
   const branches: string[] = [];
   for (let i = 0; i < quotedColumns.length; i++) {
     const prefix = quotedColumns.slice(0, i).map((c, j) => eq(c, after[j]));
     branches.push(`(${[...prefix, gt(quotedColumns[i], after[i])].join(' AND ')})`);
   }
-  return `(${branches.join(' OR ')})`;
+  return `(${bound}(${branches.join(' OR ')}))`;
 }
