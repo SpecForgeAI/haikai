@@ -94,14 +94,32 @@ class FakeAdapter implements DbAdapter {
     table: string;
     orderBy: string[];
     limits: { maxRows: number };
+    after?: unknown[] | null;
   }): Promise<DbReadResult> {
     const table = this.tables[args.table];
     if (!table) throw new Error(`unknown table ${args.table}`);
     let ordered = orderRows(table.rows, args.orderBy);
+    if (args.after && args.after.length > 0) {
+      // Keyset continuation (2026-08-11): rows strictly AFTER the cursor
+      // tuple under the same nulls-low ordering — the paginated comparator
+      // walks the fake exactly like a real adapter.
+      const after = args.after;
+      ordered = ordered.filter((r) => {
+        for (let i = 0; i < args.orderBy.length; i++) {
+          const rv = r[args.orderBy[i]] ?? null;
+          const av = after[i] ?? null;
+          if (rv === av) continue;
+          if (av === null) return true; // non-null sorts after null
+          if (rv === null) return false;
+          return rv > av;
+        }
+        return false; // equal tuple is not "after"
+      });
+    }
     if (this.failures.reverseFetchOrder) ordered = ordered.reverse();
     const cap = Math.min(args.limits.maxRows, this.failures.clipFetchAt ?? Infinity);
     const rows = ordered.slice(0, cap);
-    return { rows, rowCount: rows.length, truncated: rows.length < table.rows.length };
+    return { rows, rowCount: rows.length, truncated: rows.length < ordered.length };
   }
 
   async dispose(): Promise<void> {
@@ -503,11 +521,9 @@ describe('sampled-depth honesty (2026-08-11)', () => {
     expect(report.tables[0].reason).toContain('nothing was actually compared');
   });
 
-  test('Defect A: the target fetch is ANCHORED on the source keys — intersection by construction', async () => {
+  test('key-capable targets compare at FULL depth via pagination — the sampling ceiling is gone (2026-08-11)', async () => {
     const target = new AnchoredFakeAdapter({
-      // Target holds the same 4 rows but its "first-2 page" (ids -2, -1)
-      // would share nothing with the source page — the old shape.
-      t: { columns, rows: [{ id: -2 }, { id: -1 }, { id: 1 }, { id: 2 }] },
+      t: { columns, rows: [{ id: 9 }, { id: 8 }, { id: 2 }, { id: 1 }] },
     });
     const report = await runDataParityComparison({
       source: new FakeAdapter({
@@ -516,15 +532,19 @@ describe('sampled-depth honesty (2026-08-11)', () => {
       target,
       tables: [{ table: 't', orderBy: ['id'], keyIsUnique: true }],
       ruleset: null,
-      knobs: { sampleRows: 2, fullScanMaxRows: 1, timeoutSeconds: 5 },
+      // 4-row table walked in 2-row pages: WAY above the "full-scan bound",
+      // yet every row is compared — no sampled depth, no ceiling.
+      knobs: { sampleRows: 2, fullScanMaxRows: 2, timeoutSeconds: 5 },
     });
-    // The target was asked for EXACTLY the source's sampled keys…
-    expect(target.keyFetches).toHaveLength(1);
+    // The source was paged with the keyset cursor and the target was asked
+    // for EXACTLY each page's keys…
+    expect(target.keyFetches).toHaveLength(2);
     expect(target.keyFetches[0].keys).toEqual([[1], [2]]);
-    // …so the whole sample compared, and it matches.
+    expect(target.keyFetches[1].keys).toEqual([[8], [9]]);
+    // …so the WHOLE table compared at full depth, and it matches.
     expect(report.tables[0].verdict).toBe('match');
-    expect(report.tables[0].depth).toBe('sampled');
-    expect(report.tables[0].rows_compared).toBe(2);
+    expect(report.tables[0].depth).toBe('full');
+    expect(report.tables[0].rows_compared).toBe(4);
   });
 
   test('Defect A: a sampled source key with NO target row is genuine row-set divergence when anchored', async () => {

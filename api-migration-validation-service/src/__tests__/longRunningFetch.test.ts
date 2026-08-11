@@ -17,17 +17,17 @@ describe('longFetchTimeoutMs (sidecar)', () => {
     delete process.env.SIDECAR_FETCH_TIMEOUT_MS;
   });
 
-  it('defaults to 6 hours', () => {
+  it('defaults to 24 hours', () => {
     delete process.env.SIDECAR_FETCH_TIMEOUT_MS;
-    expect(longFetchTimeoutMs()).toBe(21_600_000);
-    expect(LONG_FETCH_TIMEOUT_MS).toBe(21_600_000);
+    expect(longFetchTimeoutMs()).toBe(86_400_000);
+    expect(LONG_FETCH_TIMEOUT_MS).toBe(86_400_000);
   });
 
   it('honours the env override at call time and falls back on garbage', () => {
     process.env.SIDECAR_FETCH_TIMEOUT_MS = '120000';
     expect(longFetchTimeoutMs()).toBe(120_000);
     process.env.SIDECAR_FETCH_TIMEOUT_MS = 'nope';
-    expect(longFetchTimeoutMs()).toBe(21_600_000);
+    expect(longFetchTimeoutMs()).toBe(86_400_000);
   });
 });
 

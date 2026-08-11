@@ -16,8 +16,10 @@
  */
 import { Agent } from 'undici';
 
-/** Default overall cap for one sidecar call: 6 hours. */
-export const LONG_FETCH_TIMEOUT_MS = 21_600_000;
+/** Default overall cap for one sidecar call: 24 hours (2026-08-11, raised
+ * from 6h — real-volume page reads/counts are allowed to be slow; the cap
+ * exists only so an orphaned call cannot hang a run forever). */
+export const LONG_FETCH_TIMEOUT_MS = 86_400_000;
 
 /** `SIDECAR_FETCH_TIMEOUT_MS` override, read at CALL time; defensive
  * fallback on a non-numeric/non-positive value. */

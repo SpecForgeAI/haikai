@@ -34,7 +34,11 @@ import { createTracer } from '../trace';
 
 const trace = createTracer('schema-apply');
 
-const DEFAULT_TIMEOUT_SECONDS = Number(process.env.SCHEMA_APPLY_TIMEOUT_SECONDS ?? 300);
+// Raised 300s -> 6h (2026-08-11): the POST-LOAD context builds indexes and
+// validates FKs over fully-loaded tables — on real volumes that is hours of
+// legitimate engine work, and 300s guaranteed a mid-DDL abort. The env
+// valve remains for operators who want a tighter budget.
+const DEFAULT_TIMEOUT_SECONDS = Number(process.env.SCHEMA_APPLY_TIMEOUT_SECONDS ?? 21_600);
 const KNOWN_CONTEXTS = new Set(['structural', 'post-load']);
 
 interface DbBlock {

@@ -66,6 +66,19 @@ function quoteIdent(name: string): string {
 }
 
 /**
+ * PostgreSQL caps one statement at 65,535 bind parameters (uint16 on the
+ * wire). params = rows × columns, so a fixed row batch silently breaks on
+ * WIDE tables (500 rows × 132+ columns exceeds the cap and the whole insert
+ * errors). Shrink the row batch to fit under the cap with headroom; never
+ * below 1 (2026-08-11, real-volume hardening).
+ */
+const PG_MAX_BIND_PARAMS = 60_000;
+function fitBatchRows(batchRows: number, columnsPerRow: number): number {
+  if (columnsPerRow <= 0) return batchRows;
+  return Math.max(1, Math.min(batchRows, Math.floor(PG_MAX_BIND_PARAMS / columnsPerRow)));
+}
+
+/**
  * A mid-table load failure that CARRIES the rows already written (gold
  * standard 2026-08-07): a plain throw lost the count, so the runner reported
  * `loadedCount: 0` for a table that had real partial data on the target —
@@ -137,10 +150,11 @@ export class PostgresTargetLoader implements TargetLoader {
     const overriding = spec.identityColumns.length > 0 ? 'OVERRIDING SYSTEM VALUE ' : '';
 
     let total = 0;
+    const batchRows = fitBatchRows(this.batchRows, spec.loadColumns.length);
     const client = await this.pool.connect();
     try {
-      for (let i = 0; i < rows.length; i += this.batchRows) {
-        const batch = rows.slice(i, i + this.batchRows);
+      for (let i = 0; i < rows.length; i += batchRows) {
+        const batch = rows.slice(i, i + batchRows);
         const params: unknown[] = [];
         const tuples: string[] = [];
         for (const row of batch) {
@@ -257,7 +271,7 @@ export class PostgresSyncTargetLoader extends PostgresTargetLoader implements Sy
         ? `ON CONFLICT (${conflictTarget}) DO UPDATE SET ${updates}`
         : `ON CONFLICT (${conflictTarget}) DO NOTHING`;
     let total = 0;
-    const batchRows = 200;
+    const batchRows = fitBatchRows(200, spec.loadColumns.length);
     const client = await this.pool.connect();
     try {
       for (let i = 0; i < rows.length; i += batchRows) {
