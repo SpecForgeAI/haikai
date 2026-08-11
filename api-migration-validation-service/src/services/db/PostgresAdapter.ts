@@ -246,6 +246,53 @@ export class PostgresAdapter implements DbAdapter {
     return this.runReadonlySelect(sql, params, args.limits);
   }
 
+  async fetchRowsByKeys(args: {
+    schema?: string | null;
+    table: string;
+    keyColumns: string[];
+    keys: unknown[][];
+    limits: DbQueryLimits;
+  }): Promise<DbReadResult> {
+    // Key-anchored parity fetch (2026-08-11): rows for EXACTLY the source's
+    // sampled key tuples, so a sampled comparison has its intersection by
+    // construction instead of hoping two engines' "first N" pages overlap.
+    if (args.keyColumns.length === 0) {
+      throw new Error('fetchRowsByKeys requires at least one key column');
+    }
+    if (args.keys.length === 0) {
+      return { rows: [], rowCount: 0, truncated: false };
+    }
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    const cols = args.keyColumns.map(quoteIdent).join(', ');
+    const rows: Record<string, unknown>[] = [];
+    // Batched row-value IN lists: parameter count = keys × columns per batch,
+    // kept far below the driver's limit; NULL key members can never match an
+    // IN row-value, which is correct — NULL never equals NULL on either side.
+    const BATCH = 500;
+    for (let i = 0; i < args.keys.length; i += BATCH) {
+      const batch = args.keys.slice(i, i + BATCH);
+      const params: unknown[] = [];
+      const tuples = batch
+        .map(
+          (key) =>
+            `(${key
+              .map((v) => {
+                params.push(v);
+                return `$${params.length}`;
+              })
+              .join(', ')})`
+        )
+        .join(', ');
+      const sql =
+        `SELECT * FROM ${qSchema}${quoteIdent(args.table)} ` +
+        `WHERE (${cols}) IN (${tuples})`;
+      const result = await this.runReadonlySelect(sql, params, args.limits);
+      rows.push(...result.rows);
+      if (result.truncated) return { rows, rowCount: rows.length, truncated: true };
+    }
+    return { rows, rowCount: rows.length, truncated: false };
+  }
+
   async dispose(): Promise<void> {
     await this.pool.end();
   }

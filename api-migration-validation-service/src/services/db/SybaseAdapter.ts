@@ -10,6 +10,7 @@ import {
 import { assertReadonlySelect } from './sqlGuard';
 import { keysetPredicate } from './keyset';
 import { SYBASE_SIDECAR_URL } from '../../config';
+import { longRunningFetch } from '../longRunningFetch';
 
 /**
  * `SybaseAdapter` -- Node-side adapter that proxies through the
@@ -300,7 +301,10 @@ export class SybaseAdapter implements DbAdapter {
     body: Record<string, unknown>,
   ): Promise<TResp> {
     const url = `${this.sidecarBaseUrl}${pathSuffix}`;
-    const resp = await fetch(url, {
+    // Long-running wiring (2026-08-11): keyset page queries legitimately run
+    // for many minutes on big ASE tables — a bare fetch died at undici's
+    // 300s headers default, truncating loads at clean page multiples.
+    const resp = await longRunningFetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -345,13 +349,27 @@ function quoteIdent(name: string): string {
  * (ASE converts string datetime literals natively). NULL never reaches here
  * — the predicate builder maps NULLs to IS [NOT] NULL forms.
  */
+/** `yyyy-MM-dd HH:mm:ss.SSS` from LOCAL getters — no timezone conversion. */
+function naiveLocalDatetime(d: Date): string {
+  const p = (n: number, w = 2): string => String(n).padStart(w, '0');
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`
+  );
+}
+
 function sybLiteral(value: unknown): string {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error('keyset value must be a finite number');
     return String(value);
   }
   if (typeof value === 'boolean') return value ? '1' : '0';
-  const s = value instanceof Date ? value.toISOString().replace('T', ' ').replace('Z', '') : String(value);
+  // A Date here is defensive only (the sidecar wire is raw naive strings,
+  // echoed verbatim below) — but if one ever arrives, render its LOCAL
+  // wall-clock naively: toISOString() would UTC-shift the literal by the
+  // process offset (+1h in BST) and the cursor would miss every row
+  // (2026-08-11, ported from the work-machine parity review).
+  const s = value instanceof Date ? naiveLocalDatetime(value) : String(value);
   return `'${s.replace(/'/g, "''")}'`;
 }
 
