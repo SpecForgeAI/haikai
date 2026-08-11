@@ -255,10 +255,25 @@ def test_assemble_happy_path(wired, tmp_path):
     assert not manifest.startswith(b"\xef\xbb\xbf")
 
 
-def test_missing_spec_branch_is_a_named_failure(wired, tmp_path):
+def test_one_missing_spec_branch_is_a_LOUD_noop_skip(wired, tmp_path):
+    # Zero-diff no-op tolerance (2026-08-11): within a completed run, a spec
+    # with no branch anywhere can only be a no-op (its changeset shipped
+    # byte-identically inside another spec's branch — the live item-20 shape).
+    # The assembly skips it, records it, and still ships.
+    repo, holder = wired
+    holder["known_refs"] = {"origin/main", "feature/2026-07-31-spec-a-uid1"}
+    result = assemble_run(_request(), str(tmp_path / "ws"))
+    assert result["merged_branches"] == ["feature/2026-07-31-spec-a-uid1"]
+    assert result["noop_specs"] == ["2026-07-31-spec-b-uid2"]
+    assert holder["push_pr_calls"]  # the assembly still pushed + MR'd
+
+
+def test_ALL_spec_branches_missing_is_a_named_failure(wired, tmp_path):
+    # Every spec resolving to nothing is a lost deliverable (wrong origin /
+    # deleted branches), never a run of no-ops — refuse loudly.
     repo, holder = wired
     holder["known_refs"] = {"origin/main"}  # no spec branches at all
-    with pytest.raises(AssemblyError, match="no branch found for spec"):
+    with pytest.raises(AssemblyError, match="refusing to assemble an empty run"):
         assemble_run(_request(), str(tmp_path / "ws"))
     assert holder["push_pr_calls"] == []
 
