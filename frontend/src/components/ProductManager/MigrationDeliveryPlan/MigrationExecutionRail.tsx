@@ -300,6 +300,52 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
               (abandon: in-flight items are marked failed and Start re-enables)
             </>
           )}
+          {/* FINISHED runs can re-run the DB build (2026-08-11 — signals,
+              never locks): a completed stage whose loaded DATA is later
+              found defective re-runs assemble → schema → load → parity
+              WITHOUT re-running the specs. Schema-apply is checksum-
+              idempotent; the loader truncates before loading. */}
+          {runStatus === 'awaiting_approval' &&
+            onRetryDbBuild && (
+              <>
+                {' — '}
+                <button
+                  type="button"
+                  className={styles.coverageInlineLink}
+                  disabled={busy}
+                  onClick={onRetryDbBuild}
+                  title="Re-runs assemble → schema-apply → data load → parity reconcile without re-running the specs (e.g. after a data-fidelity fix)"
+                  data-testid="execution-rail-rerun-db-button"
+                >
+                  Re-run DB build…
+                </button>
+              </>
+            )}
+        </div>
+      )}
+
+      {/* FINISHED-run DB-build re-run (2026-08-11): a deployed stage whose
+          loaded DATA is later found defective re-runs assemble → schema →
+          load → parity WITHOUT re-running the specs (schema-apply is
+          checksum-idempotent; the loader truncates before loading). */}
+      {runStatus === 'deployed' && onRetryDbBuild && (
+        <div
+          className={styles.coveragePanelNote}
+          data-testid="execution-rail-finished-status"
+        >
+          run status: deployed{' — '}
+          <button
+            type="button"
+            className={styles.coverageInlineLink}
+            disabled={busy}
+            onClick={onRetryDbBuild}
+            title="Re-runs assemble → schema-apply → data load → parity reconcile without re-running the specs (e.g. after a data-fidelity fix)"
+            data-testid="execution-rail-rerun-db-button"
+          >
+            Re-run DB build…
+          </button>{' '}
+          (refreshes the target data + parity report; the specs and their MRs
+          are untouched)
         </div>
       )}
 

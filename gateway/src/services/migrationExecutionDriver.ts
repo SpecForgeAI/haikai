@@ -3219,10 +3219,25 @@ export async function retryDbPlaneCompletion(
   const projectId = scope.projectId;
   const run = await deps.getMigrationExecutionRun(projectId, runId);
   if (!run) return { status: 'not_found' };
-  if (run.status !== RUN_STATUS.HALTED) {
+  // 2026-08-11 (staleness-is-a-signal ruling): FINISHED runs are retryable
+  // too. A completed DB stage whose LOADED DATA is later found defective
+  // (the live case: truncated keyset loads) previously had NO path back —
+  // "only a halted run" forced a full stage re-run of every spec just to
+  // refresh table loads. Re-running assemble → schema-apply → load →
+  // parity reconcile is safe on a finished run: schema-apply is
+  // checksum-idempotent and the loader truncates before loading. Actively
+  // executing runs stay refused.
+  const RETRYABLE_RUN_STATUSES: string[] = [
+    RUN_STATUS.HALTED,
+    RUN_STATUS.AWAITING_APPROVAL,
+    RUN_STATUS.DEPLOYED,
+  ];
+  if (!RETRYABLE_RUN_STATUSES.includes(run.status ?? '')) {
     return {
       status: 'not_retryable',
-      reason: `run status is '${run.status}' — only a halted run can retry the DB build`,
+      reason:
+        `run status is '${run.status}' — the DB build can retry on a halted ` +
+        'or FINISHED (awaiting_approval/deployed) run, never one still executing',
     };
   }
   const items = (run.items ?? [])
@@ -3257,7 +3272,12 @@ export async function retryDbPlaneCompletion(
     // mentions the phrase can never make a non-chain failure retryable.
     String(finalItem.error_detail ?? '').startsWith('DB execution chain failed at ');
   const implementedOk =
-    finalItem.outcome === 'implemented' || finalItem.status === RUN_ITEM_STATUS.IMPLEMENTED;
+    finalItem.outcome === 'implemented' ||
+    finalItem.status === RUN_ITEM_STATUS.IMPLEMENTED ||
+    // A FINISHED run's final item reads deployed (2026-08-11) — that is the
+    // strongest possible "the spec run itself succeeded" evidence.
+    finalItem.outcome === 'deployed' ||
+    finalItem.status === RUN_ITEM_STATUS.DEPLOYED;
   if (!chainFailed && !implementedOk) {
     return {
       status: 'not_retryable',

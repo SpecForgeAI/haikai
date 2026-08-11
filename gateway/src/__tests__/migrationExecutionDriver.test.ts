@@ -1232,12 +1232,29 @@ describe('retryDbPlaneCompletion', () => {
     expect(chain.mock.calls[0][2]).toMatchObject({ id: 'ri-1', outcome: 'implemented' });
   });
 
-  it('refuses a run that is not halted', async () => {
+  it('refuses a run that is still EXECUTING', async () => {
     const run = { ...haltedRun(), status: RUN_STATUS.DISPATCHING };
     const { chain, deps } = retryDeps(run);
     const result = await retryDbPlaneCompletion(scope, 'run-h', deps);
     expect(result.status).toBe('not_retryable');
     expect(chain).not.toHaveBeenCalled();
+  });
+
+  it('a FINISHED run (deployed/awaiting_approval) re-runs the DB build without re-running specs (2026-08-11)', async () => {
+    // The live case: stage 1 completed, then the loaded DATA was found
+    // defective (truncated keyset loads) — re-running assemble → schema →
+    // load → parity must not require a full stage re-run.
+    for (const status of [RUN_STATUS.DEPLOYED, RUN_STATUS.AWAITING_APPROVAL]) {
+      const run = haltedRun({
+        status: RUN_ITEM_STATUS.DEPLOYED, outcome: 'deployed', error_detail: null,
+      });
+      run.status = status;
+      const { chain, deps } = retryDeps(run);
+      const result = await retryDbPlaneCompletion(scope, 'run-h', deps);
+      expect(result).toEqual({ status: 'retrying', runId: 'run-h' });
+      await flush();
+      expect(chain).toHaveBeenCalledTimes(1);
+    }
   });
 
   it('refuses a spec-authoring failure (the final item never implemented)', async () => {

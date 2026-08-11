@@ -800,4 +800,29 @@ describe('resume-from-failure (Robustness R2, 2026-08-05)', () => {
     );
     expect(screen.queryByTestId('execution-rail-resume-failed-db')).toBeNull();
   });
+  it('a FINISHED (deployed) run shows "Re-run DB build…" opening the retry dialog (2026-08-11 — data reload without a stage re-run)', async () => {
+    // The live case: stage 1 completed, then the loaded data was found
+    // defective — re-running assemble → schema → load → parity must not
+    // require re-running the 21 specs.
+    mockFetchRows.mockResolvedValue([generatedRow('wi-1', 's-1')]);
+    mockGetRun.mockResolvedValue({
+      id: 'run-done',
+      status: 'deployed',
+      items: [
+        {
+          work_item_id: 'wi-1', status: 'deployed', outcome: 'deployed',
+          deploy_on_complete: true, error_detail: null,
+        },
+      ],
+    });
+    renderWorkspace(
+      draftWith([makeItem({ id: 's-1', title: 'Schema story', workItemId: 'wi-1' } as never)]),
+    );
+
+    const button = await screen.findByTestId('execution-rail-rerun-db-button');
+    fireEvent.click(button);
+    const dialog = await screen.findByTestId('start-stage-dialog');
+    expect(dialog).toHaveTextContent('Retry DB build');
+  });
 });
+
