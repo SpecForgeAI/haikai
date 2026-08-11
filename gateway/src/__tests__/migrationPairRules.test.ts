@@ -103,9 +103,12 @@ describe('strategies', () => {
       id: 'T.TICKS',
       comparison: { strategy: 'timestamp-truncate', params: { ticks_per_second: 300 } },
     })];
-    // 1ms and 2ms share tick 0 on a 1/300s grid; 3ms and 4ms straddle a tick.
-    expect(compareWithRules('2026-01-01T00:00:00.001Z', '2026-01-01T00:00:00.002Z', r).equal).toBe(true);
-    expect(compareWithRules('2026-01-01T00:00:00.003Z', '2026-01-01T00:00:00.004Z', r).equal).toBe(false);
+    // ROUND recovery (2026-08-11): renderings of ONE stored tick compare
+    // equal even across a boundary (.456/.457 both recover tick 137 — the
+    // live false key-mismatch class floor() created); values recovering
+    // DIFFERENT ticks stay unequal.
+    expect(compareWithRules('2026-01-01T00:00:00.456Z', '2026-01-01T00:00:00.457Z', r).equal).toBe(true);
+    expect(compareWithRules('2026-01-01T00:00:00.003Z', '2026-01-01T00:00:00.007Z', r).equal).toBe(false);
   });
 
   test('timestamp-truncate with granularity_ms pins minute truncation', () => {

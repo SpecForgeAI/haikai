@@ -200,14 +200,17 @@ describe('data-parity comparator', () => {
     expect(report.summary.rules_cited).toContain('T.RTRIM');
   });
 
-  test('timestamp tick-grid rule equates sub-tick differences', async () => {
+  test('timestamp tick-grid rule RECOVERS the stored tick — boundary renderings of one tick match (2026-08-11: round, never floor)', async () => {
+    // ASE tick 137 is 456.67ms: one side renders .457, an earlier load
+    // stored .456 — the SAME tick. floor() split them into buckets 136/137
+    // (the live false key-mismatch class); round() recovers 137 for both.
     const columns = [ID_COL, { column: 'at', dataType: 'datetime' }];
     const report = await runDataParityComparison({
       source: new FakeAdapter({
-        t: { columns, rows: [{ id: 1, at: '2026-01-01T00:00:00.001Z' }] },
+        t: { columns, rows: [{ id: 1, at: '2026-01-01T00:00:00.457Z' }] },
       }),
       target: new FakeAdapter({
-        t: { columns, rows: [{ id: 1, at: '2026-01-01T00:00:00.002Z' }] },
+        t: { columns, rows: [{ id: 1, at: '2026-01-01T00:00:00.456Z' }] },
       }),
       tables: [{ table: 't', orderBy: ['id'] }],
       ruleset: RULESET,
@@ -451,3 +454,93 @@ describe('data-parity comparator', () => {
     expect(report.tables[0].reason).toContain('intersection');
   });
 });
+// ---------------------------------------------------------------------------
+// Sampled-depth honesty (2026-08-11, the work-machine parity review):
+//   Defect B — a comparison that compared NOTHING can never claim `match`.
+//   Defect A — when the target adapter can fetch BY KEYS, the sample is
+//   anchored on the source's keys (intersection by construction) and a
+//   missing key is genuine row-set evidence.
+// ---------------------------------------------------------------------------
+
+class AnchoredFakeAdapter extends FakeAdapter {
+  public keyFetches: Array<{ keyColumns: string[]; keys: unknown[][] }> = [];
+
+  constructor(private readonly anchoredTables: Record<string, FakeTable>) {
+    super(anchoredTables);
+  }
+
+  async fetchRowsByKeys(args: {
+    schema?: string | null;
+    table: string;
+    keyColumns: string[];
+    keys: unknown[][];
+    limits: { maxRows: number; timeoutSeconds: number };
+  }): Promise<{ rows: Record<string, unknown>[]; rowCount: number; truncated: boolean }> {
+    this.keyFetches.push({ keyColumns: args.keyColumns, keys: args.keys });
+    const table = this.anchoredTables[args.table];
+    const wanted = new Set(args.keys.map((k) => JSON.stringify(k)));
+    const rows = table.rows.filter((r) =>
+      wanted.has(JSON.stringify(args.keyColumns.map((c) => r[c] ?? null))),
+    );
+    return { rows, rowCount: rows.length, truncated: false };
+  }
+}
+
+describe('sampled-depth honesty (2026-08-11)', () => {
+  const columns = [ID_COL];
+
+  test('Defect B: a 0-row intersection is UNVERIFIABLE, never match', async () => {
+    const report = await runDataParityComparison({
+      // Disjoint first-2 pages: nothing shared, nothing compared.
+      source: new FakeAdapter({ t: { columns, rows: [{ id: 1 }, { id: 2 }] } }),
+      target: new FakeAdapter({ t: { columns, rows: [{ id: 3 }, { id: 4 }] } }),
+      tables: [{ table: 't', orderBy: ['id'], keyIsUnique: true }],
+      ruleset: null,
+      knobs: { sampleRows: 2, fullScanMaxRows: 1, timeoutSeconds: 5 },
+    });
+    expect(report.tables[0].verdict).toBe('unverifiable');
+    expect(report.tables[0].rows_compared).toBe(0);
+    expect(report.tables[0].reason).toContain('nothing was actually compared');
+  });
+
+  test('Defect A: the target fetch is ANCHORED on the source keys — intersection by construction', async () => {
+    const target = new AnchoredFakeAdapter({
+      // Target holds the same 4 rows but its "first-2 page" (ids -2, -1)
+      // would share nothing with the source page — the old shape.
+      t: { columns, rows: [{ id: -2 }, { id: -1 }, { id: 1 }, { id: 2 }] },
+    });
+    const report = await runDataParityComparison({
+      source: new FakeAdapter({
+        t: { columns, rows: [{ id: 1 }, { id: 2 }, { id: 8 }, { id: 9 }] },
+      }),
+      target,
+      tables: [{ table: 't', orderBy: ['id'], keyIsUnique: true }],
+      ruleset: null,
+      knobs: { sampleRows: 2, fullScanMaxRows: 1, timeoutSeconds: 5 },
+    });
+    // The target was asked for EXACTLY the source's sampled keys…
+    expect(target.keyFetches).toHaveLength(1);
+    expect(target.keyFetches[0].keys).toEqual([[1], [2]]);
+    // …so the whole sample compared, and it matches.
+    expect(report.tables[0].verdict).toBe('match');
+    expect(report.tables[0].depth).toBe('sampled');
+    expect(report.tables[0].rows_compared).toBe(2);
+  });
+
+  test('Defect A: a sampled source key with NO target row is genuine row-set divergence when anchored', async () => {
+    const target = new AnchoredFakeAdapter({
+      t: { columns, rows: [{ id: 1 }, { id: 3 }] }, // id 2 genuinely missing
+    });
+    const report = await runDataParityComparison({
+      source: new FakeAdapter({ t: { columns, rows: [{ id: 1 }, { id: 2 }] } }),
+      target,
+      tables: [{ table: 't', orderBy: ['id'], keyIsUnique: true }],
+      ruleset: null,
+      knobs: { sampleRows: 2, fullScanMaxRows: 1, timeoutSeconds: 5 },
+    });
+    expect(report.tables[0].verdict).toBe('divergent');
+    expect(report.tables[0].divergence_class).toBe('row_set');
+    expect(report.tables[0].reason).toContain('no target row');
+  });
+});
+

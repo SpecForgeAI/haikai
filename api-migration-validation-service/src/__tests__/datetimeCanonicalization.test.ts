@@ -49,10 +49,14 @@ describe('datetime canonicalization (SYBPG.DT.001 inputs)', () => {
     expect(equal(new Date('2014-05-15T23:00:00Z'), '2014-05-15 23:00:00')).toBe(true);
   });
 
-  it('tick-grid truncation still tolerates sub-tick differences only', () => {
-    // 1/300s ticks: 3ms apart can share a tick...
-    expect(equal('2014-05-15 23:00:00.001', '2014-05-15 23:00:00.002')).toBe(true);
-    // ...a full second cannot.
+  it('tick-grid recovery equates renderings of one stored tick only (2026-08-11: round, never floor)', () => {
+    // Tick 137 is 456.67ms — one side renders .457, an earlier load stored
+    // .456: SAME tick, equal (floor split these into 136/137, the live
+    // false key-mismatch class).
+    expect(equal('2014-05-15 23:00:00.456', '2014-05-15 23:00:00.457')).toBe(true);
+    // Distinct ticks stay unequal (.003 = tick 1, .007 = tick 2)...
+    expect(equal('2014-05-15 23:00:00.003', '2014-05-15 23:00:00.007')).toBe(false);
+    // ...and a full second certainly cannot match.
     expect(equal('2014-05-15 23:00:00', '2014-05-15 23:00:01')).toBe(false);
   });
 });

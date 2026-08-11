@@ -253,10 +253,29 @@ async function compareOneTable(
   }
   const maxRows = full ? sourceCount : Math.min(knobs.sampleRows, MAX_SINGLE_FETCH_ROWS);
   const rowLimits = { maxRows, timeoutSeconds: knobs.timeoutSeconds };
-  const [sourceRows, targetRows] = await Promise.all([
-    source.fetchOrderedRows({ schema: spec.schema, table: spec.table, orderBy, limits: rowLimits }),
-    target.fetchOrderedRows({ schema: spec.schema, table: spec.table, orderBy, limits: rowLimits }),
-  ]);
+  // KEY-ANCHORED sampling (2026-08-11): at sampled depth, fetching "first N
+  // by key" from each side independently only intersects when both engines
+  // order identically — they don't (collation + datetime rendering), so the
+  // live 13-table shape was near-zero overlap "compared". When the target
+  // adapter can fetch BY KEYS, anchor its fetch on the source's sampled key
+  // tuples: the intersection is the sample by construction, and a sampled
+  // source key with NO target row is genuine row-set evidence.
+  const anchored =
+    keyed && !full && typeof target.fetchRowsByKeys === 'function';
+  const sourceRows = await source.fetchOrderedRows({
+    schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
+  });
+  const targetRows = anchored
+    ? await target.fetchRowsByKeys!({
+        schema: spec.schema,
+        table: spec.table,
+        keyColumns: orderBy,
+        keys: sourceRows.rows.map((r) => orderBy.map((c) => cellValue(r, c) ?? null)),
+        limits: rowLimits,
+      })
+    : await target.fetchOrderedRows({
+        schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
+      });
   if (full && (sourceRows.truncated || targetRows.truncated)) {
     // FULL depth promised the whole table in one fetch; a truncation flag
     // here means more rows exist than the count claimed (source drifted
@@ -338,6 +357,40 @@ async function compareOneTable(
         reason:
           `key sets differ: ${sourceOnly.length} key(s) only on source, ${targetOnlyCount} only ` +
           `on target (e.g. ${sourceOnly.slice(0, 5).join(', ') || 'target-only keys'})`,
+      };
+    }
+    // ANCHORED sampled depth: a sampled source key with no target row is
+    // genuine row-set divergence (the target was asked for exactly those
+    // keys), never page drift (2026-08-11).
+    if (anchored && sourceOnly.length > 0) {
+      return {
+        ...base,
+        verdict: 'divergent',
+        divergence_class: 'row_set',
+        depth: 'sampled',
+        rows_compared: rowsCompared,
+        cell_divergences: cellDivergences,
+        divergence_examples: examples,
+        rules_cited: [...rulesCited].sort(),
+        reason:
+          `${sourceOnly.length} of ${sourceRows.rows.length} sampled source key(s) have no ` +
+          `target row (key-anchored fetch; e.g. ${sourceOnly.slice(0, 5).join(', ')})`,
+      };
+    }
+    // A comparison that compared NOTHING can never claim match (2026-08-11 —
+    // the live false-`match` defect: zero shared keys between two
+    // independently-fetched pages meant zero cells compared, and
+    // `cellDivergences > 0 ? … : 'match'` verified nothing as verified).
+    if (rowsCompared === 0 && sourceRows.rows.length > 0) {
+      return {
+        ...base,
+        depth: full ? 'full' : 'sampled',
+        rows_compared: 0,
+        cell_divergences: 0,
+        reason:
+          `the sampled pages shared no keys — nothing was actually compared ` +
+          `(${sourceOnly.length} source-only / ${targetOnlyCount} target-only); a 0-row ` +
+          `intersection is unverifiable, never a match`,
       };
     }
     return {

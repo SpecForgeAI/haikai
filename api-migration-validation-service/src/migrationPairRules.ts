@@ -238,7 +238,13 @@ export function canonicalize(value: unknown, comparison: PairComparison): unknow
       const ms = toEpochMs(value);
       if (ms === null) return value;
       const tps = num(params, 'ticks_per_second');
-      if (tps !== null && tps > 0) return Math.floor((ms * tps) / 1000);
+      // ROUND, never floor (2026-08-11): ticks_per_second RECOVERS a stored
+      // tick index from a millisecond RENDERING. Renderings sit within
+      // ±0.5ms of the true tick (ASE 1/300s ticks render .003/.007/.010…),
+      // so rounding is exact for every tick while flooring drops boundary
+      // renderings into the adjacent bucket (.457 → 137.1 → 137 vs the
+      // same tick's .456 → 136.8 → 136 — a false key mismatch).
+      if (tps !== null && tps > 0) return Math.round((ms * tps) / 1000);
       const granularity = num(params, 'granularity_ms');
       if (granularity !== null && granularity > 0) return Math.floor(ms / granularity);
       return ms;

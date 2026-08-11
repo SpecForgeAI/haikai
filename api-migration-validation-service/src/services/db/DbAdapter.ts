@@ -104,6 +104,25 @@ export interface DbAdapter {
   }): Promise<DbReadResult>;
 
   /**
+   * OPTIONAL capability (2026-08-11): fetch every row whose key tuple equals
+   * any of `keys` — the KEY-ANCHORED sampled-parity fetch. Sampling by
+   * "first N from each side independently" only compares anything when both
+   * engines order identically (they don't — collation + datetime rendering
+   * disagree), so the comparator anchors the target fetch on the SOURCE's
+   * sampled keys when the target adapter implements this. Key values are
+   * passed RAW (the target engine compares its own stored values). Adapters
+   * without the capability leave it undefined; the comparator falls back to
+   * the page fetch with an honest depth note.
+   */
+  fetchRowsByKeys?(args: {
+    schema?: string | null;
+    table: string;
+    keyColumns: string[];
+    keys: unknown[][];
+    limits: DbQueryLimits;
+  }): Promise<DbReadResult>;
+
+  /**
    * Release pooled resources. Idempotent.
    */
   dispose(): Promise<void>;
