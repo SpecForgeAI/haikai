@@ -206,19 +206,42 @@ def assemble_run(request: AssembleRunRequest, workspace_dir: str) -> dict:
         raise AssemblyError(str(exc)) from exc
 
     merged: List[str] = []
+    noop_specs: List[str] = []
     try:
         for spec in request.spec_names:
             candidates = ([f"feature/{spec}--{folder}"] if folder else []) + [f"feature/{spec}"]
             ref = _resolve_ref(gm, candidates)
             if ref is None:
-                raise AssemblyError(
-                    f"no branch found for spec '{spec}' (tried {candidates} locally and on origin)"
+                # Zero-diff no-op tolerance (2026-08-11): a spec in a COMPLETED
+                # run with no branch locally OR on origin can only be a
+                # zero-diff no-op — the outcome-honesty rules make every other
+                # nothing-committed shape an `error` (which blocks assembly),
+                # and a push failure never reports implemented. Its work ships
+                # inside the other branches by definition (the chain even
+                # based the NEXT spec off the last GOOD branch), so the
+                # assembly skips it LOUDLY and records it in the result —
+                # never silently.
+                logger.warning(
+                    "assembly: spec '%s' has no branch (tried %s locally and "
+                    "on origin) — treating as a zero-diff no-op whose changes "
+                    "ship inside the other branches; skipping its merge",
+                    spec, candidates,
                 )
+                noop_specs.append(spec)
+                continue
             try:
                 gm.merge_no_ff(ref, f"Assemble {spec}")
             except GitManagerError as exc:
                 raise AssemblyError(f"merge conflict assembling '{ref}': {exc}") from exc
             merged.append(ref)
+        if not merged:
+            # EVERY spec resolving to no branch is not a run — it is a lost
+            # deliverable (e.g. the wrong origin); fail loud, never assemble
+            # an empty branch.
+            raise AssemblyError(
+                f"no spec branch found for ANY of {request.spec_names} — refusing to "
+                "assemble an empty run (wrong origin, or the branches were deleted?)"
+            )
 
         overlaid = 0
         for pack_file in request.pack_files:
@@ -276,6 +299,9 @@ def assemble_run(request: AssembleRunRequest, workspace_dir: str) -> dict:
         "branch": request.branch_name,
         "mr_url": mr_url,
         "merged_branches": merged,
+        # Specs skipped as zero-diff no-ops (no branch anywhere; work ships
+        # inside the merged branches). Recorded for the audit trail.
+        "noop_specs": noop_specs,
         "overlaid_files": overlaid,
     }
 
