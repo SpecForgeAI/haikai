@@ -109,12 +109,38 @@ export function buildLoadPlan(mainManifest: unknown, bulkManifest?: unknown): Lo
     let orderBy = pk?.columns ?? [];
     const orderKeyIsPrimaryKey = orderBy.length > 0;
     if (orderBy.length === 0) {
-      orderBy = cols
-        .filter(
-          (c) => !UNORDERABLE_TYPE_FRAGMENTS.some((f) => (c.dataType ?? '').toLowerCase().includes(f)),
-        )
-        .map((c) => c.columnName ?? '')
-        .filter((n) => n.length > 0);
+      // No usable PK (2026-08-12: incl. surrogate-PK tables whose natural
+      // key was DEMOTED to a non-unique index): prefer a declared key/index
+      // as the order key — it matches a real source index (fast keyset
+      // seeks) and duplicate runs on it are handled by the runner's
+      // boundary-trimmed pagination. Falls back to every orderable column.
+      const orderable = new Set(
+        cols
+          .filter(
+            (c) =>
+              !UNORDERABLE_TYPE_FRAGMENTS.some((f) => (c.dataType ?? '').toLowerCase().includes(f)),
+          )
+          .map((c) => (c.columnName ?? '').toLowerCase()),
+      );
+      const declaredKey = keys.find(
+        (k) =>
+          k.schemaName === schema &&
+          k.tableName === table &&
+          k.kind !== 'primary_key' &&
+          k.isSurrogate !== true &&
+          Array.isArray(k.columns) &&
+          k.columns.length > 0 &&
+          k.columns.every((c) => orderable.has(c.toLowerCase())),
+      );
+      orderBy =
+        declaredKey?.columns ??
+        cols
+          .filter(
+            (c) =>
+              !UNORDERABLE_TYPE_FRAGMENTS.some((f) => (c.dataType ?? '').toLowerCase().includes(f)),
+          )
+          .map((c) => c.columnName ?? '')
+          .filter((n) => n.length > 0);
     }
 
     const expected = expectedCounts[qn(schema, table)];

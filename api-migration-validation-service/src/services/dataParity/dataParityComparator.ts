@@ -202,6 +202,12 @@ async function compareOneTable(
   const sourceTypeByColumn = new Map(
     sourceColumns.map((c) => [normalizeColumnKey(c.column), c.dataType ?? '']),
   );
+  // Order-key column types for TYPE-AWARE cursor rendering (2026-08-12):
+  // literal-SQL adapters must render numeric cursor values unquoted (the
+  // sidecar wire carries numerics as strings). Parameterised adapters
+  // ignore these.
+  const sourceOrderByTypes = (cols: string[]): Array<string | null> =>
+    cols.map((c) => sourceTypeByColumn.get(normalizeColumnKey(c)) ?? null);
 
   // ---- Rung 3: row comparison ----------------------------------------------
   // KEYED JOIN when a unique key is declared (2026-08-07); canonical-sorted
@@ -312,6 +318,7 @@ async function compareOneTable(
       }
       const src = await source.fetchOrderedRows({
         schema: spec.schema, table: spec.table, orderBy, limits: pageLimits, after,
+        orderByTypes: sourceOrderByTypes(orderBy),
       });
       pages += 1;
       if (src.rows.length === 0) break;
@@ -397,6 +404,7 @@ async function compareOneTable(
   const rowLimits = { maxRows, timeoutSeconds: knobs.timeoutSeconds };
   const sourceRows = await source.fetchOrderedRows({
     schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,
+    orderByTypes: sourceOrderByTypes(orderBy),
   });
   const targetRows = await target.fetchOrderedRows({
     schema: spec.schema, table: spec.table, orderBy, limits: rowLimits,

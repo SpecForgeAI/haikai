@@ -139,11 +139,40 @@ export function mapSourceType(column: {
       return mapped('boolean', "bit -> boolean: 0/1 are valid Postgres boolean COPY literals");
     case 'char':
     case 'nchar':
+      // NEVER emit bare `char` (2026-08-12): PostgreSQL defines it as
+      // char(1), so a column whose recorded length was lost silently
+      // truncates to one character — the live 3-table
+      // `value too long for type character(1)` load-failure class (8
+      // length-stripped char columns each). An unknown width is a
+      // DECISION, not a guess.
+      if (length === null || length === undefined || !Number.isFinite(length)) {
+        return {
+          kind: 'needs_decision',
+          question:
+            `Column type '${column.dataType}' carries no length, and PostgreSQL treats a ` +
+            `bare 'char' as char(1) — a silently-truncating guess the generator refuses to ` +
+            `make. Recover the real width from the live source (re-run the DB schema ` +
+            `harvest for this table, or probe max(datalength(<col>))) and specify the ` +
+            `target type (specify_target_type with resolution_json.target_type, e.g. ` +
+            `'char(8)' — or 'text' to accept unpadded semantics), or drop the column ` +
+            `(drop_column).`,
+          options: UNLISTED_TYPE_OPTIONS,
+        };
+      }
       return mapped(withLength('char'));
     case 'varchar':
     case 'nvarchar':
     case 'univarchar':
     case 'sysname':
+      // Bare `varchar` is SAFE on PostgreSQL (unlimited length) — note the
+      // lost source width instead of failing.
+      if (length === null || length === undefined || !Number.isFinite(length)) {
+        return mapped(
+          'varchar',
+          `${base} -> varchar (UNBOUNDED): the source length was not recorded; ` +
+            `unlimited on the target, so no value can truncate`,
+        );
+      }
       return mapped(withLength('varchar'));
     case 'text':
     case 'unitext':

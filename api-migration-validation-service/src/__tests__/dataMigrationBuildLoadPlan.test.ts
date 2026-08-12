@@ -76,5 +76,31 @@ describe('buildLoadPlan (Spec Y)', () => {
     expect(heap.orderKeyIsPrimaryKey).toBe(false);
     expect(heap.orderBy).toEqual(['payload', 'amount']);
   });
+
+  it('DEMOTED natural key (2026-08-12): a declared non-PK index beats the all-columns fallback as the order key', () => {
+    // The surrogate demote_tables remedy leaves the natural key as a
+    // NON-UNIQUE index — it matches a real source index (fast keyset seeks)
+    // and boundary-trimmed pagination handles its duplicates.
+    const demotedManifest = {
+      expected_schema: {
+        tables: [{ schemaName: 'dbo', tableName: 'hir_organisation' }],
+        columns: [
+          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'HierarchyId', dataType: 'int' },
+          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'ValidFrom', dataType: 'datetime' },
+          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'payload', dataType: 'varchar' },
+          { schemaName: 'dbo', tableName: 'hir_organisation', columnName: 'id', dataType: 'bigint', isIdentity: true, isSurrogate: true },
+        ],
+        keysAndIndexes: [
+          { schemaName: 'dbo', tableName: 'hir_organisation', kind: 'primary_key', columns: ['id'], isSurrogate: true },
+          { schemaName: 'dbo', tableName: 'hir_organisation', kind: 'index', columns: ['HierarchyId', 'ValidFrom'] },
+        ],
+      },
+    };
+    const plan = buildLoadPlan(demotedManifest);
+    const table = plan.tables[0];
+    expect(table.orderKeyIsPrimaryKey).toBe(false);
+    expect(table.orderBy).toEqual(['HierarchyId', 'ValidFrom']);
+    expect(table.loadColumns).toEqual(['HierarchyId', 'ValidFrom', 'payload']);
+  });
 });
 
