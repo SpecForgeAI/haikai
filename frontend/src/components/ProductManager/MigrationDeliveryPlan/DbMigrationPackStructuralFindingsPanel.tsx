@@ -272,8 +272,12 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
     });
   }, []);
 
-  // Zero findings: render nothing — legacy packs / clean packs get no section.
-  if (!loaded || (findings.length === 0 && !error)) return null;
+  // The section renders whenever loaded (2026-08-12): it used to vanish on
+  // zero findings, which HID the harvest button — but harvesting the live
+  // catalog (widths / nullability / keys) is exactly what a clean-looking
+  // pack may need when the committed attributes drifted from source truth
+  // (the live char(1)/NOT-NULL load-failure classes).
+  if (!loaded) return null;
 
   const openCount = findings.filter((f) => f.open).length;
 
@@ -284,11 +288,16 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
     >
       <div className={styles.surfaceHeader}>
         <h4 className={styles.manifestSectionTitle}>Structural findings</h4>
+        {/* ALWAYS enabled (2026-08-12, staleness-is-a-signal ruling): the
+            old `disabled={openCount === 0}` treated "no open findings" as a
+            lock, but the harvest is a general live-catalog fidelity re-read
+            (widths / nullability / keys) — dispositioned or zero findings
+            are exactly when an operator may still need it. The modal owns
+            its own in-flight state. */}
         <button
           type="button"
           className={styles.actionButton}
           onClick={() => setHarvestOpen(true)}
-          disabled={openCount === 0}
           title="Read the real schema from the live source database and regenerate the pack"
           data-testid="db-pack-harvest-open-button"
         >
@@ -317,6 +326,13 @@ export const DbMigrationPackStructuralFindingsPanel: React.FC<
         >
           {error}
         </div>
+      )}
+
+      {findings.length === 0 && !error && (
+        <p className={styles.manifestNote} data-testid="db-pack-structural-findings-empty">
+          No structural findings on this pack — the harvest stays available for a
+          live-catalog fidelity re-read (column widths, nullability, keys).
+        </p>
       )}
 
       {findings.length > 0 && (

@@ -231,14 +231,27 @@ describe('DbMigrationPackStructuralFindingsPanel', () => {
     );
   });
 
-  it('renders NOTHING when the pack has zero findings', async () => {
+  it('zero findings still renders the section with an ENABLED harvest button (2026-08-12)', async () => {
+    // The old zero-findings-renders-nothing behaviour HID the harvest — but
+    // a clean-looking pack is exactly when a live-catalog fidelity re-read
+    // (widths / nullability / keys) may be needed. Staleness-is-a-signal
+    // ruling: the button is never disabled by finding state.
     mockListFindings.mockResolvedValue({ findings: [] });
-    const { container } = renderPanel();
-    await waitFor(() => expect(mockListFindings).toHaveBeenCalled());
-    expect(
-      screen.queryByTestId('db-pack-structural-findings'),
-    ).not.toBeInTheDocument();
-    expect(container).toBeEmptyDOMElement();
+    renderPanel();
+    await waitFor(() =>
+      expect(screen.getByTestId('db-pack-structural-findings')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('db-pack-structural-findings-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('db-pack-harvest-open-button')).toBeEnabled();
+  });
+
+  it('the harvest button stays ENABLED when every finding is dispositioned (the live disabled-button bug)', async () => {
+    mockListFindings.mockResolvedValue({ findings: [KNOWN_GAP_FINDING] });
+    renderPanel();
+    await waitFor(() =>
+      expect(screen.getByTestId('db-pack-harvest-open-button')).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId('db-pack-harvest-open-button')).toBeEnabled();
   });
 
   it('details expander lists the itemised affected pairs (partial-coverage follow-up)', async () => {
