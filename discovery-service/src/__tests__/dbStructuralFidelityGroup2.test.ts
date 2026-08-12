@@ -70,6 +70,7 @@ import { PostgresDiscoveryPack } from '../services/databasePacks/postgres/Postgr
 import { SybaseDiscoveryPack } from '../services/databasePacks/sybase/SybaseDiscoveryPack';
 import { transformSidecarIntrospection } from '../services/databasePacks/sybase/sybaseIntrospection';
 import { buildRelationshipCandidates } from '../services/databasePacks/databasePackOrchestrator';
+import { composeSourceType } from '../services/databasePacks/candidateStructuralFidelity';
 import type {
   DatabaseDiscoveryConfig,
   DatabaseDiscoveryCredentials,
@@ -458,5 +459,31 @@ describe('buildRelationshipCandidates fk_columns (Spec 2026-05-29)', () => {
     // It is a RELATIONSHIP, not a logical<->physical mapping row.
     expect(rel.data.sourceEntity).toBe('order_lines');
     expect(rel.data.targetEntity).toBe('orders');
+  });
+});
+
+// -----------------------------------------------------------------------------
+// 7) source_type width composition (2026-08-12): AMS attributes carry no
+//    length column, so a bare `char` + separate maxLength lost the width at
+//    save-back FOREVER — the pack generator then emitted PostgreSQL's char(1)
+//    (the live `value too long for type character(1)` load-failure class).
+// -----------------------------------------------------------------------------
+
+describe('composeSourceType (2026-08-12)', () => {
+  it('composes the width into length-bearing bases', () => {
+    expect(composeSourceType('char', 8)).toBe('char(8)');
+    expect(composeSourceType('varchar', 50)).toBe('varchar(50)');
+    expect(composeSourceType('nchar', 4)).toBe('nchar(4)');
+    expect(composeSourceType('varbinary', 16)).toBe('varbinary(16)');
+  });
+
+  it('passes through already-widthful, length-less and non-length-bearing types verbatim', () => {
+    expect(composeSourceType('char(2)', 8)).toBe('char(2)'); // engine already spelled it
+    expect(composeSourceType('char', null)).toBe('char');
+    expect(composeSourceType('char', 0)).toBe('char');
+    expect(composeSourceType('int', 4)).toBe('int'); // storage size, not a width
+    expect(composeSourceType('numeric', 19)).toBe('numeric'); // precision/scale ride their own slots
+    expect(composeSourceType('datetime', 8)).toBe('datetime');
+    expect(composeSourceType('text', 16)).toBe('text');
   });
 });

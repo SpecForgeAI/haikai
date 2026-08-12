@@ -1011,10 +1011,37 @@ function backfillExistingRowStructure(
       if (existing[key] === null || existing[key] === undefined) {
         existing[key] = value;
         filled.push(key);
+      } else if (
+        key === 'source_type' &&
+        typeof existing[key] === 'string' &&
+        typeof value === 'string' &&
+        isWidthRefinement(existing[key], value)
+      ) {
+        // WIDTH REFINEMENT (2026-08-12): an existing BARE length-bearing
+        // type (`char`) refined by the live catalog's widthful spelling of
+        // the SAME base (`char(8)`) is a repair, not a conflict — AMS
+        // attributes carry no length column, so the bare form silently
+        // became char(1) on the PostgreSQL target (the live
+        // `value too long for type character(1)` load-failure class).
+        existing[key] = value;
+        filled.push('source_type_width');
       }
     }
   }
   return filled;
+}
+
+/**
+ * TRUE when `incoming` is the widthful spelling of the SAME base type as the
+ * bare `existing` (`char` -> `char(8)`). Anything else — different base,
+ * existing already widthful, incoming bare — is NOT a refinement.
+ */
+function isWidthRefinement(existing: string, incoming: string): boolean {
+  const ex = existing.trim().toLowerCase();
+  const inc = incoming.trim().toLowerCase();
+  if (ex.includes('(') || !inc.includes('(')) return false;
+  const incomingBase = inc.slice(0, inc.indexOf('(')).trim();
+  return incomingBase === ex;
 }
 
 /**
