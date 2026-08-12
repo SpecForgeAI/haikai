@@ -1583,6 +1583,28 @@ class ArchModelClient {
     }
   }
 
+  /**
+   * Persist a data-migration (bulk load) report — the parity-report sibling
+   * (2026-08-12). An incomplete load is then diagnosable from the VERBATIM
+   * per-table failure reason (AMS also WARN-logs each incomplete table),
+   * never inferred from row counts. Report body is the runner's snake_case
+   * shape.
+   */
+  async saveDataMigrationReport(
+    projectId: string,
+    architectureId: string,
+    report: Record<string, unknown> | object,
+  ): Promise<{ id: string }> {
+    const endpoint =
+      `/api/projects/${projectId}/architectures/${architectureId}/data-migration-reports`;
+    try {
+      const res = await this.client.post<{ id: string }>(endpoint, report);
+      return res.data;
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'save data-migration report');
+    }
+  }
+
   async listCaptureSessionsByStatus(
     projectId: string,
     status: CaptureSessionStatus,

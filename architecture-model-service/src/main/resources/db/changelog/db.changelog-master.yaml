@@ -5186,3 +5186,21 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 222: data_migration_reports (2026-08-12) — the parity-report sibling
+  # (210). The AMVS bulk-load run persists its per-table load report so an
+  # incomplete load is diagnosable from the VERBATIM per-table failure reason,
+  # never inferred from row counts. Latest row per (project, architecture).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 221).
+  # ============================================================================
+  - changeSet:
+      id: 222-data-migration-reports
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/222-data-migration-reports.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
