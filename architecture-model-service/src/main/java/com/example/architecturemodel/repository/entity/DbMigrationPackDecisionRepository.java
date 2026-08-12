@@ -4,6 +4,7 @@ import com.example.architecturemodel.model.entity.DbMigrationPackDecisionEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -37,4 +38,18 @@ public interface DbMigrationPackDecisionRepository
      * (Spec 2026-07-02-a, Persistence-Tier Oracle Program).
      */
     long countByPackIdAndStatus(UUID packId, String status);
+
+    /**
+     * Stale-open prune (2026-08-12): OPEN decisions whose key the CURRENT
+     * generation no longer raises are orphans — the condition that raised
+     * them was fixed by better inputs (e.g. a live-catalog harvest restoring
+     * char widths), yet they would keep blocking plan generation and Migrate
+     * forever. Resolved rows are NEVER touched (they are the resolution
+     * store the generator reads back).
+     */
+    long deleteByPackIdAndStatusAndDecisionKeyNotIn(
+        UUID packId, String status, Collection<String> decisionKeys);
+
+    /** Empty-generation form of the stale-open prune (no keys raised at all). */
+    long deleteByPackIdAndStatus(UUID packId, String status);
 }
