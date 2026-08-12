@@ -411,4 +411,87 @@ describe('candidateSaveBackService - structural carriage + backfill (2026-08-01)
     const rels = saved.metaModel.relationships.logical_data_entity_relationships;
     expect(rels[0].fk_columns).toEqual(presentFk); // untouched
   });
+
+  it('WIDTH-REFINES a bare length-bearing source_type from the live catalog (2026-08-12) — same base only', async () => {
+    // The live 64-decision class: a prior save left source_type as bare
+    // `char` (AMS attributes carry no length column), so the pack generator
+    // could never recover the width — a re-scan carrying `char(8)` of the
+    // SAME base is a repair, not a conflict. A different base or an
+    // already-widthful existing value stays untouched.
+    const model = makeModel({
+      physical: [
+        { id: 'pde-existing', name: 'TRADE', physical_type: 'Table', database: '', tags: '' },
+      ],
+      physicalAttrs: [
+        {
+          id: 'pda-bare',
+          name: 'flag',
+          physical_entity_id: 'pde-existing',
+          data_type: 'char',
+          source_type: 'char', // bare — the width was lost
+          is_primary_key: false,
+          is_nullable: true,
+        },
+        {
+          id: 'pda-widthful',
+          name: 'code',
+          physical_entity_id: 'pde-existing',
+          data_type: 'char',
+          source_type: 'char(2)', // already widthful — must NOT change
+          is_primary_key: false,
+          is_nullable: true,
+        },
+        {
+          id: 'pda-otherbase',
+          name: 'label',
+          physical_entity_id: 'pde-existing',
+          data_type: 'char',
+          source_type: 'char', // bare, but the re-scan disagrees on the base
+          is_primary_key: false,
+          is_nullable: true,
+        },
+      ],
+      rels: [],
+    });
+
+    const candidates = [
+      makeCandidate({
+        id: 'cand-trade-rescan',
+        name: 'TRADE',
+        candidate_type: 'physical_data_entities',
+        data: { objectType: 'table', databaseName: 'hier_dev1' },
+      }),
+      makeCandidate({
+        id: 'cand-flag',
+        name: 'flag',
+        candidate_type: 'physical_data_attributes',
+        parent_candidate_id: 'cand-trade-rescan',
+        data: { dataType: 'char', source_type: 'char(8)' },
+      }),
+      makeCandidate({
+        id: 'cand-code',
+        name: 'code',
+        candidate_type: 'physical_data_attributes',
+        parent_candidate_id: 'cand-trade-rescan',
+        data: { dataType: 'char', source_type: 'char(99)' },
+      }),
+      makeCandidate({
+        id: 'cand-label',
+        name: 'label',
+        candidate_type: 'physical_data_attributes',
+        parent_candidate_id: 'cand-trade-rescan',
+        data: { dataType: 'varchar', source_type: 'varchar(50)' },
+      }),
+    ];
+    const { putModels } = wireAxios(model, candidates);
+
+    const { saveDiscoveryCandidatesToModel } = require('../services/candidateSaveBackService');
+    await saveDiscoveryCandidatesToModel('proj-001', 'arch-001', 'run-001');
+
+    const saved = lastModel(putModels);
+    const attrs = saved.metaModel.entities.physical_data_attributes;
+    expect(attrs.find((a: any) => a.id === 'pda-bare').source_type).toBe('char(8)'); // refined
+    expect(attrs.find((a: any) => a.id === 'pda-widthful').source_type).toBe('char(2)'); // untouched
+    expect(attrs.find((a: any) => a.id === 'pda-otherbase').source_type).toBe('char'); // base mismatch: untouched
+  });
 });

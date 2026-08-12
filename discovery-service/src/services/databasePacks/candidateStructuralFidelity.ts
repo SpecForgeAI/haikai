@@ -234,11 +234,43 @@ export function buildFkColumnsMetadata(
  * `collation: null` / `is_generated: false` / `generation_expression: null`
  * and the existing Spec-3 keys are unchanged.
  */
+/**
+ * Length-bearing base types whose declared width must ride INSIDE
+ * `source_type` (2026-08-12): AMS attributes carry NO length column, so a
+ * bare `char` + separate maxLength loses the width at save-back FOREVER —
+ * the pack generator then reads bare `char` (PostgreSQL: char(1)) and the
+ * live estate saw `value too long for type character(1)` load failures.
+ * Composing `char` + 8 -> `char(8)` is FIDELITY (the engine's own
+ * parenthesized spelling), not normalization. Numeric precision/scale
+ * already ride their own AMS slots and are untouched.
+ */
+const LENGTH_BEARING_BASES = new Set([
+  'char', 'nchar', 'varchar', 'nvarchar', 'binary', 'varbinary',
+]);
+
+/** `char` + 8 -> `char(8)`; already-parenthesized / length-less types pass through. */
+export function composeSourceType(
+  dataType: string,
+  maxLength: number | null | undefined,
+): string {
+  const raw = (dataType ?? '').trim();
+  if (raw.includes('(')) return raw; // engine already spelled the width
+  if (
+    maxLength === null ||
+    maxLength === undefined ||
+    !Number.isFinite(maxLength) ||
+    maxLength <= 0
+  ) {
+    return raw;
+  }
+  return LENGTH_BEARING_BASES.has(raw.toLowerCase()) ? `${raw}(${maxLength})` : raw;
+}
+
 export function attributeStructuralFidelityFields(
   c: ColumnMetadata,
 ): Record<string, unknown> {
   return {
-    source_type: c.dataType,
+    source_type: composeSourceType(c.dataType, c.maxLength),
     scale: c.scale ?? null,
     precision: c.precision ?? null,
     column_default: c.defaultExpression ?? null,
