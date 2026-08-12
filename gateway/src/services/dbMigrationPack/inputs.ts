@@ -653,8 +653,16 @@ export function applySurrogatePkDecision(
 
   // --- demotions first: the demoted tables become no-PK tables and the ---
   // --- surrogate loop below picks them up like any other.              ---
+  // Accept an ARRAY of "schema.table" names or a comma-separated STRING
+  // (belt-and-braces for hand-entered resolutions).
+  const rawDemote = resolution['demote_tables'];
+  const demoteList = Array.isArray(rawDemote)
+    ? rawDemote
+    : typeof rawDemote === 'string'
+      ? rawDemote.split(',')
+      : [];
   const demoteWanted = new Set(
-    (Array.isArray(resolution['demote_tables']) ? resolution['demote_tables'] : [])
+    demoteList
       .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
       .map((t) => t.trim().toLowerCase()),
   );
