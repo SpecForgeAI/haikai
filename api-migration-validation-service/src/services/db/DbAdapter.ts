@@ -94,6 +94,15 @@ export interface DbAdapter {
    * NOT NULL` standing in for `col > NULL` and `col IS NULL` for
    * `col = NULL`), because neither engine's row-value comparison covers the
    * NULLS-LOW contract. `after.length` must equal `orderBy.length`.
+   *
+   * `orderByTypes` (2026-08-12, optional; positionally aligned with
+   * `orderBy`) carries the SOURCE column types so literal-SQL adapters can
+   * render cursor values type-correctly. The sidecar wire deliberately
+   * carries bigint/numeric values as STRINGS (JSON.parse precision), so a
+   * string-shaped cursor value is NOT evidence of a string column — quoting
+   * one against a numeric column is an engine type error (the live
+   * `Implicit conversion from 'VARCHAR' to 'BIGINT'` read failure).
+   * Parameterised adapters may ignore it (the engine infers from context).
    */
   fetchOrderedRows(args: {
     schema?: string | null;
@@ -101,7 +110,24 @@ export interface DbAdapter {
     orderBy: string[];
     limits: DbQueryLimits;
     after?: unknown[] | null;
+    orderByTypes?: Array<string | null> | null;
   }): Promise<DbReadResult>;
+
+  /**
+   * OPTIONAL capability (2026-08-12): probe the INTEGRITY of a declared key
+   * against the LIVE data — (a) do any key columns hold NULLs, (b) do any
+   * key tuples repeat? A pack-declared primary key the data does not satisfy
+   * makes the load un-runnable (the target PK rejects it) and silently
+   * poisons keyset pagination + keyed parity; the bulk runner probes BEFORE
+   * writing anything and reports the surrogate-PK remedy instead of a
+   * cryptic constraint violation. Adapter-owned SQL + quoting.
+   */
+  probeKeyIntegrity?(args: {
+    schema?: string | null;
+    table: string;
+    keyColumns: string[];
+    limits: DbQueryLimits;
+  }): Promise<{ nullKeys: boolean; duplicateKeys: boolean }>;
 
   /**
    * OPTIONAL capability (2026-08-11): fetch every row whose key tuple equals

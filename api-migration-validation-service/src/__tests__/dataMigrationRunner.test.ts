@@ -464,6 +464,128 @@ describe('runDataMigration (Spec Y)', () => {
     expect(loader.loaded['dbo.clip']).toEqual(rows.map((r) => [r.id]));
   });
 
+  it('KEY-INTEGRITY PREFLIGHT: a declared PK with duplicate tuples is unverifiable naming the surrogate remedy — NOTHING is written (2026-08-12)', async () => {
+    class ProbingAdapter extends FakeAdapter {
+      probes: Array<{ table: string; keyColumns: string[] }> = [];
+      constructor(
+        private readonly result: { nullKeys: boolean; duplicateKeys: boolean },
+        counts: Record<string, number>,
+        fixtures: Record<string, TableFixture>,
+      ) {
+        super(counts, fixtures);
+      }
+      async probeKeyIntegrity(args: {
+        schema?: string | null;
+        table: string;
+        keyColumns: string[];
+        limits: DbQueryLimits;
+      }): Promise<{ nullKeys: boolean; duplicateKeys: boolean }> {
+        this.probes.push({ table: args.table, keyColumns: args.keyColumns });
+        return this.result;
+      }
+    }
+    const fixtures = {
+      'dbo.hir_organisation': {
+        count: 4,
+        columns: [{ column: 'HierarchyId', dataType: 'int' }],
+        rows: [{ HierarchyId: 1 }, { HierarchyId: 1 }, { HierarchyId: 2 }, { HierarchyId: 3 }],
+      },
+    };
+    const source = new ProbingAdapter({ nullKeys: false, duplicateKeys: true }, {}, fixtures);
+    const loader = new FakeLoader();
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter({ 'dbo.hir_organisation': 0 }),
+      targetLoader: loader,
+      plan: planFor([spec({ table: 'hir_organisation', orderBy: ['HierarchyId'], loadColumns: ['HierarchyId'] })]),
+      ruleset,
+      knobs,
+    });
+    expect(source.probes).toEqual([{ table: 'hir_organisation', keyColumns: ['HierarchyId'] }]);
+    expect(report.tables[0].status).toBe('unverifiable');
+    expect(report.tables[0].reason).toContain('is NOT UNIQUE');
+    expect(report.tables[0].reason).toContain('demote_tables');
+    expect(report.tables[0].reason).toContain('"dbo.hir_organisation"');
+    // Nothing was truncated or written — the doomed load never started.
+    expect(loader.prepared).toEqual([]);
+    expect(loader.loadCalls).toBe(0);
+
+    // NULL key members hit the same preflight with their own wording.
+    const nullSource = new ProbingAdapter({ nullKeys: true, duplicateKeys: false }, {}, fixtures);
+    const nullReport = await runDataMigration({
+      source: nullSource,
+      target: new FakeAdapter({ 'dbo.hir_organisation': 0 }),
+      targetLoader: new FakeLoader(),
+      plan: planFor([spec({ table: 'hir_organisation', orderBy: ['HierarchyId'], loadColumns: ['HierarchyId'] })]),
+      ruleset,
+      knobs,
+    });
+    expect(nullReport.tables[0].reason).toContain('contains NULL key values');
+  });
+
+  it('BOUNDARY-TRIMMED pagination loads duplicate key tuples EXACTLY ONCE on a non-unique order key (2026-08-12)', async () => {
+    // Duplicate run of k=2 spans the first page boundary — the strict `>`
+    // cursor used to SKIP the tail of the run silently.
+    const rows = [
+      { k: 1, v: 'a' },
+      { k: 2, v: 'b1' },
+      { k: 2, v: 'b2' },
+      { k: 3, v: 'c' },
+      { k: 4, v: 'd' },
+    ];
+    const source = new FakeAdapter({}, {
+      'dbo.dups': {
+        count: 5,
+        columns: [{ column: 'k', dataType: 'int' }, { column: 'v', dataType: 'varchar(10)' }],
+        rows,
+      },
+    });
+    const loader = new FakeLoader();
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter({ 'dbo.dups': 5 }),
+      targetLoader: loader,
+      plan: planFor([
+        spec({ table: 'dups', orderBy: ['k'], orderKeyIsPrimaryKey: false, loadColumns: ['k', 'v'] }),
+      ]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 3, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('loaded');
+    expect(report.tables[0].loadedCount).toBe(5);
+    // Every row exactly once — no boundary skip, no boundary re-read.
+    expect(loader.loaded['dbo.dups']).toEqual(rows.map((r) => [r.k, r.v]));
+  });
+
+  it('a full page sharing ONE key tuple on a non-unique key fails LOUD, never a silent partial (2026-08-12)', async () => {
+    const rows = [
+      { k: 2, v: 'a' },
+      { k: 2, v: 'b' },
+      { k: 2, v: 'c' },
+      { k: 3, v: 'd' },
+    ];
+    const source = new FakeAdapter({}, {
+      'dbo.run': {
+        count: 4,
+        columns: [{ column: 'k', dataType: 'int' }, { column: 'v', dataType: 'varchar(10)' }],
+        rows,
+      },
+    });
+    const report = await runDataMigration({
+      source,
+      target: new FakeAdapter({ 'dbo.run': 0 }),
+      targetLoader: new FakeLoader(),
+      plan: planFor([
+        spec({ table: 'run', orderBy: ['k'], orderKeyIsPrimaryKey: false, loadColumns: ['k', 'v'] }),
+      ]),
+      ruleset,
+      knobs: { readCap: 0, pageRows: 2, timeoutSeconds: 30 },
+    });
+    expect(report.tables[0].status).toBe('unverifiable');
+    expect(report.tables[0].reason).toContain('shares ONE order-key tuple');
+    expect(report.tables[0].reason).toContain('raise page_rows');
+  });
+
   it('emits EXEC.DATA predicates + an EXEC scorecard', async () => {
     const source = new FakeAdapter({}, {
       'dbo.flags': { count: 1, columns: [{ column: 'id', dataType: 'int' }], rows: [{ id: 1 }] },

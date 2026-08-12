@@ -146,6 +146,9 @@ async function syncOneTable(
     sourceType: typeByColumn.get(name.trim().toLowerCase()) ?? '',
   }));
   const pageRows = Math.max(1, Math.min(knobs.pageRows, MAX_SINGLE_FETCH_ROWS));
+  // Type-aware cursor rendering (2026-08-12) — see the bulk runner.
+  const typesFor = (cols: string[]): Array<string | null> =>
+    cols.map((c) => typeByColumn.get(c.trim().toLowerCase()) ?? null);
 
   if (spec.strategy === 'full_reload') {
     await loader.prepareTable(spec.load);
@@ -158,6 +161,7 @@ async function syncOneTable(
         orderBy: spec.load.orderBy,
         limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
         after,
+        orderByTypes: typesFor(spec.load.orderBy),
       });
       if (read.rows.length === 0) break;
       const tuples = read.rows.map((r) => forwardTransformRow(r, columns, ruleset).values);
@@ -200,6 +204,7 @@ async function syncOneTable(
       orderBy: [spec.deltaKey],
       limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
       after,
+      orderByTypes: typesFor([spec.deltaKey]),
     });
     if (read.rows.length === 0) break;
     const tuples = read.rows.map((r) => forwardTransformRow(r, columns, ruleset).values);
@@ -257,6 +262,7 @@ async function syncOneTable(
             orderBy: pkColumns,
             limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
             after: kAfter,
+            orderByTypes: typesFor(pkColumns),
           });
           if (read.rows.length === 0) break;
           for (const r of read.rows) {

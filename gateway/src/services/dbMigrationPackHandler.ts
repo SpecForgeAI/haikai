@@ -604,7 +604,12 @@ export function buildDbMigrationPackArtifacts(
         `id / row_id / haikai_row_id, first non-colliding — with a primary key; ` +
         `source data is unaffected, and parity/sync deliberately never key on the ` +
         `surrogate) or leave_without_pk (the no-PK finding stays for its ` +
-        `accept/known-gap dispositions). Affected: ${tablesStillWithoutPk.join(', ')}.`,
+        `accept/known-gap dispositions). The same resolution also handles tables ` +
+        `whose DECLARED key the live data does not satisfy (the bulk-load ` +
+        `preflight reports duplicate/NULL key tuples): list them in ` +
+        `resolution_json.demote_tables (["schema.table", ...]) — each demotes its ` +
+        `natural key to a NON-UNIQUE index and takes a surrogate identity PK. ` +
+        `Affected: ${tablesStillWithoutPk.join(', ')}.`,
       options: [...SURROGATE_PK_OPTIONS],
     });
   }

@@ -176,6 +176,76 @@ describe('SybaseAdapter (sidecar-backed)', () => {
     );
   });
 
+  it('renders a NUMERIC-typed cursor value UNQUOTED (2026-08-12 — the VARCHAR->BIGINT read failure)', async () => {
+    // The sidecar wire carries bigint/numeric as STRINGS (JSON.parse
+    // precision); quoting one back at ASE against its numeric column is
+    // "Implicit conversion from 'VARCHAR' to 'BIGINT' is not allowed" —
+    // the live hir_audit_info keyset failure at 1.2M rows.
+    const recorded = installFetchMock([{ body: { ok: true, rows: [], rowCount: 0 } }]);
+    const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
+    await adapter.fetchOrderedRows({
+      schema: 'dbo',
+      table: 'hir_audit_info',
+      orderBy: ['Uuid'],
+      limits: { maxRows: 500, timeoutSeconds: 30 },
+      after: ['1202209'],
+      orderByTypes: ['bigint'],
+    });
+    expect(recorded[0].body.sql).toContain('"Uuid" > 1202209');
+    expect(recorded[0].body.sql).not.toContain("'1202209'");
+  });
+
+  it('keeps quotes on string-typed cursor values and REFUSES a non-canonical numeric (fail loud)', async () => {
+    const recorded = installFetchMock([{ body: { ok: true, rows: [], rowCount: 0 } }]);
+    const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
+    // A varchar column holding digit strings keeps its quotes — type-driven,
+    // never shape-guessed.
+    await adapter.fetchOrderedRows({
+      schema: 'dbo',
+      table: 't',
+      orderBy: ['code'],
+      limits: { maxRows: 10, timeoutSeconds: 5 },
+      after: ['1202209'],
+      orderByTypes: ['varchar(20)'],
+    });
+    expect(recorded[0].body.sql).toContain(`"code" > '1202209'`);
+    // A numeric column whose cursor value is not a canonical numeric string
+    // is corrupt — refuse to render it into SQL at all.
+    await expect(
+      adapter.fetchOrderedRows({
+        schema: 'dbo',
+        table: 't',
+        orderBy: ['n'],
+        limits: { maxRows: 10, timeoutSeconds: 5 },
+        after: ['12; DROP TABLE x'],
+        orderByTypes: ['bigint'],
+      }),
+    ).rejects.toThrow(/not a canonical numeric/);
+  });
+
+  it('probeKeyIntegrity runs the NULL-key and duplicate-key probes and maps the hits (2026-08-12)', async () => {
+    const recorded = installFetchMock([
+      { body: { ok: true, rows: [], rowCount: 0 } }, // no NULL keys
+      { body: { ok: true, rows: [{ hit: 1 }], rowCount: 1 } }, // duplicates exist
+    ]);
+    const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
+    const probe = await adapter.probeKeyIntegrity({
+      schema: 'dbo',
+      table: 'hir_organisation',
+      keyColumns: ['HierarchyId', 'ValidFrom'],
+      limits: { maxRows: 1, timeoutSeconds: 30 },
+    });
+    expect(probe).toEqual({ nullKeys: false, duplicateKeys: true });
+    expect(recorded[0].body.sql).toBe(
+      'SELECT TOP 1 1 AS hit FROM "dbo"."hir_organisation" ' +
+        'WHERE "HierarchyId" IS NULL OR "ValidFrom" IS NULL',
+    );
+    expect(recorded[1].body.sql).toBe(
+      'SELECT TOP 1 1 AS hit FROM "dbo"."hir_organisation" ' +
+        'GROUP BY "HierarchyId", "ValidFrom" HAVING COUNT(*) > 1',
+    );
+  });
+
   it('dispose is a stateless no-op', async () => {
     const adapter = new SybaseAdapter(baseConfig, { sidecarBaseUrl: SIDECAR_URL });
     await expect(adapter.dispose()).resolves.toBeUndefined();

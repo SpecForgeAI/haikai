@@ -31,11 +31,17 @@
  * already handle it, and `>= NULL` has no useful bound).
  */
 
-/** Build the predicate. `quotedColumns` are already engine-quoted. */
+/**
+ * Build the predicate. `quotedColumns` are already engine-quoted. `render`
+ * receives the COLUMN INDEX alongside the value (2026-08-12) so literal-SQL
+ * engines can render each cursor member under its column's declared type
+ * (the sidecar wire carries numerics as strings; quoting one against a
+ * numeric column is an engine type error). Parameterising renders ignore it.
+ */
 export function keysetPredicate(
   quotedColumns: string[],
   after: unknown[],
-  render: (value: unknown) => string,
+  render: (value: unknown, index: number) => string,
 ): string {
   if (quotedColumns.length === 0) {
     throw new Error('keyset predicate requires at least one order column');
@@ -45,18 +51,18 @@ export function keysetPredicate(
       `keyset tuple arity ${after.length} does not match order-key arity ${quotedColumns.length}`,
     );
   }
-  const gt = (col: string, v: unknown): string =>
-    v === null || v === undefined ? `${col} IS NOT NULL` : `${col} > ${render(v)}`;
-  const eq = (col: string, v: unknown): string =>
-    v === null || v === undefined ? `${col} IS NULL` : `${col} = ${render(v)}`;
+  const gt = (col: string, v: unknown, i: number): string =>
+    v === null || v === undefined ? `${col} IS NOT NULL` : `${col} > ${render(v, i)}`;
+  const eq = (col: string, v: unknown, i: number): string =>
+    v === null || v === undefined ? `${col} IS NULL` : `${col} = ${render(v, i)}`;
   const bound =
     quotedColumns.length > 1 && after[0] !== null && after[0] !== undefined
-      ? `${quotedColumns[0]} >= ${render(after[0])} AND `
+      ? `${quotedColumns[0]} >= ${render(after[0], 0)} AND `
       : '';
   const branches: string[] = [];
   for (let i = 0; i < quotedColumns.length; i++) {
-    const prefix = quotedColumns.slice(0, i).map((c, j) => eq(c, after[j]));
-    branches.push(`(${[...prefix, gt(quotedColumns[i], after[i])].join(' AND ')})`);
+    const prefix = quotedColumns.slice(0, i).map((c, j) => eq(c, after[j], j));
+    branches.push(`(${[...prefix, gt(quotedColumns[i], after[i], i)].join(' AND ')})`);
   }
   return `(${bound}(${branches.join(' OR ')}))`;
 }

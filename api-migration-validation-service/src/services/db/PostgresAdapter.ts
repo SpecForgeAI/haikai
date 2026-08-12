@@ -228,6 +228,9 @@ export class PostgresAdapter implements DbAdapter {
     orderBy: string[];
     limits: DbQueryLimits;
     after?: unknown[] | null;
+    /** Ignored here (2026-08-12): params are typed by the engine from the
+     * column context — only literal-SQL adapters need the declared types. */
+    orderByTypes?: Array<string | null> | null;
   }): Promise<DbReadResult> {
     if (args.orderBy.length === 0) {
       throw new Error('fetchOrderedRows requires at least one order column');
@@ -299,6 +302,40 @@ export class PostgresAdapter implements DbAdapter {
       if (result.truncated) return { rows, rowCount: rows.length, truncated: true };
     }
     return { rows, rowCount: rows.length, truncated: false };
+  }
+
+  async probeKeyIntegrity(args: {
+    schema?: string | null;
+    table: string;
+    keyColumns: string[];
+    limits: DbQueryLimits;
+  }): Promise<{ nullKeys: boolean; duplicateKeys: boolean }> {
+    // Key-integrity preflight (2026-08-12) — the Sybase adapter's sibling
+    // (an engine-agnostic runner may probe either side).
+    if (args.keyColumns.length === 0) {
+      throw new Error('probeKeyIntegrity requires at least one key column');
+    }
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    const qTable = `${qSchema}${quoteIdent(args.table)}`;
+    const qCols = args.keyColumns.map(quoteIdent);
+    const limits = { maxRows: 1, timeoutSeconds: args.limits.timeoutSeconds };
+
+    const nullRes = await this.runReadonlySelect(
+      `SELECT 1 AS hit FROM ${qTable} ` +
+        `WHERE ${qCols.map((c) => `${c} IS NULL`).join(' OR ')} LIMIT 1`,
+      [],
+      limits,
+    );
+    const dupRes = await this.runReadonlySelect(
+      `SELECT 1 AS hit FROM ${qTable} ` +
+        `GROUP BY ${qCols.join(', ')} HAVING COUNT(*) > 1 LIMIT 1`,
+      [],
+      limits,
+    );
+    return {
+      nullKeys: nullRes.rows.length > 0,
+      duplicateKeys: dupRes.rows.length > 0,
+    };
   }
 
   async dispose(): Promise<void> {

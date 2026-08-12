@@ -623,24 +623,60 @@ function clampIdent(name: string): string {
  * delta-key detection, parity keying, sync ordering) can exclude them — the
  * SOURCE has no such column and target values are generated independently.
  *
+ * DEMOTION (2026-08-12): `resolution_json.demote_tables` (array of
+ * "schema.table", case-insensitive) names tables whose DECLARED primary key
+ * the live source data does not satisfy — the bulk-load preflight reports
+ * duplicate/NULL key tuples with exactly this remedy. Each named table's
+ * natural PK is demoted to a NON-UNIQUE index (the key stays useful for
+ * keyset ordering; duplicates are boundary-trim paginated) and the table
+ * then takes a surrogate identity PK like any no-PK table.
+ *
  * The column name cascades `id` -> `row_id` -> `haikai_row_id` to the first
  * name not colliding (case-insensitively) with an existing column; a table
  * colliding on all three (pathological) is left untouched and reported so
  * the caller can surface it — never a silent partial.
  *
  * Returns the per-table outcome for manifest/warning surfaces. A missing or
- * `leave_without_pk` resolution is a no-op (`{added: [], skipped: []}`).
+ * `leave_without_pk` resolution is a no-op.
  */
 export function applySurrogatePkDecision(
   tables: IrTable[],
   resolvedDecisions: Record<string, Record<string, unknown>>,
-): { added: string[]; skipped: string[] } {
+): { added: string[]; skipped: string[]; demoted: string[] } {
   const added: string[] = [];
   const skipped: string[] = [];
+  const demoted: string[] = [];
   const resolution = resolvedDecisions[SURROGATE_PK_DECISION_KEY];
   if (!resolution || resolution['option'] !== 'add_surrogate_identity_pk') {
-    return { added, skipped };
+    return { added, skipped, demoted };
   }
+
+  // --- demotions first: the demoted tables become no-PK tables and the ---
+  // --- surrogate loop below picks them up like any other.              ---
+  const demoteWanted = new Set(
+    (Array.isArray(resolution['demote_tables']) ? resolution['demote_tables'] : [])
+      .filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+      .map((t) => t.trim().toLowerCase()),
+  );
+  for (const table of tables) {
+    if (table.objectType !== 'table') continue;
+    const qn = `${table.schemaName}.${table.tableName}`;
+    if (!demoteWanted.has(qn.toLowerCase())) continue;
+    const pk = table.primaryKey;
+    if (!pk || pk.isSurrogate) continue; // nothing real to demote
+    table.indexes.push({
+      name: clampIdent(`ix_${table.tableName}_natural_key`),
+      columns: [...pk.columns],
+      isUnique: false, // the whole point: the live data is NOT unique on it
+      isClustered: false,
+      columnDirections: null,
+      method: null,
+      predicate: null,
+    });
+    table.primaryKey = null;
+    demoted.push(qn);
+  }
+
   for (const table of tables) {
     if (table.objectType !== 'table' || table.primaryKey) continue;
     const taken = new Set(table.columns.map((c) => c.columnName.toLowerCase()));
@@ -684,7 +720,8 @@ export function applySurrogatePkDecision(
   }
   added.sort((a, b) => a.localeCompare(b));
   skipped.sort((a, b) => a.localeCompare(b));
-  return { added, skipped };
+  demoted.sort((a, b) => a.localeCompare(b));
+  return { added, skipped, demoted };
 }
 
 // ---------------------------------------------------------------------------

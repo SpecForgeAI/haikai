@@ -125,6 +125,44 @@ async function migrateOneTable(
     name,
     sourceType: typeByColumn.get(name.trim().toLowerCase()) ?? '',
   }));
+  // Order-key column types for TYPE-AWARE cursor rendering (2026-08-12):
+  // the sidecar wire carries numerics as strings; the Sybase adapter must
+  // know the column type to render an unquoted literal (the live VARCHAR
+  // -> BIGINT conversion failure on hir_audit_info's Uuid cursor).
+  const orderByTypes = spec.orderBy.map(
+    (c) => typeByColumn.get(c.trim().toLowerCase()) ?? null,
+  );
+
+  // KEY-INTEGRITY PREFLIGHT (2026-08-12): a pack-declared PK the live data
+  // does not satisfy makes this load un-runnable — the target's PK rejects
+  // duplicate tuples (the live 6-table `duplicate key value violates unique
+  // constraint` class) and NULL key members (the live 3-table NULL-in-NOT-
+  // NULL class). Probe BEFORE truncating or writing anything and name the
+  // deterministic remedy instead of surfacing a cryptic constraint error.
+  if (spec.orderKeyIsPrimaryKey && typeof source.probeKeyIntegrity === 'function') {
+    const probe = await source.probeKeyIntegrity({
+      schema: spec.schema,
+      table: spec.table,
+      keyColumns: spec.orderBy,
+      limits: { maxRows: 1, timeoutSeconds: knobs.timeoutSeconds },
+    });
+    if (probe.duplicateKeys || probe.nullKeys) {
+      const problems = [
+        probe.duplicateKeys ? 'is NOT UNIQUE (duplicate key tuples exist)' : null,
+        probe.nullKeys ? 'contains NULL key values' : null,
+      ].filter(Boolean).join(' and ');
+      return {
+        ...base,
+        reason:
+          `declared primary key [${spec.orderBy.join(', ')}] ${problems} in the live ` +
+          `source data — the target's PK would reject this load, so nothing was written. ` +
+          `Resolve via the pack-wide surrogate_pk decision: set resolution_json.demote_tables ` +
+          `to include "${spec.schema ?? ''}.${spec.table}" (adds a target-only surrogate ` +
+          `identity PK and demotes the natural key to a NON-UNIQUE index), then regenerate ` +
+          `the pack and re-run the DB build`,
+      };
+    }
+  }
 
   // Idempotent load (WS3 P2, 2026-07-31): truncate ONCE before the first
   // page so a re-run (duplicate dispatch, retry, chain re-fire) can NEVER
@@ -164,26 +202,57 @@ async function migrateOneTable(
         orderBy: spec.orderBy,
         limits: { maxRows: pageRows, timeoutSeconds: knobs.timeoutSeconds },
         after,
+        orderByTypes,
       });
       pages += 1;
       if (read.rows.length === 0) break;
 
+      // BOUNDARY-TRIMMED pagination for NON-UNIQUE order keys (2026-08-12):
+      // with a strict `>` cursor, rows equal to the boundary tuple that
+      // fall beyond the page break are silently SKIPPED (the old keyNote
+      // caveat). On a full page over a non-unique key, trim the trailing
+      // run of rows sharing the last tuple — the next page's `> cursor`
+      // re-fetches that run COMPLETE from its first row. Every duplicate
+      // loads exactly once; a run wider than the page is a loud failure,
+      // never a silent partial.
+      const keyTupleOf = (row: Record<string, unknown>): string =>
+        JSON.stringify(spec.orderBy.map((c) => rowValue(row, c) ?? null));
+      const fullPage = read.rows.length >= pageRows || read.truncated;
+      let pageToLoad = read.rows;
+      if (spec.orderKeyIsPrimaryKey === false && fullPage) {
+        const boundary = keyTupleOf(read.rows[read.rows.length - 1]);
+        let cut = read.rows.length;
+        while (cut > 0 && keyTupleOf(read.rows[cut - 1]) === boundary) cut--;
+        if (cut === 0) {
+          return {
+            ...base,
+            loadedCount,
+            reason:
+              `a full page of ${pageRows} rows shares ONE order-key tuple on the non-unique ` +
+              `key [${spec.orderBy.join(', ')}] — boundary-trimmed pagination cannot make ` +
+              `progress; raise page_rows above the largest duplicate run (loaded rows are ` +
+              `PARTIAL and the table is unverifiable)`,
+          };
+        }
+        pageToLoad = read.rows.slice(0, cut);
+      }
+
       const tuples: unknown[][] = [];
-      for (const row of read.rows) {
+      for (const row of pageToLoad) {
         const transformed = forwardTransformRow(row, columns, ruleset);
         for (const id of transformed.appliedRuleIds) rulesCited.add(id);
         tuples.push(transformed.values);
       }
       loadedCount += await loader.loadTable(spec, tuples);
-      readTotal += read.rows.length;
+      readTotal += pageToLoad.length;
 
       // A short page ends the walk ONLY when the adapter did not clip it
       // (belt-and-braces: with the clamp above a truncated page should not
       // occur, but a clipped page mistaken for the final page is silent
       // data loss — keep paging while the adapter says there is more).
-      if (read.rows.length < pageRows && !read.truncated) break; // final page
+      if (!fullPage) break; // final page (loaded in full, boundary included)
 
-      const lastRow = read.rows[read.rows.length - 1];
+      const lastRow = pageToLoad[pageToLoad.length - 1];
       const cursor = spec.orderBy.map((c) => rowValue(lastRow, c) ?? null);
       if (after !== null && JSON.stringify(cursor) === JSON.stringify(after)) {
         return {
@@ -224,12 +293,13 @@ async function migrateOneTable(
     expected !== null && expected !== sourceCount
       ? ` (source count ${sourceCount} differs from the pack manifest expectation ${expected} — source drifted since generation)`
       : '';
-  // A non-unique order key can skip rows that exactly duplicate a page
-  // boundary tuple — name the cause when the reconcile is off on such a key.
+  // Non-unique order keys are boundary-trimmed (2026-08-12) so duplicates
+  // load exactly once — a reconcile gap on such a key now means source
+  // drift mid-load, not pagination skips.
   const keyNote =
     spec.orderKeyIsPrimaryKey === false
-      ? ' (order key is NOT a primary key: rows exactly duplicating a page-boundary key tuple ' +
-        'are skipped by keyset pagination — add/propose a primary key for an exact load)'
+      ? ' (order key is NOT a primary key: pagination is boundary-trimmed so duplicate key ' +
+        'tuples load exactly once — a gap here means the source changed mid-load)'
       : '';
 
   return {

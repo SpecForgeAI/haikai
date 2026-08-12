@@ -263,6 +263,7 @@ export class SybaseAdapter implements DbAdapter {
     orderBy: string[];
     limits: DbQueryLimits;
     after?: unknown[] | null;
+    orderByTypes?: Array<string | null> | null;
   }): Promise<DbReadResult> {
     if (args.orderBy.length === 0) {
       throw new Error('fetchOrderedRows requires at least one order column');
@@ -274,8 +275,18 @@ export class SybaseAdapter implements DbAdapter {
     // takes no params; values are literalised via sybLiteral (NULL-aware,
     // NULLS-LOW: `col IS NOT NULL` stands in for `col > NULL`). ASE has no
     // row-value comparison, so the tuple predicate is expanded.
+    //
+    // TYPE-AWARE rendering (2026-08-12): the sidecar wire carries
+    // bigint/numeric values as STRINGS (JSON.parse precision), and quoting
+    // one back at ASE against its numeric column is a type error
+    // (`Implicit conversion from 'VARCHAR' to 'BIGINT'` — the live
+    // hir_audit_info read failure at 1.2M rows). The predicate builder
+    // passes the column index, so each cursor member renders under ITS
+    // column's declared source type.
+    const render = (value: unknown, index: number): string =>
+      sybLiteral(value, args.orderByTypes?.[index] ?? null);
     const where = args.after && args.after.length > 0
-      ? `WHERE ${keysetPredicate(args.orderBy.map(quoteIdent), args.after, sybLiteral)} `
+      ? `WHERE ${keysetPredicate(args.orderBy.map(quoteIdent), args.after, render)} `
       : '';
     // Ascending sort places NULLs low natively on this engine — the
     // cross-engine NULLS-LOW ordering contract (the sibling appends
@@ -284,6 +295,38 @@ export class SybaseAdapter implements DbAdapter {
       `SELECT TOP ${Math.max(1, args.limits.maxRows)} * ` +
       `FROM ${qSchema}${quoteIdent(args.table)} ${where}ORDER BY ${orderBy}`;
     return this.runReadonlySelect(sql, [], args.limits);
+  }
+
+  async probeKeyIntegrity(args: {
+    schema?: string | null;
+    table: string;
+    keyColumns: string[];
+    limits: DbQueryLimits;
+  }): Promise<{ nullKeys: boolean; duplicateKeys: boolean }> {
+    // Key-integrity preflight (2026-08-12): a pack-declared PK the live data
+    // does not satisfy makes the load un-runnable (the target PK rejects
+    // it) — probe BEFORE writing anything. Two cheap single-scan probes.
+    if (args.keyColumns.length === 0) {
+      throw new Error('probeKeyIntegrity requires at least one key column');
+    }
+    const qSchema = args.schema ? `${quoteIdent(args.schema)}.` : '';
+    const qTable = `${qSchema}${quoteIdent(args.table)}`;
+    const qCols = args.keyColumns.map(quoteIdent);
+    const limits = { maxRows: 1, timeoutSeconds: args.limits.timeoutSeconds };
+
+    const nullSql =
+      `SELECT TOP 1 1 AS hit FROM ${qTable} ` +
+      `WHERE ${qCols.map((c) => `${c} IS NULL`).join(' OR ')}`;
+    const dupSql =
+      `SELECT TOP 1 1 AS hit FROM ${qTable} ` +
+      `GROUP BY ${qCols.join(', ')} HAVING COUNT(*) > 1`;
+
+    const nullRes = await this.runReadonlySelect(nullSql, [], limits);
+    const dupRes = await this.runReadonlySelect(dupSql, [], limits);
+    return {
+      nullKeys: nullRes.rows.length > 0,
+      duplicateKeys: dupRes.rows.length > 0,
+    };
   }
 
   async dispose(): Promise<void> {
@@ -368,12 +411,45 @@ function naiveLocalDatetime(d: Date): string {
   );
 }
 
-function sybLiteral(value: unknown): string {
+/** Source-type bases whose literals must render UNQUOTED (numeric family). */
+const NUMERIC_TYPE_BASES = new Set([
+  'int', 'integer', 'smallint', 'tinyint', 'bigint', 'unsigned',
+  'numeric', 'decimal', 'money', 'smallmoney', 'float', 'real', 'bit',
+]);
+
+/** Canonical numeric string — the only shape allowed unquoted (injection-safe). */
+const CANONICAL_NUMERIC_RE = /^[+-]?\d+(\.\d+)?([eE][+-]?\d+)?$/;
+
+function isNumericTypeBase(sourceType: string | null): boolean {
+  if (!sourceType) return false;
+  const base = sourceType.trim().toLowerCase().split('(')[0].split(/\s+/)[0];
+  return NUMERIC_TYPE_BASES.has(base);
+}
+
+function sybLiteral(value: unknown, sourceType: string | null = null): string {
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new Error('keyset value must be a finite number');
     return String(value);
   }
   if (typeof value === 'boolean') return value ? '1' : '0';
+  // TYPE-AWARE numerics (2026-08-12): the sidecar wire renders
+  // bigint/numeric/decimal as STRINGS to survive JSON.parse (2^53), so a
+  // string cursor value on a numeric column must render UNQUOTED — ASE
+  // refuses `VARCHAR > BIGINT` ("Implicit conversion ... not allowed", the
+  // live hir_audit_info failure). Type-driven, never guessed from shape: a
+  // varchar column holding digit strings keeps its quotes. A numeric column
+  // whose value is NOT a canonical numeric string is corrupt — fail loud,
+  // never quote it into a guaranteed engine error.
+  if (typeof value === 'string' && isNumericTypeBase(sourceType)) {
+    const s = value.trim();
+    if (!CANONICAL_NUMERIC_RE.test(s)) {
+      throw new Error(
+        `keyset cursor value ${JSON.stringify(value)} is not a canonical numeric ` +
+          `literal for its ${sourceType} column — refusing to render it into SQL`,
+      );
+    }
+    return s;
+  }
   // A Date here is defensive only (the sidecar wire is raw naive strings,
   // echoed verbatim below) — but if one ever arrives, render its LOCAL
   // wall-clock naively: toISOString() would UTC-shift the literal by the
