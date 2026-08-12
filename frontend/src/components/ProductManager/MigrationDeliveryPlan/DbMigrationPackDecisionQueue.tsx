@@ -69,6 +69,15 @@ function detailFieldForOption(option: string): { key: string; label: string } | 
       return { key: 'restart_with', label: 'Restart value' };
     case 'manually_specified_key':
       return { key: 'column', label: 'Delta key column' };
+    case 'add_surrogate_identity_pk':
+      // Surrogate demotion (2026-08-12): tables whose DECLARED PK the live
+      // data does not satisfy (the bulk-load preflight names them) — each
+      // demotes its natural key to a NON-UNIQUE index and takes the
+      // surrogate identity PK. Optional; comma-separated schema.table.
+      return {
+        key: 'demote_tables',
+        label: 'Demote tables (optional, comma-separated schema.table)',
+      };
     default:
       return null;
   }
@@ -174,7 +183,14 @@ export const DbMigrationPackDecisionQueue: React.FC<
     const resolution: Record<string, unknown> = { option };
     const detailField = detailFieldForOption(option);
     if (detailField && detail.trim()) {
-      resolution[detailField.key] = detail.trim();
+      resolution[detailField.key] =
+        detailField.key === 'demote_tables'
+          ? // The generator reads an ARRAY of "schema.table" names.
+            detail
+              .split(',')
+              .map((t) => t.trim())
+              .filter((t) => t.length > 0)
+          : detail.trim();
     }
     return resolution;
   };

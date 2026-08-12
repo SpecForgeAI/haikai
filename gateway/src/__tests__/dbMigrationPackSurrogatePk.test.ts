@@ -210,6 +210,22 @@ describe('applySurrogatePkDecision (unit)', () => {
     // A table NOT named in demote_tables keeps its real PK untouched.
     expect(untouched.primaryKey).toEqual({ name: 'pk_keyed_fine', columns: ['a'] });
   });
+
+  it('demote_tables also accepts a comma-separated STRING (the UI detail-field wire form)', () => {
+    const a = heap('t_a', ['k', 'v']);
+    a.primaryKey = { name: 'pk_a', columns: ['k'] };
+    const b = heap('t_b', ['k', 'v']);
+    b.primaryKey = { name: 'pk_b', columns: ['k'] };
+    const outcome = applySurrogatePkDecision([a, b], {
+      [SURROGATE_PK_DECISION_KEY]: {
+        option: 'add_surrogate_identity_pk',
+        demote_tables: ' dbo.t_a , dbo.t_b ',
+      },
+    });
+    expect(outcome.demoted).toEqual(['dbo.t_a', 'dbo.t_b']);
+    expect(a.primaryKey).toEqual(expect.objectContaining({ isSurrogate: true }));
+    expect(b.primaryKey).toEqual(expect.objectContaining({ isSurrogate: true }));
+  });
 });
 
 describe('surrogate PK end-to-end (decision -> DDL -> expected schema -> findings)', () => {
