@@ -689,9 +689,15 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
         </>
       )}
 
-      {/* Decision queue --------------------------------------------------------- */}
+      {/* Decision queue. Keyed by pack id + generation timestamp (2026-08-12,
+          the findings-panel idiom): a regeneration — including the one a
+          completed HARVEST runs server-side — re-derives the decision set
+          (stale opens pruned AMS-side), so the queue must remount and
+          refetch instead of showing the pre-harvest list until a manual
+          page refresh. */}
       {activeSection === 'decisions' && (
         <DbMigrationPackDecisionQueue
+          key={`${pack.id}-${pack.generated_at ?? ''}`}
           projectId={projectId}
           packId={pack.id}
           onResolved={handleDecisionResolved}
