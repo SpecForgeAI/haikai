@@ -37,6 +37,8 @@ import {
 } from '../services/dataMigration/targetLoader';
 import { buildLoadPlan } from '../services/dataMigration/buildLoadPlan';
 import { runDataMigration } from '../services/dataMigration/dataMigrationRunner';
+import { DataMigrationReportBody } from '../services/dataMigration/types';
+import { archModelClient } from '../services/archModelClient';
 import {
   IncrementalSyncReport,
   SyncTableSpec,
@@ -122,6 +124,12 @@ function toConfig(block: DbBlock): DbConnectionConfig {
 
 export interface DataMigrationRunDeps {
   createDbAdapter?: typeof defaultCreateDbAdapter;
+  /** Report persistence seam (the parity route's pattern) — tests inject. */
+  saveReport?: (
+    projectId: string,
+    architectureId: string,
+    report: DataMigrationReportBody,
+  ) => Promise<{ id: string }>;
   createTargetLoader?: (
     config: DbConnectionConfig,
     opts: { batchRows: number },
@@ -149,6 +157,10 @@ interface IncrementalRunBody extends RunBody {
 export function buildDataMigrationRunRouter(deps: DataMigrationRunDeps = {}): Router {
   const router = Router({ mergeParams: true });
   const factory = deps.createDbAdapter ?? defaultCreateDbAdapter;
+  const saveReport =
+    deps.saveReport ??
+    ((projectId: string, architectureId: string, report: DataMigrationReportBody) =>
+      archModelClient.saveDataMigrationReport(projectId, architectureId, report));
   const makeLoader =
     deps.createTargetLoader ??
     ((config: DbConnectionConfig, opts: { batchRows: number }) =>
@@ -196,7 +208,56 @@ export function buildDataMigrationRunRouter(deps: DataMigrationRunDeps = {}): Ro
       const ruleset = loadPairRuleset();
       const report = await runDataMigration({ source, target, targetLoader, plan, ruleset, knobs });
       emitDataMigrationPredicates(report, trace, corr);
-      return res.status(200).json({ report, summary: report.summary });
+
+      // One failure line PER TABLE that did not fully load, with the
+      // VERBATIM reason (2026-08-12) — the console answers "why did these
+      // tables fail" directly; nobody infers failures from row counts.
+      for (const t of report.tables) {
+        if (t.status === 'loaded' || t.status === 'empty') continue;
+        trace.warn(
+          `table ${t.schema ?? ''}.${t.table} incomplete: status=${t.status} ` +
+            `loaded=${t.loadedCount}/${t.sourceCount ?? '?'} — ${t.reason ?? 'no reason recorded'}`,
+          corr,
+        );
+      }
+
+      // Report persistence (the parity route's pattern): fail-soft — a
+      // persist failure never fails a COMPLETED load; the caller still gets
+      // the full report with report_persisted: false. Skips cleanly when the
+      // caller carries no architecture_id (the report is arch-scoped in AMS).
+      let reportId: string | null = null;
+      let persistError: string | null = null;
+      if (body.architecture_id) {
+        try {
+          const saved = await saveReport(projectId, body.architecture_id, report);
+          reportId = saved.id;
+        } catch (err) {
+          persistError = err instanceof Error ? err.message.slice(0, 200) : 'unknown';
+        }
+        trace.predicate(
+          'DATA.MIG.REP.01', 'data-migration report persisted for diagnosis',
+          persistError === null,
+          'report row lands in AMS (per-table verbatim failure reasons readable after the run)',
+          persistError === null
+            ? `report_id=${reportId} status=${report.summary.status}`
+            : `persist FAILED: ${persistError} — load result unaffected, report only in this response`,
+          corr,
+        );
+      } else {
+        trace.predicateSkip(
+          'DATA.MIG.REP.01', 'data-migration report persisted for diagnosis',
+          'no architecture_id on the request — AMS report row is arch-scoped',
+          corr,
+        );
+      }
+
+      return res.status(200).json({
+        report_id: reportId,
+        report_persisted: persistError === null && reportId !== null,
+        persist_error: persistError,
+        report,
+        summary: report.summary,
+      });
     } catch (err) {
       trace.fail(
         `data migration run errored: ${err instanceof Error ? err.message.slice(0, 200) : 'unknown'}`,

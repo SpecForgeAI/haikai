@@ -112,6 +112,7 @@ function makeApp(overrides: {
   source?: FakeAdapter;
   target?: FakeAdapter;
   loader?: FakeLoader;
+  saveReportThrows?: string;
 } = {}) {
   const source =
     overrides.source ??
@@ -128,6 +129,11 @@ function makeApp(overrides: {
     );
   const target = overrides.target ?? new FakeAdapter(2, [], []);
   const loader = overrides.loader ?? new FakeLoader();
+  const savedReports: Array<{
+    projectId: string;
+    architectureId: string;
+    report: Record<string, unknown>;
+  }> = [];
 
   const app = express();
   app.use(express.json());
@@ -136,9 +142,20 @@ function makeApp(overrides: {
       createDbAdapter: ((config: { dbType: string }) =>
         config.dbType === 'sybase' ? source : target) as never,
       createTargetLoader: () => loader,
+      saveReport: async (projectId, architectureId, report) => {
+        if (overrides.saveReportThrows) {
+          throw new Error(overrides.saveReportThrows);
+        }
+        savedReports.push({
+          projectId,
+          architectureId,
+          report: report as unknown as Record<string, unknown>,
+        });
+        return { id: `report-${savedReports.length}` };
+      },
     }),
   );
-  return { app, source, target, loader };
+  return { app, source, target, loader, savedReports };
 }
 
 describe('POST /api/data-migration/run', () => {
@@ -165,8 +182,8 @@ describe('POST /api/data-migration/run', () => {
     expect(res.body.issues.length).toBeGreaterThan(0);
   });
 
-  it('runs the bulk load and returns a clean report on the happy path', async () => {
-    const { app, loader } = makeApp();
+  it('runs the bulk load and returns a clean report on the happy path — and persists it', async () => {
+    const { app, loader, savedReports } = makeApp();
     const res = await request(app)
       .post('/api/data-migration/run')
       .send({
@@ -185,5 +202,75 @@ describe('POST /api/data-migration/run', () => {
       [1, true],
       [2, false],
     ]);
+    // Report persistence (2026-08-12, the parity-report sibling).
+    expect(res.body.report_persisted).toBe(true);
+    expect(res.body.report_id).toBe('report-1');
+    expect(savedReports).toHaveLength(1);
+    expect(savedReports[0]).toMatchObject({ projectId: 'p1', architectureId: 'arch-1' });
+    expect(savedReports[0].report).toEqual(res.body.report);
+  });
+
+  it('persists the VERBATIM per-table failure reason on an incomplete load', async () => {
+    // Target count disagrees with the source (3 != 2): reconciled_mismatch
+    // with the runner's reason text — that exact string must land in the
+    // persisted report, so failures are read, never inferred from counts.
+    const { app, savedReports } = makeApp({ target: new FakeAdapter(3, [], []) });
+    const res = await request(app)
+      .post('/api/data-migration/run')
+      .send({
+        project_id: 'p1',
+        architecture_id: 'arch-1',
+        source_db: DB_BLOCK('sybase'),
+        target_db: DB_BLOCK('postgres'),
+        manifest: MANIFEST,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.report.tables[0].status).toBe('reconciled_mismatch');
+    expect(res.body.report_persisted).toBe(true);
+    const persisted = savedReports[0].report as {
+      tables: Array<{ status: string; reason: string | null }>;
+    };
+    expect(persisted.tables[0].status).toBe('reconciled_mismatch');
+    expect(persisted.tables[0].reason).toBe(res.body.report.tables[0].reason);
+    expect(persisted.tables[0].reason).toContain('post-load reconcile off');
+  });
+
+  it('FAIL-SOFT: a persist failure never fails a completed load', async () => {
+    const { app } = makeApp({ saveReportThrows: 'AMS unreachable (simulated)' });
+    const res = await request(app)
+      .post('/api/data-migration/run')
+      .send({
+        project_id: 'p1',
+        architecture_id: 'arch-1',
+        source_db: DB_BLOCK('sybase'),
+        target_db: DB_BLOCK('postgres'),
+        manifest: MANIFEST,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.summary.status).toBe('clean');
+    expect(res.body.report_persisted).toBe(false);
+    expect(res.body.report_id).toBeNull();
+    expect(res.body.persist_error).toContain('AMS unreachable');
+  });
+
+  it('skips persistence cleanly when architecture_id is absent', async () => {
+    const { app, savedReports } = makeApp();
+    const res = await request(app)
+      .post('/api/data-migration/run')
+      .send({
+        project_id: 'p1',
+        source_db: DB_BLOCK('sybase'),
+        target_db: DB_BLOCK('postgres'),
+        manifest: MANIFEST,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.summary.status).toBe('clean');
+    expect(res.body.report_persisted).toBe(false);
+    expect(res.body.report_id).toBeNull();
+    expect(res.body.persist_error).toBeNull();
+    expect(savedReports).toHaveLength(0);
   });
 });
