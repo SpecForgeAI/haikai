@@ -110,9 +110,11 @@ public class DbMigrationPackService {
      * non-null the file set is replaced wholesale; {@code decisions} are
      * upserted by {@code decision_key} -- existing rows re-link (object_ref /
      * category / question / options refreshed, status / resolution /
-     * resolved_at PRESERVED), unknown keys insert as {@code open}. Decisions
-     * and drift reports are never deleted here -- they survive regeneration
-     * by pack id.</p>
+     * resolved_at PRESERVED), unknown keys insert as {@code open}. OPEN
+     * decisions the current generation no longer raises are PRUNED
+     * (2026-08-12 -- they would block the gate forever after their raising
+     * condition was fixed by better inputs); resolved decisions and drift
+     * reports are never deleted -- they survive regeneration by pack id.</p>
      *
      * @throws IllegalArgumentException on missing body/architecture_id,
      *     invalid status/file_kind/category, or duplicate inline keys (400)
@@ -224,11 +226,30 @@ public class DbMigrationPackService {
             }
         }
 
+        // Stale-open prune (2026-08-12): a generation provides the COMPLETE
+        // decision set, so an OPEN row whose key it no longer raises is an
+        // orphan — its raising condition was fixed by better inputs (e.g. a
+        // live-catalog harvest restoring char widths), yet it would keep
+        // blocking plan generation and Migrate forever. Resolved rows are
+        // NEVER pruned: they are the resolution store the generator reads
+        // back on every regeneration (surrogate_pk / delta_key / ...).
+        long decisionsPruned = 0;
+        if (request.decisions() != null) {
+            List<String> raisedKeys = request.decisions().stream()
+                .map(DbMigrationPackDecisionDto::decisionKey)
+                .toList();
+            decisionsPruned = raisedKeys.isEmpty()
+                ? decisionRepository.deleteByPackIdAndStatus(
+                    saved.getId(), DbMigrationPackDecisionEntity.STATUS_OPEN)
+                : decisionRepository.deleteByPackIdAndStatusAndDecisionKeyNotIn(
+                    saved.getId(), DbMigrationPackDecisionEntity.STATUS_OPEN, raisedKeys);
+        }
+
         log.info(
             "[diag-ams] db_migration_pack stage=upsert projectId={} architectureId={} packId={} "
-                + "created={} files={} decisionsLinked={} decisionsCreated={}",
+                + "created={} files={} decisionsLinked={} decisionsCreated={} decisionsPruned={}",
             projectId, request.architectureId(), saved.getId(),
-            created, fileCount, decisionsLinked, decisionsCreated);
+            created, fileCount, decisionsLinked, decisionsCreated, decisionsPruned);
         return DbMigrationPackMapper.toDto(saved);
     }
 
