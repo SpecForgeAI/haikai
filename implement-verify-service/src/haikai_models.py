@@ -109,6 +109,24 @@ class OrchestrationRequest(BaseModel):
             "when reachable). Requires worktree runs (WORKTREE_RUNS=on)."
         ),
     )
+    # Integration base (2026-08-12): cross-run STAGE continuation without a
+    # single lineage. base_spec chaining picks ONE prior branch — which may
+    # never have existed (a zero-diff no-op spec is honestly `implemented`
+    # with no branch: the live Stage-2 "resolves no branch" start failure)
+    # and, even alive, cannot carry a prior stage's N sibling branches.
+    integration_base: bool = Field(
+        default=False,
+        description=(
+            "True = base this run's worktree branches on the default branch "
+            "PLUS every remote `feature/*` branch for each repo target merged "
+            "in — the run accumulates onto ALL prior unmerged work, and a "
+            "missing branch is simply absent rather than fatal. base_spec "
+            "takes precedence when both are set (an explicit lineage wins). "
+            "Requires worktree runs (WORKTREE_RUNS=on). Merge conflicts "
+            "across the accumulated branches fail allocation loudly with the "
+            "conflicted paths."
+        ),
+    )
     open_merge_request: bool = Field(
         default=True,
         description=(

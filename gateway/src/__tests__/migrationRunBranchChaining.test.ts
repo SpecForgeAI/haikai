@@ -33,6 +33,7 @@ import {
   advanceRunOnBuildResult,
   chainBaseSpecForItem,
   lastGoodSpecOfRun,
+  runBaseModeOf,
   startMigration,
   MigrationDriverDeps,
   MigrateScope,
@@ -225,6 +226,21 @@ describe('lastGoodSpecOfRun / chainBaseSpecForItem', () => {
     run.base_spec = null;
     expect(chainBaseSpecForItem(run, run.items![0])).toBeNull();
   });
+
+  it('runBaseModeOf reads the run_base_mode stamp; legacy/absent = chain (2026-08-12)', () => {
+    const run = chainedRun();
+    expect(runBaseModeOf(run)).toBe('chain'); // legacy run, no stamp
+    expect(runBaseModeOf(null)).toBe('chain');
+    run.decision_log_json = [
+      { type: 'something_else', mode: 'integration' },
+      { type: 'run_base_mode', mode: 'integration', reason: 'stage_integration' },
+    ];
+    expect(runBaseModeOf(run)).toBe('integration');
+    run.decision_log_json = [{ type: 'run_base_mode', mode: 'fresh' }];
+    expect(runBaseModeOf(run)).toBe('fresh');
+    run.decision_log_json = [{ type: 'run_base_mode', mode: 'garbage' }];
+    expect(runBaseModeOf(run)).toBe('chain'); // defensive fallback
+  });
 });
 
 // ===========================================================================
@@ -355,7 +371,13 @@ describe('startMigration baseMode', () => {
     };
   }
 
-  it("default 'chain': the new run persists the prior run's last good spec as base_spec", async () => {
+  it("default 'chain' at a stage boundary: the new run is INTEGRATION-based (2026-08-12) — no single-lineage base_spec", async () => {
+    // The live Stage-2 failure: lastGoodSpecOfRun picked an item whose
+    // branch never existed (a zero-diff no-op spec is honestly implemented
+    // with no branch), and even a live branch is ONE of the prior stage's N
+    // sibling branches. The stage continuation now stamps run_base_mode
+    // 'integration'; IVS builds default-branch + every remote feature/*
+    // branch per target, so a missing branch is simply absent.
     const created: { run?: MigrationExecutionRun } = {};
     const deps = startDeps(priorStageRun(), created);
 
@@ -364,10 +386,14 @@ describe('startMigration baseMode', () => {
 
     expect(result.status).toBe('started');
     const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
-    expect(req.run.base_spec).toBe('2026-08-01-stage1-final-dddd4444');
-    // The first dispatch chains off it.
+    expect(req.run.base_spec).toBeNull();
+    expect(req.run.decision_log_json).toEqual([
+      expect.objectContaining({ type: 'run_base_mode', mode: 'integration', reason: 'stage_integration' }),
+    ]);
+    // The first dispatch carries the integration flag, not a lineage base.
     const submit = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
-    expect(submit.baseSpec).toBe('2026-08-01-stage1-final-dddd4444');
+    expect(submit.baseSpec).toBeUndefined();
+    expect(submit.integrationBase).toBe(true);
   });
 
   it("'fresh': no prior-run read, base_spec null, first dispatch has NO baseSpec (default-branch base)", async () => {
@@ -449,8 +475,12 @@ describe('startMigration baseMode', () => {
     expect(result.status).toBe('started');
     const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
     expect(req.run.base_spec).toBeNull();
+    expect(req.run.decision_log_json).toEqual([
+      expect.objectContaining({ type: 'run_base_mode', mode: 'chain', reason: 'restart_of_same_stage' }),
+    ]);
     const submit = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
     expect(submit.baseSpec).toBeUndefined(); // clean tree off the default branch
+    expect(submit.integrationBase).toBeUndefined(); // a re-start never integrates the abandoned attempt
   });
 
   it('RE-START after a DEPLOYED same-stage run (overlapping items) is also fresh — a redo replaces the old work', async () => {

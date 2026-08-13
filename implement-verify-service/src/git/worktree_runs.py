@@ -186,6 +186,100 @@ def fresh_default_base(live_repo: Path, default_branch: str) -> str:
     return remote if _ref_resolves(live_repo, remote) else default_branch
 
 
+# ── Integration base (2026-08-12, stage continuation) ────────────────────────
+
+INTEGRATION_BRANCH_PREFIX = "integration/"
+
+
+class IntegrationBaseConflict(WorktreeAllocationError):
+    """Two accumulated feature branches disagree on the same paths — the
+    integration base cannot be built mechanically. Carries the conflicted
+    paths so the operator knows exactly what to reconcile."""
+
+
+def _remote_feature_branches(live_repo: Path, folder) -> list[str]:
+    """Every `origin/feature/*` ref belonging to THIS repo target, sorted.
+    Polyrepo targets own the `feature/<spec>--<folder>` suffix form; the
+    root target (folder None) owns suffix-less names. Sorted for a
+    deterministic merge order."""
+    cp = _git(live_repo, "for-each-ref", "--format=%(refname:short)",
+              "refs/remotes/origin/feature/")
+    if cp.returncode != 0:
+        return []
+    out = []
+    for line in (cp.stdout or "").splitlines():
+        name = line.strip()
+        if not name:
+            continue
+        short = name[len("origin/"):] if name.startswith("origin/") else name
+        tail = short[len("feature/"):] if short.startswith("feature/") else short
+        if folder is not None:
+            if tail.endswith(f"--{folder}"):
+                out.append(name)
+        elif "--" not in tail:
+            out.append(name)
+    return sorted(out)
+
+
+def _conflicted_paths(repo: Path) -> list[str]:
+    cp = _git(repo, "diff", "--name-only", "--diff-filter=U")
+    return [ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip()]
+
+
+def integration_base(live_repo: Path, folder, default_branch: str,
+                     tag: str) -> str:
+    """Build the INTEGRATION base for one repo target: a branch off the
+    freshly-fetched default with EVERY remote `feature/*` branch for this
+    target merged in (2026-08-12 — the third base behaviour).
+
+    Why: cross-run `base_spec` chaining follows a SINGLE lineage. The picked
+    spec's branch may never have existed (a zero-diff no-op spec is honestly
+    `implemented` with no branch — the live Stage-2 "resolves no branch"
+    start failure), and even a live branch is one of the prior stage's N
+    sibling branches, not the accumulated whole. Here specs accumulate onto
+    ALL prior unmerged work, and a missing branch is simply absent.
+
+    Merges run in a TEMPORARY worktree — the live checkout is never touched.
+    No branches to integrate = the plain fresh default base. A merge
+    conflict aborts cleanly and raises IntegrationBaseConflict naming the
+    branch + conflicted paths (fail-fast, W5)."""
+    live_repo = Path(live_repo).resolve()
+    _git(live_repo, "fetch", "--all", "--quiet")  # best-effort
+    base = fresh_default_base(live_repo, default_branch)
+    branches = _remote_feature_branches(live_repo, folder)
+    if not branches:
+        return base
+    branch = f"{INTEGRATION_BRANCH_PREFIX}{tag}" + (f"--{folder}" if folder else "")
+    # Short, collision-safe tmp path (W8 path budget — tags are long spec names).
+    tmp_key = hashlib.sha256(branch.encode()).hexdigest()[:12]
+    tmp = live_repo.parent / f".integration-{tmp_key}"
+    # A crashed prior build may have left the branch held — free the stale
+    # worktree so `-B` can reset the branch (the tmp path is ours alone).
+    _git(live_repo, "worktree", "remove", "--force", str(tmp))
+    _require(_git(live_repo, "worktree", "add", "-B", branch, str(tmp), base),
+             f"cannot create integration worktree for {branch}")
+    try:
+        for ref in branches:
+            merged = _git(tmp, "merge", "--no-ff", "--no-edit", ref)
+            if merged.returncode != 0:
+                paths = _conflicted_paths(tmp)
+                _git(tmp, "merge", "--abort")
+                raise IntegrationBaseConflict(
+                    f"integration base for target {folder or '(root)'} hit merge "
+                    f"conflicts merging {ref}"
+                    + (f" (conflicted: {', '.join(paths[:10])}"
+                       + (f" +{len(paths) - 10} more" if len(paths) > 10 else "")
+                       + ")" if paths else "")
+                    + " — the accumulated feature branches disagree; resolve by "
+                    "merging/closing the conflicting MRs (or start the stage "
+                    "'fresh from main' after merging), then retry")
+        logger.info("integration base %s for target %s: merged %d branch(es)",
+                    branch, folder or "(root)", len(branches))
+    finally:
+        _git(live_repo, "worktree", "remove", "--force", str(tmp))
+    return branch
+
+
 def free_branch_holder_if_dead(live_repo: Path, branch: str, storage,
                                workspace_dir: str) -> bool:
     """Inline D14-lite reclaim at allocation (run-branch chaining hardening):
