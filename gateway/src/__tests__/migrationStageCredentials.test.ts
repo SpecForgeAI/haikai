@@ -162,6 +162,46 @@ describe('POST .../target-credentials — stage-2 source + target service', () =
       .send({ api: { type: 'none' }, source_api: { current_base_url: 'legacy:8080', api: { type: 'none' } } });
     expect(res.status).toBe(400);
   });
+
+  it('registers the ssoToken custom-header auth VERBATIM (2026-08-13 — the capture-wizard auth surface)', async () => {
+    // Internal systems authenticate with the `ssoToken` header; the Start
+    // Stage 2 modal previously offered none|bearer only. The full
+    // ApiAuthSecret now travels through to the store unchanged (it is
+    // POSTed to the AMVS /secrets route verbatim at replay time).
+    const res = await request(app())
+      .post(URL)
+      .send({
+        api: { type: 'none' },
+        source_api: {
+          current_base_url: 'http://legacy:8080',
+          api: { type: 'custom_header', headerName: 'ssoToken', headerValue: 'tok-123' },
+        },
+      });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ sourceApiRegistered: true });
+    const watch = currentSystemCredentialsStore.get('p1');
+    expect(watch?.api).toEqual({
+      type: 'custom_header',
+      headerName: 'ssoToken',
+      headerValue: 'tok-123',
+    });
+  });
+
+  it.each([
+    ['bearer without a token', { type: 'bearer' }, 'bearerToken'],
+    ['basic without a username', { type: 'basic', password: 'p' }, 'username'],
+    ['custom_header without a name', { type: 'custom_header', headerValue: 'v' }, 'headerName'],
+    ['custom_header without a value', { type: 'custom_header', headerName: 'ssoToken' }, 'headerValue'],
+  ])('rejects source_api %s with a 400 naming the missing field', async (_label, api, missing) => {
+    const res = await request(app())
+      .post(URL)
+      .send({
+        api: { type: 'none' },
+        source_api: { current_base_url: 'http://legacy:8080', api },
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(missing);
+  });
 });
 
 describe('drift tick vs creds-only entries', () => {

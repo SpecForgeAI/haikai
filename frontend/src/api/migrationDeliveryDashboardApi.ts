@@ -1579,7 +1579,23 @@ export async function registerRunStageCredentials(
     targetDb?: StageDbCredentials;
     sourceDb?: StageDbCredentials;
     service?: StageServeSpec;
-    sourceApi?: { currentBaseUrl: string; authType: string; bearerToken?: string };
+    /**
+     * SOURCE (current system) API + its FULL auth secret (2026-08-13): the
+     * same `ApiAuthSecret` shape the capture wizard produces — none |
+     * bearer (bearerToken) | basic (username/password) | custom_header
+     * (headerName/headerValue; ssoToken rides here with the fixed name).
+     */
+    sourceApi?: {
+      currentBaseUrl: string;
+      auth: {
+        type: string;
+        bearerToken?: string;
+        username?: string;
+        password?: string;
+        headerName?: string;
+        headerValue?: string;
+      };
+    };
     /** Target-API auth for the reconcile replay; defaults to none. */
     apiAuthType?: string;
   },
@@ -1612,12 +1628,10 @@ export async function registerRunStageCredentials(
         ? {
             source_api: {
               current_base_url: opts.sourceApi.currentBaseUrl,
-              api: {
-                type: opts.sourceApi.authType,
-                ...(opts.sourceApi.bearerToken
-                  ? { bearerToken: opts.sourceApi.bearerToken }
-                  : {}),
-              },
+              // The full secret travels verbatim (2026-08-13) — the gateway
+              // store mirrors AMVS's ApiAuthSecret, so custom_header
+              // (incl. ssoToken) / basic / bearer all pass through.
+              api: opts.sourceApi.auth,
             },
           }
         : {}),

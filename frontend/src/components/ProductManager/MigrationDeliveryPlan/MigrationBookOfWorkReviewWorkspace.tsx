@@ -128,6 +128,11 @@ import MigrationCarryOverAccountingPanel, {
 import { type CarryOverCoverageResult } from '../../../api/carryOverCoverageApi';
 import { useToast } from '../../../contexts/ToastContext';
 import styles from './MigrationBookOfWork.module.css';
+import ApiAuthFields, {
+  EMPTY_API_AUTH,
+  toApiAuthSecret,
+  type ApiAuthValue,
+} from '../../shared/ApiAuthFields';
 
 /**
  * Group the server gate's blocking reasons by machine code with a friendly
@@ -1039,8 +1044,13 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   // Stage-2 SOURCE service (current system API) section (2026-07-31).
   const [sourceApiFields, setSourceApiFields] = useState({
     baseUrl: '',
-    authType: 'none',
-    bearerToken: '',
+  });
+  // The SAME auth surface as the API Behaviour Baseline Capture wizard
+  // (2026-08-13): none | bearer | basic | ssoToken header | custom header —
+  // internal systems authenticate with the ssoToken header, which the old
+  // none|bearer dropdown could not express.
+  const [sourceApiAuth, setSourceApiAuth] = useState<ApiAuthValue>({
+    ...EMPTY_API_AUTH,
   });
   const [dialogBusy, setDialogBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -1231,11 +1241,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           if (sourceApiFields.baseUrl.trim() !== '') {
             opts.sourceApi = {
               currentBaseUrl: sourceApiFields.baseUrl.trim(),
-              authType: sourceApiFields.authType,
-              ...(sourceApiFields.authType === 'bearer' &&
-              sourceApiFields.bearerToken.trim() !== ''
-                ? { bearerToken: sourceApiFields.bearerToken }
-                : {}),
+              // Full auth secret (2026-08-13): the wizard-shaped form value
+              // maps to the gateway's ApiAuthSecret (sso_token -> the fixed
+              // `ssoToken` custom header, value trimmed).
+              auth: toApiAuthSecret(sourceApiAuth),
             };
           }
         }
@@ -1289,6 +1298,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     serveFields,
     serveEnvText,
     sourceApiFields,
+    sourceApiAuth,
     refreshRun,
     refreshCredsStatus,
   ]);
@@ -2498,37 +2508,24 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                       }
                       data-testid="start-stage-source-api-url"
                     />
-                    <label htmlFor="src-api-auth">Auth</label>
-                    <select
-                      id="src-api-auth"
-                      className={styles.modalInput}
-                      value={sourceApiFields.authType}
-                      onChange={(e) =>
-                        setSourceApiFields((f) => ({ ...f, authType: e.target.value }))
+                    {/* Shared auth surface (2026-08-13): the SAME methods as
+                        the API Behaviour Baseline Capture wizard — incl. the
+                        ssoToken header internal systems require. */}
+                    <ApiAuthFields
+                      value={sourceApiAuth}
+                      onChange={(patch) =>
+                        setSourceApiAuth((v) => ({ ...v, ...patch }))
                       }
-                      data-testid="start-stage-source-api-auth"
-                    >
-                      <option value="none">none</option>
-                      <option value="bearer">bearer</option>
-                    </select>
-                    {sourceApiFields.authType === 'bearer' && (
-                      <>
-                        <label htmlFor="src-api-token">Token</label>
-                        <input
-                          id="src-api-token"
-                          className={styles.modalInput}
-                          type="password"
-                          value={sourceApiFields.bearerToken}
-                          onChange={(e) =>
-                            setSourceApiFields((f) => ({
-                              ...f,
-                              bearerToken: e.target.value,
-                            }))
-                          }
-                          data-testid="start-stage-source-api-token"
-                        />
-                      </>
-                    )}
+                      classNames={{
+                        fieldGroup: styles.modalInputRow,
+                        label: '',
+                        input: styles.modalInput,
+                        select: styles.modalInput,
+                      }}
+                      testIdPrefix="start-stage-source-api"
+                      selectId="src-api-auth"
+                      selectLabel="Auth"
+                    />
                   </div>
                   <p data-testid="start-stage-serve-note">
                     <strong>Target service (how to run it):</strong>{' '}

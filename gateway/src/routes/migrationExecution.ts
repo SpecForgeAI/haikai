@@ -930,10 +930,20 @@ migrationExecutionRouter.post(
         setup?: string;
         env?: Record<string, unknown>;
       };
-      /** Stage-2 Start modal: the SOURCE (current system) API details. */
+      /** Stage-2 Start modal: the SOURCE (current system) API details. The
+       * auth block is the FULL ApiAuthSecret shape (2026-08-13) — the same
+       * methods the capture wizard offers, incl. the ssoToken custom header
+       * internal systems require. */
       source_api?: {
         current_base_url?: string;
-        api?: { type?: string };
+        api?: {
+          type?: string;
+          bearerToken?: string;
+          username?: string;
+          password?: string;
+          headerName?: string;
+          headerValue?: string;
+        };
       };
     };
     if (!body.api || typeof body.api.type !== 'string') {
@@ -1000,6 +1010,25 @@ migrationExecutionRouter.post(
       if (!urlOk || !apiOk) {
         return res.status(400).json({
           error: 'source_api block must include { current_base_url (http/https), api: { type } }',
+        });
+      }
+      // Per-type required material (2026-08-13): a secret missing its value
+      // would only fail LATER at replay time, invisibly — fail the
+      // registration loudly instead.
+      const api = sa.api!;
+      const missing =
+        api.type === 'bearer' && (api.bearerToken ?? '').trim() === ''
+          ? 'bearerToken'
+          : api.type === 'basic' && (api.username ?? '').trim() === ''
+            ? 'username'
+            : api.type === 'custom_header' && (api.headerName ?? '').trim() === ''
+              ? 'headerName'
+              : api.type === 'custom_header' && (api.headerValue ?? '').trim() === ''
+                ? 'headerValue'
+                : null;
+      if (missing) {
+        return res.status(400).json({
+          error: `source_api.api type '${api.type}' requires a non-empty '${missing}'`,
         });
       }
       sourceApi = { currentBaseUrl: sa.current_base_url as string, api: sa.api as { type: string } };
