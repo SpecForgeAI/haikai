@@ -1278,6 +1278,20 @@ export async function startMigration(
   //     "Resume stage N" is untouched: it continues the SAME run, where
   //     within-run item chaining applies by design.
   let runBaseSpec: string | null = null;
+  // INTEGRATION base (2026-08-12, the live Stage-2 start failure): the old
+  // stage-boundary chain resolved lastGoodSpecOfRun(prior) — a SINGLE
+  // lineage. Two failure modes: (a) the picked item's branch may never have
+  // existed (a zero-diff no-op spec is honestly `implemented` with no
+  // branch — IVS then fail-fasts "resolves no branch"); (b) even a live
+  // branch is ONE of the prior stage's N sibling branches, not the
+  // accumulated whole (the DB plane produced 21, merged only in the
+  // assembly's own db-migration/* branch). Stage continuation now uses a
+  // third behaviour: base on the default branch PLUS every remote
+  // feature/* branch for the target merged in (IVS builds it per repo
+  // target at allocation) — specs accumulate onto ALL prior work and a
+  // missing branch is simply absent, never fatal.
+  let runBaseMode: 'chain' | 'fresh' | 'integration' =
+    scope.baseMode === 'fresh' ? 'fresh' : 'chain';
   let baseReason = scope.baseMode === 'fresh' ? 'operator_fresh' : 'no_prior_run';
   if (scope.baseMode !== 'fresh') {
     const fetchLatest =
@@ -1297,8 +1311,8 @@ export async function startMigration(
         } else if (latest.status !== RUN_STATUS.DEPLOYED) {
           baseReason = 'prior_run_not_deployed';
         } else {
-          runBaseSpec = lastGoodSpecOfRun(latest);
-          baseReason = runBaseSpec ? 'stage_chain' : 'prior_run_has_no_good_spec';
+          runBaseMode = 'integration';
+          baseReason = 'stage_integration';
         }
       }
     } catch (error) {
@@ -1332,13 +1346,16 @@ export async function startMigration(
     projectId,
     bookId,
     baseMode: scope.baseMode ?? 'chain',
+    runBaseMode,
     baseSpec: runBaseSpec,
     baseReason,
   });
   trace.step(
-    runBaseSpec
-      ? `run base: chained off ${runBaseSpec} (${baseReason})`
-      : `run base: default branch (${baseReason})`,
+    runBaseMode === 'integration'
+      ? `run base: integration (default branch + every remote feature/* branch) (${baseReason})`
+      : runBaseSpec
+        ? `run base: chained off ${runBaseSpec} (${baseReason})`
+        : `run base: default branch (${baseReason})`,
     { project: scope.project }
   );
 
@@ -1356,6 +1373,17 @@ export async function startMigration(
       current_sequence_position: 0,
       pinned_current_baseline_id: baseline?.id ?? null,
       base_spec: runBaseSpec,
+      // run_base_mode stamped at creation (2026-08-12) so retries, Resume and
+      // the boot-recovery sweep re-derive the SAME base behaviour after a
+      // gateway restart — read back via runBaseModeOf().
+      decision_log_json: [
+        {
+          type: 'run_base_mode',
+          mode: runBaseMode,
+          reason: baseReason,
+          at: new Date().toISOString(),
+        },
+      ],
     } as MigrationExecutionRun,
     items: dispatchSet.map((d) => ({
       sequence_position: d.sequencePosition,
@@ -1471,10 +1499,34 @@ export async function startMigration(
 }
 
 /**
+ * The run's base behaviour, read back from the `run_base_mode` entry stamped
+ * into `decision_log_json` at run creation (2026-08-12): 'integration' =
+ * IVS builds the base per repo target as default branch + every remote
+ * feature/* branch merged; 'fresh' = default branch; 'chain' (default,
+ * incl. legacy runs with no stamp) = the base_spec lineage behaviour.
+ */
+export function runBaseModeOf(
+  run: MigrationExecutionRun | null | undefined
+): 'chain' | 'fresh' | 'integration' {
+  const entries = (run?.decision_log_json ?? []).filter(
+    (e) => e && (e as Record<string, unknown>).type === 'run_base_mode'
+  );
+  const last = entries.length > 0 ? (entries[entries.length - 1] as Record<string, unknown>) : null;
+  const mode = last?.mode;
+  return mode === 'integration' || mode === 'fresh' ? mode : 'chain';
+}
+
+/**
  * The last GOOD spec of a run: the highest-sequence item that reported
  * `implemented`/`deployed` and carries a spec_name (the `-r<n>` restamp of a
  * retried item included — the successful attempt's name IS the branch that
  * holds the good state). Null when the run has no successful item yet.
+ *
+ * NOTE (2026-08-12): no longer used for CROSS-RUN stage continuation — the
+ * picked item's branch may never have existed (a zero-diff no-op spec is
+ * honestly `implemented` with no branch), and a single lineage cannot carry
+ * a prior stage's N sibling branches. Stage continuation uses the
+ * integration base (see runBaseModeOf). Within-run chaining is unchanged.
  */
 export function lastGoodSpecOfRun(
   run: MigrationExecutionRun | null | undefined
@@ -1733,6 +1785,13 @@ export async function runSpecSegment(
   // base_spec (cross-run stage chaining). A RETRY derives the same base — the
   // failed attempt has no successful outcome, so its wreckage is never chained.
   const chainBase = chainBaseSpecForItem(freshRun ?? run, item);
+  // INTEGRATION base (2026-08-12): with no within-run prior good to chain
+  // off, a run created in integration mode bases its FIRST worktree on the
+  // default branch + every remote feature/* branch for the target (built by
+  // IVS at allocation). Subsequent items chain within-run as before, so the
+  // whole run still accumulates.
+  const useIntegrationBase =
+    !chainBase && runBaseModeOf(freshRun ?? run) === 'integration';
 
   // Stamp the computed spec_name; SUBMITTING (no ANSWERING phase any more —
   // the boot-recovery sweep re-kicks submitting-with-no-job_id as before).
@@ -1789,6 +1848,7 @@ export async function runSpecSegment(
       deployOnComplete: wantsHaiboxDeploy,
       ...(targetServeSpec ? { targetServeSpec } : {}),
       ...(chainBase ? { baseSpec: chainBase } : {}),
+      ...(useIntegrationBase ? { integrationBase: true } : {}),
       openMergeRequest,
       callbackUrl: deps.buildResultsCallbackUrl,
     });
@@ -1820,12 +1880,17 @@ export async function runSpecSegment(
     specName,
     deployOnComplete: item.deploy_on_complete ?? false,
     baseSpec: chainBase,
+    integrationBase: useIntegrationBase,
     openMergeRequest,
   });
 
   trace.step(
     `spec dispatched — ${specName}` +
-      (chainBase ? ` (chained off ${chainBase})` : ' (base: default branch)'),
+      (chainBase
+        ? ` (chained off ${chainBase})`
+        : useIntegrationBase
+          ? ' (base: integration — default branch + remote feature/* branches)'
+          : ' (base: default branch)'),
     {
       run: runId,
       job: submit.jobId,
@@ -1975,6 +2040,11 @@ export async function runBatchSegment(
       // cross-run base resolved at run creation (batch specs already share a
       // tree/branch within the job — only the cross-run base applies here).
       ...((run.base_spec ?? '').trim() !== '' ? { baseSpec: run.base_spec } : {}),
+      // INTEGRATION base (2026-08-12): stage continuation without a lineage
+      // base — IVS builds default branch + every remote feature/* branch.
+      ...((run.base_spec ?? '').trim() === '' && runBaseModeOf(run) === 'integration'
+        ? { integrationBase: true }
+        : {}),
       callbackUrl: deps.buildResultsCallbackUrl,
     });
   } catch (error) {

@@ -97,6 +97,15 @@ export interface OrchestrationSubmitInput {
    */
   baseSpec?: string | null;
   /**
+   * INTEGRATION base (2026-08-12, stage continuation): TRUE = IVS bases this
+   * spec's worktree on the default branch PLUS every remote feature/* branch
+   * for each repo target merged in — the run accumulates onto ALL prior
+   * unmerged work, and a branch that never existed is simply absent rather
+   * than a fail-fast (the live "base_spec resolves no branch" Stage-2 start
+   * failure). Mutually exclusive with baseSpec (baseSpec wins when both set).
+   */
+  integrationBase?: boolean;
+  /**
    * Run-branch chaining: FALSE = commit + push the spec branch but do NOT
    * open a merge request (only the stage-final branch, which carries the
    * whole chain's diff, opens the ONE MR). Omitted = IVS default (true).
@@ -141,6 +150,8 @@ export interface OrchestrationBatchSubmitInput {
    * continuation). Omitted = default-branch base.
    */
   baseSpec?: string | null;
+  /** INTEGRATION base (2026-08-12) — see the single-spec field. */
+  integrationBase?: boolean;
   /** The gateway's build-results URL (one callback for the whole batch). */
   callbackUrl: string;
 }
@@ -295,6 +306,7 @@ export async function submitOrchestration(
     // the previous GOOD spec's branch; suppress the per-spec MR on non-final
     // items (the stage-final branch opens the ONE MR for the whole chain).
     ...(input.baseSpec ? { base_spec: input.baseSpec } : {}),
+    ...(input.integrationBase ? { integration_base: true } : {}),
     ...(input.openMergeRequest !== undefined
       ? { open_merge_request: input.openMergeRequest }
       : {}),
@@ -308,6 +320,7 @@ export async function submitOrchestration(
     deployOnComplete: input.deployOnComplete,
     baseSpec: input.baseSpec ?? null,
     openMergeRequest: input.openMergeRequest ?? null,
+    integrationBase: input.integrationBase ?? false,
   });
 }
 
@@ -340,6 +353,8 @@ export async function submitOrchestrationBatch(
     ...(input.targetServeSpec ? { target: toTargetWire(input.targetServeSpec) } : {}),
     // Run-branch chaining (2026-08-06): cross-run base for the batch branch.
     ...(input.baseSpec ? { base_spec: input.baseSpec } : {}),
+    // INTEGRATION base (2026-08-12): default branch + remote feature/* merged.
+    ...(input.integrationBase ? { integration_base: true } : {}),
     options: { ...DEFAULT_OPTIONS },
   };
 
@@ -350,5 +365,6 @@ export async function submitOrchestrationBatch(
     batchName: input.batchName,
     deployOnComplete: input.deployOnComplete,
     baseSpec: input.baseSpec ?? null,
+    integrationBase: input.integrationBase ?? false,
   });
 }

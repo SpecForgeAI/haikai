@@ -287,6 +287,10 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                     job.job_id, run_ws)
     scoped_specs = [spec_scope] if spec_scope else specs
     branch = None
+    # Integration-base branch tag (2026-08-12): target-agnostic — the helper
+    # appends the `--<folder>` suffix per repo target itself.
+    integration_tag = (spec_scope or getattr(request, "batch_name", None)
+                       or _run_branch_for(request, None).removeprefix("feature/"))
     try:
         with wr.project_git_lock(workspace_dir, request.company, request.project):
             allocated = []
@@ -300,9 +304,17 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                 # spec's branch when the driver threads one; otherwise a
                 # freshly-fetched default (origin-preferred). Per target —
                 # polyrepo bases carry the `--<folder>` suffix.
+                # Integration base (2026-08-12): stage continuation without a
+                # lineage — default branch + every remote feature/* branch for
+                # the target merged in. An explicit base_spec lineage wins
+                # (the driver sends it for within-run chaining, where the
+                # lineage already contains the integration base).
                 if getattr(request, "base_spec", None):
                     base = wr.resolve_base_ref(live_repo, request.base_spec,
                                                folder, default_branch)
+                elif getattr(request, "integration_base", False):
+                    base = wr.integration_base(live_repo, folder,
+                                               default_branch, integration_tag)
                 else:
                     base = wr.fresh_default_base(live_repo, default_branch)
                 # The finishing job's callback fires BEFORE its worktree is
@@ -1395,15 +1407,16 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 job, request, workspace_dir, storage)
             if wt_err:
                 raise ValueError(f"worktree allocation failed: {wt_err}")
-        elif getattr(request, "base_spec", None):
-            # Run-branch chaining bases the worktree branch at allocation; the
-            # legacy live-tree path branches off the default branch and would
-            # SILENTLY drop the chain — the exact spec-blindness this feature
-            # exists to remove. Fail loudly instead.
+        elif getattr(request, "base_spec", None) or getattr(request, "integration_base", False):
+            # Run-branch chaining / integration base set the worktree base at
+            # allocation; the legacy live-tree path branches off the default
+            # branch and would SILENTLY drop the chain or the accumulated
+            # feature branches — the exact spec-blindness these features
+            # exist to remove. Fail loudly instead.
             raise ValueError(
-                "base_spec requires worktree runs (WORKTREE_RUNS=on); the "
-                "legacy live-tree path cannot base a run off a prior spec's "
-                "branch")
+                "base_spec/integration_base requires worktree runs "
+                "(WORKTREE_RUNS=on); the legacy live-tree path cannot base a "
+                "run off a prior spec's branch or an integration base")
         ws_for_run = run_workspace or workspace_dir
         start_step = job.resume_from_step or 1
 
