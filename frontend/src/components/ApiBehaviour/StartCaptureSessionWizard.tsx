@@ -72,6 +72,7 @@ import {
 import { useArchitecture } from '../../contexts/ArchitectureContext';
 import type { Interface as InterfaceModel } from '../../types/model';
 import styles from './StartCaptureSessionWizard.module.css';
+import ApiAuthFields, { type ApiAuthType } from '../shared/ApiAuthFields';
 import { PostmanImportWizardStep } from './PostmanImportWizardStep';
 import { usePostmanImportRun } from './usePostmanImportRun';
 import type { ImportedRequest } from '../../utils/postmanImport';
@@ -103,7 +104,9 @@ export interface StartCaptureSessionWizardProps {
 
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-type AuthType = 'none' | 'bearer' | 'basic' | 'sso_token' | 'header';
+// The auth option surface is SHARED (2026-08-13): the same five methods
+// render in the Start-stage dialog via components/shared/ApiAuthFields.
+type AuthType = ApiAuthType;
 type DbType = 'none' | 'postgres' | 'sybase';
 
 interface Step2Config {
@@ -1571,93 +1574,20 @@ export function StartCaptureSessionWizard({
                   data-testid="start-capture-session-wizard-base-url"
                 />
               </div>
-              <div className={styles.fieldGroup}>
-                <label className={styles.label} htmlFor="csw-auth-type">
-                  Auth type
-                </label>
-                <select
-                  id="csw-auth-type"
-                  className={styles.select}
-                  value={step2.authType}
-                  onChange={(e) =>
-                    setStep2((s) => ({ ...s, authType: e.target.value as AuthType }))
-                  }
-                  data-testid="start-capture-session-wizard-auth-type"
-                >
-                  <option value="none">None</option>
-                  <option value="bearer">Bearer token</option>
-                  <option value="basic">Basic</option>
-                  <option value="sso_token">ssoToken (in header)</option>
-                  <option value="header">Custom header</option>
-                </select>
-              </div>
-              {step2.authType === 'bearer' && (
-                <div className={styles.fieldGroup}>
-                  <label className={styles.label}>Bearer token</label>
-                  <input
-                    type="password"
-                    className={styles.input}
-                    value={step2.bearerToken}
-                    onChange={(e) => setStep2((s) => ({ ...s, bearerToken: e.target.value }))}
-                    data-testid="start-capture-session-wizard-bearer-token"
-                  />
-                </div>
-              )}
-              {step2.authType === 'basic' && (
-                <>
-                  <div className={styles.fieldGroup}>
-                    <label className={styles.label}>Username</label>
-                    <input
-                      className={styles.input}
-                      value={step2.basicUsername}
-                      onChange={(e) => setStep2((s) => ({ ...s, basicUsername: e.target.value }))}
-                    />
-                  </div>
-                  <div className={styles.fieldGroup}>
-                    <label className={styles.label}>Password</label>
-                    <input
-                      type="password"
-                      className={styles.input}
-                      value={step2.basicPassword}
-                      onChange={(e) => setStep2((s) => ({ ...s, basicPassword: e.target.value }))}
-                    />
-                  </div>
-                </>
-              )}
-              {step2.authType === 'sso_token' && (
-                <div className={styles.fieldGroup}>
-                  <label className={styles.label}>SSO token value</label>
-                  <input
-                    type="password"
-                    className={styles.input}
-                    value={step2.ssoToken}
-                    onChange={(e) => setStep2((s) => ({ ...s, ssoToken: e.target.value }))}
-                    data-testid="start-capture-session-wizard-sso-token"
-                    placeholder="Paste the ssoToken value — sent as the 'ssoToken' header (spaces trimmed)"
-                  />
-                </div>
-              )}
-              {step2.authType === 'header' && (
-                <>
-                  <div className={styles.fieldGroup}>
-                    <label className={styles.label}>Header name</label>
-                    <input
-                      className={styles.input}
-                      value={step2.headerName}
-                      onChange={(e) => setStep2((s) => ({ ...s, headerName: e.target.value }))}
-                    />
-                  </div>
-                  <div className={styles.fieldGroup}>
-                    <label className={styles.label}>Header value</label>
-                    <input
-                      type="password"
-                      className={styles.input}
-                      value={step2.headerValue}
-                      onChange={(e) => setStep2((s) => ({ ...s, headerValue: e.target.value }))}
-                    />
-                  </div>
-                </>
-              )}
+              {/* Shared auth surface (2026-08-13): the SAME five methods the
+                  Start-stage dialog offers — see components/shared/ApiAuthFields. */}
+              <ApiAuthFields
+                value={step2}
+                onChange={(patch) => setStep2((s) => ({ ...s, ...patch }))}
+                classNames={{
+                  fieldGroup: styles.fieldGroup,
+                  label: styles.label,
+                  input: styles.input,
+                  select: styles.select,
+                }}
+                testIdPrefix="start-capture-session-wizard"
+                selectId="csw-auth-type"
+              />
               <div className={styles.fieldGroup}>
                 <label className={styles.label} htmlFor="csw-default-headers">
                   Default headers (one "Name: Value" per line)
