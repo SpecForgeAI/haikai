@@ -563,3 +563,51 @@ describe('spec text structure', () => {
     expect(text).toContain('## Parity obligation');
   });
 });
+
+describe('TARGET-STACK SECTION pin (2026-08-14)', () => {
+  const SECTION = '## Target technology stack (captured decisions — authoritative)\n\nStack body.';
+
+  it('appends the section to a carried fact spec (after the parity contract)', async () => {
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story(),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts()) },
+      targetStackSectionText: SECTION,
+    });
+    expect(row.status).toBe('generated');
+    const text = row.generatedSpecText as string;
+    expect(text).toContain('## Target technology stack (captured decisions — authoritative)');
+    // Appended at the END — the byte-faithful contract body is untouched above it.
+    expect(text.indexOf('## Parity obligation')).toBeLessThan(
+      text.indexOf('## Target technology stack'),
+    );
+  });
+
+  it('manual-gate procedure text does NOT receive the section (human/wizard work)', async () => {
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story({
+        tags: ['provenance:plan-deterministic', 'execution:manual-gate'],
+        codeStoryKind: 'capture',
+      }),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn() },
+      targetStackSectionText: SECTION,
+    });
+    expect(row.generatedSpecText).not.toContain('## Target technology stack');
+  });
+
+  it('absent section -> spec text unchanged (no empty block)', async () => {
+    const row = await runCodeSpecCarriage({
+      projectId: 'p-1',
+      currentArchitectureId: 'arch-1',
+      story: story(),
+      baseRow: baseRow(),
+      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts()) },
+    });
+    expect(row.generatedSpecText).not.toContain('## Target technology stack');
+  });
+});

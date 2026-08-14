@@ -49,6 +49,7 @@ import type {
 import { SPEC_TEXT_REQUIRED_PREFIX } from './specGenerationResponseValidator';
 import { fenceFor } from './migrationDbPackSpecCarriage';
 import { MANUAL_GATE_TAG, CODE_PROVENANCE_TAG } from './migrationCodeStreamPlanner';
+import { appendTargetStackSection } from './migrationTargetStackSpecSection';
 import { createTracer } from '../trace';
 import { loadPairRuleset } from '../migrationPairRules';
 
@@ -874,8 +875,17 @@ export async function runCodeSpecCarriage(args: {
   story: CarriedStory;
   baseRow: MigrationStorySpecGenerationDto;
   deps: RunCodeSpecCarriageDeps;
+  /**
+   * Target-stack section (2026-08-14): the deterministic captured-decisions
+   * block appended to every carried spec so the byte-faithful parity contract
+   * ALSO names the stack it must be implemented in. Null/absent → nothing
+   * appended (manual-gate procedure text never receives it).
+   */
+  targetStackSectionText?: string | null;
 }): Promise<MigrationStorySpecGenerationDto> {
   const { projectId, currentArchitectureId, story, baseRow, deps } = args;
+  const withStackSection = (specText: string): string =>
+    appendTargetStackSection(specText, args.targetStackSectionText ?? null);
 
   if (isManualGateCarriageStory(story)) {
     const specText = buildManualGateSpecText(story);
@@ -944,7 +954,7 @@ export async function runCodeSpecCarriage(args: {
       ...baseRow,
       status: 'generated',
       confidence: 'high',
-      generatedSpecText: specText,
+      generatedSpecText: withStackSection(specText),
       warningsJson: null,
       missingInputsJson: null,
       focusedContextRefsJson: {
@@ -1157,7 +1167,7 @@ export async function runCodeSpecCarriage(args: {
     ...baseRow,
     status: warnings.length > 0 ? 'generated_with_warnings' : 'generated',
     confidence: 'high',
-    generatedSpecText: specText,
+    generatedSpecText: withStackSection(specText),
     warningsJson: warnings.length > 0 ? warnings : null,
     missingInputsJson: null,
     focusedContextRefsJson: {
