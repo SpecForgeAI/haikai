@@ -79,16 +79,25 @@ export function wireRowToArtifactLike(
 }
 
 /**
- * Build the v1 convention service->module mapping for the artifacts: each
- * distinct `tag` maps to placement `{ moduleDir: '<tag>/' }` (monorepo). Distinct
- * tags resolve independently. A blank/empty tag is logged (no silent drop) and
- * left out of the mapping so the destination resolver surfaces it as unresolved
- * rather than the producer guessing a path.
+ * Build the convention service->module mapping for the artifacts.
+ *
+ * SINGLE-SERVICE REPO (2026-08-14): when exactly ONE artifact is confirmed,
+ * its build file IS the application's root build file — placement `.` (repo
+ * root). The prior `<tag>/pom.xml` convention buried a single service's pom in
+ * a subdirectory the build tool never reads, so the scaffolded app could not
+ * build from a fresh clone.
+ *
+ * MULTI-SERVICE: each distinct `tag` maps to `{ moduleDir: '<tag>' }`
+ * (monorepo module dirs, the original v1 convention). A blank/empty tag is
+ * logged (no silent drop) and left out of the mapping so the destination
+ * resolver surfaces it as unresolved rather than the producer guessing a path.
  */
 export function buildConventionServiceModuleMapping(
   artifacts: readonly ConfirmedManifestArtifactLike[],
 ): ServiceModuleMapping {
   const mapping: ServiceModuleMapping = {};
+  const nonBlank = artifacts.filter((a) => (a.tag ?? '').trim().length > 0);
+  const singleService = nonBlank.length === 1 && artifacts.length === 1;
   for (const a of artifacts) {
     const tag = (a.tag ?? '').trim();
     if (tag.length === 0) {
@@ -98,9 +107,17 @@ export function buildConventionServiceModuleMapping(
       );
       continue;
     }
-    // v1 convention: the module directory IS the tag (monorepo). The destination
-    // resolver appends the file name, e.g. `<tag>/pom.xml`.
-    mapping[tag] = { moduleDir: tag };
+    if (singleService) {
+      logger.info(
+        `[diag-gateway] confirmed_manifest_to_codebase seed_producer_root_placement ` +
+          `tag=${tag} reason=single_service_repo destination=repo_root`,
+      );
+      mapping[tag] = { moduleDir: '.' };
+    } else {
+      // Multi-service convention: the module directory IS the tag (monorepo).
+      // The destination resolver appends the file name, e.g. `<tag>/pom.xml`.
+      mapping[tag] = { moduleDir: tag };
+    }
   }
   return mapping;
 }

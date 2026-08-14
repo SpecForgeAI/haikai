@@ -1105,9 +1105,12 @@ export async function fetchManuallyEditedInScope(
 /** How a story would generate — the gateway batch loop's routing, named. */
 export type SpecPreflightRoute =
   | 'db_pack'
+  | 'db_pack_review'
   | 'manual_gate'
   | 'code_facts'
+  | 'scaffold'
   | 'description'
+  | 'prerequisite'
   | 'resolver';
 
 /**

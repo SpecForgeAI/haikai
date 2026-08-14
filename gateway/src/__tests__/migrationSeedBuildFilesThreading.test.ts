@@ -223,8 +223,10 @@ describe('seed-build-files story threading (Spec 5, Group 3)', () => {
     expect(begin).toBeGreaterThanOrEqual(0);
     const carved = text.slice(begin + SEED_FILE_BODY_BEGIN.length + 1, end - 1);
     expect(carved).toBe(POM_BODY);
-    // The LLM-generated scaffolding narrative is still present (append, not replace).
-    expect(text).toContain('/agent-os:shape-spec');
+    // 2026-08-14: the seed story is DETERMINISTIC — the manifest block rides
+    // inside the assembled application-bootstrap spec (no LLM narrative).
+    expect(text).toContain('assembled DETERMINISTICALLY');
+    expect(text).toContain('Bootstrap the RUNNABLE target application');
     expect(row.status === 'generated' || row.status === 'generated_with_warnings').toBe(true);
   });
 
@@ -285,10 +287,10 @@ describe('seed-build-files story threading (Spec 5, Group 3)', () => {
     }
   });
 
-  it('(e) NO confirmed manifest -> seed story is a safe no-op (no seed block / no garbage) and the batch completes', async () => {
+  it('(e) NO confirmed manifest -> HONEST insufficient_context naming the upload remedy (2026-08-14)', async () => {
     const bow = buildBowWithSeed(1);
     const persisted: SpecGenerationResult[][] = [];
-    // Source returns null -> no-op.
+    // Source returns null -> no confirmed manifest.
     const nullSource: SeedBuildFilesSource = async () => null;
     const deps = makeDeps(bow, nullSource, persisted);
 
@@ -297,12 +299,16 @@ describe('seed-build-files story threading (Spec 5, Group 3)', () => {
       deps,
     );
 
+    // The scaffold spec cannot pin the authoritative build file without the
+    // manifest — pre-fix this silently generated LLM prose with no seed block
+    // (the live "no runnable application" failure). Now it is a loud, honest
+    // insufficient_context with the exact remedy.
     const row = seedRow(persisted);
-    const text = row.generatedSpecText ?? '';
-    expect(text).not.toContain(SEED_BUILD_FILES_SECTION_HEADING);
-    expect(text).not.toContain(SEED_FILE_BODY_BEGIN);
-    // The seed story still generated normally (no block, but a real spec).
-    expect(text).toContain('/agent-os:shape-spec');
+    expect(row.status).toBe('insufficient_context');
+    expect(row.generatedSpecText ?? null).toBeNull();
+    const missing = (row.missingInputsJson ?? []) as Array<Record<string, unknown>>;
+    expect(missing[0]?.input).toBe('confirmed_target_build_manifest');
+    expect(String(missing[0]?.reason)).toContain('Upload the target manifest');
     expect(result.summary.failed).toBe(0);
   });
 
