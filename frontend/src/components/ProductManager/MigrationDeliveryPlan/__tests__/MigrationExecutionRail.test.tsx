@@ -199,7 +199,7 @@ function renderWorkspace(draft: MigrationBookOfWorkDraft) {
 }
 
 beforeEach(() => {
-  mockRunSpecPreflight.mockReset().mockResolvedValue([]);
+  mockRunSpecPreflight.mockReset().mockResolvedValue({ rows: [], warnings: [] });
   mockFetchRows.mockReset().mockResolvedValue([]);
   mockTriggerMigrate
     .mockReset()

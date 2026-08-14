@@ -1139,6 +1139,18 @@ interface SpecPreflightRowDto {
   note: string | null;
 }
 
+/** Book-level preflight warning (2026-08-14) — e.g. SCAFFOLD_STORY_MISSING. */
+export interface SpecPreflightWarning {
+  code: string;
+  message: string;
+}
+
+/** Preflight outcome: per-story rows + book-level warnings. */
+export interface SpecPreflightResult {
+  rows: SpecPreflightRow[];
+  warnings: SpecPreflightWarning[];
+}
+
 /**
  * Run the spec preflight for a book. Read-only on the backend (no LLM); the
  * gateway executes the generator's first half per story and stops before the
@@ -1149,7 +1161,7 @@ interface SpecPreflightRowDto {
 export async function runSpecPreflight(
   projectId: string,
   bookOfWorkId: string,
-): Promise<SpecPreflightRow[]> {
+): Promise<SpecPreflightResult> {
   const url =
     `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
     `/migration-books-of-work/${encodeURIComponent(bookOfWorkId)}` +
@@ -1161,16 +1173,22 @@ export async function runSpecPreflight(
   if (!res.ok) {
     throw new Error(`Spec preflight failed: ${res.status} ${res.statusText}`);
   }
-  const body = (await res.json()) as { rows?: SpecPreflightRowDto[] };
-  return (body.rows ?? []).map((d) => ({
-    bookItemId: d.book_item_id,
-    workItemId: d.work_item_id ?? null,
-    title: d.title,
-    route: d.route,
-    ready: d.ready,
-    missingInputs: Array.isArray(d.missing_inputs) ? d.missing_inputs : [],
-    note: d.note ?? null,
-  }));
+  const body = (await res.json()) as {
+    rows?: SpecPreflightRowDto[];
+    warnings?: SpecPreflightWarning[];
+  };
+  return {
+    rows: (body.rows ?? []).map((d) => ({
+      bookItemId: d.book_item_id,
+      workItemId: d.work_item_id ?? null,
+      title: d.title,
+      route: d.route,
+      ready: d.ready,
+      missingInputs: Array.isArray(d.missing_inputs) ? d.missing_inputs : [],
+      note: d.note ?? null,
+    })),
+    warnings: Array.isArray(body.warnings) ? body.warnings : [],
+  };
 }
 
 /**
