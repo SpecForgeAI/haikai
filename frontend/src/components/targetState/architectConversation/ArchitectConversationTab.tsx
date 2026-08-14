@@ -160,6 +160,16 @@ export interface ArchitectConversationTabProps {
    * "Reopen / continue" CTA instead of defaulting to a fresh start.
    */
   conversationSavedAt?: string | null;
+  /**
+   * 2026-08-14: the TARGET draft's `services` elements for the manifest
+   * picker, supplied by the parent workspace from the draft's OWN element
+   * inventory. The tab's ArchitectureContext model is the CURRENT-STATE
+   * architecture on this page — its element ids fail the AMS ownership
+   * validation (`service_element_not_in_architecture`), which silently killed
+   * every confirmed-manifest persist. When absent (older mounts / tests) the
+   * tab falls back to the context model's services.
+   */
+  manifestServiceOptions?: ManifestServiceOption[] | null;
 }
 
 /**
@@ -198,6 +208,7 @@ export function ArchitectConversationTab({
   onScrolledToDecision,
   architectureName,
   conversationSavedAt = null,
+  manifestServiceOptions: manifestServiceOptionsProp = null,
 }: ArchitectConversationTabProps) {
   const [envelope, setEnvelope] = useState<ConversationEnvelope | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -330,20 +341,21 @@ export function ArchitectConversationTab({
     return { hasUiTier, hasServiceTier, hasPersistenceTier };
   }, [model.metaModel.entities.services, model.metaModel.entities.app_components]);
 
-  // Spec 2026-06-26-target-manifest-service-association (Task Group 4): the
-  // option list for the manifest-upload Service picker. The draft target
-  // architecture's services already live in the workspace model (with
-  // `repo_subfolder` for moduleDir derivation, FR5) — map them to the picker's
-  // minimal { id, name, repoSubfolder } shape (no new fetch).
-  const manifestServiceOptions: ManifestServiceOption[] = useMemo(
-    () =>
-      (model.metaModel.entities.services ?? []).map((svc) => ({
-        id: svc.id,
-        name: svc.name,
-        repoSubfolder: svc.repo_subfolder ?? null,
-      })),
-    [model.metaModel.entities.services],
-  );
+  // The manifest-upload Service picker options. 2026-08-14: the parent
+  // workspace supplies the TARGET draft's services (from the draft's OWN
+  // element inventory) — the context model here is the CURRENT-STATE
+  // architecture, and its element ids fail the AMS ownership validation
+  // (`service_element_not_in_architecture`), which silently killed every
+  // confirmed-manifest persist. The context-model mapping remains only as a
+  // fallback for mounts that predate the prop.
+  const manifestServiceOptions: ManifestServiceOption[] = useMemo(() => {
+    if (manifestServiceOptionsProp) return manifestServiceOptionsProp;
+    return (model.metaModel.entities.services ?? []).map((svc) => ({
+      id: svc.id,
+      name: svc.name,
+      repoSubfolder: svc.repo_subfolder ?? null,
+    }));
+  }, [manifestServiceOptionsProp, model.metaModel.entities.services]);
 
   // Spec 2026-06-05-architect-tier-gating (Half B, Task Group 4): the in-session
   // confirmed technology-tier set. Null until the user confirms/adjusts via the

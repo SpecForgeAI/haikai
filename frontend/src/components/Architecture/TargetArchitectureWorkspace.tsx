@@ -84,6 +84,7 @@ import {
   UnmappedCurrentElement,
 } from '../../api/targetArchitecturesApi';
 import { loadModelByProjectId } from '../../api/modelApi';
+import type { ManifestServiceOption } from '../../api/targetManifestApi';
 import {
   TargetArchitectureCompareView,
   type CompareMapping,
@@ -200,6 +201,33 @@ function bucketise(inventory: ElementInventoryResponse | null): GroupedRows {
   collect('infrastructure', infraDomain);
 
   return out;
+}
+
+/**
+ * The TARGET draft's `services` elements as manifest-picker options
+ * (2026-08-14). Same Applications-domain / service-type selection rule as the
+ * gateway's scaffold-service reader (the inventory type is named "Services";
+ * the UI's "APIs" bucket merges services+interfaces+endpoints, which is why a
+ * services element like a "<name> API" DISPLAYS under APIs). Archived
+ * instances are skipped. Exported for unit tests.
+ */
+export function targetServicesFromInventory(
+  inventory: ElementInventoryResponse | null,
+): ManifestServiceOption[] {
+  const options: ManifestServiceOption[] = [];
+  for (const domain of inventory?.domains ?? []) {
+    if (domain.name.toLowerCase() !== 'applications' && domain.name.toLowerCase() !== 'application') {
+      continue;
+    }
+    for (const type of domain.types ?? []) {
+      if (!/service/i.test(type.name)) continue;
+      for (const instance of type.instances ?? []) {
+        if (instance.archived) continue;
+        options.push({ id: instance.id, name: instance.name });
+      }
+    }
+  }
+  return options;
 }
 
 /**
@@ -458,6 +486,17 @@ export const TargetArchitectureWorkspace: React.FC = () => {
   const selectedDraftElementCount = useMemo(
     () => totalElementCount(grouped),
     [grouped],
+  );
+
+  // Manifest picker options (2026-08-14): the TARGET draft's `services`
+  // elements from ITS element inventory. The conversation tab's own
+  // ArchitectureContext model is the CURRENT-STATE architecture on this page;
+  // binding a manifest to one of its element ids fails the AMS ownership
+  // validation (service_element_not_in_architecture), which killed every
+  // confirmed-manifest persist.
+  const targetManifestServiceOptions: ManifestServiceOption[] = useMemo(
+    () => targetServicesFromInventory(inventory),
+    [inventory],
   );
 
   // -----------------------------------------------------------------------
@@ -1031,6 +1070,12 @@ export const TargetArchitectureWorkspace: React.FC = () => {
             onEmptyStateRedirect={handleEmptyStateRedirectFromConversation}
             scrollToDecisionId={scrollToDecisionId}
             onScrolledToDecision={handleScrolledToDecision}
+            /* 2026-08-14: the manifest picker MUST offer the TARGET draft's
+               services elements — the tab's own ArchitectureContext model is
+               the CURRENT-STATE architecture on this page, and its element
+               ids fail the AMS ownership validation (the live
+               service_element_not_in_architecture 400 on every upload). */
+            manifestServiceOptions={targetManifestServiceOptions}
           />
         </RightHandPanelShell>
       )}

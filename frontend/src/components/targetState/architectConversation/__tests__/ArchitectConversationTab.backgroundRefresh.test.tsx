@@ -154,6 +154,34 @@ describe('ArchitectConversationTab — background refresh keeps the subtree (202
     expect(screen.getByTestId('manifest-upload-panel')).toBeTruthy();
   });
 
+  it('the manifest picker offers the PARENT-SUPPLIED target services, not the context model (2026-08-14)', async () => {
+    vi.mocked(loadConversation).mockResolvedValue(buildEnvelope());
+
+    render(
+      <ArchitectConversationTab
+        projectId={PROJECT_ID}
+        selectedTargetArchitectureId={TARGET_ARCH_ID}
+        currentUserId="user-A"
+        architectureName="Target Payments v2"
+        manifestServiceOptions={[{ id: 'svc-target-9', name: 'Target Orders Service' }]}
+      />,
+    );
+
+    const fileInput = await screen.findByTestId('manifest-file-input');
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['<project/>'], 'pom.xml', { type: 'text/xml' })] },
+    });
+
+    const select = screen.getByTestId('manifest-service-select-0') as HTMLSelectElement;
+    const values = Array.from(select.querySelectorAll('option')).map((o) =>
+      o.getAttribute('value'),
+    );
+    // The TARGET draft's element id is offered; the context model's
+    // CURRENT-STATE id (which fails the AMS ownership validation) is NOT.
+    expect(values).toEqual(['', 'svc-target-9']);
+    expect(values).not.toContain('svc-msk7s63i-x72go');
+  });
+
   it('the INITIAL load still shows the full-screen loader (no envelope yet)', () => {
     vi.mocked(loadConversation).mockImplementation(
       () => new Promise(() => undefined),
