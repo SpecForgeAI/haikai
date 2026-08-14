@@ -139,6 +139,24 @@ describe('targetManifestArtifactsClient', () => {
         persistTargetManifestArtifacts(PROJECT_ID, TARGET_ARCH_ID, []),
       ).rejects.toThrow(/HTTP 500/);
     });
+
+    it('carries the AMS error BODY in the thrown message (2026-08-14 — surfaces ValidationException details)', async () => {
+      const { persistTargetManifestArtifacts } = require('../targetManifestArtifactsClient');
+
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: 'service_element_not_in_architecture',
+            field: 'target_service_element_id',
+          }),
+          { status: 400 },
+        ),
+      );
+
+      await expect(
+        persistTargetManifestArtifacts(PROJECT_ID, TARGET_ARCH_ID, []),
+      ).rejects.toThrow(/HTTP 400.*service_element_not_in_architecture/);
+    });
   });
 
   describe('fetchLatestTargetManifestArtifacts (READ seam)', () => {

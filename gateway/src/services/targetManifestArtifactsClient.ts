@@ -165,8 +165,18 @@ export async function persistTargetManifestArtifacts(
   });
 
   if (!response.ok) {
+    // Carry the AMS error BODY (2026-08-14): a bare status code hid the real
+    // cause (e.g. the service-element ownership ValidationException details)
+    // from the operator-facing persist outcome.
+    let detail = '';
+    try {
+      detail = (await response.text()).slice(0, 500);
+    } catch {
+      // body unreadable — the status alone will have to do.
+    }
     throw new Error(
-      `architecture model service manifest-artifacts persist failed: HTTP ${response.status}`,
+      `architecture model service manifest-artifacts persist failed: ` +
+        `HTTP ${response.status}${detail ? ` — ${detail}` : ''}`,
     );
   }
 

@@ -410,6 +410,41 @@ export function ManifestUploadPanel({
         </div>
       )}
 
+      {/* --- confirmed-manifest persist outcome (2026-08-14) ---
+          `failed` means the manifest bytes did NOT reach the store the
+          migration plan's scaffold story reads — previously invisible
+          (log-only fail-soft), leaving the plan screen stuck on "no
+          confirmed manifest" after a seemingly successful upload. */}
+      {response?.manifestPersist?.status === 'failed' && (
+        <div
+          className={`${styles.banner} ${styles.bannerError}`}
+          role="alert"
+          data-testid="manifest-persist-failed"
+        >
+          <span>
+            The manifest could NOT be saved to the confirmed-manifest store — the
+            migration plan&apos;s application-scaffold story depends on it, so the
+            plan screen will keep reporting &quot;no confirmed manifest&quot; until
+            this succeeds. Error: {response.manifestPersist.error ?? 'unknown'}
+          </span>
+        </div>
+      )}
+      {response?.manifestPersist?.status === 'ok' && (
+        <div
+          className={styles.banner}
+          role="status"
+          data-testid="manifest-persist-ok"
+        >
+          <span>
+            Manifest saved to the confirmed-manifest store (
+            {response.manifestPersist.artifactCount} file
+            {response.manifestPersist.artifactCount === 1 ? '' : 's'}) — the
+            migration plan&apos;s scaffold story can now be created (re-expand the
+            foundations epic on the plan screen).
+          </span>
+        </div>
+      )}
+
       {/* --- partial-success banner (Group 3 first-POST-failure abort) --- */}
       {response?.autoAnswer?.aborted && (
         <div

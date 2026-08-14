@@ -129,10 +129,11 @@ test('picker-derived subfolder tag survives upload -> persist UNCHANGED and is t
   expect(wire.tag).toBe(DERIVED_SUBFOLDER_TAG);
   expect(wire.target_service_element_id).toBe(SVC_ID);
 
-  // 3) The producer homes the file under that EXACT tag — `moduleDir` equals the
-  // picker-derived subfolder, so seed-build placement is preserved with no
-  // producer change (the FR5 contract: persisted tag === derived moduleDir).
+  // 3) Producer placement. 2026-08-14: a SINGLE confirmed artifact is a
+  // single-service repo — the build file is the application's ROOT build file
+  // (moduleDir '.'), regardless of the picker-derived tag (the tag remains the
+  // latest-flip/scoping key). Multi-artifact uploads keep the `<tag>` dirs.
   expect(buildConventionServiceModuleMapping(persisted)).toEqual({
-    [DERIVED_SUBFOLDER_TAG]: { moduleDir: DERIVED_SUBFOLDER_TAG },
+    [DERIVED_SUBFOLDER_TAG]: { moduleDir: '.' },
   });
 });
