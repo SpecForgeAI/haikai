@@ -174,6 +174,66 @@ describe('ManifestUploadPanel — Service picker (Spec 2026-06-26, TG4)', () => 
     expect(screen.queryByTestId('manifest-tag-warning')).toBeNull();
   });
 
+  it('(5) a FAILED confirmed-manifest persist renders the loud banner with the AMS error (2026-08-14)', async () => {
+    const { deps, uploadSpy } = makeDeps();
+    uploadSpy.mockResolvedValue({
+      ...emptyResponse(),
+      manifestPersist: {
+        status: 'failed',
+        artifactCount: 1,
+        tags: ['services/orders'],
+        error:
+          'architecture model service manifest-artifacts persist failed: HTTP 400 — service_element_not_in_architecture',
+      },
+    });
+    render(
+      <ManifestUploadPanel
+        projectId={PROJECT}
+        targetArchitectureId={ARCH}
+        services={SERVICES}
+        deps={deps}
+      />,
+    );
+    fireEvent.change(screen.getByTestId('manifest-file-input'), {
+      target: { files: [pomFile('a/pom.xml')] },
+    });
+    fireEvent.change(screen.getByTestId('manifest-service-select-0'), {
+      target: { value: 'svc-orders' },
+    });
+    fireEvent.click(screen.getByTestId('manifest-upload-submit'));
+
+    const banner = await screen.findByTestId('manifest-persist-failed');
+    expect(banner.textContent).toContain('could NOT be saved');
+    expect(banner.textContent).toContain('service_element_not_in_architecture');
+    expect(screen.queryByTestId('manifest-persist-ok')).toBeNull();
+  });
+
+  it('(6) a SUCCESSFUL persist renders the confirmation + re-expand pointer (2026-08-14)', async () => {
+    const { deps, uploadSpy } = makeDeps();
+    uploadSpy.mockResolvedValue({
+      ...emptyResponse(),
+      manifestPersist: { status: 'ok', artifactCount: 1, tags: ['services/orders'] },
+    });
+    render(
+      <ManifestUploadPanel
+        projectId={PROJECT}
+        targetArchitectureId={ARCH}
+        services={SERVICES}
+        deps={deps}
+      />,
+    );
+    fireEvent.change(screen.getByTestId('manifest-file-input'), {
+      target: { files: [pomFile('a/pom.xml')] },
+    });
+    fireEvent.change(screen.getByTestId('manifest-service-select-0'), {
+      target: { value: 'svc-orders' },
+    });
+    fireEvent.click(screen.getByTestId('manifest-upload-submit'));
+
+    const banner = await screen.findByTestId('manifest-persist-ok');
+    expect(banner.textContent).toContain('re-expand the foundations epic');
+  });
+
   it('(4) the free-text tag input is fully replaced by the picker (no override)', () => {
     const { deps } = makeDeps();
     render(

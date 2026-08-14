@@ -286,6 +286,22 @@ export interface TargetManifestAutoAnswerSlice {
   pendingVersionConfirmations: PendingVersionConfirmationEntry[];
 }
 
+/**
+ * Outcome of the confirmed-manifest AMS persist (2026-08-14) — SURFACED on the
+ * upload response instead of log-only. The live failure this closes: the
+ * persist was fail-soft with a `[diag-gateway]` line only, so an upload could
+ * "succeed" on screen while the manifest store stayed empty — and the plan's
+ * scaffold story (which reads that store) could never be created, with
+ * nothing anywhere telling the operator why.
+ */
+export interface ManifestPersistOutcome {
+  status: 'ok' | 'failed' | 'skipped_empty';
+  artifactCount: number;
+  tags: string[];
+  /** The AMS/client error (status + body snippet) when `status='failed'`. */
+  error?: string;
+}
+
 export interface TargetManifestUploadResponse {
   parsedManifests: ParsedManifest[];
   droppedManifests: UnparsedManifest[];
@@ -302,6 +318,12 @@ export interface TargetManifestUploadResponse {
    * surfaced via `aborted` / `partialFailureCodes`.
    */
   autoAnswer: TargetManifestAutoAnswerSlice | null;
+  /**
+   * Confirmed-manifest persist outcome (2026-08-14). Absent/null on the
+   * parse-only seam and on a 100%-dropped upload. `failed` carries the AMS
+   * error so the operator sees WHY the manifest store did not update.
+   */
+  manifestPersist?: ManifestPersistOutcome | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +679,7 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
   // `autoAnswer` exactly as before. Skipped (logged) when there are no confirmed
   // artifacts to persist.
   // -------------------------------------------------------------------------
+  let manifestPersist: ManifestPersistOutcome;
   if (confirmedManifests.length > 0) {
     const persist = args.persistConfirmedManifests ?? defaultPersistConfirmedManifests;
     // Carry the orchestrator's Tier-2 free facts into the persisted payload
@@ -671,21 +694,37 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
         artifactCount: confirmedManifests.length,
         tags: confirmedManifests.map((a) => a.tag),
       });
+      manifestPersist = {
+        status: 'ok',
+        artifactCount: confirmedManifests.length,
+        tags: confirmedManifests.map((a) => a.tag),
+      };
     } catch (err) {
-      // Fail-soft: log and degrade to a no-op. The upload response is unchanged.
+      // Fail-soft for the upload response's OTHER slices — but LOUD on the
+      // response itself (2026-08-14): the operator must see that the manifest
+      // store did NOT update, and why, because the plan's scaffold story
+      // depends on this persist.
+      const message = err instanceof Error ? err.message : String(err);
       logger.warn('[diag-gateway] target_manifest_upload persist_confirmed_manifests_failed', {
         projectId,
         targetArchitectureId,
         artifactCount: confirmedManifests.length,
         tags: confirmedManifests.map((a) => a.tag),
-        error: err instanceof Error ? err.message : String(err),
+        error: message,
       });
+      manifestPersist = {
+        status: 'failed',
+        artifactCount: confirmedManifests.length,
+        tags: confirmedManifests.map((a) => a.tag),
+        error: message,
+      };
     }
   } else {
     logger.info('[diag-gateway] target_manifest_upload persist_confirmed_manifests_skipped_empty', {
       projectId,
       targetArchitectureId,
     });
+    manifestPersist = { status: 'skipped_empty', artifactCount: 0, tags: [] };
   }
 
   // -------------------------------------------------------------------------
@@ -711,6 +750,7 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
       pendingVersionConfirmations:
         orchestrated.writeOutcome.pendingVersionConfirmations,
     },
+    manifestPersist,
   };
 }
 

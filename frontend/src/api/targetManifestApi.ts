@@ -179,6 +179,19 @@ export interface TargetManifestAutoAnswerSlice {
   pendingVersionConfirmations?: PendingVersionConfirmationEntry[];
 }
 
+/**
+ * Confirmed-manifest AMS persist outcome (2026-08-14). `failed` means the
+ * manifest bytes did NOT reach the store the migration plan's scaffold story
+ * reads — previously invisible (log-only fail-soft), which let an upload look
+ * successful while the plan screen kept reporting "no confirmed manifest".
+ */
+export interface ManifestPersistOutcome {
+  status: 'ok' | 'failed' | 'skipped_empty';
+  artifactCount: number;
+  tags: string[];
+  error?: string;
+}
+
 /** The full upload response. */
 export interface TargetManifestUploadResponse {
   parsedManifests: ParsedManifest[];
@@ -189,6 +202,8 @@ export interface TargetManifestUploadResponse {
     totalDeclaredDependencies: number;
   };
   autoAnswer: TargetManifestAutoAnswerSlice | null;
+  /** Persist outcome; absent on older gateway responses / parse-only paths. */
+  manifestPersist?: ManifestPersistOutcome | null;
 }
 
 // ============================================================================

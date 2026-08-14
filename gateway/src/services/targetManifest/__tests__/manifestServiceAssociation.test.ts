@@ -280,9 +280,25 @@ test('seed buildConventionServiceModuleMapping still keys placement on the tag, 
     targetServiceElementId: SVC_ID,
   };
 
-  // Placement is derived from the tag alone; the service FK does not alter it
-  // (the persisted tag now EQUALS the Service-derived moduleDir, so no change).
+  // Placement is derived from the tag alone; the service FK does not alter it.
+  // 2026-08-14: a SINGLE confirmed artifact is a single-service repo — its
+  // build file is the application's ROOT build file (moduleDir '.').
   expect(buildConventionServiceModuleMapping([artifact])).toEqual({
+    'orders-service': { moduleDir: '.' },
+  });
+
+  // With a SIBLING artifact the multi-service `<tag>` convention holds and the
+  // FK still does not alter placement.
+  const sibling: ConfirmedManifestArtifact = {
+    ...artifact,
+    tag: 'web-app',
+    ecosystem: 'NPM',
+    kind: 'package.json',
+    manifestPath: 'apps/web/package.json',
+    targetServiceElementId: null,
+  };
+  expect(buildConventionServiceModuleMapping([artifact, sibling])).toEqual({
     'orders-service': { moduleDir: 'orders-service' },
+    'web-app': { moduleDir: 'web-app' },
   });
 });

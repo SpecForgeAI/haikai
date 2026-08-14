@@ -302,13 +302,22 @@ test('a persist write hiccup is swallowed + logged and the upload response is un
     persistConfirmedManifests: throwingPersist,
   });
 
-  // The response is byte-identical to the no-op-persist run: autoAnswer unchanged.
+  // The response's OTHER slices are byte-identical to the no-op-persist run.
   expect(failRes.autoAnswer).toEqual(okRes.autoAnswer);
   expect(failRes.autoAnswer).not.toBeNull();
   expect(failRes.autoAnswer!.confirmedManifests[0].content).toBe(SPRING_POM);
   expect(failRes.parsedManifests).toEqual(okRes.parsedManifests);
 
-  // The failure was logged via the [diag-gateway] posture (no silent drop).
+  // 2026-08-14: the persist outcome is LOUD on the response — the operator
+  // must see that the manifest store did not update (the plan's scaffold
+  // story depends on this persist), not just a gateway log line.
+  expect(okRes.manifestPersist).toMatchObject({ status: 'ok', artifactCount: 1 });
+  expect(failRes.manifestPersist).toMatchObject({ status: 'failed', artifactCount: 1 });
+  expect(String(failRes.manifestPersist?.error)).toContain(
+    'simulated AMS manifest-artifacts 500',
+  );
+
+  // The failure was ALSO logged via the [diag-gateway] posture (no silent drop).
   const failedLogs = (logger.warn as jest.Mock).mock.calls.filter(
     (c: unknown[]) =>
       typeof c[0] === 'string' &&
