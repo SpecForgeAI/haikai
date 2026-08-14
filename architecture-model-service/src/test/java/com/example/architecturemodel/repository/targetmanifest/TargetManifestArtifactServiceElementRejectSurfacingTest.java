@@ -86,10 +86,12 @@ class TargetManifestArtifactServiceElementRejectSurfacingTest {
         return entityManager.persist(mf);
     }
 
-    private UUID persistService(String modelFileId, String name) {
-        UUID serviceId = UUID.randomUUID();
+    /** Realistic STRING element id ({@code svc-<slug>} -- not a UUID; 2026-08-14). */
+    private String persistService(String modelFileId, String name) {
+        String serviceId = "svc-" + name.toLowerCase().replaceAll("[^a-z0-9]+", "-")
+            + "-" + Integer.toHexString(name.hashCode());
         ServiceEntity svc = ServiceEntity.builder()
-            .id(serviceId.toString())
+            .id(serviceId)
             .modelFileId(modelFileId)
             .applicationId("app-1")
             .name(name)
@@ -98,7 +100,7 @@ class TargetManifestArtifactServiceElementRejectSurfacingTest {
         return serviceId;
     }
 
-    private static TargetManifestArtifactInput input(String tag, UUID serviceElementId) {
+    private static TargetManifestArtifactInput input(String tag, String serviceElementId) {
         return new TargetManifestArtifactInput(
             tag, "pom", "MAVEN", "pom.xml", "<project/>", null,
             List.of(), List.of(), serviceElementId);
@@ -112,7 +114,7 @@ class TargetManifestArtifactServiceElementRejectSurfacingTest {
         UUID otherArchitectureId = UUID.randomUUID();
         persistModelFile(projectId, targetArchitectureId);
         ModelFileEntity otherMf = persistModelFile(projectId, otherArchitectureId);
-        UUID crossServiceId = persistService(otherMf.getId(), "Other Arch Service");
+        String crossServiceId = persistService(otherMf.getId(), "Other Arch Service");
         entityManager.flush();
 
         // 1) The persist path throws the typed validation error...
@@ -127,7 +129,7 @@ class TargetManifestArtifactServiceElementRejectSurfacingTest {
         assertThat(ex.getEntityType()).isEqualTo("services");
         assertThat(ex.getCode()).isEqualTo("service_element_not_in_architecture");
         assertThat(ex.getField()).isEqualTo("target_service_element_id");
-        assertThat(ex.getEntityId()).isEqualTo(crossServiceId.toString());
+        assertThat(ex.getEntityId()).isEqualTo(crossServiceId);
 
         // 3) The production handler maps that exact exception to the HTTP 400
         //    snake_case envelope the gateway (and the picker UI) would receive.

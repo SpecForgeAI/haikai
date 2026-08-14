@@ -189,8 +189,8 @@ public class TargetManifestArtifactService {
      */
     private void validateServiceElementOwnership(UUID projectId,
                                                  UUID targetArchitectureId,
-                                                 UUID serviceElementId) {
-        if (serviceElementId == null) {
+                                                 String serviceElementId) {
+        if (serviceElementId == null || serviceElementId.isBlank()) {
             return;
         }
 
@@ -198,22 +198,22 @@ public class TargetManifestArtifactService {
             .findByProjectIdAndArchitectureId(projectId, targetArchitectureId)
             .orElseThrow(() -> new ValidationException(
                 "services", "service_element_not_in_architecture", "target_service_element_id",
-                serviceElementId.toString(), null,
+                serviceElementId, null,
                 "Target service element " + serviceElementId
                     + " cannot be validated: no model file for project " + projectId
                     + " architecture " + targetArchitectureId));
 
-        ServiceEntity service = serviceRepository.findById(serviceElementId.toString())
+        ServiceEntity service = serviceRepository.findById(serviceElementId)
             .orElseThrow(() -> new ValidationException(
                 "services", "service_element_not_found", "target_service_element_id",
-                serviceElementId.toString(), null,
+                serviceElementId, null,
                 "Target service element " + serviceElementId
                     + " not found (unknown or archived)"));
 
         if (!modelFile.getId().equals(service.getModelFileId())) {
             throw new ValidationException(
                 "services", "service_element_not_in_architecture", "target_service_element_id",
-                serviceElementId.toString(), service.getName(),
+                serviceElementId, service.getName(),
                 "Target service element " + serviceElementId
                     + " does not belong to architecture " + targetArchitectureId);
         }
@@ -231,8 +231,8 @@ public class TargetManifestArtifactService {
      * @return the number of manifest rows whose FK was nulled
      */
     @Transactional
-    public int onServiceElementArchived(UUID serviceElementId) {
-        if (serviceElementId == null) {
+    public int onServiceElementArchived(String serviceElementId) {
+        if (serviceElementId == null || serviceElementId.isBlank()) {
             return 0;
         }
         int cleared = repository.clearTargetServiceElementId(serviceElementId);
@@ -244,7 +244,7 @@ public class TargetManifestArtifactService {
     }
 
     /**
-     * Batch variant of {@link #onServiceElementArchived(UUID)} for the
+     * Batch variant of {@link #onServiceElementArchived(String)} for the
      * whole-model save path which removes several {@code services} elements at
      * once. Null/empty input is a no-op.
      *
@@ -252,7 +252,7 @@ public class TargetManifestArtifactService {
      * @return the number of manifest rows whose FK was nulled
      */
     @Transactional
-    public int onServiceElementsArchived(Collection<UUID> serviceElementIds) {
+    public int onServiceElementsArchived(Collection<String> serviceElementIds) {
         if (serviceElementIds == null || serviceElementIds.isEmpty()) {
             return 0;
         }
