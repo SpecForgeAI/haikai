@@ -125,6 +125,13 @@ import {
   TargetManifestArtifactWire,
   fetchLatestTargetManifestArtifacts as defaultFetchLatestTargetManifestArtifacts,
 } from './targetManifestArtifactsClient';
+// Scaffold gate diagnosis (2026-08-14): names WHY the scaffold could not
+// inject (no manifest / wrong-architecture upload / no target arch) — the
+// silent [] paths cost a live plan its scaffold story.
+import {
+  diagnoseScaffoldManifestGate,
+  scaffoldManifestGateRemedy,
+} from './migrationScaffoldManifestGate';
 import { fetchMigrationDiscoveryContext } from './migrationDiscoveryContextClient';
 import { fetchEndpointBaselineCoverage } from './apiBehaviourBaselineCoverageClient';
 
@@ -1780,7 +1787,15 @@ async function buildScaffoldInjectionForEpic(args: {
   } = args;
 
   const targetArchitectureId = book.targetArchitectureId;
-  if (!targetArchitectureId) return [];
+  if (!targetArchitectureId) {
+    // LOUD (2026-08-14): the silent [] here cost a live plan its scaffold
+    // story — eleven service-plane specs with no runnable application.
+    console.log(
+      `[diag-gateway] pm_migration_delivery_plan stage=scaffold_gate_skipped ` +
+        `projectId=${projectId} epicId=${epic.id} reason=no_target_architecture_id`
+    );
+    return [];
+  }
 
   let manifests: TargetManifestArtifactWire[] = [];
   try {
@@ -1793,7 +1808,29 @@ async function buildScaffoldInjectionForEpic(args: {
     });
     return [];
   }
-  if (!Array.isArray(manifests) || manifests.length === 0) return [];
+  if (!Array.isArray(manifests) || manifests.length === 0) {
+    // LOUD (2026-08-14): name the precise failure mode — including the
+    // upload/plan architecture-binding mismatch class, where the manifest
+    // exists but under a different target architecture than the plan's.
+    // The spec preflight surfaces the same diagnosis as a user-facing
+    // warning with the remedy; here we log it at expansion time.
+    try {
+      const diagnosis = await diagnoseScaffoldManifestGate(
+        projectId,
+        targetArchitectureId
+      );
+      console.log(
+        `[diag-gateway] pm_migration_delivery_plan stage=scaffold_gate_skipped ` +
+          `projectId=${projectId} epicId=${epic.id} status=${diagnosis.status} ` +
+          `bookArch=${targetArchitectureId} ` +
+          `otherArch=${diagnosis.otherArchitectureId ?? 'none'} ` +
+          `remedy=${JSON.stringify(scaffoldManifestGateRemedy(diagnosis))}`
+      );
+    } catch {
+      // The diagnosis itself is best-effort; the gate outcome is unchanged.
+    }
+    return [];
+  }
 
   const host = resolveScaffoldHostForEpic({ epic, items: book.items, manifests });
   if (!host.isHost || !host.manifest) return [];

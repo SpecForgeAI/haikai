@@ -418,18 +418,21 @@ export const defaultPersistConfirmedManifests: PersistConfirmedManifestsSeam = a
 };
 
 // ---------------------------------------------------------------------------
-// Seed-build-files story minting — RELOCATED (Spec 2026-06-25 follow-up)
+// Seed-build-files story minting — history (corrected 2026-08-14)
 //
-// The dormant upload-time `seed_build_files` story mint has been REMOVED from
-// this route. Seed-story minting now happens at BOOK-OF-WORK CREATION time
-// (`services/migrationBookOfWorkHandler.ts` -> `generateMigrationBookOfWork`),
-// where the bookId/items are minted and a confirmed manifest can be checked,
-// and where the seed rides the initial `book_of_work_json` blob (which AMS
-// `createDraft` persists WITHOUT per-item kind validation — sidestepping the
-// AMS ALLOWED_KINDS 400). This route still PERSISTS the confirmed manifest
-// bytes (Task Group 3, below) so that creation-time gate has data to read.
-// `services/migrationSeedStoryMinting.ts` is left in place (now superseded /
-// unused by production) to avoid churn; it is simply no longer wired here.
+// The upload-time `seed_build_files` story mint was removed from this route
+// (Spec 2026-06-25 follow-up). A prior version of this comment claimed the
+// mint was relocated to book-of-work CREATION time — that relocation was
+// NEVER implemented, and creation-time seeding was subsequently deleted
+// deliberately (Spec 2026-06-26 FR1: the orphan `parentId:null` seed story
+// evaded hierarchy validation). The SINGLE live authority is the scaffold
+// feature+story injection at PHASE-2 EPIC EXPANSION
+// (`migrationBookOfWorkExpansionHandler.buildScaffoldInjectionForEpic`),
+// gated on the confirmed manifest this route persists (Task Group 3, below).
+// If the manifest is uploaded AFTER the foundations epic was expanded,
+// RE-EXPANDING that epic injects the scaffold — the spec preflight surfaces
+// this remedy. The dead `migrationSeedStoryMinting` module was deleted
+// (2026-08-14).
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -686,11 +689,11 @@ export async function buildTargetManifestUploadResponseWithAutoAnswer(args: {
   }
 
   // -------------------------------------------------------------------------
-  // Seed-story minting RELOCATED (Spec 2026-06-25 follow-up): the dormant
-  // upload-time mint has been removed from this route. The FIRST-sequenced
-  // `seed_build_files` story is now minted at BOOK-OF-WORK CREATION time
-  // (`migrationBookOfWorkHandler.ts`), gated on the confirmed manifest the
-  // persist above just wrote. Nothing to do here.
+  // Seed-story minting (corrected 2026-08-14): the scaffold feature+story
+  // injects at EPIC-EXPANSION time, gated on the confirmed manifest the
+  // persist above just wrote. If the foundations epic was expanded BEFORE
+  // this upload, re-expanding it injects the scaffold — the spec preflight
+  // surfaces that remedy. Nothing to do here.
   // -------------------------------------------------------------------------
 
   return {
