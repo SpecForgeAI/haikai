@@ -85,7 +85,7 @@ beforeEach(() => {
 // (a) + (b) bundle output: per-tag `<tag>/` placement, verbatim content
 // ===========================================================================
 
-test('builds a bundle with verbatim content and per-tag `<tag>/` placement', async () => {
+test('a SINGLE confirmed artifact places its build file at the REPO ROOT (2026-08-14)', async () => {
   const { fetch, calls } = stubRead([
     wireRow('orders-service', 'maven_pom', 'pom.xml', POM),
   ]);
@@ -108,11 +108,13 @@ test('builds a bundle with verbatim content and per-tag `<tag>/` placement', asy
   // Verbatim content carried byte-for-byte (trailing newline preserved).
   expect(m.content).toBe(POM);
 
-  // Convention mapping resolves the destination to `<tag>/pom.xml`.
+  // Single-service repo: the build file IS the application's root build file.
+  // (The prior `<tag>/pom.xml` convention buried it in a subdirectory the
+  // build tool never reads — the scaffolded app could not build.)
   const { destination } = attachResolvedDestination(m, bundle!.mapping, bundle!.layout);
   expect(destination.resolved).toBe(true);
   if (destination.resolved) {
-    expect(destination.destinationPath).toBe('orders-service/pom.xml');
+    expect(destination.destinationPath).toBe('pom.xml');
   }
 });
 

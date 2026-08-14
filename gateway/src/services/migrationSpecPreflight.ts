@@ -12,8 +12,10 @@
  *      LLM-free): the spec text is discarded; status + missingInputs kept.
  *   2. Code carriage (incl. manual-gate) — `runCodeSpecCarriage`, same
  *      treatment. Manual-gate stories are always ready (deterministic text).
- *   3. Manual-add / seed-build-files — description-grounded: the LLM path
- *      relaxes the insufficient-context short-circuit, so preflight is ready.
+ *   3. Seed-build-files — deterministic application-bootstrap carriage
+ *      (2026-08-14): ready iff the confirmed target manifest resolves.
+ *      Manual adds — description-grounded: the LLM path relaxes the
+ *      insufficient-context short-circuit, so preflight is ready.
  *   4. Everything else — the AMS focused-context resolver +
  *      `detectInsufficientContext`, the exact pre-LLM check the batch runs.
  *      Unsaved stories (no workItemId) report `save_required` instead.
@@ -55,7 +57,14 @@ import {
   defaultFetchCodeSpecFacts,
   RunCodeSpecCarriageDeps,
 } from './migrationCodeSpecCarriage';
-import { isSeedBuildFilesStory } from './migrationSeedBuildFilesEnrichment';
+import {
+  isSeedBuildFilesStory,
+  resolveSeedBuildFilesEnrichment,
+  SeedBuildFilesEnrichment,
+  SeedBuildFilesSource,
+} from './migrationSeedBuildFilesEnrichment';
+import { productionSeedBuildFilesSource } from './migrationSeedBuildFilesProducer';
+import { runScaffoldSpecCarriage } from './migrationScaffoldSpecCarriage';
 
 /** How the story would generate — the batch loop's routing, named. */
 export type SpecPreflightRoute =
@@ -63,6 +72,7 @@ export type SpecPreflightRoute =
   | 'db_pack_review'
   | 'manual_gate'
   | 'code_facts'
+  | 'scaffold'
   | 'description'
   | 'prerequisite'
   | 'resolver';
@@ -85,6 +95,13 @@ export interface SpecPreflightDeps {
   fetchSpecContext?: SpecContextFetcher;
   /** Pack translation-queue read for the db_pack_review route (Spec 2026-07-23). */
   fetchPackTranslations?: FetchPackTranslationsFn;
+  /**
+   * Scaffold route (2026-08-14): the SAME confirmed-manifest source the batch
+   * uses — the seed_build_files story is ready iff the verbatim manifest block
+   * resolves (its spec is deterministic; the decisions read is fail-soft and
+   * never gates readiness).
+   */
+  seedBuildFilesSource?: SeedBuildFilesSource;
 }
 
 /** Minimal base row the carriage functions spread their result over. */
@@ -165,6 +182,21 @@ export async function runSpecPreflight(
   const bow = await loadBook(projectId, bookOfWorkId);
   const stories = bow.items.filter((i) => i.type === 'story');
   const rows: SpecPreflightRow[] = [];
+
+  // Scaffold route: resolve the confirmed-manifest enrichment lazily, ONCE,
+  // only when a seed_build_files story is present in the book.
+  const seedSource = deps.seedBuildFilesSource ?? productionSeedBuildFilesSource;
+  let seedEnrichmentPromise: Promise<SeedBuildFilesEnrichment> | null = null;
+  const getSeedEnrichment = (): Promise<SeedBuildFilesEnrichment> => {
+    if (!seedEnrichmentPromise) {
+      seedEnrichmentPromise = resolveSeedBuildFilesEnrichment(seedSource, {
+        projectId,
+        bookOfWorkId,
+        targetArchitectureId: bow.targetArchitectureId ?? null,
+      });
+    }
+    return seedEnrichmentPromise;
+  };
 
   for (const story of stories) {
     const mk = (
@@ -257,8 +289,26 @@ export async function runSpecPreflight(
         continue;
       }
 
-      // 3) Description-grounded (manual adds + seed-build-files).
-      if (isManualAdd(story) || isSeedBuildFilesStory(story)) {
+      // 2d) SCAFFOLD story (2026-08-14): deterministic bootstrap carriage —
+      // ready iff the confirmed target build manifest resolves (the batch's
+      // exact gate; the decisions read is fail-soft and never blocks).
+      if (isSeedBuildFilesStory(story)) {
+        const enrichment = await getSeedEnrichment();
+        const row = runScaffoldSpecCarriage({
+          story,
+          baseRow: baseRowFor(projectId, bookOfWorkId, story),
+          enrichment,
+          decisions: [],
+        });
+        const { ready, missing } = carriageOutcome(row);
+        rows.push(
+          mk('scaffold', ready, missing, 'deterministic application-bootstrap carriage')
+        );
+        continue;
+      }
+
+      // 3) Description-grounded (manual adds).
+      if (isManualAdd(story)) {
         rows.push(mk('description', true, [], 'description-grounded generation'));
         continue;
       }

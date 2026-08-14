@@ -275,8 +275,10 @@ describe('Spec 5 E2E: confirmed manifest -> verbatim seed file in the FIRST stor
     // Both resolved destination paths are present and distinct.
     expect(text).toContain(`EXACTLY this path): ${ORDERS_DEST}`);
     expect(text).toContain(`EXACTLY this path): ${WEB_UI_DEST}`);
-    // The seed story still generated normally (block APPENDED, not replacing the spec).
-    expect(text).toContain('/agent-os:shape-spec');
+    // 2026-08-14: the seed story is DETERMINISTIC — the blocks ride inside the
+    // assembled application-bootstrap spec (no LLM narrative).
+    expect(text).toContain('assembled DETERMINISTICALLY');
+    expect(text).toContain('Bootstrap the RUNNABLE target application');
     expect(flat[0].status === 'generated' || flat[0].status === 'generated_with_warnings').toBe(true);
   });
 
@@ -372,7 +374,7 @@ describe('Spec 5 E2E: confirmed manifest -> verbatim seed file in the FIRST stor
     expect(carveBodyForDestination(seedText(persisted), ORDERS_DEST)).toBe(POM_BODY);
   });
 
-  it('(6) NO confirmed manifest -> the FIRST seed story is a clean no-op and the batch still completes', async () => {
+  it('(6) NO confirmed manifest -> HONEST insufficient_context naming the upload remedy (2026-08-14)', async () => {
     const bow = buildBowWithSeed(2);
     const persisted: SpecGenerationResult[][] = [];
     // Null source == no confirmed manifest exists yet.
@@ -381,13 +383,16 @@ describe('Spec 5 E2E: confirmed manifest -> verbatim seed file in the FIRST stor
       makeDeps(bow, async () => null, persisted),
     );
 
-    const text = seedText(persisted);
-    // No seed section, no block heading, no sentinels, no garbage.
-    expect(text).not.toContain(SEED_BUILD_FILES_SECTION_HEADING);
-    expect(text).not.toContain(SEED_FILE_WRITE_BLOCK_HEADING);
-    expect(text).not.toContain(SEED_FILE_BODY_BEGIN);
-    // The seed story still generated a real spec, and nothing failed.
-    expect(text).toContain('/agent-os:shape-spec');
+    // Pre-fix this silently generated LLM prose with no seed block — the live
+    // "eleven specs, no runnable application" failure. The scaffold spec now
+    // refuses to generate without its authoritative build file and names the
+    // exact remedy instead.
+    const row = persisted.flat().find((r) => r.workItemId === 'wi-seed');
+    expect(row?.status).toBe('insufficient_context');
+    expect(row?.generatedSpecText ?? null).toBeNull();
+    const missing = (row?.missingInputsJson ?? []) as Array<Record<string, unknown>>;
+    expect(missing[0]?.input).toBe('confirmed_target_build_manifest');
+    expect(String(missing[0]?.reason)).toContain('Upload the target manifest');
     expect(result.summary.failed).toBe(0);
   });
 });

@@ -167,8 +167,10 @@ test('verbatim bytes survive the FULL gateway chain: persist-mapper -> wire row 
   const carriedBody = blockText.slice(begin + SEED_FILE_BODY_BEGIN.length + 1, end - 1);
   expect(carriedBody).toBe(verbatimPom);
 
-  // The resolved per-module path is the convention `<tag>/pom.xml`.
-  expect(blockText).toContain('orders-service/pom.xml');
+  // Single confirmed artifact (2026-08-14): the build file is the application's
+  // ROOT build file — `pom.xml` at the repo root, not `<tag>/pom.xml`.
+  expect(blockText).toContain('EXACTLY this path): pom.xml');
+  expect(blockText).not.toContain('orders-service/pom.xml');
 });
 
 // ===========================================================================

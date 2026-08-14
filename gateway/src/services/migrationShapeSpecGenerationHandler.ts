@@ -165,6 +165,7 @@ export type { ImplementStatePutter, ImplementStatePutBody };
 import {
   fetchActiveTargetArchitectureId as defaultFetchActiveTargetArchitectureIdForCitation,
   fetchLatestCapturedDecisions as defaultFetchLatestCapturedDecisionsForCitation,
+  fetchLatestCapturedDecisions,
   TargetStateCapturedDecision,
 } from './targetStateCapturedDecisionsClient';
 import { logger } from './logger';
@@ -185,6 +186,10 @@ import {
   isSeedBuildFilesStory,
   resolveSeedBuildFilesEnrichment,
 } from './migrationSeedBuildFilesEnrichment';
+// Scaffold bootstrap carriage (2026-08-14): the seed_build_files story's spec
+// is assembled DETERMINISTICALLY (no LLM) from the verbatim manifest block +
+// the captured target-state decisions.
+import { runScaffoldSpecCarriage } from './migrationScaffoldSpecCarriage';
 import {
   isDbPackReviewStory,
   buildDbPackReviewSpecText,
@@ -795,6 +800,18 @@ export interface ShapeSpecGenerationDeps {
    * unchanged. CONSUMES the confirmed artifact as-is (no re-parse/re-resolve).
    */
   seedBuildFilesSource?: SeedBuildFilesSource;
+  /**
+   * Scaffold bootstrap carriage (2026-08-14): latest captured target-state
+   * decisions for the book's target architecture, fetched ONCE per batch. The
+   * scaffold story's DETERMINISTIC spec derives its bootstrap requirements
+   * from these rows (each cited `[decision:<code>]`). Fail-soft: a read
+   * hiccup degrades to `[]` — the scaffold spec still carries the verbatim
+   * manifest block and lists the uncaptured codes loudly.
+   */
+  fetchCapturedDecisionsForSpecs?: (
+    projectId: string,
+    targetArchitectureId: string
+  ) => Promise<TargetStateCapturedDecision[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -2309,6 +2326,26 @@ async function runSinglePassBatch(
       targetArchitectureId: bow.targetArchitectureId ?? null,
     });
 
+  // Scaffold bootstrap carriage (2026-08-14): the captured target-state
+  // decisions for the book's target architecture, fetched ONCE per batch.
+  // Fail-soft: a read hiccup degrades to [] (the scaffold spec still carries
+  // the verbatim manifest block and LISTS the uncaptured codes — never guesses).
+  let scaffoldDecisions: TargetStateCapturedDecision[] = [];
+  if (bow.targetArchitectureId) {
+    try {
+      const fetchDecisions =
+        deps.fetchCapturedDecisionsForSpecs ?? fetchLatestCapturedDecisions;
+      scaffoldDecisions = await fetchDecisions(projectId, bow.targetArchitectureId);
+    } catch (e) {
+      logger.warn('Captured-decisions read for scaffold carriage failed (fail-soft)', {
+        projectId,
+        bookOfWorkId,
+        targetArchitectureId: bow.targetArchitectureId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   // ----- Stage 3 + 4: select + filter -----
   const targetSet =
     input.targetWorkItemIds && input.targetWorkItemIds.length > 0
@@ -2429,6 +2466,25 @@ async function runSinglePassBatch(
       continue;
     }
 
+    // SCAFFOLD story (2026-08-14): the dedicated seed_build_files story is
+    // now fully DETERMINISTIC — the application-bootstrap spec assembled from
+    // the verbatim manifest block + the captured decisions. It previously ran
+    // the description-grounded LLM path off a one-line planner description
+    // (with the manifest block appended after), which produced prose that
+    // never asked for a runnable application. No LLM; no confirmed manifest
+    // -> honest insufficient_context naming the upload remedy.
+    if (isSeedBuildFilesStory(story)) {
+      const row = runScaffoldSpecCarriage({
+        story,
+        baseRow,
+        enrichment: seedBuildFilesEnrichment,
+        decisions: scaffoldDecisions,
+      });
+      perStoryResults.push(row);
+      logStoryResult(row);
+      continue;
+    }
+
     // Prerequisite stories (Spec 2026-07-23): planner-declared blocked gates
     // (`provenance:prerequisite`, e.g. "Resolve code-discovery prerequisites").
     // They are MEANT to be blocked — but pre-fix they fell into the resolver
@@ -2453,14 +2509,8 @@ async function runSinglePassBatch(
     // confidence / implement-state / persistence) runs UNCHANGED — only the
     // context source + the prompt flavour differ. Manual adds NEVER route
     // through D3's discovered operational_capability / capability path.
-    // Spec 5 (Group 3.3): the dedicated seed-build-files story is recognised by
-    // its stable kind marker. It carries NO discovered context (its purpose is
-    // to write the verbatim build file), so it runs the SAME description-grounded
-    // path a manual add uses — it reaches the generated branch without the
-    // discovered-context resolver / insufficient-context short-circuit. The
-    // verbatim manifest write-block(s) are appended to its spec text at the
-    // enrichment anchor below (Group 3.2).
-    const seedBuildFilesStory = isSeedBuildFilesStory(story);
+    // (2026-08-14: the seed-build-files story no longer reaches this path —
+    // it short-circuits DETERMINISTICALLY above via the scaffold carriage.)
     // FOUNDATION stories (Spec 2026-07-23): code-provenance tagged with ZERO
     // endpoints ("Security & auth parity foundations" etc.) — cross-cutting
     // planner-authored intent, so they generate DESCRIPTION-GROUNDED. Pre-fix
@@ -2469,7 +2519,7 @@ async function runSinglePassBatch(
     // (DB-pack review stories short-circuit DETERMINISTICALLY above and never
     // reach this path.)
     const foundationStory = isCodeFoundationStory(story);
-    const manualAdd = isManualAdd(story) || seedBuildFilesStory || foundationStory;
+    const manualAdd = isManualAdd(story) || foundationStory;
     // 2026-07-31: foundation stories route to the `foundation` flavour — the
     // old `api` default handed an endpoint-less infra story the "produce an
     // endpoint spec" prompt, contradicting the manual-add block and making
@@ -2745,23 +2795,9 @@ async function runSinglePassBatch(
       generated.specText,
       generatedAfterCitation.tests
     );
-    // Spec 5 (Group 3.2): for the dedicated seed-build-files story ONLY,
-    // append the verbatim per-module "write this exact file" block(s) onto the
-    // generated spec text. This is a surgical INSERTION at the existing
-    // enrichment anchor — every other story is untouched (ordinary feature
-    // stories never receive a manifest). The block(s) were assembled ONCE per
-    // batch from the Spec 3 confirmed manifest(s) (Group 4 trigger); when there
-    // is no confirmed manifest the enrichment text is null and nothing is
-    // appended (safe no-op). Appending here (rather than overwriting) keeps the
-    // pass-2 no-meaningful-change comparison weighing the SAME enriched body.
-    if (seedBuildFilesStory && seedBuildFilesEnrichment.text) {
-      enrichedSpecText = `${enrichedSpecText}\n\n${seedBuildFilesEnrichment.text}`;
-      console.log(
-        `[diag-gateway] pm_migration_shape_spec_generation seed_build_files_injected ` +
-          `workItemId=${workItemId} carried=${seedBuildFilesEnrichment.carriedCount} ` +
-          `skipped=${seedBuildFilesEnrichment.skipped.length}`
-      );
-    }
+    // (2026-08-14: the seed-build-files enrichment anchor moved into the
+    // deterministic scaffold carriage above — the manifest block is embedded
+    // INSIDE the assembled bootstrap spec, not appended after LLM prose.)
 
     // Parser-extracted structured arrays. AMS re-parses at write time as
     // the canonical source; the gateway computes them here for the
