@@ -92,10 +92,17 @@ class TargetManifestArtifactOwnershipValidationTest {
         return entityManager.persist(mf);
     }
 
-    private UUID persistService(String modelFileId, String name) {
-        UUID serviceId = UUID.randomUUID();
+    /**
+     * Persists a {@code services} element with a REALISTIC string id
+     * ({@code svc-<slug>} — NOT a UUID). 2026-08-14: the original test used
+     * UUID-shaped ids, which hid the live bug where the UUID-typed FK column
+     * rejected every real element id at the wire (changeset 223).
+     */
+    private String persistService(String modelFileId, String name) {
+        String serviceId = "svc-" + name.toLowerCase().replaceAll("[^a-z0-9]+", "-")
+            + "-" + Integer.toHexString(name.hashCode());
         ServiceEntity svc = ServiceEntity.builder()
-            .id(serviceId.toString())
+            .id(serviceId)
             .modelFileId(modelFileId)
             .applicationId("app-1")
             .name(name)
@@ -104,7 +111,7 @@ class TargetManifestArtifactOwnershipValidationTest {
         return serviceId;
     }
 
-    private static TargetManifestArtifactInput input(String tag, UUID serviceElementId) {
+    private static TargetManifestArtifactInput input(String tag, String serviceElementId) {
         return new TargetManifestArtifactInput(
             tag, "pom", "MAVEN", "pom.xml", "<project/>", null,
             List.of(), List.of(), serviceElementId);
@@ -116,7 +123,7 @@ class TargetManifestArtifactOwnershipValidationTest {
         UUID projectId = UUID.randomUUID();
         UUID targetArchitectureId = UUID.randomUUID();
         ModelFileEntity mf = persistModelFile(projectId, targetArchitectureId);
-        UUID serviceId = persistService(mf.getId(), "Orders Service");
+        String serviceId = persistService(mf.getId(), "Orders Service");
         entityManager.flush();
 
         List<TargetManifestArtifactDto> latest = service.persistLatest(
@@ -140,7 +147,7 @@ class TargetManifestArtifactOwnershipValidationTest {
         persistModelFile(projectId, targetArchitectureId);
         entityManager.flush();
 
-        UUID unknown = UUID.randomUUID();
+        String unknown = "svc-does-not-exist";
         assertThatThrownBy(() -> service.persistLatest(
             projectId, targetArchitectureId, List.of(input("orders", unknown))))
             .isInstanceOf(ValidationException.class);
@@ -155,12 +162,12 @@ class TargetManifestArtifactOwnershipValidationTest {
         UUID projectId = UUID.randomUUID();
         UUID targetArchitectureId = UUID.randomUUID();
         ModelFileEntity mf = persistModelFile(projectId, targetArchitectureId);
-        UUID serviceId = persistService(mf.getId(), "Orders Service");
+        String serviceId = persistService(mf.getId(), "Orders Service");
         entityManager.flush();
 
         // Archive == removal: the element no longer has a row (services are
         // soft-deleted by removal; there is no per-row archived flag).
-        serviceRepository.deleteById(serviceId.toString());
+        serviceRepository.deleteById(serviceId);
         entityManager.flush();
 
         assertThatThrownBy(() -> service.persistLatest(
@@ -179,7 +186,7 @@ class TargetManifestArtifactOwnershipValidationTest {
         persistModelFile(projectId, targetArchitectureId);
         ModelFileEntity otherMf = persistModelFile(projectId, otherArchitectureId);
         // The service is live, but belongs to a DIFFERENT architecture.
-        UUID crossServiceId = persistService(otherMf.getId(), "Other Arch Service");
+        String crossServiceId = persistService(otherMf.getId(), "Other Arch Service");
         entityManager.flush();
 
         assertThatThrownBy(() -> service.persistLatest(
@@ -195,7 +202,7 @@ class TargetManifestArtifactOwnershipValidationTest {
         UUID projectId = UUID.randomUUID();
         UUID targetArchitectureId = UUID.randomUUID();
         ModelFileEntity mf = persistModelFile(projectId, targetArchitectureId);
-        UUID serviceId = persistService(mf.getId(), "Orders Service");
+        String serviceId = persistService(mf.getId(), "Orders Service");
         entityManager.flush();
 
         service.persistLatest(projectId, targetArchitectureId,

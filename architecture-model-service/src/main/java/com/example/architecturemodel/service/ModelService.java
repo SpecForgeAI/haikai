@@ -1196,22 +1196,19 @@ public class ModelService {
      * re-inserts the surviving services); any id present before the save but
      * absent from {@code survivingServiceIds} was removed, so its dependent
      * {@code target_manifest_artifacts.target_service_element_id} rows are
-     * nulled here. Non-UUID legacy ids can never be a service-element FK (those
-     * are UUIDs) and are skipped.
+     * nulled here. Service element ids are STRINGS ({@code svc-<slug>}) --
+     * the previous UUID-parse filter here skipped EVERY real id (2026-08-14,
+     * changeset 223 fixed the column type to match).
      */
     private void nullManifestFksForRemovedServices(Set<String> preSaveServiceIds,
                                                    Set<String> survivingServiceIds) {
         if (preSaveServiceIds.isEmpty()) {
             return;
         }
-        List<UUID> removed = new ArrayList<>();
+        List<String> removed = new ArrayList<>();
         for (String id : preSaveServiceIds) {
-            if (id != null && !survivingServiceIds.contains(id)) {
-                try {
-                    removed.add(UUID.fromString(id));
-                } catch (IllegalArgumentException ignored) {
-                    // Non-UUID service id -- cannot be a target_service_element_id.
-                }
+            if (id != null && !id.isBlank() && !survivingServiceIds.contains(id)) {
+                removed.add(id);
             }
         }
         if (!removed.isEmpty()) {

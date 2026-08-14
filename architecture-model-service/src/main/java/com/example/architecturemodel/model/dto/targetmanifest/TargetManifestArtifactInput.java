@@ -2,7 +2,6 @@ package com.example.architecturemodel.model.dto.targetmanifest;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * One confirmed manifest artifact in the write payload forwarded by the gateway
@@ -37,6 +36,9 @@ import java.util.UUID;
  *                             objects (stored as JSONB); informational only
  * @param targetServiceElementId logical FK to the target-state {@code services}
  *                             element (codebase) the manifest is bound to;
+ *                             a STRING element id (e.g. {@code svc-<slug>} --
+ *                             NOT a UUID; the original UUID typing rejected
+ *                             every real id at deserialization, 2026-08-14);
  *                             validated at write to belong to the path
  *                             {@code targetArchitectureId} and be non-archived;
  *                             nullable on legacy rows, UI-required going forward
@@ -50,6 +52,6 @@ public record TargetManifestArtifactInput(
     String packageLockContent,
     List<Map<String, Object>> resolvedDependencies,
     List<Map<String, Object>> tier2Facts,
-    UUID targetServiceElementId
+    String targetServiceElementId
 ) {
 }

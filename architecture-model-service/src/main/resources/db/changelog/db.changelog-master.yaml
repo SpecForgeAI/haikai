@@ -5204,3 +5204,22 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 223: target_manifest_artifacts.target_service_element_id UUID -> VARCHAR
+  # (2026-08-14). Services element ids are STRINGS (svc-<slug>); the UUID type
+  # rejected every real id at the wire (HTTP 400 body-malformed), so no bound
+  # manifest ever persisted and the plan's scaffold story could not be created.
+  # Column has only ever held NULL, so the retype is data-safe.
+  #
+  # NEW changeset only -- never edit applied changesets (<= 222).
+  # ============================================================================
+  - changeSet:
+      id: 223-target-manifest-service-element-string
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/223-target-manifest-service-element-string.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

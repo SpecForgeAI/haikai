@@ -178,9 +178,14 @@ public class TargetManifestArtifactEntity {
      * <p>Spec: Target Manifest -&gt; Service Association (Foreign Key) (2026-06-26)
      * -- Task Group 1. Snake_case wire ({@code targetServiceElementId} -&gt;
      * {@code target_service_element_id}); NO {@code @CamelCaseWire}.</p>
+     *
+     * <p>STRING, not UUID (2026-08-14, changeset 223): {@code services} element
+     * ids are strings (e.g. {@code svc-<slug>} -- {@code ServiceEntity}'s
+     * primary key is {@code String}). The original UUID typing rejected every
+     * real element id at the wire, so no bound manifest ever persisted.</p>
      */
     @Column(name = "target_service_element_id")
-    private UUID targetServiceElementId;
+    private String targetServiceElementId;
 
     /**
      * Latest-version flag. Exactly one row per

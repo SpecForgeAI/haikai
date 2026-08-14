@@ -62,9 +62,10 @@ public interface TargetManifestArtifactRepository
      * FK never dangles -- there is NO physical DB foreign key (elements are
      * soft-deleted, not hard-deleted), so the cascade is applied here.
      *
-     * <p>Service element ids are globally unique UUIDs, so nulling by element id
-     * alone is precise and needs no {@code (project, target_architecture)}
-     * scoping. Returns the number of rows updated.</p>
+     * <p>Service element ids are globally unique STRINGS ({@code svc-<slug>} --
+     * 2026-08-14, changeset 223), so nulling by element id alone is precise and
+     * needs no {@code (project, target_architecture)} scoping. Returns the
+     * number of rows updated.</p>
      *
      * <p>Spec: Target Manifest -&gt; Service Association (Foreign Key)
      * (2026-06-26) -- Task Group 2, FR6.</p>
@@ -72,10 +73,10 @@ public interface TargetManifestArtifactRepository
     @Modifying
     @Query("UPDATE TargetManifestArtifactEntity e SET e.targetServiceElementId = null "
         + "WHERE e.targetServiceElementId = :serviceElementId")
-    int clearTargetServiceElementId(@Param("serviceElementId") UUID serviceElementId);
+    int clearTargetServiceElementId(@Param("serviceElementId") String serviceElementId);
 
     /**
-     * Batch variant of {@link #clearTargetServiceElementId(UUID)}: null
+     * Batch variant of {@link #clearTargetServiceElementId(String)}: null
      * {@code target_service_element_id} on every row pointing at any of the
      * supplied (archived/removed) service element ids. Used by the whole-model
      * save path which removes several {@code services} elements at once.
@@ -88,5 +89,5 @@ public interface TargetManifestArtifactRepository
     @Query("UPDATE TargetManifestArtifactEntity e SET e.targetServiceElementId = null "
         + "WHERE e.targetServiceElementId IN :serviceElementIds")
     int clearTargetServiceElementIdIn(
-        @Param("serviceElementIds") Collection<UUID> serviceElementIds);
+        @Param("serviceElementIds") Collection<String> serviceElementIds);
 }

@@ -144,6 +144,36 @@ class TargetManifestArtifactControllerTest {
     }
 
     @Test
+    @DisplayName("POST accepts a STRING target_service_element_id (svc-<slug>) — the UUID typing rejected EVERY real element id at deserialization with a body-malformed 400, so no bound manifest ever persisted (2026-08-14)")
+    void persistAcceptsStringServiceElementId() throws Exception {
+        when(service.persistLatest(eq(PROJECT_ID), eq(TARGET_ARCH_ID), anyList()))
+            .thenReturn(List.of(dto("hifi-api", "<project/>", null)));
+
+        // RAW snake_case wire body — exactly what the gateway posts, including a
+        // realistic non-UUID services element id.
+        String body = "{\"artifacts\":[{"
+            + "\"tag\":\"hifi-api\",\"kind\":\"maven_pom\",\"ecosystem\":\"MAVEN\","
+            + "\"manifest_path\":\"pom.xml\",\"content\":\"<project/>\","
+            + "\"package_lock_content\":null,\"resolved_dependencies\":[],"
+            + "\"tier2_facts\":[],"
+            + "\"target_service_element_id\":\"svc-msk7s63i-x72go\"}]}";
+
+        mockMvc.perform(post(
+                "/api/model/projects/{p}/target-architectures/{a}/manifest-artifacts",
+                PROJECT_ID, TARGET_ARCH_ID)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+            .andExpect(status().isCreated());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<TargetManifestArtifactInput>> captor =
+            ArgumentCaptor.forClass(List.class);
+        verify(service).persistLatest(eq(PROJECT_ID), eq(TARGET_ARCH_ID), captor.capture());
+        assertThat(captor.getValue().get(0).targetServiceElementId())
+            .isEqualTo("svc-msk7s63i-x72go");
+    }
+
+    @Test
     @DisplayName("GET .../manifest-artifacts: returns the latest artifacts (one per tag) as a snake_case list with verbatim content")
     void listLatestSnakeCase() throws Exception {
         when(service.findLatest(PROJECT_ID, TARGET_ARCH_ID))

@@ -51,6 +51,8 @@ class TargetManifestArtifactServiceElementChangesetTest {
     private static final String CREATE_SQL_PATH = "db/changelog/sql/199-target-manifest-artifacts.sql";
     private static final String TIER2_SQL_PATH = "db/changelog/sql/201-target-manifest-tier2-facts.sql";
     private static final String ALTER_SQL_PATH = "db/changelog/sql/202-target-manifest-service-element.sql";
+    /** 2026-08-14: retypes the FK column UUID -> VARCHAR (services element ids are strings). */
+    private static final String RETYPE_SQL_PATH = "db/changelog/sql/223-target-manifest-service-element-string.sql";
 
     /**
      * Mirror Liquibase's SQL-aware {@code stripComments} + {@code splitStatements}
@@ -103,7 +105,7 @@ class TargetManifestArtifactServiceElementChangesetTest {
     }
 
     @Test
-    @DisplayName("202-target-manifest-service-element.sql applies after 199+201: adds the nullable target_service_element_id UUID column; existing columns untouched; a UUID round-trips and a row without it reads back null")
+    @DisplayName("199+201+202+223 apply in sequence: target_service_element_id ends VARCHAR; a REAL string element id (svc-<slug>) round-trips and a row without it reads back null")
     void changesetAppliesCleanly() throws Exception {
         String createSql = StreamUtils.copyToString(
             new ClassPathResource(CREATE_SQL_PATH).getInputStream(), StandardCharsets.UTF_8);
@@ -111,11 +113,14 @@ class TargetManifestArtifactServiceElementChangesetTest {
             new ClassPathResource(TIER2_SQL_PATH).getInputStream(), StandardCharsets.UTF_8);
         String alterSql = StreamUtils.copyToString(
             new ClassPathResource(ALTER_SQL_PATH).getInputStream(), StandardCharsets.UTF_8);
+        String retypeSql = StreamUtils.copyToString(
+            new ClassPathResource(RETYPE_SQL_PATH).getInputStream(), StandardCharsets.UTF_8);
 
         List<String> statements = new ArrayList<>();
         statements.addAll(splitStatements(createSql)); // 199: create table
         statements.addAll(splitStatements(tier2Sql));  // 201: add tier2_facts
         statements.addAll(splitStatements(alterSql));  // 202: add target_service_element_id
+        statements.addAll(splitStatements(retypeSql)); // 223: retype UUID -> VARCHAR
 
         String url = "jdbc:h2:mem:serviceElementChangeset_" + System.nanoTime()
             + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL"
@@ -136,8 +141,9 @@ class TargetManifestArtifactServiceElementChangesetTest {
                 "ID", "PROJECT_ID", "TARGET_ARCHITECTURE_ID", "TAG",
                 "RESOLVED_DEPENDENCIES", "TIER2_FACTS", "CONTENT", "IS_LATEST", "CREATED_AT");
 
-            // ---- functional: a service-element UUID round-trips ----
-            UUID serviceId = UUID.randomUUID();
+            // ---- functional: a REAL string element id round-trips (the live
+            // bug: the UUID typing rejected exactly this shape) ----
+            String serviceId = "svc-msk7s63i-x72go";
             try (Statement st = conn.createStatement()) {
                 st.execute("INSERT INTO target_manifest_artifacts "
                     + "(id, project_id, target_architecture_id, tag, target_service_element_id) VALUES "
@@ -147,8 +153,7 @@ class TargetManifestArtifactServiceElementChangesetTest {
                  ResultSet rs = st.executeQuery(
                      "SELECT target_service_element_id FROM target_manifest_artifacts WHERE tag = 'orders'")) {
                 assertThat(rs.next()).isTrue();
-                assertThat(rs.getString("target_service_element_id"))
-                    .isEqualToIgnoringCase(serviceId.toString());
+                assertThat(rs.getString("target_service_element_id")).isEqualTo(serviceId);
             }
 
             // ---- target_service_element_id is nullable: a row without it reads back null ----
@@ -206,9 +211,28 @@ class TargetManifestArtifactServiceElementChangesetTest {
     }
 
     @Test
-    @DisplayName("TargetManifestArtifactDto.fromEntity carries target_service_element_id through entity -> DTO unchanged (and a null id maps to a null DTO field)")
+    @DisplayName("db.changelog-master.yaml registers changeset 223 (the UUID -> VARCHAR retype) AFTER 222")
+    void masterChangelogRegisters223() throws Exception {
+        String master = StreamUtils.copyToString(
+            new ClassPathResource("db/changelog/db.changelog-master.yaml").getInputStream(),
+            StandardCharsets.UTF_8);
+
+        assertThat(master)
+            .contains("id: 223-target-manifest-service-element-string")
+            .contains("db/changelog/sql/223-target-manifest-service-element-string.sql");
+
+        int idx222 = master.indexOf("id: 222-data-migration-reports");
+        int idx223 = master.indexOf("id: 223-target-manifest-service-element-string");
+        assertThat(idx222).isGreaterThan(-1);
+        assertThat(idx223)
+            .as("changeset 223 must be registered AFTER 222")
+            .isGreaterThan(idx222);
+    }
+
+    @Test
+    @DisplayName("TargetManifestArtifactDto.fromEntity carries the STRING target_service_element_id through entity -> DTO unchanged (and a null id maps to a null DTO field)")
     void fromEntityCarriesTargetServiceElementId() {
-        UUID serviceId = UUID.randomUUID();
+        String serviceId = "svc-orders-service-1a2b";
         TargetManifestArtifactEntity entity = TargetManifestArtifactEntity.builder()
             .id(UUID.randomUUID())
             .projectId(UUID.randomUUID())

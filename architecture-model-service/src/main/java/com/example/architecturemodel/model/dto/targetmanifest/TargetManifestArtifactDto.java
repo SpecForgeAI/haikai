@@ -39,7 +39,7 @@ public record TargetManifestArtifactDto(
     String packageLockContent,
     List<Map<String, Object>> resolvedDependencies,
     List<Map<String, Object>> tier2Facts,
-    UUID targetServiceElementId,
+    String targetServiceElementId,
     Boolean isLatest,
     Instant createdAt
 ) {
