@@ -75,6 +75,7 @@ import MigrationBookOfWorkItemDrawer from './MigrationBookOfWorkItemDrawer';
 // Phase 1a: the spec lifecycle folds into THIS screen (chips, generation,
 // manual supply/ready, deletion) — the standalone Generate Specs screen dies.
 import {
+  mintScaffoldStory,
   runSpecPreflight,
   SpecPreflightRow,
   SpecPreflightWarning,
@@ -620,6 +621,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     SpecPreflightWarning[]
   >([]);
   const [preflightLoading, setPreflightLoading] = useState<boolean>(false);
+  // Saved-book scaffold mint (2026-08-14): the SCAFFOLD_STORY_MISSING
+  // banner's inline remedy action.
+  const [scaffoldMintBusy, setScaffoldMintBusy] = useState<boolean>(false);
+  const [scaffoldMintError, setScaffoldMintError] = useState<string | null>(null);
 
   const refreshPreflight = useCallback(async () => {
     setPreflightLoading(true);
@@ -1615,6 +1620,33 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     });
   }, [projectId, bookId]);
 
+  /**
+   * Saved-book scaffold mint (2026-08-14): the SCAFFOLD_STORY_MISSING
+   * banner's inline action. Additive add-item on the gateway — existing
+   * stories/specs untouched; on success the tree, spec rows and the
+   * preflight (whose warning should clear) all refresh.
+   */
+  const handleMintScaffoldStory = useCallback(async () => {
+    setScaffoldMintBusy(true);
+    setScaffoldMintError(null);
+    try {
+      const outcome = await mintScaffoldStory(projectId, bookId);
+      if (outcome.status === 'minted' || outcome.status === 'already_present') {
+        await refreshDraftAfterExpansion();
+        await refreshSpecRows();
+        await refreshPreflight();
+      } else {
+        setScaffoldMintError(outcome.remedy ?? outcome.reason ?? 'Mint refused.');
+      }
+    } catch (err) {
+      setScaffoldMintError(
+        err instanceof Error ? err.message : 'Scaffold-story mint failed',
+      );
+    } finally {
+      setScaffoldMintBusy(false);
+    }
+  }, [projectId, bookId, refreshDraftAfterExpansion, refreshSpecRows, refreshPreflight]);
+
   const handleExpandEpic = useCallback(
     async (epicId: string) => {
       setExpansionError(null);
@@ -2053,7 +2085,9 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
       )}
 
       {/* Book-level preflight warnings (2026-08-14) — signal, never a lock:
-          nothing is disabled; each warning names its exact remedy. */}
+          nothing is disabled; each warning names its exact remedy. The
+          scaffold warning carries its remedy ACTION inline: on a saved book
+          the story is minted additively (epic re-expansion is draft-only). */}
       {preflightWarnings.map((w) => (
         <div
           key={w.code}
@@ -2062,6 +2096,24 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           data-testid={`preflight-warning-${w.code.toLowerCase()}`}
         >
           {'⚠'} {w.message}
+          {w.code === 'SCAFFOLD_STORY_MISSING' && !archived && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className={styles.selectButton}
+                onClick={() => void handleMintScaffoldStory()}
+                disabled={scaffoldMintBusy}
+                data-testid="mint-scaffold-story-button"
+                title="Add the application-scaffold story to this plan (additive — existing stories and specs are untouched)"
+              >
+                {scaffoldMintBusy ? 'Creating…' : 'Create scaffold story'}
+              </button>
+              {scaffoldMintError && (
+                <span data-testid="mint-scaffold-story-error"> {scaffoldMintError}</span>
+              )}
+            </>
+          )}
         </div>
       ))}
 

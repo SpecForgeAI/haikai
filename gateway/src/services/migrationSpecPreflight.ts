@@ -407,10 +407,10 @@ export async function runSpecPreflight(
       const diagnosis = await diagnose(projectId, bow.targetArchitectureId ?? null);
       remedy =
         diagnosis.status === 'ok'
-          ? 'The confirmed target build manifest IS present — re-expand the ' +
-            "service plane's foundations epic and the scaffold story will " +
-            'inject (the epic was expanded before the manifest existed under ' +
-            "this plan's target architecture)."
+          ? 'The confirmed target build manifest IS present — click "Create ' +
+            'scaffold story" on this banner to add it to the plan. (Epic ' +
+            're-expansion only works while the book is a DRAFT; on a saved ' +
+            'book the story is minted additively.)'
           : scaffoldManifestGateRemedy(diagnosis);
     } catch (e) {
       remedy =

@@ -70,6 +70,7 @@ import {
   WorkstreamLockedError,
 } from '../services/migrationShapeSpecGenerationHandler';
 import { runSpecPreflight } from '../services/migrationSpecPreflight';
+import { mintScaffoldStoryIntoBook } from '../services/migrationScaffoldStoryMint';
 import { fetchProjectConfigWithDefaults } from '../services/architectureModelClient';
 import { autoSeedEpicCapturedDecision } from '../services/epicCapturedDecisionsClient';
 // Spec 5 Phase 2 (2026-06-25-confirmed-manifest-producer-wiring, Task Group 5):
@@ -108,6 +109,41 @@ const productionDeps: ShapeSpecGenerationDeps = {
   // the consumer-side carriage.
   seedBuildFilesSource: productionSeedBuildFilesSource,
 };
+
+// ---------------------------------------------------------------------------
+// POST .../scaffold-story — mint the application-scaffold story into a SAVED
+// book (2026-08-14). Epic re-expansion is draft-only (AMS rejects
+// items/append on saved books), so this additive add-item path is the
+// saved-book remedy the preflight warning points at.
+// ---------------------------------------------------------------------------
+
+migrationShapeSpecGenerationRouter.post(
+  '/projects/:projectId/migration-books-of-work/:bookId/scaffold-story',
+  async (req: Request, res: Response) => {
+    const { projectId, bookId } = req.params;
+    try {
+      const outcome = await mintScaffoldStoryIntoBook({ projectId, bookId });
+      const status =
+        outcome.status === 'minted' || outcome.status === 'already_present' ? 200 : 409;
+      console.log(
+        `[diag-gw] route=scaffold-story-mint status=${status} ` +
+          `outcome=${outcome.status} projectId=${projectId} bookId=${bookId}`
+      );
+      res.status(status).json(outcome);
+    } catch (error) {
+      logger.error('Scaffold-story mint: unexpected error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      res.status(500).json({
+        error: {
+          message: error instanceof Error ? error.message : 'Scaffold-story mint failed',
+        },
+      });
+    }
+  }
+);
 
 // ---------------------------------------------------------------------------
 // POST .../spec-generations/preflight — the ONE readiness function (Phase 0)
