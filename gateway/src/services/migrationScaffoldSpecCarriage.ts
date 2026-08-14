@@ -38,54 +38,21 @@ import { TargetStateCapturedDecision } from './targetStateCapturedDecisionsClien
 import { serveSpecDefaultsFromAnswers } from './migrationServeSpecDefaults';
 
 // ---------------------------------------------------------------------------
-// Decision-value resolution (architecture-wide rows)
+// Decision-value resolution — shared with the target-stack spec section
+// (2026-08-14: the helpers live in migrationTargetStackSpecSection so both
+// modules read decision values identically; re-exported here for callers).
 // ---------------------------------------------------------------------------
 
-/**
- * Human-readable value of one captured-decision row. Prefers `answerSummary`;
- * unwraps the pre-fill JSON envelope (`{ value, sourceQuote, sourceFile }`,
- * where `value` may be a string or a `{ framework, version }` pair); otherwise
- * the raw `answerValue` verbatim. Mirrors the target-tech-stack.md renderer.
- */
-export function resolveDecisionDisplayValue(d: TargetStateCapturedDecision): string {
-  if (d.answerSummary && d.answerSummary.length > 0) return d.answerSummary;
-  const raw = d.answerValue ?? '';
-  if (raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const value = parsed.value;
-      if (typeof value === 'string' && value.length > 0) return value;
-      if (value && typeof value === 'object') {
-        const fw = (value as Record<string, unknown>).framework;
-        const ver = (value as Record<string, unknown>).version;
-        if (typeof fw === 'string' && fw.length > 0) {
-          return typeof ver === 'string' && ver.length > 0 ? `${fw} ${ver}` : fw;
-        }
-      }
-    } catch {
-      // Fall through to verbatim rendering.
-    }
-  }
-  return raw;
-}
+import {
+  architectureDecisionValues,
+  buildTargetStackSpecSection,
+  appendTargetStackSection,
+} from './migrationTargetStackSpecSection';
 
-/**
- * Latest ARCHITECTURE-WIDE value per decision code (scope invariant: an
- * architecture-scope row has `scopeRefId` null). Scoped per-element overrides
- * are irrelevant to bootstrapping the application shell and are ignored here.
- */
-export function architectureDecisionValues(
-  decisions: readonly TargetStateCapturedDecision[],
-): Map<string, string> {
-  const byCode = new Map<string, string>();
-  for (const d of decisions) {
-    if (d.scopeRefId) continue;
-    if (!byCode.has(d.decisionCode)) {
-      byCode.set(d.decisionCode, resolveDecisionDisplayValue(d));
-    }
-  }
-  return byCode;
-}
+export {
+  architectureDecisionValues,
+  resolveDecisionDisplayValue,
+} from './migrationTargetStackSpecSection';
 
 // ---------------------------------------------------------------------------
 // Deterministic requirement recipes
@@ -379,7 +346,15 @@ export function buildScaffoldBootstrapSpecText(args: {
     lines.push('');
   }
 
-  return { text: lines.join('\n'), warnings };
+  // The full grouped stack reference (the same section every service-plane
+  // spec carries) — the bootstrap requirements above consume it; later
+  // stories cite it.
+  const text = appendTargetStackSection(
+    lines.join('\n'),
+    buildTargetStackSpecSection(decisions),
+  );
+
+  return { text, warnings };
 }
 
 // ---------------------------------------------------------------------------

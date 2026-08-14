@@ -190,6 +190,13 @@ import {
 // is assembled DETERMINISTICALLY (no LLM) from the verbatim manifest block +
 // the captured target-state decisions.
 import { runScaffoldSpecCarriage } from './migrationScaffoldSpecCarriage';
+// Target-stack section (2026-08-14): the deterministic captured-decisions
+// block appended to every service-plane spec (carriage + LLM paths).
+import {
+  appendTargetStackSection,
+  buildTargetStackSpecSection,
+  isDbPlaneStream,
+} from './migrationTargetStackSpecSection';
 import {
   isDbPackReviewStory,
   buildDbPackReviewSpecText,
@@ -2345,6 +2352,11 @@ async function runSinglePassBatch(
       });
     }
   }
+  // Target-stack section (2026-08-14): the deterministic captured-decisions
+  // block EVERY service-plane spec carries (carriage and LLM alike) — the fix
+  // for eleven technology-neutral specs aimed at an empty repository. Null
+  // when no decisions are captured (nothing fabricated).
+  const targetStackSectionText = buildTargetStackSpecSection(scaffoldDecisions);
 
   // ----- Stage 3 + 4: select + filter -----
   const targetSet =
@@ -2436,6 +2448,7 @@ async function runSinglePassBatch(
         deps: {
           fetchCodeSpecFacts: deps.fetchCodeSpecFacts ?? defaultFetchCodeSpecFacts,
         },
+        targetStackSectionText,
       });
       perStoryResults.push(row);
       logStoryResult(row);
@@ -2798,6 +2811,16 @@ async function runSinglePassBatch(
     // (2026-08-14: the seed-build-files enrichment anchor moved into the
     // deterministic scaffold carriage above — the manifest block is embedded
     // INSIDE the assembled bootstrap spec, not appended after LLM prose.)
+
+    // Target-stack section (2026-08-14): every service-plane LLM-generated
+    // spec (foundations, manual adds, discovered stories) carries the
+    // deterministic captured-decisions block. DB-plane streams are excluded
+    // (their specs carry the pack's own files). Appended HERE — before the
+    // pass-2 computations — so the no-meaningful-change comparison weighs the
+    // SAME enriched body in both passes.
+    if (!isDbPlaneStream(story.tags)) {
+      enrichedSpecText = appendTargetStackSection(enrichedSpecText, targetStackSectionText);
+    }
 
     // Parser-extracted structured arrays. AMS re-parses at write time as
     // the canonical source; the gateway computes them here for the
