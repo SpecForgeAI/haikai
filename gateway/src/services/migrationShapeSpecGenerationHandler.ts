@@ -1631,7 +1631,15 @@ export function buildStoryUserPrompt(
   ctx: MigrationSpecContextDto,
   story: LoadedBookOfWorkItem,
   pass: number,
-  manualAddFlavour?: ManualAddFlavour
+  manualAddFlavour?: ManualAddFlavour,
+  /**
+   * 2026-08-14: the deterministic captured-decisions stack section, shown to
+   * description-grounded stories so the LLM writes AGAINST the decided stack.
+   * The prior wording told these stories the decisions context was
+   * "intentionally absent" — the exact suppression that produced
+   * technology-neutral foundation specs against an empty repository.
+   */
+  targetStackPromptBlock?: string | null
 ): string {
   const lines: string[] = [];
   lines.push('STORY METADATA');
@@ -1669,13 +1677,36 @@ export function buildStoryUserPrompt(
         'absent — for a manually-added item that absence is expected and the ' +
         'description is authoritative.'
     );
-    lines.push(
-      'The captured-decisions context is ALSO intentionally absent for this ' +
-        'item. Do NOT emit NO_CAPTURED_DECISIONS, do NOT invent warning codes ' +
-        'about missing or description-only context, and do NOT lower your ' +
-        'confidence for the absence of discovered/decision context — warn only ' +
-        'about genuine ambiguities INSIDE the description itself.'
-    );
+    if (targetStackPromptBlock) {
+      // 2026-08-14: the stack IS decided — show it and DEMAND it be used.
+      // The old wording ("captured-decisions context is intentionally absent")
+      // instructed the exact suppression that produced technology-neutral
+      // foundation specs against an empty repository.
+      lines.push('');
+      lines.push('TARGET TECHNOLOGY STACK (CAPTURED — AUTHORITATIVE)');
+      lines.push('==================================================');
+      lines.push(targetStackPromptBlock);
+      lines.push('');
+      lines.push(
+        'The target technology stack IS decided — it is listed above. Write the ' +
+          'spec AGAINST it: name the concrete frameworks, components, classes and ' +
+          'configuration idioms of the captured stack (never a technology-neutral ' +
+          'abstraction), and cite the decision codes as [decision:<code>] in ' +
+          'evidenceRefs[] and inline rationale. The application itself is created ' +
+          'by the scaffold story, sequenced FIRST in this plan — this story ' +
+          'implements INSIDE that application, extending its conventions. Do NOT ' +
+          'contradict a listed decision; where a decision you need is NOT listed, ' +
+          'flag the gap in warnings[] instead of inventing an answer.'
+      );
+    } else {
+      lines.push(
+        'No captured-decisions context is available for this item. Do NOT emit ' +
+          'NO_CAPTURED_DECISIONS, do NOT invent warning codes about missing or ' +
+          'description-only context, and do NOT lower your confidence for the ' +
+          'absence of discovered/decision context — warn only about genuine ' +
+          'ambiguities INSIDE the description itself.'
+      );
+    }
     if (manualAddFlavour === 'operational') {
       lines.push(
         'KIND = operational (non-API): this item is an operational / batch / ' +
@@ -1696,12 +1727,16 @@ export function buildStoryUserPrompt(
           'an endpoint path, HTTP method, request/response shape or status ' +
           'codes, and do NOT return insufficient_context because those are ' +
           'absent — a foundation story never has them. Orient the spec around ' +
-          'the foundation itself: the components/conventions to put in place, ' +
-          'how interface stories will consume them, and the target-stack ' +
-          'idioms to follow. The STRUCTURED TEST PACK asserts the foundation ' +
-          "EFFECTS (unit tests on the new components; functional checks that " +
-          'the wiring/convention holds), keeping the SAME { title, ' +
-          'description, type: unit | functional } shape. Leave ' +
+          'the foundation itself: the CONCRETE components of the captured ' +
+          'target stack to put in place (name the actual framework classes / ' +
+          'mechanisms the stack implies — e.g. the stack\'s security filter ' +
+          'chain, its exception-handler advice, its typed configuration ' +
+          'binding — never a framework-neutral "an auth convention"), how ' +
+          'interface stories will consume them, and how they extend the ' +
+          'application the scaffold story creates. The STRUCTURED TEST PACK ' +
+          'asserts the foundation EFFECTS (unit tests on the new components; ' +
+          'functional checks that the wiring/convention holds), keeping the ' +
+          'SAME { title, description, type: unit | functional } shape. Leave ' +
           'coveredEndpointIds empty — there is no endpoint.'
       );
     } else {
@@ -2647,7 +2682,16 @@ async function runSinglePassBatch(
     // Single synchronous LLM call (R-3).
     let llmContent: string;
     try {
-      const userPrompt = buildStoryUserPrompt(ctx, story, pass, manualAddFlavour);
+      const userPrompt = buildStoryUserPrompt(
+        ctx,
+        story,
+        pass,
+        manualAddFlavour,
+        // Description-grounded stories in service-plane streams see the
+        // captured stack (2026-08-14); DB-plane and discovered-context
+        // stories keep their existing context surfaces.
+        manualAdd && !isDbPlaneStream(story.tags) ? targetStackSectionText : null
+      );
       const { content } = await callLlm({
         systemPrompt,
         userPrompt,

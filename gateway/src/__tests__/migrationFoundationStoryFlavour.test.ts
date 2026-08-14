@@ -99,4 +99,43 @@ describe('buildStoryUserPrompt framing', () => {
     expect(prompt).toContain('KIND = api');
     expect(prompt).not.toContain('KIND = foundation');
   });
+
+  // 2026-08-14: the stack IS decided — description-grounded stories see it.
+  // The prior wording ("captured-decisions context is ALSO intentionally
+  // absent") instructed the exact suppression that produced technology-
+  // neutral foundation specs against an empty repository.
+  it('a provided target-stack block is shown with write-AGAINST-it instructions', () => {
+    const story = foundationStory();
+    const ctx = buildDescriptionGroundedContext(story, bow, true);
+    const prompt = buildStoryUserPrompt(
+      ctx,
+      story,
+      1,
+      'foundation',
+      '## Target technology stack (captured decisions — authoritative)\n- `service.framework` — Spring Boot 4.0.0'
+    );
+    expect(prompt).toContain('TARGET TECHNOLOGY STACK (CAPTURED — AUTHORITATIVE)');
+    expect(prompt).toContain('Spring Boot 4.0.0');
+    expect(prompt).toContain('name the concrete frameworks');
+    expect(prompt).toContain('scaffold story, sequenced FIRST');
+    // The old suppression wording is GONE when the stack is provided.
+    expect(prompt).not.toContain('intentionally absent');
+    expect(prompt).not.toContain('No captured-decisions context is available');
+  });
+
+  it('without a stack block the no-decisions wording applies (never invents one)', () => {
+    const story = foundationStory();
+    const ctx = buildDescriptionGroundedContext(story, bow, true);
+    const prompt = buildStoryUserPrompt(ctx, story, 1, 'foundation', null);
+    expect(prompt).toContain('No captured-decisions context is available');
+    expect(prompt).not.toContain('TARGET TECHNOLOGY STACK (CAPTURED — AUTHORITATIVE)');
+  });
+
+  it('the foundation flavour demands CONCRETE captured-stack components', () => {
+    const story = foundationStory();
+    const ctx = buildDescriptionGroundedContext(story, bow, true);
+    const prompt = buildStoryUserPrompt(ctx, story, 1, 'foundation');
+    expect(prompt).toContain('CONCRETE components of the captured target stack');
+    expect(prompt).toContain('extend the application the scaffold story creates');
+  });
 });
