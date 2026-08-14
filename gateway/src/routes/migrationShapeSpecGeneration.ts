@@ -119,13 +119,16 @@ migrationShapeSpecGenerationRouter.post(
     const { projectId, bookId } = req.params;
     const start = Date.now();
     try {
-      const rows = await runSpecPreflight({ projectId, bookOfWorkId: bookId });
+      const { rows, warnings } = await runSpecPreflight({
+        projectId,
+        bookOfWorkId: bookId,
+      });
       console.log(
         `[diag-gw] route=spec-generations-preflight status=200 ` +
           `elapsed_ms=${Date.now() - start} stories=${rows.length} ` +
-          `ready=${rows.filter((r) => r.ready).length}`
+          `ready=${rows.filter((r) => r.ready).length} warnings=${warnings.length}`
       );
-      res.status(200).json({ rows });
+      res.status(200).json({ rows, warnings });
     } catch (error) {
       logger.error('Spec preflight: unexpected error', {
         projectId,

@@ -77,6 +77,7 @@ import MigrationBookOfWorkItemDrawer from './MigrationBookOfWorkItemDrawer';
 import {
   runSpecPreflight,
   SpecPreflightRow,
+  SpecPreflightWarning,
   SpecGenerationRow,
   fetchSpecGenerationsForBook,
   fetchSpecGenerationSummary,
@@ -612,16 +613,24 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   const [preflightRows, setPreflightRows] = useState<SpecPreflightRow[] | null>(
     null,
   );
+  // Book-level preflight warnings (2026-08-14): plan-shape gaps no story chip
+  // can carry — e.g. SCAFFOLD_STORY_MISSING (service-plane stories but no
+  // application-scaffold story), with the manifest-gate remedy inline.
+  const [preflightWarnings, setPreflightWarnings] = useState<
+    SpecPreflightWarning[]
+  >([]);
   const [preflightLoading, setPreflightLoading] = useState<boolean>(false);
 
   const refreshPreflight = useCallback(async () => {
     setPreflightLoading(true);
     try {
-      const rows = await runSpecPreflight(projectId, bookId);
+      const { rows, warnings } = await runSpecPreflight(projectId, bookId);
       setPreflightRows(rows);
+      setPreflightWarnings(warnings);
     } catch {
       // Fail-soft: chips fall back to the baked readiness until the next run.
       setPreflightRows(null);
+      setPreflightWarnings([]);
     } finally {
       setPreflightLoading(false);
     }
@@ -2042,6 +2051,19 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           {specActionError}
         </div>
       )}
+
+      {/* Book-level preflight warnings (2026-08-14) — signal, never a lock:
+          nothing is disabled; each warning names its exact remedy. */}
+      {preflightWarnings.map((w) => (
+        <div
+          key={w.code}
+          className={styles.expansionErrorBanner}
+          role="alert"
+          data-testid={`preflight-warning-${w.code.toLowerCase()}`}
+        >
+          {'⚠'} {w.message}
+        </div>
+      ))}
 
       {saveResponse && (
         <MigrationBookOfWorkPostSaveView

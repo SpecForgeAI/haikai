@@ -65,6 +65,11 @@ import {
 } from './migrationSeedBuildFilesEnrichment';
 import { productionSeedBuildFilesSource } from './migrationSeedBuildFilesProducer';
 import { runScaffoldSpecCarriage } from './migrationScaffoldSpecCarriage';
+import { isDbPlaneStream } from './migrationTargetStackSpecSection';
+import {
+  diagnoseScaffoldManifestGate,
+  scaffoldManifestGateRemedy,
+} from './migrationScaffoldManifestGate';
 
 /** How the story would generate — the batch loop's routing, named. */
 export type SpecPreflightRoute =
@@ -88,6 +93,19 @@ export interface SpecPreflightRow {
   note: string | null;
 }
 
+/** Book-level preflight warning (2026-08-14) — a plan-shape gap no single
+ * story row can carry, e.g. "service-plane stories but NO scaffold story". */
+export interface SpecPreflightWarning {
+  code: string;
+  message: string;
+}
+
+/** Preflight outcome: per-story rows + book-level warnings. */
+export interface SpecPreflightResult {
+  rows: SpecPreflightRow[];
+  warnings: SpecPreflightWarning[];
+}
+
 export interface SpecPreflightDeps {
   loadBookOfWork?: BookOfWorkLoader;
   fetchPackFiles?: FetchPackFilesFn;
@@ -102,6 +120,8 @@ export interface SpecPreflightDeps {
    * never gates readiness).
    */
   seedBuildFilesSource?: SeedBuildFilesSource;
+  /** Manifest-gate diagnosis seam for the book-level scaffold warning. */
+  diagnoseManifestGate?: typeof diagnoseScaffoldManifestGate;
 }
 
 /** Minimal base row the carriage functions spread their result over. */
@@ -140,11 +160,13 @@ function carriageOutcome(
 
 /**
  * Run the preflight for every story of a book. Read-only; NEVER calls the LLM.
+ * Returns per-story rows PLUS book-level warnings (2026-08-14) — plan-shape
+ * gaps no single story can carry, surfaced with their exact remedy.
  */
 export async function runSpecPreflight(
   input: { projectId: string; bookOfWorkId: string },
   deps: SpecPreflightDeps = {}
-): Promise<SpecPreflightRow[]> {
+): Promise<SpecPreflightResult> {
   const { projectId, bookOfWorkId } = input;
   const loadBook = deps.loadBookOfWork ?? defaultLoadBookOfWork;
   const fetchSpecContext = deps.fetchSpecContext ?? fetchMigrationSpecContext;
@@ -365,10 +387,52 @@ export async function runSpecPreflight(
     }
   }
 
+  // ----- Book-level warnings (2026-08-14) -----
+  // The live failure this closes: a service-plane plan WITHOUT a scaffold
+  // story sailed through every per-story check — eleven ready specs, no
+  // runnable application. The scaffold's absence is a PLAN-shape gap, so it
+  // is diagnosed here, with the manifest-gate remedy naming the exact fix
+  // (signal, never a lock — nothing is disabled).
+  const warnings: SpecPreflightWarning[] = [];
+  const hasSeedStory = stories.some((s) => isSeedBuildFilesStory(s));
+  const servicePlaneStories = stories.filter(
+    (s) =>
+      (s.tags ?? []).some((t) => (t ?? '').trim().startsWith('stream:')) &&
+      !isDbPlaneStream(s.tags)
+  );
+  if (!hasSeedStory && servicePlaneStories.length > 0) {
+    const diagnose = deps.diagnoseManifestGate ?? diagnoseScaffoldManifestGate;
+    let remedy: string;
+    try {
+      const diagnosis = await diagnose(projectId, bow.targetArchitectureId ?? null);
+      remedy =
+        diagnosis.status === 'ok'
+          ? 'The confirmed target build manifest IS present — re-expand the ' +
+            "service plane's foundations epic and the scaffold story will " +
+            'inject (the epic was expanded before the manifest existed under ' +
+            "this plan's target architecture)."
+          : scaffoldManifestGateRemedy(diagnosis);
+    } catch (e) {
+      remedy =
+        'Manifest-gate diagnosis failed (' +
+        (e instanceof Error ? e.message : String(e)) +
+        ') — upload the target build manifest on the Target State screen, then ' +
+        're-expand the foundations epic.';
+    }
+    warnings.push({
+      code: 'SCAFFOLD_STORY_MISSING',
+      message:
+        `This plan has ${servicePlaneStories.length} service-plane stor` +
+        `${servicePlaneStories.length === 1 ? 'y' : 'ies'} but NO application-` +
+        `scaffold story — the implementer would receive specs with no runnable ` +
+        `application to build into. ${remedy}`,
+    });
+  }
+
   console.log(
     `[diag-gateway] pm_migration_spec_preflight completed projectId=${projectId} ` +
       `bookOfWorkId=${bookOfWorkId} stories=${rows.length} ` +
-      `ready=${rows.filter((r) => r.ready).length}`
+      `ready=${rows.filter((r) => r.ready).length} warnings=${warnings.length}`
   );
-  return rows;
+  return { rows, warnings };
 }

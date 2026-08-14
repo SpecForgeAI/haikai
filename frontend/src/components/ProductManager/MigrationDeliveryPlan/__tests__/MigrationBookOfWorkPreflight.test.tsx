@@ -118,6 +118,12 @@ function makeDraft(): MigrationBookOfWorkDraft {
   };
 }
 
+function preflightResult(
+  warnings: Array<{ code: string; message: string }> = [],
+) {
+  return { rows: preflightRows(), warnings };
+}
+
 function preflightRows() {
   return [
     {
@@ -162,7 +168,7 @@ beforeEach(() => {
 
 describe('plan screen — preflight readiness (the one readiness function)', () => {
   it('chips render the LIVE preflight verdict (ready ✓ / blocked (n)), overriding the baked readiness', async () => {
-    mockRunSpecPreflight.mockResolvedValue(preflightRows());
+    mockRunSpecPreflight.mockResolvedValue(preflightResult());
     renderWorkspace();
 
     await waitFor(() =>
@@ -178,7 +184,7 @@ describe('plan screen — preflight readiness (the one readiness function)', () 
   });
 
   it('drawer shows the "Readiness check (live)" section with generator-vocabulary missing inputs', async () => {
-    mockRunSpecPreflight.mockResolvedValue(preflightRows());
+    mockRunSpecPreflight.mockResolvedValue(preflightResult());
     renderWorkspace();
     await waitFor(() =>
       expect(screen.getByTestId('badge-readiness-s-blocked')).toHaveTextContent(
@@ -198,12 +204,33 @@ describe('plan screen — preflight readiness (the one readiness function)', () 
   });
 
   it('"Re-check readiness" re-runs the preflight on demand', async () => {
-    mockRunSpecPreflight.mockResolvedValue(preflightRows());
+    mockRunSpecPreflight.mockResolvedValue(preflightResult());
     renderWorkspace();
     await waitFor(() => expect(mockRunSpecPreflight).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByTestId('recheck-readiness-button'));
     await waitFor(() => expect(mockRunSpecPreflight).toHaveBeenCalledTimes(2));
+  });
+
+  it('book-level warnings render as a banner with the remedy (2026-08-14 — signal, never a lock)', async () => {
+    mockRunSpecPreflight.mockResolvedValue(
+      preflightResult([
+        {
+          code: 'SCAFFOLD_STORY_MISSING',
+          message:
+            'This plan has 7 service-plane stories but NO application-scaffold story — upload the target manifest, then re-expand the foundations epic.',
+        },
+      ]),
+    );
+    renderWorkspace();
+
+    const banner = await screen.findByTestId(
+      'preflight-warning-scaffold_story_missing',
+    );
+    expect(banner).toHaveTextContent('NO application-scaffold story');
+    expect(banner).toHaveTextContent('re-expand the foundations epic');
+    // Signal, never a lock: the generate button stays enabled.
+    expect(screen.getByTestId('generate-specs-saved-button')).toBeEnabled();
   });
 
   it('FAIL-SOFT: preflight failure leaves the baked readiness chips in place', async () => {

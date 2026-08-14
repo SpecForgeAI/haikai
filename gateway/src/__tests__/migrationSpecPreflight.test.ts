@@ -44,7 +44,15 @@ function depsWith(
   extra: Parameters<typeof runSpecPreflight>[1] = {}
 ) {
   const loadBookOfWork: BookOfWorkLoader = jest.fn().mockResolvedValue(bow(items));
-  return { loadBookOfWork, ...extra };
+  // Hermetic default for the book-level scaffold warning's manifest-gate
+  // diagnosis (2026-08-14) — no live AMS probe from unit tests.
+  const diagnoseManifestGate = jest.fn().mockResolvedValue({
+    status: 'no_manifest',
+    bookTargetArchitectureId: 'arch-tgt',
+    artifactCount: 0,
+    probeErrors: [],
+  });
+  return { loadBookOfWork, diagnoseManifestGate, ...extra };
 }
 
 describe('runSpecPreflight — routing + readiness', () => {
@@ -61,7 +69,7 @@ describe('runSpecPreflight — routing + readiness', () => {
     const fetchPackFiles = jest.fn().mockResolvedValue([
       { file_path: 'liquibase/db.changelog-master.xml', content: '<xml/>' },
     ]);
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchPackFiles })
     );
@@ -81,7 +89,7 @@ describe('runSpecPreflight — routing + readiness', () => {
     const fetchPackFiles = jest.fn().mockResolvedValue([
       { file_path: 'liquibase/other.xml', content: 'x' },
     ]);
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchPackFiles })
     );
@@ -115,7 +123,7 @@ describe('runSpecPreflight — routing + readiness', () => {
       } as never),
     ];
     const fetchCodeSpecFacts = jest.fn();
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchCodeSpecFacts })
     );
@@ -143,7 +151,7 @@ describe('runSpecPreflight — routing + readiness', () => {
       { translation_key: 'k2', object_ref: 'dbo.v1', kind: 'view', disposition: 'translate', review_status: 'unreviewed' },
       { translation_key: 'k3', object_ref: 'dbo.v2', kind: 'view', disposition: 'translate', review_status: 'needs_rework' },
     ]);
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext, fetchPackTranslations } as never)
     );
@@ -167,7 +175,7 @@ describe('runSpecPreflight — routing + readiness', () => {
       } as never),
     ];
     const fetchSpecContext = jest.fn();
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext })
     );
@@ -185,7 +193,7 @@ describe('runSpecPreflight — routing + readiness', () => {
       } as never),
     ];
     const fetchSpecContext = jest.fn();
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext })
     );
@@ -210,7 +218,7 @@ describe('runSpecPreflight — routing + readiness', () => {
             ],
           }
     ) as never;
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext })
     );
@@ -224,7 +232,7 @@ describe('runSpecPreflight — routing + readiness', () => {
   it('UNSAVED resolver story → save_required (no resolver call)', async () => {
     const items = [story({ id: 'S-unsaved', workItemId: undefined })];
     const fetchSpecContext = jest.fn();
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext: fetchSpecContext as never })
     );
@@ -241,7 +249,7 @@ describe('runSpecPreflight — routing + readiness', () => {
       if (input.workItemId === 'wi-boom') throw new Error('AMS down');
       return { missingInputs: [] };
     }) as never;
-    const rows = await runSpecPreflight(
+    const { rows } = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext })
     );
@@ -259,10 +267,130 @@ describe('runSpecPreflight — routing + readiness', () => {
     const fetchSpecContext: SpecContextFetcher = jest
       .fn()
       .mockResolvedValue({ missingInputs: [] }) as never;
-    const rows: SpecPreflightRow[] = await runSpecPreflight(
+    const result = await runSpecPreflight(
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext })
     );
+    const rows: SpecPreflightRow[] = result.rows;
     expect(rows.map((r) => r.book_item_id)).toEqual(['S1']);
+  });
+});
+
+describe('runSpecPreflight — book-level warnings (2026-08-14)', () => {
+  const fetchSpecContext: SpecContextFetcher = jest
+    .fn()
+    .mockResolvedValue({ missingInputs: [] }) as never;
+
+  it('service-plane stories WITHOUT a scaffold story → SCAFFOLD_STORY_MISSING with the gate remedy', async () => {
+    const items = [
+      story({
+        id: 'S-foundation',
+        title: 'Security & auth parity foundations',
+        tags: ['provenance:plan-deterministic', 'stream:api_migration'],
+      } as never),
+    ];
+    const { warnings } = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchSpecContext })
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].code).toBe('SCAFFOLD_STORY_MISSING');
+    expect(warnings[0].message).toContain('NO application-scaffold story');
+    // The hermetic gate stub says no_manifest → the upload remedy rides along.
+    expect(warnings[0].message).toContain('Upload it on the Target State screen');
+  });
+
+  it('manifest PRESENT but scaffold missing → the re-expand remedy (epic expanded before upload)', async () => {
+    const items = [
+      story({
+        id: 'S-foundation',
+        tags: ['provenance:plan-deterministic', 'stream:api_migration'],
+      } as never),
+    ];
+    const diagnoseManifestGate = jest.fn().mockResolvedValue({
+      status: 'ok',
+      bookTargetArchitectureId: 'arch-tgt',
+      artifactCount: 1,
+      probeErrors: [],
+    });
+    const { warnings } = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchSpecContext, diagnoseManifestGate })
+    );
+    expect(warnings[0].message).toContain('re-expand');
+    expect(warnings[0].message).toContain('foundations epic');
+  });
+
+  it('a seed_build_files story present → NO warning', async () => {
+    const items = [
+      story({
+        id: 'S-scaffold',
+        title: 'Scaffold the app',
+        tags: ['seed_build_files', 'stream:api_migration', 'provenance:scaffold'],
+        kind: 'operational',
+      } as never),
+      story({
+        id: 'S-foundation',
+        workItemId: 'wi-2',
+        tags: ['provenance:plan-deterministic', 'stream:api_migration'],
+      } as never),
+    ];
+    const seedBuildFilesSource = jest.fn().mockResolvedValue(null);
+    const { warnings } = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchSpecContext, seedBuildFilesSource })
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  it('a DB-plane-only book → NO scaffold warning (their specs carry pack files)', async () => {
+    const items = [
+      story({
+        id: 'S-db',
+        tags: ['seed_db_pack_files', 'stream:target_database_schema_implementation'],
+        packId: 'pack-1',
+        packFilePaths: ['a.sql'],
+      } as never),
+    ];
+    const fetchPackFiles = jest.fn().mockResolvedValue([{ file_path: 'a.sql', content: 'x' }]);
+    const { warnings } = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { fetchPackFiles })
+    );
+    expect(warnings).toEqual([]);
+  });
+
+  it('SCAFFOLD route: seed story readiness follows the manifest gate (in lockstep with the batch)', async () => {
+    const items = [
+      story({
+        id: 'S-scaffold',
+        title: 'Scaffold the app',
+        tags: ['seed_build_files', 'stream:api_migration'],
+        kind: 'operational',
+      } as never),
+    ];
+    const noManifest = jest.fn().mockResolvedValue(null);
+    const withManifest = jest.fn().mockResolvedValue({
+      manifests: [
+        { fileName: 'pom.xml', content: '<project/>', serviceTag: 'svc', hasVersionUnknown: false },
+      ],
+      mapping: { svc: { moduleDir: '.' } },
+      layout: 'monorepo',
+    });
+
+    const blocked = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { seedBuildFilesSource: noManifest })
+    );
+    expect(blocked.rows[0]).toMatchObject({ route: 'scaffold', ready: false });
+    expect(JSON.stringify(blocked.rows[0].missing_inputs)).toContain(
+      'confirmed_target_build_manifest'
+    );
+
+    const ready = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items, { seedBuildFilesSource: withManifest })
+    );
+    expect(ready.rows[0]).toMatchObject({ route: 'scaffold', ready: true });
   });
 });

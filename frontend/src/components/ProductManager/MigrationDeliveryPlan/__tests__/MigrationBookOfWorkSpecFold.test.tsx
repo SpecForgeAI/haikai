@@ -209,7 +209,7 @@ function renderWorkspace() {
 }
 
 beforeEach(() => {
-  mockRunSpecPreflight.mockReset().mockResolvedValue([]);
+  mockRunSpecPreflight.mockReset().mockResolvedValue({ rows: [], warnings: [] });
   mockFetchRows.mockReset().mockResolvedValue(threeRows());
   mockFetchSummary.mockReset().mockResolvedValue({ notAttemptedCount: 0 });
   mockStartBatch.mockReset().mockResolvedValue({ perStoryResults: [] });
