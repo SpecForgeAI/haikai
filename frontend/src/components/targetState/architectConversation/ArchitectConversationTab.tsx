@@ -1242,7 +1242,15 @@ export function ArchitectConversationTab({
     );
   }
 
-  if (loading) {
+  // Full-screen loader on the INITIAL load only (2026-08-14). A background
+  // refresh (post-upload / post-import `refreshEnvelope`) previously hit this
+  // gate too, UNMOUNTING the whole tab — which destroyed every child's local
+  // state milliseconds after it appeared: the manifest panel's upload
+  // response, its persist banners, its status lists. The upload looked like
+  // it "never happened". While an envelope exists, a refresh keeps the
+  // subtree mounted and swaps the envelope in place (staleness is a signal,
+  // never a lock).
+  if (loading && !envelope) {
     return (
       <div
         className={styles.container}
