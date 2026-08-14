@@ -141,7 +141,20 @@ public record AddWorkItemRequest(
      * out-of-gate behaviour unchanged.
      */
     @JsonProperty("discovery_finding_references")
-    List<String> discoveryFindingReferences
+    List<String> discoveryFindingReferences,
+
+    /**
+     * OPTIONAL, scaffold mint on a SAVED book (2026-08-14): free-form tags
+     * stamped verbatim onto the blob item's {@code tags} list (blank entries
+     * dropped). The gateway's scaffold-story mint marks the story
+     * {@code seed_build_files} (+ {@code stream:<ws>} / {@code provenance:scaffold})
+     * so the downstream deterministic bootstrap carriage recognises it — the
+     * epic-expansion injection path cannot run on a saved book
+     * ("items/append is only allowed on a draft book"), so this additive
+     * add-item path is the saved-book equivalent. Absent/empty stamps nothing.
+     */
+    @JsonProperty("tags")
+    List<String> tags
 ) {
 
     /** API-endpoint prompt flavour (the default). */
@@ -154,8 +167,9 @@ public record AddWorkItemRequest(
      * Backward-compatible 7-arg constructor preserving the pre-2026-07-26
      * (D5/D6) canonical signature. Defaults the triage-era fields
      * ({@code workstream} / {@code acceptance_criteria} /
-     * {@code discovery_finding_references}) to {@code null} so existing
-     * callers and tests compile and behave unchanged.
+     * {@code discovery_finding_references}) and the 2026-08-14 {@code tags}
+     * field to {@code null} so existing callers and tests compile and behave
+     * unchanged.
      */
     public AddWorkItemRequest(
             String provenance,
@@ -166,6 +180,26 @@ public record AddWorkItemRequest(
             Integer sequenceOrder,
             List<String> netNewOperations) {
         this(provenance, kind, title, description, parentBookItemId,
-            sequenceOrder, netNewOperations, null, null, null);
+            sequenceOrder, netNewOperations, null, null, null, null);
+    }
+
+    /**
+     * Backward-compatible 10-arg constructor preserving the pre-2026-08-14
+     * canonical signature (defaults {@code tags} to {@code null}).
+     */
+    public AddWorkItemRequest(
+            String provenance,
+            String kind,
+            String title,
+            String description,
+            String parentBookItemId,
+            Integer sequenceOrder,
+            List<String> netNewOperations,
+            String workstream,
+            List<String> acceptanceCriteria,
+            List<String> discoveryFindingReferences) {
+        this(provenance, kind, title, description, parentBookItemId,
+            sequenceOrder, netNewOperations, workstream, acceptanceCriteria,
+            discoveryFindingReferences, null);
     }
 }

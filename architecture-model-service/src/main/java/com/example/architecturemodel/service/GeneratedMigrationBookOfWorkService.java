@@ -1408,6 +1408,15 @@ public class GeneratedMigrationBookOfWorkService {
         if (!findingRefs.isEmpty()) {
             draftItem.put("discoveryFindingReferences", findingRefs);
         }
+        // Scaffold mint on a SAVED book (2026-08-14): free-form tags stamped
+        // verbatim onto the blob item. The gateway's scaffold-story mint marks
+        // the story `seed_build_files` so the deterministic bootstrap carriage
+        // recognises it (the epic-expansion injection cannot run on a saved
+        // book). Absent/empty stamps nothing.
+        List<String> tags = sanitiseStringList(request.tags());
+        if (!tags.isEmpty()) {
+            draftItem.put("tags", tags);
+        }
         items.add(draftItem);
         bookOfWork.put("items", items);
         draft.setBookOfWorkJson(bookOfWork);

@@ -300,7 +300,7 @@ describe('runSpecPreflight — book-level warnings (2026-08-14)', () => {
     expect(warnings[0].message).toContain('Upload it on the Target State screen');
   });
 
-  it('manifest PRESENT but scaffold missing → the re-expand remedy (epic expanded before upload)', async () => {
+  it('manifest PRESENT but scaffold missing → the Create-scaffold-story remedy (saved books cannot re-expand)', async () => {
     const items = [
       story({
         id: 'S-foundation',
@@ -317,8 +317,8 @@ describe('runSpecPreflight — book-level warnings (2026-08-14)', () => {
       { projectId: PROJECT, bookOfWorkId: BOOK },
       depsWith(items, { fetchSpecContext, diagnoseManifestGate })
     );
-    expect(warnings[0].message).toContain('re-expand');
-    expect(warnings[0].message).toContain('foundations epic');
+    expect(warnings[0].message).toContain('Create scaffold story');
+    expect(warnings[0].message).toContain('saved book');
   });
 
   it('a seed_build_files story present → NO warning', async () => {

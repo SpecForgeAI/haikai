@@ -18,6 +18,7 @@ vi.mock('../MigrationBookOfWork.module.css', () => ({
 }));
 
 const mockRunSpecPreflight = vi.fn();
+const mockMintScaffoldStory = vi.fn();
 vi.mock('../../../../api/specGenerationApi', async () => {
   const actual = await vi.importActual<
     typeof import('../../../../api/specGenerationApi')
@@ -25,6 +26,7 @@ vi.mock('../../../../api/specGenerationApi', async () => {
   return {
     ...actual,
     runSpecPreflight: (...args: unknown[]) => mockRunSpecPreflight(...args),
+    mintScaffoldStory: (...args: unknown[]) => mockMintScaffoldStory(...args),
   };
 });
 vi.mock('../../../../api/dbMigrationPackApi', async () => {
@@ -32,6 +34,18 @@ vi.mock('../../../../api/dbMigrationPackApi', async () => {
     typeof import('../../../../api/dbMigrationPackApi')
   >('../../../../api/dbMigrationPackApi');
   return { ...actual, listDbMigrationPacks: vi.fn().mockResolvedValue([]) };
+});
+// Scaffold-mint success path refetches the book (refreshDraftAfterExpansion);
+// pin a benign refetch so the mint tests exercise the refresh chain.
+const mockGetMigrationBookOfWork = vi.fn();
+vi.mock('../../../../api/migrationBookOfWorkApi', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../../api/migrationBookOfWorkApi')
+  >('../../../../api/migrationBookOfWorkApi');
+  return {
+    ...actual,
+    getMigrationBookOfWork: (...args: unknown[]) => mockGetMigrationBookOfWork(...args),
+  };
 });
 // Carry-over accounting (2026-07-26): the workspace mounts the coverage read
 // on render — pin a benign empty result so no test leaks a real fetch.
@@ -164,6 +178,8 @@ function renderWorkspace() {
 
 beforeEach(() => {
   mockRunSpecPreflight.mockReset();
+  mockMintScaffoldStory.mockReset();
+  mockGetMigrationBookOfWork.mockReset().mockResolvedValue(makeDraft());
 });
 
 describe('plan screen — preflight readiness (the one readiness function)', () => {
@@ -231,6 +247,49 @@ describe('plan screen — preflight readiness (the one readiness function)', () 
     expect(banner).toHaveTextContent('re-expand the foundations epic');
     // Signal, never a lock: the generate button stays enabled.
     expect(screen.getByTestId('generate-specs-saved-button')).toBeEnabled();
+  });
+
+  it('the scaffold banner\'s "Create scaffold story" button mints and refreshes (2026-08-14 — saved books cannot re-expand)', async () => {
+    mockRunSpecPreflight.mockResolvedValue(
+      preflightResult([
+        {
+          code: 'SCAFFOLD_STORY_MISSING',
+          message: 'No scaffold story — click "Create scaffold story".',
+        },
+      ]),
+    );
+    mockMintScaffoldStory.mockResolvedValue({ status: 'minted', workItemId: 'wi-scaffold' });
+    renderWorkspace();
+
+    const button = await screen.findByTestId('mint-scaffold-story-button');
+    const preflightCallsBefore = mockRunSpecPreflight.mock.calls.length;
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(mockMintScaffoldStory).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID),
+    );
+    // Success refreshes the preflight (the warning recomputes server-side).
+    await waitFor(() =>
+      expect(mockRunSpecPreflight.mock.calls.length).toBeGreaterThan(preflightCallsBefore),
+    );
+    expect(screen.queryByTestId('mint-scaffold-story-error')).toBeNull();
+  });
+
+  it('a refused mint surfaces the remedy inline (no silent failure)', async () => {
+    mockRunSpecPreflight.mockResolvedValue(
+      preflightResult([
+        { code: 'SCAFFOLD_STORY_MISSING', message: 'No scaffold story.' },
+      ]),
+    );
+    mockMintScaffoldStory.mockResolvedValue({
+      status: 'manifest_missing',
+      remedy: 'Upload the target manifest first.',
+    });
+    renderWorkspace();
+
+    fireEvent.click(await screen.findByTestId('mint-scaffold-story-button'));
+    const error = await screen.findByTestId('mint-scaffold-story-error');
+    expect(error).toHaveTextContent('Upload the target manifest first.');
   });
 
   it('FAIL-SOFT: preflight failure leaves the baked readiness chips in place', async () => {

@@ -155,6 +155,38 @@ class GeneratedMigrationBookOfWorkAddItemTest {
     }
 
     @Test
+    @DisplayName("addItem stamps the OPTIONAL tags list verbatim onto the blob item (2026-08-14 — the saved-book scaffold mint's seed_build_files marker)")
+    void addItem_stampsTagsOntoBlob() {
+        UUID projectId = UUID.randomUUID();
+        GeneratedMigrationBookOfWorkDto draft = service.createDraft(projectId, buildSavedDraft());
+
+        AddWorkItemRequest request = new AddWorkItemRequest(
+            WorkItemEntity.PROVENANCE_NET_NEW,
+            AddWorkItemRequest.KIND_OPERATIONAL,
+            "Scaffold the service app and reproduce pom.xml exactly as confirmed, dependency-for-dependency.",
+            "Scaffold story.",
+            null,
+            0,
+            null,
+            "api_migration",
+            null,
+            null,
+            java.util.List.of("seed_build_files", "stream:api_migration", "provenance:scaffold", "  ", ""));
+
+        AddWorkItemResponse response = service.addItem(projectId, draft.id(), request);
+
+        Map<String, Object> reloaded =
+            repository.findById(draft.id()).orElseThrow().getBookOfWorkJson();
+        Map<String, Object> blob = itemById(itemsOf(reloaded), response.bookItemId());
+        assertThat(blob).isNotNull();
+        // Tags ride the blob verbatim (blank entries dropped) — the downstream
+        // deterministic bootstrap carriage recognises the story by this marker.
+        assertThat(blob.get("tags")).isEqualTo(
+            java.util.List.of("seed_build_files", "stream:api_migration", "provenance:scaffold"));
+        assertThat(blob.get("workstream")).isEqualTo("api_migration");
+    }
+
+    @Test
     @DisplayName("addItem with carry_over (undiscoverable-carry_over case) stamps carry_over on the column + blob")
     void addItem_carryOver_stampsCarryOver() {
         UUID projectId = UUID.randomUUID();

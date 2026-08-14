@@ -1152,6 +1152,45 @@ export interface SpecPreflightResult {
 }
 
 /**
+ * Outcome of the saved-book scaffold-story mint (2026-08-14). `minted` /
+ * `already_present` are success shapes; `manifest_missing` / `no_host_epic`
+ * carry the remedy/reason.
+ */
+export interface ScaffoldMintOutcome {
+  status: 'minted' | 'already_present' | 'manifest_missing' | 'no_host_epic';
+  workItemId?: string | null;
+  title?: string;
+  remedy?: string;
+  reason?: string;
+}
+
+/**
+ * Mint the application-scaffold story into a SAVED book (2026-08-14). Epic
+ * re-expansion is draft-only, so the plan-screen warning's "Create scaffold
+ * story" button calls this additive path instead. 200 and 409 both carry a
+ * structured outcome; anything else throws.
+ *
+ * POST /api/v1/projects/{projectId}/migration-books-of-work/{bookId}/scaffold-story
+ */
+export async function mintScaffoldStory(
+  projectId: string,
+  bookOfWorkId: string,
+): Promise<ScaffoldMintOutcome> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookOfWorkId)}` +
+    `/scaffold-story`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (res.status !== 200 && res.status !== 409) {
+    throw new Error(`Scaffold-story mint failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as ScaffoldMintOutcome;
+}
+
+/**
  * Run the spec preflight for a book. Read-only on the backend (no LLM); the
  * gateway executes the generator's first half per story and stops before the
  * LLM call.
