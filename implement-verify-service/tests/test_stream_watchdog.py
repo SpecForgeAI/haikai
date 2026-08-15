@@ -113,6 +113,84 @@ class TestStall:
         assert guard.stalled is True
 
 
+class TestStderrLiveness:
+    def test_stderr_activity_defers_the_stall_kill(self):
+        # A child that is stdout-silent but STREAMS stderr (maven-style
+        # progress) is alive — it must NOT be killed as stalled (2026-08-15).
+        guard = GuardedProcess(
+            _spawn(
+                "import sys, time\n"
+                "print('alive')\n"
+                "for _ in range(30):\n"
+                "    sys.stderr.write('progress\\n'); sys.stderr.flush()\n"
+                "    time.sleep(0.2)\n"
+                "print('done')\n"
+            ),
+            label="test-cli",
+            stall_timeout_s=2,  # far below the ~6s stdout gap
+        )
+        lines = [ln.strip() for ln in guard.stdout]  # no StreamStallError
+        assert lines == ["alive", "done"]
+        assert guard.wait(timeout=30) == 0
+
+    def test_total_silence_on_both_pipes_still_kills(self):
+        guard = GuardedProcess(
+            _spawn("import time; print('alive'); time.sleep(600)"),
+            label="test-cli",
+            stall_timeout_s=2,
+        )
+        it = iter(guard.stdout)
+        assert next(it).strip() == "alive"
+        with pytest.raises(StreamStallError):
+            next(it)
+
+
+class TestStderrTailFlush:
+    def test_stderr_read_right_after_wait_sees_the_final_burst(self):
+        # The failure-classification shape (2026-08-15): the child writes its
+        # diagnosis to stderr in the FINAL burst and exits non-zero; the
+        # caller does wait() then stderr.read() immediately. The read must
+        # join the drain so the transient signature is never lost to a race.
+        for _ in range(5):  # scheduling-dependent pre-fix — hammer it
+            guard = GuardedProcess(
+                _spawn(
+                    "import sys;"
+                    "sys.stderr.write('InternalServerException: throttled\\n');"
+                    "sys.exit(3)"
+                ),
+                label="test-cli",
+                stall_timeout_s=30,
+            )
+            list(guard.stdout)
+            guard.wait(timeout=30)
+            text = guard.stderr.read()  # NO sleep — the join does the flush
+            assert "InternalServerException" in text
+            assert classify_step_failure([text]) == FAILURE_CLASS_TRANSIENT
+
+
+class TestDoubleTimeoutWait:
+    def test_unreapable_child_raises_transient_stall_error(self, monkeypatch):
+        # Simulate a child that survives even the post-kill re-wait: wait()
+        # must RAISE (message carrying "timed out" -> transient retry), not
+        # silently return -1 while .returncode stays None ("exited with code
+        # None" carried no transient signature).
+        guard = GuardedProcess(
+            _spawn("print('x')"),
+            label="test-cli",
+            stall_timeout_s=30,
+        )
+        list(guard.stdout)
+
+        def _always_timeout(timeout=None):
+            raise subprocess.TimeoutExpired(cmd="test-cli", timeout=timeout or 0)
+
+        monkeypatch.setattr(guard._process, "wait", _always_timeout)
+        with pytest.raises(StreamStallError) as exc:
+            guard.wait(timeout=1)
+        assert "timed out" in str(exc.value)
+        assert classify_step_failure([str(exc.value)]) == FAILURE_CLASS_TRANSIENT
+
+
 class TestConfig:
     def test_env_default_and_override(self, monkeypatch):
         monkeypatch.delenv("STREAM_STALL_TIMEOUT_SECONDS", raising=False)

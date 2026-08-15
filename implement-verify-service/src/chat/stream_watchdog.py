@@ -42,6 +42,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from typing import Iterator, List, Optional
 
 from src.job_queue.process_tracking import kill_tree
@@ -73,16 +74,26 @@ def stream_stall_timeout_seconds() -> int:
 
 class StreamStallError(RuntimeError):
     """Raised (after the tree is killed) when the child's stdout goes silent
-    past the stall deadline. The message deliberately carries the transient
-    signatures ("stream stalled", "timed out") so
+    past the stall deadline — or (``phase='wait'``) when the child survives
+    even the post-kill reap. The message deliberately carries the transient
+    signatures ("stream stalled" / "timed out") so
     ``transient_failure.classify_step_failure`` marks the step retryable."""
 
-    def __init__(self, label: str, stall_seconds: int, pid: Optional[int]):
-        super().__init__(
-            f"{label} stream stalled: no output for {stall_seconds}s "
-            f"(timed out waiting on pid {pid}); process tree killed. "
-            "The step can be retried."
-        )
+    def __init__(self, label: str, stall_seconds: int, pid: Optional[int],
+                 phase: str = "stream"):
+        if phase == "wait":
+            msg = (
+                f"{label} did not exit within {stall_seconds}s after its "
+                f"stream ended (timed out waiting on pid {pid}); the process "
+                "tree kill did not reap it. The step can be retried."
+            )
+        else:
+            msg = (
+                f"{label} stream stalled: no output for {stall_seconds}s "
+                f"(timed out waiting on pid {pid}); process tree killed. "
+                "The step can be retried."
+            )
+        super().__init__(msg)
 
 
 class _DrainedStderr:
@@ -116,6 +127,12 @@ class GuardedProcess:
         self._stderr_parts: List[str] = []
         self._stderr_lock = threading.Lock()
         self._stalled = False
+        # Liveness signal from the stderr drain (monotonic timestamp of the
+        # last stderr line): a child that is stdout-silent but actively
+        # writing stderr (e.g. a long build streaming progress there) is
+        # ALIVE and must not be killed as stalled.
+        self._last_stderr_monotonic: Optional[float] = None
+        self._stderr_thread: Optional[threading.Thread] = None
 
         if process.stdout is not None:
             t = threading.Thread(target=self._pump_stdout, daemon=True)
@@ -125,6 +142,7 @@ class GuardedProcess:
         if process.stderr is not None:
             t = threading.Thread(target=self._drain_stderr, daemon=True)
             t.start()
+            self._stderr_thread = t
 
         # Drop-in surface.
         self.stdout = self
@@ -144,6 +162,7 @@ class GuardedProcess:
     def _drain_stderr(self) -> None:
         try:
             for line in self._process.stderr:  # type: ignore[union-attr]
+                self._last_stderr_monotonic = time.monotonic()
                 with self._stderr_lock:
                     self._stderr_parts.append(line)
         except Exception:
@@ -169,6 +188,19 @@ class GuardedProcess:
                     timeout=None if unbounded else self._stall_timeout_s
                 )
             except queue.Empty:
+                # stderr-fed liveness (2026-08-15): a child writing stderr
+                # within the window is demonstrably ALIVE — killing it as
+                # "stalled" would abort real work (maven and friends stream
+                # progress to stderr). Only TOTAL silence on both pipes kills.
+                last_err = self._last_stderr_monotonic
+                if (last_err is not None
+                        and (time.monotonic() - last_err) < self._stall_timeout_s):
+                    logger.warning(
+                        "%s stdout silent for %ss but stderr is active — "
+                        "child alive, continuing to wait (pid=%s)",
+                        self._label, self._stall_timeout_s, self._process.pid,
+                    )
+                    continue
                 self._stalled = True
                 logger.error(
                     "%s stream stalled (no output for %ss, pid=%s) — killing tree",
@@ -183,14 +215,27 @@ class GuardedProcess:
             yield item
 
     def stderr_text(self) -> str:
-        # Give the drain thread a beat to flush the tail after exit.
+        # JOIN the drain thread briefly (2026-08-15): callers read stderr
+        # immediately after wait() to classify a failure, but Popen.wait()
+        # returns on child exit while the drain may still be consuming the
+        # final buffered burst — the exact lines carrying the transient
+        # signatures (throttle / InternalServerException) that decide retry
+        # vs kill. The pipe closes on child exit, so the join returns
+        # promptly; 5s bounds a pathological holder.
+        t = self._stderr_thread
+        if t is not None and t.is_alive():
+            t.join(timeout=5.0)
         with self._stderr_lock:
             return "".join(self._stderr_parts).strip()
 
     def wait(self, timeout: Optional[float] = None):
         """BOUNDED wait (default {DEFAULT_WAIT_TIMEOUT_SECONDS}s): a healthy
         child exits promptly once stdout closes; a lingering pipe holder is
-        killed rather than allowed to hang the step tail."""
+        killed rather than allowed to hang the step tail. A child that
+        survives even the post-kill reap raises :class:`StreamStallError`
+        (phase='wait') — callers read ``.returncode`` after ``wait()``, and
+        a silent ``-1`` return left ``returncode`` as ``None`` ("exited with
+        code None"), stripping the transient signature from classification."""
         bound = DEFAULT_WAIT_TIMEOUT_SECONDS if timeout is None else timeout
         try:
             return self._process.wait(timeout=bound)
@@ -203,7 +248,9 @@ class GuardedProcess:
             try:
                 return self._process.wait(timeout=30)
             except subprocess.TimeoutExpired:
-                return self._process.returncode if self._process.returncode is not None else -1
+                raise StreamStallError(
+                    self._label, int(bound), self._process.pid, phase="wait"
+                )
 
     def kill(self) -> None:
         kill_tree(self._process.pid)
