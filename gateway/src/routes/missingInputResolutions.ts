@@ -57,6 +57,7 @@ import {
 import { fetchProjectConfigWithDefaults } from '../services/architectureModelClient';
 import { autoSeedEpicCapturedDecision } from '../services/epicCapturedDecisionsClient';
 import { computeCostPreview, CostPreviewResponse } from '../services/migrationShapeSpecCostPreview';
+import { productionSeedBuildFilesSource } from '../services/migrationSeedBuildFilesProducer';
 
 export const missingInputResolutionsRouter = Router();
 
@@ -89,6 +90,12 @@ export const RETRY_BATCH_THRESHOLD_LABEL = '5_stories_or_50k_tokens';
 const productionDeps: ShapeSpecGenerationDeps = {
   fetchProjectConfig: fetchProjectConfigWithDefaults,
   autoSeedEpicCapturedDecision,
+  // The retry-batch path regenerates through the SAME handler as the primary
+  // spec-generation routes, so it must carry the same confirmed-manifest seed
+  // source. Without it the scaffold story regenerates to a FALSE
+  // insufficient_context ("no confirmed manifest") even when the manifest IS
+  // confirmed — the handler treats an unwired source as a deliberate no-op.
+  seedBuildFilesSource: productionSeedBuildFilesSource,
 };
 
 // ---------------------------------------------------------------------------
