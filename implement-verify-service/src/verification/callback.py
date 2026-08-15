@@ -93,11 +93,40 @@ def validate_callback_url(url: str) -> None:
         raise CallbackRejected(f"host '{parsed.hostname}' resolves to a private/loopback/metadata address")
 
 
-def post_callback(callback_url: str, payload: dict, timeout: int = 30) -> bool:
-    """Validate, sign, and POST. Best-effort: returns False (never raises) so a
-    bad/unreachable callback doesn't crash the worker — the result is durable
-    in the db and pollable via GET /api/v2/bugs/{id}."""
+def _retry_delays() -> list[float]:
+    """Backoff schedule for RETRYABLE callback failures (5xx / network).
+    ``SX_CALLBACK_RETRY_DELAYS`` (comma-separated seconds) overrides; empty
+    string disables retries. Default: 10, 30, 60 (4 attempts, ~100s total —
+    enough to ride out a gateway/AMS restart blip without stalling the worker
+    for long)."""
+    raw = os.environ.get("SX_CALLBACK_RETRY_DELAYS")
+    if raw is None:
+        return [10.0, 30.0, 60.0]
+    out: list[float] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(float(part))
+        except ValueError:
+            logger.warning("SX_CALLBACK_RETRY_DELAYS entry %r not numeric; ignored", part)
+    return out
+
+
+def post_callback(callback_url: str, payload: dict, timeout: int = 30,
+                  sleep=None) -> bool:
+    """Validate, sign, and POST — with bounded retries on RETRYABLE failures
+    (2026-08-15). A single transient 502 used to permanently strand the run
+    consumer at 'dispatching': the job's terminal state was durable in the db
+    but the one-and-only delivery attempt had already been spent. 5xx and
+    network errors now retry on a short backoff; 4xx do NOT (an auth/contract
+    problem will not heal by retrying). Best-effort overall: returns False
+    (never raises) after exhaustion — the result stays durable + pollable."""
+    import time as _time
     import requests
+
+    sleep = sleep or _time.sleep
 
     try:
         validate_callback_url(callback_url)
@@ -116,12 +145,31 @@ def post_callback(callback_url: str, payload: dict, timeout: int = 30) -> bool:
     service_token = os.environ.get("SX_CALLBACK_SERVICE_TOKEN")
     if service_token:
         headers["X-Service-Token"] = service_token
-    try:
-        resp = requests.post(callback_url, data=body, headers=headers, timeout=timeout, allow_redirects=False)
-        ok = 200 <= resp.status_code < 300
-        if not ok:
-            logger.warning(f"callback {callback_url} returned {resp.status_code}")
-        return ok
-    except Exception as exc:
-        logger.warning(f"callback to {callback_url} failed: {exc}")
-        return False
+
+    delays = _retry_delays()
+    attempts = len(delays) + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(callback_url, data=body, headers=headers,
+                                 timeout=timeout, allow_redirects=False)
+            if 200 <= resp.status_code < 300:
+                if attempt > 1:
+                    logger.info(f"callback {callback_url} delivered on attempt {attempt}")
+                return True
+            retryable = resp.status_code >= 500
+            logger.warning(
+                f"callback {callback_url} returned {resp.status_code} "
+                f"(attempt {attempt}/{attempts}"
+                + (", will retry" if retryable and attempt <= len(delays) else ", giving up")
+                + ")")
+            if not retryable:
+                return False
+        except Exception as exc:
+            logger.warning(
+                f"callback to {callback_url} failed: {exc} "
+                f"(attempt {attempt}/{attempts}"
+                + (", will retry" if attempt <= len(delays) else ", giving up")
+                + ")")
+        if attempt <= len(delays):
+            sleep(delays[attempt - 1])
+    return False

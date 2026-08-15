@@ -122,8 +122,15 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
       `IF the repository already contains the DB plane's changelog (a run based on the ` +
       `DB Merge Request carries \`liquibase/db.changelog-master.xml\` and its ` +
       `changesets), point the tool's configuration at that EXISTING master changelog — ` +
-      `NEVER create a second/parallel changelog beside it. Only when the repository has ` +
-      `no changelog at all (a fresh-from-main run), create an EMPTY skeleton that ` +
+      `NEVER create a second/parallel changelog beside it. CRITICAL for that case: the ` +
+      `migration tool applies the schema to the target database OUT-OF-BAND, so the ` +
+      `database has the objects but NO changelog-tracking table — boot-time migration ` +
+      `against it would RE-APPLY every changeset and fail on existing objects. Provide ` +
+      `and document a one-time baseline step (e.g. \`mvn liquibase:changelogSync\`) ` +
+      `that records the existing changesets as applied WITHOUT executing them, and ` +
+      `make the boot-time wiring safe to run only after that baseline (document the ` +
+      `order in the README — never assume a fresh database). Only when the repository ` +
+      `has no changelog at all (a fresh-from-main run), create an EMPTY skeleton that ` +
       `applies cleanly on boot. The DB plane owns the schema content either way. ` +
       cite('db.migrations'),
   },
@@ -254,8 +261,20 @@ export function buildScaffoldBootstrapSpecText(args: {
       'service plane: every later story (foundations, interface implementations, ' +
       'internal processing) implements its work INSIDE the application this story ' +
       'creates. When this story is done the repository holds a real application that ' +
-      'builds, boots, connects to the target database, answers its health check, and ' +
-      'runs a green test suite — with zero business endpoints implemented yet.'
+      'builds and runs a green test suite (including an in-test context boot) — with ' +
+      'zero business endpoints implemented yet.'
+  );
+  lines.push('');
+  lines.push(
+    '**GENERATION-TIME VERIFICATION IS STATIC + IN-TEST ONLY.** Never run the ' +
+      'server as a foreground process to satisfy a criterion, and NEVER install, ' +
+      'start, or configure databases, brokers, or any other infrastructure — not ' +
+      'locally, not in containers outside the test suite, not anywhere. (A live ' +
+      'incident: an agent stood up its own PostgreSQL cluster with trust auth to ' +
+      'satisfy a runtime criterion, then wedged the job running a non-terminating ' +
+      'server.) Runtime verification against the migrated target database is the ' +
+      'EXECUTION DRIVER’s job at deploy time, via the registered serve ' +
+      'contract — never this story’s.'
   );
   lines.push('');
   lines.push(enrichmentText.trim());
@@ -280,7 +299,10 @@ export function buildScaffoldBootstrapSpecText(args: {
   }
   lines.push('');
 
-  // Acceptance criteria — pinned to the SAME serve derivation haibox uses.
+  // Acceptance criteria (2026-08-15 — STATIC + IN-TEST only): a criterion
+  // that demanded a live boot "against the migrated target database" invited
+  // an agent to stand up its own database and run a non-terminating server —
+  // the exact live failure. Runtime boot belongs to the execution driver.
   const serve = serveSpecDefaultsFromAnswers({
     framework: v('service.framework') ?? undefined,
     language: v('service.language') ?? undefined,
@@ -291,22 +313,25 @@ export function buildScaffoldBootstrapSpecText(args: {
   lines.push('');
   lines.push('1. The seeded build file(s) above exist at EXACTLY their stated paths, byte-identical.');
   lines.push('2. The application builds cleanly from a fresh clone.');
+  lines.push(
+    '3. The test suite runs green, including the boot smoke test: a Spring ' +
+      'Boot Test starts the application context and asserts the health ' +
+      'surface IN-TEST. If a real database is wanted in-test, use ' +
+      'Testcontainers (declared in the manifest) — NEVER an external or ' +
+      'hand-started database, and NEVER a live foreground server.'
+  );
+  lines.push('');
   if (serve.command && serve.command.trim().length > 0) {
     lines.push(
-      `3. \`${serve.command}\` boots the application` +
-        (serve.health_path
-          ? ` and \`${serve.health_path}\` reports healthy against the migrated target database`
-          : '') +
-        ' (the execution driver boots the app with exactly this contract).'
+      `> Runtime verification (informational, NOT a criterion of this story): ` +
+        `the execution driver boots the app at deploy time with ` +
+        `\`${serve.command}\`` +
+        (serve.health_path ? ` and probes \`${serve.health_path}\`` : '') +
+        ` against the migrated target database. This story only has to keep ` +
+        `that contract bootable — never to execute it.`
     );
-  } else {
-    lines.push(
-      '3. The application boots via its captured runtime and its health surface reports ' +
-        'healthy against the migrated target database.'
-    );
+    lines.push('');
   }
-  lines.push('4. The test suite runs green, including the boot smoke test.');
-  lines.push('');
 
   lines.push('## Explicitly out of scope');
   lines.push('');

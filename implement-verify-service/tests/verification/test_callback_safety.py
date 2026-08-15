@@ -131,3 +131,67 @@ class TestPost:
         cb.post_callback("http://localhost:8081/cb", {"job_id": "j1"})
 
         assert "X-Service-Token" not in captured["headers"]
+
+
+class _R:
+    def __init__(self, status_code=200):
+        self.status_code = status_code
+
+
+class TestCallbackRetry:
+    """Bounded retry on RETRYABLE failures (2026-08-15): a single transient
+    502 used to permanently strand the run consumer at 'dispatching' — the
+    job's terminal state was durable but the one delivery attempt was spent."""
+
+    def test_502_retries_then_delivers(self, monkeypatch):
+        monkeypatch.setenv("SX_CALLBACK_ALLOWED_HOSTS", "localhost")
+        monkeypatch.delenv("SX_CALLBACK_RETRY_DELAYS", raising=False)
+        import requests
+        calls = {"n": 0}
+        def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
+            calls["n"] += 1
+            return _R(502) if calls["n"] < 3 else _R(200)
+        monkeypatch.setattr(requests, "post", fake_post)
+        slept = []
+
+        ok = cb.post_callback("http://localhost:8081/cb", {"job_id": "j1"},
+                              sleep=slept.append)
+
+        assert ok is True
+        assert calls["n"] == 3
+        assert slept == [10.0, 30.0]  # default backoff schedule
+
+    def test_4xx_does_not_retry(self, monkeypatch):
+        monkeypatch.setenv("SX_CALLBACK_ALLOWED_HOSTS", "localhost")
+        import requests
+        calls = {"n": 0}
+        def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
+            calls["n"] += 1
+            return _R(401)
+        monkeypatch.setattr(requests, "post", fake_post)
+        slept = []
+
+        ok = cb.post_callback("http://localhost:8081/cb", {"job_id": "j1"},
+                              sleep=slept.append)
+
+        assert ok is False
+        assert calls["n"] == 1  # auth/contract problems will not heal by retrying
+        assert slept == []
+
+    def test_exhausted_retries_return_false(self, monkeypatch):
+        monkeypatch.setenv("SX_CALLBACK_ALLOWED_HOSTS", "localhost")
+        monkeypatch.setenv("SX_CALLBACK_RETRY_DELAYS", "1,2")
+        import requests
+        calls = {"n": 0}
+        def fake_post(url, data=None, headers=None, timeout=None, allow_redirects=None):
+            calls["n"] += 1
+            raise requests.ConnectionError("boom")
+        monkeypatch.setattr(requests, "post", fake_post)
+        slept = []
+
+        ok = cb.post_callback("http://localhost:8081/cb", {"job_id": "j1"},
+                              sleep=slept.append)
+
+        assert ok is False
+        assert calls["n"] == 3
+        assert slept == [1.0, 2.0]
