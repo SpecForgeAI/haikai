@@ -3308,9 +3308,20 @@ export async function resumeFailedMigrationRun(
           'resume without salvage to retry the spec instead.',
       };
     }
+    // Chain alignment (2026-08-15): the NEXT spec bases off this item's
+    // spec_name (chainBaseSpecForItem → feature/<spec_name>). Salvage may
+    // legitimately return a different attempt's branch (e.g. the item was
+    // re-stamped to the base name by a manual resume while only the -rN tree
+    // survived) — the stamped name must follow the branch that actually got
+    // pushed, or the successor builds on a branch WITHOUT the salvaged work.
+    const salvagedSpecName = (outcome.branch ?? '').replace(/^feature\//, '').trim();
+    const currentSpecName = (firstFailed.spec_name as string).trim();
     await safePatchItem(deps, projectId, firstFailed.id as string, {
       status: RUN_ITEM_STATUS.IMPLEMENTED,
       outcome: 'implemented',
+      ...(salvagedSpecName && salvagedSpecName !== currentSpecName
+        ? { spec_name: salvagedSpecName }
+        : {}),
       error_detail: `salvaged from local worktree (${outcome.branch}): ${
         (outcome.summary ?? '').slice(0, 400)
       }`,
