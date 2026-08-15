@@ -1351,9 +1351,24 @@ export async function startMigration(
       const dispatchWorkItemIds = new Set(
         dispatchSet.map((d) => d.workItemId).filter((id): id is string => !!id)
       );
+      // Plane-aware (2026-08-15): only a run that actually covered the DB
+      // plane ever created a db-migration/<id8> assembly branch (the DB
+      // completion chain is the sole creator). "Newest DEPLOYED + disjoint"
+      // alone could select a deployed SERVICE run — deriving a branch name
+      // that never existed and failing the allocation with a misleading
+      // remedy while the real DB assembly branch sits on origin.
+      const planeByWorkItemId = new Map<string, MigrationPlane>();
+      for (const item of items) {
+        if (!item.workItemId) continue;
+        if (!isDispatchableLeafItem(item)) continue;
+        planeByWorkItemId.set(item.workItemId, planeForItem(item));
+      }
       const dbRun = (runs ?? []).find(
         (r) =>
           r.status === RUN_STATUS.DEPLOYED &&
+          (r.items ?? []).some(
+            (i) => i.work_item_id && planeByWorkItemId.get(i.work_item_id) === 'db'
+          ) &&
           !(r.items ?? []).some(
             (i) => i.work_item_id && dispatchWorkItemIds.has(i.work_item_id)
           )

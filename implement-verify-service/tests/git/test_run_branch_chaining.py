@@ -125,6 +125,64 @@ def test_fresh_default_base_picks_up_new_origin_commits(live_repo, origin,
     assert (wt / "merged.txt").exists()
 
 
+# ── explicit_branch_base + force_base (2026-08-15, "start from the MR") ─────
+
+def test_explicit_branch_base_resolves_origin_ref(live_repo, origin):
+    _commit_on_branch(live_repo, "db-migration/abc12345", "main", "db.txt")
+    _run(live_repo, "push", "origin", "db-migration/abc12345")
+    ref = wr.explicit_branch_base(live_repo, "db-migration/abc12345")
+    assert ref == "origin/db-migration/abc12345"
+
+
+def test_explicit_branch_base_fail_closed_when_absent(live_repo, origin):
+    with pytest.raises(wr.WorktreeAllocationError, match="does not resolve"):
+        wr.explicit_branch_base(live_repo, "db-migration/never1234")
+
+
+def test_force_base_resets_stale_free_branch_to_explicit_base(live_repo,
+                                                              origin,
+                                                              tmp_path):
+    """Same-day Re-start shape: the deterministic spec name reuses the
+    abandoned attempt's branch. Without force_base the worktree silently
+    attaches to the wreckage; with it the FREE branch is reset to the
+    operator's explicit MR base."""
+    # The MR base: a DB assembly branch on origin carrying db.txt.
+    _commit_on_branch(live_repo, "db-migration/abc12345", "main", "db.txt")
+    _run(live_repo, "push", "origin", "db-migration/abc12345")
+    # The abandoned attempt: same spec branch based on plain main, with
+    # wreckage committed — and its worktree already reclaimed (branch free).
+    _commit_on_branch(live_repo, "feature/spec-x", "main", "wreckage.txt")
+
+    base = wr.explicit_branch_base(live_repo, "db-migration/abc12345")
+    wt = tmp_path / "wt-restart"
+    wr.add_worktree(live_repo, wt, "feature/spec-x", base, force_base=True)
+
+    assert (wt / "db.txt").exists()            # sits on the MR base
+    assert not (wt / "wreckage.txt").exists()  # wreckage discarded
+    # The reset moved the LOCAL ref only; origin is untouched.
+    assert (wt / "a.txt").exists()
+
+
+def test_force_base_leaves_live_holder_failure_intact(live_repo, tmp_path):
+    """force_base never overrides the active-elsewhere rule: a branch held by
+    a live worktree still fails loudly."""
+    wr.add_worktree(live_repo, tmp_path / "wt-a", "feature/spec-y", "main",
+                    job_id="run-A")
+    with pytest.raises(wr.WorktreeAllocationError, match="active in another"):
+        wr.add_worktree(live_repo, tmp_path / "wt-b", "feature/spec-y",
+                        "main", job_id="run-B", force_base=True)
+
+
+def test_without_force_base_existing_branch_still_attaches(live_repo,
+                                                           tmp_path):
+    """The D4 attach rule is unchanged for non-explicit bases (resume flows
+    depend on it)."""
+    _commit_on_branch(live_repo, "feature/spec-z", "main", "kept.txt")
+    wt = tmp_path / "wt-resume"
+    wr.add_worktree(live_repo, wt, "feature/spec-z", "main")
+    assert (wt / "kept.txt").exists()
+
+
 # ── free_branch_holder_if_dead ──────────────────────────────────────────────
 
 def _job_with_worktree(storage, ws, live_repo, branch, status):

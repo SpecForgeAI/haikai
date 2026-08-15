@@ -516,6 +516,101 @@ describe('startMigration baseMode', () => {
     const req = (deps.createMigrationExecutionRun as jest.Mock).mock.calls[0][1];
     expect(req.run.base_spec).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // baseMode 'mr' (2026-08-15): base every worktree on the prior DB run's
+  // db-migration/<id8> assembly branch. Resolution must be PLANE-AWARE — only
+  // a run that covered the DB plane ever created an assembly branch.
+  // -------------------------------------------------------------------------
+
+  /** A book whose feature holds one DB story plus the three service stories. */
+  function mixedPlaneBook(): BookOfWork {
+    const b = book();
+    (b.book_of_work_json as { items: unknown[] }).items.push({
+      id: 's-db',
+      parentId: 'f1',
+      type: 'story',
+      title: 'Schema build',
+      sequenceOrder: 3,
+      workItemId: 'wi-db-1',
+      workstream: 'target_database_schema_implementation',
+    });
+    return b;
+  }
+
+  function deployedDbRun(): MigrationExecutionRun {
+    return {
+      id: 'run-db-11111111',
+      project_id: PROJECT_ID,
+      book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.DEPLOYED,
+      items: [
+        { id: 'db-0', sequence_position: 0, work_item_id: 'wi-db-1', spec_name: '2026-08-01-schema-cccc3333', status: RUN_ITEM_STATUS.DEPLOYED, outcome: 'deployed' },
+      ],
+    };
+  }
+
+  function deployedServiceRun(): MigrationExecutionRun {
+    return {
+      id: 'run-svc-22222222',
+      project_id: PROJECT_ID,
+      book_of_work_id: BOOK_ID,
+      status: RUN_STATUS.DEPLOYED,
+      items: [
+        // A service story NOT in the current dispatch (deferred sibling shape)
+        // — deployed + disjoint, so the plane-blind predicate would pick it.
+        { id: 'svc-0', sequence_position: 0, work_item_id: 'wi-svc-old', spec_name: '2026-08-10-old-svc-ffff6666', status: RUN_ITEM_STATUS.DEPLOYED, outcome: 'deployed' },
+      ],
+    };
+  }
+
+  it("'mr' resolves the newest deployed DB-PLANE run — never a newer deployed service run whose db-migration/<id8> branch never existed", async () => {
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(null, created);
+    (deps.fetchBookOfWork as jest.Mock).mockResolvedValue(mixedPlaneBook());
+    // Newest-first history: the service run is newer, the DB run older.
+    (deps.fetchMigrationExecutionRunsForBook as jest.Mock).mockResolvedValue([
+      deployedServiceRun(),
+      deployedDbRun(),
+    ]);
+    // The DB story is deployed by the prior run; only wi-1..3 dispatch (they
+    // have ready specs; wi-db-1 does not need one — it is not in the plane).
+    const result = await startMigration(
+      { ...scope, plane: 'service', baseMode: 'mr', parityOverride: true },
+      deps
+    );
+    await flush();
+
+    expect(result.status).toBe('started');
+    const submit = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    // 'run-db-11111111' -> alnum 'rundb11111111' -> first 8 = 'rundb111'.
+    expect(submit.baseBranch).toBe('db-migration/rundb111');
+    expect(submit.baseSpec).toBeUndefined();
+  });
+
+  it("'mr' with NO deployed DB-plane run blocks loudly (mr_base_unresolvable) — a deployed service run must not fabricate a branch name", async () => {
+    const created: { run?: MigrationExecutionRun } = {};
+    const deps = startDeps(null, created);
+    // Service-only book (no DB stories -> no plane-precedence requirement):
+    // the ONLY deployed run is a service run. The plane-blind predicate would
+    // have picked it and derived db-migration/runsvc22 — a branch that never
+    // existed (only the DB completion chain creates assembly branches).
+    (deps.fetchMigrationExecutionRunsForBook as jest.Mock).mockResolvedValue([
+      deployedServiceRun(),
+    ]);
+
+    const result = await startMigration(
+      { ...scope, plane: 'service', baseMode: 'mr', parityOverride: true },
+      deps
+    );
+    await flush();
+
+    expect(result.status).toBe('blocked');
+    if (result.status === 'blocked') {
+      expect(result.reasons.some((r) => r.code === 'mr_base_unresolvable')).toBe(true);
+    }
+    expect(deps.createMigrationExecutionRun).not.toHaveBeenCalled();
+  });
 });
 
 // ===========================================================================
