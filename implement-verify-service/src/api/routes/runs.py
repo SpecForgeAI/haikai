@@ -36,6 +36,44 @@ async def list_runs(authenticated: bool = Depends(verify_api_key)):
         conn.close()
 
 
+@router.post("/api/v2/runs/salvage-worktree")
+async def salvage_worktree(payload: dict,
+                           authenticated: bool = Depends(verify_api_key)):
+    """Salvage a dead run item's local worktree (2026-08-15): commit + push
+    the spec's existing worktree as its branch so a Resume proceeds to the
+    NEXT spec instead of re-doing finished work. Body:
+    {company, project, spec_name}. Single-repo projects only (the polyrepo
+    artifact layout has per-target trees — refused loudly, never guessed).
+    """
+    from src.api import _safe_project_dir
+    from src.git import worktree_runs as wr
+
+    company = (payload or {}).get("company") or ""
+    project = (payload or {}).get("project") or ""
+    spec_name = (payload or {}).get("spec_name") or ""
+    if not company.strip() or not project.strip() or not spec_name.strip():
+        return JSONResponse(
+            {"status": "error", "message": "company, project and spec_name are required"},
+            status_code=400)
+    try:
+        project_dir = _safe_project_dir(company, project)
+    except Exception as exc:  # traversal-safe resolver rejects bad segments
+        return JSONResponse({"status": "error", "message": str(exc)},
+                            status_code=400)
+    if not (project_dir / ".git").exists():
+        return JSONResponse(
+            {"status": "error",
+             "message": f"{project_dir} is not a git repository root — polyrepo "
+                        "salvage is not supported; commit/push the target's "
+                        "worktree manually"},
+            status_code=409)
+    result = wr.salvage_spec_worktree(project_dir, spec_name.strip())
+    status_code = 200 if result.get("status") == "salvaged" else 409
+    logger.info("salvage-worktree %s/%s spec=%s -> %s", company, project,
+                spec_name, result.get("status"))
+    return JSONResponse(result, status_code=status_code)
+
+
 @router.get("/api/v2/runs/{orchestrate_id}/graph")
 async def run_graph(orchestrate_id: str, at_seq: int | None = None,
                     from_seq: int = 0, stream: bool = False,

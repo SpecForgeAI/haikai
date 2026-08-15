@@ -31,10 +31,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   allManifestsHaveService,
+  applyManifestReconcile,
   deriveServiceModuleDir,
+  fetchManifestReconcile,
   resolvedTargetVersionChip,
   shortenManifestPath,
   uploadTargetManifests,
+  type ManifestReconcileResult,
   type ManifestServiceOption,
   type PendingVersionConfirmationEntry,
   type ResolvedTargetVersion,
@@ -241,6 +244,47 @@ export function ManifestUploadPanel({
     onActiveChange?.(selected.length > 0);
   }, [selected.length, onActiveChange]);
 
+  // Manifest ↔ decision reconciliation (2026-08-15): pending decision-
+  // required additions + conflicts for the latest confirmed pom. Loaded on
+  // mount and refreshed after every upload / apply.
+  const [reconcile, setReconcile] = useState<ManifestReconcileResult | null>(null);
+  const [reconcileBusy, setReconcileBusy] = useState(false);
+  const [reconcileError, setReconcileError] = useState<string | null>(null);
+
+  const loadReconcile = useCallback(async () => {
+    if (!targetArchitectureId) return;
+    try {
+      setReconcile(await fetchManifestReconcile(projectId, targetArchitectureId));
+    } catch {
+      // Fail-soft: the section simply doesn't render until the next load.
+    }
+  }, [projectId, targetArchitectureId]);
+
+  useEffect(() => {
+    void loadReconcile();
+  }, [loadReconcile]);
+
+  const handleApplyAdditions = useCallback(
+    async (coordinates: string[]) => {
+      setReconcileBusy(true);
+      setReconcileError(null);
+      try {
+        const result = await applyManifestReconcile(
+          projectId,
+          targetArchitectureId,
+          coordinates,
+        );
+        if ('error' in result) {
+          setReconcileError(result.error);
+        }
+        await loadReconcile();
+      } finally {
+        setReconcileBusy(false);
+      }
+    },
+    [projectId, targetArchitectureId, loadReconcile],
+  );
+
   const handleUpload = useCallback(async () => {
     if (!allManifestsHaveService(selected)) return;
     setBusy(true);
@@ -256,6 +300,7 @@ export function ManifestUploadPanel({
       setManualOverrides({}); // a fresh upload recomputes everything
       setFreeFacts(result.autoAnswer?.freeFacts ?? []); // re-seed the Tier-2 list
       setSelected([]); // clear the picker on success
+      void loadReconcile(); // decisions may have auto-answered — recompute
       onUploaded?.(result);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Failed to upload manifests');
@@ -269,6 +314,7 @@ export function ManifestUploadPanel({
     targetArchitectureId,
     conversationThreadId,
     onUploaded,
+    loadReconcile,
   ]);
 
   // The auto-answered decisions to render — the recomputed structured target
@@ -442,6 +488,76 @@ export function ManifestUploadPanel({
             migration plan&apos;s scaffold story can now be created (re-expand the
             foundations epic on the plan screen).
           </span>
+        </div>
+      )}
+
+      {/* --- manifest ↔ decision reconciliation (2026-08-15) --- */}
+      {reconcile && reconcile.additions.length > 0 && (
+        <div className={styles.banner} role="status" data-testid="manifest-reconcile-additions">
+          <p className={styles.sectionLabel}>
+            Decision-required dependencies missing from the pom (
+            {reconcile.additions.length})
+          </p>
+          <ul>
+            {reconcile.additions.map((a) => (
+              <li key={`${a.groupId}:${a.artifactId}`}>
+                <code>
+                  {a.groupId}:{a.artifactId}
+                  {a.version ? `:${a.version}` : ' (version BOM-managed)'}
+                </code>{' '}
+                — from <code>[decision:{a.decisionCode}]</code>. {a.note}{' '}
+                <button
+                  type="button"
+                  disabled={reconcileBusy}
+                  onClick={() =>
+                    void handleApplyAdditions([`${a.groupId}:${a.artifactId}`])
+                  }
+                  data-testid={`manifest-reconcile-apply-${a.artifactId}`}
+                >
+                  Add to pom
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={reconcileBusy}
+            onClick={() =>
+              void handleApplyAdditions(
+                reconcile.additions.map((a) => `${a.groupId}:${a.artifactId}`),
+              )
+            }
+            data-testid="manifest-reconcile-apply-all"
+          >
+            {reconcileBusy ? 'Applying…' : 'Add all to pom'}
+          </button>{' '}
+          <span>
+            Applying writes a NEW version of the stored pom (history kept); the
+            rest of the file stays byte-identical. Regenerate the scaffold spec
+            afterwards so it carries the amended pom.
+          </span>
+          {reconcileError && (
+            <div role="alert" data-testid="manifest-reconcile-error">
+              {reconcileError}
+            </div>
+          )}
+        </div>
+      )}
+      {reconcile && reconcile.conflicts.length > 0 && (
+        <div
+          className={`${styles.banner} ${styles.bannerError}`}
+          role="alert"
+          data-testid="manifest-reconcile-conflicts"
+        >
+          <p className={styles.sectionLabel}>
+            Decision ↔ pom conflicts ({reconcile.conflicts.length}) — never
+            changed automatically
+          </p>
+          <ul>
+            {reconcile.conflicts.map((c) => (
+              <li key={c.coordinate}>{c.message}</li>
+            ))}
+          </ul>
         </div>
       )}
 

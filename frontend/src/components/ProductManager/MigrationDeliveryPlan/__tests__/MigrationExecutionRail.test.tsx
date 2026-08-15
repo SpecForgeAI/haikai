@@ -424,12 +424,15 @@ describe('execution rail (Phase 1b)', () => {
         project: 'demo',
         plane: 'service',
         parityOverride: false,
-        baseMode: 'chain', // run-branch chaining default (2026-08-06)
+        // 2026-08-15: a stage >1 start DEFAULTS to the Merge-Request base
+        // (the DB plane's assembly branch is normally un-merged until
+        // end-to-end evidence exists).
+        baseMode: 'mr',
       }),
     );
   });
 
-  it('run-branch chaining (2026-08-06): the stage-2 dialog offers "start from main"; ticking it sends baseMode=fresh, and stage 1 never shows the checkbox', async () => {
+  it('run base selector (2026-08-15): stage-2 dialog defaults to MR; picking "Fresh from main" sends baseMode=fresh; stage 1 never shows it', async () => {
     const twoPlane = [
       makeItem({ id: 's-db', title: 'Schema', workItemId: 'wi-db' } as never),
       makeItem({
@@ -450,18 +453,20 @@ describe('execution rail (Phase 1b)', () => {
     });
     renderWorkspace(draftWith(twoPlane));
 
-    // Stage 1's dialog has NO base-mode checkbox (there is no previous stage).
+    // Stage 1's dialog has NO base selector (there is no previous stage).
     fireEvent.click(await screen.findByTestId('execution-rail-start'));
     let dialog = await screen.findByTestId('start-stage-dialog');
     expect(within(dialog).queryByTestId('start-stage-base-mode')).toBeNull();
     fireEvent.click(within(dialog).getByTestId('start-stage-cancel'));
 
-    // Stage 2's dialog HAS it; ticked -> the migrate POST carries 'fresh'.
+    // Stage 2's dialog HAS it: MR pre-selected; picking Fresh sends 'fresh'.
     fireEvent.click(await screen.findByTestId('execution-rail-start-service'));
     dialog = await screen.findByTestId('start-stage-dialog');
-    fireEvent.click(
-      within(dialog).getByTestId('start-stage-base-mode-checkbox'),
-    );
+    expect(
+      (within(dialog).getByTestId('start-stage-base-mr-radio') as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    fireEvent.click(within(dialog).getByTestId('start-stage-base-fresh-radio'));
     fireEvent.click(within(dialog).getByTestId('start-stage-confirm'));
     await waitFor(() =>
       expect(mockTriggerMigrate).toHaveBeenCalledWith(PROJECT_ID, BOOK_ID, {
@@ -617,7 +622,7 @@ describe('execution rail (Phase 1b)', () => {
         project: 'demo',
         plane: 'service',
         parityOverride: true,
-        baseMode: 'chain', // run-branch chaining default (2026-08-06)
+        baseMode: 'mr', // stage >1 default base (2026-08-15)
       }),
     );
   });

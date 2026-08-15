@@ -106,6 +106,12 @@ export interface OrchestrationSubmitInput {
    */
   integrationBase?: boolean;
   /**
+   * Explicit-branch base (2026-08-15): base the worktree on
+   * `origin/<baseBranch>` (the DB assembly branch — "start from the open
+   * Merge Request"). IVS fail-closes when the branch is absent on origin.
+   */
+  baseBranch?: string | null;
+  /**
    * Run-branch chaining: FALSE = commit + push the spec branch but do NOT
    * open a merge request (only the stage-final branch, which carries the
    * whole chain's diff, opens the ONE MR). Omitted = IVS default (true).
@@ -152,6 +158,8 @@ export interface OrchestrationBatchSubmitInput {
   baseSpec?: string | null;
   /** INTEGRATION base (2026-08-12) — see the single-spec field. */
   integrationBase?: boolean;
+  /** Explicit-branch (MR) base (2026-08-15) — see the single-spec field. */
+  baseBranch?: string | null;
   /** The gateway's build-results URL (one callback for the whole batch). */
   callbackUrl: string;
 }
@@ -166,6 +174,49 @@ export interface OrchestrationSubmitResult {
   status?: string | null;
   /** Error detail on a non-accepted submit. */
   error?: string | null;
+}
+
+/** Outcome of the IVS worktree salvage (2026-08-15 — Resume with salvage). */
+export interface SalvageWorktreeResult {
+  status: 'salvaged' | 'no_worktree' | 'error';
+  branch?: string;
+  committed?: boolean;
+  summary?: string;
+  message?: string;
+}
+
+/**
+ * Salvage a dead run item's LOCAL worktree via IVS (2026-08-15): commit +
+ * push the spec's existing worktree as its branch so Resume proceeds to the
+ * NEXT spec. Never throws — failures come back as `{ status: 'error' }` so
+ * the driver surfaces them verbatim.
+ */
+export async function salvageSpecWorktree(
+  company: string,
+  project: string,
+  specName: string
+): Promise<SalvageWorktreeResult> {
+  try {
+    const response = await request('/api/v2/runs/salvage-worktree', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': RIVVY_USER_AGENT,
+      },
+      body: { company, project, spec_name: specName },
+    });
+    const body = (await response.json().catch(() => null)) as SalvageWorktreeResult | null;
+    if (!body || typeof body.status !== 'string') {
+      return { status: 'error', message: `salvage returned HTTP ${response.status} with no body` };
+    }
+    return body;
+  } catch (error) {
+    return {
+      status: 'error',
+      message: error instanceof Error ? error.message : 'salvage request failed',
+    };
+  }
 }
 
 /**
@@ -307,6 +358,8 @@ export async function submitOrchestration(
     // items (the stage-final branch opens the ONE MR for the whole chain).
     ...(input.baseSpec ? { base_spec: input.baseSpec } : {}),
     ...(input.integrationBase ? { integration_base: true } : {}),
+    // MR base (2026-08-15): explicit origin branch (the DB assembly branch).
+    ...(input.baseBranch ? { base_branch: input.baseBranch } : {}),
     ...(input.openMergeRequest !== undefined
       ? { open_merge_request: input.openMergeRequest }
       : {}),
@@ -321,6 +374,7 @@ export async function submitOrchestration(
     baseSpec: input.baseSpec ?? null,
     openMergeRequest: input.openMergeRequest ?? null,
     integrationBase: input.integrationBase ?? false,
+    baseBranch: input.baseBranch ?? null,
   });
 }
 
@@ -355,6 +409,8 @@ export async function submitOrchestrationBatch(
     ...(input.baseSpec ? { base_spec: input.baseSpec } : {}),
     // INTEGRATION base (2026-08-12): default branch + remote feature/* merged.
     ...(input.integrationBase ? { integration_base: true } : {}),
+    // MR base (2026-08-15): the batch branch sits on the DB assembly branch.
+    ...(input.baseBranch ? { base_branch: input.baseBranch } : {}),
     options: { ...DEFAULT_OPTIONS },
   };
 
@@ -366,5 +422,6 @@ export async function submitOrchestrationBatch(
     deployOnComplete: input.deployOnComplete,
     baseSpec: input.baseSpec ?? null,
     integrationBase: input.integrationBase ?? false,
+    baseBranch: input.baseBranch ?? null,
   });
 }

@@ -1107,6 +1107,10 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
       continue;
     }
     if (kind === 'foundations') {
+      // 2026-08-15: 'Data access & persistence conventions' added — the live
+      // run's biggest scoping gap: 60 endpoint stories all needed database
+      // reads, and with no persistence foundation, endpoint story #1 would
+      // have invented the pattern for stories #2-60 to copy.
       const foundationTitles =
         feature.codeStreamKind === 'internal'
           ? ['Scheduler & queue infrastructure rehoming']
@@ -1114,7 +1118,18 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
               'Security & auth parity foundations',
               'Serialization & error-mapping conventions',
               'Environment & configuration wiring',
+              'Data access & persistence conventions',
             ];
+      const foundationDescriptions: Record<string, string> = {
+        'Data access & persistence conventions':
+          'The ONE data-access pattern every endpoint and internal-process ' +
+          'story consumes: the repository/DAO layer shape, the concrete access ' +
+          'technology per the captured db.* decisions (driver, connection ' +
+          'pool), transaction demarcation per db.transactionStrategy, and ' +
+          'read-replica routing per db.readReplicaUsage. Establish the ' +
+          'package home + one worked reference repository so implementation ' +
+          'stories copy an existing convention instead of inventing one.',
+      };
       foundationTitles.forEach((title, i) => {
         stories.push(
           mkItem({
@@ -1122,7 +1137,9 @@ export function buildCodeEpicStories(args: BuildCodeEpicStoriesArgs): MigrationB
             type: 'story',
             parentId: feature.id,
             title,
-            description: `${title} for the ${streamTitle(stream)} stream (cross-cutting; applies to every interface story).`,
+            description:
+              foundationDescriptions[title] ??
+              `${title} for the ${streamTitle(stream)} stream (cross-cutting; applies to every interface story).`,
             workstream: ws,
             sequenceOrder: next(),
             tags: baseTags,

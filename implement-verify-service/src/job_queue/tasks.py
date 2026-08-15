@@ -312,6 +312,12 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                 if getattr(request, "base_spec", None):
                     base = wr.resolve_base_ref(live_repo, request.base_spec,
                                                folder, default_branch)
+                elif getattr(request, "base_branch", None):
+                    # Explicit-branch base (2026-08-15): "start from the open
+                    # Merge Request" — the driver resolved the DB assembly
+                    # branch; allocation FAIL-CLOSES if it is absent on origin.
+                    base = wr.explicit_branch_base(live_repo,
+                                                   request.base_branch)
                 elif getattr(request, "integration_base", False):
                     base = wr.integration_base(live_repo, folder,
                                                default_branch, integration_tag)
@@ -1407,16 +1413,19 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 job, request, workspace_dir, storage)
             if wt_err:
                 raise ValueError(f"worktree allocation failed: {wt_err}")
-        elif getattr(request, "base_spec", None) or getattr(request, "integration_base", False):
-            # Run-branch chaining / integration base set the worktree base at
-            # allocation; the legacy live-tree path branches off the default
-            # branch and would SILENTLY drop the chain or the accumulated
-            # feature branches — the exact spec-blindness these features
-            # exist to remove. Fail loudly instead.
+        elif (getattr(request, "base_spec", None)
+              or getattr(request, "integration_base", False)
+              or getattr(request, "base_branch", None)):
+            # Run-branch chaining / integration / explicit-branch base set the
+            # worktree base at allocation; the legacy live-tree path branches
+            # off the default branch and would SILENTLY drop the chain, the
+            # accumulated feature branches, or the MR base — the exact
+            # spec-blindness these features exist to remove. Fail loudly.
             raise ValueError(
-                "base_spec/integration_base requires worktree runs "
+                "base_spec/integration_base/base_branch requires worktree runs "
                 "(WORKTREE_RUNS=on); the legacy live-tree path cannot base a "
-                "run off a prior spec's branch or an integration base")
+                "run off a prior spec's branch, an integration base, or an "
+                "explicit MR branch")
         ws_for_run = run_workspace or workspace_dir
         start_step = job.resume_from_step or 1
 

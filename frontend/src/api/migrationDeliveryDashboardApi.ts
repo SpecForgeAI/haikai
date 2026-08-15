@@ -943,12 +943,14 @@ export interface MigrationExecutionRunDto {
  *                  ("Start stage N" starts stage N only); `parityOverride`
  *                  is the break-glass past the DB data-parity precedence gate
  *                  when starting the service plane (recorded on the run);
- *                  `baseMode` (run-branch chaining, 2026-08-06) picks where
- *                  the stage's first worktree branch starts — 'chain'
- *                  (default) continues from the previous stage's last good
- *                  spec branch so this stage sees its unmerged work; 'fresh'
- *                  starts from the main branch (the Start-stage checkbox, for
- *                  when the previous stage's MR is already merged).
+ *                  `baseMode` (run-branch chaining, 2026-08-06; extended
+ *                  2026-08-15) picks where the stage's first worktree branch
+ *                  starts — 'chain' (default) = the driver's derivation
+ *                  (integration at a deployed disjoint stage boundary, else
+ *                  main); 'fresh' = clean main; 'mr' = the prior DB run's
+ *                  db-migration/<id> assembly branch (the open Merge
+ *                  Request's code); 'integration' = main + every pushed
+ *                  db-migration/* and feature/* branch merged.
  */
 export async function triggerMigrate(
   projectId: string,
@@ -958,7 +960,7 @@ export async function triggerMigrate(
     project: string;
     plane?: 'db' | 'service' | 'ui';
     parityOverride?: boolean;
-    baseMode?: 'chain' | 'fresh';
+    baseMode?: 'chain' | 'fresh' | 'mr' | 'integration';
   },
 ): Promise<TriggerMigrateResult> {
   const url =
@@ -1717,7 +1719,7 @@ export type ResumeFailedMigrationRunResult =
 export async function resumeFailedMigrationRun(
   projectId: string,
   runId: string,
-  args: { company: string; project: string; bookId?: string },
+  args: { company: string; project: string; bookId?: string; salvage?: boolean },
 ): Promise<ResumeFailedMigrationRunResult> {
   const url =
     `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
@@ -1729,6 +1731,9 @@ export async function resumeFailedMigrationRun(
       company: args.company,
       project: args.project,
       ...(args.bookId ? { book_id: args.bookId } : {}),
+      // Salvage-first (2026-08-15): commit+push the failed spec's local
+      // worktree, mark it implemented, resume from the next spec.
+      ...(args.salvage ? { salvage: true } : {}),
     }),
   });
   const body = (await res.json().catch(() => ({}))) as {

@@ -118,9 +118,13 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
   {
     needs: ['db.migrations'],
     render: (v) =>
-      `Wire the schema-migration tool per the captured decision (${v('db.migrations')}) ` +
-      `with an EMPTY changelog/migration skeleton that applies cleanly on boot. The DB ` +
-      `plane owns the schema content; this story only proves the tool runs. ` +
+      `Wire the schema-migration tool per the captured decision (${v('db.migrations')}). ` +
+      `IF the repository already contains the DB plane's changelog (a run based on the ` +
+      `DB Merge Request carries \`liquibase/db.changelog-master.xml\` and its ` +
+      `changesets), point the tool's configuration at that EXISTING master changelog — ` +
+      `NEVER create a second/parallel changelog beside it. Only when the repository has ` +
+      `no changelog at all (a fresh-from-main run), create an EMPTY skeleton that ` +
+      `applies cleanly on boot. The DB plane owns the schema content either way. ` +
       cite('db.migrations'),
   },
   {
