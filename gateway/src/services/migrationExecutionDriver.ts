@@ -117,7 +117,10 @@ import {
 } from './migrationDataParityGate';
 import { createDataParityReconcileTrigger } from './migrationDataParityReconcile';
 import { createDataMigrationTrigger } from './migrationDataRunnerDispatch';
-import { createDbPlaneCompletionRunner } from './migrationDbPlaneCompletion';
+import {
+  createDbPlaneCompletionRunner,
+  defaultGetJobStatus,
+} from './migrationDbPlaneCompletion';
 import {
   migrationTargetCredentialsStore,
   type TargetServeSpec,
@@ -262,6 +265,15 @@ export interface MigrationDriverDeps {
   submitOrchestrationBatch?: typeof submitOrchestrationBatch;
   /** Resume-with-salvage (2026-08-15): the IVS worktree salvage client. */
   salvageSpecWorktree?: typeof salvageSpecWorktree;
+  /**
+   * IVS job-status read (2026-08-15): the boot sweep's callback-lost
+   * reconcile — the C5 "durable + pollable" promise finally consumed. A run
+   * whose item was SUBMITTED with a job_id but whose terminal callback never
+   * arrived (every delivery attempt failed) would otherwise wedge at
+   * 'dispatching' forever. Optional + lazily defaulted so pre-existing deps
+   * mocks keep compiling.
+   */
+  getJobStatus?: typeof defaultGetJobStatus;
   /**
    * DB-pack readiness gate reads (Spec 2026-07-02-e). Optional + defaulted
    * inside {@link evaluateDbPackReadiness} so pre-existing deps mocks keep
@@ -4172,10 +4184,16 @@ async function resolveDescriptorForItem(
 export async function recoverInFlightRuns(
   runs: Array<{ projectId: string; runId: string; company: string; project: string; bookId: string }>,
   deps: MigrationDriverDeps
-): Promise<{ recovered: number; rekicked: number; retriesRearmed: number }> {
+): Promise<{
+  recovered: number;
+  rekicked: number;
+  retriesRearmed: number;
+  callbacksReconciled: number;
+}> {
   let recovered = 0;
   let rekicked = 0;
   let retriesRearmed = 0;
+  let callbacksReconciled = 0;
 
   for (const ref of runs) {
     try {
@@ -4224,6 +4242,87 @@ export async function recoverInFlightRuns(
         });
         kickSpecRunner(scope, run, item, descriptor, deps);
         rekicked++;
+      }
+
+      // Callback-lost reconcile (2026-08-15 — the C5 "durable + pollable"
+      // promise finally consumed): an item SUBMITTED with a job_id whose IVS
+      // job already finished but whose terminal callback was never delivered
+      // (all retry attempts failed) wedged the run at 'dispatching' forever —
+      // the predicate above requires !job_id, so nothing ever looked again.
+      // Poll the durable job record; a terminal job feeds the SAME advance
+      // path the callback would have (CD-6 idempotency guards a late twin).
+      const orphaned = items.filter(
+        (i) =>
+          (i.status === RUN_ITEM_STATUS.SUBMITTED ||
+            i.status === RUN_ITEM_STATUS.SUBMITTING) &&
+          !!i.job_id &&
+          !i.outcome
+      );
+      const reconciledJobs = new Set<string>();
+      for (const item of orphaned) {
+        const jobId = item.job_id as string;
+        // Batch shape: N siblings share one job — one advance completes all.
+        if (reconciledJobs.has(jobId)) continue;
+        reconciledJobs.add(jobId);
+        const getJob = deps.getJobStatus ?? defaultGetJobStatus;
+        const job = await getJob(jobId).catch(() => null);
+        if (!job) continue; // unreadable — the next boot sweep tries again
+        const terminal =
+          job.status === 'completed' ||
+          job.status === 'failed' ||
+          job.status === 'cancelled';
+        if (!terminal) continue; // still running — its callback will come
+        const result = (job.result ?? {}) as Record<string, unknown>;
+        let advanceInput: BuildResultAdvanceInput | null = null;
+        if (typeof result.outcome === 'string' && result.outcome) {
+          advanceInput = {
+            company: scope.company,
+            project: scope.project,
+            jobId,
+            outcome: result.outcome as BuildResultOutcome,
+            prUrl: typeof result.pr_url === 'string' ? result.pr_url : null,
+            targetBaseUrl:
+              typeof result.target_base_url === 'string' ? result.target_base_url : null,
+            errors: Array.isArray(result.errors) ? result.errors.map(String) : null,
+            failureClass:
+              typeof result.failure_class === 'string' ? result.failure_class : null,
+          };
+        } else if (job.status === 'failed' || job.status === 'cancelled') {
+          advanceInput = {
+            company: scope.company,
+            project: scope.project,
+            jobId,
+            outcome: 'error',
+            errors: [job.error ?? `IVS job ${job.status} with no result payload`],
+          };
+        }
+        if (!advanceInput) {
+          // Completed with no recognisable result — never guess success.
+          logger.warn('[diag-gateway] migration_execution_driver recovery_job_result_unreadable', {
+            projectId: ref.projectId,
+            runId: ref.runId,
+            runItemId: item.id,
+            jobId,
+            jobStatus: job.status,
+          });
+          continue;
+        }
+        logger.info('[diag-gateway] migration_execution_driver recovery_callback_reconciled', {
+          projectId: ref.projectId,
+          runId: ref.runId,
+          runItemId: item.id,
+          jobId,
+          jobStatus: job.status,
+          outcome: advanceInput.outcome,
+        });
+        const decision = await advanceRunOnBuildResult(advanceInput, deps);
+        logger.info('[diag-gateway] migration_execution_driver recovery_reconcile_decision', {
+          projectId: ref.projectId,
+          runId: ref.runId,
+          jobId,
+          decision,
+        });
+        callbacksReconciled++;
       }
 
       // Robustness R2: re-arm SCHEDULED RETRIES lost with the previous
@@ -4283,8 +4382,9 @@ export async function recoverInFlightRuns(
     recovered,
     rekicked,
     retriesRearmed,
+    callbacksReconciled,
   });
-  return { recovered, rekicked, retriesRearmed };
+  return { recovered, rekicked, retriesRearmed, callbacksReconciled };
 }
 
 // ============================================================================
