@@ -75,6 +75,7 @@ import {
 import {
   submitOrchestration,
   submitOrchestrationBatch,
+  salvageSpecWorktree,
   OrchestrationSubmitResult,
 } from './migrationOrchestrationSubmit';
 import { recordWorkItemImplementationError } from './migrationWorkItemErrorSink';
@@ -162,6 +163,11 @@ export interface DispatchDescriptor {
   deployOnComplete: boolean;
   /** The item's plane workstream (Spec W plane derivation). */
   workstream?: string | null;
+  /** Blob-item tags (2026-08-15 — the service-plane foundations-first rank). */
+  tags?: string[];
+  /** True when the blob item lists committed endpoint ids (an implementation
+   * story); false for foundations/scaffold (2026-08-15 ordering rank). */
+  hasEndpointIds?: boolean;
   /** The migration plane this item belongs to (Spec W). */
   plane?: MigrationPlane;
 }
@@ -221,7 +227,7 @@ export interface MigrateScope {
    * Start-stage dialog). Within a run, later specs always chain off the
    * previous successful item regardless of this mode.
    */
-  baseMode?: 'chain' | 'fresh' | null;
+  baseMode?: 'chain' | 'fresh' | 'mr' | 'integration' | null;
 }
 
 /** The injectable dependency surface (the DI seam for tests). */
@@ -254,6 +260,8 @@ export interface MigrationDriverDeps {
    * sites that predate batch mode keep compiling.
    */
   submitOrchestrationBatch?: typeof submitOrchestrationBatch;
+  /** Resume-with-salvage (2026-08-15): the IVS worktree salvage client. */
+  salvageSpecWorktree?: typeof salvageSpecWorktree;
   /**
    * DB-pack readiness gate reads (Spec 2026-07-02-e). Optional + defaulted
    * inside {@link evaluateDbPackReadiness} so pre-existing deps mocks keep
@@ -676,6 +684,10 @@ export function buildOrderedDispatchSet(params: {
       deployOnComplete: false,
       workstream: item.workstream ?? workstreamFromTags(item.tags),
       plane: planeForItem(item),
+      tags: (item.tags ?? []).filter((t): t is string => typeof t === 'string'),
+      hasEndpointIds:
+        Array.isArray((item as { apiEndpointIds?: unknown }).apiEndpointIds) &&
+        ((item as { apiEndpointIds?: unknown[] }).apiEndpointIds?.length ?? 0) > 0,
     });
   }
   // Big-bang: only the FINAL spec deploys.
@@ -798,8 +810,31 @@ export function buildPhasedDispatchSet(params: {
   const descriptors: DispatchDescriptor[] = [];
   let seq = 0;
   for (const plane of PLANE_ORDER) {
-    const list = byPlane.get(plane);
+    let list = byPlane.get(plane);
     if (!list || list.length === 0) continue;
+    // Service-plane foundations-first rank (2026-08-15): scaffold story →
+    // ALL foundation stories (both streams — the scheduler/queue rehoming
+    // previously ran AFTER 60 endpoint stories, so the whole convention
+    // layer was request-response-shaped) → implementation stories. STABLE
+    // within ranks (the walk order is preserved inside each group).
+    if (plane === 'service') {
+      const rank = (d: DispatchDescriptor): number => {
+        const tags = d.tags ?? [];
+        if (tags.some((t) => t.trim().toLowerCase() === 'seed_build_files')) return 0;
+        if (
+          tags.includes('provenance:plan-deterministic') &&
+          !d.hasEndpointIds &&
+          !tags.includes('execution:manual-gate')
+        ) {
+          return 1; // planner-authored foundation (zero endpoints)
+        }
+        return 2;
+      };
+      list = list
+        .map((d, i) => ({ d, i }))
+        .sort((a, b) => rank(a.d) - rank(b.d) || a.i - b.i)
+        .map((x) => x.d);
+    }
     const phaseDescriptors = list.map((d) => ({
       ...d,
       sequencePosition: seq++,
@@ -1290,10 +1325,75 @@ export async function startMigration(
   // feature/* branch for the target merged in (IVS builds it per repo
   // target at allocation) — specs accumulate onto ALL prior work and a
   // missing branch is simply absent, never fatal.
-  let runBaseMode: 'chain' | 'fresh' | 'integration' =
+  let runBaseMode: 'chain' | 'fresh' | 'integration' | 'mr' =
     scope.baseMode === 'fresh' ? 'fresh' : 'chain';
   let baseReason = scope.baseMode === 'fresh' ? 'operator_fresh' : 'no_prior_run';
-  if (scope.baseMode !== 'fresh') {
+  // Explicit-branch base (2026-08-15): the run's worktrees sit on the branch
+  // named here (the DB assembly branch = the open Merge Request's code).
+  let runBaseBranch: string | null = null;
+  if (scope.baseMode === 'integration') {
+    // Operator-chosen integration (2026-08-15): previously integration was
+    // only auto-derived at a deployed+disjoint stage boundary — a same-stage
+    // RE-start could never accumulate onto prior pushed branches.
+    runBaseMode = 'integration';
+    baseReason = 'operator_integration';
+  } else if (scope.baseMode === 'mr') {
+    // "Start from the open Merge Request" (2026-08-15): base every worktree
+    // on the prior DB run's db-migration/<id8> assembly branch — the merged
+    // DB plane INCLUDING the assembly-only overlay files. Resolution: the
+    // newest DEPLOYED run whose items are DISJOINT from this dispatch (the
+    // same genuinely-preceding-stage predicate the auto-integration uses).
+    // IVS fail-closes at allocation if the branch is absent on origin.
+    const fetchRuns =
+      deps.fetchMigrationExecutionRunsForBook ?? getMigrationExecutionRunsForBook;
+    try {
+      const runs = await fetchRuns(projectId, bookId);
+      const dispatchWorkItemIds = new Set(
+        dispatchSet.map((d) => d.workItemId).filter((id): id is string => !!id)
+      );
+      const dbRun = (runs ?? []).find(
+        (r) =>
+          r.status === RUN_STATUS.DEPLOYED &&
+          !(r.items ?? []).some(
+            (i) => i.work_item_id && dispatchWorkItemIds.has(i.work_item_id)
+          )
+      );
+      if (!dbRun || !dbRun.id) {
+        return {
+          status: 'blocked',
+          reasons: [
+            {
+              code: 'mr_base_unresolvable',
+              message:
+                'No deployed preceding-stage run found for this book — there is no ' +
+                'DB assembly branch (db-migration/<runId>) to base on. Deploy the ' +
+                'DB plane first, or choose "fresh from main" / "integration".',
+            },
+          ],
+        };
+      }
+      const runIdShort =
+        String(dbRun.id).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) || 'run';
+      runBaseBranch = `db-migration/${runIdShort}`;
+      runBaseMode = 'mr';
+      baseReason = 'operator_mr';
+    } catch (error) {
+      // FAIL-CLOSED like the chain path: the operator asked for the MR base;
+      // silently starting elsewhere would discard the DB plane invisibly.
+      return {
+        status: 'blocked',
+        reasons: [
+          {
+            code: 'mr_base_unresolvable',
+            message:
+              'Could not read the prior runs to resolve the DB assembly branch ' +
+              `(${error instanceof Error ? error.message : 'read failed'}). Retry, or ` +
+              'choose a different base in the Start-stage dialog.',
+          },
+        ],
+      };
+    }
+  } else if (scope.baseMode !== 'fresh') {
     const fetchLatest =
       deps.fetchLatestMigrationExecutionRunForBook ??
       getLatestMigrationExecutionRunForBook;
@@ -1351,11 +1451,13 @@ export async function startMigration(
     baseReason,
   });
   trace.step(
-    runBaseMode === 'integration'
-      ? `run base: integration (default branch + every remote feature/* branch) (${baseReason})`
-      : runBaseSpec
-        ? `run base: chained off ${runBaseSpec} (${baseReason})`
-        : `run base: default branch (${baseReason})`,
+    runBaseMode === 'mr'
+      ? `run base: Merge Request branch ${runBaseBranch} (${baseReason})`
+      : runBaseMode === 'integration'
+        ? `run base: integration (default + db-migration/* + feature/* branches) (${baseReason})`
+        : runBaseSpec
+          ? `run base: chained off ${runBaseSpec} (${baseReason})`
+          : `run base: default branch (${baseReason})`,
     { project: scope.project }
   );
 
@@ -1381,6 +1483,9 @@ export async function startMigration(
           type: 'run_base_mode',
           mode: runBaseMode,
           reason: baseReason,
+          // 'mr' mode: the resolved DB assembly branch, persisted so retries,
+          // Resume and boot recovery re-derive the SAME base (2026-08-15).
+          ...(runBaseBranch ? { base_branch: runBaseBranch } : {}),
           at: new Date().toISOString(),
         },
       ],
@@ -1507,13 +1612,28 @@ export async function startMigration(
  */
 export function runBaseModeOf(
   run: MigrationExecutionRun | null | undefined
-): 'chain' | 'fresh' | 'integration' {
+): 'chain' | 'fresh' | 'integration' | 'mr' {
   const entries = (run?.decision_log_json ?? []).filter(
     (e) => e && (e as Record<string, unknown>).type === 'run_base_mode'
   );
   const last = entries.length > 0 ? (entries[entries.length - 1] as Record<string, unknown>) : null;
   const mode = last?.mode;
-  return mode === 'integration' || mode === 'fresh' ? mode : 'chain';
+  return mode === 'integration' || mode === 'fresh' || mode === 'mr' ? mode : 'chain';
+}
+
+/**
+ * The explicit base branch of an 'mr'-mode run (2026-08-15), read from the
+ * same `run_base_mode` decision-log entry. Null for every other mode.
+ */
+export function runBaseBranchOf(
+  run: MigrationExecutionRun | null | undefined
+): string | null {
+  const entries = (run?.decision_log_json ?? []).filter(
+    (e) => e && (e as Record<string, unknown>).type === 'run_base_mode'
+  );
+  const last = entries.length > 0 ? (entries[entries.length - 1] as Record<string, unknown>) : null;
+  const branch = last?.base_branch;
+  return typeof branch === 'string' && branch.trim() !== '' ? branch : null;
 }
 
 /**
@@ -1792,6 +1912,13 @@ export async function runSpecSegment(
   // whole run still accumulates.
   const useIntegrationBase =
     !chainBase && runBaseModeOf(freshRun ?? run) === 'integration';
+  // MR base (2026-08-15): the run's FIRST worktree (no within-run prior good
+  // to chain off) sits on the DB assembly branch resolved at run creation;
+  // subsequent items chain within-run as before.
+  const mrBaseBranch =
+    !chainBase && runBaseModeOf(freshRun ?? run) === 'mr'
+      ? runBaseBranchOf(freshRun ?? run)
+      : null;
 
   // Stamp the computed spec_name; SUBMITTING (no ANSWERING phase any more —
   // the boot-recovery sweep re-kicks submitting-with-no-job_id as before).
@@ -1849,6 +1976,7 @@ export async function runSpecSegment(
       ...(targetServeSpec ? { targetServeSpec } : {}),
       ...(chainBase ? { baseSpec: chainBase } : {}),
       ...(useIntegrationBase ? { integrationBase: true } : {}),
+      ...(mrBaseBranch ? { baseBranch: mrBaseBranch } : {}),
       openMergeRequest,
       callbackUrl: deps.buildResultsCallbackUrl,
     });
@@ -2041,9 +2169,13 @@ export async function runBatchSegment(
       // tree/branch within the job — only the cross-run base applies here).
       ...((run.base_spec ?? '').trim() !== '' ? { baseSpec: run.base_spec } : {}),
       // INTEGRATION base (2026-08-12): stage continuation without a lineage
-      // base — IVS builds default branch + every remote feature/* branch.
+      // base — IVS builds default branch + db-migration/* + feature/* merged.
       ...((run.base_spec ?? '').trim() === '' && runBaseModeOf(run) === 'integration'
         ? { integrationBase: true }
+        : {}),
+      // MR base (2026-08-15): the batch branch sits on the DB assembly branch.
+      ...((run.base_spec ?? '').trim() === '' && runBaseModeOf(run) === 'mr'
+        ? { baseBranch: runBaseBranchOf(run) ?? undefined }
         : {}),
       callbackUrl: deps.buildResultsCallbackUrl,
     });
@@ -3098,7 +3230,8 @@ export type ResumeFailedRunResult =
 export async function resumeFailedMigrationRun(
   scope: MigrateScope,
   runId: string,
-  deps: MigrationDriverDeps
+  deps: MigrationDriverDeps,
+  opts: { salvageFirstFailed?: boolean } = {}
 ): Promise<ResumeFailedRunResult> {
   scope = normalizeScopeIdentifiers(scope);
   const projectId = scope.projectId;
@@ -3114,7 +3247,7 @@ export async function resumeFailedMigrationRun(
   const items = (run.items ?? [])
     .slice()
     .sort((a, b) => (a.sequence_position ?? 0) - (b.sequence_position ?? 0));
-  const toReset = items.filter(
+  let toReset = items.filter(
     (i) =>
       i.id &&
       i.status !== RUN_ITEM_STATUS.IMPLEMENTED &&
@@ -3127,6 +3260,65 @@ export async function resumeFailedMigrationRun(
       status: 'not_resumable',
       reason: 'every item already implemented/deployed — nothing to resume',
     };
+  }
+
+  // Salvage-first (2026-08-15): commit + push the FIRST failed item's local
+  // worktree as its branch and mark it implemented, so the resume proceeds
+  // to the NEXT spec instead of re-doing finished work. FAIL-CLOSED: a
+  // refused/errored salvage blocks the resume with the reason (the operator
+  // resumes WITHOUT salvage to retry the spec instead).
+  if (opts.salvageFirstFailed) {
+    const firstFailed = toReset.find(
+      (i) => i.status === RUN_ITEM_STATUS.FAILED && (i.spec_name ?? '').trim() !== ''
+    );
+    if (!firstFailed) {
+      return {
+        status: 'not_resumable',
+        reason:
+          'salvage requested but no failed item with a spec name exists — ' +
+          'resume without salvage.',
+      };
+    }
+    const salvage = deps.salvageSpecWorktree ?? salvageSpecWorktree;
+    const outcome = await salvage(
+      scope.company,
+      scope.project,
+      (firstFailed.spec_name as string).trim()
+    );
+    if (outcome.status !== 'salvaged') {
+      return {
+        status: 'not_resumable',
+        reason:
+          `salvage refused (${outcome.status}): ${outcome.message ?? 'no detail'} — ` +
+          'resume without salvage to retry the spec instead.',
+      };
+    }
+    await safePatchItem(deps, projectId, firstFailed.id as string, {
+      status: RUN_ITEM_STATUS.IMPLEMENTED,
+      outcome: 'implemented',
+      error_detail: `salvaged from local worktree (${outcome.branch}): ${
+        (outcome.summary ?? '').slice(0, 400)
+      }`,
+      job_id: '',
+      failure_class: '',
+    });
+    logger.info('[diag-gateway] migration_execution_driver resume_salvaged_item', {
+      projectId,
+      runId,
+      runItemId: firstFailed.id,
+      specName: firstFailed.spec_name,
+      branch: outcome.branch,
+      committed: outcome.committed ?? null,
+    });
+    toReset = toReset.filter((i) => i.id !== firstFailed.id);
+    if (toReset.length === 0) {
+      return {
+        status: 'not_resumable',
+        reason:
+          'salvage succeeded and no other item remains to run — the run can be ' +
+          'completed via its normal callbacks or restarted for the next stage.',
+      };
+    }
   }
 
   // Detect the batch shape BEFORE the reset clears the shared job_id.

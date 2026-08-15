@@ -442,6 +442,75 @@ export async function fetchLatestTargetManifests(
 }
 
 // ============================================================================
+// Manifest ↔ decision reconciliation (2026-08-15)
+// ============================================================================
+
+/** A decision-required dependency the confirmed pom is missing. */
+export interface ManifestReconcileAddition {
+  groupId: string;
+  artifactId: string;
+  /** Null = BOM-managed (inserted version-less on apply). */
+  version: string | null;
+  decisionCode: string;
+  note: string;
+}
+
+/** A decision that contradicts an EXISTING pom entry (never auto-changed). */
+export interface ManifestReconcileConflict {
+  decisionCode: string;
+  coordinate: string;
+  pomVersion: string;
+  decisionValue: string;
+  message: string;
+}
+
+export interface ManifestReconcileResult {
+  tag: string | null;
+  additions: ManifestReconcileAddition[];
+  conflicts: ManifestReconcileConflict[];
+}
+
+/** Fetch the pending additions + conflicts for the latest confirmed pom. */
+export async function fetchManifestReconcile(
+  projectId: string,
+  targetArchitectureId: string,
+): Promise<ManifestReconcileResult> {
+  const url =
+    `${GATEWAY_BASE}/api/projects/${encodeURIComponent(projectId)}` +
+    `/target-architectures/${encodeURIComponent(targetArchitectureId)}` +
+    `/manifest-reconcile`;
+  const res = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+  if (!res.ok) return { tag: null, additions: [], conflicts: [] };
+  const body = (await res.json().catch(() => null)) as ManifestReconcileResult | null;
+  return body && Array.isArray(body.additions)
+    ? body
+    : { tag: null, additions: [], conflicts: [] };
+}
+
+/** Apply approved additions — persists a NEW latest artifact version. */
+export async function applyManifestReconcile(
+  projectId: string,
+  targetArchitectureId: string,
+  coordinates: string[],
+): Promise<{ applied: string[] } | { error: string }> {
+  const url =
+    `${GATEWAY_BASE}/api/projects/${encodeURIComponent(projectId)}` +
+    `/target-architectures/${encodeURIComponent(targetArchitectureId)}` +
+    `/manifest-reconcile/apply`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ coordinates }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    applied?: string[];
+    error?: string;
+  };
+  if (res.ok && Array.isArray(body.applied)) return { applied: body.applied };
+  return { error: body.error ?? `apply failed (HTTP ${res.status})` };
+}
+
+// ============================================================================
 // Derived display helpers (pure) — used by the provenance/version-unknown UI.
 // ============================================================================
 

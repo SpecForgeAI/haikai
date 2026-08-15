@@ -118,13 +118,29 @@ class OrchestrationRequest(BaseModel):
         default=False,
         description=(
             "True = base this run's worktree branches on the default branch "
-            "PLUS every remote `feature/*` branch for each repo target merged "
-            "in — the run accumulates onto ALL prior unmerged work, and a "
-            "missing branch is simply absent rather than fatal. base_spec "
-            "takes precedence when both are set (an explicit lineage wins). "
-            "Requires worktree runs (WORKTREE_RUNS=on). Merge conflicts "
-            "across the accumulated branches fail allocation loudly with the "
-            "conflicted paths."
+            "PLUS every remote `db-migration/*` assembly branch and every "
+            "remote `feature/*` branch for each repo target merged in (DB "
+            "assembly first, 2026-08-15) — the run accumulates onto ALL prior "
+            "unmerged work, and a missing branch is simply absent rather than "
+            "fatal. base_spec takes precedence when both are set (an explicit "
+            "lineage wins). Requires worktree runs (WORKTREE_RUNS=on). Merge "
+            "conflicts across the accumulated branches fail allocation loudly "
+            "with the conflicted paths."
+        ),
+    )
+    # Explicit-branch base (2026-08-15): "start from the open Merge Request".
+    # The DB plane sits in an un-merged MR (its assembly branch) until
+    # end-to-end reconciliation evidence exists; a service-plane run can base
+    # every worktree directly on that branch.
+    base_branch: Optional[str] = Field(
+        default=None,
+        description=(
+            "Explicit remote branch name (e.g. `db-migration/<runId>`) whose "
+            "`origin/<base_branch>` forms the base ref for this run's "
+            "worktree branches. FAIL-CLOSED when absent on origin (never a "
+            "silent fall-back to the default branch). Precedence: base_spec "
+            "> base_branch > integration_base > fresh default. Requires "
+            "worktree runs (WORKTREE_RUNS=on)."
         ),
     )
     open_merge_request: bool = Field(

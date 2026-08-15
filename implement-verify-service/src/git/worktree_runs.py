@@ -226,6 +226,39 @@ def _conflicted_paths(repo: Path) -> list[str]:
     return [ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip()]
 
 
+def _remote_db_migration_branches(live_repo: Path) -> list[str]:
+    """Every `origin/db-migration/*` ref (the DB assembly branches — each is
+    the merged DB spec branches PLUS the assembly-only overlay files that were
+    never committed to any feature branch), sorted for deterministic order.
+    Merged FIRST by the integration base (2026-08-15): merging the individual
+    DB `feature/*` branches afterwards is a clean no-op (they are ancestors),
+    but merging ONLY them would silently miss the overlay files."""
+    cp = _git(live_repo, "for-each-ref", "--format=%(refname:short)",
+              "refs/remotes/origin/db-migration/")
+    if cp.returncode != 0:
+        return []
+    return sorted(ln.strip() for ln in (cp.stdout or "").splitlines() if ln.strip())
+
+
+def explicit_branch_base(live_repo: Path, base_branch: str) -> str:
+    """The base ref for an EXPLICIT-branch run (2026-08-15 — 'start from the
+    open Merge Request'): `origin/<base_branch>` after a fetch. FAIL-CLOSED:
+    a missing branch raises a NAMED error — silently falling back to the
+    default branch would discard the DB plane from every worktree in the run
+    (the exact silent-divergence class the operator opted out of)."""
+    live_repo = Path(live_repo).resolve()
+    _git(live_repo, "fetch", "origin", "--quiet")  # best-effort refresh
+    ref = f"origin/{base_branch}"
+    if not _ref_resolves(live_repo, ref):
+        raise WorktreeAllocationError(
+            f"explicit base branch '{base_branch}' does not resolve on origin "
+            f"({ref}) — the Merge-Request base cannot be built. Was the DB "
+            "assembly branch pushed (and its MR still open)? Choose 'fresh "
+            "from main' to opt out explicitly."
+        )
+    return ref
+
+
 def integration_base(live_repo: Path, folder, default_branch: str,
                      tag: str) -> str:
     """Build the INTEGRATION base for one repo target: a branch off the
@@ -246,7 +279,12 @@ def integration_base(live_repo: Path, folder, default_branch: str,
     live_repo = Path(live_repo).resolve()
     _git(live_repo, "fetch", "--all", "--quiet")  # best-effort
     base = fresh_default_base(live_repo, default_branch)
-    branches = _remote_feature_branches(live_repo, folder)
+    # DB assembly branches FIRST (2026-08-15): each db-migration/* branch is
+    # the merged DB spec branches + the assembly-only overlay files. The DB
+    # feature/* siblings then merge as clean no-ops (ancestors), so the
+    # service-plane branches accumulate ON TOP of the complete DB plane.
+    branches = (_remote_db_migration_branches(live_repo)
+                + _remote_feature_branches(live_repo, folder))
     if not branches:
         return base
     branch = f"{INTEGRATION_BRANCH_PREFIX}{tag}" + (f"--{folder}" if folder else "")
@@ -278,6 +316,81 @@ def integration_base(live_repo: Path, folder, default_branch: str,
     finally:
         _git(live_repo, "worktree", "remove", "--force", str(tmp))
     return branch
+
+
+def salvage_spec_worktree(live_repo: Path, spec_name: str) -> dict:
+    """Salvage a dead run item's LOCAL worktree (2026-08-15).
+
+    When a spec's implementation completed but the run died before commit/push
+    (the overnight stall shape), the finished work sits uncommitted in the
+    spec's worktree. This commits + pushes it as the spec's branch so a
+    Resume proceeds to the NEXT spec instead of re-doing finished work — the
+    first-class version of the manual git surgery the operator's agent
+    performed by hand.
+
+    Finds the worktree holding `feature/<spec>` (or the highest retry
+    `feature/<spec>-r<N>`), commits any uncommitted changes, pushes the
+    branch, and returns a structured outcome:
+      {status: 'salvaged', branch, committed, summary} |
+      {status: 'no_worktree', message} | {status: 'error', message}
+    Never raises for content reasons.
+    """
+    live_repo = Path(live_repo).resolve()
+    cp = _git(live_repo, "worktree", "list", "--porcelain")
+    if cp.returncode != 0:
+        return {"status": "error", "message": "git worktree list failed"}
+    # Parse porcelain blocks -> (path, branch-short).
+    candidates: list[tuple[str, str]] = []
+    path: str | None = None
+    for line in (cp.stdout or "").splitlines():
+        line = line.strip()
+        if line.startswith("worktree "):
+            path = line[len("worktree "):]
+        elif line.startswith("branch ") and path:
+            short = line[len("branch "):]
+            short = short[len("refs/heads/"):] if short.startswith("refs/heads/") else short
+            base = f"feature/{spec_name}"
+            if short == base or short.startswith(f"{base}-r"):
+                candidates.append((path, short))
+            path = None
+    if not candidates:
+        return {
+            "status": "no_worktree",
+            "message": (
+                f"no local worktree holds a feature/{spec_name}[-rN] branch — "
+                "nothing to salvage (the worktree may have been reclaimed); "
+                "resume WITHOUT salvage to retry the spec"),
+        }
+    # Highest retry attempt wins (the latest work).
+    def _attempt(branch: str) -> int:
+        tail = branch.rsplit("-r", 1)
+        return int(tail[1]) if len(tail) == 2 and tail[1].isdigit() else 0
+    wt_path, branch = max(candidates, key=lambda c: _attempt(c[1]))
+    wt = Path(wt_path)
+    if not wt.exists():
+        return {"status": "no_worktree",
+                "message": f"worktree path for {branch} no longer exists ({wt})"}
+
+    committed = False
+    dirty = _git(wt, "status", "--porcelain")
+    if (dirty.stdout or "").strip():
+        _git(wt, "add", "-A")
+        cm = _git(wt, "commit", "-m",
+                  f"salvage: {spec_name} — completed work recovered from a stalled run")
+        if cm.returncode != 0:
+            return {"status": "error",
+                    "message": f"salvage commit failed: {(cm.stderr or cm.stdout or '').strip()[:400]}"}
+        committed = True
+    push = _git(wt, "push", "-u", "origin", branch)
+    if push.returncode != 0:
+        return {"status": "error",
+                "message": f"salvage push failed for {branch}: {(push.stderr or '').strip()[:400]}"}
+    stat = _git(wt, "show", "--stat", "--format=%s", "HEAD")
+    summary = (stat.stdout or "").strip()[:1000]
+    logger.info("salvaged worktree for %s: branch=%s committed=%s", spec_name,
+                branch, committed)
+    return {"status": "salvaged", "branch": branch, "committed": committed,
+            "summary": summary}
 
 
 def free_branch_holder_if_dead(live_repo: Path, branch: str, storage,

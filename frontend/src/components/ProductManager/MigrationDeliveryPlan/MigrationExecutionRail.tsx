@@ -164,7 +164,7 @@ export interface MigrationExecutionRailProps {
    * stage N" (the existing full-stage start) so the operator explicitly
    * chooses between "from spec 1 of X" and "from the failed spec up to X".
    */
-  onResumeFailed?: (plane: RailPlaneId) => void;
+  onResumeFailed?: (plane: RailPlaneId, salvage?: boolean) => void;
 }
 
 function describeBlockReason(r: Record<string, unknown>): string {
@@ -552,6 +552,19 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
                         data-testid={`execution-rail-resume-failed-${p.plane}`}
                       >
                         {busy ? 'Working…' : `▶ Resume stage ${stageNo}`}
+                      </button>
+                    )}
+                    {haltedMidStage && onResumeFailed && (
+                      <button
+                        type="button"
+                        className={styles.selectButton}
+                        style={{ marginTop: 8, marginLeft: 8 }}
+                        disabled={!scopeReady || busy}
+                        onClick={() => onResumeFailed(p.plane, true)}
+                        title="When the failed spec's work is COMPLETE but the run died before commit/push (a stalled job): commits + pushes its existing local worktree as the spec branch, marks it implemented, and resumes from the NEXT spec. Refused loudly if no worktree exists."
+                        data-testid={`execution-rail-resume-salvage-${p.plane}`}
+                      >
+                        {busy ? 'Working…' : '▶ Resume (salvage last spec)'}
                       </button>
                     )}
                     {!scopeReady && (

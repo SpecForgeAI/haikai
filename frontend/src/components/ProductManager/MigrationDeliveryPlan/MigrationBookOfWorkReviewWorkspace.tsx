@@ -1018,11 +1018,14 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   // Parity-only refusal of a service start renders the break-glass option
   // (mirrors the resume-time break-glass; the override is recorded).
   const [showParityBreakGlass, setShowParityBreakGlass] = useState(false);
-  // Run-branch chaining (2026-08-06): unticked (default) = this stage's first
-  // worktree branch CONTINUES from the previous stage's last good spec branch
-  // (sees its unmerged work); ticked = start fresh from the main branch (the
-  // previous stage's MR is already merged). Reset on every dialog open.
-  const [startFromMain, setStartFromMain] = useState(false);
+  // Run base (2026-08-15 — replaces the single "start fresh" checkbox with
+  // the three-way selector): 'auto' = the driver's derivation (integration at
+  // a deployed disjoint stage boundary, else default branch); 'mr' = the
+  // prior DB run's db-migration/<id> assembly branch (the open Merge
+  // Request's code — DB plane included, without merging the MR); 'fresh' =
+  // clean main; 'integration' = main + every pushed db-migration/* and
+  // feature/* branch merged (keeps prior service attempts too).
+  const [runBase, setRunBase] = useState<'auto' | 'mr' | 'fresh' | 'integration'>('auto');
   const [credsStatus, setCredsStatus] =
     useState<MigrationCredentialsStatus | null>(null);
   const [targetDbFields, setTargetDbFields] = useState({
@@ -1150,7 +1153,10 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           authType: sa.auth_type ?? 'none',
         }));
       }
-      setStartFromMain(false);
+      // Default the base to the MR when a stage >1 START (the DB plane's MR is
+      // normally open until end-to-end evidence exists); harmless otherwise —
+      // the selector only renders for stage >1 starts.
+      setRunBase(mode === 'start' && (stageNo ?? 1) > 1 ? 'mr' : 'auto');
       setStartDialog({ open: true, mode, plane, stageNo });
     },
     [refreshCredsStatus],
@@ -1185,7 +1191,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           project: projectName,
           plane: startDialog.plane,
           parityOverride,
-          baseMode: startFromMain ? 'fresh' : 'chain',
+          baseMode: runBase === 'auto' ? 'chain' : runBase,
         });
         if (result.status === 'blocked') {
           setDialogError(
@@ -1303,7 +1309,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     bookId,
     startDialog.mode,
     startDialog.plane,
-    startFromMain,
+    runBase,
     run?.id,
     targetDbFields,
     targetDbPassword,
@@ -1375,28 +1381,34 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   // continues from its first FAILED spec — implemented items are never
   // re-run. The driver's fail-closed refusal (409) surfaces its reason on
   // the rail's existing error affordance.
-  const handleRailResumeFailed = useCallback(async () => {
-    if (!companyName || !projectName || !run?.id) return;
-    setRailBusy(true);
-    setRailError(null);
-    try {
-      const result = await resumeFailedMigrationRun(projectId, run.id, {
-        company: companyName,
-        project: projectName,
-        bookId,
-      });
-      if (!result.resumed) {
-        setRailError(`Resume refused: ${result.reason}`);
+  const handleRailResumeFailed = useCallback(
+    async (_plane?: string, salvage?: boolean) => {
+      if (!companyName || !projectName || !run?.id) return;
+      setRailBusy(true);
+      setRailError(null);
+      try {
+        const result = await resumeFailedMigrationRun(projectId, run.id, {
+          company: companyName,
+          project: projectName,
+          bookId,
+          // Salvage-first (2026-08-15): commit+push the failed spec's local
+          // worktree and mark it implemented before resuming from the next.
+          ...(salvage ? { salvage: true } : {}),
+        });
+        if (!result.resumed) {
+          setRailError(`Resume refused: ${result.reason}`);
+        }
+        await refreshRun();
+      } catch (err) {
+        setRailError(
+          err instanceof Error ? err.message : 'Failed to resume the run.',
+        );
+      } finally {
+        setRailBusy(false);
       }
-      await refreshRun();
-    } catch (err) {
-      setRailError(
-        err instanceof Error ? err.message : 'Failed to resume the run.',
-      );
-    } finally {
-      setRailBusy(false);
-    }
-  }, [companyName, projectName, projectId, bookId, run?.id, refreshRun]);
+    },
+    [companyName, projectName, projectId, bookId, run?.id, refreshRun],
+  );
 
   const archived = draft?.status === 'archived';
 
@@ -2267,7 +2279,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           onProvideCreds={() => void openStartDialog('register')}
           onHaltRun={() => void handleRailHalt()}
           onRetryDbBuild={() => void openStartDialog('retry-db', 'db', 1)}
-          onResumeFailed={() => void handleRailResumeFailed()}
+          onResumeFailed={(plane, salvage) => void handleRailResumeFailed(plane, salvage)}
         />
       )}
 
@@ -2386,23 +2398,63 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 </p>
               )}
               {startDialog.mode === 'start' && (startDialog.stageNo ?? 1) > 1 && (
-                <label
-                  className={styles.modalHint}
+                <div
                   style={{ display: 'block', margin: '8px 0' }}
                   data-testid="start-stage-base-mode"
                 >
-                  <input
-                    type="checkbox"
-                    checked={startFromMain}
-                    onChange={(e) => setStartFromMain(e.target.checked)}
-                    data-testid="start-stage-base-mode-checkbox"
-                  />{' '}
-                  Start from the main branch — use when the previous
-                  stage&apos;s changes are already merged. Unticked (default),
-                  this stage&apos;s work continues from the previous
-                  stage&apos;s branch so its unmerged code is visible to every
-                  spec.
-                </label>
+                  <p className={styles.modalHint} style={{ marginBottom: 4 }}>
+                    Where should this stage&apos;s code start from?
+                  </p>
+                  {(
+                    [
+                      {
+                        value: 'mr' as const,
+                        label: 'From the open Merge Request (recommended)',
+                        hint:
+                          "Every worktree sits on the prior DB run's assembly " +
+                          'branch (db-migration/<runId>) — the complete DB plane ' +
+                          'including its Liquibase changelogs, without merging the MR.',
+                      },
+                      {
+                        value: 'fresh' as const,
+                        label: 'Fresh from main',
+                        hint:
+                          "A clean tree — the DB plane's unmerged work will NOT be " +
+                          'in the worktrees. Use when the previous stage has merged.',
+                      },
+                      {
+                        value: 'integration' as const,
+                        label: 'Integration (all pushed branches)',
+                        hint:
+                          'main + every pushed db-migration/* and feature/* branch ' +
+                          'merged — keeps earlier service-spec attempts too.',
+                      },
+                      {
+                        value: 'auto' as const,
+                        label: 'Automatic',
+                        hint:
+                          'The pre-2026-08-15 behaviour: integration at a deployed ' +
+                          'stage boundary, else a clean main tree on a re-start.',
+                      },
+                    ] as const
+                  ).map((opt) => (
+                    <label
+                      key={opt.value}
+                      className={styles.modalHint}
+                      style={{ display: 'block', marginBottom: 4 }}
+                      data-testid={`start-stage-base-${opt.value}`}
+                    >
+                      <input
+                        type="radio"
+                        name="start-stage-base"
+                        checked={runBase === opt.value}
+                        onChange={() => setRunBase(opt.value)}
+                        data-testid={`start-stage-base-${opt.value}-radio`}
+                      />{' '}
+                      <strong>{opt.label}</strong> — {opt.hint}
+                    </label>
+                  ))}
+                </div>
               )}
               {startDialog.mode === 'retry-db' && (
                 <p className={styles.coveragePanelNote}>

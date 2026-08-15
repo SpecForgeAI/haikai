@@ -75,6 +75,13 @@ import {
   fetchLatestTargetManifestArtifacts,
   persistTargetManifestArtifacts,
 } from '../services/targetManifestArtifactsClient';
+// Manifest ↔ decision reconciliation (2026-08-15): proposed additions +
+// conflicts; additions apply as a new latest artifact version.
+import {
+  applyAdditionsToPom,
+  reconcileManifestWithDecisions,
+} from '../services/targetManifest/manifestDecisionReconcile';
+import { fetchLatestCapturedDecisions } from '../services/targetStateCapturedDecisionsClient';
 
 // ---------------------------------------------------------------------------
 // Multipart config — in-memory only; the manifest bytes are parsed in-process
@@ -942,6 +949,123 @@ export function registerTargetManifestUploadRoute(
         return res.status(503).json({
           error: 'Architecture model service unavailable',
           details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+  );
+
+  // -------------------------------------------------------------------------
+  // Manifest ↔ decision reconciliation (2026-08-15). The pom is the
+  // authoritative BASELINE: existing entries never change silently, but
+  // decisions imply ADDITIONS the operator can approve — applied as a new
+  // latest artifact version with a minimal textual insert.
+  //   GET  .../manifest-reconcile        → { tag, additions, conflicts }
+  //   POST .../manifest-reconcile/apply  → { applied, tag } (body: {coordinates})
+  // -------------------------------------------------------------------------
+  const loadLatestMavenArtifact = async (projectId: string, targetArchitectureId: string) => {
+    const artifacts = await fetchManifestArtifacts(projectId, targetArchitectureId);
+    return (
+      artifacts.find(
+        (a) =>
+          (a.ecosystem ?? '').toUpperCase() === 'MAVEN' ||
+          (a.manifest_path ?? '').toLowerCase().endsWith('pom.xml')
+      ) ?? null
+    );
+  };
+
+  router.get(
+    '/projects/:projectId/target-architectures/:targetArchitectureId/manifest-reconcile',
+    async (req: Request, res: ExpressResponse) => {
+      const { projectId, targetArchitectureId } = req.params;
+      try {
+        const artifact = await loadLatestMavenArtifact(projectId, targetArchitectureId);
+        if (!artifact || !artifact.content) {
+          return res.status(200).json({ tag: null, additions: [], conflicts: [] });
+        }
+        const decisions = await fetchLatestCapturedDecisions(projectId, targetArchitectureId);
+        const result = reconcileManifestWithDecisions(artifact.content, decisions);
+        return res.status(200).json({ tag: artifact.tag, ...result });
+      } catch (err) {
+        logger.warn('[diag-gateway] manifest_reconcile read failed', {
+          projectId,
+          targetArchitectureId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return res.status(503).json({
+          error: 'reconciliation unavailable',
+          details: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+  );
+
+  router.post(
+    '/projects/:projectId/target-architectures/:targetArchitectureId/manifest-reconcile/apply',
+    async (req: Request, res: ExpressResponse) => {
+      const { projectId, targetArchitectureId } = req.params;
+      const coordinates: string[] = Array.isArray((req.body ?? {}).coordinates)
+        ? (req.body.coordinates as string[])
+        : [];
+      if (coordinates.length === 0) {
+        return res.status(400).json({ error: 'coordinates[] (g:a strings) is required' });
+      }
+      try {
+        const artifact = await loadLatestMavenArtifact(projectId, targetArchitectureId);
+        if (!artifact || !artifact.content) {
+          return res.status(409).json({ error: 'no confirmed Maven manifest to amend' });
+        }
+        const decisions = await fetchLatestCapturedDecisions(projectId, targetArchitectureId);
+        const { additions } = reconcileManifestWithDecisions(artifact.content, decisions);
+        const selected = additions.filter((a) =>
+          coordinates.includes(`${a.groupId}:${a.artifactId}`)
+        );
+        if (selected.length === 0) {
+          return res
+            .status(409)
+            .json({ error: 'none of the requested coordinates is a pending addition' });
+        }
+        const updated = applyAdditionsToPom(artifact.content, selected);
+        if (updated === null) {
+          return res.status(409).json({
+            error:
+              'the pom has no <dependencies> section to insert into — amend it manually and re-upload',
+          });
+        }
+        // New latest artifact version — the store keeps history; everything
+        // except `content` carried verbatim from the prior latest row.
+        await persistTargetManifestArtifacts(projectId, targetArchitectureId, [
+          {
+            tag: artifact.tag,
+            kind: artifact.kind ?? null,
+            ecosystem: artifact.ecosystem ?? null,
+            manifest_path: artifact.manifest_path ?? null,
+            content: updated,
+            package_lock_content: artifact.package_lock_content ?? null,
+            resolved_dependencies: Array.isArray(artifact.resolved_dependencies)
+              ? artifact.resolved_dependencies
+              : [],
+            target_service_element_id: artifact.target_service_element_id ?? null,
+            tier2_facts: Array.isArray(artifact.tier2_facts) ? artifact.tier2_facts : [],
+          },
+        ]);
+        logger.info('[diag-gateway] manifest_reconcile applied', {
+          projectId,
+          targetArchitectureId,
+          tag: artifact.tag,
+          applied: selected.map((a) => `${a.groupId}:${a.artifactId}`),
+        });
+        return res.status(200).json({
+          tag: artifact.tag,
+          applied: selected.map((a) => `${a.groupId}:${a.artifactId}`),
+        });
+      } catch (err) {
+        logger.error('[diag-gateway] manifest_reconcile apply failed', {
+          projectId,
+          targetArchitectureId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return res.status(500).json({
+          error: err instanceof Error ? err.message : String(err),
         });
       }
     },

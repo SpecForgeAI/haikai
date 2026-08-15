@@ -160,14 +160,18 @@ migrationExecutionRouter.post(
         .status(400)
         .json({ status: 'error', message: `plane must be one of db|service|ui` });
     }
-    // Run-branch chaining (2026-08-06): 'chain' (default) = the run's first
-    // dispatch bases off the latest prior run's last GOOD spec branch;
-    // 'fresh' = start from the default branch (Start-stage checkbox: the
-    // previous stage's changes are already merged).
-    if (body.baseMode !== undefined && body.baseMode !== 'chain' && body.baseMode !== 'fresh') {
-      return res
-        .status(400)
-        .json({ status: 'error', message: `baseMode must be one of chain|fresh` });
+    // Run base modes: 'chain' (default — auto: integration at a deployed
+    // disjoint stage boundary, else default branch); 'fresh' = default
+    // branch; 'mr' (2026-08-15) = the prior DB run's db-migration/<id>
+    // assembly branch (the open Merge Request's code); 'integration'
+    // (2026-08-15, now explicit too) = default + every remote db-migration/*
+    // and feature/* branch merged.
+    const VALID_BASE_MODES = new Set(['chain', 'fresh', 'mr', 'integration']);
+    if (body.baseMode !== undefined && !VALID_BASE_MODES.has(body.baseMode)) {
+      return res.status(400).json({
+        status: 'error',
+        message: `baseMode must be one of chain|fresh|mr|integration`,
+      });
     }
 
     const scope: MigrateScope = {
@@ -556,7 +560,12 @@ migrationExecutionRouter.post(
   '/projects/:projectId/migration-execution-runs/:runId/resume-failed',
   async (req: Request, res: Response) => {
     const { projectId, runId } = req.params;
-    const body = (req.body ?? {}) as { company?: string; project?: string; book_id?: string };
+    const body = (req.body ?? {}) as {
+      company?: string;
+      project?: string;
+      book_id?: string;
+      salvage?: boolean;
+    };
     if (!body.company || !body.project) {
       return res.status(400).json({
         error: 'body must include company + project (the workspace identifiers)',
@@ -572,7 +581,10 @@ migrationExecutionRouter.post(
           project: body.project,
         },
         runId,
-        deps
+        deps,
+        // Salvage-first (2026-08-15): commit+push the first failed item's
+        // local worktree and mark it implemented before resuming.
+        { salvageFirstFailed: body.salvage === true }
       );
       logger.info('[diag-gateway] migration_execution_driver resume_failed_requested', {
         projectId,
