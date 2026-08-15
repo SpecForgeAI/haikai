@@ -1331,6 +1331,21 @@ public class GeneratedMigrationBookOfWorkService {
             draftItem.put("description", request.description());
         }
         draftItem.put("sequenceOrder", sequenceOrder);
+        // ROW-CONSUMED fields must be stamped BEFORE persistOne (2026-08-15):
+        // buildDescription reads `acceptanceCriteria` and buildTagsJson reads
+        // `tags` off the draft item at persist time. Stamping them after the
+        // call (the latent pattern the earlier optional fields followed) left
+        // the minted work_item row with tags_json NULL and a description
+        // missing its Acceptance Criteria section — the blob was right, the
+        // row silently diverged from every save-to-backlog-persisted sibling.
+        List<String> acceptanceCriteria = sanitiseStringList(request.acceptanceCriteria());
+        if (!acceptanceCriteria.isEmpty()) {
+            draftItem.put("acceptanceCriteria", acceptanceCriteria);
+        }
+        List<String> tags = sanitiseStringList(request.tags());
+        if (!tags.isEmpty()) {
+            draftItem.put("tags", tags);
+        }
 
         // Minimal synthetic request: defaults for description-building toggles
         // (the add-item action does not expose them); status defaults to
@@ -1400,23 +1415,13 @@ public class GeneratedMigrationBookOfWorkService {
         if (request.workstream() != null && !request.workstream().isBlank()) {
             draftItem.put("workstream", request.workstream().trim());
         }
-        List<String> acceptanceCriteria = sanitiseStringList(request.acceptanceCriteria());
-        if (!acceptanceCriteria.isEmpty()) {
-            draftItem.put("acceptanceCriteria", acceptanceCriteria);
-        }
         List<String> findingRefs = sanitiseStringList(request.discoveryFindingReferences());
         if (!findingRefs.isEmpty()) {
             draftItem.put("discoveryFindingReferences", findingRefs);
         }
-        // Scaffold mint on a SAVED book (2026-08-14): free-form tags stamped
-        // verbatim onto the blob item. The gateway's scaffold-story mint marks
-        // the story `seed_build_files` so the deterministic bootstrap carriage
-        // recognises it (the epic-expansion injection cannot run on a saved
-        // book). Absent/empty stamps nothing.
-        List<String> tags = sanitiseStringList(request.tags());
-        if (!tags.isEmpty()) {
-            draftItem.put("tags", tags);
-        }
+        // (acceptanceCriteria + tags — e.g. the scaffold mint's
+        // `seed_build_files` marker — were stamped BEFORE persistOne above:
+        // the row builder consumes them; the blob carries the same map.)
         items.add(draftItem);
         bookOfWork.put("items", items);
         draft.setBookOfWorkJson(bookOfWork);
