@@ -1493,3 +1493,33 @@ class TestEntrypointImportsHaveNoEnvSideEffects:
             "suite-poisoning bug). Move the load into main()/__main__:\n  "
             + "\n  ".join(offenders)
         )
+
+
+# --- Guard: stall-guarded CLI subprocess streaming (2026-08-15) --------------
+
+
+class TestChatExecutorPopenIsGuarded:
+    """Every `subprocess.Popen(` in the CLI chat executors MUST be wrapped in
+    `GuardedProcess(` (src/chat/stream_watchdog.py). The bare Popen's
+    `for line in process.stdout` blocked FOREVER on a dead-but-unreaped
+    child holding the pipe open (two overnight job deaths: spec 8, spec 4),
+    while the job heartbeat stayed fresh and recovery skipped the corpse.
+    Equality counts (never >=) per the house guard-test rule.
+    """
+
+    EXECUTORS = ("claude_chat_executor.py", "kiro_chat_executor.py")
+
+    def test_every_popen_in_chat_executors_is_guarded(self):
+        for name in self.EXECUTORS:
+            text = _read_text(SRC / "chat" / name)
+            popen_count = len(re.findall(r"subprocess\.Popen\(", text))
+            guarded_count = len(
+                re.findall(r"GuardedProcess\(\s*subprocess\.Popen\(", text)
+            )
+            assert popen_count > 0, f"{name}: expected at least one spawn site"
+            assert guarded_count == popen_count, (
+                f"{name}: {popen_count} subprocess.Popen( call(s) but only "
+                f"{guarded_count} wrapped in GuardedProcess( - a bare Popen "
+                "stream can hang a job forever on a silent pipe (the "
+                "overnight spec-death mode). Wrap every spawn."
+            )
