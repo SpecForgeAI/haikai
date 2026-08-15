@@ -169,7 +169,7 @@ class GeneratedMigrationBookOfWorkAddItemTest {
             0,
             null,
             "api_migration",
-            null,
+            java.util.List.of("Seeded files byte-identical to the confirmed manifest."),
             null,
             java.util.List.of("seed_build_files", "stream:api_migration", "provenance:scaffold", "  ", ""));
 
@@ -184,6 +184,22 @@ class GeneratedMigrationBookOfWorkAddItemTest {
         assertThat(blob.get("tags")).isEqualTo(
             java.util.List.of("seed_build_files", "stream:api_migration", "provenance:scaffold"));
         assertThat(blob.get("workstream")).isEqualTo("api_migration");
+
+        // 2026-08-15: the ROW must carry them too. persistOne builds
+        // tags_json + the description's Acceptance Criteria section from the
+        // draft item AT persist time — stamping them after the call left the
+        // minted row with tags_json NULL and an AC-less description while
+        // the blob looked correct (row/blob divergence).
+        WorkItemEntity created =
+            workItemRepository.findById(response.workItemId()).orElseThrow();
+        assertThat(created.getTagsJson())
+            .as("work_item.tags_json must carry the tags stamped before persistOne")
+            .isNotNull()
+            .containsKeys("seed_build_files", "stream:api_migration", "provenance:scaffold");
+        assertThat(created.getDescription())
+            .as("work_item.description must include the Acceptance Criteria section")
+            .contains("Acceptance Criteria")
+            .contains("Seeded files byte-identical to the confirmed manifest.");
     }
 
     @Test
