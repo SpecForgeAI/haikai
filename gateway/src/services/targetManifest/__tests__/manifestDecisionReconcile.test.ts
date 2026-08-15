@@ -138,3 +138,116 @@ describe('applyAdditionsToPom', () => {
     ).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-08-15 hardening: the canonical Spring Initializr layout puts the
+// project <dependencies> BEFORE <dependencyManagement>, and <build> plugins
+// carry their own <dependencies> (plugin classpath). The old textual scan
+// ("first </dependencies> after </dependencyManagement>") inserted into the
+// PLUGIN block on that shape — silent pom corruption the scaffold spec then
+// reproduced verbatim.
+// ---------------------------------------------------------------------------
+
+const INITIALIZR_POM = [
+  '<?xml version="1.0" encoding="UTF-8"?>',
+  '<project xmlns="http://maven.apache.org/POM/4.0.0">',
+  '    <dependencies>',
+  '        <dependency>',
+  '            <groupId>org.springframework.boot</groupId>',
+  '            <artifactId>spring-boot-starter-web</artifactId>',
+  '        </dependency>',
+  '        <!-- <dependency>',
+  '            <groupId>org.liquibase</groupId>',
+  '            <artifactId>liquibase-core</artifactId>',
+  '        </dependency> -->',
+  '    </dependencies>',
+  '    <dependencyManagement>',
+  '        <dependencies>',
+  '            <dependency>',
+  '                <groupId>org.springframework.cloud</groupId>',
+  '                <artifactId>spring-cloud-dependencies</artifactId>',
+  '                <version>2025.1.2</version>',
+  '            </dependency>',
+  '        </dependencies>',
+  '    </dependencyManagement>',
+  '    <build>',
+  '        <plugins>',
+  '            <plugin>',
+  '                <groupId>org.liquibase</groupId>',
+  '                <artifactId>liquibase-maven-plugin</artifactId>',
+  '                <dependencies>',
+  '                    <dependency>',
+  '                        <groupId>org.postgresql</groupId>',
+  '                        <artifactId>postgresql</artifactId>',
+  '                        <version>42.7.4</version>',
+  '                    </dependency>',
+  '                </dependencies>',
+  '            </plugin>',
+  '        </plugins>',
+  '    </build>',
+  '</project>',
+  '',
+].join('\n');
+
+describe('Initializr layout (deps BEFORE dependencyManagement, plugin classpath after)', () => {
+  it('a commented-out dependency does NOT count as present', () => {
+    const deps = parsePomDependencies(INITIALIZR_POM);
+    expect(deps.map((d) => d.artifactId)).not.toContain('liquibase-core');
+  });
+
+  it('a build-plugin classpath dependency does NOT satisfy an app-classpath requirement', () => {
+    const deps = parsePomDependencies(INITIALIZR_POM);
+    // org.postgresql:postgresql appears ONLY inside the liquibase-maven-plugin.
+    expect(deps.map((d) => d.artifactId)).not.toContain('postgresql');
+    const { additions } = reconcileManifestWithDecisions(INITIALIZR_POM, DECISIONS);
+    expect(additions.map((a) => a.artifactId)).toContain('postgresql');
+    expect(additions.map((a) => a.artifactId)).toContain('liquibase-core');
+  });
+
+  it('apply inserts into the PROJECT dependencies, never the plugin block', () => {
+    const { additions } = reconcileManifestWithDecisions(INITIALIZR_POM, DECISIONS);
+    const updated = applyAdditionsToPom(INITIALIZR_POM, additions);
+    expect(updated).not.toBeNull();
+    // The insert lands BEFORE dependencyManagement (inside the project block),
+    // NOT inside <build>.
+    const insertedAt = updated!.indexOf('<artifactId>liquibase-core</artifactId>', updated!.indexOf('<dependencies>'));
+    const mgmtStart = updated!.indexOf('<dependencyManagement>');
+    const buildStart = updated!.indexOf('<build>');
+    expect(insertedAt).toBeGreaterThan(-1);
+    expect(insertedAt).toBeLessThan(mgmtStart);
+    expect(insertedAt).toBeLessThan(buildStart);
+    // The plugin block is byte-identical.
+    const pluginBlock = INITIALIZR_POM.slice(INITIALIZR_POM.indexOf('<build>'));
+    expect(updated!.endsWith(pluginBlock)).toBe(true);
+  });
+
+  it('a shared-line closing tag never samples markup as indentation', () => {
+    const compact = [
+      '<project>',
+      '    <dependencies>',
+      '        <dependency><groupId>g0</groupId><artifactId>a0</artifactId></dependency></dependencies>',
+      '</project>',
+    ].join('\n');
+    const updated = applyAdditionsToPom(compact, [
+      { groupId: 'org.liquibase', artifactId: 'liquibase-core', version: null, decisionCode: 'db.migrations', note: '' },
+    ]);
+    expect(updated).not.toBeNull();
+    // No line may begin with markup masquerading as indentation.
+    expect(updated!).not.toContain('</dependency><dependency>');
+    for (const line of updated!.split('\n')) {
+      expect(line).not.toMatch(/^\s*<\/dependency><groupId>/);
+    }
+    // The original dependency and the project close survive untouched.
+    expect(updated!).toContain('<artifactId>a0</artifactId>');
+    expect(updated!).toContain('<artifactId>liquibase-core</artifactId>');
+    expect(updated!.trimEnd().endsWith('</project>')).toBe(true);
+  });
+
+  it('self-closing <dependencies/> -> null (no insertion point invented)', () => {
+    expect(
+      applyAdditionsToPom('<project>\n    <dependencies/>\n</project>', [
+        { groupId: 'g', artifactId: 'a', version: null, decisionCode: 'x', note: '' },
+      ])
+    ).toBeNull();
+  });
+});

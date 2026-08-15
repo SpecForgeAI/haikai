@@ -94,14 +94,104 @@ export interface PomDependency {
   version: string | null;
 }
 
-/** All `<dependency>` entries anywhere in the pom (deps + dependencyManagement
- * both count as "present" — a managed entry still satisfies the requirement). */
-export function parsePomDependencies(content: string): PomDependency[] {
-  const out: PomDependency[] = [];
-  const blockRe = /<dependency>([\s\S]*?)<\/dependency>/g;
+/**
+ * Replace every XML comment's characters with spaces of EQUAL length. All
+ * indices into the masked string are valid in the original — the scan runs on
+ * the masked text, edits land on the original bytes. A commented-out
+ * dependency (or a commented-out `</dependencies>` tag) therefore can never
+ * satisfy a requirement or attract an insert.
+ */
+function maskComments(content: string): string {
+  return content.replace(/<!--[\s\S]*?-->/g, (m) => ' '.repeat(m.length));
+}
+
+interface PomScan {
+  /**
+   * Index of the `</dependencies>` close tag of the PROJECT-level
+   * `<dependencies>` element (a direct child of `<project>`); -1 when the pom
+   * has none. This is the ONLY block additions may be inserted into — a
+   * `<dependencies>` inside `<build>/<plugin>` is a plugin classpath, and one
+   * inside `<dependencyManagement>` only manages versions.
+   */
+  projectDependenciesCloseIdx: number;
+  /** Every `<dependency>` element with its ancestor element names (outermost first). */
+  dependencyBlocks: Array<{ start: number; end: number; path: string[] }>;
+}
+
+/**
+ * Single lightweight element walk over the comment-masked pom. Tracks an open
+ * -element stack so every `<dependency>` knows its ancestors and the
+ * project-level `<dependencies>` is identified STRUCTURALLY — not by textual
+ * position relative to `</dependencyManagement>`, which broke on the canonical
+ * Spring Initializr layout (project dependencies BEFORE dependencyManagement,
+ * `<build>` plugins carrying their own `<dependencies>` after it).
+ */
+function scanPom(masked: string): PomScan {
+  const tagRe = /<(\/?)([A-Za-z][\w.:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)(\/?)>/g;
+  const stack: string[] = [];
+  const dependencyBlocks: PomScan['dependencyBlocks'] = [];
+  let projectDependenciesCloseIdx = -1;
+  let openDep: { start: number; path: string[] } | null = null;
   let m: RegExpExecArray | null;
-  while ((m = blockRe.exec(content)) !== null) {
-    const block = m[1];
+  while ((m = tagRe.exec(masked)) !== null) {
+    const closing = m[1] === '/';
+    const name = m[2];
+    const selfClosing = m[4] === '/';
+    if (!closing) {
+      if (selfClosing) continue;
+      if (name === 'dependency' && openDep === null) {
+        openDep = { start: m.index, path: [...stack] };
+      }
+      stack.push(name);
+    } else {
+      const at = stack.lastIndexOf(name);
+      if (at >= 0) stack.length = at; // tolerate malformed nesting
+      if (name === 'dependency' && openDep !== null) {
+        dependencyBlocks.push({
+          start: openDep.start,
+          end: m.index + m[0].length,
+          path: openDep.path,
+        });
+        openDep = null;
+      }
+      if (
+        name === 'dependencies' &&
+        projectDependenciesCloseIdx < 0 &&
+        stack.length === 1 &&
+        stack[0] === 'project'
+      ) {
+        projectDependenciesCloseIdx = m.index;
+      }
+    }
+  }
+  return { projectDependenciesCloseIdx, dependencyBlocks };
+}
+
+/**
+ * True when a `<dependency>` at this ancestor path DECLARES a dependency:
+ * the project `<dependencies>`, `<dependencyManagement>` (project or profile
+ * scoped — a managed entry still satisfies a requirement), or a `<profile>`'s
+ * own `<dependencies>`. Excludes `<build>/<plugin>` dependencies (plugin
+ * classpath, NOT the application's) — counting those as "present" silently
+ * suppressed required additions.
+ */
+function declaresDependency(path: string[]): boolean {
+  const parent = path[path.length - 1];
+  const grand = path[path.length - 2];
+  if (parent !== 'dependencies') return false;
+  return grand === 'project' || grand === 'dependencyManagement' || grand === 'profile';
+}
+
+/** All DECLARED `<dependency>` entries (project deps + dependencyManagement +
+ * profiles — a managed entry still satisfies the requirement). Comments are
+ * masked first and `<build>/<plugin>` classpath sections never count. */
+export function parsePomDependencies(content: string): PomDependency[] {
+  const masked = maskComments(content);
+  const { dependencyBlocks } = scanPom(masked);
+  const out: PomDependency[] = [];
+  for (const b of dependencyBlocks) {
+    if (!declaresDependency(b.path)) continue;
+    const block = masked.slice(b.start, b.end);
     const g = /<groupId>\s*([^<]+?)\s*<\/groupId>/.exec(block)?.[1] ?? null;
     const a = /<artifactId>\s*([^<]+?)\s*<\/artifactId>/.exec(block)?.[1] ?? null;
     const v = /<version>\s*([^<]+?)\s*<\/version>/.exec(block)?.[1] ?? null;
@@ -198,24 +288,27 @@ export function reconcileManifestWithDecisions(
 // ---------------------------------------------------------------------------
 
 /**
- * Insert the approved additions into the PROJECT `<dependencies>` section
- * (the first `</dependencies>` AFTER `</dependencyManagement>` when one
- * exists, else the first `</dependencies>`). Indentation is sampled from the
- * closing tag's own line. Returns null when no insertion point exists.
+ * Insert the approved additions into the PROJECT-level `<dependencies>`
+ * section, located STRUCTURALLY (a direct child of `<project>`) — never a
+ * `<build>/<plugin>` classpath block or `<dependencyManagement>`, regardless
+ * of element order. Indentation is sampled from the closing tag's own line
+ * when that line is pure whitespace; a shared-line closing tag falls back to
+ * a plain four-space indent inserted immediately before the tag (never
+ * markup-as-indentation). Returns null when the pom has no project-level
+ * `<dependencies>` element.
  */
 export function applyAdditionsToPom(
   pomContent: string,
   additions: readonly ProposedAddition[]
 ): string | null {
   if (additions.length === 0) return pomContent;
-  const mgmtEnd = pomContent.indexOf('</dependencyManagement>');
-  const searchFrom = mgmtEnd >= 0 ? mgmtEnd + '</dependencyManagement>'.length : 0;
-  const closeIdx = pomContent.indexOf('</dependencies>', searchFrom);
+  const closeIdx = scanPom(maskComments(pomContent)).projectDependenciesCloseIdx;
   if (closeIdx < 0) return null;
 
-  // Sample the closing tag's leading whitespace for faithful indentation.
   const lineStart = pomContent.lastIndexOf('\n', closeIdx) + 1;
-  const closeIndent = pomContent.slice(lineStart, closeIdx);
+  const linePrefix = pomContent.slice(lineStart, closeIdx);
+  const prefixIsIndent = /^[ \t]*$/.test(linePrefix);
+  const closeIndent = prefixIsIndent ? linePrefix : '    ';
   const depIndent = `${closeIndent}    `;
   const inner = `${depIndent}    `;
 
@@ -232,5 +325,10 @@ export function applyAdditionsToPom(
     )
     .join('\n');
 
-  return pomContent.slice(0, lineStart) + blocks + '\n' + pomContent.slice(lineStart);
+  if (prefixIsIndent) {
+    return pomContent.slice(0, lineStart) + blocks + '\n' + pomContent.slice(lineStart);
+  }
+  // `</dependencies>` shares its line with earlier markup — insert directly
+  // before the tag; every byte outside the insert stays identical.
+  return pomContent.slice(0, closeIdx) + '\n' + blocks + '\n' + pomContent.slice(closeIdx);
 }

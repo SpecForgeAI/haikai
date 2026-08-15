@@ -1033,6 +1033,10 @@ export function registerTargetManifestUploadRoute(
         }
         // New latest artifact version — the store keeps history; everything
         // except `content` carried verbatim from the prior latest row.
+        // `resolved_dependencies` gains one entry per applied coordinate so
+        // the row stays internally consistent (consumers of the resolved list
+        // — e.g. vulnerability fate derivation — must see what `content` now
+        // declares). BOM-managed additions ride the version-unknown sentinel.
         await persistTargetManifestArtifacts(projectId, targetArchitectureId, [
           {
             tag: artifact.tag,
@@ -1041,9 +1045,18 @@ export function registerTargetManifestUploadRoute(
             manifest_path: artifact.manifest_path ?? null,
             content: updated,
             package_lock_content: artifact.package_lock_content ?? null,
-            resolved_dependencies: Array.isArray(artifact.resolved_dependencies)
-              ? artifact.resolved_dependencies
-              : [],
+            resolved_dependencies: [
+              ...(Array.isArray(artifact.resolved_dependencies)
+                ? artifact.resolved_dependencies
+                : []),
+              ...selected.map((a) => ({
+                name: `${a.groupId}:${a.artifactId}`,
+                resolvedVersion: a.version ?? 'version-unknown',
+                versionUnknown: a.version == null,
+                ecosystem: 'MAVEN',
+                provenance: 'decision-reconcile',
+              })),
+            ],
             target_service_element_id: artifact.target_service_element_id ?? null,
             tier2_facts: Array.isArray(artifact.tier2_facts) ? artifact.tier2_facts : [],
           },
