@@ -151,15 +151,32 @@ def add_worktree(live_repo: Path, path: Path, branch: str, base: str,
                 logger.info(
                     "add_worktree: reset FREE stale branch %s (was %s) to "
                     "explicit base %s before attach", branch, old_tip, base)
+                _record_branch_base(live_repo, branch, base)
             _require(_git(live_repo, "worktree", "add", str(path), branch),
                      f"cannot attach worktree to existing branch {branch}")
         else:
             _require(_git(live_repo, "worktree", "add", "-b", branch,
                           str(path), base),
                      f"cannot create worktree branch {branch} from {base}")
+            _record_branch_base(live_repo, branch, base)
     if job_id:
         _git(live_repo, "worktree", "lock",
              "--reason", f"job {job_id} active", str(path))
+
+
+def _record_branch_base(live_repo: Path, branch: str, base: str) -> None:
+    """Record the sha a spec branch was created from (best-effort). Salvage
+    reads it back: a branch whose tip still equals its creation base carries
+    ZERO spec work — 'salvaging' it would mark the spec implemented with an
+    empty diff, silently losing the spec."""
+    sha = (_git(live_repo, "rev-parse", base).stdout or "").strip()
+    if sha:
+        _git(live_repo, "config", f"branch.{branch}.haikai-base-sha", sha)
+
+
+def _recorded_branch_base(repo_dir: Path, branch: str) -> str:
+    return (_git(repo_dir, "config", "--get",
+                 f"branch.{branch}.haikai-base-sha").stdout or "").strip()
 
 
 def _ref_resolves(live_repo: Path, ref: str) -> bool:
@@ -379,11 +396,19 @@ def salvage_spec_worktree(live_repo: Path, spec_name: str) -> dict:
                 "nothing to salvage (the worktree may have been reclaimed); "
                 "resume WITHOUT salvage to retry the spec"),
         }
-    # Highest retry attempt wins (the latest work).
+    # The item's CURRENT spec_name is the attempt the driver last dispatched —
+    # its exact branch wins outright (2026-08-15). "Highest -rN" alone picked
+    # a STALE earlier retry over the latest work: a manual Resume re-stamps
+    # the item back to the BASE name, so the newest attempt can be suffix-less
+    # while an old wedged `-r2` tree still lingers. Only when the exact branch
+    # has no worktree does the highest surviving attempt stand in (the caller
+    # re-aligns the item's spec_name to the returned branch).
     def _attempt(branch: str) -> int:
         tail = branch.rsplit("-r", 1)
         return int(tail[1]) if len(tail) == 2 and tail[1].isdigit() else 0
-    wt_path, branch = max(candidates, key=lambda c: _attempt(c[1]))
+    exact = [c for c in candidates if c[1] == f"feature/{spec_name}"]
+    wt_path, branch = (exact[0] if exact
+                       else max(candidates, key=lambda c: _attempt(c[1])))
     wt = Path(wt_path)
     if not wt.exists():
         return {"status": "no_worktree",
@@ -399,6 +424,22 @@ def salvage_spec_worktree(live_repo: Path, spec_name: str) -> dict:
             return {"status": "error",
                     "message": f"salvage commit failed: {(cm.stderr or cm.stdout or '').strip()[:400]}"}
         committed = True
+    if not committed:
+        # Vacuous-salvage guard (2026-08-15): a clean tree whose branch tip
+        # still equals its recorded creation base carries ZERO spec work (the
+        # run died right after allocation). Returning 'salvaged' would mark
+        # the spec IMPLEMENTED with an empty diff — the spec silently lost.
+        base_sha = _recorded_branch_base(wt, branch)
+        tip = (_git(wt, "rev-parse", "HEAD").stdout or "").strip()
+        if base_sha and tip == base_sha:
+            return {
+                "status": "nothing_to_salvage",
+                "message": (
+                    f"branch {branch} has no commits beyond its creation base "
+                    f"({base_sha[:12]}) and the worktree is clean — there is no "
+                    "completed work to salvage; resume WITHOUT salvage to run "
+                    "the spec"),
+            }
     push = _git(wt, "push", "-u", "origin", branch)
     if push.returncode != 0:
         return {"status": "error",

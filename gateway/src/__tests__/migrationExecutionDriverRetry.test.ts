@@ -545,6 +545,65 @@ describe('resumeFailedMigrationRun', () => {
     expect(submitted.specs).toHaveLength(2);
     expect(submitted.batchName).toContain('resume-');
   });
+
+  // -------------------------------------------------------------------------
+  // Salvage-first resume (2026-08-15)
+  // -------------------------------------------------------------------------
+
+  it('salvage re-aligns the item spec_name to the branch that was actually pushed — the successor chains off the salvaged work', async () => {
+    const run = sequentialRun();
+    run.status = RUN_STATUS.HALTED;
+    run.items![0].status = RUN_ITEM_STATUS.FAILED;
+    run.items![0].outcome = 'failed';
+    run.items![0].spec_name = '2026-08-15-story-one-aaaa1111';
+    const salvageMock = jest.fn().mockResolvedValue({
+      status: 'salvaged',
+      // IVS legitimately returns a DIFFERENT attempt's branch: only the -r2
+      // tree survived reclamation.
+      branch: 'feature/2026-08-15-story-one-aaaa1111-r2',
+      committed: true,
+      summary: '1 file changed',
+    });
+    const deps = statefulDeps(run, [], { salvageSpecWorktree: salvageMock });
+
+    const result = await resumeFailedMigrationRun(scope, 'run-1', deps, {
+      salvageFirstFailed: true,
+    });
+    expect(result.status).toBe('resumed');
+    expect(salvageMock).toHaveBeenCalledWith(
+      'acme',
+      'order-mig',
+      '2026-08-15-story-one-aaaa1111'
+    );
+    // The salvaged item: implemented AND re-stamped to the pushed branch's name.
+    expect(run.items![0].status).toBe(RUN_ITEM_STATUS.IMPLEMENTED);
+    expect(run.items![0].spec_name).toBe('2026-08-15-story-one-aaaa1111-r2');
+    await flush();
+    // The next spec chains off the SALVAGED branch, not the stale base name.
+    const submittedNext = (deps.submitOrchestration as jest.Mock).mock.calls[0][0];
+    expect(submittedNext.baseSpec).toBe('2026-08-15-story-one-aaaa1111-r2');
+  });
+
+  it('a refused salvage (nothing_to_salvage) blocks the resume — the spec is NEVER marked implemented on an empty branch', async () => {
+    const run = sequentialRun();
+    run.status = RUN_STATUS.HALTED;
+    run.items![0].status = RUN_ITEM_STATUS.FAILED;
+    run.items![0].outcome = 'failed';
+    run.items![0].spec_name = '2026-08-15-story-one-aaaa1111';
+    const salvageMock = jest.fn().mockResolvedValue({
+      status: 'nothing_to_salvage',
+      message: 'branch has no commits beyond its creation base',
+    });
+    const deps = statefulDeps(run, [], { salvageSpecWorktree: salvageMock });
+
+    const result = await resumeFailedMigrationRun(scope, 'run-1', deps, {
+      salvageFirstFailed: true,
+    });
+    expect(result.status).toBe('not_resumable');
+    expect((result as { reason: string }).reason).toContain('nothing_to_salvage');
+    expect(run.items![0].status).toBe(RUN_ITEM_STATUS.FAILED); // untouched
+    expect(deps.submitOrchestration).not.toHaveBeenCalled();
+  });
 });
 
 // ===========================================================================
