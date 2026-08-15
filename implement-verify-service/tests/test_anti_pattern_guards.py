@@ -1523,3 +1523,16 @@ class TestChatExecutorPopenIsGuarded:
                 "stream can hang a job forever on a silent pipe (the "
                 "overnight spec-death mode). Wrap every spawn."
             )
+
+    def test_every_chat_executor_spawn_sets_posix_session(self):
+        # kill_tree's POSIX branch is os.killpg on the child's GROUP: a spawn
+        # without start_new_session inherits the WORKER's group, so a
+        # stall-kill would SIGKILL the whole service (2026-08-15 — the kiro
+        # chat executor was the one spawn site missing it).
+        for name in self.EXECUTORS:
+            text = _read_text(SRC / "chat" / name)
+            assert "start_new_session" in text, (
+                f"{name}: no start_new_session in the spawn kwargs - on "
+                "posix, kill_tree(pid) does os.killpg(os.getpgid(pid)) and "
+                "would kill the worker's own process group (self-kill)."
+            )

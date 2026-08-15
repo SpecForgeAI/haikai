@@ -291,18 +291,25 @@ class KiroChatExecutor:
             # inactivity deadline (kills the tree + raises a retry-classified
             # StreamStallError), drains stderr concurrently (the mutual
             # pipe-deadlock class), and bounds wait().
+            popen_kwargs = dict(
+                cwd=str(self.project_dir),
+                env=env_vars,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                encoding='utf-8',
+                errors='replace',
+            )
+            # kill_tree's POSIX branch is os.killpg on the child's process
+            # GROUP — without its own session the child inherits the WORKER's
+            # group and a stall-kill would SIGKILL the whole service
+            # (kiro-cli runs natively on posix hosts; every other executor
+            # already sets this).
+            if subprocess.os.name == "posix":
+                popen_kwargs["start_new_session"] = True
             process = GuardedProcess(
-                subprocess.Popen(
-                    cli_args,
-                    cwd=str(self.project_dir),
-                    env=env_vars,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    encoding='utf-8',
-                    errors='replace'
-                ),
+                subprocess.Popen(cli_args, **popen_kwargs),
                 label="kiro-cli",
             )
             # D13 parity with the Claude executors (2026-07-28): report the
