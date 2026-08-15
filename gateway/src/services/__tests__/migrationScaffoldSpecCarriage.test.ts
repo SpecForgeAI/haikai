@@ -146,11 +146,29 @@ describe('buildScaffoldBootstrapSpecText', () => {
     expect(text).toContain('[decision:ci.pipeline]');
     // The main class derives its package from the manifest's own coordinates.
     expect(text).toContain("group/artifact coordinates");
-    // Boot acceptance pinned to the SAME serve derivation haibox uses.
-    expect(text).toContain('`mvn spring-boot:run` boots the application');
-    expect(text).toContain('/actuator/health');
-    // Boot smoke test demanded — the "no runnable test suite" killer.
+    // 2026-08-15: acceptance is STATIC + IN-TEST only. The old criterion
+    // demanded a live boot "against the migrated target database" — an agent
+    // stood up its own PostgreSQL cluster and ran a non-terminating server
+    // to satisfy it. The serve contract is INFORMATIONAL, never a criterion.
+    expect(text).toContain('GENERATION-TIME VERIFICATION IS STATIC + IN-TEST ONLY');
+    expect(text).toContain('NEVER install');
     expect(text).toContain('boot smoke test');
+    expect(text).toContain('IN-TEST');
+    expect(text).toContain('Testcontainers');
+    expect(text).toContain('Runtime verification (informational, NOT a criterion');
+    expect(text).toContain('`mvn spring-boot:run`'); // informational serve note
+    expect(text).toContain('/actuator/health');
+    // The criteria list itself carries NO live-boot demand.
+    const criteria = text.slice(
+      text.indexOf('## Acceptance criteria'),
+      text.indexOf('> Runtime verification')
+    );
+    expect(criteria).not.toContain('boots the application');
+    expect(criteria).not.toContain('migrated target database');
+    // MR-base Liquibase safety: pre-applied schema needs a changelogSync
+    // baseline, never a boot-time re-apply.
+    expect(text).toContain('changelogSync');
+    expect(text).toContain('OUT-OF-BAND');
     // Nothing missing → no warnings.
     expect(warnings).toEqual([]);
     expect(text).not.toContain('Decisions not captured');
