@@ -22,6 +22,7 @@ Five consecutive autoresearch:debug passes (260504-0823, -0934, -1127, -1229, -1
 | 260504-1127 | (test-pollution `set_api_key`) | 3 sites pop'd unconditionally |
 | 260504-1229 | `_safe_project_dir` | 17 sites in api/__init__.py |
 | 260504-1301 | `stop_flag` (SSE handlers) | 2 v2 SSE handlers — and the test asserted `>=4` instead of equality, hiding the gap |
+| 260815 | `GuardedProcess` (stream_watchdog) | both CLI chat executors read child stdout with a bare unbounded `for line in process.stdout` and never drained stderr — a silent/wedged pipe hung jobs FOREVER while the heartbeat stayed fresh (overnight spec deaths). Guard: every `subprocess.Popen(` in the chat executors must be wrapped in `GuardedProcess(` (equality count) |
 
 When you add a hardening helper or fix:
 

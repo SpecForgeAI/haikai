@@ -20,6 +20,7 @@ from . import rate_limit_backoff
 from .cli_limits import MAX_CLI_ARG_LENGTH
 from .model_pinning import claude_pinned_model, describe_pinned_model, model_args
 from .profiles_path import HAIKAI_PROFILES_ROOT
+from .stream_watchdog import GuardedProcess
 from .tool_executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
@@ -472,7 +473,7 @@ class ClaudeChatExecutor:
         ])
         return argv
 
-    def _spawn_subprocess(self, cli_args: List[str]) -> subprocess.Popen:
+    def _spawn_subprocess(self, cli_args: List[str]) -> "GuardedProcess":
         """Spawn the Claude CLI subprocess with the project's standard kwargs.
 
         Single source of truth for cwd / env / stdout / stderr /
@@ -502,7 +503,14 @@ class ClaudeChatExecutor:
         )
         if subprocess.os.name == "posix":
             kwargs["start_new_session"] = True
-        proc = subprocess.Popen(cli_args, **kwargs)
+        # Stall-guarded wrapper (2026-08-15): every consumer iterates
+        # `.stdout` / calls `.wait()` / reads `.stderr` — the bare Popen
+        # versions of those block FOREVER on a dead-but-unreaped child
+        # holding the pipe open (the overnight spec-death mode). The guard
+        # pumps stdout with an inactivity deadline (kill tree + retry-
+        # classified StreamStallError), drains stderr concurrently, and
+        # bounds wait(). Drop-in for the exact surface the call sites use.
+        proc = GuardedProcess(subprocess.Popen(cli_args, **kwargs), label="claude-cli")
         on_spawn = getattr(self, "on_spawn", None)
         if on_spawn:
             try:

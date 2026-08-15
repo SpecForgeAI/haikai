@@ -29,6 +29,7 @@ from typing import Optional, Dict, Any, Generator, List
 from .cli_limits import MAX_CLI_ARG_LENGTH
 from .model_pinning import describe_pinned_model, kiro_pinned_model, model_args
 from .profiles_path import HAIKAI_PROFILES_ROOT
+from .stream_watchdog import GuardedProcess
 from ..kiro_cli_locator import kiro_cli_args, locate_kiro_cli
 from datetime import datetime
 
@@ -283,16 +284,26 @@ class KiroChatExecutor:
 
         try:
             env_vars = {**os.environ}
-            process = subprocess.Popen(
-                cli_args,
-                cwd=str(self.project_dir),
-                env=env_vars,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                encoding='utf-8',
-                errors='replace'
+            # Stall-guarded wrapper (2026-08-15): the bare `for line in
+            # process.stdout` blocked FOREVER when the kiro run died inside
+            # WSL but wsl.exe kept the pipe open-and-silent (two overnight
+            # job deaths, specs 8 + 4). GuardedProcess pumps stdout with an
+            # inactivity deadline (kills the tree + raises a retry-classified
+            # StreamStallError), drains stderr concurrently (the mutual
+            # pipe-deadlock class), and bounds wait().
+            process = GuardedProcess(
+                subprocess.Popen(
+                    cli_args,
+                    cwd=str(self.project_dir),
+                    env=env_vars,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    encoding='utf-8',
+                    errors='replace'
+                ),
+                label="kiro-cli",
             )
             # D13 parity with the Claude executors (2026-07-28): report the
             # spawned pid so the job runner's cancel watchdog can kill the

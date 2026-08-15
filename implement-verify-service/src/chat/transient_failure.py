@@ -57,6 +57,10 @@ TRANSIENT_SIGNATURES = (
     "temporarily unavailable",
     "bedrock is unable",
     "modeltimeout",
+    # Stall watchdog (2026-08-15): a silent/wedged CLI pipe is killed and
+    # surfaced as StreamStallError — a re-runnable condition (the run died,
+    # nothing about the WORK was wrong), so the bounded step retry applies.
+    "stream stalled",
 )
 
 #: How much trailing output to consider — transient banners appear at the
