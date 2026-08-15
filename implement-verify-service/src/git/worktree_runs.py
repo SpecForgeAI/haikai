@@ -108,10 +108,19 @@ def _has_submodules(live_repo: Path) -> bool:
 
 
 def add_worktree(live_repo: Path, path: Path, branch: str, base: str,
-                 job_id: str = "") -> None:
+                 job_id: str = "", force_base: bool = False) -> None:
     """The three-way allocation rule (D4, user ruling verbatim):
     absent → add -b; exists+active elsewhere → fail clearly;
-    exists+free → add without -b. Detached mode: branch=None."""
+    exists+free → add without -b. Detached mode: branch=None.
+
+    ``force_base`` (2026-08-15, explicit-branch base): the operator's chosen
+    base is a HARD contract. Same-day Re-start reuses the deterministic spec
+    name, so a leftover FREE branch from the abandoned attempt would be
+    attached silently — planting the new run on the old attempt's base, the
+    exact silent-divergence class explicit bases fail-close against. With
+    ``force_base`` the free branch is reset to ``base`` before attach (live
+    holders still fail loudly above; the old tip stays reachable via reflog,
+    and auto-retry ``-rN`` attempts already start clean from base)."""
     # Resolve BOTH to absolute (2026-07-28): git resolves a relative dest
     # against the `-C <live_repo>` directory, NOT the process cwd — a
     # relative `path` silently plants the worktree inside the live clone
@@ -133,6 +142,15 @@ def add_worktree(live_repo: Path, path: Path, branch: str, base: str,
                 f"branch {branch} is active in another worktree ({holder}) — "
                 f"refusing allocation for job {job_id or '?'}")
         if _branch_exists(live_repo, branch):
+            if force_base:
+                old_tip = (_git(live_repo, "rev-parse", "--short", branch)
+                           .stdout or "").strip()
+                _require(_git(live_repo, "branch", "-f", branch, base),
+                         f"cannot reset stale branch {branch} to explicit "
+                         f"base {base}")
+                logger.info(
+                    "add_worktree: reset FREE stale branch %s (was %s) to "
+                    "explicit base %s before attach", branch, old_tip, base)
             _require(_git(live_repo, "worktree", "add", str(path), branch),
                      f"cannot attach worktree to existing branch {branch}")
         else:

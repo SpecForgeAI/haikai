@@ -309,15 +309,20 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                 # the target merged in. An explicit base_spec lineage wins
                 # (the driver sends it for within-run chaining, where the
                 # lineage already contains the integration base).
+                explicit_base = False
                 if getattr(request, "base_spec", None):
                     base = wr.resolve_base_ref(live_repo, request.base_spec,
                                                folder, default_branch)
                 elif getattr(request, "base_branch", None):
                     # Explicit-branch base (2026-08-15): "start from the open
                     # Merge Request" — the driver resolved the DB assembly
-                    # branch; allocation FAIL-CLOSES if it is absent on origin.
+                    # branch; allocation FAIL-CLOSES if it is absent on origin,
+                    # and a leftover FREE same-name branch from an abandoned
+                    # same-day attempt is RESET to this base (never silently
+                    # attached — the operator's chosen base is a hard contract).
                     base = wr.explicit_branch_base(live_repo,
                                                    request.base_branch)
+                    explicit_base = True
                 elif getattr(request, "integration_base", False):
                     base = wr.integration_base(live_repo, folder,
                                                default_branch, integration_tag)
@@ -330,7 +335,7 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
                                               workspace_dir)
                 dest = run_product if folder is None else run_product / folder
                 wr.add_worktree(live_repo, dest, branch, base,
-                                job_id=job.job_id)
+                                job_id=job.job_id, force_base=explicit_base)
                 logger.info("Job %s: worktree for %s -> branch %s from base %s",
                             job.job_id, folder or "(root)", branch, base)
                 wr.seed_repo_config(live_repo, dest)
