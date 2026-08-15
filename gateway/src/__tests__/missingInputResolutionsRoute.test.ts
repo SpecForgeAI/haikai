@@ -276,6 +276,12 @@ describe('POST /api/projects/:projectId/spec-generations/retry-batch (under thre
       expect.objectContaining({
         fetchProjectConfig: expect.any(Function),
         autoSeedEpicCapturedDecision: expect.any(Function),
+        // 2026-08-15: the retry-batch path must carry the confirmed-manifest
+        // seed source. Without it the scaffold story regenerates to a FALSE
+        // insufficient_context (the handler treats an unwired source as a
+        // deliberate no-op) — the "Ready to retry" card would disagree with
+        // the drawer Regenerate on the exact same story.
+        seedBuildFilesSource: expect.any(Function),
       }),
     );
     // Crucially, the gateway must NEVER call the AMS retry-batch endpoint --
@@ -383,6 +389,7 @@ describe('POST /api/projects/:projectId/spec-generations/retry-batch (confirmed)
       expect.objectContaining({
         fetchProjectConfig: expect.any(Function),
         autoSeedEpicCapturedDecision: expect.any(Function),
+        seedBuildFilesSource: expect.any(Function),
       }),
     );
   });
