@@ -607,6 +607,36 @@ describe('resumeFailedMigrationRun', () => {
 });
 
 // ===========================================================================
+// Duplicate-failure idempotency (2026-08-15): 'error' is terminal
+// ===========================================================================
+
+describe("CD-6 idempotency covers outcome 'error'", () => {
+  it('a REDELIVERED failure callback (the IVS callback retry legitimately produces one) is a no-op — no re-halt, no duplicate error record', async () => {
+    const run = sequentialRun();
+    run.status = RUN_STATUS.HALTED;
+    run.items![0].status = RUN_ITEM_STATUS.FAILED;
+    run.items![0].outcome = 'error'; // the raw outcome the halt path preserves
+    const deps = statefulDeps(run, []);
+
+    const decision = await advanceRunOnBuildResult(
+      {
+        company: 'acme',
+        project: 'order-mig',
+        jobId: 'job-1',
+        outcome: 'error',
+        summary: 'boom (redelivered)',
+      },
+      deps
+    );
+
+    expect(decision).toBe('noop_idempotent');
+    expect(deps.recordWorkItemImplementationError).not.toHaveBeenCalled();
+    expect(deps.patchMigrationExecutionRun).not.toHaveBeenCalled();
+    expect(deps.patchMigrationExecutionRunItem).not.toHaveBeenCalled();
+  });
+});
+
+// ===========================================================================
 // Boot-recovery sweep re-arms persisted retries
 // ===========================================================================
 
@@ -645,5 +675,73 @@ describe('boot sweep retry re-arm', () => {
     );
     expect(result.retriesRearmed).toBe(0);
     expect(timers).toHaveLength(0);
+  });
+});
+
+// ===========================================================================
+// Boot-sweep callback-lost reconcile (2026-08-15)
+// ===========================================================================
+
+describe('boot sweep reconciles callback-lost items from the durable IVS job record', () => {
+  const REF = [{ projectId: PROJECT_ID, runId: 'run-1', company: 'acme', project: 'order-mig', bookId: BOOK_ID }];
+
+  it('a SUBMITTED item whose job already COMPLETED advances from job.result — the wedged run un-wedges and dispatches the next spec', async () => {
+    const run = sequentialRun(); // item 0 SUBMITTED under job-1, no outcome
+    const getJobStatus = jest.fn().mockResolvedValue({
+      status: 'completed',
+      result: { outcome: 'implemented', errors: [], pr_url: null },
+      error: null,
+    });
+    const deps = statefulDeps(run, [], { getJobStatus });
+
+    const result = await recoverInFlightRuns(REF, deps);
+    await flush();
+
+    expect(getJobStatus).toHaveBeenCalledWith('job-1');
+    expect(result.callbacksReconciled).toBe(1);
+    expect(run.items![0].status).toBe(RUN_ITEM_STATUS.IMPLEMENTED);
+    expect(run.items![0].outcome).toBe('implemented');
+    // The next item was dispatched — the run continues instead of wedging.
+    expect(deps.submitOrchestration).toHaveBeenCalled();
+  });
+
+  it('a still-RUNNING job is left alone (its callback will come)', async () => {
+    const run = sequentialRun();
+    const getJobStatus = jest.fn().mockResolvedValue({ status: 'running', result: null, error: null });
+    const deps = statefulDeps(run, [], { getJobStatus });
+
+    const result = await recoverInFlightRuns(REF, deps);
+
+    expect(result.callbacksReconciled).toBe(0);
+    expect(run.items![0].status).toBe(RUN_ITEM_STATUS.SUBMITTED);
+  });
+
+  it('a FAILED job with no result payload synthesizes an error advance (halt path, loud)', async () => {
+    const run = sequentialRun();
+    const getJobStatus = jest.fn().mockResolvedValue({
+      status: 'failed',
+      result: null,
+      error: 'worker crashed',
+    });
+    const deps = statefulDeps(run, [], { getJobStatus });
+
+    const result = await recoverInFlightRuns(REF, deps);
+    await flush();
+
+    expect(result.callbacksReconciled).toBe(1);
+    expect(run.items![0].status).toBe(RUN_ITEM_STATUS.FAILED);
+    expect(run.items![0].outcome).toBe('error');
+    expect(run.status).toBe(RUN_STATUS.HALTED);
+  });
+
+  it('a COMPLETED job with an unreadable result is never guessed into a success', async () => {
+    const run = sequentialRun();
+    const getJobStatus = jest.fn().mockResolvedValue({ status: 'completed', result: {}, error: null });
+    const deps = statefulDeps(run, [], { getJobStatus });
+
+    const result = await recoverInFlightRuns(REF, deps);
+
+    expect(result.callbacksReconciled).toBe(0);
+    expect(run.items![0].status).toBe(RUN_ITEM_STATUS.SUBMITTED); // untouched
   });
 });

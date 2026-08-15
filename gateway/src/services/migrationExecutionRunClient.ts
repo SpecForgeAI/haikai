@@ -142,8 +142,26 @@ export const RUN_ITEM_STATUS = {
   REJECTED: 'rejected',
 } as const;
 
-/** Terminal build-results outcome values recorded on a run-item. */
-export const TERMINAL_OUTCOMES = ['implemented', 'deployed', 'failed', 'rejected'] as const;
+/**
+ * Terminal build-results outcome values recorded on a run-item. Includes the
+ * RAW halt outcomes the halt path preserves verbatim (2026-08-15): the IVS
+ * job path reports `error` (never legacy `failed`) and the bug path may
+ * report `fix_unserved` / `not_fixed`. An outcome is only ever WRITTEN by a
+ * terminal transition (success patch or halt; armed transient retries leave
+ * it null) — omitting `error` made the CD-6 idempotency guard blind to the
+ * single most common failure outcome, so a redelivered failure callback
+ * (which the IVS callback retry legitimately produces) re-ran the whole halt
+ * path and appended duplicate work-item error records.
+ */
+export const TERMINAL_OUTCOMES = [
+  'implemented',
+  'deployed',
+  'failed',
+  'rejected',
+  'error',
+  'fix_unserved',
+  'not_fixed',
+] as const;
 
 /** Typed AMS run-state error carrying the upstream status + body. */
 export class MigrationRunStateError extends Error {
