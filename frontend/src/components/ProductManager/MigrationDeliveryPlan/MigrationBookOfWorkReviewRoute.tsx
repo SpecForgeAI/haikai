@@ -163,6 +163,11 @@ export function MigrationBookOfWorkReviewRoute() {
           `${archScopedPrefix}/migration-books-of-work/${bookId}/delivery`,
         )
       }
+      onOpenProgress={() =>
+        navigate(
+          `${archScopedPrefix}/migration-books-of-work/${bookId}/progress`,
+        )
+      }
     />
   );
 }

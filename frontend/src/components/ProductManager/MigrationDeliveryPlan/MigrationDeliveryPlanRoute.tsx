@@ -111,14 +111,12 @@ export function MigrationDeliveryPlanRoute() {
     [setSearchParams],
   );
 
-  // The generation wizard opens on demand. It still auto-opens on a fresh
-  // landing (the only ways onto this route are the "Create Migration Delivery
-  // Plan" launchers, so create-intent is implied), but CLOSING it now stays on
-  // this page — revealing the section tabs + draft list — instead of ejecting
-  // to the backlog. That eject-on-close was the dead-end that made the Schema
-  // migration tab unreachable: the modal covered the tabs and Cancel navigated
-  // away.
-  const [wizardOpen, setWizardOpen] = useState(true);
+  // The generation wizard opens ON DEMAND ONLY (2026-08-16): landing here no
+  // longer auto-opens the create modal — subsequent visits are about the
+  // EXISTING plans (the draft list below), not creating another one. The
+  // "Create Migration Delivery Plan" button opens it; closing stays on this
+  // page (the earlier eject-on-close dead-end stays fixed).
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   // Fetch the project's architectures for the wizard's Stage-1 pickers. The
   // wizard only needs `{ id, name }`; archived architectures are still valid
@@ -231,10 +229,14 @@ export function MigrationDeliveryPlanRoute() {
           )}
 
           {/* Existing drafts for this project. Clicking a row routes to the
-              review workspace for that draft id. */}
+              review workspace for that draft id. The architecture id -> name
+              map renders readable Current/Target arch columns (2026-08-16). */}
           <MigrationBookOfWorkDraftListView
             projectId={projectId}
             onOpenDraft={(bookId) => goToReview(bookId)}
+            architectureNameById={
+              new Map(architectures.map((a) => [a.id, a.name]))
+            }
           />
         </>
       )}

@@ -41,6 +41,12 @@ import styles from './MigrationBookOfWork.module.css';
 export interface MigrationBookOfWorkDraftListViewProps {
   projectId: string;
   onOpenDraft: (bookId: string, draft: MigrationBookOfWorkDraft) => void;
+  /**
+   * Architecture id -> display name (2026-08-16): the Current/Target arch
+   * columns render the NAME instead of the raw UUID. Unknown ids fall back
+   * to the id so an archived/foreign architecture still renders something.
+   */
+  architectureNameById?: ReadonlyMap<string, string>;
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -111,7 +117,7 @@ function confidenceReadinessSummary(
 
 export const MigrationBookOfWorkDraftListView: React.FC<
   MigrationBookOfWorkDraftListViewProps
-> = ({ projectId, onOpenDraft }) => {
+> = ({ projectId, onOpenDraft, architectureNameById }) => {
   const [drafts, setDrafts] = useState<MigrationBookOfWorkDraft[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -219,8 +225,14 @@ export const MigrationBookOfWorkDraftListView: React.FC<
                   }}
                 >
                   <td>{d.title ?? '(untitled)'}</td>
-                  <td>{d.currentArchitectureId}</td>
-                  <td>{d.targetArchitectureId}</td>
+                  <td>
+                    {architectureNameById?.get(d.currentArchitectureId) ??
+                      d.currentArchitectureId}
+                  </td>
+                  <td>
+                    {architectureNameById?.get(d.targetArchitectureId) ??
+                      d.targetArchitectureId}
+                  </td>
                   <td data-testid={`draft-status-${d.id}`}>{d.status}</td>
                   <td>{formatDate(d.createdAt)}</td>
                   <td>

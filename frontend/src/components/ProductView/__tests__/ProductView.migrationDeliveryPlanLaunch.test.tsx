@@ -132,7 +132,9 @@ describe('ProductView -- Create Migration Delivery Plan launch button', () => {
     );
     const launch = screen.getByTestId('create-migration-delivery-plan-button');
     expect(launch).toBeInTheDocument();
-    expect(launch).toHaveTextContent('Create Migration Delivery Plan');
+    // 2026-08-16: navigation button, not a create action — the plan exists
+    // after the first visit, so no "Create" verb.
+    expect(launch).toHaveTextContent('Migration Delivery Plan');
     // Both buttons live in the same control-row button group (siblings).
     expect(launch.parentElement).toBe(
       screen.getByTestId('upload-book-of-work-button').parentElement,

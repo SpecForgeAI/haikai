@@ -174,7 +174,7 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
     mockGenerateMigrationDeliveryPlan.mockReset();
   });
 
-  it('renders the generation wizard (modal) and feeds the project architectures into Stage 1', async () => {
+  it('does NOT auto-open the wizard on landing; the Create button opens it and feeds Stage 1', async () => {
     mockListArchitectures.mockResolvedValueOnce([
       buildArchitecture(),
       buildArchitecture({ id: TARGET_ARCH_ID, name: 'Target architecture' }),
@@ -183,7 +183,19 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
 
     renderRoute();
 
-    // The wizard modal renders (renders nothing when open=false; here open).
+    // 2026-08-16: landing shows the page (Create button + tabs + draft list),
+    // NOT the create modal — subsequent visits are about existing plans.
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('migration-delivery-plan-create-button'),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('mdp-wizard')).not.toBeInTheDocument();
+
+    // The Create button opens the wizard on demand.
+    fireEvent.click(
+      screen.getByTestId('migration-delivery-plan-create-button'),
+    );
     await waitFor(() =>
       expect(screen.getByTestId('mdp-wizard')).toBeInTheDocument(),
     );
@@ -206,8 +218,11 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
     expect(currentSelect.value).toBe(ARCH_ID);
   });
 
-  it('renders the existing-drafts list', async () => {
-    mockListArchitectures.mockResolvedValueOnce([buildArchitecture()]);
+  it('renders the existing-drafts list with architecture NAMES in the arch columns', async () => {
+    mockListArchitectures.mockResolvedValueOnce([
+      buildArchitecture(),
+      buildArchitecture({ id: TARGET_ARCH_ID, name: 'Target architecture' }),
+    ]);
     mockListMigrationBookOfWorks.mockResolvedValueOnce([buildDraft()]);
 
     renderRoute();
@@ -215,11 +230,13 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
     await waitFor(() =>
       expect(screen.getByTestId('draft-list-view')).toBeInTheDocument(),
     );
-    await waitFor(() =>
-      expect(
-        screen.getByTestId('draft-list-row-draft-existing-1'),
-      ).toBeInTheDocument(),
-    );
+    const row = await screen.findByTestId('draft-list-row-draft-existing-1');
+    // 2026-08-16: the Current/Target arch cells render the architecture NAME
+    // (mapped from the route's architecture list), never the raw UUID.
+    expect(row).toHaveTextContent('Current architecture');
+    expect(row).toHaveTextContent('Target architecture');
+    expect(row).not.toHaveTextContent(ARCH_ID);
+    expect(row).not.toHaveTextContent(TARGET_ARCH_ID);
   });
 
   it('navigates to the review URL when the wizard completes generation', async () => {
@@ -238,26 +255,39 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
 
     renderRoute();
 
+    // Open the wizard via the Create button (no auto-open, 2026-08-16).
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('migration-delivery-plan-create-button'),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByTestId('migration-delivery-plan-create-button'),
+    );
     await waitFor(() =>
       expect(screen.getByTestId('mdp-wizard')).toBeInTheDocument(),
     );
 
     // Drive the wizard: current arch is pre-selected; pick a target, advance
     // through the stages, then Generate. We mock generate via the API module.
+    // The wizard can open before the architectures fetch resolves — wait for
+    // the target option to exist before selecting it.
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('option', { name: 'Target architecture' }).length,
+      ).toBeGreaterThan(0),
+    );
     fireEvent.change(screen.getByTestId('mdp-wizard-target-arch'), {
       target: { value: TARGET_ARCH_ID },
     });
-    // Stage 1 -> 2
-    fireEvent.click(screen.getByTestId('mdp-wizard-next'));
-    // Stage 2 requires >=1 intent.
-    fireEvent.click(
-      screen.getByTestId('mdp-wizard-intent-unsure_infer_from_context'),
+    // The wizard is THREE stages post-Spec-Z (the migration-intent stage was
+    // removed — intent is inferred from the target-state conversation):
+    // 1 arch pickers -> 2 scope (defaults, always advanceable) -> 3 generate.
+    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 1 -> 2 (scope)
+    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 2 -> 3 (generate)
+    await waitFor(() =>
+      expect(screen.getByTestId('mdp-wizard-generate')).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 2 -> 3
-    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 3 -> 4
-    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 4 -> 5
-    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 5 -> 6
-    fireEvent.click(screen.getByTestId('mdp-wizard-next')); // 6 -> 7
     fireEvent.click(screen.getByTestId('mdp-wizard-generate'));
 
     await waitFor(() =>
@@ -274,7 +304,15 @@ describe('MigrationDeliveryPlanRoute (follow-up wiring)', () => {
 
     renderRoute();
 
-    // Wizard auto-opens on landing.
+    // Open the wizard via the Create button (no auto-open, 2026-08-16).
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('migration-delivery-plan-create-button'),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByTestId('migration-delivery-plan-create-button'),
+    );
     await waitFor(() =>
       expect(screen.getByTestId('mdp-wizard')).toBeInTheDocument(),
     );
