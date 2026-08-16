@@ -58,6 +58,7 @@ import { fetchProjectConfigWithDefaults } from '../services/architectureModelCli
 import { autoSeedEpicCapturedDecision } from '../services/epicCapturedDecisionsClient';
 import { computeCostPreview, CostPreviewResponse } from '../services/migrationShapeSpecCostPreview';
 import { productionSeedBuildFilesSource } from '../services/migrationSeedBuildFilesProducer';
+import { autoApplyDecisionAdditions } from '../services/targetManifest/manifestDecisionAutoApply';
 
 export const missingInputResolutionsRouter = Router();
 
@@ -96,6 +97,9 @@ const productionDeps: ShapeSpecGenerationDeps = {
   // insufficient_context ("no confirmed manifest") even when the manifest IS
   // confirmed — the handler treats an unwired source as a deliberate no-op.
   seedBuildFilesSource: productionSeedBuildFilesSource,
+  // Decision→manifest auto-apply (2026-08-16): same wiring as the primary
+  // route — the seeded pom must be decision-consistent on retry too.
+  autoApplyDecisionAdditions,
 };
 
 // ---------------------------------------------------------------------------

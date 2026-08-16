@@ -113,15 +113,21 @@ describe('seed-build-files enrichment (Spec 5, Groups 3 + 4)', () => {
     expect(text).toContain(PKG_BODY);
   });
 
-  it('(c) carries explicit FIRST-sequencing + authoritative-lock framing', () => {
+  it('(c) carries explicit FIRST-sequencing + starting-point framing (2026-08-16: additions permitted, existing entries survive)', () => {
     const out = buildSeedBuildFilesEnrichment(bundle([pomManifest()]));
     const text = out.text as string;
     expect(text).toContain(SEED_BUILD_FILES_SECTION_HEADING);
     expect(text).toContain('SEQUENCED FIRST');
     expect(text).toContain('BEFORE any other story');
-    // Authoritative lock language (per-file rules come from Group 1's block).
-    expect(text).toContain('byte-for-byte');
-    expect(text).toMatch(/do NOT regenerate, overwrite, re-pin, upgrade, downgrade/i);
+    // 2026-08-16 ruling: exact INITIAL write + surviving entries, but the file
+    // is a STARTING POINT — the old freeze wording made the implementer refuse
+    // decision-required additions (liquibase-core).
+    expect(text).toMatch(/INITIAL write must\s*reproduce each file EXACTLY/);
+    expect(text).toMatch(
+      /never regenerate,\s*re-pin, upgrade, downgrade, or replace an existing entry/
+    );
+    expect(text).toMatch(/STARTING POINT, not a freeze/);
+    expect(text).toMatch(/ADD the minimal\s*entry/);
   });
 
   it('(d) preserves a version-unknown marker VERBATIM (no invented version)', () => {

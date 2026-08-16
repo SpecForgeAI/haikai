@@ -169,6 +169,15 @@ describe('buildScaffoldBootstrapSpecText', () => {
     // baseline, never a boot-time re-apply.
     expect(text).toContain('changelogSync');
     expect(text).toContain('OUT-OF-BAND');
+    // 2026-08-16: the migration tool must be ADDED + ENABLED when the seeded
+    // manifest lacks it (live failure: decision said Liquibase, pom never
+    // declared liquibase-core, spring.liquibase.enabled stayed off, nothing
+    // could migrate) — and the pom wording is starting-point, never a freeze.
+    expect(text).toContain('org.liquibase:liquibase-core');
+    expect(text).toContain('spring.liquibase.enabled');
+    expect(text).toContain('ADD it');
+    expect(text).toContain('STARTING POINT, not a freeze');
+    expect(text).not.toContain('NEVER add a dependency beyond the manifest');
     // Nothing missing → no warnings.
     expect(warnings).toEqual([]);
     expect(text).not.toContain('Decisions not captured');

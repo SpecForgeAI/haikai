@@ -207,19 +207,22 @@ export function buildSeedFileWriteBlock(
     `File kind: ${manifest.fileName}`,
     '',
     `INSTRUCTION (exact-write, NOT a suggestion):`,
-    `Create this file with EXACTLY this content. This is the AUTHORITATIVE, FROZEN ` +
-      `source of dependency truth for this module: the declared dependencies and their ` +
-      `versions were curated (specifically to reduce CVEs) and MUST survive byte-for-byte.`,
+    `Create this file with EXACTLY this content. This is the AUTHORITATIVE STARTING ` +
+      `POINT for this module's build: the declared dependencies and their versions were ` +
+      `curated (specifically to reduce CVEs) — the INITIAL write must reproduce them ` +
+      `byte-for-byte, and every entry present below must SURVIVE every later edit.`,
     '',
     `Rules for this file:`,
-    `- Write the bytes between the BEGIN/END markers below EXACTLY as shown — same ` +
-      `coordinates, same versions, same ordering, same formatting.`,
-    `- Do NOT regenerate, overwrite, replace, re-pin, upgrade, downgrade, re-order, or ` +
-      `infer an alternative build file for this module.`,
-    `- Do NOT change, add, or remove any declared dependency or version.`,
-    `- You MAY add scaffolding AROUND this file (plugin blocks, build config, project ` +
-      `metadata, surrounding boilerplate needed to make it build) — but build the rest of ` +
-      `the codebase to FIT this file, never the reverse.${versionUnknownLine}`,
+    `- INITIAL WRITE: write the bytes between the BEGIN/END markers below EXACTLY as ` +
+      `shown — same coordinates, same versions, same ordering, same formatting.`,
+    `- Never regenerate or replace the file wholesale, and never re-pin, upgrade, ` +
+      `downgrade, re-order, or remove any dependency/version it already declares.`,
+    `- ADDITIONS ARE PERMITTED — this file is a starting point, not a freeze: when a ` +
+      `requirement in this spec (or a later spec) needs a dependency, plugin, or build ` +
+      `setting the file lacks, ADD the minimal entry (version-less where a managed BOM ` +
+      `owns the version) and say which requirement/[decision:<code>] demanded it. ` +
+      `Existing entries stay untouched.`,
+    `- Build the rest of the codebase to FIT this file, never the reverse.${versionUnknownLine}`,
     '',
     `The exact file content follows between the markers (reproduce verbatim; the marker ` +
       `lines themselves are NOT part of the file):`,

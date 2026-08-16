@@ -118,7 +118,13 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
   {
     needs: ['db.migrations'],
     render: (v) =>
-      `Wire the schema-migration tool per the captured decision (${v('db.migrations')}). ` +
+      `Wire the schema-migration tool per the captured decision (${v('db.migrations')}) ` +
+      `and ENABLE it: if the seeded build manifest does not yet declare the tool's ` +
+      `dependency (e.g. \`org.liquibase:liquibase-core\`), ADD it — minimal entry, ` +
+      `version-less where the platform BOM manages it — citing this decision; a ` +
+      `migration tool that is declared in the decisions but absent from the classpath ` +
+      `silently disables schema migration (\`spring.liquibase.enabled\` defaults off ` +
+      `with no dependency). ` +
       `IF the repository already contains the DB plane's changelog (a run based on the ` +
       `DB Merge Request carries \`liquibase/db.changelog-master.xml\` and its ` +
       `changesets), point the tool's configuration at that EXISTING master changelog — ` +
@@ -185,10 +191,12 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
     needs: ['tracing.framework'],
     optional: ['metrics.framework'],
     render: (v) =>
-      `Wire observability ONLY with dependencies the seeded manifest already declares ` +
+      `Wire observability per the captured decisions ` +
       `(tracing: ${v('tracing.framework')}` +
       (v('metrics.framework') ? `; metrics: ${v('metrics.framework')}` : '') +
-      `). NEVER add a dependency beyond the manifest — it is authoritative. ` +
+      `). Prefer dependencies the seeded manifest already declares; when a captured ` +
+      `decision requires one the manifest lacks, add the minimal entry citing the ` +
+      `decision — never invent tooling no decision names. ` +
       cite('tracing.framework'),
   },
   {
@@ -311,7 +319,13 @@ export function buildScaffoldBootstrapSpecText(args: {
   });
   lines.push('## Acceptance criteria');
   lines.push('');
-  lines.push('1. The seeded build file(s) above exist at EXACTLY their stated paths, byte-identical.');
+  lines.push(
+    '1. The seeded build file(s) exist at EXACTLY their stated paths and every ' +
+      'entry they declared survives unchanged (same coordinates, same versions). ' +
+      'Additions the requirements above demanded (each citing its ' +
+      '`[decision:<code>]`) are expected and welcome — the seeded file is the ' +
+      'authoritative STARTING POINT, not a freeze.'
+  );
   lines.push('2. The application builds cleanly from a fresh clone.');
   lines.push(
     '3. The test suite runs green, including the boot smoke test: a Spring ' +

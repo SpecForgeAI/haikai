@@ -378,11 +378,15 @@ export function buildSeedBuildFilesEnrichment(
     '',
     `Each block below is an EXACT-WRITE instruction for one target module's build ` +
       `file (\`pom.xml\` / \`package.json\`). The declared dependencies and their ` +
-      `versions were curated specifically to reduce CVEs and MUST survive ` +
-      `byte-for-byte — write each file EXACTLY as shown at EXACTLY its stated ` +
-      `destination path, then build the rest of the codebase to FIT these files. ` +
-      `Do NOT regenerate, overwrite, re-pin, upgrade, downgrade, infer, or replace ` +
-      `any of them.`,
+      `versions were curated specifically to reduce CVEs: the INITIAL write must ` +
+      `reproduce each file EXACTLY as shown at EXACTLY its stated destination path, ` +
+      `and every declared entry must survive every later edit — never regenerate, ` +
+      `re-pin, upgrade, downgrade, or replace an existing entry. The file is a ` +
+      `STARTING POINT, not a freeze: when a requirement in this or a later spec ` +
+      `needs a dependency, plugin, or build setting the file lacks, ADD the minimal ` +
+      `entry (version-less where a managed BOM owns the version), citing the ` +
+      `requirement/[decision:<code>] that demanded it. Build the rest of the ` +
+      `codebase to FIT these files.`,
     '',
     `PHASE NOTE: the write instructions above apply to the IMPLEMENT phase only. ` +
       `During spec SHAPING, record these blocks in the spec verbatim — do not ` +

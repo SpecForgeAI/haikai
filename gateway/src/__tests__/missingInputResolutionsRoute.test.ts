@@ -282,6 +282,9 @@ describe('POST /api/projects/:projectId/spec-generations/retry-batch (under thre
         // deliberate no-op) — the "Ready to retry" card would disagree with
         // the drawer Regenerate on the exact same story.
         seedBuildFilesSource: expect.any(Function),
+        // 2026-08-16: decision→manifest auto-apply rides retry-batch too —
+        // the seeded pom must be decision-consistent on every generation path.
+        autoApplyDecisionAdditions: expect.any(Function),
       }),
     );
     // Crucially, the gateway must NEVER call the AMS retry-batch endpoint --
