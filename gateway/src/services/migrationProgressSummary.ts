@@ -258,8 +258,10 @@ export interface ProgressSummaryDeps {
   ): Promise<number | null>;
   /**
    * SAVED architecture candidates for ONE run (2026-08-16): distinct
-   * candidates with a save-back candidate->entity mapping — the banner's
-   * "architecture items" fact. Actually-saved, not merely approved.
+   * candidates with a save-back candidate->entity mapping, FALLING BACK to
+   * the run's `status=committed` candidate count (the save-back's other
+   * footprint — older saves wrote no provenance mappings). The banner's
+   * "architecture items" fact: actually-saved, not merely approved.
    */
   countSavedCandidatesForRun(
     projectId: string,
@@ -340,11 +342,14 @@ export function defaultProgressSummaryDeps(): ProgressSummaryDeps {
       return typeof body.total === 'number' ? body.total : null;
     },
     async countSavedCandidatesForRun(projectId, architectureId, runId) {
-      const url =
+      const runBase =
         `${amsBase()}/api/model/projects/${encodeURIComponent(projectId)}` +
         `/architectures/${encodeURIComponent(architectureId)}` +
-        `/discovery/runs/${encodeURIComponent(runId)}/candidate-entity-mappings`;
-      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+        `/discovery/runs/${encodeURIComponent(runId)}`;
+      // Footprint 1: save-back provenance mappings (candidate -> entity).
+      const response = await fetch(`${runBase}/candidate-entity-mappings`, {
+        headers: { Accept: 'application/json' },
+      });
       if (!response.ok) return null;
       const rows = (await response.json()) as Array<{ candidate_id?: string | null }>;
       if (!Array.isArray(rows)) return null;
@@ -356,7 +361,18 @@ export function defaultProgressSummaryDeps(): ProgressSummaryDeps {
         if (row.candidate_id) distinct.add(row.candidate_id);
         else anonymous += 1;
       }
-      return distinct.size + anonymous;
+      const fromMappings = distinct.size + anonymous;
+      if (fromMappings > 0) return fromMappings;
+      // Footprint 2 (shakedown 2026-08-16, live data had NO mapping rows):
+      // the save-back also transitions each saved candidate's `status` to
+      // 'committed' — count those. Older saves that never wrote provenance
+      // mappings still carry this transition.
+      const committed = await fetch(`${runBase}/candidates?status=committed`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!committed.ok) return fromMappings;
+      const committedRows = (await committed.json()) as unknown[];
+      return Array.isArray(committedRows) ? committedRows.length : fromMappings;
     },
     fetchActiveCurrentBaseline,
     fetchBaselineItems,
@@ -669,6 +685,7 @@ export async function computeMigrationProgressSummary(
   // while an older run held the real saved set (shakedown 2026-08-16).
   const discoveryFactsForKind = async (
     kinds: string[],
+    kindLabel: string,
   ): Promise<{ findings: number | null; savedItems: number | null }> => {
     if (!discoveryRuns) return { findings: null, savedItems: null };
     // The AMS list is newest-first.
@@ -695,13 +712,19 @@ export async function computeMigrationProgressSummary(
         }
       }
     }
+    if (savedItems === 0) {
+      // A true zero is self-explaining on screen, never a silent puzzle.
+      warnings.push(
+        `${kindLabel}: no SAVED architecture candidates on any of the ${completed.length} completed run(s) — approve + save a run's candidates to populate its architecture items.`,
+      );
+    }
     return { findings: await findingsPromise, savedItems };
   };
   const dbDiscoveryFacts = scope.db
-    ? await discoveryFactsForKind(['database', 'combined'])
+    ? await discoveryFactsForKind(['database', 'combined'], 'DB discovery')
     : { findings: null, savedItems: null };
   const codeDiscoveryFacts = scope.service
-    ? await discoveryFactsForKind(['code', 'combined'])
+    ? await discoveryFactsForKind(['code', 'combined'], 'Code/logs discovery')
     : { findings: null, savedItems: null };
 
   // --- Stages. --------------------------------------------------------------
