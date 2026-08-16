@@ -151,3 +151,88 @@ export async function getMigrationProgressSummary(
   }
   return (await res.json()) as MigrationProgressSummaryDto;
 }
+
+// ============================================================================
+// Manual reconciliation trigger (2026-08-16)
+// ============================================================================
+
+export interface ManualDbBlockDto {
+  dbType: 'sybase' | 'postgres';
+  host: string;
+  port: number;
+  database: string;
+  schema?: string | null;
+  username: string;
+  password: string;
+}
+
+export interface ManualAuthDto {
+  type: 'none' | 'bearer' | 'api_key_header' | 'api_key_query' | 'basic' | 'custom_header';
+  bearerToken?: string;
+  headerName?: string;
+  headerValue?: string;
+  queryParamName?: string;
+  queryParamValue?: string;
+  username?: string;
+  password?: string;
+}
+
+/**
+ * Request body for the manual reconciliation kick. Credential blocks are
+ * OPTIONAL — the gateway falls back to the run's already-registered in-memory
+ * credentials, so a re-run doesn't force re-typing. Everything sent lands in
+ * the gateway's in-memory stores only: never persisted, never logged.
+ */
+export interface StartReconciliationRequestDto {
+  run_data_parity: boolean;
+  run_api_reconcile: boolean;
+  /** CURRENT-state (source) DB credentials — the data-parity source side. */
+  source_db?: ManualDbBlockDto | null;
+  /** TARGET DB credentials — parity target side + reconcile state snapshots. */
+  target_db?: ManualDbBlockDto | null;
+  /** TARGET service auth (the replay target). */
+  api?: ManualAuthDto | null;
+  /** TARGET service base URL (blank = the run's persisted value). */
+  target_base_url?: string | null;
+  /** CURRENT-state service details (source-side registration). */
+  source_api?: { current_base_url?: string; api?: ManualAuthDto | null } | null;
+}
+
+export type ManualRecOutcomeDto =
+  | { status: 'started'; detail: string }
+  | { status: 'blocked'; reason: string };
+
+export interface StartReconciliationResultDto {
+  dataParity: ManualRecOutcomeDto | null;
+  apiReconcile: ManualRecOutcomeDto | null;
+}
+
+/**
+ * Kick the selected reconciliation(s). Both engines run in the BACKGROUND
+ * (minutes-to-hours on big systems): a 202 means started/blocked per rec —
+ * refresh the progress report to see results land. A 400 (bad input) or
+ * 5xx rejects with the server message.
+ */
+export async function startManualReconciliation(
+  projectId: string,
+  architectureId: string,
+  bookId: string,
+  body: StartReconciliationRequestDto,
+): Promise<StartReconciliationResultDto> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}` +
+    `/migration-books-of-work/${encodeURIComponent(bookId)}/reconciliation/run`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const serverMessage = await readServerMessage(res);
+    throw new Error(
+      serverMessage || `Failed to start the reconciliation: ${res.status} ${res.statusText}`,
+    );
+  }
+  return (await res.json()) as StartReconciliationResultDto;
+}

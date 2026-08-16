@@ -33,11 +33,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   getMigrationProgressSummary,
+  startManualReconciliation,
   type DbSectionDto,
   type MigrationProgressSummaryDto,
   type ProgressStageDto,
   type ServiceSectionDto,
 } from '../../../api/migrationProgressReportApi';
+import { RunReconciliationModal } from './RunReconciliationModal';
 import {
   formatCountWithPct,
   matchingTier,
@@ -88,6 +90,8 @@ export interface MigrationProgressReportProps {
   productName: string;
   /** Test seam: the summary fetch (defaults to the real client). */
   fetchSummaryFn?: typeof getMigrationProgressSummary;
+  /** Test seam: the manual reconciliation trigger (defaults to the real client). */
+  startReconciliationFn?: typeof startManualReconciliation;
 }
 
 export function MigrationProgressReport({
@@ -96,10 +100,12 @@ export function MigrationProgressReport({
   bookId,
   productName,
   fetchSummaryFn = getMigrationProgressSummary,
+  startReconciliationFn = startManualReconciliation,
 }: MigrationProgressReportProps) {
   const [summary, setSummary] = useState<MigrationProgressSummaryDto | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [reconciliationOpen, setReconciliationOpen] = useState<boolean>(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,7 +146,11 @@ export function MigrationProgressReport({
 
   return (
     <div className={styles.page} data-testid="mpr-page">
-      <Banner summary={summary} productName={productName} />
+      <Banner
+        summary={summary}
+        productName={productName}
+        onRunReconciliation={() => setReconciliationOpen(true)}
+      />
       {summary.db && summary.scope.db && <DbSectionView db={summary.db} />}
       {summary.service && summary.scope.service && (
         <ServiceSectionView service={summary.service} />
@@ -149,6 +159,19 @@ export function MigrationProgressReport({
         <div className={styles.warnings} data-testid="mpr-warnings">
           {summary.warnings.join(' ')}
         </div>
+      )}
+      {reconciliationOpen && (
+        <RunReconciliationModal
+          projectId={projectId}
+          architectureId={architectureId}
+          bookId={bookId}
+          scope={summary.scope}
+          startFn={startReconciliationFn}
+          onClose={(ranAny) => {
+            setReconciliationOpen(false);
+            if (ranAny) void load();
+          }}
+        />
       )}
     </div>
   );
@@ -161,9 +184,11 @@ export function MigrationProgressReport({
 function Banner({
   summary,
   productName,
+  onRunReconciliation,
 }: {
   summary: MigrationProgressSummaryDto;
   productName: string;
+  onRunReconciliation: () => void;
 }) {
   const stages = summary.stages;
   return (
@@ -181,6 +206,14 @@ function Banner({
           <span className={styles.identityLabel}>Target state:</span>{' '}
           {summary.targetStateLabel ?? '—'}
         </span>
+        <button
+          type="button"
+          className={styles.runRecButton}
+          data-testid="mpr-run-reconciliation"
+          onClick={onRunReconciliation}
+        >
+          Run reconciliation…
+        </button>
       </div>
       <div
         className={styles.stepper}

@@ -18,7 +18,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { vi } from 'vitest';
 
 // Mock the CSS module so class-name access does not blow up under jsdom.
@@ -161,6 +161,19 @@ describe('MigrationProgressReport', () => {
     expect(screen.getByTestId('mpr-db-bucket-failed-load').textContent).toContain('[TBC]');
     expect(screen.getByTestId('mpr-service-bucket-reconciled').textContent).toContain('[TBC]');
     expect(screen.getByTestId('mpr-per-operation').textContent).toContain('TBC - execute migration plan');
+  });
+
+  it('opens the run-reconciliation modal from the banner button', async () => {
+    renderReport(populatedSummary());
+    await waitFor(() => expect(screen.getByTestId('mpr-page')).toBeTruthy());
+    expect(screen.queryByTestId('rrm-modal')).toBeNull();
+    fireEvent.click(screen.getByTestId('mpr-run-reconciliation'));
+    expect(screen.getByTestId('rrm-modal')).toBeTruthy();
+    // Both recs are in scope -> both field groups offered.
+    expect(screen.getByTestId('rrm-db-fields')).toBeTruthy();
+    expect(screen.getByTestId('rrm-api-fields')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('rrm-cancel'));
+    expect(screen.queryByTestId('rrm-modal')).toBeNull();
   });
 
   it('renders only the DB section for a DB-only scope', async () => {
