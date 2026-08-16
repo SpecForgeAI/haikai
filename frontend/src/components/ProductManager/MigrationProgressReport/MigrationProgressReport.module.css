@@ -1,0 +1,299 @@
+/**
+ * MigrationProgressReport styles (2026-08-16).
+ *
+ * ONE-SCREEN discipline: the whole report (banner + two sections) must fit a
+ * full-HD screen with no scrolling — tight paddings, single-line cells,
+ * section titles on slim strips, no large margins.
+ *
+ * Condition-colour tiers map 1:1 to progressReportColours.ts. Cells always
+ * keep the number visible — colour is reinforcement, never the only signal.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+  font-size: 13px;
+  color: #202124;
+}
+
+.errorBox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d93025;
+  border-radius: 6px;
+  background: #fdecea;
+}
+
+.warnings {
+  font-size: 11px;
+  color: #757575;
+}
+
+/* ---------------------------------------------------------------------------
+ * Banner
+ * ------------------------------------------------------------------------ */
+
+.banner {
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.identityLine {
+  display: flex;
+  align-items: baseline;
+  gap: 24px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #dadce0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.identityItem {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.identityLabel {
+  font-weight: 400;
+  color: #5f6368;
+}
+
+.identityArrow {
+  color: #5f6368;
+}
+
+.stepper {
+  display: grid;
+  gap: 0;
+}
+
+.stageCell {
+  padding: 6px 8px;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  min-height: 58px;
+}
+
+.stageCell:last-child {
+  border-right: none;
+}
+
+.stageName {
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stageIcon {
+  font-weight: 700;
+}
+
+.stageFact {
+  font-size: 11px;
+  color: #3c4043;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 14px;
+}
+
+/* Stage cell backgrounds: complete / in progress / not started (or failed). */
+.stageComplete {
+  background: #e6f4ea;
+}
+
+.stageComplete .stageIcon {
+  color: #1e8e3e;
+}
+
+.stageInProgress {
+  background: #fef7e0;
+}
+
+.stageInProgress .stageIcon {
+  color: #b06000;
+}
+
+.stageNotStarted {
+  background: #fdecea;
+}
+
+.stageNotStarted .stageIcon {
+  color: #d93025;
+}
+
+/* ---------------------------------------------------------------------------
+ * Sections
+ * ------------------------------------------------------------------------ */
+
+.section {
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.sectionTitle {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  background: #f1f3f4;
+  border-bottom: 1px solid #dadce0;
+}
+
+.stripTitle {
+  padding: 3px 12px;
+  font-size: 11px;
+  color: #5f6368;
+  background: #fafafa;
+  border-top: 1px solid #eceff1;
+  border-bottom: 1px solid #eceff1;
+}
+
+/* Facts panel: current 40% | target 40% | Matching? 20%. */
+.factsGrid {
+  display: grid;
+  grid-template-columns: 2fr 2fr 1fr;
+}
+
+.factsCell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-right: 1px solid #eceff1;
+  border-bottom: 1px solid #eceff1;
+  min-height: 24px;
+}
+
+.factsCell:nth-child(3n) {
+  border-right: none;
+}
+
+.factsHeader {
+  font-size: 11px;
+  font-weight: 700;
+  color: #5f6368;
+  background: #fafafa;
+}
+
+.factsLabel {
+  white-space: nowrap;
+}
+
+.factsValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.matchCell {
+  justify-content: center;
+  font-weight: 700;
+}
+
+/* Bucket strips (worst -> best). */
+.bucketRow {
+  display: grid;
+}
+
+.bucketRow4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.bucketRow3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bucketRow2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.bucketCell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-right: 1px solid rgba(0, 0, 0, 0.08);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.bucketCell:last-child {
+  border-right: none;
+}
+
+.bucketLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bucketValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.perOpStrip {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 5px 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.perOpItem {
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+ * Condition-colour tiers (progressReportColours.ts) + the grey TBC cell.
+ * ------------------------------------------------------------------------ */
+
+.tierMediumGreen {
+  background: #34a853;
+  color: #ffffff;
+}
+
+.tierLightGreen {
+  background: #b7e1c1;
+  color: #1e3a26;
+}
+
+.tierYellow {
+  background: #fdd663;
+  color: #3f3000;
+}
+
+.tierLightOrange {
+  background: #ffcc80;
+  color: #4e2a00;
+}
+
+.tierMediumOrange {
+  background: #fb8c00;
+  color: #ffffff;
+}
+
+.tierMediumRed {
+  background: #d93025;
+  color: #ffffff;
+}
+
+.tbcCell {
+  background: #eceff1;
+  color: #757575;
+  font-style: italic;
+}

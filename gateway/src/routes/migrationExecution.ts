@@ -88,6 +88,7 @@ import {
   computeRunParityStatus,
   defaultRunParityStatusDeps,
 } from '../services/migrationRunParityStatus';
+import { computeMigrationProgressSummary } from '../services/migrationProgressSummary';
 import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
 import type {
   TargetDbSecret,
@@ -659,6 +660,35 @@ migrationExecutionRouter.get(
         { project: projectId, run: runId },
       );
       return res.status(502).json({ error: 'Failed to compute run parity status' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Stakeholder progress summary (2026-08-16): the deterministic aggregation
+// behind the `.../progress` report screen. Reads ONLY persisted data (reports,
+// pack, runs, breaks, baseline, decisions, discovery roll-ups) — fail-soft per
+// block, no credentials, no LLM. Warnings ride the payload.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.get(
+  '/projects/:projectId/architectures/:architectureId/migration-books-of-work/:bookId/progress-summary',
+  async (req: Request, res: Response) => {
+    const { projectId, architectureId, bookId } = req.params;
+    try {
+      const summary = await computeMigrationProgressSummary({
+        projectId,
+        architectureId,
+        bookId,
+      });
+      return res.status(200).json(summary);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_progress summary_error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to compute the migration progress summary' });
     }
   }
 );
