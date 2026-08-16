@@ -288,7 +288,10 @@ function ProductViewLayout() {
               disabled={isCreateDeliveryPlanDisabled}
               data-testid="create-migration-delivery-plan-button"
             >
-              Create Migration Delivery Plan
+              {/* "Migration Delivery Plan" (2026-08-16): the button NAVIGATES
+                  to the plan landing page — only the first visit creates; from
+                  then on the plan already exists, so no "Create" verb. */}
+              Migration Delivery Plan
             </button>
           </div>
 

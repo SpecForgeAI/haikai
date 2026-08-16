@@ -221,6 +221,12 @@ export interface MigrationBookOfWorkReviewWorkspaceProps {
   /** Deep link to the delivery dashboard (run forensics). */
   onOpenDelivery?: () => void;
   /**
+   * Deep link to the stakeholder progress SUMMARY report (2026-08-16) —
+   * the deterministic one-screen `.../progress` view. Rendered with the
+   * Progress Detail link above Save draft and in the Execution rail.
+   */
+  onOpenProgress?: () => void;
+  /**
    * Active architecture id (Residual 2): resolves the pack's DECLARED
    * target-DB binding for the Start-stage dialog prefill.
    */
@@ -387,6 +393,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
   projectName,
   scopeHint,
   onOpenDelivery,
+  onOpenProgress,
   activeArchitectureId,
 }) => {
   const { showToast } = useToast();
@@ -1993,6 +2000,37 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
             )}
           </p>
         </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+          {/* Progress report links (2026-08-16): above the Save-draft toolbar —
+              Detail = the delivery dashboard, Summary = the one-screen
+              stakeholder progress report. */}
+          {(onOpenDelivery || onOpenProgress) && (
+            <div
+              style={{ display: 'flex', gap: 16 }}
+              data-testid="review-progress-links"
+            >
+              {onOpenDelivery && (
+                <button
+                  type="button"
+                  className={styles.coverageInlineLink}
+                  onClick={onOpenDelivery}
+                  data-testid="review-progress-detail-link"
+                >
+                  Progress Detail {'→'}
+                </button>
+              )}
+              {onOpenProgress && (
+                <button
+                  type="button"
+                  className={styles.coverageInlineLink}
+                  onClick={onOpenProgress}
+                  data-testid="review-progress-summary-link"
+                >
+                  Progress Summary {'→'}
+                </button>
+              )}
+            </div>
+          )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {!archived && (
             <button
@@ -2073,6 +2111,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           >
             {saveDraftState === 'saving' ? 'Saving\u2026' : 'Save draft'}
           </button>
+        </div>
         </div>
       </div>
 
@@ -2275,6 +2314,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
           onBreakGlass={() => void handleRailApprove(true)}
           onSelectStory={(id) => setSelectedItemId(id)}
           onOpenDelivery={onOpenDelivery}
+          onOpenProgress={onOpenProgress}
           dbCredsRegistered={credsStatus ? credsStatus.targetRegistered : null}
           onProvideCreds={() => void openStartDialog('register')}
           onHaltRun={() => void handleRailHalt()}

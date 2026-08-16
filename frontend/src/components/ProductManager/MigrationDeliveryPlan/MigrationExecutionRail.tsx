@@ -133,6 +133,12 @@ export interface MigrationExecutionRailProps {
   onSelectStory: (bookItemId: string) => void;
   onOpenDelivery?: () => void;
   /**
+   * Open the stakeholder progress SUMMARY report (2026-08-16) — the
+   * deterministic one-screen `.../progress` view. Rendered with the
+   * Progress Detail link above the stage cards, right-aligned.
+   */
+  onOpenProgress?: () => void;
+  /**
    * Target-DB credential registration presence for the ACTIVE run (Residual 2).
    * null = no run / unknown. Rendered on the DB card so a lost registration
    * (e.g. gateway restart — the store is in-memory) is visible, not a silent
@@ -188,6 +194,7 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
   onBreakGlass,
   onSelectStory,
   onOpenDelivery,
+  onOpenProgress,
   dbCredsRegistered,
   onProvideCreds,
   onHaltRun,
@@ -370,6 +377,37 @@ export const MigrationExecutionRail: React.FC<MigrationExecutionRailProps> = ({
           </button>{' '}
           (re-runs assemble {'→'} schema {'→'} load {'→'} reconcile without
           re-running the specs)
+        </div>
+      )}
+
+      {/* Progress report links (2026-08-16): right-aligned above the stage
+          cards — Detail = the delivery dashboard, Summary = the stakeholder
+          one-screen progress report. */}
+      {(onOpenDelivery || onOpenProgress) && (
+        <div
+          style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, margin: '2px 0 6px' }}
+          data-testid="execution-rail-progress-links"
+        >
+          {onOpenDelivery && (
+            <button
+              type="button"
+              className={styles.coverageInlineLink}
+              onClick={onOpenDelivery}
+              data-testid="execution-rail-progress-detail-link"
+            >
+              Progress Detail {'→'}
+            </button>
+          )}
+          {onOpenProgress && (
+            <button
+              type="button"
+              className={styles.coverageInlineLink}
+              onClick={onOpenProgress}
+              data-testid="execution-rail-progress-summary-link"
+            >
+              Progress Summary {'→'}
+            </button>
+          )}
         </div>
       )}
 
