@@ -89,6 +89,10 @@ import {
   defaultRunParityStatusDeps,
 } from '../services/migrationRunParityStatus';
 import { computeMigrationProgressSummary } from '../services/migrationProgressSummary';
+import {
+  ManualDbBlock,
+  startManualReconciliation,
+} from '../services/migrationManualReconcileTriggers';
 import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
 import type {
   TargetDbSecret,
@@ -689,6 +693,65 @@ migrationExecutionRouter.get(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Failed to compute the migration progress summary' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Manual reconciliation triggers (2026-08-16): the operator "run the rec(s)
+// now" door behind the progress report's modal. Fire-and-forget kicks of the
+// existing engines (AMVS data-parity comparator / full-baseline reconcile);
+// blocking preconditions are checked synchronously so the modal can say WHY.
+// Credentials land in the in-memory stores only — never persisted or logged.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/architectures/:architectureId/migration-books-of-work/:bookId/reconciliation/run',
+  async (req: Request, res: Response) => {
+    const { projectId, architectureId, bookId } = req.params;
+    const body = (req.body ?? {}) as {
+      run_data_parity?: boolean;
+      run_api_reconcile?: boolean;
+      source_db?: ManualDbBlock | null;
+      target_db?: ManualDbBlock | null;
+      api?: Parameters<typeof startManualReconciliation>[0]['request']['api'];
+      target_base_url?: string | null;
+      source_api?: {
+        current_base_url?: string;
+        api?: Parameters<typeof startManualReconciliation>[0]['request']['api'];
+      } | null;
+    };
+    try {
+      const outcome = await startManualReconciliation({
+        projectId,
+        architectureId,
+        bookId,
+        request: {
+          runDataParity: body.run_data_parity === true,
+          runApiReconcile: body.run_api_reconcile === true,
+          sourceDb: body.source_db ?? null,
+          targetDb: body.target_db ?? null,
+          api: body.api ?? null,
+          targetBaseUrl: body.target_base_url ?? null,
+          sourceApi: body.source_api
+            ? {
+                currentBaseUrl: body.source_api.current_base_url,
+                api: body.source_api.api ?? null,
+              }
+            : null,
+        },
+      });
+      if (!outcome.ok) {
+        return res.status(400).json({ error: outcome.error });
+      }
+      return res.status(202).json(outcome.result);
+    } catch (error) {
+      logger.error('[diag-gateway] migration_manual_reconcile error', {
+        projectId,
+        bookId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to start the reconciliation' });
     }
   }
 );
