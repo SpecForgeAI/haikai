@@ -68,8 +68,12 @@ export interface DbSectionDto {
     dataMismatch: number;
     fullyReconciled: number;
   } | null;
-  viewsNotMigrated: number | null;
-  procsNotMigrated: number | null;
+  /**
+   * MIGRATED counts (2026-08-16, positive phrasing): views/procs with an
+   * approved translation, out of `current.views`/`current.procs`.
+   */
+  viewsMigrated: number | null;
+  procsMigrated: number | null;
 }
 
 export interface ServiceSectionTotalsDto {

@@ -52,8 +52,8 @@ function populatedSummary(): MigrationProgressSummaryDto {
       current: { tables: 120, rows: 4213882, views: 14, procs: 38 },
       target: { tables: 120, rows: 4198441, views: 12, procs: 31 },
       buckets: { failedToLoad: 2, rowCountMismatch: 3, dataMismatch: 1, fullyReconciled: 114 },
-      viewsNotMigrated: 2,
-      procsNotMigrated: 7,
+      viewsMigrated: 12,
+      procsMigrated: 31,
     },
     service: {
       current: { interfaces: 6, endpoints: 45 },
@@ -78,8 +78,8 @@ function tbcSummary(): MigrationProgressSummaryDto {
       current: { tables: 120, rows: null, views: 14, procs: 38 },
       target: null,
       buckets: null,
-      viewsNotMigrated: null,
-      procsNotMigrated: null,
+      viewsMigrated: null,
+      procsMigrated: null,
     },
     service: {
       current: { interfaces: 6, endpoints: 45 },
@@ -125,17 +125,20 @@ describe('MigrationProgressReport', () => {
     expect(screen.getByTestId('mpr-db-tables-matching').textContent).toBe('true');
     expect(screen.getByTestId('mpr-db-rows-matching').textContent).toBe('false');
 
-    // Bucket tiers + inline percentages.
+    // Bucket tiers + the one consistent `X of Y (Z%)` format (2026-08-16).
     const failedLoad = screen.getByTestId('mpr-db-bucket-failed-load');
     expect(failedLoad.getAttribute('data-tier')).toBe('yellow');
-    expect(failedLoad.textContent).toContain('2 (1.7%)');
+    expect(failedLoad.textContent).toContain('2 of 120 (1.7%)');
     expect(screen.getByTestId('mpr-db-bucket-reconciled').getAttribute('data-tier')).toBe('light-green'); // 114/120 = 95%
-    expect(screen.getByTestId('mpr-db-views-not-migrated').getAttribute('data-tier')).toBe('light-orange'); // 2 of 14 = 14.3%
-    expect(screen.getByTestId('mpr-db-views-not-migrated').textContent).toContain('2 of 14 (14.3%)');
-    expect(screen.getByTestId('mpr-db-procs-not-migrated').getAttribute('data-tier')).toBe('medium-orange'); // 7 of 38 = 18.4%
+    expect(screen.getByTestId('mpr-db-bucket-reconciled').textContent).toContain('114 of 120 (95%)');
+    // Positive MIGRATED cells on the desired (fully-reconciled) ladder.
+    expect(screen.getByTestId('mpr-db-views-migrated').getAttribute('data-tier')).toBe('yellow'); // 12 of 14 = 86%
+    expect(screen.getByTestId('mpr-db-views-migrated').textContent).toContain('Views migrated');
+    expect(screen.getByTestId('mpr-db-views-migrated').textContent).toContain('12 of 14 (86%)');
+    expect(screen.getByTestId('mpr-db-procs-migrated').getAttribute('data-tier')).toBe('light-orange'); // 31 of 38 = 82%
 
     // Service buckets partition the 45 endpoints; strip renders the rollup.
-    expect(screen.getByTestId('mpr-service-bucket-reconciled').textContent).toContain('41 (91%)');
+    expect(screen.getByTestId('mpr-service-bucket-reconciled').textContent).toContain('41 of 45 (91%)');
     expect(screen.getByTestId('mpr-per-operation').textContent).toContain('Replayed 417 operations:');
     expect(screen.getByTestId('mpr-per-operation').textContent).toContain('9 under investigation');
 

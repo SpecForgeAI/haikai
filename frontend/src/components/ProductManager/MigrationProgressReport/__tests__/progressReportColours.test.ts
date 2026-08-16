@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  formatCountWithPct,
+  formatCountOfTotal,
   matchingTier,
   reconciledTier,
   undesiredTier,
@@ -70,14 +70,14 @@ describe('matchingTier', () => {
   });
 });
 
-describe('formatCountWithPct', () => {
+describe('formatCountOfTotal (the one consistent X of Y (Z%) cell format)', () => {
   it('one decimal below 10%, whole numbers above', () => {
-    expect(formatCountWithPct(2, 120)).toBe('2 (1.7%)');
-    expect(formatCountWithPct(114, 120)).toBe('114 (95%)');
+    expect(formatCountOfTotal(2, 120)).toBe('2 of 120 (1.7%)');
+    expect(formatCountOfTotal(114, 120)).toBe('114 of 120 (95%)');
   });
 
   it('falls back to the bare count without a denominator', () => {
-    expect(formatCountWithPct(7, null)).toBe('7');
-    expect(formatCountWithPct(7, 0)).toBe('7');
+    expect(formatCountOfTotal(7, null)).toBe('7');
+    expect(formatCountOfTotal(7, 0)).toBe('7');
   });
 });

@@ -41,7 +41,7 @@ import {
 } from '../../../api/migrationProgressReportApi';
 import { RunReconciliationModal } from './RunReconciliationModal';
 import {
-  formatCountWithPct,
+  formatCountOfTotal,
   matchingTier,
   reconciledTier,
   undesiredTier,
@@ -358,42 +358,7 @@ function BucketCell({
   return (
     <div className={`${styles.bucketCell} ${tierClass(tier)}`} data-testid={testId} data-tier={tier}>
       <span className={styles.bucketLabel}>{label}:</span>
-      <span className={styles.bucketValue}>{formatCountWithPct(value, total)}</span>
-    </div>
-  );
-}
-
-/** `Views not migrated: 2 of 14 (14.3%)` — the object-type cells. */
-function NotMigratedCell({
-  label,
-  value,
-  total,
-  testId,
-}: {
-  label: string;
-  value: number | null;
-  total: number | null;
-  testId: string;
-}) {
-  if (value === null) {
-    return (
-      <div className={`${styles.bucketCell} ${styles.tbcCell}`} data-testid={testId}>
-        <span className={styles.bucketLabel}>{label}:</span>
-        <span className={styles.bucketValue}>[{TBC_LABEL}]</span>
-      </div>
-    );
-  }
-  const tier = undesiredTier(value, total);
-  const ofTotal = total !== null && total > 0 ? `${formatNumber(value)} of ${formatNumber(total)}` : formatNumber(value);
-  const pct =
-    total !== null && total > 0 ? ` (${((value / total) * 100).toFixed(1)}%)` : '';
-  return (
-    <div className={`${styles.bucketCell} ${tierClass(tier)}`} data-testid={testId} data-tier={tier}>
-      <span className={styles.bucketLabel}>{label}:</span>
-      <span className={styles.bucketValue}>
-        {ofTotal}
-        {pct}
-      </span>
+      <span className={styles.bucketValue}>{formatCountOfTotal(value, total)}</span>
     </div>
   );
 }
@@ -424,9 +389,11 @@ function DbSectionView({ db }: { db: DbSectionDto }) {
         <BucketCell label="Data mismatches" value={db.buckets?.dataMismatch ?? null} total={total} kind="undesired" testId="mpr-db-bucket-data-mismatch" />
         <BucketCell label="Fully reconciled" value={db.buckets?.fullyReconciled ?? null} total={total} kind="reconciled" testId="mpr-db-bucket-reconciled" />
       </div>
+      {/* Positive phrasing (2026-08-16): MIGRATED counts on the desired
+          (fully-reconciled) colour ladder — 100% is medium green. */}
       <div className={`${styles.bucketRow} ${styles.bucketRow2}`}>
-        <NotMigratedCell label="Views not migrated" value={db.viewsNotMigrated} total={db.current.views} testId="mpr-db-views-not-migrated" />
-        <NotMigratedCell label="Stored procs not migrated" value={db.procsNotMigrated} total={db.current.procs} testId="mpr-db-procs-not-migrated" />
+        <BucketCell label="Views migrated" value={db.viewsMigrated} total={db.current.views} kind="reconciled" testId="mpr-db-views-migrated" />
+        <BucketCell label="Stored procs migrated" value={db.procsMigrated} total={db.current.procs} kind="reconciled" testId="mpr-db-procs-migrated" />
       </div>
     </section>
   );
