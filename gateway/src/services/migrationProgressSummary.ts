@@ -17,6 +17,19 @@
  *     buckets, the per-operation break rollup) from the run items, the break
  *     store and the pinned baseline.
  *
+ * EXTERNAL-ONLY service counts (shakedown fix, 2026-08-16): interfaces typed
+ * INTERNAL_PROCESSING / INTERNAL_PROCESS (batch classes, schedulers,
+ * listeners — never HTTP-exercisable; the same set the capture harness and
+ * the AMS inventory reconciliation exclude) are OUT of every service-section
+ * total and bucket, together with their endpoints. Stakeholders count the
+ * externally-reachable API surface, mirroring the Live-behaviour cell.
+ *
+ * DISCOVERY stage truth (shakedown fix, 2026-08-16): stage completion +
+ * findings counts read the per-kind discovery runs LIST (authoritative),
+ * not the discovery-context roll-up — the context caps its run highlights
+ * to the most recent runs, so a completed code run silently vanished from
+ * the banner once a later DB run pushed it out.
+ *
  * FAIL-SOFT EVERYWHERE: a missing report / unreadable read nulls that block
  * (the frontend renders grey `[TBC - execute migration plan]` cells) and
  * appends a warning — it never throws the whole report away. Sections render
@@ -65,7 +78,6 @@ import {
   MigrationReconciliationBreak,
   getReconciliationBreaksForRun,
 } from './migrationReconciliationBreakClient';
-import { ModelIndex, defaultConsumerResolverReads } from './dbChangeConsumerResolver';
 
 // ============================================================================
 // Output types (camelCase — a gateway-built response, not an AMS proxy)
@@ -149,9 +161,7 @@ export interface MigrationProgressSummary {
 }
 
 // ============================================================================
-// AMS latest-report wire shapes (snake_case entity rows; report_json verbatim
-// from the AMVS runner/comparator — load tables camelCase counts, parity
-// tables snake_case, exactly as each producer builds them)
+// AMS wire shapes
 // ============================================================================
 
 export interface LatestDataMigrationReport {
@@ -193,6 +203,33 @@ export interface LatestDataParityReportRow {
   } | null;
 }
 
+/** One discovery run row (AMS `GET .../discovery/runs`, snake_case). */
+export interface DiscoveryRunRow {
+  id?: string;
+  status?: string | null;
+  discovery_kind?: string | null;
+}
+
+/**
+ * The internal-aware service inventory of ONE architecture (from the AMS
+ * full-model read). "External" excludes every interface typed
+ * INTERNAL_PROCESSING / INTERNAL_PROCESS — byte-identical to the AMS
+ * inventory-reconciliation + capture-scope exclusion set — and the endpoints
+ * those interfaces own.
+ */
+export interface ServiceInventory {
+  interfacesTotal: number;
+  externalInterfaces: number;
+  endpointsTotal: number;
+  /** External endpoint ids (the service-section denominator). */
+  externalEndpointIds: Set<string>;
+  /** Normalised `"METHOD /path"` -> external endpoint id (break attribution). */
+  endpointIdByKey: Map<string, string>;
+}
+
+/** Both spellings tolerated — mirrors the AMS INTERNAL_INTERFACE_TYPES set. */
+const INTERNAL_INTERFACE_TYPES = new Set(['INTERNAL_PROCESSING', 'INTERNAL_PROCESS']);
+
 // ============================================================================
 // Deps (DI seam)
 // ============================================================================
@@ -206,6 +243,14 @@ export interface ProgressSummaryDeps {
     currentArchitectureId: string,
     targetArchitectureId: string | null,
   ): Promise<MigrationDiscoveryContext | null>;
+  /** The authoritative per-kind discovery run list (banner stage truth). */
+  listDiscoveryRuns(projectId: string, architectureId: string): Promise<DiscoveryRunRow[]>;
+  /** Findings total for ONE run (page=0&size=1 read of the search total). */
+  countFindingsForRun(
+    projectId: string,
+    architectureId: string,
+    runId: string,
+  ): Promise<number | null>;
   fetchActiveCurrentBaseline: typeof fetchActiveCurrentBaseline;
   fetchBaselineItems: typeof fetchBaselineItems;
   fetchLatestCapturedDecisions: typeof fetchLatestCapturedDecisions;
@@ -219,7 +264,10 @@ export interface ProgressSummaryDeps {
     architectureId: string,
   ): Promise<LatestDataParityReportRow | null>;
   getBreaksForRun: typeof getReconciliationBreaksForRun;
-  fetchModelIndex(projectId: string, architectureId: string): Promise<ModelIndex | null>;
+  fetchServiceInventory(
+    projectId: string,
+    architectureId: string,
+  ): Promise<ServiceInventory | null>;
 }
 
 async function amsLatestOrNull<T>(url: string, label: string): Promise<T | null> {
@@ -255,6 +303,27 @@ export function defaultProgressSummaryDeps(): ProgressSummaryDeps {
         return null;
       }
     },
+    async listDiscoveryRuns(projectId, architectureId) {
+      const url =
+        `${amsBase()}/api/model/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}/discovery/runs`;
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        throw new Error(`discovery runs read failed: HTTP ${response.status}`);
+      }
+      const rows = (await response.json()) as DiscoveryRunRow[];
+      return Array.isArray(rows) ? rows : [];
+    },
+    async countFindingsForRun(projectId, architectureId, runId) {
+      const url =
+        `${amsBase()}/api/model/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}` +
+        `/discovery/runs/${encodeURIComponent(runId)}/findings?page=0&size=1`;
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) return null;
+      const body = (await response.json()) as { total?: number };
+      return typeof body.total === 'number' ? body.total : null;
+    },
     fetchActiveCurrentBaseline,
     fetchBaselineItems,
     fetchLatestCapturedDecisions,
@@ -272,8 +341,56 @@ export function defaultProgressSummaryDeps(): ProgressSummaryDeps {
       return amsLatestOrNull<LatestDataParityReportRow>(url, 'latest data-parity report');
     },
     getBreaksForRun: getReconciliationBreaksForRun,
-    async fetchModelIndex(projectId, architectureId) {
-      return defaultConsumerResolverReads().fetchModelIndex(projectId, architectureId);
+    async fetchServiceInventory(projectId, architectureId) {
+      const url =
+        `${amsBase()}/api/model/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}`;
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        throw new Error(`model read failed: HTTP ${response.status}`);
+      }
+      const model = (await response.json()) as {
+        metaModel?: {
+          entities?: {
+            interfaces?: Array<{ id?: string; interface_type?: string | null }>;
+            endpoints?: Array<{
+              id?: string;
+              interface_id?: string | null;
+              operation_verb?: string | null;
+              path_or_address?: string | null;
+            }>;
+          };
+        };
+      };
+      const interfaces = model.metaModel?.entities?.interfaces ?? [];
+      const endpoints = model.metaModel?.entities?.endpoints ?? [];
+      const internalInterfaceIds = new Set<string>();
+      let externalInterfaces = 0;
+      for (const iface of interfaces) {
+        const type = (iface.interface_type ?? '').trim().toUpperCase();
+        if (INTERNAL_INTERFACE_TYPES.has(type)) {
+          if (iface.id) internalInterfaceIds.add(iface.id);
+        } else {
+          externalInterfaces += 1;
+        }
+      }
+      const externalEndpointIds = new Set<string>();
+      const endpointIdByKey = new Map<string, string>();
+      for (const ep of endpoints) {
+        if (!ep.id) continue;
+        if (ep.interface_id && internalInterfaceIds.has(ep.interface_id)) continue;
+        externalEndpointIds.add(ep.id);
+        const verb = (ep.operation_verb ?? '').toUpperCase();
+        const path = ep.path_or_address ?? '';
+        if (verb && path) endpointIdByKey.set(`${verb} ${path}`, ep.id);
+      }
+      return {
+        interfacesTotal: interfaces.length,
+        externalInterfaces,
+        endpointsTotal: endpoints.length,
+        externalEndpointIds,
+        endpointIdByKey,
+      };
     },
   };
 }
@@ -408,8 +525,9 @@ export async function computeMigrationProgressSummary(
   }
 
   // --- Shared reads (all fail-soft). ---------------------------------------
-  const [context, decisions, baseline, runsRead, packView] = await Promise.all([
+  const [context, discoveryRuns, decisions, baseline, runsRead, packView] = await Promise.all([
     deps.fetchDiscoveryContext(projectId, architectureId, targetArchitectureId),
+    soft('Discovery runs', () => deps.listDiscoveryRuns(projectId, architectureId)),
     targetArchitectureId
       ? soft('Captured decisions', () =>
           deps.fetchLatestCapturedDecisions(projectId, targetArchitectureId),
@@ -436,8 +554,10 @@ export async function computeMigrationProgressSummary(
       ])
     : [null, null];
 
-  const currentModelIndex = scope.service
-    ? await soft('Current model index', () => deps.fetchModelIndex(projectId, architectureId))
+  const currentInventory = scope.service
+    ? await soft('Current service inventory', () =>
+        deps.fetchServiceInventory(projectId, architectureId),
+      )
     : null;
 
   // --- Run rollups shared by stages + service section. ---------------------
@@ -489,29 +609,52 @@ export async function computeMigrationProgressSummary(
         break;
       }
     }
-    const targetModelIndex =
+    const targetInventory =
       planeDeployed('service') && targetArchitectureId
-        ? await soft('Target model index', () =>
-            deps.fetchModelIndex(projectId, targetArchitectureId),
+        ? await soft('Target service inventory', () =>
+            deps.fetchServiceInventory(projectId, targetArchitectureId),
           )
         : null;
     service = buildServiceSection({
-      context,
       serviceStories,
       latestItemByStory,
       breaks: serviceBreaks,
       baselineItems,
-      currentModelIndex,
-      targetModelIndex,
+      currentInventory,
+      targetInventory,
       serviceDeployed: planeDeployed('service'),
       warnings,
     });
   }
 
+  // --- Discovery findings per kind (latest completed run of the kind). -----
+  const findingsForKind = async (kinds: string[]): Promise<number | null> => {
+    if (!discoveryRuns) return null;
+    // The AMS list is newest-first; the first COMPLETED run of the kind is
+    // the current truth (findings are run-scoped; summing re-runs would
+    // double-count superseded findings).
+    const latestCompleted = discoveryRuns.find(
+      (r) =>
+        kinds.includes((r.discovery_kind ?? 'code').toLowerCase()) &&
+        (r.status ?? '').toUpperCase() === 'COMPLETED' &&
+        !!r.id,
+    );
+    if (!latestCompleted?.id) return null;
+    return soft('Discovery findings count', () =>
+      deps.countFindingsForRun(projectId, architectureId, latestCompleted.id as string),
+    );
+  };
+  const dbFindings = scope.db ? await findingsForKind(['database', 'combined']) : null;
+  const codeFindings = scope.service ? await findingsForKind(['code', 'combined']) : null;
+
   // --- Stages. --------------------------------------------------------------
   const stages = buildStages({
     scope,
     context,
+    discoveryRuns,
+    dbFindings,
+    codeFindings,
+    currentInventory,
     baseline,
     baselineItems,
     decisionsCount: decisions?.length ?? 0,
@@ -696,59 +839,42 @@ function buildDbSection(
 // ============================================================================
 
 function buildServiceSection(args: {
-  context: MigrationDiscoveryContext | null;
   serviceStories: ProgressBookItem[];
   latestItemByStory: Map<string, MigrationExecutionRunItem>;
   breaks: MigrationReconciliationBreak[];
   baselineItems: ApiBehaviourBaselineItemWire[];
-  currentModelIndex: ModelIndex | null;
-  targetModelIndex: ModelIndex | null;
+  currentInventory: ServiceInventory | null;
+  targetInventory: ServiceInventory | null;
   serviceDeployed: boolean;
   warnings: string[];
 }): ServiceSection {
   const {
-    context,
     serviceStories,
     latestItemByStory,
     breaks,
     baselineItems,
-    currentModelIndex,
-    targetModelIndex,
+    currentInventory,
+    targetInventory,
     serviceDeployed,
     warnings,
   } = args;
 
-  // In-scope endpoints: the union of the non-manual service stories' endpoint
-  // carriage. This is the denominator the buckets partition exactly.
-  const inScopeEndpointIds = new Set<string>();
-  const endpointIdsByStory = new Map<string, string[]>();
-  for (const story of serviceStories) {
-    if (isManualExecutionItem(story) || !story.workItemId) continue;
-    const ids = (story.apiEndpointIds ?? []).filter((id): id is string => !!id);
-    endpointIdsByStory.set(story.workItemId, ids);
-    for (const id of ids) inScopeEndpointIds.add(id);
-  }
-  let endpointTotal: number | null = inScopeEndpointIds.size;
-  if (endpointTotal === 0) {
-    // Older books carry no endpoint carriage — fall back to the model's
-    // endpoint inventory so the totals row stays honest.
-    endpointTotal = currentModelIndex ? currentModelIndex.endpointKeyById.size : null;
-    if (endpointTotal !== null) {
-      warnings.push(
-        'Service stories carry no endpoint ids — endpoint totals use the architecture model inventory; buckets are unavailable.',
-      );
-    }
-  }
+  // The denominator is the EXTERNAL endpoint inventory of the current
+  // architecture (internal-processing interfaces + their endpoints excluded)
+  // — the externally-reachable API surface a stakeholder counts, mirroring
+  // the Live-behaviour cell. Story endpoint carriage only ATTRIBUTES the
+  // failure buckets; it never defines the total.
+  const external = currentInventory?.externalEndpointIds ?? null;
 
   const current: ServiceSectionTotals = {
-    interfaces: context?.currentArchitectureSummary?.interfaceCount ?? null,
-    endpoints: endpointTotal,
+    interfaces: currentInventory?.externalInterfaces ?? null,
+    endpoints: external ? external.size : null,
   };
 
   const target: ServiceSectionTotals | null = serviceDeployed
     ? {
-        interfaces: context?.targetArchitectureSummary?.interfaceCount ?? null,
-        endpoints: targetModelIndex ? targetModelIndex.endpointKeyById.size : null,
+        interfaces: targetInventory?.externalInterfaces ?? null,
+        endpoints: targetInventory ? targetInventory.externalEndpointIds.size : null,
       }
     : null;
 
@@ -757,25 +883,28 @@ function buildServiceSection(args: {
     return { current, target, buckets: null, perOperation: null };
   }
 
-  // ---- Buckets: partition the in-scope endpoints, worst-first. ------------
+  // ---- Buckets: partition the external endpoints, worst-first. ------------
   let buckets: ServiceSection['buckets'] = null;
-  if (inScopeEndpointIds.size > 0) {
+  if (external && external.size > 0) {
     const failedStoriesEndpoints = new Set<string>();
-    for (const [workItemId, ids] of endpointIdsByStory) {
-      const item = latestItemByStory.get(workItemId);
+    for (const story of serviceStories) {
+      if (isManualExecutionItem(story) || !story.workItemId) continue;
+      const item = latestItemByStory.get(story.workItemId);
       const status = item?.status ?? '';
-      if (status === 'failed' || status === 'rejected') {
-        for (const id of ids) failedStoriesEndpoints.add(id);
+      if (status !== 'failed' && status !== 'rejected') continue;
+      const ids = (story.apiEndpointIds ?? []).filter((id): id is string => !!id);
+      if (ids.length === 0) {
+        warnings.push(
+          `Story "${story.title ?? story.workItemId}" failed but carries no endpoint ids — its endpoints cannot be attributed to the failed-to-migrate bucket.`,
+        );
+      }
+      for (const id of ids) {
+        if (external.has(id)) failedStoriesEndpoints.add(id);
       }
     }
 
-    // Breaks -> endpoints via the "METHOD /path" key of the CURRENT model.
-    const endpointIdByKey = new Map<string, string>();
-    if (currentModelIndex) {
-      for (const [id, key] of currentModelIndex.endpointKeyById) {
-        if (key) endpointIdByKey.set(key, id);
-      }
-    }
+    // Breaks -> endpoints via the "METHOD /path" key of the CURRENT inventory.
+    const endpointIdByKey = currentInventory?.endpointIdByKey ?? new Map<string, string>();
     const unresolvedBreakEndpoints = new Set<string>();
     let unmappableUnresolved = 0;
     for (const b of breaks) {
@@ -785,7 +914,7 @@ function buildServiceSection(args: {
       const method = typeof detail.method === 'string' ? detail.method.toUpperCase() : '';
       const path = typeof detail.path === 'string' ? detail.path : '';
       const endpointId = method && path ? endpointIdByKey.get(`${method} ${path}`) : undefined;
-      if (endpointId && inScopeEndpointIds.has(endpointId)) {
+      if (endpointId && external.has(endpointId)) {
         unresolvedBreakEndpoints.add(endpointId);
       } else {
         unmappableUnresolved += 1;
@@ -793,14 +922,14 @@ function buildServiceSection(args: {
     }
     if (unmappableUnresolved > 0) {
       warnings.push(
-        `${unmappableUnresolved} unresolved break(s) could not be mapped to an in-scope endpoint and are excluded from the endpoint buckets.`,
+        `${unmappableUnresolved} unresolved break(s) could not be mapped to an external endpoint and are excluded from the endpoint buckets.`,
       );
     }
 
     let failedToMigrate = 0;
     let failedReconciliation = 0;
     let fullyReconciled = 0;
-    for (const id of inScopeEndpointIds) {
+    for (const id of external) {
       if (failedStoriesEndpoints.has(id)) failedToMigrate += 1;
       else if (unresolvedBreakEndpoints.has(id)) failedReconciliation += 1;
       else fullyReconciled += 1;
@@ -840,6 +969,10 @@ function buildServiceSection(args: {
 function buildStages(args: {
   scope: { db: boolean; service: boolean };
   context: MigrationDiscoveryContext | null;
+  discoveryRuns: DiscoveryRunRow[] | null;
+  dbFindings: number | null;
+  codeFindings: number | null;
+  currentInventory: ServiceInventory | null;
   baseline: ApiBehaviourBaseline | null;
   baselineItems: ApiBehaviourBaselineItemWire[];
   decisionsCount: number;
@@ -858,6 +991,10 @@ function buildStages(args: {
   const {
     scope,
     context,
+    discoveryRuns,
+    dbFindings,
+    codeFindings,
+    currentInventory,
     baseline,
     baselineItems,
     decisionsCount,
@@ -875,9 +1012,18 @@ function buildStages(args: {
   } = args;
   const stages: ProgressStage[] = [];
 
-  const runRows = context?.discoveryRunsSummary?.runs ?? [];
-  const totalFindings = context?.findingsSummary?.totalFindings ?? null;
-  const dbFindings = context?.databaseDiscoverySummary?.databaseFindingCount ?? null;
+  // Authoritative per-kind run rows (the runs LIST); the context's capped
+  // highlight list is only the fallback when the list read failed.
+  const runRowsOfKind = (kinds: string[]): Array<{ status: string }> => {
+    if (discoveryRuns) {
+      return discoveryRuns
+        .filter((r) => kinds.includes((r.discovery_kind ?? 'code').toLowerCase()))
+        .map((r) => ({ status: (r.status ?? '').toUpperCase() }));
+    }
+    return (context?.discoveryRunsSummary?.runs ?? [])
+      .filter((r) => kinds.includes((r.discoveryKind ?? 'code').toLowerCase()))
+      .map((r) => ({ status: (r.status ?? '').toUpperCase() }));
+  };
 
   const discoveryStage = (
     key: 'db_discovery' | 'code_discovery',
@@ -886,11 +1032,11 @@ function buildStages(args: {
     entities: number | null,
     findings: number | null,
   ): ProgressStage => {
-    const ofKind = runRows.filter((r) => kinds.includes((r.discoveryKind ?? 'code').toLowerCase()));
-    const completed = ofKind.some((r) => (r.status ?? '').toUpperCase() === 'COMPLETED');
+    const ofKind = runRowsOfKind(kinds);
+    const completed = ofKind.some((r) => r.status === 'COMPLETED');
     const anyStarted = ofKind.length > 0;
     const allFailed =
-      anyStarted && ofKind.every((r) => (r.status ?? '').toUpperCase() === 'FAILED');
+      anyStarted && ofKind.every((r) => r.status === 'FAILED' || r.status === 'CANCELLED');
     const facts: string[] = [];
     if (completed && entities !== null) facts.push(`${entities} arch entities`);
     if (completed && findings !== null) facts.push(`${findings} findings`);
@@ -913,17 +1059,18 @@ function buildStages(args: {
     );
   }
   if (scope.service) {
+    // Discovery INVENTORY counts (internal included — discovery discovered
+    // them); the reconciliation section below counts external-only.
     const summary = context?.currentArchitectureSummary;
-    const svcEntities =
-      summary?.serviceCount !== undefined || summary?.interfaceCount !== undefined
-        ? (summary?.serviceCount ?? 0) +
-          (summary?.interfaceCount ?? 0) +
-          (service?.current.endpoints ?? 0)
+    const svcEntities = currentInventory
+      ? (summary?.serviceCount ?? 0) +
+        currentInventory.interfacesTotal +
+        currentInventory.endpointsTotal
+      : summary?.serviceCount !== undefined || summary?.interfaceCount !== undefined
+        ? (summary?.serviceCount ?? 0) + (summary?.interfaceCount ?? 0)
         : null;
-    const svcFindings =
-      totalFindings !== null ? Math.max(0, totalFindings - (dbFindings ?? 0)) : null;
     stages.push(
-      discoveryStage('code_discovery', 'Code/logs discovery', ['code', 'combined'], svcEntities, svcFindings),
+      discoveryStage('code_discovery', 'Code/logs discovery', ['code', 'combined'], svcEntities, codeFindings),
     );
 
     // Live behaviour rides the service plane only.
