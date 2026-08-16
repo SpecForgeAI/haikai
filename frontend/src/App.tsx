@@ -97,6 +97,10 @@ import { FindingsRegister } from './components/SecurityOverview/FindingsRegister
 // <ProjectLayout>'s missing-architecture redirect does not bounce a deep
 // link away.
 import { MigrationDeliveryDashboardRoute } from './components/ProductManager/MigrationDeliveryDashboard/MigrationDeliveryDashboardRoute';
+// Stakeholder progress report (2026-08-16): the deterministic, single-screen
+// reconciliation summary for one book of work. Same architecture-scoped
+// rationale as the delivery dashboard route above.
+import { MigrationProgressReportRoute } from './components/ProductManager/MigrationProgressReport/MigrationProgressReportRoute';
 // Spec 2026-05-17 PM Migration Delivery Plan + Draft Book-of-Work Generation
 // -- follow-up route wiring (2026-06-03). The generation wizard, draft list,
 // and review workspace were built + unit-tested but never mounted behind a
@@ -869,6 +873,16 @@ function AppRoutes() {
           <Route
             path="migration-books-of-work/:bookId/delivery"
             element={<MigrationDeliveryDashboardRoute />}
+          />
+          {/*
+            Stakeholder progress report (2026-08-16). Deterministic, no-detail
+            reconciliation summary: banner (identity + 7-stage pipeline), the
+            DATABASE and SERVICE (API) reconciliation sections. Reads only
+            persisted report data via the gateway progress-summary aggregation.
+          */}
+          <Route
+            path="migration-books-of-work/:bookId/progress"
+            element={<MigrationProgressReportRoute />}
           />
           {/*
             Spec 2026-05-17 PM Migration Delivery Plan + Draft Book-of-Work
