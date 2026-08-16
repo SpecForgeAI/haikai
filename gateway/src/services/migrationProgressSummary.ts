@@ -661,32 +661,41 @@ export async function computeMigrationProgressSummary(
     });
   }
 
-  // --- Discovery facts per kind (latest completed run of the kind): the
-  // findings total + the SAVED architecture candidates ("architecture items").
+  // --- Discovery facts per kind: findings from the LATEST completed run;
+  // "architecture items" (SAVED candidates) from the newest completed run
+  // that actually HAS save-back mappings. The two can differ: a fresh
+  // re-scan completes with zero saved candidates until the operator saves
+  // it — binding both counts to that run showed a false 0 on live data
+  // while an older run held the real saved set (shakedown 2026-08-16).
   const discoveryFactsForKind = async (
     kinds: string[],
   ): Promise<{ findings: number | null; savedItems: number | null }> => {
     if (!discoveryRuns) return { findings: null, savedItems: null };
-    // The AMS list is newest-first; the first COMPLETED run of the kind is
-    // the current truth (both counts are run-scoped; summing re-runs would
-    // double-count superseded rows).
-    const latestCompleted = discoveryRuns.find(
+    // The AMS list is newest-first.
+    const completed = discoveryRuns.filter(
       (r) =>
         kinds.includes((r.discovery_kind ?? 'code').toLowerCase()) &&
         (r.status ?? '').toUpperCase() === 'COMPLETED' &&
         !!r.id,
     );
-    if (!latestCompleted?.id) return { findings: null, savedItems: null };
-    const runId = latestCompleted.id;
-    const [findings, savedItems] = await Promise.all([
-      soft('Discovery findings count', () =>
-        deps.countFindingsForRun(projectId, architectureId, runId),
-      ),
-      soft('Saved candidate count', () =>
-        deps.countSavedCandidatesForRun(projectId, architectureId, runId),
-      ),
-    ]);
-    return { findings, savedItems };
+    if (completed.length === 0) return { findings: null, savedItems: null };
+    const findingsPromise = soft('Discovery findings count', () =>
+      deps.countFindingsForRun(projectId, architectureId, completed[0].id as string),
+    );
+    let savedItems: number | null = null;
+    for (const run of completed) {
+      const count = await soft('Saved candidate count', () =>
+        deps.countSavedCandidatesForRun(projectId, architectureId, run.id as string),
+      );
+      if (count !== null) {
+        savedItems = savedItems ?? 0;
+        if (count > 0) {
+          savedItems = count;
+          break;
+        }
+      }
+    }
+    return { findings: await findingsPromise, savedItems };
   };
   const dbDiscoveryFacts = scope.db
     ? await discoveryFactsForKind(['database', 'combined'])

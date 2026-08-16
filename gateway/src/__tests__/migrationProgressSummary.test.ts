@@ -426,6 +426,29 @@ describe('computeMigrationProgressSummary', () => {
     expect(byKey.reconciliation.status).toBe('in_progress');
   });
 
+  it('BUG regression (2026-08-16): an unsaved re-scan does not zero the architecture items — the newest SAVED run counts', async () => {
+    const summary = await computeMigrationProgressSummary(
+      ARGS,
+      makeDeps({
+        listDiscoveryRuns: async () => [
+          // Newest DB run: completed re-scan, candidates NOT yet saved.
+          { id: 'r-db-new', status: 'COMPLETED', discovery_kind: 'database' },
+          { id: 'r-db', status: 'COMPLETED', discovery_kind: 'database' },
+          { id: 'r-code', status: 'COMPLETED', discovery_kind: 'code' },
+        ],
+        countFindingsForRun: async (_p, _a, runId) =>
+          runId === 'r-db-new' ? 9 : runId === 'r-db' ? 4 : 6,
+        countSavedCandidatesForRun: async (_p, _a, runId) =>
+          runId === 'r-db-new' ? 0 : runId === 'r-db' ? 12 : 34,
+      }),
+    );
+    const byKey = Object.fromEntries(summary.stages.map((s) => [s.key, s]));
+    // Findings come from the LATEST completed run; architecture items from
+    // the newest run that actually HAS saved candidates.
+    expect(byKey.db_discovery.facts).toEqual(['12 architecture items', '9 findings']);
+    expect(byKey.code_discovery.facts).toEqual(['34 architecture items', '6 findings']);
+  });
+
   it('BUG-1 regression: a completed code run evicted from the context highlights still completes the stage', async () => {
     // The discovery-context roll-up CAPS its run highlights to the most
     // recent runs — on the live system a later DB run evicted the completed
