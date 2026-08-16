@@ -819,6 +819,19 @@ export interface ShapeSpecGenerationDeps {
     projectId: string,
     targetArchitectureId: string
   ) => Promise<TargetStateCapturedDecision[]>;
+  /**
+   * Decision→manifest auto-apply (2026-08-16): reconcile the latest confirmed
+   * manifest against the captured decisions and apply any decision-required
+   * ADDITIONS before the seed enrichment reads it — so the scaffold spec
+   * always seeds a decision-consistent pom (the live gap: db.migrations said
+   * Liquibase, the pom never gained liquibase-core, and the seeded manifest
+   * shipped without the migration tool). Wired by the production routes only
+   * (never throws — fail-soft inside); undefined in tests = skipped.
+   */
+  autoApplyDecisionAdditions?: (
+    projectId: string,
+    targetArchitectureId: string
+  ) => Promise<unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -2361,6 +2374,15 @@ async function runSinglePassBatch(
   // safe NO-OP (enrichment.text === null) and ordinary stories are untouched.
   // NEVER throws — a confirmed-manifest read hiccup degrades to a no-op so the
   // batch can never be broken by it.
+  // Decision→manifest auto-apply (2026-08-16): amend the confirmed manifest
+  // with any decision-required additions BEFORE the enrichment reads it, so
+  // the seeded pom is always decision-consistent. Fail-soft inside; only the
+  // production routes wire it (tests skip).
+  if (deps.autoApplyDecisionAdditions && bow.targetArchitectureId) {
+    await deps
+      .autoApplyDecisionAdditions(projectId, bow.targetArchitectureId)
+      .catch(() => undefined);
+  }
   const seedBuildFilesEnrichment: SeedBuildFilesEnrichment =
     await resolveSeedBuildFilesEnrichment(deps.seedBuildFilesSource, {
       projectId,

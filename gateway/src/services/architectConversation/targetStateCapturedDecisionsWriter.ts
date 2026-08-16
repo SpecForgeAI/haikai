@@ -155,5 +155,27 @@ export async function postCapturedDecision(
     `decision=${body.decisionCode} scope=${body.scopeKind} target=${targetArchitectureId}`,
     { project: projectId, arch: targetArchitectureId },
   );
+  // Decision→manifest auto-apply (2026-08-16): the pom is the authoritative
+  // STARTING POINT — a decision that requires a coordinate the confirmed
+  // manifest lacks (db.migrations → liquibase-core was the live gap) amends
+  // the manifest automatically. This is the ONE write seam every captured-
+  // decision producer funnels through, so a single debounced hook here covers
+  // the conversation, the decisions-file import, vulnerability-reduction
+  // revisions, and the manifest auto-answerer. Fire-and-forget + fail-soft:
+  // a reconcile hiccup can never fail the decision write. Lazy require keeps
+  // this low-level writer import-cycle-proof.
+  try {
+    const { scheduleDecisionManifestAutoApply } =
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      require('../targetManifest/manifestDecisionAutoApply') as
+        typeof import('../targetManifest/manifestDecisionAutoApply');
+    scheduleDecisionManifestAutoApply(projectId, targetArchitectureId);
+  } catch (hookErr) {
+    logger.warn('captured-decision write: manifest auto-apply scheduling failed (fail-soft)', {
+      projectId,
+      targetArchitectureId,
+      error: hookErr instanceof Error ? hookErr.message : String(hookErr),
+    });
+  }
   return created;
 }

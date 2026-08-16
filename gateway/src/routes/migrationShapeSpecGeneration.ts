@@ -84,6 +84,7 @@ import { autoSeedEpicCapturedDecision } from '../services/epicCapturedDecisionsC
 // honest-v1 no-op `defaultProductionSeedBuildFilesSource`; tests still inject a
 // concrete source.
 import { productionSeedBuildFilesSource } from '../services/migrationSeedBuildFilesProducer';
+import { autoApplyDecisionAdditions } from '../services/targetManifest/manifestDecisionAutoApply';
 
 export const migrationShapeSpecGenerationRouter = Router();
 
@@ -108,6 +109,11 @@ const productionDeps: ShapeSpecGenerationDeps = {
   // is fail-soft (a read hiccup degrades to null). This is the ONLY change to
   // the consumer-side carriage.
   seedBuildFilesSource: productionSeedBuildFilesSource,
+  // Decision→manifest auto-apply (2026-08-16): before the seed enrichment
+  // reads the confirmed manifest, apply any decision-required coordinate
+  // additions (db.migrations → liquibase-core was the live gap) so the
+  // scaffold spec always seeds a decision-consistent pom. Fail-soft inside.
+  autoApplyDecisionAdditions,
 };
 
 // ---------------------------------------------------------------------------

@@ -301,7 +301,7 @@ describe('Spec 5 E2E: confirmed manifest -> verbatim seed file in the FIRST stor
     expect(carved).not.toMatch(/"legacy-widget":\s*"\d/);
   });
 
-  it('(3) AUTHORITATIVE-LOCK wording is carried in the persisted seed text (build around it, never regenerate)', async () => {
+  it('(3) STARTING-POINT wording is carried in the persisted seed text (exact initial write; additions permitted; existing entries survive)', async () => {
     const bow = buildBowWithSeed(0);
     const persisted: SpecGenerationResult[][] = [];
     const deps = makeDeps(bow, sourceFor([pomManifest()]), persisted);
@@ -310,9 +310,13 @@ describe('Spec 5 E2E: confirmed manifest -> verbatim seed file in the FIRST stor
 
     const text = seedText(persisted);
     expect(text).toContain('Create this file with EXACTLY this content');
-    expect(text).toMatch(/AUTHORITATIVE, FROZEN/);
+    // 2026-08-16: the freeze language is GONE — it made the implementer refuse
+    // decision-required additions (liquibase-core). Starting-point instead.
+    expect(text).toMatch(/AUTHORITATIVE STARTING\s*POINT/);
+    expect(text).toMatch(/ADDITIONS ARE PERMITTED/);
+    expect(text).not.toMatch(/AUTHORITATIVE, FROZEN/);
     expect(text).toMatch(/NOT a suggestion/);
-    expect(text).toMatch(/build the rest of the codebase to FIT this file/);
+    expect(text).toMatch(/Build the rest of\s*the codebase to FIT this file/);
     // First-sequencing framing rode along too.
     expect(text).toContain('SEQUENCED FIRST');
     expect(text).toContain('BEFORE any other story');

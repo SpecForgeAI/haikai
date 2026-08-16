@@ -120,16 +120,21 @@ describe('buildSeedFileWriteBlock — verbatim carriage core (Spec 5, Group 1)',
     expect(extractCarriedBody(block)).toBe(POM_WITH_VERSION_UNKNOWN);
   });
 
-  it('(b) includes explicit exact-write + authoritative-lock wording', () => {
+  it('(b) includes exact-initial-write + starting-point wording (2026-08-16: additions permitted, existing entries survive)', () => {
     const block = buildSeedFileWriteBlock(manifest()) as string;
     expect(block).toContain('Create this file with EXACTLY this content');
-    expect(block).toMatch(/AUTHORITATIVE, FROZEN/);
-    // never regenerate / overwrite / replace / re-pin
-    expect(block).toMatch(
-      /Do NOT regenerate, overwrite, replace, re-pin, upgrade, downgrade, re-order, or infer/,
-    );
+    // 2026-08-16 ruling: the seeded file is the authoritative STARTING POINT,
+    // not a freeze — the old "Do NOT change, add, or remove any declared
+    // dependency" lock made the implementer refuse to add liquibase-core when
+    // the db.migrations decision demanded it (live failure: nothing enabled
+    // Liquibase). Existing entries still survive; additions are permitted.
+    expect(block).toMatch(/AUTHORITATIVE STARTING\s*POINT/);
+    expect(block).toMatch(/ADDITIONS ARE PERMITTED/);
+    expect(block).toMatch(/never re-pin, upgrade,\s*downgrade, re-order, or remove/);
+    expect(block).not.toMatch(/FROZEN/);
+    expect(block).not.toMatch(/Do NOT change, add, or remove/);
     // build around it
-    expect(block).toMatch(/build the rest of the codebase to FIT this file/);
+    expect(block).toMatch(/Build the rest of\s*the codebase to FIT this file/);
     expect(block).toMatch(/NOT a suggestion/);
   });
 

@@ -169,6 +169,33 @@ describe('seed-build-files trigger + commit-timing + v1 boundary (Spec 5, Group 
     expect(text).toContain(POM_BODY);
   });
 
+  it('(a2) decision→manifest auto-apply runs BEFORE the seed enrichment reads the manifest (2026-08-16)', async () => {
+    // The live gap: db.migrations said Liquibase, the confirmed pom never
+    // gained liquibase-core, and the seeded manifest shipped without the
+    // migration tool. When the production routes wire the auto-apply seam,
+    // the handler must run it before the enrichment read so the scaffold spec
+    // seeds a decision-consistent pom.
+    const bow = buildBowWithSeed();
+    const persisted: SpecGenerationResult[][] = [];
+    const source = jest.fn(sourceFor([pomManifest()]));
+    const autoApply = jest.fn().mockResolvedValue({ status: 'applied' });
+    const deps = {
+      ...makeDeps(bow, source, persisted),
+      autoApplyDecisionAdditions: autoApply,
+    };
+
+    await runShapeSpecGenerationBatch(
+      { projectId: 'proj-001', bookOfWorkId: 'book-001', batchSize: 5 },
+      deps,
+    );
+
+    expect(autoApply).toHaveBeenCalledWith('proj-001', expect.any(String));
+    // Ordering: the manifest was amended BEFORE the enrichment consumed it.
+    expect(autoApply.mock.invocationCallOrder[0]).toBeLessThan(
+      source.mock.invocationCallOrder[0],
+    );
+  });
+
   it('(b) NO confirmed manifest -> safe no-op (no seed block / no garbage)', async () => {
     const bow = buildBowWithSeed();
     const persisted: SpecGenerationResult[][] = [];

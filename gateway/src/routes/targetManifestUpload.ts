@@ -82,6 +82,7 @@ import {
   reconcileManifestWithDecisions,
 } from '../services/targetManifest/manifestDecisionReconcile';
 import { fetchLatestCapturedDecisions } from '../services/targetStateCapturedDecisionsClient';
+import { autoApplyDecisionAdditions } from '../services/targetManifest/manifestDecisionAutoApply';
 
 // ---------------------------------------------------------------------------
 // Multipart config — in-memory only; the manifest bytes are parsed in-process
@@ -908,7 +909,16 @@ export function registerTargetManifestUploadRoute(
             llmClient: buildArchitectLlmClient(),
           },
         });
-        return res.status(200).json(response);
+        // Decision→manifest auto-apply (2026-08-16): the just-persisted pom is
+        // a STARTING POINT — decisions already captured (a conversation run
+        // before the upload) may require coordinates it lacks. Apply them NOW
+        // and surface the outcome on the response so the panel/logs show what
+        // was amended. Fail-soft inside; conflicts stay loud + manual.
+        const decisionAutoApply = await autoApplyDecisionAdditions(
+          projectId,
+          targetArchitectureId,
+        );
+        return res.status(200).json({ ...response, decisionAutoApply });
       } catch (err) {
         logger.error('target-manifest upload: unexpected failure building response', {
           projectId,
