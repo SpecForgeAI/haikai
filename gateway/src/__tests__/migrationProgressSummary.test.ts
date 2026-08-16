@@ -269,6 +269,8 @@ function makeDeps(overrides: Partial<ProgressSummaryDeps> = {}): ProgressSummary
     ],
     countFindingsForRun: async (_projectId, _architectureId, runId) =>
       runId === 'r-db' ? 4 : 6,
+    countSavedCandidatesForRun: async (_projectId, _architectureId, runId) =>
+      runId === 'r-db' ? 12 : 34,
     fetchServiceInventory: async (_projectId, architectureId) =>
       architectureId === CURRENT_ARCH ? currentInventoryFixture() : targetInventoryFixture(),
     ...overrides,
@@ -290,8 +292,8 @@ describe('computeMigrationProgressSummary', () => {
     expect(summary.db?.current).toEqual({ tables: 3, rows: null, views: 2, procs: 3 });
     expect(summary.db?.target).toBeNull();
     expect(summary.db?.buckets).toBeNull();
-    expect(summary.db?.viewsNotMigrated).toBeNull();
-    expect(summary.db?.procsNotMigrated).toBeNull();
+    expect(summary.db?.viewsMigrated).toBeNull();
+    expect(summary.db?.procsMigrated).toBeNull();
 
     // Service section: EXTERNAL-only counts (the INTERNAL_PROCESSING
     // interface + its ep-int are excluded from the 3/4 inventory totals).
@@ -302,11 +304,11 @@ describe('computeMigrationProgressSummary', () => {
 
     const byKey = Object.fromEntries(summary.stages.map((s) => [s.key, s]));
     expect(byKey.db_discovery.status).toBe('complete');
-    expect(byKey.db_discovery.facts).toEqual(['8 arch entities', '4 findings']);
+    // "architecture items" = the SAVED candidates of the latest completed
+    // run of the kind (2026-08-16), not a derived model-entity tally.
+    expect(byKey.db_discovery.facts).toEqual(['12 architecture items', '4 findings']);
     expect(byKey.code_discovery.status).toBe('complete');
-    // Discovery entities count the FULL inventory (1 service + 3 interfaces
-    // + 4 endpoints, internal included); findings come from the code run.
-    expect(byKey.code_discovery.facts).toEqual(['8 arch entities', '6 findings']);
+    expect(byKey.code_discovery.facts).toEqual(['34 architecture items', '6 findings']);
     expect(byKey.live_behaviour.status).toBe('complete');
     expect(byKey.live_behaviour.facts).toEqual(['3 endpoints', '5 captured behaviours']);
     expect(byKey.target_conversation.status).toBe('complete');
@@ -361,8 +363,10 @@ describe('computeMigrationProgressSummary', () => {
     expect(
       (b?.failedToLoad ?? 0) + (b?.rowCountMismatch ?? 0) + (b?.dataMismatch ?? 0) + (b?.fullyReconciled ?? 0),
     ).toBe(summary.db?.current.tables);
-    expect(summary.db?.viewsNotMigrated).toBe(1);
-    expect(summary.db?.procsNotMigrated).toBe(2);
+    // Positive framing (2026-08-16): MIGRATED counts (1 approved view of 2
+    // captured; 1 approved proc of 3 captured).
+    expect(summary.db?.viewsMigrated).toBe(1);
+    expect(summary.db?.procsMigrated).toBe(1);
 
     // Service: ep3's story failed to migrate; ep1 has an open break; ep2 clean.
     expect(summary.service?.buckets).toEqual({
@@ -489,6 +493,7 @@ describe('computeMigrationProgressSummary', () => {
         getBreaksForRun: boom as unknown as ProgressSummaryDeps['getBreaksForRun'],
         listDiscoveryRuns: boom as unknown as ProgressSummaryDeps['listDiscoveryRuns'],
         countFindingsForRun: boom as unknown as ProgressSummaryDeps['countFindingsForRun'],
+        countSavedCandidatesForRun: boom as unknown as ProgressSummaryDeps['countSavedCandidatesForRun'],
         fetchServiceInventory: boom as unknown as ProgressSummaryDeps['fetchServiceInventory'],
       }),
     );

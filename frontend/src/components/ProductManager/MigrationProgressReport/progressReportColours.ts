@@ -58,10 +58,15 @@ export function matchingTier(matching: boolean): ConditionTier {
   return matching ? 'medium-green' : 'medium-red';
 }
 
-/** `2 (1.7%)` — the inline percentage shown beside each bucket number. */
-export function formatCountWithPct(value: number, total: number | null): string {
-  if (total === null || total <= 0) return String(value);
+/**
+ * `2 of 120 (1.7%)` — the ONE consistent with-a-total cell format
+ * (2026-08-16): every bucket-style cell renders value, denominator and
+ * percentage the same way. One decimal below 10%, whole numbers above.
+ * Without a usable denominator the bare count renders.
+ */
+export function formatCountOfTotal(value: number, total: number | null): string {
+  if (total === null || total <= 0) return value.toLocaleString();
   const pct = (value / total) * 100;
   const rounded = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
-  return `${value.toLocaleString()} (${rounded}%)`;
+  return `${value.toLocaleString()} of ${total.toLocaleString()} (${rounded}%)`;
 }

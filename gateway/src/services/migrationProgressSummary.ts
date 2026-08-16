@@ -119,8 +119,13 @@ export interface DbSection {
     dataMismatch: number;
     fullyReconciled: number;
   } | null;
-  viewsNotMigrated: number | null;
-  procsNotMigrated: number | null;
+  /**
+   * MIGRATED counts (2026-08-16, positive phrasing — the earlier
+   * not-migrated fields were a confusing double negative): views/procs with
+   * an approved `translate` translation, out of `current.views`/`current.procs`.
+   */
+  viewsMigrated: number | null;
+  procsMigrated: number | null;
 }
 
 export interface ServiceSectionTotals {
@@ -251,6 +256,16 @@ export interface ProgressSummaryDeps {
     architectureId: string,
     runId: string,
   ): Promise<number | null>;
+  /**
+   * SAVED architecture candidates for ONE run (2026-08-16): distinct
+   * candidates with a save-back candidate->entity mapping — the banner's
+   * "architecture items" fact. Actually-saved, not merely approved.
+   */
+  countSavedCandidatesForRun(
+    projectId: string,
+    architectureId: string,
+    runId: string,
+  ): Promise<number | null>;
   fetchActiveCurrentBaseline: typeof fetchActiveCurrentBaseline;
   fetchBaselineItems: typeof fetchBaselineItems;
   fetchLatestCapturedDecisions: typeof fetchLatestCapturedDecisions;
@@ -323,6 +338,25 @@ export function defaultProgressSummaryDeps(): ProgressSummaryDeps {
       if (!response.ok) return null;
       const body = (await response.json()) as { total?: number };
       return typeof body.total === 'number' ? body.total : null;
+    },
+    async countSavedCandidatesForRun(projectId, architectureId, runId) {
+      const url =
+        `${amsBase()}/api/model/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}` +
+        `/discovery/runs/${encodeURIComponent(runId)}/candidate-entity-mappings`;
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) return null;
+      const rows = (await response.json()) as Array<{ candidate_id?: string | null }>;
+      if (!Array.isArray(rows)) return null;
+      // Distinct CANDIDATES saved (a candidate may map to several entities —
+      // create + link rows); rows without a candidate id count individually.
+      const distinct = new Set<string>();
+      let anonymous = 0;
+      for (const row of rows) {
+        if (row.candidate_id) distinct.add(row.candidate_id);
+        else anonymous += 1;
+      }
+      return distinct.size + anonymous;
     },
     fetchActiveCurrentBaseline,
     fetchBaselineItems,
@@ -627,34 +661,47 @@ export async function computeMigrationProgressSummary(
     });
   }
 
-  // --- Discovery findings per kind (latest completed run of the kind). -----
-  const findingsForKind = async (kinds: string[]): Promise<number | null> => {
-    if (!discoveryRuns) return null;
+  // --- Discovery facts per kind (latest completed run of the kind): the
+  // findings total + the SAVED architecture candidates ("architecture items").
+  const discoveryFactsForKind = async (
+    kinds: string[],
+  ): Promise<{ findings: number | null; savedItems: number | null }> => {
+    if (!discoveryRuns) return { findings: null, savedItems: null };
     // The AMS list is newest-first; the first COMPLETED run of the kind is
-    // the current truth (findings are run-scoped; summing re-runs would
-    // double-count superseded findings).
+    // the current truth (both counts are run-scoped; summing re-runs would
+    // double-count superseded rows).
     const latestCompleted = discoveryRuns.find(
       (r) =>
         kinds.includes((r.discovery_kind ?? 'code').toLowerCase()) &&
         (r.status ?? '').toUpperCase() === 'COMPLETED' &&
         !!r.id,
     );
-    if (!latestCompleted?.id) return null;
-    return soft('Discovery findings count', () =>
-      deps.countFindingsForRun(projectId, architectureId, latestCompleted.id as string),
-    );
+    if (!latestCompleted?.id) return { findings: null, savedItems: null };
+    const runId = latestCompleted.id;
+    const [findings, savedItems] = await Promise.all([
+      soft('Discovery findings count', () =>
+        deps.countFindingsForRun(projectId, architectureId, runId),
+      ),
+      soft('Saved candidate count', () =>
+        deps.countSavedCandidatesForRun(projectId, architectureId, runId),
+      ),
+    ]);
+    return { findings, savedItems };
   };
-  const dbFindings = scope.db ? await findingsForKind(['database', 'combined']) : null;
-  const codeFindings = scope.service ? await findingsForKind(['code', 'combined']) : null;
+  const dbDiscoveryFacts = scope.db
+    ? await discoveryFactsForKind(['database', 'combined'])
+    : { findings: null, savedItems: null };
+  const codeDiscoveryFacts = scope.service
+    ? await discoveryFactsForKind(['code', 'combined'])
+    : { findings: null, savedItems: null };
 
   // --- Stages. --------------------------------------------------------------
   const stages = buildStages({
     scope,
     context,
     discoveryRuns,
-    dbFindings,
-    codeFindings,
-    currentInventory,
+    dbDiscoveryFacts,
+    codeDiscoveryFacts,
     baseline,
     baselineItems,
     decisionsCount: decisions?.length ?? 0,
@@ -748,8 +795,8 @@ function buildDbSection(
       current,
       target: null,
       buckets: null,
-      viewsNotMigrated: null,
-      procsNotMigrated: null,
+      viewsMigrated: null,
+      procsMigrated: null,
     };
   }
 
@@ -823,14 +870,8 @@ function buildDbSection(
     current,
     target,
     buckets,
-    viewsNotMigrated:
-      capturedViews !== null && migratedViews !== null
-        ? Math.max(0, capturedViews - migratedViews)
-        : null,
-    procsNotMigrated:
-      capturedProcs !== null && migratedProcs !== null
-        ? Math.max(0, capturedProcs - migratedProcs)
-        : null,
+    viewsMigrated: migratedViews,
+    procsMigrated: migratedProcs,
   };
 }
 
@@ -970,9 +1011,8 @@ function buildStages(args: {
   scope: { db: boolean; service: boolean };
   context: MigrationDiscoveryContext | null;
   discoveryRuns: DiscoveryRunRow[] | null;
-  dbFindings: number | null;
-  codeFindings: number | null;
-  currentInventory: ServiceInventory | null;
+  dbDiscoveryFacts: { findings: number | null; savedItems: number | null };
+  codeDiscoveryFacts: { findings: number | null; savedItems: number | null };
   baseline: ApiBehaviourBaseline | null;
   baselineItems: ApiBehaviourBaselineItemWire[];
   decisionsCount: number;
@@ -992,9 +1032,8 @@ function buildStages(args: {
     scope,
     context,
     discoveryRuns,
-    dbFindings,
-    codeFindings,
-    currentInventory,
+    dbDiscoveryFacts,
+    codeDiscoveryFacts,
     baseline,
     baselineItems,
     decisionsCount,
@@ -1029,8 +1068,7 @@ function buildStages(args: {
     key: 'db_discovery' | 'code_discovery',
     label: string,
     kinds: string[],
-    entities: number | null,
-    findings: number | null,
+    facts_: { findings: number | null; savedItems: number | null },
   ): ProgressStage => {
     const ofKind = runRowsOfKind(kinds);
     const completed = ofKind.some((r) => r.status === 'COMPLETED');
@@ -1038,8 +1076,13 @@ function buildStages(args: {
     const allFailed =
       anyStarted && ofKind.every((r) => r.status === 'FAILED' || r.status === 'CANCELLED');
     const facts: string[] = [];
-    if (completed && entities !== null) facts.push(`${entities} arch entities`);
-    if (completed && findings !== null) facts.push(`${findings} findings`);
+    // "architecture items" = the SAVED architecture candidates of the latest
+    // completed run of the kind (2026-08-16 — replaces the derived
+    // model-entity tally, which was not what discovery itself reports).
+    if (completed && facts_.savedItems !== null) {
+      facts.push(`${facts_.savedItems} architecture items`);
+    }
+    if (completed && facts_.findings !== null) facts.push(`${facts_.findings} findings`);
     if (!anyStarted) facts.push('not started');
     return {
       key,
@@ -1050,27 +1093,13 @@ function buildStages(args: {
   };
 
   if (scope.db) {
-    const dbEntities =
-      db?.current.tables !== null && db?.current.tables !== undefined
-        ? (db.current.tables ?? 0) + (db.current.views ?? 0) + (db.current.procs ?? 0)
-        : null;
     stages.push(
-      discoveryStage('db_discovery', 'DB discovery', ['database', 'combined'], dbEntities, dbFindings),
+      discoveryStage('db_discovery', 'DB discovery', ['database', 'combined'], dbDiscoveryFacts),
     );
   }
   if (scope.service) {
-    // Discovery INVENTORY counts (internal included — discovery discovered
-    // them); the reconciliation section below counts external-only.
-    const summary = context?.currentArchitectureSummary;
-    const svcEntities = currentInventory
-      ? (summary?.serviceCount ?? 0) +
-        currentInventory.interfacesTotal +
-        currentInventory.endpointsTotal
-      : summary?.serviceCount !== undefined || summary?.interfaceCount !== undefined
-        ? (summary?.serviceCount ?? 0) + (summary?.interfaceCount ?? 0)
-        : null;
     stages.push(
-      discoveryStage('code_discovery', 'Code/logs discovery', ['code', 'combined'], svcEntities, codeFindings),
+      discoveryStage('code_discovery', 'Code/logs discovery', ['code', 'combined'], codeDiscoveryFacts),
     );
 
     // Live behaviour rides the service plane only.
@@ -1150,8 +1179,14 @@ function buildStages(args: {
       db.buckets.failedToLoad === 0 &&
       db.buckets.rowCountMismatch === 0 &&
       db.buckets.dataMismatch === 0 &&
-      (db.viewsNotMigrated ?? 0) === 0 &&
-      (db.procsNotMigrated ?? 0) === 0);
+      // Positive framing (2026-08-16): clean = everything captured is
+      // migrated; unknown counts stay clean (same posture as before).
+      (db.current.views === null ||
+        db.viewsMigrated === null ||
+        db.viewsMigrated >= db.current.views) &&
+      (db.current.procs === null ||
+        db.procsMigrated === null ||
+        db.procsMigrated >= db.current.procs));
   const serviceClean =
     !scope.service ||
     (!!service?.buckets &&
