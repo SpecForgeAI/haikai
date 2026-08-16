@@ -25,11 +25,19 @@
 import { useMemo, useState } from 'react';
 import {
   startManualReconciliation,
-  type ManualAuthDto,
   type ManualDbBlockDto,
   type StartReconciliationRequestDto,
   type StartReconciliationResultDto,
 } from '../../../api/migrationProgressReportApi';
+// THE one shared auth surface (2026-08-13): the same methods every other
+// credential dialog in the tool offers — none | bearer | basic |
+// ssoToken (fixed `ssoToken` header) | custom header. Never a bespoke list.
+import {
+  ApiAuthFields,
+  EMPTY_API_AUTH,
+  toApiAuthSecret,
+  type ApiAuthValue,
+} from '../../shared/ApiAuthFields';
 import styles from './MigrationProgressReport.module.css';
 
 // ============================================================================
@@ -52,28 +60,6 @@ const emptyDb = (dbType: 'sybase' | 'postgres'): DbFieldsState => ({
   port: '',
   database: '',
   schema: '',
-  username: '',
-  password: '',
-});
-
-interface AuthFieldsState {
-  type: ManualAuthDto['type'];
-  bearerToken: string;
-  headerName: string;
-  headerValue: string;
-  queryParamName: string;
-  queryParamValue: string;
-  username: string;
-  password: string;
-}
-
-const emptyAuth = (): AuthFieldsState => ({
-  type: 'none',
-  bearerToken: '',
-  headerName: '',
-  headerValue: '',
-  queryParamName: '',
-  queryParamValue: '',
   username: '',
   password: '',
 });
@@ -110,27 +96,6 @@ function dbBlockFromFields(
       password: fields.password,
     },
   };
-}
-
-function authFromFields(fields: AuthFieldsState): ManualAuthDto {
-  switch (fields.type) {
-    case 'bearer':
-      return { type: 'bearer', bearerToken: fields.bearerToken };
-    case 'api_key_header':
-      return { type: 'api_key_header', headerName: fields.headerName, headerValue: fields.headerValue };
-    case 'api_key_query':
-      return {
-        type: 'api_key_query',
-        queryParamName: fields.queryParamName,
-        queryParamValue: fields.queryParamValue,
-      };
-    case 'basic':
-      return { type: 'basic', username: fields.username, password: fields.password };
-    case 'custom_header':
-      return { type: 'custom_header', headerName: fields.headerName, headerValue: fields.headerValue };
-    default:
-      return { type: 'none' };
-  }
 }
 
 // ============================================================================
@@ -189,65 +154,29 @@ function DbFields({
   );
 }
 
-function AuthFields({
+/** The shared auth surface with this modal's field-row styling. */
+function AuthBlock({
   value,
   onChange,
   idPrefix,
 }: {
-  value: AuthFieldsState;
-  onChange: (next: AuthFieldsState) => void;
+  value: ApiAuthValue;
+  onChange: (next: ApiAuthValue) => void;
   idPrefix: string;
 }) {
-  const field = (key: keyof AuthFieldsState, label: string, type: 'text' | 'password' = 'text') => (
-    <label className={styles.fieldRow}>
-      <span className={styles.fieldLabel}>{label}</span>
-      <input
-        className={styles.fieldInput}
-        type={type}
-        value={value[key]}
-        data-testid={`${idPrefix}-${key}`}
-        onChange={(e) => onChange({ ...value, [key]: e.target.value })}
-      />
-    </label>
-  );
   return (
-    <>
-      <label className={styles.fieldRow}>
-        <span className={styles.fieldLabel}>Auth</span>
-        <select
-          className={styles.fieldInput}
-          value={value.type}
-          data-testid={`${idPrefix}-type`}
-          onChange={(e) => onChange({ ...value, type: e.target.value as AuthFieldsState['type'] })}
-        >
-          <option value="none">None</option>
-          <option value="bearer">Bearer token</option>
-          <option value="api_key_header">API key (header)</option>
-          <option value="api_key_query">API key (query)</option>
-          <option value="basic">Basic</option>
-          <option value="custom_header">Custom header</option>
-        </select>
-      </label>
-      {value.type === 'bearer' && field('bearerToken', 'Bearer token', 'password')}
-      {(value.type === 'api_key_header' || value.type === 'custom_header') && (
-        <>
-          {field('headerName', 'Header name')}
-          {field('headerValue', 'Header value', 'password')}
-        </>
-      )}
-      {value.type === 'api_key_query' && (
-        <>
-          {field('queryParamName', 'Query param name')}
-          {field('queryParamValue', 'Query param value', 'password')}
-        </>
-      )}
-      {value.type === 'basic' && (
-        <>
-          {field('username', 'Username')}
-          {field('password', 'Password', 'password')}
-        </>
-      )}
-    </>
+    <ApiAuthFields
+      value={value}
+      onChange={(patch) => onChange({ ...value, ...patch })}
+      classNames={{
+        fieldGroup: styles.fieldRow,
+        label: styles.fieldLabel,
+        input: styles.fieldInput,
+        select: styles.fieldInput,
+      }}
+      testIdPrefix={idPrefix}
+      selectLabel="Auth"
+    />
   );
 }
 
@@ -279,9 +208,9 @@ export function RunReconciliationModal({
   const [sourceDb, setSourceDb] = useState<DbFieldsState>(emptyDb('sybase'));
   const [targetDb, setTargetDb] = useState<DbFieldsState>(emptyDb('postgres'));
   const [targetBaseUrl, setTargetBaseUrl] = useState<string>('');
-  const [targetAuth, setTargetAuth] = useState<AuthFieldsState>(emptyAuth());
+  const [targetAuth, setTargetAuth] = useState<ApiAuthValue>(EMPTY_API_AUTH);
   const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('');
-  const [currentAuth, setCurrentAuth] = useState<AuthFieldsState>(emptyAuth());
+  const [currentAuth, setCurrentAuth] = useState<ApiAuthValue>(EMPTY_API_AUTH);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StartReconciliationResultDto | null>(null);
@@ -303,19 +232,26 @@ export function RunReconciliationModal({
     if (runDb && source.error) return setError(source.error);
     const target = dbBlockFromFields(targetDb, 'Target state database');
     if ((runDb || runApi) && target.error) return setError(target.error);
+    // The source-side registration is keyed by its base URL — auth without a
+    // URL cannot be stored, so say so instead of silently dropping it.
+    if (runApi && currentBaseUrl.trim() === '' && currentAuth.authType !== 'none') {
+      return setError(
+        'Current state service: a Base URL is required when its auth is set (or set auth back to None to reuse the registered details).',
+      );
+    }
 
     const body: StartReconciliationRequestDto = {
       run_data_parity: runDb,
       run_api_reconcile: runApi,
       ...(source.block ? { source_db: source.block } : {}),
       ...(target.block ? { target_db: target.block } : {}),
-      ...(runApi ? { api: authFromFields(targetAuth) } : {}),
+      ...(runApi ? { api: toApiAuthSecret(targetAuth) } : {}),
       ...(runApi && targetBaseUrl.trim() !== '' ? { target_base_url: targetBaseUrl.trim() } : {}),
       ...(runApi && currentBaseUrl.trim() !== ''
         ? {
             source_api: {
               current_base_url: currentBaseUrl.trim(),
-              api: authFromFields(currentAuth),
+              api: toApiAuthSecret(currentAuth),
             },
           }
         : {}),
@@ -393,6 +329,8 @@ export function RunReconciliationModal({
             )}
             {runApi && (
               <div className={styles.credColumns} data-testid="rrm-api-fields">
+                {/* SYMMETRIC service blocks (2026-08-16): both sides carry
+                    Base URL + the shared auth surface (incl. ssoToken). */}
                 <fieldset className={styles.credFieldset}>
                   <legend className={styles.credLegend}>Current state service</legend>
                   <label className={styles.fieldRow}>
@@ -400,15 +338,13 @@ export function RunReconciliationModal({
                     <input
                       className={styles.fieldInput}
                       type="text"
-                      placeholder="optional — behaviour replays from the recorded baseline"
+                      placeholder="blank = the registered details"
                       value={currentBaseUrl}
                       data-testid="rrm-current-base-url"
                       onChange={(e) => setCurrentBaseUrl(e.target.value)}
                     />
                   </label>
-                  {currentBaseUrl.trim() !== '' && (
-                    <AuthFields value={currentAuth} onChange={setCurrentAuth} idPrefix="rrm-current-auth" />
-                  )}
+                  <AuthBlock value={currentAuth} onChange={setCurrentAuth} idPrefix="rrm-current" />
                 </fieldset>
                 <fieldset className={styles.credFieldset}>
                   <legend className={styles.credLegend}>Target state service</legend>
@@ -423,7 +359,7 @@ export function RunReconciliationModal({
                       onChange={(e) => setTargetBaseUrl(e.target.value)}
                     />
                   </label>
-                  <AuthFields value={targetAuth} onChange={setTargetAuth} idPrefix="rrm-target-auth" />
+                  <AuthBlock value={targetAuth} onChange={setTargetAuth} idPrefix="rrm-target" />
                 </fieldset>
               </div>
             )}

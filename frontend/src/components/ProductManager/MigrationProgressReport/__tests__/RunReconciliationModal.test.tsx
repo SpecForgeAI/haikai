@@ -68,7 +68,7 @@ describe('RunReconciliationModal', () => {
     setInput('rrm-target-db-password', 'pw2');
     setInput('rrm-target-base-url', 'http://target:9090');
     setInput('rrm-target-auth-type', 'bearer');
-    setInput('rrm-target-auth-bearerToken', 'tok');
+    setInput('rrm-target-bearer-token', 'tok');
 
     fireEvent.click(screen.getByTestId('rrm-run'));
     await waitFor(() => expect(screen.getByTestId('rrm-results')).toBeTruthy());
@@ -145,6 +145,46 @@ describe('RunReconciliationModal', () => {
     expect(screen.getByTestId('rrm-result-api').textContent).toContain('unresolved break');
     fireEvent.click(screen.getByTestId('rrm-close'));
     expect(onClose).toHaveBeenCalledWith(false);
+  });
+
+  it('offers the SHARED auth surface on BOTH service sides, incl. ssoToken as a fixed header', async () => {
+    const { startFn } = renderModal({
+      dataParity: null,
+      apiReconcile: { status: 'started', detail: 'ok' },
+    });
+    fireEvent.click(screen.getByTestId('rrm-check-db')); // DB off -> API only
+
+    // SYMMETRY: the current-state side carries the auth selector without
+    // needing a base URL typed first (the earlier asymmetry made the modal
+    // unusable), and both selects offer the canonical option set.
+    expect(screen.getByTestId('rrm-current-auth-type')).toBeTruthy();
+    const targetSelect = screen.getByTestId('rrm-target-auth-type');
+    const options = Array.from(targetSelect.querySelectorAll('option')).map(
+      (o) => (o as HTMLOptionElement).value,
+    );
+    expect(options).toEqual(['none', 'bearer', 'basic', 'sso_token', 'header']);
+
+    // ssoToken -> the fixed `ssoToken` custom header, value TRIMMED.
+    setInput('rrm-target-auth-type', 'sso_token');
+    setInput('rrm-target-sso-token', '  tok-123  ');
+    fireEvent.click(screen.getByTestId('rrm-run'));
+    await waitFor(() => expect(startFn).toHaveBeenCalled());
+    expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
+      run_data_parity: false,
+      run_api_reconcile: true,
+      api: { type: 'custom_header', headerName: 'ssoToken', headerValue: 'tok-123' },
+    });
+  });
+
+  it('requires a current base URL when current-side auth is set (nothing silently dropped)', async () => {
+    const { startFn } = renderModal({ dataParity: null, apiReconcile: null });
+    fireEvent.click(screen.getByTestId('rrm-check-db')); // DB off -> API only
+    setInput('rrm-current-auth-type', 'sso_token');
+    setInput('rrm-current-sso-token', 'tok');
+    fireEvent.click(screen.getByTestId('rrm-run'));
+    await waitFor(() => expect(screen.getByTestId('rrm-error')).toBeTruthy());
+    expect(screen.getByTestId('rrm-error').textContent).toContain('Base URL is required');
+    expect(startFn).not.toHaveBeenCalled();
   });
 
   it('disables an out-of-scope reconciliation', () => {
