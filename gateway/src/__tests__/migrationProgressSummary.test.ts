@@ -11,6 +11,7 @@ import {
   LatestDataMigrationReport,
   LatestDataParityReportRow,
   ProgressSummaryDeps,
+  ServiceInventory,
   computeMigrationProgressSummary,
 } from '../services/migrationProgressSummary';
 import type { MigrationExecutionRun } from '../services/migrationExecutionRunClient';
@@ -203,11 +204,35 @@ function baseParityReport(): LatestDataParityReportRow {
   };
 }
 
-function modelIndexOf(entries: Array<[string, string | null]>) {
+/**
+ * Internal-aware inventory fixtures (shakedown fix 2026-08-16): the current
+ * architecture carries an INTERNAL_PROCESSING interface owning ep-int — it is
+ * counted in the discovery totals but excluded from every external count.
+ */
+function currentInventoryFixture(): ServiceInventory {
   return {
-    endpointKeyById: new Map(entries),
-    depIdByPhysicalName: new Map<string, string>(),
-    effects: [],
+    interfacesTotal: 3, // ext-if1, ext-if2, int-if (INTERNAL_PROCESSING)
+    externalInterfaces: 2,
+    endpointsTotal: 4, // ep1, ep2, ep3 external + ep-int internal
+    externalEndpointIds: new Set(['ep1', 'ep2', 'ep3']),
+    endpointIdByKey: new Map([
+      ['GET /a', 'ep1'],
+      ['POST /b', 'ep2'],
+      ['GET /c', 'ep3'],
+    ]),
+  };
+}
+
+function targetInventoryFixture(): ServiceInventory {
+  return {
+    interfacesTotal: 2,
+    externalInterfaces: 2,
+    endpointsTotal: 2,
+    externalEndpointIds: new Set(['tep1', 'tep2']),
+    endpointIdByKey: new Map([
+      ['GET /a', 'tep1'],
+      ['POST /b', 'tep2'],
+    ]),
   };
 }
 
@@ -238,17 +263,14 @@ function makeDeps(overrides: Partial<ProgressSummaryDeps> = {}): ProgressSummary
     fetchLatestDataMigrationReport: async () => null,
     fetchLatestDataParityReport: async () => null,
     getBreaksForRun: async () => [],
-    fetchModelIndex: async (_projectId, architectureId) =>
-      architectureId === CURRENT_ARCH
-        ? modelIndexOf([
-            ['ep1', 'GET /a'],
-            ['ep2', 'POST /b'],
-            ['ep3', 'GET /c'],
-          ])
-        : modelIndexOf([
-            ['tep1', 'GET /a'],
-            ['tep2', 'POST /b'],
-          ]),
+    listDiscoveryRuns: async () => [
+      { id: 'r-db', status: 'COMPLETED', discovery_kind: 'database' },
+      { id: 'r-code', status: 'COMPLETED', discovery_kind: 'code' },
+    ],
+    countFindingsForRun: async (_projectId, _architectureId, runId) =>
+      runId === 'r-db' ? 4 : 6,
+    fetchServiceInventory: async (_projectId, architectureId) =>
+      architectureId === CURRENT_ARCH ? currentInventoryFixture() : targetInventoryFixture(),
     ...overrides,
   };
   return deps;
@@ -271,7 +293,8 @@ describe('computeMigrationProgressSummary', () => {
     expect(summary.db?.viewsNotMigrated).toBeNull();
     expect(summary.db?.procsNotMigrated).toBeNull();
 
-    // Service section: in-scope endpoint denominator, no reconciliation yet.
+    // Service section: EXTERNAL-only counts (the INTERNAL_PROCESSING
+    // interface + its ep-int are excluded from the 3/4 inventory totals).
     expect(summary.service?.current).toEqual({ interfaces: 2, endpoints: 3 });
     expect(summary.service?.target).toBeNull();
     expect(summary.service?.buckets).toBeNull();
@@ -281,7 +304,9 @@ describe('computeMigrationProgressSummary', () => {
     expect(byKey.db_discovery.status).toBe('complete');
     expect(byKey.db_discovery.facts).toEqual(['8 arch entities', '4 findings']);
     expect(byKey.code_discovery.status).toBe('complete');
-    expect(byKey.code_discovery.facts).toEqual(['6 arch entities', '6 findings']);
+    // Discovery entities count the FULL inventory (1 service + 3 interfaces
+    // + 4 endpoints, internal included); findings come from the code run.
+    expect(byKey.code_discovery.facts).toEqual(['8 arch entities', '6 findings']);
     expect(byKey.live_behaviour.status).toBe('complete');
     expect(byKey.live_behaviour.facts).toEqual(['3 endpoints', '5 captured behaviours']);
     expect(byKey.target_conversation.status).toBe('complete');
@@ -397,6 +422,35 @@ describe('computeMigrationProgressSummary', () => {
     expect(byKey.reconciliation.status).toBe('in_progress');
   });
 
+  it('BUG-1 regression: a completed code run evicted from the context highlights still completes the stage', async () => {
+    // The discovery-context roll-up CAPS its run highlights to the most
+    // recent runs — on the live system a later DB run evicted the completed
+    // code run and the banner showed "not started". The runs LIST is the
+    // authoritative source; the context highlights only carry the DB run here.
+    const context = baseContext();
+    context.discoveryRunsSummary = {
+      totalRuns: 2,
+      completedRuns: 1,
+      runs: [
+        {
+          runId: 'r-db',
+          architectureId: CURRENT_ARCH,
+          status: 'COMPLETED',
+          discoveryKind: 'database',
+          createdAt: '',
+          updatedAt: '',
+        },
+      ],
+    };
+    const summary = await computeMigrationProgressSummary(
+      ARGS,
+      makeDeps({ fetchDiscoveryContext: async () => context }),
+    );
+    const byKey = Object.fromEntries(summary.stages.map((s) => [s.key, s]));
+    expect(byKey.code_discovery.status).toBe('complete');
+    expect(byKey.code_discovery.facts).toContain('6 findings');
+  });
+
   it('empty book defaults both planes into scope with a warning', async () => {
     const summary = await computeMigrationProgressSummary(
       ARGS,
@@ -433,7 +487,9 @@ describe('computeMigrationProgressSummary', () => {
         fetchLatestDataMigrationReport: boom as unknown as ProgressSummaryDeps['fetchLatestDataMigrationReport'],
         fetchLatestDataParityReport: boom as unknown as ProgressSummaryDeps['fetchLatestDataParityReport'],
         getBreaksForRun: boom as unknown as ProgressSummaryDeps['getBreaksForRun'],
-        fetchModelIndex: boom as unknown as ProgressSummaryDeps['fetchModelIndex'],
+        listDiscoveryRuns: boom as unknown as ProgressSummaryDeps['listDiscoveryRuns'],
+        countFindingsForRun: boom as unknown as ProgressSummaryDeps['countFindingsForRun'],
+        fetchServiceInventory: boom as unknown as ProgressSummaryDeps['fetchServiceInventory'],
       }),
     );
     expect(summary.stages.length).toBeGreaterThan(0);
