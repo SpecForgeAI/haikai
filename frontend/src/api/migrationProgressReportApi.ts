@@ -200,6 +200,13 @@ export interface StartReconciliationRequestDto {
   target_base_url?: string | null;
   /** CURRENT-state service details (source-side registration). */
   source_api?: { current_base_url?: string; api?: ManualAuthDto | null } | null;
+  /**
+   * Operator-sanctioned supersede: terminally dispose the previous
+   * reconcile's unresolved breaks (wont_report + audit detail) instead of
+   * blocking on the latch — for re-runs after a broken reconcile left
+   * artifact breaks.
+   */
+  supersede_open_breaks?: boolean;
 }
 
 export type ManualRecOutcomeDto =

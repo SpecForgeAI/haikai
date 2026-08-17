@@ -187,6 +187,23 @@ describe('RunReconciliationModal', () => {
     expect(startFn).not.toHaveBeenCalled();
   });
 
+  it('ticking supersede sends the supersede_open_breaks flag', async () => {
+    const { startFn } = renderModal({
+      dataParity: null,
+      apiReconcile: { status: 'started', detail: 'ok' },
+    });
+    fireEvent.click(screen.getByTestId('rrm-check-db')); // DB off -> API only
+    fireEvent.click(screen.getByTestId('rrm-supersede-breaks'));
+    fireEvent.click(screen.getByTestId('rrm-run'));
+    await waitFor(() => expect(startFn).toHaveBeenCalled());
+    expect(startFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1', {
+      run_data_parity: false,
+      run_api_reconcile: true,
+      api: { type: 'none' },
+      supersede_open_breaks: true,
+    });
+  });
+
   it('disables an out-of-scope reconciliation', () => {
     renderModal(
       { dataParity: null, apiReconcile: null },

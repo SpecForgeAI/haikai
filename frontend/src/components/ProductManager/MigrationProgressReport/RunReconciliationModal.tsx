@@ -211,6 +211,7 @@ export function RunReconciliationModal({
   const [targetAuth, setTargetAuth] = useState<ApiAuthValue>(EMPTY_API_AUTH);
   const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('');
   const [currentAuth, setCurrentAuth] = useState<ApiAuthValue>(EMPTY_API_AUTH);
+  const [supersedeBreaks, setSupersedeBreaks] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StartReconciliationResultDto | null>(null);
@@ -255,6 +256,7 @@ export function RunReconciliationModal({
             },
           }
         : {}),
+      ...(runApi && supersedeBreaks ? { supersede_open_breaks: true } : {}),
     };
     setSubmitting(true);
     try {
@@ -362,6 +364,18 @@ export function RunReconciliationModal({
                   <AuthBlock value={targetAuth} onChange={setTargetAuth} idPrefix="rrm-target" />
                 </fieldset>
               </div>
+            )}
+            {runApi && (
+              <label className={styles.noteLine}>
+                <input
+                  type="checkbox"
+                  checked={supersedeBreaks}
+                  data-testid="rrm-supersede-breaks"
+                  onChange={(e) => setSupersedeBreaks(e.target.checked)}
+                />{' '}
+                Supersede unresolved breaks from the previous reconcile (marks
+                them wont_report so the re-run can start)
+              </label>
             )}
             {!runDb && runApi && (
               <div className={styles.credColumns}>
