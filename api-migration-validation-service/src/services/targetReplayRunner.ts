@@ -471,6 +471,43 @@ export async function runTargetReplay(
       session.source_baseline_id,
     );
 
+    // ------------------------------------------------------------------
+    // 2b) Resolve CONCRETE request paths for templated items (2026-08-17).
+    // A source item's `path` is the operation TEMPLATE key ("/x/{id}") —
+    // deliberately: endpoint scopes, state-effect scoping, diagnostics and
+    // the source<->target diff all join on it. But the TRANSPORT URL must
+    // be the concrete path the item's capture actually exercised: replaying
+    // the template sent literal "{grdOrgId}" over the wire and 4xx/5xx'd
+    // every parameterised endpoint (live: matched=0 across 470 items).
+    // Resolve item.capture_id -> source capture.request_path once per run;
+    // fail-soft — an unresolved item replays its template as before.
+    // ------------------------------------------------------------------
+    const concretePathByCaptureId = new Map<string, string>();
+    if (items.some((i) => (i.path ?? '').includes('{'))) {
+      try {
+        const listCaptures = (archModelClient as {
+          listCapturesBySession?: (
+            projectId: string,
+            sessionId: string,
+          ) => Promise<Array<{ id?: string; request_path?: string | null }>>;
+        }).listCapturesBySession;
+        const sourceCaptures = listCaptures
+          ? await listCaptures.call(archModelClient, projectId, sourceBaseline.session_id)
+          : [];
+        for (const cap of sourceCaptures) {
+          if (cap.id && cap.request_path) {
+            concretePathByCaptureId.set(cap.id, cap.request_path);
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[targetReplayRunner] source-capture path resolution failed: ${
+            err instanceof Error ? err.message : String(err)
+          } -- templated items replay with their template paths`,
+        );
+      }
+    }
+
     // Spec 2026-07-06-n: ONE committed-model effect-scope read for the whole
     // replay when a target-DB adapter was provided. Null (no adapter / read
     // failed) => no snapshots => the diff verdict degrades VISIBLY to
@@ -563,6 +600,14 @@ export async function runTargetReplay(
       }
 
       const req = extractItemRequest(item);
+      // Transport path (2026-08-17): the concrete path the source capture
+      // exercised, when resolvable. `req.path` (the template) keeps serving
+      // scope-matching, state-effect scoping, diagnostics and the target
+      // item's diff-join key below.
+      const transportPath =
+        (req.path.includes('{')
+          ? concretePathByCaptureId.get(item.capture_id)
+          : undefined) ?? req.path;
 
       // Spec 2026-07-06-i: SCOPED replay — out-of-scope items are skipped
       // (counted; the scope rides the diff's audit blob below, so the
@@ -671,7 +716,7 @@ export async function runTargetReplay(
       try {
         const response = await executor.request({
           method: req.method as never,
-          url: req.path,
+          url: transportPath,
           params: req.query,
           headers: req.headers,
           data: req.body,
@@ -712,12 +757,14 @@ export async function runTargetReplay(
           operation_id: item.operation_id,
           attempt_number: 1,
           request_method: req.method,
-          request_path: req.path,
+          // The CONCRETE path actually sent (2026-08-17) — a capture is the
+          // record of the wire request; the template key lives on the item.
+          request_path: transportPath,
           // Issue 1: AMS REQUIRES a non-blank request_url_redacted (else 400).
           request_url_redacted: redactUrl(
             ((session.api_base_url ?? '').replace(/\/+$/, '') +
-              (req.path.startsWith('/') ? req.path : `/${req.path}`)) ||
-            req.path),
+              (transportPath.startsWith('/') ? transportPath : `/${transportPath}`)) ||
+            transportPath),
           request_query_json: req.query ?? null,
           request_headers_redacted_json: req.headers ?? null,
           request_body_json: normaliseBodyForAms(req.body),
