@@ -13,6 +13,7 @@ import {
   startManualReconciliation,
 } from '../services/migrationManualReconcileTriggers';
 import type { MigrationExecutionRun } from '../services/migrationExecutionRunClient';
+import type { MigrationReconciliationBreak } from '../services/migrationReconciliationBreakClient';
 import type { TargetDbSecret } from '../services/migrationTargetCredentialsStore';
 
 const PROJECT = 'proj-1';
@@ -54,6 +55,7 @@ function makeDeps(overrides: Partial<ManualReconcileDeps> = {}) {
     trigger: [] as MigrationExecutionRun[],
     registered: [] as Array<{ runId: string; db?: TargetDbSecret }>,
     patched: [] as unknown[],
+    breakPatches: [] as Array<{ breakId: string; body: Record<string, unknown> }>,
   };
   const deps: ManualReconcileDeps = {
     resolveTables: async () => [
@@ -66,6 +68,10 @@ function makeDeps(overrides: Partial<ManualReconcileDeps> = {}) {
     }) as ManualReconcileDeps['runParity'],
     getRunsForBook: async () => [deployedRun()],
     getBreaksForRun: async () => [],
+    patchBreak: (async (_p: string, breakId: string, body: MigrationReconciliationBreak) => {
+      calls.breakPatches.push({ breakId, body: body as Record<string, unknown> });
+      return body;
+    }) as ManualReconcileDeps['patchBreak'],
     patchRun: (async (_p: string, _r: string, patch: unknown) => {
       calls.patched.push(patch);
       return deployedRun();
@@ -263,6 +269,35 @@ describe('startManualReconciliation', () => {
     ).toContain('1 unresolved break');
     await flush();
     expect(calls.trigger).toHaveLength(0);
+  });
+
+  it('supersede flag terminally disposes the unresolved breaks, then fires the re-run', async () => {
+    const { deps, calls } = makeDeps({
+      getBreaksForRun: async () => [
+        { id: 'b1', disposition_status: 'open' },
+        { id: 'b2', disposition_status: 'accepted' }, // already terminal — untouched
+        { id: 'b3', disposition_status: 'still_broken' },
+      ],
+    });
+    const outcome = await startManualReconciliation(
+      {
+        ...ARGS,
+        request: {
+          runDataParity: false,
+          runApiReconcile: true,
+          api: { type: 'none' },
+          supersedeOpenBreaks: true,
+        },
+      },
+      deps,
+    );
+    expect(outcome.ok && outcome.result.apiReconcile?.status).toBe('started');
+    await flush();
+    // Only the NON-terminal breaks are superseded, to wont_report with audit.
+    expect(calls.breakPatches.map((p) => p.breakId)).toEqual(['b1', 'b3']);
+    expect(calls.breakPatches[0].body.disposition_status).toBe('wont_report');
+    expect(String(calls.breakPatches[0].body.error_detail)).toContain('superseded');
+    expect(calls.trigger).toHaveLength(1);
   });
 
   it('an all-terminal break set unlatches the manual re-run (gold-standard rule)', async () => {

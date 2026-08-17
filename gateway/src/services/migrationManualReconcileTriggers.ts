@@ -49,6 +49,7 @@ import {
   TERMINAL_DISPOSITIONS,
   BREAK_DISPOSITION,
   getReconciliationBreaksForRun,
+  patchReconciliationBreak,
 } from './migrationReconciliationBreakClient';
 import {
   FullReconcileResult,
@@ -104,6 +105,13 @@ export interface ManualReconcileRequest {
     currentBaseUrl?: string;
     api?: (TargetApiAuthSecret & { type: string }) | null;
   } | null;
+  /**
+   * Operator-sanctioned supersede (2026-08-17): terminally dispose the
+   * previous reconcile's unresolved breaks (`wont_report`, with an audit
+   * detail) instead of blocking on the latch — for re-runs after a broken
+   * reconcile left artifact breaks (e.g. the template-path replay bug).
+   */
+  supersedeOpenBreaks?: boolean;
 }
 
 export type ManualRecOutcome =
@@ -124,6 +132,7 @@ export interface ManualReconcileDeps {
   runParity: typeof runDataParityReconcileViaAmvs;
   getRunsForBook: typeof getMigrationExecutionRunsForBook;
   getBreaksForRun: typeof getReconciliationBreaksForRun;
+  patchBreak: typeof patchReconciliationBreak;
   patchRun: typeof patchMigrationExecutionRun;
   triggerApiReconcile(
     run: MigrationExecutionRun,
@@ -152,6 +161,7 @@ export function defaultManualReconcileDeps(): ManualReconcileDeps {
     runParity: runDataParityReconcileViaAmvs,
     getRunsForBook: getMigrationExecutionRunsForBook,
     getBreaksForRun: getReconciliationBreaksForRun,
+    patchBreak: patchReconciliationBreak,
     patchRun: patchMigrationExecutionRun,
     triggerApiReconcile: triggerFullBaselineReconcile,
     reconciliationDriverDeps: defaultReconciliationDriverDeps,
@@ -351,12 +361,50 @@ export async function startManualReconciliation(
         const nonTerminal = breaks.filter(
           (b) => !TERMINAL_DISPOSITIONS.includes(b.disposition_status ?? BREAK_DISPOSITION.OPEN),
         );
-        if (nonTerminal.length > 0) {
+        let supersedeFailed = false;
+        if (nonTerminal.length > 0 && request.supersedeOpenBreaks === true) {
+          // Operator-sanctioned supersede: terminally dispose the previous
+          // reconcile's unresolved breaks so the driver's all-terminal
+          // unlatch rule admits the re-run. wont_report is the terminal
+          // human disposition for "not sending this as a bug" — with an
+          // audit detail naming the supersede.
+          let disposed = 0;
+          for (const b of nonTerminal) {
+            if (!b.id) continue;
+            try {
+              await deps.patchBreak(projectId, b.id, {
+                disposition_status: BREAK_DISPOSITION.WONT_REPORT,
+                error_detail: 'superseded by a manual reconciliation re-run',
+              });
+              disposed += 1;
+            } catch (err) {
+              logger.warn('[diag-gateway] manual_reconcile supersede_break_failed', {
+                projectId,
+                runId: run.id,
+                breakId: b.id,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            }
+          }
+          trace.step(
+            `manual reconcile superseded ${disposed}/${nonTerminal.length} unresolved break(s)`,
+            { ...corr, run: run.id },
+          );
+          supersedeFailed = disposed < nonTerminal.length;
+        }
+        if (nonTerminal.length > 0 && request.supersedeOpenBreaks !== true) {
           result.apiReconcile = {
             status: 'blocked',
             reason:
               `${nonTerminal.length} unresolved break(s) from the previous reconcile — ` +
-              'resolve or dispose them on the delivery dashboard, then re-run.',
+              'resolve or dispose them on the delivery dashboard (or tick ' +
+              "'Supersede unresolved breaks' in this modal), then re-run.",
+          };
+        } else if (supersedeFailed) {
+          result.apiReconcile = {
+            status: 'blocked',
+            reason:
+              'Some unresolved breaks could not be superseded — the driver latch would refuse the re-run. Check the gateway logs and retry.',
           };
         } else {
           deps.registerTargetCreds(

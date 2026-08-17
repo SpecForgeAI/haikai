@@ -720,6 +720,7 @@ migrationExecutionRouter.post(
         current_base_url?: string;
         api?: Parameters<typeof startManualReconciliation>[0]['request']['api'];
       } | null;
+      supersede_open_breaks?: boolean;
     };
     try {
       const outcome = await startManualReconciliation({
@@ -739,6 +740,7 @@ migrationExecutionRouter.post(
                 api: body.source_api.api ?? null,
               }
             : null,
+          supersedeOpenBreaks: body.supersede_open_breaks === true,
         },
       });
       if (!outcome.ok) {
