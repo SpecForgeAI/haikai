@@ -70,6 +70,12 @@ import {
   diagnoseScaffoldManifestGate,
   scaffoldManifestGateRemedy,
 } from './migrationScaffoldManifestGate';
+import {
+  fetchBookOfWork,
+  fetchSpecGenerationsForBook,
+} from './migrationDriverAmsReads';
+import { fetchLatestCapturedDecisions } from './targetStateCapturedDecisionsClient';
+import { resolveTargetDbNameDecision } from './dbMigrationPackHandler';
 
 /** How the story would generate — the batch loop's routing, named. */
 export type SpecPreflightRoute =
@@ -122,6 +128,15 @@ export interface SpecPreflightDeps {
   seedBuildFilesSource?: SeedBuildFilesSource;
   /** Manifest-gate diagnosis seam for the book-level scaffold warning. */
   diagnoseManifestGate?: typeof diagnoseScaffoldManifestGate;
+  /**
+   * Target-DB name consistency check seams (2026-08-17): the book read (for
+   * the target architecture id), the spec-generation rows (for the generated
+   * text scan) and the captured decisions (for the `db.databaseName` value).
+   * Defaults wire the real AMS reads; tests inject fixtures.
+   */
+  fetchBook?: typeof fetchBookOfWork;
+  fetchSpecGens?: typeof fetchSpecGenerationsForBook;
+  fetchDecisions?: typeof fetchLatestCapturedDecisions;
 }
 
 /** Minimal base row the carriage functions spread their result over. */
@@ -426,6 +441,73 @@ export async function runSpecPreflight(
         `${servicePlaneStories.length === 1 ? 'y' : 'ies'} but NO application-` +
         `scaffold story — the implementer would receive specs with no runnable ` +
         `application to build into. ${remedy}`,
+    });
+  }
+
+  // --- Target-DB name consistency (2026-08-17). Already-generated specs
+  // that cite a DIFFERENT database name than the current `db.databaseName`
+  // decision (default haikai_target) would boot services against a database
+  // the DB plane never created. A SIGNAL, never a lock (the staleness
+  // principle): the operator regenerates the flagged specs or re-answers the
+  // decision. Fail-soft — any read error skips the check entirely.
+  try {
+    const fetchBook = deps.fetchBook ?? fetchBookOfWork;
+    const fetchSpecGens = deps.fetchSpecGens ?? fetchSpecGenerationsForBook;
+    const fetchDecisions = deps.fetchDecisions ?? fetchLatestCapturedDecisions;
+    const book = await fetchBook(projectId, bookOfWorkId);
+    const targetArchId = book?.target_architecture_id ?? null;
+    const decisions = targetArchId
+      ? await fetchDecisions(projectId, targetArchId)
+      : [];
+    const expected = resolveTargetDbNameDecision(decisions) ?? 'haikai_target';
+    const specGens = await fetchSpecGens(projectId, bookOfWorkId);
+    const titleByWorkItem = new Map(
+      rows
+        .filter((r) => r.work_item_id)
+        .map((r) => [r.work_item_id as string, r.title])
+    );
+    const offenders = new Map<string, Set<string>>();
+    for (const gen of specGens) {
+      const text = gen.generated_spec_text ?? '';
+      if (!text) continue;
+      for (const m of text.matchAll(
+        /jdbc:postgresql:\/\/[^/\s'"`]+\/([A-Za-z0-9_]+)/g
+      )) {
+        const name = m[1].toLowerCase();
+        if (name === expected) continue;
+        const title =
+          titleByWorkItem.get(gen.work_item_id ?? '') ??
+          gen.work_item_id ??
+          'unknown story';
+        const set = offenders.get(name) ?? new Set<string>();
+        set.add(title);
+        offenders.set(name, set);
+      }
+    }
+    if (offenders.size > 0) {
+      const detail = [...offenders.entries()]
+        .map(
+          ([name, titles]) =>
+            `'${name}' (${[...titles].slice(0, 3).join(', ')}${
+              titles.size > 3 ? ', …' : ''
+            })`
+        )
+        .join('; ');
+      warnings.push({
+        code: 'TARGET_DB_NAME_MISMATCH',
+        message:
+          `Generated spec(s) reference a database name that differs from the ` +
+          `target binding '${expected}': ${detail}. Regenerate those specs ` +
+          `(or re-answer db.databaseName in the target-state conversation) so ` +
+          `the services' default configuration points at the database the DB ` +
+          `plane actually creates.`,
+      });
+    }
+  } catch (e) {
+    logger.warn('[diag-gateway] pm_migration_spec_preflight db_name_check_skipped', {
+      projectId,
+      bookOfWorkId,
+      error: e instanceof Error ? e.message : String(e),
     });
   }
 

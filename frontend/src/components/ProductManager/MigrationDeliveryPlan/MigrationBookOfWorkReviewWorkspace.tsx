@@ -2763,7 +2763,7 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                       id="srv-env"
                       className={styles.modalInput}
                       rows={3}
-                      placeholder={'SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/haikai_target\nSPRING_DATASOURCE_USERNAME=postgres'}
+                      placeholder={`SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/${credsStatus?.targetBinding?.database ?? 'haikai_target'}\nSPRING_DATASOURCE_USERNAME=postgres`}
                       value={serveEnvText}
                       onChange={(e) => setServeEnvText(e.target.value)}
                       data-testid="start-stage-serve-env"

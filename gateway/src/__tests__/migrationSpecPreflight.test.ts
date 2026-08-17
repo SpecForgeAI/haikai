@@ -52,7 +52,19 @@ function depsWith(
     artifactCount: 0,
     probeErrors: [],
   });
-  return { loadBookOfWork, diagnoseManifestGate, ...extra };
+  // Hermetic defaults for the target-DB name consistency check (2026-08-17)
+  // — no live AMS reads from unit tests.
+  const fetchBook = jest.fn().mockResolvedValue({ target_architecture_id: 'arch-tgt' });
+  const fetchSpecGens = jest.fn().mockResolvedValue([]);
+  const fetchDecisions = jest.fn().mockResolvedValue([]);
+  return {
+    loadBookOfWork,
+    diagnoseManifestGate,
+    fetchBook,
+    fetchSpecGens,
+    fetchDecisions,
+    ...extra,
+  };
 }
 
 describe('runSpecPreflight — routing + readiness', () => {
@@ -392,5 +404,55 @@ describe('runSpecPreflight — book-level warnings (2026-08-14)', () => {
       depsWith(items, { seedBuildFilesSource: withManifest })
     );
     expect(ready.rows[0]).toMatchObject({ route: 'scaffold', ready: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Target-DB name consistency (2026-08-17): generated specs citing a DIFFERENT
+// database name than the db.databaseName decision get a book-level warning —
+// a signal, never a lock.
+// ---------------------------------------------------------------------------
+
+describe('runSpecPreflight — target-DB name consistency', () => {
+  // Unsaved story (no workItemId): the resolver route reports save_required
+  // with NO external reads, keeping this test hermetic.
+  const items = () => [story({ id: 'S-1', workItemId: undefined, title: 'Orders API' })];
+
+  it('warns TARGET_DB_NAME_MISMATCH when a generated spec cites a different database', async () => {
+    const { warnings } = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items(), {
+        fetchDecisions: jest
+          .fn()
+          .mockResolvedValue([{ decisionCode: 'db.databaseName', answerValue: 'acme_core' }]),
+        fetchSpecGens: jest.fn().mockResolvedValue([
+          {
+            work_item_id: 'w-1',
+            generated_spec_text:
+              'spring.datasource.url: jdbc:postgresql://localhost:5432/invented_db',
+          },
+        ]),
+      })
+    );
+    const w = warnings.find((x) => x.code === 'TARGET_DB_NAME_MISMATCH');
+    expect(w).toBeDefined();
+    expect(w!.message).toContain("'acme_core'");
+    expect(w!.message).toContain("'invented_db'");
+  });
+
+  it('stays silent when specs cite the bound name (default haikai_target)', async () => {
+    const { warnings } = await runSpecPreflight(
+      { projectId: PROJECT, bookOfWorkId: BOOK },
+      depsWith(items(), {
+        fetchSpecGens: jest.fn().mockResolvedValue([
+          {
+            work_item_id: 'w-1',
+            generated_spec_text:
+              'spring.datasource.url: jdbc:postgresql://localhost:5432/haikai_target',
+          },
+        ]),
+      })
+    );
+    expect(warnings.find((x) => x.code === 'TARGET_DB_NAME_MISMATCH')).toBeUndefined();
   });
 });

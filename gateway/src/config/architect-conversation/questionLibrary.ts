@@ -978,6 +978,28 @@ export const QUESTION_LIBRARY: QuestionLibrary = [
     allowedExceptionScopes: ['physical_data_entity'],
   },
 
+  {
+    code: 'db.databaseName',
+    group: 'C',
+    orderInGroup: 11,
+    prompt: 'What should the target database be named?',
+    staticContextLeadIn:
+      'The physical database name the migration creates and every configuration references: ' +
+      'the schema-apply seed CREATES this database, the data migration loads into it, and the ' +
+      "migrated services' default configuration (e.g. the application.yml datasource URL) must " +
+      'point at exactly this name. Lowercase letters, digits and underscores (a safe ' +
+      'PostgreSQL identifier). Default: haikai_target.',
+    expectedAnswerShape: 'free-text',
+    choices: [],
+    defaultsWhenUnchanged: 'haikai_target',
+    cascades: [],
+    relevanceCondition: onlyWhenPersistenceTier,
+    dependencyClass: 'independent',
+    foundationalInputs: [],
+    versioned: false,
+    allowedExceptionScopes: ['physical_data_entity'],
+  },
+
   // ===== Group D — Domain / DTO style (4) =====
 
   {
