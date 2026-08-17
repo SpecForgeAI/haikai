@@ -1372,6 +1372,26 @@ class ArchModelClient {
   }
 
   /**
+   * List the capture rows of ONE capture session. The target replay resolves
+   * templated baseline-item paths to the CONCRETE request paths their source
+   * captures actually exercised (item.capture_id -> capture.request_path) —
+   * an item's `path` is the operation TEMPLATE key, never a sendable URL
+   * (shakedown 2026-08-17).
+   */
+  async listCapturesBySession(
+    projectId: string,
+    sessionId: string,
+  ): Promise<CaptureDto[]> {
+    const endpoint = `/api/projects/${projectId}/api-behaviour/captures?sessionId=${encodeURIComponent(sessionId)}`;
+    try {
+      const res = await this.client.get<CaptureDto[]>(endpoint);
+      return res.data ?? [];
+    } catch (err) {
+      throw this.toClientError(err, endpoint, 'list captures by session');
+    }
+  }
+
+  /**
    * Read every operation row owned by a session. Used by `/start` to load
    * the persisted operation inventory before spawning the orchestrator.
    */

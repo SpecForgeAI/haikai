@@ -136,6 +136,8 @@ function buildArchClientMock(opts: {
   session: CaptureSessionDto;
   sourceBaseline: BaselineDto;
   items: BaselineItemDto[];
+  /** Source-session captures (2026-08-17): concrete-path resolution input. */
+  sourceCaptures?: Array<{ id: string; request_path: string | null }>;
 }): { mock: Record<string, unknown>; state: MockState } {
   const state: MockState = {
     capturesCreated: [],
@@ -158,6 +160,7 @@ function buildArchClientMock(opts: {
     getCaptureSession: jest.fn(async () => opts.session),
     getBaseline: jest.fn(async () => opts.sourceBaseline),
     listBaselineItems: jest.fn(async () => opts.items),
+    listCapturesBySession: jest.fn(async () => opts.sourceCaptures ?? []),
     createBaseline: jest.fn(async (projectId: string, body: Record<string, unknown>) => {
       void projectId;
       state.baselinesCreated.push({ body });
@@ -342,6 +345,68 @@ function buildDeps(opts: {
     now: () => 1700000000000,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Test 0 (shakedown regression, 2026-08-17): a TEMPLATED item path replays
+// the CONCRETE path its source capture exercised. `item.path` is the
+// operation template key ("/x/{id}") — sending it literally 4xx/5xx'd every
+// parameterised endpoint (live: matched=0 across 470 items). The concrete
+// path resolves via item.capture_id -> source capture.request_path; the
+// TEMPLATE stays on the target item (the diff join key) and an unresolvable
+// item falls back to its template.
+// ---------------------------------------------------------------------------
+test('templated item paths replay the concrete captured path; the template stays the item key', async () => {
+  const session = buildSession();
+  const items = [
+    buildItem(1, 'POST', '/hierarchynodes/{grdOrgId}'),
+    buildItem(2, 'GET', '/widgets'),
+    buildItem(3, 'POST', '/orphans/{id}'), // no matching capture -> template fallback
+  ];
+  const { mock, state } = buildArchClientMock({
+    session,
+    sourceBaseline: buildSourceBaseline(),
+    items,
+    sourceCaptures: [
+      { id: 'cap-1', request_path: '/hierarchynodes/ORG-42' },
+      { id: 'cap-2', request_path: '/widgets' },
+    ],
+  });
+  // URL-recording executor: every request resolves 200.
+  const requestedUrls: string[] = [];
+  const factory: NonNullable<TargetReplayDeps['createHttpExecutor']> = () => ({
+    request: jest.fn(async (args: { url: string }) => {
+      requestedUrls.push(args.url);
+      return {
+        data: { ok: true },
+        status: 200,
+        statusText: '',
+        headers: { 'content-type': 'application/json' },
+        config: {} as never,
+      } as never;
+    }),
+    requestWithAuthOverride: jest.fn(),
+    setAuth: jest.fn(),
+    dispose: jest.fn(),
+  } as unknown as SessionHttpExecutor);
+
+  const outcome = await runTargetReplay(
+    SESSION_ID,
+    buildDeps({ archMock: mock, executor: factory }),
+  );
+
+  expect(outcome.finalStatus).toBe('completed');
+  expect(outcome.itemsReplayed).toBe(3);
+  // CONCRETE paths on the wire; unresolvable item keeps its template.
+  expect(requestedUrls).toEqual([
+    '/hierarchynodes/ORG-42',
+    '/widgets',
+    '/orphans/{id}',
+  ]);
+  // The concrete path is recorded on the target CAPTURE...
+  expect(state.capturesCreated[0].body.request_path).toBe('/hierarchynodes/ORG-42');
+  // ...while the target baseline ITEM keeps the TEMPLATE (diff join key).
+  expect(state.baselineItemsCreated[0].body.path).toBe('/hierarchynodes/{grdOrgId}');
+});
 
 // ---------------------------------------------------------------------------
 // Test 1: Happy-path -- 3 non-mutating items all return 200.
