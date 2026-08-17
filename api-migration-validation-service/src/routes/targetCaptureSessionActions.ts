@@ -366,6 +366,18 @@ export function buildTargetCaptureSessionActionsRouter(
           );
         }
 
+        // AMS's session state machine only allows draft -> configured ->
+        // running. A target session created by this flow carries its FULL
+        // config from the create body and its secrets were verified loaded
+        // above (that IS the 'configured' semantic), so hop through
+        // 'configured' first — PATCHing draft -> running directly is a 409
+        // Conflict that killed every headless reconcile started from a
+        // fresh session (shakedown 2026-08-17).
+        if (session.status === 'draft') {
+          await archModelClient.patchCaptureSession(projectId, sessionId, {
+            status: 'configured',
+          });
+        }
         // Transition to 'running' BEFORE registering the live runManager
         // entry so a concurrent /start hits the 409 guard above.
         const running = await archModelClient.patchCaptureSession(

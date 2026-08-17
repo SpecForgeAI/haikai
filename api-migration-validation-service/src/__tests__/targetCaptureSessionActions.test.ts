@@ -267,6 +267,46 @@ test('POST /target-capture-sessions/:id/start dispatches to runTargetReplay only
 });
 
 // ---------------------------------------------------------------------------
+// Test 2b (shakedown regression, 2026-08-17): starting a DRAFT session hops
+// through 'configured' BEFORE 'running'. AMS's state machine only allows
+// draft -> configured -> running; the route used to PATCH draft -> running
+// directly, which AMS 409'd ("Illegal status transition") — killing every
+// headless reconcile started from a freshly created target session.
+// ---------------------------------------------------------------------------
+test('POST /target-capture-sessions/:id/start from draft PATCHes configured then running (legal hops)', async () => {
+  const draftSession = buildSession({ status: 'draft' });
+  const { mock, sessionPatches } = buildArchModelClientMock({ session: draftSession });
+  const spawnRunner = jest.fn(async () => ({
+    sessionId: SESSION_ID,
+    targetBaselineId: 'tb-1',
+    itemsTotal: 0,
+    itemsReplayed: 0,
+    itemsSkipped: 0,
+    itemsFailed: 0,
+    finalStatus: 'completed' as const,
+    errorMessage: null,
+    diagnostics: [],
+  }));
+  secretsStore.set({
+    sessionId: SESSION_ID,
+    api: { type: 'custom_header', headerName: 'ssoToken', headerValue: 'tok' },
+    loadedAt: Date.now(),
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const app = buildApp({ archModelClient: mock as any, spawnRunner });
+  const res = await request(app)
+    .post(`/api/target-capture-sessions/${SESSION_ID}/start?projectId=${PROJECT_ID}`)
+    .send({});
+  expect(res.status).toBe(202);
+  const statusPatches = sessionPatches
+    .map((p) => p.body.status)
+    .filter((s): s is string => typeof s === 'string');
+  expect(statusPatches).toEqual(['configured', 'running']);
+  await new Promise((r) => setTimeout(r, 5));
+  expect(spawnRunner).toHaveBeenCalledTimes(1);
+});
+
+// ---------------------------------------------------------------------------
 // Test 3: GET /status returns the session row + runManager liveness flag.
 // ---------------------------------------------------------------------------
 test('GET /target-capture-sessions/:id/status returns session status + liveness', async () => {
