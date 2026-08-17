@@ -104,7 +104,7 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
   },
   {
     needs: ['db.engine'],
-    optional: ['db.driver', 'db.connectionPool', 'db.schemaMapping'],
+    optional: ['db.driver', 'db.connectionPool', 'db.schemaMapping', 'db.databaseName'],
     render: (v) =>
       `Configure the datasource against the target database: ${v('db.engine')}` +
       (v('db.driver') ? `, driver ${v('db.driver')}` : '') +
@@ -112,6 +112,11 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
       `. Connection settings come from configuration (never hardcoded credentials).` +
       (v('db.schemaMapping')
         ? ` Schema naming follows the captured mapping: ${v('db.schemaMapping')}.`
+        : '') +
+      (v('db.databaseName')
+        ? ` The DEFAULT configuration's datasource MUST point at the database named ` +
+          `'${v('db.databaseName')}' — the exact database the DB plane creates and ` +
+          `loads; NEVER invent a different database name. ${cite('db.databaseName')}`
         : '') +
       ` ${cite('db.engine')}`,
   },

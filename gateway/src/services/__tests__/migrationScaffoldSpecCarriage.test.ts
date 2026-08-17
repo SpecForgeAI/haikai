@@ -201,6 +201,19 @@ describe('buildScaffoldBootstrapSpecText', () => {
     expect(codes).toEqual(expect.arrayContaining(['db.engine', 'db.migrations', 'testing.unit']));
     expect(warnings.every((w) => w.code === 'DECISION_NOT_CAPTURED')).toBe(true);
   });
+
+  it('cites the operator-chosen target database name in the datasource requirement (2026-08-17)', () => {
+    const { text } = buildScaffoldBootstrapSpecText({
+      story: STORY,
+      enrichmentText: ENRICHMENT_TEXT,
+      decisions: [...FULL_DECISIONS, decision('db.databaseName', 'acme_core')],
+    });
+    // The default configuration must point at the EXACT database the DB
+    // plane creates — the spec names it and cites the decision.
+    expect(text).toContain("database named 'acme_core'");
+    expect(text).toContain('NEVER invent a different database name');
+    expect(text).toContain('[decision:db.databaseName]');
+  });
 });
 
 describe('runScaffoldSpecCarriage', () => {

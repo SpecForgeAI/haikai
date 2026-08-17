@@ -559,9 +559,13 @@ export function buildSequenceSeeds(
  */
 export function buildDbMigrationPackArtifacts(
   ir: SourceSchemaIr,
-  options?: { seedMargin?: number }
+  options?: { seedMargin?: number; targetDbName?: string }
 ): PackArtifacts {
   const seedMargin = options?.seedMargin ?? DEFAULT_SEED_MARGIN;
+  // The operator-chosen target database NAME (2026-08-17): resolved from the
+  // `db.databaseName` captured decision by the caller; absent/invalid falls
+  // back to the historical default so existing projects are byte-identical.
+  const targetDbName = options?.targetDbName ?? 'haikai_target';
   const decisions: PackDecision[] = [];
   const coverage: CoverageEntry[] = [];
   const collationNotes: string[] = [];
@@ -986,7 +990,7 @@ export function buildDbMigrationPackArtifacts(
       engine: 'postgresql',
       host: 'localhost',
       port: 5432,
-      database: 'haikai_target',
+      database: targetDbName,
       schema: 'public',
       username: 'postgres',
       note:
@@ -1365,6 +1369,49 @@ export interface GenerateDbMigrationPackResult {
   translationSync: TranslationHookResult | null;
 }
 
+/**
+ * Resolve the operator-chosen target database NAME from the `db.databaseName`
+ * captured decision (2026-08-17). ONE source of truth: the manifest's
+ * declared `target_db` binding carries it, so the schema-apply seed, the
+ * Start-dialog prefill, parity/load/drift and the seed-story spec all
+ * inherit — and the scaffold spec's datasource requirement cites the SAME
+ * decision, so the migrated services' default configuration names the same
+ * database. Values are validated as a safe PostgreSQL identifier (lowercase
+ * letters/digits/underscores, <=63 chars); anything else falls back to the
+ * historical `haikai_target` default with a loud log — never a silently
+ * broken CREATE DATABASE.
+ */
+export function resolveTargetDbNameDecision(
+  decisions: ReadonlyArray<{
+    decisionCode: string;
+    answerValue?: string | null;
+    answerSummary?: string | null;
+  }>,
+): string | undefined {
+  const row = decisions.find((d) => d.decisionCode === 'db.databaseName');
+  if (!row) return undefined;
+  // Prefer the parsed answer VALUE (the free-text name itself); the summary
+  // may be prose. A JSON-wrapped `{ value }` unwraps like the stack section.
+  let raw = (row.answerValue ?? row.answerSummary ?? '').trim();
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { value?: unknown };
+      if (typeof parsed.value === 'string') raw = parsed.value.trim();
+    } catch {
+      /* keep raw */
+    }
+  }
+  const name = raw.toLowerCase();
+  if (/^[a-z_][a-z0-9_]{0,62}$/.test(name)) return name;
+  if (raw.length > 0) {
+    logger.warn(
+      `[diag-gateway] db_migration_pack target_db_name_invalid value='${raw}' — ` +
+        `not a safe PostgreSQL identifier; falling back to haikai_target`
+    );
+  }
+  return undefined;
+}
+
 export async function generateDbMigrationPack(
   request: GenerateDbMigrationPackRequest,
   deps: DbMigrationPackHandlerDeps = {}
@@ -1395,7 +1442,10 @@ export async function generateDbMigrationPack(
 
   // Stages 3-4 — deterministic mapping + emission (one pure call).
   logger.info(`[diag-gateway] db_migration_pack stage=mapping projectId=${projectId}`);
-  const artifacts = buildDbMigrationPackArtifacts(ir, { seedMargin: request.seedMargin });
+  const artifacts = buildDbMigrationPackArtifacts(ir, {
+    seedMargin: request.seedMargin,
+    targetDbName: resolveTargetDbNameDecision(inputs.dbDecisions),
+  });
   logger.info(
     `[diag-gateway] db_migration_pack stage=emit projectId=${projectId} files=${artifacts.files.length} decisions=${artifacts.decisions.length}`
   );
