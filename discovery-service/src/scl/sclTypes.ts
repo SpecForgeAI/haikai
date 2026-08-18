@@ -114,11 +114,18 @@ export interface SclBoundaryContract { key: string; kind: 'boundary'; symbol: st
 export type SclContract = SclBehaviourTable | SclShapeContract | SclBoundaryContract;
 
 /**
- * A deterministic finding raised during slicing: unresolvable dynamic dispatch
- * (2+ DI implementations), a complexity-budget truncation (LOUD, never
- * silent), or a file the parser could not read.
+ * A deterministic finding raised during slicing or corpus assembly:
+ *   - 'dispatch_ambiguity': unresolvable dynamic dispatch (2+ DI implementations).
+ *   - 'complexity_truncated': a complexity-budget truncation (LOUD, never silent).
+ *   - 'parse_error': a file the parser could not read.
+ *   - 'unresolved_calls': ONE aggregated corpus-assembly finding counting every
+ *     call/dispatch row whose targetKey is null (up to 10 sites listed in
+ *     `candidates`, total in `detail`).
+ *   - 'near_duplicate_cluster': deterministic near-duplicate detection over
+ *     behaviour tables (identical normalized row sequences); members listed in
+ *     `candidates`. Never auto-merged — the merge/keep call is a DECISION.
  */
-export interface SclFinding { kind: 'dispatch_ambiguity' | 'complexity_truncated' | 'parse_error'; symbol: string; detail: string; candidates?: string[]; }
+export interface SclFinding { kind: 'dispatch_ambiguity' | 'complexity_truncated' | 'parse_error' | 'unresolved_calls' | 'near_duplicate_cluster'; symbol: string; detail: string; candidates?: string[]; }
 
 // ---------------------------------------------------------------------------
 // Deterministic serialization + content-hashed keys
