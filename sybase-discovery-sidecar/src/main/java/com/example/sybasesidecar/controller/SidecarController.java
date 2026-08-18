@@ -2,11 +2,15 @@ package com.example.sybasesidecar.controller;
 
 import com.example.sybasesidecar.model.IntrospectionRequest;
 import com.example.sybasesidecar.model.IntrospectionResponse;
+import com.example.sybasesidecar.model.MutationRequest;
+import com.example.sybasesidecar.model.MutationResponse;
 import com.example.sybasesidecar.model.QueryRequest;
 import com.example.sybasesidecar.model.QueryResponse;
 import com.example.sybasesidecar.model.TestConnectionRequest;
 import com.example.sybasesidecar.model.TestConnectionResponse;
+import com.example.sybasesidecar.service.MutationSqlGuard;
 import com.example.sybasesidecar.service.SidecarSqlGuard;
+import com.example.sybasesidecar.service.SybaseMutationService;
 import com.example.sybasesidecar.service.SybaseQueryService;
 import jakarta.validation.Valid;
 import java.util.Collections;
@@ -38,9 +42,14 @@ public class SidecarController {
     private static final Logger LOG = LoggerFactory.getLogger(SidecarController.class);
 
     private final SybaseQueryService queryService;
+    private final SybaseMutationService mutationService;
 
-    public SidecarController(final SybaseQueryService queryService) {
+    public SidecarController(
+            final SybaseQueryService queryService,
+            final SybaseMutationService mutationService
+    ) {
         this.queryService = queryService;
+        this.mutationService = mutationService;
     }
 
     /**
@@ -164,6 +173,58 @@ public class SidecarController {
                 body.ok() ? "ok" : "fail",
                 body.rowCount(),
                 body.truncated(),
+                System.currentTimeMillis() - start);
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Execute a guarded COMPENSATION batch (Capture-State Discipline Spec 1 —
+     * the ONLY write surface on the sidecar). Every statement must satisfy
+     * {@link MutationSqlGuard}'s grammar (derived inverse DML, the
+     * IDENTITY_INSERT toggles, or the identity_burn_max reseed); a guard
+     * violation is HTTP 400 BEFORE any JDBC work, distinguishing a contract
+     * violation from a runtime failure. The read path ({@code /query} +
+     * {@link SidecarSqlGuard}) is untouched and stays SELECT-only.
+     */
+    @PostMapping("/mutate")
+    public ResponseEntity<MutationResponse> mutate(
+            @Valid @RequestBody final MutationRequest req
+    ) {
+        final long start = System.currentTimeMillis();
+        LOG.info("[diag-sidecar] op=mutate status=accepted host_set={} driver_choice={} statements={}",
+                req.getHost() != null && !req.getHost().isEmpty(),
+                req.getDriver(),
+                req.getStatements() == null ? 0 : req.getStatements().size());
+        try {
+            MutationSqlGuard.assertCompensationBatch(req.getStatements());
+        } catch (final SidecarSqlGuard.SqlGuardException e) {
+            LOG.warn("Sidecar mutate category=mutate_guard_reject reason={}", e.getReason());
+            LOG.warn("[diag-sidecar] op=mutate status=400 reason={} elapsed_ms={}",
+                    e.getReason(), System.currentTimeMillis() - start);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new MutationResponse(
+                    false,
+                    "SQL guard rejected: " + e.getMessage(),
+                    Collections.emptyList()
+            ));
+        }
+
+        final int timeoutSec = req.getQueryTimeoutSeconds() == null
+                ? 30
+                : Math.max(1, Math.min(300, req.getQueryTimeoutSeconds()));
+        final MutationResponse body = this.mutationService.mutate(
+                req.getDriver(),
+                req.getHost(),
+                req.getPort(),
+                req.getDatabase(),
+                req.getUsername(),
+                req.getPassword(),
+                req.getStatements(),
+                req.getTransactional() == null || req.getTransactional(),
+                timeoutSec
+        );
+        LOG.info("[diag-sidecar] op=mutate status=200 result={} statements={} elapsed_ms={}",
+                body.ok() ? "ok" : "fail",
+                req.getStatements().size(),
                 System.currentTimeMillis() - start);
         return ResponseEntity.ok(body);
     }

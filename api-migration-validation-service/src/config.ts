@@ -222,3 +222,31 @@ export const VOLATILITY_PROBE_BUDGET_MS: number =
  */
 export const VOLATILITY_PROBE_SPACING_MS: number =
   parseInt(process.env.VOLATILITY_PROBE_SPACING_MS || '250', 10);
+
+/**
+ * Compensation full-image row cap (Capture-State Discipline Spec 1). The v1
+ * imaging ladder has exactly ONE rung — a complete PK-keyed row image of each
+ * effect table before/after/verify — so a table whose live count exceeds this
+ * cap REFUSES the bracket (`table_too_large`, fail-closed: the mutating call
+ * is skipped with a finding, never fired uncompensated). Raise deliberately
+ * for engagements with larger effect tables.
+ * Default: 100000.
+ */
+export const COMPENSATION_FULL_IMAGE_MAX_ROWS: number =
+  parseInt(process.env.COMPENSATION_FULL_IMAGE_MAX_ROWS || '100000', 10);
+
+/**
+ * Keyset page size for compensation table imaging. Clamped to the adapter
+ * seam's MAX_SINGLE_FETCH_ROWS (the Sybase sidecar buffers one page as one
+ * JSON response).
+ * Default: 5000.
+ */
+export const COMPENSATION_IMAGE_PAGE_ROWS: number =
+  parseInt(process.env.COMPENSATION_IMAGE_PAGE_ROWS || '5000', 10);
+
+/**
+ * Per-statement timeout (seconds) for compensation reads AND writes.
+ * Default: 30.
+ */
+export const COMPENSATION_STATEMENT_TIMEOUT_SECONDS: number =
+  parseInt(process.env.COMPENSATION_STATEMENT_TIMEOUT_SECONDS || '30', 10);

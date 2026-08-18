@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.sybasesidecar.service.SybaseMutationService;
 import com.example.sybasesidecar.service.SybaseQueryService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,9 @@ class SidecarControllerTest {
     @Autowired
     private SybaseQueryService queryService;
 
+    @Autowired
+    private SybaseMutationService mutationService;
+
     /**
      * The {@code /query} endpoint returns HTTP 400 for a guard-rejected
      * SQL string. Demonstrates the controller surfaces guard rejections
@@ -31,7 +35,8 @@ class SidecarControllerTest {
      */
     @Test
     void queryReturns400OnGuardRejection() throws Exception {
-        final SidecarController controller = new SidecarController(this.queryService);
+        final SidecarController controller =
+                new SidecarController(this.queryService, this.mutationService);
         final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         final String body = "{"
                 + "\"host\":\"h\","
@@ -50,6 +55,32 @@ class SidecarControllerTest {
     }
 
     /**
+     * The {@code /mutate} endpoint (Capture-State Discipline Spec 1) returns
+     * HTTP 400 for a batch containing a statement outside the compensation
+     * grammar — BEFORE any JDBC work, exactly like the {@code /query} guard.
+     */
+    @Test
+    void mutateReturns400OnGuardRejection() throws Exception {
+        final SidecarController controller =
+                new SidecarController(this.queryService, this.mutationService);
+        final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        final String body = "{"
+                + "\"host\":\"h\","
+                + "\"port\":5000,"
+                + "\"database\":\"d\","
+                + "\"username\":\"u\","
+                + "\"password\":\"p\","
+                + "\"statements\":[\"DELETE FROM t WHERE id = 1\",\"DROP TABLE t\"]"
+                + "}";
+        mockMvc.perform(post("/mutate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.ok").value(false))
+                .andExpect(jsonPath("$.error").exists());
+    }
+
+    /**
      * The {@code /test-connection} endpoint accepts the expected body
      * shape. Bad credentials produce HTTP 200 with {@code ok=false} - the
      * status code reflects "we processed the request"; the body carries
@@ -57,7 +88,8 @@ class SidecarControllerTest {
      */
     @Test
     void testConnectionReturnsErrorShapeForBadHost() throws Exception {
-        final SidecarController controller = new SidecarController(this.queryService);
+        final SidecarController controller =
+                new SidecarController(this.queryService, this.mutationService);
         final MockMvc mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
         final String body = "{"
                 + "\"host\":\"127.0.0.1\","
