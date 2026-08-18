@@ -192,3 +192,9 @@ export { vulnerabilityReductionRouter } from './vulnerabilityReduction';
 // human review (approve routes the additive write through the MCP server's
 // apply_gap_metadata tool), and model-validated manual capture.
 export { dbGapProposalsRouter } from './dbGapProposals';
+
+// SCL annotation-pass routes (SCL pipeline spec 4, 2026-08-18): fire-and-forget
+// LLM annotation run over the mined SCL corpus (grounded + guarded — verbatim-
+// substring hallucination guards, deterministic contradiction pass vs the
+// captured baseline) + the latest-scan annotation-status proxy.
+export { sclAnnotationRouter } from './sclAnnotation';

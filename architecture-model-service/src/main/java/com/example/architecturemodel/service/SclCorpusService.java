@@ -130,6 +130,18 @@ public class SclCorpusService {
     }
 
     /**
+     * One scan by id (2026-08-18: the gateway annotation pass and the
+     * Structural Model tab read scans by explicit id).
+     *
+     * @param scanId the scan UUID
+     * @return the scan, or empty when unknown
+     */
+    @Transactional(readOnly = true)
+    public Optional<SclScanDto> getScan(UUID scanId) {
+        return scanRepository.findById(scanId).map(mapper::toDto);
+    }
+
+    /**
      * All scans for a (project, architecture), newest first.
      *
      * @param projectId the project UUID

@@ -97,6 +97,22 @@ public class SclCorpusController {
     }
 
     /**
+     * GET .../scl/scans/{scanId} -- one scan by id (2026-08-18: the gateway
+     * annotation pass and the Structural Model tab read a scan by explicit id).
+     */
+    @GetMapping("/scans/{scanId}")
+    public ResponseEntity<SclScanDto> getScan(
+            @PathVariable UUID projectId,
+            @PathVariable UUID architectureId,
+            @PathVariable UUID scanId) {
+        log.debug("GET /api/model/projects/{}/architectures/{}/scl/scans/{}",
+            projectId, architectureId, scanId);
+        return sclCorpusService.getScan(scanId)
+            .map(ResponseEntity::ok)
+            .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
      * PATCH .../scl/scans/{scanId} -- null-guarded scan PATCH
      * ({@code status} validated against the vocabulary; {@code stats_json}
      * opaque). 404 for an unknown scan, 400 for a bad status.
