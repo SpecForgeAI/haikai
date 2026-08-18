@@ -422,7 +422,7 @@ export function buildTargetCaptureSessionActionsRouter(
         // "no state snapshots", never a throw; deltas stay null =>
         // state_unverified, fail-closed and visible). The route OWNS the
         // adapter lifecycle: disposed when the spawned run settles.
-        const dbAdapter = (() => {
+        const targetDbConfig = (() => {
           const cfg = session.db_config_redacted_json as {
             dbType?: string;
             host?: string;
@@ -435,21 +435,32 @@ export function buildTargetCaptureSessionActionsRouter(
           if (!cfg || !cfg.host || !cfg.port || !cfg.database || !cfg.username) return null;
           if (!dbSecret?.password) return null;
           if (cfg.dbType !== 'postgres' && cfg.dbType !== 'sybase') return null;
-          const factory = deps.createDbAdapter ?? createDbAdapter;
-          return factory({
-            dbType: cfg.dbType,
+          return {
+            // The guard above proves the literal; `dbType?: string` on the
+            // redacted-json shape defeats narrowing, hence the assertion.
+            dbType: cfg.dbType as 'postgres' | 'sybase',
             host: cfg.host,
             port: cfg.port,
             database: cfg.database,
-            schema: cfg.schema,
+            schema: cfg.schema ?? null,
             username: cfg.username,
             password: dbSecret.password,
-          });
+          };
         })();
+        const dbAdapter = targetDbConfig
+          ? (deps.createDbAdapter ?? createDbAdapter)(targetDbConfig)
+          : null;
 
         const runnerDeps: TargetReplayDeps | undefined =
           endpointScope || scopePurpose || dbAdapter
-            ? { endpointScope, scopePurpose, dbAdapter }
+            ? {
+                endpointScope,
+                scopePurpose,
+                dbAdapter,
+                // CSD Spec 4: full connection config (password included)
+                // activates the target-side compensation brackets.
+                targetDbConfig,
+              }
             : undefined;
 
         // Fire-and-forget the runner. Per-run errors land as `failed`
