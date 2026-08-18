@@ -165,6 +165,21 @@ export interface Config {
    * the 2026-08-18 design ruling — thresholds are config-tunable).
    */
   sclStoryRowBudget: number;
+  /**
+   * Per-spec upheld-contest circuit breaker (SCL pipeline spec 9 — contested-
+   * test protocol). When the fraction of a spec's shipped suite that ends up
+   * QUARANTINED (upheld contests) exceeds this rate, the spec halts — a
+   * systematic extraction misread. Read from SCL_CONTEST_SPEC_THRESHOLD.
+   * Default: 0.2 (the design's "~20%"; thresholds are config-tunable).
+   */
+  sclContestSpecThreshold: number;
+  /**
+   * Run-level aggregate quarantine circuit breaker (SCL pipeline spec 9).
+   * When the run-wide quarantined fraction of ALL shipped tests exceeds this
+   * rate, the whole run halts. Read from SCL_CONTEST_RUN_THRESHOLD.
+   * Default: 0.05 (the design's "~5%").
+   */
+  sclContestRunThreshold: number;
 
   // Migration Execution Driver Configuration
   // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)
@@ -259,6 +274,18 @@ function parseIntEnv(value: string | undefined, defaultValue: number): number {
 function parseBoolEnv(value: string | undefined, defaultValue: boolean): boolean {
   if (!value) return defaultValue;
   return value.toLowerCase() === 'true';
+}
+
+/**
+ * Parses a finite float from environment variable with default
+ * @param value - String value from environment
+ * @param defaultValue - Default if parsing fails
+ * @returns Parsed float
+ */
+function parseFloatEnv(value: string | undefined, defaultValue: number): number {
+  if (!value) return defaultValue;
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
 /**
@@ -399,6 +426,12 @@ export function loadConfig(): Config {
     // story (SCL pipeline spec 7); a controller group over the budget splits
     // into consecutive-method "part N" slices. Default 40.
     sclStoryRowBudget: parseIntEnv(process.env.SCL_STORY_ROW_BUDGET, 40),
+    // SCL_CONTEST_SPEC_THRESHOLD / SCL_CONTEST_RUN_THRESHOLD: contested-test
+    // circuit breakers (SCL pipeline spec 9). Per-spec upheld-contest rate
+    // above the spec threshold halts that spec; run-level aggregate quarantine
+    // rate above the run threshold halts the run. Defaults 0.2 / 0.05.
+    sclContestSpecThreshold: parseFloatEnv(process.env.SCL_CONTEST_SPEC_THRESHOLD, 0.2),
+    sclContestRunThreshold: parseFloatEnv(process.env.SCL_CONTEST_RUN_THRESHOLD, 0.05),
 
     // Migration Execution Driver Configuration
     // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)
