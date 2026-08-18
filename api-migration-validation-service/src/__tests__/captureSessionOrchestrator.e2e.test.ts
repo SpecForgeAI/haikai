@@ -288,10 +288,19 @@ test('orchestrator end-to-end: secrets staged + inventory present -> scenario ca
 
   // The terminal record_capture_note tool wrote exactly one diagnostic row;
   // because the capture persisted cleanly there is NO `failed_request`
-  // diagnostic.
-  expect(diagnosticsCreated).toHaveLength(1);
-  expect(diagnosticsCreated[0].body.session_id).toBe(SESSION_ID);
-  expect(diagnosticsCreated[0].body.message).toBe('happy-path captured');
+  // diagnostic. CSD Spec 3 additionally writes a LOUD `compensation_inactive`
+  // advisory here — this session confirms mutating calls but stages NO DB
+  // credentials, which is exactly the posture the advisory exists to flag.
+  const advisories = diagnosticsCreated.filter(
+    (d) => d.body.diagnostic_type === 'compensation_inactive',
+  );
+  expect(advisories).toHaveLength(1);
+  const nonAdvisory = diagnosticsCreated.filter(
+    (d) => d.body.diagnostic_type !== 'compensation_inactive',
+  );
+  expect(nonAdvisory).toHaveLength(1);
+  expect(nonAdvisory[0].body.session_id).toBe(SESSION_ID);
+  expect(nonAdvisory[0].body.message).toBe('happy-path captured');
 
   // Terminal session patch with status='completed' and truthful tallies.
   expect(sessionPatches).toHaveLength(1);

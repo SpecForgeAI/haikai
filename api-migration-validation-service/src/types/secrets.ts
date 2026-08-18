@@ -24,6 +24,17 @@ export interface ApiAuthSecret {
 
 export interface DbSecret {
   password: string;
+  /**
+   * Optional READ-ONLY login (credential-role split, Capture-State
+   * Discipline Spec 3): when BOTH fields are present, observational paths
+   * (DB sampling, state snapshots, compensation imaging, S0 fingerprints)
+   * connect with THIS login, and the primary credentials above are reserved
+   * for the compensation/restore write surface. When absent, the primary
+   * login serves both roles and the session carries a visible advisory
+   * recommending the split.
+   */
+  readonlyUsername?: string;
+  readonlyPassword?: string;
 }
 
 export interface SecretsBundle {

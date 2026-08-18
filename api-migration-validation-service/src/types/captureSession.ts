@@ -129,6 +129,16 @@ export type DiagnosticType =
   | 'llm_generation_failure'
   | 'redaction_warning'
   | 'endpoint_skipped'
-  | 'retry_exhausted';
+  | 'retry_exhausted'
+  // Capture-State Discipline Spec 3 (2026-08-18): compensation-bracket and
+  // S0-fingerprint session diagnostics (mirrored in the AMS allowlist).
+  | 'compensation_no_effect_map'
+  | 'compensation_refused'
+  | 'compensation_residue'
+  | 'compensation_inactive'
+  | 'compensation_credential_split_recommended'
+  | 's0_fingerprint_mismatch'
+  | 's0_snapshot_missing'
+  | 's0_fingerprint_check_failed';
 
 export type BaselineStatus = 'draft' | 'active' | 'archived';

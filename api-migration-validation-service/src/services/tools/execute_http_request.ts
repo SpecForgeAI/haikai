@@ -953,16 +953,25 @@ const handler: ToolHandler = async (args, ctx) => {
     // (2) up to ~5 candidate identifiers from the SUCCESSFUL response body
     // (Kiro #2). Defensive: `extractIdentifierFacts` never throws; the harvest
     // is additionally wrapped so a learning failure can never fail a capture.
-    try {
-      const provenance = `${method.toUpperCase()} ${path}`;
-      for (const idFact of extractIdentifierFacts(safeResponseBody)) {
-        runManager.recordLearnedFact(
-          ctx.session.id,
-          `OK id: ${idFact} (from ${provenance})`.slice(0, 240),
-        );
+    //
+    // Compensation exception (CSD Spec 3): identifiers minted by a MUTATING
+    // response reference rows the scenario bracket will UNDO — teaching later
+    // scenarios those ids would send them to entities that no longer exist.
+    // Ids harvested from reads (S0 data) stay valid and are still recorded.
+    const suppressIdHarvest =
+      ctx.compensationActive === true && STATE_DELTA_VERBS.has(method.toLowerCase());
+    if (!suppressIdHarvest) {
+      try {
+        const provenance = `${method.toUpperCase()} ${path}`;
+        for (const idFact of extractIdentifierFacts(safeResponseBody)) {
+          runManager.recordLearnedFact(
+            ctx.session.id,
+            `OK id: ${idFact} (from ${provenance})`.slice(0, 240),
+          );
+        }
+      } catch {
+        /* best-effort */
       }
-    } catch {
-      /* best-effort */
     }
   } else if (!authOverride && response && errorSummary) {
     // (3) known-bad fact for a non-2xx response with a distilled cause (Kiro
