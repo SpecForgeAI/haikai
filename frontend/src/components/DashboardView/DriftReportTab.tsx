@@ -56,6 +56,8 @@ import {
 import styles from './ApiBaselinesListPage.module.css';
 import { DiffItemDetailModal } from './DiffItemDetailModal';
 import { DiffFindingDetailDrawer } from './DiffFindingDetailDrawer';
+// CSD Spec 8 (2026-08-18): signature-level clustered rollup.
+import { DiffClusteredSummary } from './DiffClusteredSummary';
 
 export interface DriftReportTabProps {
   projectId: string;
@@ -564,6 +566,10 @@ export const DriftReportTab: React.FC<DriftReportTabProps> = ({
           {error}
         </div>
       )}
+
+      {/* CSD Spec 8 (2026-08-18): signature-level rollup — a large (round-2)
+          diff triages as a handful of groups, never item-by-item. */}
+      <DiffClusteredSummary items={items} />
 
       {computing && (
         <div className={styles.emptyMessage} data-testid="drift-report-computing-spinner">
