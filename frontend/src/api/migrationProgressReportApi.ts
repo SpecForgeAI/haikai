@@ -247,3 +247,68 @@ export async function startManualReconciliation(
   }
   return (await res.json()) as StartReconciliationResultDto;
 }
+
+// ---------------------------------------------------------------------------
+// Log-replay reconciliation — ROUND 2 (CSD Spec 7/8, 2026-08-18)
+// ---------------------------------------------------------------------------
+
+export interface LogReplayReconcileRequestDto {
+  corpus_id?: string | null;
+  current: {
+    base_url: string;
+    api: StartReconciliationRequestDto['api'];
+    db?: StartReconciliationRequestDto['source_db'] | null;
+  };
+  target: {
+    base_url: string;
+    api: StartReconciliationRequestDto['api'];
+    db?: StartReconciliationRequestDto['target_db'] | null;
+  };
+}
+
+export interface LogReplayReconcileResultDto {
+  ok: boolean;
+  error: string | null;
+  corpus_id: string | null;
+  log_replay_baseline_id: string | null;
+  current_side: {
+    itemsTotal: number;
+    itemsReplayed: number;
+    itemsSkipped: number;
+    itemsFailed: number;
+  } | null;
+  diff_id: string | null;
+  target_baseline_id: string | null;
+  diff_items: number;
+  breaks: number;
+}
+
+/**
+ * Run reconciliation round 2: the staged log corpus replays against BOTH
+ * systems at S0 (phase A current-side -> log_replay baseline; phase B the
+ * existing headless target replay + diff, tagged purpose=log_replay_round2).
+ * SYNCHRONOUS — the call returns the verdict (minutes for large corpora;
+ * the modal shows a running state).
+ */
+export async function runLogReplayReconciliation(
+  projectId: string,
+  architectureId: string,
+  body: LogReplayReconcileRequestDto,
+): Promise<LogReplayReconcileResultDto> {
+  const url =
+    `${GATEWAY_BASE}/api/v1/projects/${encodeURIComponent(projectId)}` +
+    `/architectures/${encodeURIComponent(architectureId)}` +
+    `/log-replay-reconcile/run`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const parsed = (await res.json().catch(() => null)) as LogReplayReconcileResultDto | null;
+  if (!res.ok) {
+    throw new Error(
+      parsed?.error || `Failed to run the log-replay reconciliation: ${res.status}`,
+    );
+  }
+  return parsed as LogReplayReconcileResultDto;
+}

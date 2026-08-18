@@ -25,6 +25,8 @@
 import { useMemo, useState } from 'react';
 import {
   startManualReconciliation,
+  runLogReplayReconciliation,
+  type LogReplayReconcileResultDto,
   type ManualDbBlockDto,
   type StartReconciliationRequestDto,
   type StartReconciliationResultDto,
@@ -193,6 +195,8 @@ export interface RunReconciliationModalProps {
   onClose: (ranAny: boolean) => void;
   /** Test seam: the trigger call (defaults to the real client). */
   startFn?: typeof startManualReconciliation;
+  /** Test seam: the round-2 log-replay call (CSD Spec 8). */
+  logReplayFn?: typeof runLogReplayReconciliation;
 }
 
 export function RunReconciliationModal({
@@ -202,6 +206,7 @@ export function RunReconciliationModal({
   scope,
   onClose,
   startFn = startManualReconciliation,
+  logReplayFn = runLogReplayReconciliation,
 }: RunReconciliationModalProps) {
   const [runDb, setRunDb] = useState<boolean>(scope.db);
   const [runApi, setRunApi] = useState<boolean>(scope.service);
@@ -212,20 +217,28 @@ export function RunReconciliationModal({
   const [currentBaseUrl, setCurrentBaseUrl] = useState<string>('');
   const [currentAuth, setCurrentAuth] = useState<ApiAuthValue>(EMPTY_API_AUTH);
   const [supersedeBreaks, setSupersedeBreaks] = useState<boolean>(false);
+  // CSD Spec 8 (2026-08-18): reconciliation ROUND 2 — replay the staged log
+  // corpus against BOTH systems at S0. Reuses the credential blocks this
+  // modal already collects; SYNCHRONOUS (the verdict renders inline).
+  const [runLogReplay, setRunLogReplay] = useState<boolean>(false);
+  const [logReplayResult, setLogReplayResult] =
+    useState<LogReplayReconcileResultDto | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<StartReconciliationResultDto | null>(null);
 
   const ranAny = useMemo(
     () =>
-      result !== null &&
-      (result.dataParity?.status === 'started' || result.apiReconcile?.status === 'started'),
-    [result],
+      (result !== null &&
+        (result.dataParity?.status === 'started' ||
+          result.apiReconcile?.status === 'started')) ||
+      logReplayResult?.ok === true,
+    [result, logReplayResult],
   );
 
   const submit = async () => {
     setError(null);
-    if (!runDb && !runApi) {
+    if (!runDb && !runApi && !runLogReplay) {
       setError('Select at least one reconciliation to run.');
       return;
     }
@@ -238,6 +251,12 @@ export function RunReconciliationModal({
     if (runApi && currentBaseUrl.trim() === '' && currentAuth.authType !== 'none') {
       return setError(
         'Current state service: a Base URL is required when its auth is set (or set auth back to None to reuse the registered details).',
+      );
+    }
+    // Round 2 replays LIVE against BOTH systems — both base URLs are required.
+    if (runLogReplay && (currentBaseUrl.trim() === '' || targetBaseUrl.trim() === '')) {
+      return setError(
+        'Log-replay round 2 needs BOTH service base URLs (current and target).',
       );
     }
 
@@ -260,7 +279,41 @@ export function RunReconciliationModal({
     };
     setSubmitting(true);
     try {
-      setResult(await startFn(projectId, architectureId, bookId, body));
+      if (runDb || runApi) {
+        setResult(await startFn(projectId, architectureId, bookId, body));
+      }
+      if (runLogReplay) {
+        // Round 2 (CSD Spec 8): synchronous — the verdict renders inline.
+        // A failure here never masks the round-1 kicks above.
+        try {
+          setLogReplayResult(
+            await logReplayFn(projectId, architectureId, {
+              current: {
+                base_url: currentBaseUrl.trim(),
+                api: toApiAuthSecret(currentAuth),
+                db: source.block ?? null,
+              },
+              target: {
+                base_url: targetBaseUrl.trim(),
+                api: toApiAuthSecret(targetAuth),
+                db: target.block ?? null,
+              },
+            }),
+          );
+        } catch (e) {
+          setLogReplayResult({
+            ok: false,
+            error: e instanceof Error ? e.message : 'log-replay reconciliation failed',
+            corpus_id: null,
+            log_replay_baseline_id: null,
+            current_side: null,
+            diff_id: null,
+            target_baseline_id: null,
+            diff_items: 0,
+            breaks: 0,
+          });
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to start the reconciliation');
     } finally {
@@ -309,9 +362,19 @@ export function RunReconciliationModal({
             />{' '}
             Service (API) reconciliation
           </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={runLogReplay}
+              data-testid="rrm-check-log-replay"
+              onChange={(e) => setRunLogReplay(e.target.checked)}
+            />{' '}
+            Log-replay reconciliation (round 2) — replays the staged application-log
+            corpus against BOTH systems at S0
+          </label>
         </div>
 
-        {result === null ? (
+        {result === null && logReplayResult === null ? (
           <>
             {runDb && (
               <div className={styles.credColumns} data-testid="rrm-db-fields">
@@ -329,7 +392,7 @@ export function RunReconciliationModal({
                 />
               </div>
             )}
-            {runApi && (
+            {(runApi || runLogReplay) && (
               <div className={styles.credColumns} data-testid="rrm-api-fields">
                 {/* SYMMETRIC service blocks (2026-08-16): both sides carry
                     Base URL + the shared auth surface (incl. ssoToken). */}
@@ -395,8 +458,24 @@ export function RunReconciliationModal({
           </>
         ) : (
           <div data-testid="rrm-results">
-            {outcomeLine('Database', result.dataParity)}
-            {outcomeLine('Service (API)', result.apiReconcile)}
+            {outcomeLine('Database', result?.dataParity ?? null)}
+            {outcomeLine('Service (API)', result?.apiReconcile ?? null)}
+            {logReplayResult && (
+              <div
+                className={`${styles.recResultLine} ${
+                  logReplayResult.ok ? styles.recResultStarted : styles.recResultBlocked
+                }`}
+                data-testid="rrm-result-log-replay"
+              >
+                <strong>Log replay (round 2):</strong>{' '}
+                {logReplayResult.ok
+                  ? `complete — ${logReplayResult.diff_items} item(s) diffed, ` +
+                    `${logReplayResult.breaks} differing; current side replayed ` +
+                    `${logReplayResult.current_side?.itemsReplayed ?? 0}/` +
+                    `${logReplayResult.current_side?.itemsTotal ?? 0}`
+                  : `failed — ${logReplayResult.error ?? 'unknown error'}`}
+              </div>
+            )}
           </div>
         )}
 
@@ -407,7 +486,7 @@ export function RunReconciliationModal({
         )}
 
         <div className={styles.modalActions}>
-          {result === null ? (
+          {result === null && logReplayResult === null ? (
             <>
               <button type="button" onClick={() => onClose(false)} data-testid="rrm-cancel">
                 Cancel
@@ -419,7 +498,7 @@ export function RunReconciliationModal({
                 onClick={() => void submit()}
                 data-testid="rrm-run"
               >
-                {submitting ? 'Starting…' : 'Run selected'}
+                {submitting ? 'Running…' : 'Run selected'}
               </button>
             </>
           ) : (
