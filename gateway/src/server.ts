@@ -13,6 +13,8 @@ import { chatRouter, healthRouter, orchestrationsRouter, implementationProjectsR
 import { dbGapProposalsRouter } from './routes/dbGapProposals';
 // SCL pipeline spec 4 (2026-08-18): own import line for the same reason.
 import { sclAnnotationRouter } from './routes/sclAnnotation';
+// SCL pipeline spec 5 (2026-08-18): modernization decisions review + confirm.
+import { sclModernizationRouter } from './routes/sclModernization';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -149,6 +151,10 @@ app.use('/api/v1', dbGapProposalsRouter);
 // /api/v1/projects/:projectId/architectures/:architectureId/scl/annotation/
 // {run,status}.
 app.use('/api/v1', sclAnnotationRouter);
+// SCL modernization-decisions routes (SCL pipeline spec 5, 2026-08-18):
+// /api/v1/projects/:projectId/architectures/:architectureId/scl/modernization/
+// {review,confirm} — observed-idiom review + modernize.* decision persistence.
+app.use('/api/v1', sclModernizationRouter);
 // OAS Export (direct build 2026-06-11): deterministic OpenAPI contracts for
 // an architecture's interfaces — list / generate / zip download. Sibling of
 // the DB migration pack surface on the Migration Delivery Plan.

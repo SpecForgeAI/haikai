@@ -103,6 +103,11 @@ import type {
   ManifestServiceOption,
   TargetManifestUploadResponse,
 } from '../../../api/targetManifestApi';
+// 2026-08-18 SCL pipeline ("Intermediate modernization decisions"): the
+// old→new modernization review that FOLLOWS the high-level conversation.
+// Keyed to the CURRENT (scanned) architecture; confirmed rows persist as
+// `modernize.*` captured decisions against the review's target architecture.
+import { ModernizationReviewPanel } from '../modernization/ModernizationReviewPanel';
 import { ExceptionSubDialog } from './ExceptionSubDialog';
 import {
   CloseConversationFlow,
@@ -1594,6 +1599,18 @@ export function ArchitectConversationTab({
             proceedCriticalOverride={proceedCriticalOverride}
             onProceedCriticalOverridePersisted={setProceedCriticalOverride}
           />
+          {/* 2026-08-18 SCL pipeline: the modernization decisions review — a
+              collapsible section AFTER the conversation/decisions UI. Keyed to
+              the CURRENT (scanned) architecture; renders its own quiet no-scan
+              banner when the code scan has not run yet. Default collapsed so
+              the conversation surfaces stay primary. */}
+          {activeArchitectureId && (
+            <ModernizationReviewPanel
+              projectId={projectId}
+              architectureId={activeArchitectureId}
+              defaultOpen={false}
+            />
+          )}
           </div>
         }
       />
