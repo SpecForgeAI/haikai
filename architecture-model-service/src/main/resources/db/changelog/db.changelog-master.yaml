@@ -5242,3 +5242,23 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 225: Log-replay corpus (Capture-State Discipline & Log-Replay program,
+  # Spec 5, 2026-08-18). Application logs mined into the reconciliation
+  # round-2 replay corpus: log_replay_corpus (one row per extraction with the
+  # honest lines->parsed->matched->useful FUNNEL as JSON),
+  # log_replay_corpus_item (deduplicated useful requests; request payload is
+  # OPAQUE JSONB, replay-critical fields are structured columns).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 224).
+  # ============================================================================
+  - changeSet:
+      id: 225-log-replay-corpus
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/225-log-replay-corpus.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

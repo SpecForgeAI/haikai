@@ -4,6 +4,7 @@ import { phase1Router } from './phase1';
 import { runsRouter } from './runs';
 import { sourceRouter } from './source';
 import { logEnrichmentRouter, reprocessRouter } from './logEnrichment';
+import { logReplayCorpusRouter } from './logReplayCorpus';
 import { hypothesisQaRouter } from './hypothesisQa';
 import { packsRouter } from './packs';
 import { techHintsResolveRouter } from './techHintsResolve';
@@ -81,6 +82,12 @@ discoveryRouter.use('/packs', packsRouter);
 // Spec 2026-04-05: Log-based Discovery Enrichment (Increment 14)
 discoveryRouter.use('/log-enrichment', logEnrichmentRouter);
 discoveryRouter.use('/reprocess', reprocessRouter);
+
+// Capture-State Discipline & Log-Replay program Spec 5 (2026-08-18):
+// application logs -> reconciliation round-2 replay corpus (extract via the
+// shared runtime-evidence parsers, match vs committed-model endpoints,
+// persist the staged corpus atomically to AMS changeset 225).
+discoveryRouter.use('/log-replay-corpus', logReplayCorpusRouter);
 
 // Spec 2026-04-06: Hypothesis-First Discovery Q&A (Increment 15)
 discoveryRouter.use('/hypothesis-qa', hypothesisQaRouter);
