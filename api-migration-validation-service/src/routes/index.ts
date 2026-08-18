@@ -7,6 +7,7 @@ import { dataParityRunRouter } from './dataParityRun';
 import { dataMigrationRunRouter } from './dataMigrationRun';
 import { schemaApplyRunRouter, schemaDriftRouter } from './schemaApplyRun';
 import { s0SnapshotRouter } from './s0Snapshot';
+import { logReplayRunRouter } from './logReplayRun';
 
 /**
  * API Migration Validation Routes Barrel
@@ -75,5 +76,9 @@ apiMigrationValidationRouter.use(schemaDriftRouter);
 // artifact; verify is the end-of-job "still S0?" check; restore is the
 // safety-net payout. Credentials request-scoped only.
 apiMigrationValidationRouter.use(s0SnapshotRouter);
+// Log-replay round-2 current-side run (CSD Spec 7): staged corpus ->
+// `log_replay` baseline at S0; phase B rides the headless reconcile with
+// that baseline as its source. Credentials request-scoped only.
+apiMigrationValidationRouter.use(logReplayRunRouter);
 
 export { apiMigrationValidationRouter };
