@@ -79,7 +79,19 @@ import type { ImportedRequest } from '../../utils/postmanImport';
 import {
   type PostmanRunMode,
   modeUsesPostman,
+  addCaptured,
+  classifyStatus,
 } from './postmanImportRunSupport';
+// Application-log capture source (CSD Spec 6, 2026-08-18).
+import { LogCorpusSection } from './LogCorpusSection';
+import {
+  corpusItemToManualCapture,
+  deriveSourceSelection,
+  matchCorpusItemToOperation,
+  splitCorpusForPreFire,
+  type LogCorpusExtractResponse,
+} from './logCorpusRunSupport';
+import { manualCapture } from '../../api/apiBehaviourClient';
 
 // ============================================================================
 // Props
@@ -334,6 +346,17 @@ export function StartCaptureSessionWizard({
   const [importedRequests, setImportedRequests] = useState<ImportedRequest[]>([]);
   const [draftSessionId, setDraftSessionId] = useState<string | null>(null);
 
+  // ---- Application-log capture source (CSD Spec 6, 2026-08-18) ----------
+  // Independent of the LLM/Postman pair (which derives postmanRunMode). The
+  // extract result carries the funnel + items; includeLogInInitial CHECKED
+  // pre-fires the NON-mutating corpus items through manual-capture and
+  // merges them into the SAME capturedByOp map (the delta subtraction is
+  // source-agnostic). Unticked, the corpus stays staged for round 2.
+  const [logSelected, setLogSelected] = useState(false);
+  const [includeLogInInitial, setIncludeLogInInitial] = useState(false);
+  const [logCorpusResult, setLogCorpusResult] =
+    useState<LogCorpusExtractResponse | null>(null);
+
   // The shared send-orchestration hook (arch-match resolution state + the
   // post-/start manual-capture send loop). Reads the live parsed operation
   // rows + reconciliation so the staging table maps + classifies items and a
@@ -420,6 +443,9 @@ export function StartCaptureSessionWizard({
     setDraftSessionId(null);
     setPostmanRunMode('llm');
     setImportedRequests([]);
+    setLogSelected(false);
+    setIncludeLogInInitial(false);
+    setLogCorpusResult(null);
     setDataTypeRows([]);
     setDataTypeDefaults({});
     setDataTypePreviewLoading(false);
@@ -1135,6 +1161,33 @@ export function StartCaptureSessionWizard({
     const session = draftSessionRef.current;
     if (!session || submitting) return;
     setError(null);
+
+    // CSD Spec 6: the source-selection verdict. Blocks /start when the
+    // selection leaves the initial run empty (no sources; log-only staged
+    // for round 2; log-only whose source was abandoned).
+    const sourceVerdict = deriveSourceSelection(
+      {
+        llm: postmanRunMode === 'llm' || postmanRunMode === 'postman-delta',
+        postman: modeUsesPostman(postmanRunMode),
+        log: logSelected,
+        includeLogInInitial,
+      },
+      logCorpusResult
+        ? {
+            abandoned: logCorpusResult.abandoned,
+            usefulCount: logCorpusResult.funnel?.useful ?? 0,
+          }
+        : null,
+    );
+    if (logSelected && !logCorpusResult) {
+      setError('Upload and extract an application log, or untick the Application log source.');
+      return;
+    }
+    if (sourceVerdict.startBlockReason) {
+      setError(sourceVerdict.startBlockReason);
+      return;
+    }
+
     setSubmitting(true);
     try {
       await updateCaptureSession(projectId, architectureId, session.id, {
@@ -1173,6 +1226,49 @@ export function StartCaptureSessionWizard({
         }
       }
 
+      // CSD Spec 6: checked-mode log-corpus concrete sends. NON-mutating
+      // corpus items pre-fire through the SAME manual-capture path Postman
+      // uses and merge into the SAME capturedByOp map (the /start delta
+      // subtraction is source-agnostic — zero backend changes). Mutating
+      // items never pre-fire (that path is unbracketed); the LLM captures
+      // those endpoints under the compensation discipline.
+      if (
+        logSelected &&
+        includeLogInInitial &&
+        logCorpusResult &&
+        !logCorpusResult.abandoned &&
+        (logCorpusResult.items?.length ?? 0) > 0
+      ) {
+        const { fireable } = splitCorpusForPreFire(logCorpusResult.items ?? []);
+        let logCaptured: Record<
+          string,
+          { method: string; path: string; expectedStatus: string | null }[]
+        > = postmanCapturedByOp ?? {};
+        for (const item of fireable) {
+          const operation = matchCorpusItemToOperation(item, parsedOperations);
+          if (!operation) continue; // extraction matched the MODEL; a session row may be excluded
+          try {
+            const res = await manualCapture(
+              projectId,
+              architectureId,
+              session.id,
+              corpusItemToManualCapture(item, operation, {
+                mutatingCallsConfirmed: step2.mutatingCallsConfirmed,
+              }),
+            );
+            logCaptured = addCaptured(logCaptured, operation.operation_id ?? operation.id, {
+              method: item.method,
+              path: item.path_template,
+              expectedStatus: classifyStatus(res.capture?.response_status),
+            });
+          } catch {
+            // A failed pre-fire is not fatal: the LLM loop still covers the
+            // endpoint; the send simply does not enter the captured map.
+          }
+        }
+        postmanCapturedByOp = logCaptured;
+      }
+
       // Build the start request body. The wizard sends the discovery
       // selections only when the user has opted in via the section's
       // checkbox; the downstream service treats absent fields as defaults
@@ -1189,26 +1285,27 @@ export function StartCaptureSessionWizard({
         startBody.maxFindings = 100;
         startBody.maxEvidenceItems = 100;
       }
-      // Mode 1c (Postman only): skip the planner + LLM loop and carry the
-      // coverage-override so the gate does not fail closed on the intentionally
-      // partial coverage. The selector's run mode drives postmanOnly.
-      if (postmanRunMode === 'postman-only') {
+      // No-planner runs (Postman-only, or log-only initial per the CSD Spec 6
+      // verdict): skip the LLM loop and carry the coverage-override so the
+      // gate does not fail closed on the intentionally partial coverage.
+      if (sourceVerdict.postmanOnly) {
         startBody.postmanOnly = true;
       }
-      // Mode 1b (Postman + LLM delta): forward the per-op captured map so the
-      // orchestrator subtracts the Postman-covered candidates before topping up.
-      if (postmanRunMode === 'postman-delta' && postmanCapturedByOp) {
+      // Forward the merged per-op captured map (Postman Mode 1b and/or the
+      // checked-mode log sends) so the orchestrator subtracts the covered
+      // candidates before topping up. Source-agnostic by design.
+      if (postmanCapturedByOp && Object.keys(postmanCapturedByOp).length > 0) {
         startBody.postmanCapturedByOp = postmanCapturedByOp;
       }
       // The coverage-override justification rides any explicit override re-submit
-      // (the 409 dialog) AND is REQUIRED for Mode 1c. For Mode 1c with no manual
-      // justification supplied yet, default a Postman-only justification so the
-      // coverage gate accepts the deliberately-partial run.
+      // (the 409 dialog) AND is REQUIRED for a no-planner run. Default an
+      // honest justification per the actual source combination.
       if (typeof justification === 'string' && justification.trim().length > 0) {
         startBody.coverageOverrideJustification = justification.trim();
-      } else if (postmanRunMode === 'postman-only') {
-        startBody.coverageOverrideJustification =
-          'Postman-only run: coverage is intentionally limited to the imported requests.';
+      } else if (sourceVerdict.postmanOnly) {
+        startBody.coverageOverrideJustification = modeUsesPostman(postmanRunMode)
+          ? 'Postman-only run: coverage is intentionally limited to the imported requests.'
+          : 'Log-only run: coverage is intentionally limited to the replayable logged requests.';
       }
       const running = await startCaptureSession(
         projectId,
@@ -1242,6 +1339,11 @@ export function StartCaptureSessionWizard({
     postmanRunMode,
     importedRequests,
     postmanRun,
+    logSelected,
+    includeLogInInitial,
+    logCorpusResult,
+    parsedOperations,
+    step2.mutatingCallsConfirmed,
     onStarted,
     onClose,
   ]);
@@ -1886,6 +1988,24 @@ export function StartCaptureSessionWizard({
                 onResolutionChange={postmanRun.setResolution}
                 onOperationAdded={postmanRun.addOperationRow}
                 onDeleteItem={postmanRun.deleteItem}
+                logSelected={logSelected}
+                onLogSelectedChange={(selected) => {
+                  setLogSelected(selected);
+                  if (!selected) {
+                    setIncludeLogInInitial(false);
+                    setLogCorpusResult(null);
+                  }
+                }}
+                logSectionSlot={
+                  <LogCorpusSection
+                    projectId={projectId}
+                    architectureId={architectureId}
+                    corpusResult={logCorpusResult}
+                    onCorpusResult={setLogCorpusResult}
+                    includeInInitial={includeLogInInitial}
+                    onIncludeInInitialChange={setIncludeLogInInitial}
+                  />
+                }
               />
 
               {/* ------------------------------------------------------------

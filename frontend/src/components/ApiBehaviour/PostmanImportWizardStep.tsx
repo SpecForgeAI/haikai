@@ -61,25 +61,19 @@ export interface PostmanImportWizardStepProps {
   onResolutionChange: (index: number, resolution: ArchMatchResolution) => void;
   onOperationAdded: (operation: ApiBehaviourOperationDto) => void;
   onDeleteItem: (item: StagedImportItem) => void;
+  /**
+   * Application-log capture source (CSD Spec 6, 2026-08-18). The old 3-way
+   * radio was a two-source multi-select wearing an enum costume — the
+   * selector is now genuine checkboxes {LLM, Postman, Application log}. The
+   * LLM/Postman pair still derives the EXISTING PostmanRunMode; the log
+   * source is independent state lifted to the wizard, and its sub-section
+   * (upload + staging + funnel + include-in-initial) renders via
+   * `logSectionSlot` when selected.
+   */
+  logSelected: boolean;
+  onLogSelectedChange: (selected: boolean) => void;
+  logSectionSlot?: React.ReactNode;
 }
-
-const MODE_OPTIONS: { value: PostmanRunMode; label: string; hint: string }[] = [
-  {
-    value: 'llm',
-    label: 'LLM only',
-    hint: 'Today’s behaviour — the planner generates scenarios. No Postman.',
-  },
-  {
-    value: 'postman-delta',
-    label: 'Postman + LLM delta',
-    hint: 'Fire imported requests as captures, then the LLM tops up only the uncovered scenarios.',
-  },
-  {
-    value: 'postman-only',
-    label: 'Postman only',
-    hint: 'Fire imported requests only — no LLM. Coverage is intentionally partial (override required).',
-  },
-];
 
 export function PostmanImportWizardStep({
   projectId,
@@ -97,6 +91,9 @@ export function PostmanImportWizardStep({
   onResolutionChange,
   onOperationAdded,
   onDeleteItem,
+  logSelected,
+  onLogSelectedChange,
+  logSectionSlot,
 }: PostmanImportWizardStepProps): React.ReactElement {
   const [fileName, setFileName] = React.useState<string | null>(null);
   const [parseError, setParseError] = React.useState<string | null>(null);
@@ -140,41 +137,85 @@ export function PostmanImportWizardStep({
 
   const showImportUi = modeUsesPostman(mode);
 
+  // Source checkboxes derive the existing run mode: {LLM} = llm,
+  // {LLM, Postman} = postman-delta, {Postman} = postman-only. Unticking the
+  // last of the pair leaves the OTHER one's solo mode; unticking both is a
+  // legal selection state (the wizard's start gate blocks it unless the log
+  // corpus carries the initial run).
+  const llmChecked = mode === 'llm' || mode === 'postman-delta';
+  const postmanChecked = mode === 'postman-delta' || mode === 'postman-only';
+  const applySources = (llm: boolean, postman: boolean) => {
+    if (llm && postman) onModeChange('postman-delta');
+    else if (postman) onModeChange('postman-only');
+    else onModeChange('llm');
+  };
+
   return (
     <div data-testid="postman-import-wizard-step">
       <p className={styles.helperText}>
-        Choose how this run combines your Postman collection with LLM scenario
-        generation.
+        Choose the capture sources for this run — pick one or several.
       </p>
 
       <div
         className={styles.modeList}
-        role="radiogroup"
-        aria-label="Run mode"
-        data-testid="postman-import-run-mode"
+        role="group"
+        aria-label="Capture sources"
+        data-testid="capture-sources"
       >
-        {MODE_OPTIONS.map((opt) => (
-          <label
-            key={opt.value}
-            className={`${styles.modeItem} ${
-              mode === opt.value ? styles.modeItemActive : ''
-            }`}
-            data-testid={`postman-import-run-mode-${opt.value}`}
-          >
-            <input
-              type="radio"
-              name="postman-run-mode"
-              value={opt.value}
-              checked={mode === opt.value}
-              onChange={() => onModeChange(opt.value)}
-            />
-            <span>
-              <span className={styles.modeLabel}>{opt.label}</span>
-              <span className={styles.modeHint}>{opt.hint}</span>
+        <label
+          className={`${styles.modeItem} ${llmChecked ? styles.modeItemActive : ''}`}
+          data-testid="capture-source-llm"
+        >
+          <input
+            type="checkbox"
+            checked={llmChecked}
+            onChange={(e) => applySources(e.target.checked, postmanChecked)}
+          />
+          <span>
+            <span className={styles.modeLabel}>LLM generated</span>
+            <span className={styles.modeHint}>
+              The planner generates scenarios; with other sources selected it tops up
+              only the uncovered delta.
             </span>
-          </label>
-        ))}
+          </span>
+        </label>
+        <label
+          className={`${styles.modeItem} ${postmanChecked ? styles.modeItemActive : ''}`}
+          data-testid="capture-source-postman"
+        >
+          <input
+            type="checkbox"
+            checked={postmanChecked}
+            onChange={(e) => applySources(llmChecked, e.target.checked)}
+          />
+          <span>
+            <span className={styles.modeLabel}>Postman collection</span>
+            <span className={styles.modeHint}>
+              Fire imported requests as captures. Without the LLM source, coverage is
+              intentionally partial (override required).
+            </span>
+          </span>
+        </label>
+        <label
+          className={`${styles.modeItem} ${logSelected ? styles.modeItemActive : ''}`}
+          data-testid="capture-source-log"
+        >
+          <input
+            type="checkbox"
+            checked={logSelected}
+            onChange={(e) => onLogSelectedChange(e.target.checked)}
+          />
+          <span>
+            <span className={styles.modeLabel}>Application log generated</span>
+            <span className={styles.modeHint}>
+              Mine real requests from an application log into a replay corpus —
+              merged into this run or staged for reconciliation round 2.
+            </span>
+          </span>
+        </label>
       </div>
+
+      {logSelected && logSectionSlot}
 
       {showImportUi && (
         <>

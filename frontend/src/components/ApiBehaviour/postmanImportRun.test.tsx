@@ -299,15 +299,18 @@ describe('usePostmanImportRun send loop (8.1 e)', () => {
   });
 });
 
-describe('wizard run-mode selector (8.1 a)', () => {
-  function renderSelector(mode: 'llm' | 'postman-delta' | 'postman-only') {
+describe('wizard capture-sources selector (8.1 a; CSD Spec 6 multi-select)', () => {
+  function renderSelector(
+    mode: 'llm' | 'postman-delta' | 'postman-only',
+    opts?: { logSelected?: boolean; onModeChange?: (m: string) => void },
+  ) {
     return render(
       <PostmanImportWizardStep
         projectId="p"
         architectureId="a"
         sessionId="s"
         mode={mode}
-        onModeChange={() => {}}
+        onModeChange={(m) => opts?.onModeChange?.(m)}
         importedRequests={[]}
         onImportedRequestsChange={() => {}}
         operations={[]}
@@ -317,18 +320,31 @@ describe('wizard run-mode selector (8.1 a)', () => {
         onResolutionChange={() => {}}
         onOperationAdded={() => {}}
         onDeleteItem={() => {}}
+        logSelected={opts?.logSelected ?? false}
+        onLogSelectedChange={() => {}}
+        logSectionSlot={<div data-testid="log-section-slot" />}
       />,
     );
   }
 
-  it('offers all three run modes', () => {
+  it('offers the three capture sources as checkboxes', () => {
     renderSelector('llm');
-    expect(screen.getByTestId('postman-import-run-mode-llm')).toBeTruthy();
-    expect(screen.getByTestId('postman-import-run-mode-postman-delta')).toBeTruthy();
-    expect(screen.getByTestId('postman-import-run-mode-postman-only')).toBeTruthy();
+    expect(screen.getByTestId('capture-source-llm')).toBeTruthy();
+    expect(screen.getByTestId('capture-source-postman')).toBeTruthy();
+    expect(screen.getByTestId('capture-source-log')).toBeTruthy();
   });
 
-  it('Mode 1a (LLM only) hides the Postman upload (today behaviour unchanged)', () => {
+  it('derives postman-delta when Postman is ticked alongside LLM', () => {
+    const seen: string[] = [];
+    renderSelector('llm', { onModeChange: (m) => seen.push(m) });
+    const postmanBox = screen
+      .getByTestId('capture-source-postman')
+      .querySelector('input') as HTMLInputElement;
+    postmanBox.click();
+    expect(seen).toEqual(['postman-delta']);
+  });
+
+  it('LLM-only hides the Postman upload (today behaviour unchanged)', () => {
     renderSelector('llm');
     expect(screen.queryByTestId('postman-import-wizard-file')).toBeNull();
   });
@@ -336,5 +352,10 @@ describe('wizard run-mode selector (8.1 a)', () => {
   it('a Postman mode reveals the collection upload', () => {
     renderSelector('postman-delta');
     expect(screen.getByTestId('postman-import-wizard-file')).toBeTruthy();
+  });
+
+  it('selecting the Application log source reveals the log section slot', () => {
+    renderSelector('llm', { logSelected: true });
+    expect(screen.getByTestId('log-section-slot')).toBeTruthy();
   });
 });

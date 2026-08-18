@@ -1,0 +1,95 @@
+/* LogCorpusSection (Spec 6, 2026-08-18) — visual grammar mirrors
+   PostmanImportWizardStep.module.css so the sources block reads as one unit. */
+
+.section {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.helperText {
+  color: #57606a;
+  font-size: 12px;
+}
+
+.errorBanner {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #cf222e;
+  border-radius: 6px;
+  background: #ffebe9;
+  color: #cf222e;
+  font-size: 13px;
+}
+
+.warnBanner {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #9a6700;
+  border-radius: 6px;
+  background: #fff8c5;
+  color: #7d4e00;
+  font-size: 13px;
+}
+
+.funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.gaps {
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.gaps ul {
+  margin: 4px 0 0 18px;
+  padding: 0;
+}
+
+.stagingTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.stagingTable th,
+.stagingTable td {
+  border: 1px solid #d0d7de;
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.stagingTable th {
+  background: #eaeef2;
+}
+
+.includeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.includeRow input {
+  margin-top: 2px;
+}

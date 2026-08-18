@@ -80,6 +80,7 @@ import {
 } from '../../api/apiBehaviourClient';
 import { CaptureReviewPanel } from './CaptureReviewPanel';
 import { PostmanImportAppendModal } from '../ApiBehaviour/PostmanImportAppendModal';
+import { LogCorpusAppendModal } from '../ApiBehaviour/LogCorpusAppendModal';
 import { CoverageSummaryPanel, CoverageGateBanner } from './CoverageSummaryPanel';
 import type { UnresolvedEndpoint } from './CoverageSummaryPanel';
 import { RetryUncoveredModal } from './RetryUncoveredModal';
@@ -202,6 +203,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   // detail view; the modal replays the imported collection live via
   // manual-capture and prompts re-enter-secrets on a purged finished session.
   const [appendModalOpen, setAppendModalOpen] = useState(false);
+  // CSD Spec 6 (2026-08-18): the application-log append parity modal.
+  const [logAppendModalOpen, setLogAppendModalOpen] = useState(false);
 
   // Coverage Closure: the "Retry uncovered APIs" modal (Spec 2026-07-20 CC1).
   // Holds the unresolved endpoints captured when the gate-banner button fired.
@@ -1347,6 +1350,18 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           >
             Append a Postman collection
           </button>
+          {/* CSD Spec 6 (2026-08-18): the application-log append parity —
+              stages the corpus for reconciliation round 2 and can capture the
+              non-mutating requests into this session (gate recomputes on
+              append via the same fetchOnce refresh). */}
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() => setLogAppendModalOpen(true)}
+            data-testid="capture-session-append-log"
+          >
+            Append application log
+          </button>
         </div>
       )}
 
@@ -1365,6 +1380,20 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
             void fetchOnce();
           }}
           onClose={() => setAppendModalOpen(false)}
+        />
+      )}
+
+      {logAppendModalOpen && (
+        <LogCorpusAppendModal
+          open={logAppendModalOpen}
+          projectId={projectId}
+          architectureId={architectureId}
+          sessionId={sessionId}
+          mutatingCallsConfirmed={session.mutating_calls_confirmed ?? undefined}
+          onAppended={() => {
+            void fetchOnce();
+          }}
+          onClose={() => setLogAppendModalOpen(false)}
         />
       )}
 

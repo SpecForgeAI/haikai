@@ -2165,6 +2165,95 @@ discoveryRouter.post('/projects/:projectId/architectures/:architectureId/runs/:r
 });
 
 /**
+ * POST /projects/:projectId/architectures/:architectureId/log-replay-corpus/extract
+ *
+ * Capture-State Discipline & Log-Replay program Spec 6 (2026-08-18): proxies
+ * the wizard's application-log upload to the discovery-service replay-corpus
+ * extractor (Spec 5). The body carries { logContent | logFilePath, fileName?,
+ * recipeJson? }; projectId/architectureId ride from the URL. The response
+ * (funnel + staged corpus, or the loud zero-useful abandonment) forwards
+ * transparently.
+ *
+ * Backend: POST {discoveryServiceBaseUrl}/discovery/log-replay-corpus
+ */
+discoveryRouter.post('/projects/:projectId/architectures/:architectureId/log-replay-corpus/extract', async (req: Request, res: Response) => {
+  const requestId = (req as any).requestId || 'unknown';
+  const { projectId, architectureId } = req.params;
+
+  try {
+    const { discoveryServiceBaseUrl } = getConfig();
+
+    logger.info('Processing log-replay-corpus extract proxy request', {
+      requestId,
+      projectId,
+      architectureId,
+    });
+
+    const proxyHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+
+    try {
+      const url = `${discoveryServiceBaseUrl}/discovery/log-replay-corpus`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: proxyHeaders,
+        body: JSON.stringify({
+          ...req.body,
+          projectId,
+          architectureId,
+        }),
+      });
+
+      let responseBody: unknown;
+      try {
+        responseBody = await response.json();
+      } catch {
+        responseBody = await response.text();
+      }
+
+      logger.info('Log-replay-corpus extract proxy request completed', {
+        requestId,
+        projectId,
+        architectureId,
+        status: response.status,
+        success: response.ok,
+      });
+
+      return res.status(response.status).json(responseBody);
+    } catch (fetchError) {
+      const errorMessage = fetchError instanceof Error ? fetchError.message : 'Unknown error';
+      logger.error('Log-replay-corpus extract proxy request failed', {
+        requestId,
+        projectId,
+        architectureId,
+        error: errorMessage,
+      });
+      return res.status(503).json({
+        error: {
+          code: 503,
+          message: 'Discovery service unavailable',
+        },
+      });
+    }
+  } catch (error) {
+    logger.error('Log-replay-corpus extract proxy error', {
+      requestId,
+      projectId,
+      architectureId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return res.status(500).json({
+      error: {
+        code: 500,
+        message: 'Internal server error',
+      },
+    });
+  }
+});
+
+/**
  * POST /projects/:projectId/architectures/:architectureId/runs/:runId/reprocess
  * Proxies reprocessing requests to the discovery-service.
  *

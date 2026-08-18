@@ -1812,3 +1812,50 @@ export async function testDatabaseConnection(
   }
   return (await res.json()) as DiscoveryDatabaseTestConnectionResult;
 }
+
+/**
+ * Extract a log-replay corpus from an uploaded application log (Capture-State
+ * Discipline & Log-Replay program, Spec 6, 2026-08-18).
+ *
+ * Proxies through the gateway to the discovery-service extractor (Spec 5):
+ * the response carries the honest funnel, the staged corpus reference (null
+ * when the source was ABANDONED — zero useful requests), and the items for
+ * the wizard's staging table + checked-mode concrete sends. The shape is
+ * typed in `components/ApiBehaviour/logCorpusRunSupport.ts`
+ * (`LogCorpusExtractResponse`) — this client stays shape-agnostic.
+ *
+ * @param projectId - The project identifier
+ * @param architectureId - The active architecture identifier
+ * @param request - Inline log content + display filename
+ * @returns Promise resolving to the extract response (caller types it)
+ * @throws Error if the request fails (non-ok response)
+ */
+export async function extractLogReplayCorpus(
+  projectId: string,
+  architectureId: string,
+  request: { logContent: string; fileName?: string | null }
+): Promise<unknown> {
+  const url = `${GATEWAY_BASE}/api/v1/discovery/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/log-replay-corpus/extract`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      logContent: request.logContent,
+      fileName: request.fileName ?? null,
+    }),
+  });
+
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const parsed = (await res.json()) as { error?: { message?: string } };
+      if (parsed?.error?.message) detail = `: ${parsed.error.message}`;
+    } catch {
+      /* status alone */
+    }
+    throw new Error(`Log-replay corpus extraction failed (${res.status})${detail}`);
+  }
+
+  return res.json();
+}
