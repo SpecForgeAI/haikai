@@ -195,6 +195,14 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
+/** First non-empty string among the candidates (wire-case-tolerant reads). */
+function firstString(...candidates: unknown[]): string | null {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.length > 0) return c;
+  }
+  return null;
+}
+
 /** Build the default production transport (real fetch against 8092 + AMS). */
 export function defaultReconciliationValidationDeps(): ReconciliationValidationDeps {
   const validationBase = () => getConfig().apiMigrationValidationServiceBaseUrl;
@@ -290,7 +298,23 @@ export function defaultReconciliationValidationDeps(): ReconciliationValidationD
         `/api-behaviour/diffs/by-target/${encodeURIComponent(args.targetBaselineId)}`;
       const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
       if (response.status === 404) return null;
-      return ((await readJson(response)) ?? null) as DiffStatusRow | null;
+      // AMS speaks snake_case and the diff row's identifier is plain `id`
+      // (ApiBehaviourDiffDto — there is NO diffId/diff_id field on the wire).
+      // Live failure 2026-08-17: reading only `diffId` here made every
+      // COMPLETED diff invisible, so the reconcile polled the full 15-minute
+      // deadline and "timed out" on a diff that finished in seconds. Coerce
+      // tolerantly (snake, camel) per the dual-tolerance wire idiom.
+      const body = (await readJson(response)) as Record<string, unknown> | null;
+      if (!body || typeof body !== 'object') return null;
+      const diffId = firstString(body.id, body.diff_id, body.diffId);
+      const status = firstString(body.status);
+      const errorMessage = firstString(body.error_message, body.errorMessage);
+      if (!diffId && !status) return null;
+      return {
+        ...(diffId ? { diffId } : {}),
+        status: status ?? null,
+        error_message: errorMessage ?? null,
+      };
     },
 
     async getDiffStatus(args) {
@@ -306,8 +330,18 @@ export function defaultReconciliationValidationDeps(): ReconciliationValidationD
         `${amsBase()}/api/projects/${encodeURIComponent(args.projectId)}` +
         `/api-behaviour/diffs/${encodeURIComponent(args.diffId)}/items`;
       const response = await fetch(url, { method: 'GET', headers: { Accept: 'application/json' } });
+      // LOUD on failure (2026-08-17): this used to coerce ANY non-array body
+      // — including AMS error responses — to `[]`, which the driver then
+      // recorded as a CLEAN reconcile with zero breaks. A failed read must
+      // fail the reconcile visibly, never impersonate an empty diff.
+      if (!response.ok) {
+        throw new Error(`AMS diff-items read failed (status ${response.status})`);
+      }
       const body = await readJson(response);
-      return (Array.isArray(body) ? body : []) as ReconciliationDiffItem[];
+      if (!Array.isArray(body)) {
+        throw new Error('AMS diff-items read returned a non-array body');
+      }
+      return body as ReconciliationDiffItem[];
     },
 
     sleep(ms) {
@@ -518,6 +552,23 @@ export async function runHeadlessReconcile(
 
     // 6. Read back every diff_item (the raw break records).
     const diffItems = await deps.listDiffItems({ projectId: args.projectId, diffId: diffId as string });
+
+    // A completed diff over a replayed baseline ALWAYS yields at least one
+    // item per operation pair — zero items from a completed diff means the
+    // read went wrong (wrong diff id, wire drift, AMS hiccup), not that the
+    // reconcile was clean. Refuse to report it as a successful reconcile
+    // (2026-08-17: the "ended but no rec anywhere" failure class).
+    if (diffItems.length === 0) {
+      return {
+        ok: false,
+        sessionId,
+        diffId,
+        targetBaselineId,
+        diffItems: [],
+        error:
+          'completed diff returned zero diff items — treating as a failed read, not a clean reconcile',
+      };
+    }
 
     logger.info('[diag-gateway] migration_reconciliation replay_complete', {
       projectId: args.projectId,

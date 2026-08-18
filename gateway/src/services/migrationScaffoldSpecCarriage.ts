@@ -36,6 +36,10 @@ import {
 import { SeedBuildFilesEnrichment } from './migrationSeedBuildFilesEnrichment';
 import { TargetStateCapturedDecision } from './targetStateCapturedDecisionsClient';
 import { serveSpecDefaultsFromAnswers } from './migrationServeSpecDefaults';
+import {
+  BaselineWireFacts,
+  buildScaffoldWireFormatRequirements,
+} from './migrationBaselineWireFacts';
 
 // ---------------------------------------------------------------------------
 // Decision-value resolution — shared with the target-stack spec section
@@ -161,8 +165,19 @@ const BOOTSTRAP_RECIPES: RequirementRecipe[] = [
     needs: ['api.errorContract'],
     render: (v) =>
       `Create the shared error-handling skeleton implementing the captured error ` +
-      `contract: ${v('api.errorContract')}. One application-wide handler; the ` +
-      `serialization/error-mapping foundation story fills in the per-status mappings. ` +
+      `contract: ${v('api.errorContract')}. One application-wide handler — for Spring ` +
+      `Boot, a SINGLE \`@RestControllerAdvice\` class under the application's root ` +
+      `package (covered by the main class's component scan), with no narrowing ` +
+      `attributes; the serialization/error-mapping foundation story fills in the ` +
+      `per-status mappings. The catch-all handler MUST NOT swallow exceptions the ` +
+      `framework already maps to a status: in the SAME advice class (never a second ` +
+      `advice, whose bean ordering can shadow it), register a specific handler for ` +
+      `unmatched-path lookups — Spring Boot >= 3.2 throws \`NoResourceFoundException\` ` +
+      `for any request no endpoint or static resource matches, e.g. a browser's ` +
+      `automatic \`/favicon.ico\` probe — returning 404 in the standard error shape, ` +
+      `logged at WARN, and preserve the status carried by ` +
+      `\`ResponseStatusException\`/\`ErrorResponseException\`. An unmatched-path ` +
+      `request must NEVER surface as an ERROR-level "unhandled" log or a 500. ` +
       cite('api.errorContract'),
   },
   {
@@ -252,8 +267,15 @@ export function buildScaffoldBootstrapSpecText(args: {
   story: Pick<LoadedBookOfWorkItem, 'title' | 'description'>;
   enrichmentText: string;
   decisions: readonly TargetStateCapturedDecision[];
+  /**
+   * Wire-format facts mined from the captured current-state baseline
+   * (2026-08-17): drives the app-wide wire-format bootstrap requirements
+   * (global date converter, identifier width policy, content-negotiation
+   * posture). Optional + fail-soft — absent facts just omit the block.
+   */
+  wireFacts?: BaselineWireFacts | null;
 }): ScaffoldSpecAssembly {
-  const { story, enrichmentText, decisions } = args;
+  const { story, enrichmentText, decisions, wireFacts } = args;
   const byCode = architectureDecisionValues(decisions);
   const v = (code: string): string | null => byCode.get(code) ?? null;
   const warnings: Array<Record<string, unknown>> = [];
@@ -312,6 +334,27 @@ export function buildScaffoldBootstrapSpecText(args: {
   }
   lines.push('');
 
+  // Wire-format bootstrap requirements (2026-08-17): app-wide seams derived
+  // from the MINED baseline wire facts — global date converter (+ rendering),
+  // identifier width policy, content-negotiation posture. Each cites its
+  // mined evidence the way decision requirements cite [decision:<code>].
+  // Prevents the live 0/470-match failure class: ISO-defaulted dates,
+  // Long-typed 34-digit ids, unanswerable captured Accepts.
+  const wireRequirements = buildScaffoldWireFormatRequirements(wireFacts);
+  if (wireRequirements.length > 0) {
+    lines.push('## Wire-format bootstrap requirements (mined from the captured API baseline)');
+    lines.push('');
+    lines.push(
+      'The captured current-state baseline is the WIRE ORACLE. The requirements below ' +
+        'were derived deterministically from its concrete captured values — reproduce ' +
+        'them faithfully; a framework-idiomatic default that contradicts a mined fact ' +
+        'is a defect the reconcile will surface as a break.'
+    );
+    lines.push('');
+    wireRequirements.forEach((req, i) => lines.push(`${i + 1}. ${req}`));
+    lines.push('');
+  }
+
   // Acceptance criteria (2026-08-15 — STATIC + IN-TEST only): a criterion
   // that demanded a live boot "against the migrated target database" invited
   // an agent to stand up its own database and run a non-terminating server —
@@ -338,6 +381,17 @@ export function buildScaffoldBootstrapSpecText(args: {
       'surface IN-TEST. If a real database is wanted in-test, use ' +
       'Testcontainers (declared in the manifest) — NEVER an external or ' +
       'hand-started database, and NEVER a live foreground server.'
+  );
+  // 2026-08-17 (live failure): a browser's automatic /favicon.ico request hit
+  // the migrated app's catch-all advice and logged an ERROR-level "Unhandled
+  // error" stack trace — the error skeleton swallowed the framework's own 404
+  // (NoResourceFoundException, Spring Boot >= 3.2). The criterion makes the
+  // 404 mapping VERIFIED, not just stated.
+  lines.push(
+    '4. The smoke suite asserts that a request to an unmatched path (e.g. ' +
+      '`/favicon.ico`) returns 404 — never a 500 and never an ERROR-level ' +
+      '"unhandled" log — proving the error-handling skeleton maps framework ' +
+      '404s instead of routing them through the catch-all.'
   );
   lines.push('');
   if (serve.command && serve.command.trim().length > 0) {
@@ -421,8 +475,10 @@ export function runScaffoldSpecCarriage(args: {
   baseRow: MigrationStorySpecGenerationDto;
   enrichment: SeedBuildFilesEnrichment;
   decisions: readonly TargetStateCapturedDecision[];
+  /** Mined baseline wire facts (2026-08-17) — optional, fail-soft. */
+  wireFacts?: BaselineWireFacts | null;
 }): MigrationStorySpecGenerationDto {
-  const { story, baseRow, enrichment, decisions } = args;
+  const { story, baseRow, enrichment, decisions, wireFacts } = args;
 
   if (!enrichment.text) {
     return {
@@ -447,6 +503,7 @@ export function runScaffoldSpecCarriage(args: {
     story,
     enrichmentText: enrichment.text,
     decisions,
+    wireFacts: wireFacts ?? null,
   });
 
   return {
