@@ -210,7 +210,9 @@ migrationShapeSpecGenerationRouter.post(
         confirmOverwrite: body.confirmOverwrite,
         maxFindings: body.maxFindings,
         maxEvidenceItems: body.maxEvidenceItems,
-        maxBaselineItems: body.maxBaselineItems,
+        // maxBaselineItems is gone: captured baseline items are removed from
+        // spec construction (SCL round-3 ruling, 2026-08-18) — the handler
+        // pins the resolver's baseline-item cap to 0 itself.
         autoRunPass2: body.autoRunPass2,
         workstreamId: body.workstreamId,
         // Selective generation: when the workspace sends an explicit work-item

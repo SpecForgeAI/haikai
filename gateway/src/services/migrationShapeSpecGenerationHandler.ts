@@ -495,10 +495,12 @@ export interface RunShapeSpecGenerationBatchInput {
    * drawer-driven regen actions on the frontend.
    */
   targetWorkItemIds?: ReadonlyArray<string | null | undefined>;
-  /** Optional caps forwarded to the focused-context call. */
+  /** Optional caps forwarded to the focused-context call. NOTE: there is no
+   * `maxBaselineItems` any more — captured baseline items are REMOVED from
+   * spec construction entirely (SCL round-3 ruling, 2026-08-18); the
+   * focused-context request pins the baseline-item cap to 0. */
   maxFindings?: number;
   maxEvidenceItems?: number;
-  maxBaselineItems?: number;
   /**
    * Cross-story context injection: per-batch override of the project-level
    * `auto_run_pass_2` flag. When omitted, the project setting (default true)
@@ -2615,10 +2617,11 @@ async function runSinglePassBatch(
 
     // Spec 2026-07-06-h: code-story VERBATIM CARRIAGE — fully deterministic.
     // The spec text embeds the committed contracts + data-effect SQL +
-    // behaviour blocks + captured baseline examples; manual-gate stories get
-    // deterministic procedure text. Context resolver, prompt, response
-    // validators and confidence downgrade are all bypassed; the LLM is never
-    // called. Missing facts -> insufficient_context (nothing silent).
+    // behaviour blocks (captured baseline examples were REMOVED from spec
+    // construction entirely — SCL round-3 ruling, 2026-08-18); manual-gate
+    // stories get deterministic procedure text. Context resolver, prompt,
+    // response validators and confidence downgrade are all bypassed; the LLM
+    // is never called. Missing facts -> insufficient_context (nothing silent).
     if (isCodeCarriageStory(story)) {
       const row = await runCodeSpecCarriage({
         projectId,
@@ -2772,7 +2775,13 @@ async function runSinglePassBatch(
           contextTypes: [...SHAPE_SPEC_CONTEXT_TYPES],
           maxFindings: input.maxFindings,
           maxEvidenceItems: input.maxEvidenceItems,
-          maxBaselineItems: input.maxBaselineItems,
+          // Captured examples are REMOVED from spec construction (SCL round-3
+          // ruling, 2026-08-18): the resolver must not embed baseline items
+          // into the LLM context — captures live only in reconcile + the
+          // contradiction pass + the aggregate wire-facts miner. Pinned 0
+          // (omitting would fall back to the AMS default cap, which INCLUDES
+          // items).
+          maxBaselineItems: 0,
           pass: pass === 2 ? 2 : 1,
           passOneSpecIdsInScope:
             pass === 2 ? passOneSpecIdsInScope : undefined,

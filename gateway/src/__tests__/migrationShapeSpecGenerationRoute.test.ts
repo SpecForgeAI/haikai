@@ -102,6 +102,9 @@ describe('POST .../spec-generations/generate-batch', () => {
         confirmOverwrite: false,
         maxFindings: 10,
         maxEvidenceItems: 20,
+        // maxBaselineItems is DELIBERATELY still sent by this legacy caller
+        // shape — the route must IGNORE it (captured baseline items left spec
+        // construction, 2026-08-18; the handler pins the resolver cap to 0).
         maxBaselineItems: 5,
         // Selective generation: the workspace's "Generate specs for selected"
         // sends an explicit whitelist that the route MUST forward.
@@ -120,7 +123,6 @@ describe('POST .../spec-generations/generate-batch', () => {
         confirmOverwrite: false,
         maxFindings: 10,
         maxEvidenceItems: 20,
-        maxBaselineItems: 5,
         targetWorkItemIds: ['wi-7', 'wi-9'],
       }),
       expect.objectContaining({

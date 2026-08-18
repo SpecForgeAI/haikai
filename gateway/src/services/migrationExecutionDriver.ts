@@ -131,6 +131,18 @@ import {
   backoffMsBeforeAttempt,
   FAILURE_CLASS_TRANSIENT,
 } from './migrationSpecRetryPolicy';
+// SCL execution integration (spec 10, 2026-08-18): first-commit delivery of
+// the generated behaviour suite at dispatch + the shipped-suite integrity /
+// quarantine-threshold verdict at build-results. Every seam is FAIL-SOFT for
+// non-SCL stories (zero behaviour change).
+import { sclCarriageMarkersFromBlob } from './sclSpecCarriage';
+import {
+  SclInitialCommit,
+  buildSclInitialCommit,
+  evaluateSclSuiteIntegrity,
+  isSclDispatchStory,
+  SCL_SUITE_GENERATION_FAILED_LOG_TYPE,
+} from './migrationSclExecution';
 
 /**
  * A fixed AMS path-segment used when correlating purely by job_id. The AMS
@@ -173,6 +185,15 @@ export interface DispatchDescriptor {
   hasEndpointIds?: boolean;
   /** The migration plane this item belongs to (Spec W). */
   plane?: MigrationPlane;
+  /**
+   * SCL corpus markers (spec 10, 2026-08-18): flattened off the book blob item
+   * (spec 7 stamps them) so an SCL story's dispatch can resolve its contracts
+   * and generate the first-commit behaviour suite. Null/absent on every
+   * non-SCL item.
+   */
+  sclContractKeys?: string[] | null;
+  sclLayer?: string | null;
+  sclControllerClass?: string | null;
 }
 
 /** Result of the hard-block readiness evaluation. */
@@ -370,6 +391,21 @@ export interface MigrationDriverDeps {
    * boot-recovery sweep, NOT from the in-process timer.
    */
   scheduleRetryTimer?: (delayMs: number, fn: () => void) => void;
+  /**
+   * SCL first-commit delivery (spec 10, 2026-08-18): builds the generated
+   * behaviour suite + manifest for an SCL story's dispatch. Optional + lazily
+   * defaulted to {@link buildSclInitialCommit} so pre-existing deps mocks keep
+   * compiling; tests inject a mock. FAIL-SOFT at the call site: a build
+   * failure dispatches WITHOUT initial files + a loud warn + a decision-log
+   * warning (never a blocked dispatch).
+   */
+  buildSclInitialCommit?: typeof buildSclInitialCommit;
+  /**
+   * SCL shipped-suite integrity verdict (spec 10): the build-results-time
+   * no-modification guard + quarantine thresholds. Optional + lazily
+   * defaulted to {@link evaluateSclSuiteIntegrity}; tests inject a mock.
+   */
+  evaluateSclSuiteIntegrity?: typeof evaluateSclSuiteIntegrity;
   /**
    * The carry_over completeness-gate AMS reads (D4). The gate gathers
    * behaviour-bearing capabilities + findings for the book's project +
@@ -700,6 +736,9 @@ export function buildOrderedDispatchSet(params: {
       hasEndpointIds:
         Array.isArray((item as { apiEndpointIds?: unknown }).apiEndpointIds) &&
         ((item as { apiEndpointIds?: unknown[] }).apiEndpointIds?.length ?? 0) > 0,
+      // SCL corpus markers (spec 10): flattened off the blob (snake_case as
+      // stamped by spec 7 + camelCase tolerated). Null on non-SCL items.
+      ...sclCarriageMarkersFromBlob(item as unknown as Record<string, unknown>),
     });
   }
   // Big-bang: only the FINAL spec deploys.
@@ -1991,6 +2030,66 @@ export async function runSpecSegment(
       return;
     }
   }
+  // SCL first-commit delivery (spec 10, 2026-08-18): an SCL corpus story's
+  // dispatch generates its behaviour suite DETERMINISTICALLY and attaches it
+  // as initial_commit_files — IVS commits the suite (+ scl-suite-manifest.json)
+  // as the branch's FIRST commit, before any implementer work. FAIL-SOFT:
+  // a generation failure dispatches WITHOUT initial files + a LOUD warn + a
+  // decision-log warning entry; non-SCL stories are byte-identical.
+  let sclInitialCommit: SclInitialCommit | null = null;
+  if (isSclDispatchStory({ tags: descriptor.tags ?? [] })) {
+    try {
+      const book = await deps.fetchBookOfWork(projectId, scope.bookId);
+      const buildCommit = deps.buildSclInitialCommit ?? buildSclInitialCommit;
+      sclInitialCommit = await buildCommit({
+        projectId,
+        currentArchitectureId: book?.current_architecture_id ?? '',
+        targetArchitectureId: book?.target_architecture_id ?? null,
+        story: {
+          title: descriptor.title,
+          tags: descriptor.tags ?? [],
+          sclContractKeys: descriptor.sclContractKeys ?? null,
+          sclLayer: descriptor.sclLayer ?? null,
+          sclControllerClass: descriptor.sclControllerClass ?? null,
+        },
+      });
+      logger.info('[diag-gateway] migration_execution_driver scl_suite_attached', {
+        projectId,
+        runId,
+        runItemId,
+        specName,
+        files: sclInitialCommit.files.length,
+        suiteTests: sclInitialCommit.suiteTestCount,
+        basePackage: sclInitialCommit.basePackage,
+        warnings: sclInitialCommit.warnings,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown';
+      logger.warn('[diag-gateway] migration_execution_driver scl_suite_generation_failed', {
+        projectId,
+        runId,
+        runItemId,
+        specName,
+        error: reason,
+      });
+      // Warning recorded where dispatch decisions live today: the run's
+      // decision log (best-effort — the dispatch itself proceeds).
+      await safePatchRun(deps, projectId, runId, {
+        decision_log_json: [
+          ...((freshRun ?? run).decision_log_json ?? []),
+          {
+            type: SCL_SUITE_GENERATION_FAILED_LOG_TYPE,
+            run_item_id: runItemId,
+            spec_name: specName,
+            reason,
+            at: new Date().toISOString(),
+          },
+        ],
+      });
+      sclInitialCommit = null;
+    }
+  }
+
   let submit: OrchestrationSubmitResult;
   try {
     submit = await deps.submitOrchestration({
@@ -2004,6 +2103,12 @@ export async function runSpecSegment(
       ...(chainBase ? { baseSpec: chainBase } : {}),
       ...(useIntegrationBase ? { integrationBase: true } : {}),
       ...(mrBaseBranch ? { baseBranch: mrBaseBranch } : {}),
+      ...(sclInitialCommit
+        ? {
+            initialCommitFiles: sclInitialCommit.files,
+            initialCommitMessage: sclInitialCommit.message,
+          }
+        : {}),
       openMergeRequest,
       callbackUrl: deps.buildResultsCallbackUrl,
     });
@@ -2576,6 +2681,14 @@ export async function advanceRunOnBuildResult(
     );
     return 'halted';
   }
+
+  // SCL shipped-suite integrity + quarantine thresholds (spec 10, 2026-08-18):
+  // an SCL story's success callback first runs the no-modification guard +
+  // contest-threshold circuit breakers against the branch's shipped manifest.
+  // FAIL-SOFT for every non-SCL story and on any read hiccup (the advance is
+  // never broken by the integrity layer); a fired threshold HALTS here.
+  const sclHalted = await applySclSuiteVerdict(input, scope, run, item, deps);
+  if (sclHalted) return 'halted';
 
   if (outcome === 'deployed') {
     // A plane's LAST build item deployed (Spec W phased execution). Record the
@@ -3685,6 +3798,113 @@ async function resolveItemPlane(
     );
   }
   return planeForItem(bookItem);
+}
+
+/**
+ * SCL shipped-suite verdict at build-results time (spec 10, 2026-08-18).
+ * For an SCL corpus story's SUCCESS callback (`implemented` / `deployed`):
+ *   1. resolve the book blob item's tags (SCL recognition — fail-soft);
+ *   2. ask IVS for the branch's current shipped-file hashes + sidecars and run
+ *      the no-modification guard + quarantine thresholds
+ *      ({@link evaluateSclSuiteIntegrity});
+ *   3. append the verdict to the run's decision log (run-level accounting);
+ *   4. LOUD `SCL_SUITE_MODIFIED` surfacing when shipped tests were touched;
+ *   5. a fired threshold HALTS: per-spec rate → this run item fails with the
+ *      spec-scoped reason; run-level rate → the run halts with the aggregate
+ *      reason. Returns true when the advance must stop (`halted`).
+ * NEVER throws; every degradation is logged and the advance proceeds.
+ */
+async function applySclSuiteVerdict(
+  input: BuildResultAdvanceInput,
+  scope: MigrateScope,
+  run: MigrationExecutionRun,
+  item: MigrationExecutionRunItem,
+  deps: MigrationDriverDeps
+): Promise<boolean> {
+  const runId = item.run_id as string;
+  const runItemId = item.id as string;
+  try {
+    // -- SCL recognition: the matched book blob item's tags -----------------
+    const bookId = run.book_of_work_id ?? scope.bookId;
+    if (!bookId || !item.work_item_id) return false;
+    const book = await deps.fetchBookOfWork(scope.projectId, bookId);
+    const bookItem = (book?.book_of_work_json?.items ?? []).find(
+      (bi) => bi.workItemId === item.work_item_id
+    );
+    const storyTags = (bookItem?.tags ?? []).filter(
+      (t): t is string => typeof t === 'string'
+    );
+    const evaluate = deps.evaluateSclSuiteIntegrity ?? evaluateSclSuiteIntegrity;
+    const verdict = await evaluate({
+      jobId: input.jobId,
+      runItemId,
+      storyTags,
+      runDecisionLog: run.decision_log_json,
+    });
+    if (verdict.kind === 'not_scl') return false;
+    if (verdict.kind === 'skipped') {
+      logger.warn('[diag-gateway] migration_execution_driver scl_suite_check_skipped', {
+        projectId: scope.projectId,
+        runId,
+        runItemId,
+        jobId: input.jobId,
+        reason: verdict.reason,
+      });
+      return false;
+    }
+
+    // -- Record the verdict on the run's decision log (accounting + audit) --
+    await safePatchRun(deps, scope.projectId, runId, {
+      decision_log_json: [...(run.decision_log_json ?? []), verdict.decisionEntry],
+    });
+
+    // -- No-modification guard: LOUD attention item, never silent -----------
+    if (!verdict.intact) {
+      logger.error('[diag-gateway] migration_execution_driver SCL_SUITE_MODIFIED', {
+        projectId: scope.projectId,
+        runId,
+        runItemId,
+        jobId: input.jobId,
+        modified: verdict.modified,
+        missing: verdict.missing,
+      });
+      trace.warn(
+        `SCL_SUITE_MODIFIED — shipped tests touched: ` +
+          `${[...verdict.modified, ...verdict.missing.map((p) => `${p} (missing)`)].join(', ')}`,
+        { run: runId, job: input.jobId, project: scope.project }
+      );
+    }
+
+    // -- Threshold circuit breakers (the ONLY halts in the protocol) --------
+    if (verdict.haltRun) {
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        `SCL run-level quarantine circuit breaker: the aggregate quarantine rate ` +
+          `(${(verdict.runRate * 100).toFixed(1)}%) exceeds the run threshold — ` +
+          `systematic extraction misreads across the run. Disposition the quarantine ` +
+          `list at the stage-2 gate (re-extract contracts, regenerate tests), then Resume.`);
+      return true;
+    }
+    if (verdict.haltSpec) {
+      await haltRunForItem(deps, scope, runId, runItemId, item, RUN_ITEM_STATUS.FAILED,
+        `SCL per-spec contest circuit breaker: ${verdict.quarantined} of ` +
+          `${verdict.suiteTestCount} shipped tests are quarantined ` +
+          `(${(verdict.specRate * 100).toFixed(1)}% > the spec threshold) — a ` +
+          `systematic extraction misread of this spec's contracts. Re-extract the ` +
+          `contracts, regenerate the suite, then Resume failed.`);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    // Fail-soft: the integrity layer must never break the advance.
+    logger.warn('[diag-gateway] migration_execution_driver scl_suite_check_failed', {
+      projectId: scope.projectId,
+      runId,
+      runItemId,
+      jobId: input.jobId,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return false;
+  }
 }
 
 /**

@@ -1,22 +1,22 @@
 /**
  * Unit pins — code-story verbatim spec carriage (Spec 2026-07-06-h,
- * Code-Tier Oracle Program).
+ * Code-Tier Oracle Program; captured-examples removal 2026-08-18).
  *
  *   - VERBATIM: fenced canonical JSON round-trips deep-equal to the AMS facts
  *   - FENCE: embedded backtick runs can never terminate a fence early
- *   - EXAMPLES: one canonical example per distinct response status,
- *     happy-first; the state-delta not-captured marker is explicit
+ *   - NO CAPTURED EXAMPLES (SCL round-3 ruling, 2026-08-18): spec construction
+ *     never embeds baseline captures — no 'Captured examples' section, and the
+ *     parity obligation points at the reconcile replay instead
  *   - BUDGET: deterministic trim ladder + omission manifest; contracts and
  *     SQL are never dropped
- *   - HONESTY: no contracts -> insufficient_context(no_committed_contracts);
- *     no examples on an unflagged story -> insufficient_context; model drift
- *     (endpoint gone) -> insufficient_context naming the endpoint
+ *   - HONESTY: no contracts -> insufficient_context(no_committed_contracts)
+ *     (captures no longer substitute); model drift (endpoint gone) ->
+ *     insufficient_context naming the endpoint
  *   - MANUAL-GATE: capture/closure stories get deterministic procedure text
  *   - MARKERS: blob extras map tolerantly (camelCase + snake_case)
  */
 
 import {
-  CarriageBaselineExample,
   CodeSpecFacts,
   buildCodeSpecText,
   canonicalJson,
@@ -26,7 +26,6 @@ import {
   isManualGateCarriageStory,
   pathMatchesTemplate,
   runCodeSpecCarriage,
-  selectCanonicalExamples,
 } from '../services/migrationCodeSpecCarriage';
 import type {
   LoadedBookOfWorkItem,
@@ -140,23 +139,7 @@ function facts(overrides: Partial<CodeSpecFacts> = {}): CodeSpecFacts {
       { endpointId: 'e-1', accessMode: 'read', pathMetadata: PATH_METADATA, dataEntityPointId: 'dep_phy_owners' },
     ],
     behaviours: [{ name: 'find', behavior: BEHAVIOUR }],
-    examples: [
-      ex('happy', 200),
-      ex('missing', 404),
-    ],
     ...overrides,
-  };
-}
-
-function ex(scenario: string, status: number, path = '/owners/42'): CarriageBaselineExample {
-  return {
-    endpointId: 'e-1',
-    scenarioName: scenario,
-    method: 'GET',
-    path,
-    requestJson: { query: {}, headers: { 'X-Tenant': 't1' }, body: null },
-    responseStatus: status,
-    responseJson: status === 200 ? { id: 42, name: 'Ada' } : { error: 'not found' },
   };
 }
 
@@ -234,15 +217,8 @@ describe('VERBATIM + FENCE pins', () => {
   });
 });
 
-describe('EXAMPLES pin', () => {
-  it('selects one canonical example per distinct status, happy-first, deterministically', () => {
-    const all = [ex('b-500', 500), ex('a-404', 404), ex('z-200', 200), ex('a-200', 200)];
-    const selected = selectCanonicalExamples(all, 'e-1');
-    expect(selected.map((e) => e.responseStatus)).toEqual([200, 404, 500]);
-    expect(selected[0].scenarioName).toBe('a-200'); // stable within-status pick
-  });
-
-  it('marks the state delta explicitly not captured (Spec N pending)', async () => {
+describe('CAPTURED-EXAMPLES REMOVAL pin (SCL round-3 ruling, 2026-08-18)', () => {
+  it('spec construction NEVER embeds captured examples — no section, replay-oracle parity wording instead', async () => {
     const row = await runCodeSpecCarriage({
       projectId: 'p-1',
       currentArchitectureId: 'arch-1',
@@ -250,10 +226,17 @@ describe('EXAMPLES pin', () => {
       baseRow: baseRow(),
       deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts()) },
     });
-    expect(row.generatedSpecText).toContain('State delta: not captured (Spec N pending).');
+    expect(row.status).toBe('generated');
+    const text = row.generatedSpecText as string;
+    expect(text).not.toContain('Captured examples');
+    expect(text).not.toContain('State delta: not captured');
+    // The parity obligation stays — anchored on the reconcile replay, not
+    // transcribed captures.
+    expect(text).toContain('## Parity obligation');
+    expect(text).toContain('verification oracle, never a construction input');
   });
 
-  it('matches concrete captured paths to committed templates', () => {
+  it('matches concrete captured paths to committed templates (reconcile helper — retained)', () => {
     expect(pathMatchesTemplate('/owners/42', '/owners/{id}')).toBe(true);
     expect(pathMatchesTemplate('/owners/42/pets', '/owners/{id}')).toBe(false);
     expect(pathMatchesTemplate('/owners/42?full=true', '/owners/{id}')).toBe(true);
@@ -261,31 +244,30 @@ describe('EXAMPLES pin', () => {
 });
 
 describe('BUDGET pin (trim ladder)', () => {
-  it('trims extra examples first with an omission manifest; contracts and SQL survive', async () => {
-    const many = [
-      ex('s200', 200),
-      ex('s400', 400),
-      ex('s404', 404),
-      ex('s409', 409),
-      ex('s500', 500),
-    ];
+  it('trims read-only behaviour blocks with an omission manifest; contracts and SQL survive', async () => {
+    const manyBehaviours = Array.from({ length: 40 }, (_, i) => ({
+      name: `readOnly${i}`,
+      behavior: {
+        schema_version: 'behaviour.v1',
+        method_id: `com.x.OwnerService#read${i}(Long)`,
+        io: 'reads stuff '.repeat(20),
+        data_effects: 'reads owners table',
+      },
+    }));
     const row = await runCodeSpecCarriage({
       projectId: 'p-1',
       currentArchitectureId: 'arch-1',
       story: story(),
       baseRow: baseRow(),
       deps: {
-        fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts({ examples: many })),
+        fetchCodeSpecFacts: jest.fn().mockResolvedValue(facts({ behaviours: manyBehaviours })),
         maxChars: 4_000, // force the ladder
       },
     });
     expect(row.status).toBe('generated_with_warnings');
     const text = row.generatedSpecText as string;
     expect(text).toContain('## Omitted for size');
-    // Happy + first error survive; later variants are named in the manifest.
-    expect(text).toContain('scenario: s200');
-    expect(text).toContain('scenario: s400');
-    expect(text).toContain('s409');
+    expect(text).toContain('readOnly0');
     // Contracts + verbatim SQL are NEVER dropped.
     const blocks = parsedJsonBlocks(text);
     expect(blocks).toContainEqual(REQUEST_CONTRACT);
@@ -294,12 +276,10 @@ describe('BUDGET pin (trim ladder)', () => {
 });
 
 describe('HONESTY pins', () => {
-  it('no committed contracts + no captures -> insufficient_context; WITH captures the baseline IS the contract (2026-08-09)', async () => {
-    // Neither contracts NOR captures: blocked, with BOTH remedies named.
+  it('no committed contracts -> insufficient_context (captures no longer substitute, 2026-08-18)', async () => {
     const empty = facts();
     empty.endpoints[0].requestContract = null;
     empty.endpoints[0].responseContract = null;
-    empty.examples = [];
     const blocked = await runCodeSpecCarriage({
       projectId: 'p-1',
       currentArchitectureId: 'arch-1',
@@ -310,49 +290,8 @@ describe('HONESTY pins', () => {
     expect(blocked.status).toBe('insufficient_context');
     const missing = JSON.stringify(blocked.missingInputsJson);
     expect(missing).toContain('no_committed_contracts');
-    expect(missing).toContain('Retry uncovered APIs');
-
-    // No contracts but accepted captures exist (a capture-reconciled
-    // endpoint, e.g. discovered late and closed in the baseline loop):
-    // the spec generates, grounded on the captures — the story is never
-    // blocked behind a code-discovery remedy that cannot produce contracts.
-    const bare = facts();
-    bare.endpoints[0].requestContract = null;
-    bare.endpoints[0].responseContract = null;
-    const row = await runCodeSpecCarriage({
-      projectId: 'p-1',
-      currentArchitectureId: 'arch-1',
-      story: story(),
-      baseRow: baseRow(),
-      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(bare) },
-    });
-    expect(row.status).toBe('generated');
-    const text = row.generatedSpecText as string;
-    expect(text).toContain('Contract source: captured baseline behaviour.');
-    expect(text).toContain('_No committed request contract._');
-  });
-
-  it('zero baseline examples on an UNFLAGGED story -> insufficient_context; flagged missing_baseline proceeds', async () => {
-    const noExamples = facts({ examples: [] });
-    const unflagged = await runCodeSpecCarriage({
-      projectId: 'p-1',
-      currentArchitectureId: 'arch-1',
-      story: story(),
-      baseRow: baseRow(),
-      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(noExamples) },
-    });
-    expect(unflagged.status).toBe('insufficient_context');
-    expect(JSON.stringify(unflagged.missingInputsJson)).toContain('no_baseline_examples');
-
-    const flagged = await runCodeSpecCarriage({
-      projectId: 'p-1',
-      currentArchitectureId: 'arch-1',
-      story: story({ flagReason: 'missing_baseline', codeStoryKind: 'exceptional-endpoint' }),
-      baseRow: baseRow(),
-      deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(noExamples) },
-    });
-    expect(flagged.status).toBe('generated');
-    expect(flagged.generatedSpecText).toContain('missing_baseline');
+    // The remedy names code discovery — and states the capture posture change.
+    expect(missing).toContain('reconcile time only');
   });
 
   it('endpoint missing from the model -> insufficient_context naming it (regenerate)', async () => {
@@ -403,7 +342,7 @@ describe('MANUAL-GATE pin', () => {
 });
 
 describe('INTERNAL RECIPE PIN (Spec 2026-07-06-m)', () => {
-  it('internal-stream stories skip contract/baseline requirements and embed the DB-delta recipe', async () => {
+  it('internal-stream stories skip contract requirements and embed the DB-delta recipe', async () => {
     const internalFacts: CodeSpecFacts = {
       endpoints: [
         {
@@ -428,7 +367,6 @@ describe('INTERNAL RECIPE PIN (Spec 2026-07-06-m)', () => {
         },
       ],
       behaviours: [],
-      examples: [],
     };
     const row = await runCodeSpecCarriage({
       projectId: 'p-1',
@@ -441,7 +379,7 @@ describe('INTERNAL RECIPE PIN (Spec 2026-07-06-m)', () => {
       baseRow: baseRow(),
       deps: { fetchCodeSpecFacts: jest.fn().mockResolvedValue(internalFacts) },
     });
-    expect(row.status).toBe('generated'); // no contracts, no baselines — and that is FINE here
+    expect(row.status).toBe('generated'); // no contracts — and that is FINE here
     const text = row.generatedSpecText as string;
     expect(text).toContain('## Verification recipe (DB-delta oracle');
     expect(text).toContain('dep_phy_orders');
@@ -480,7 +418,6 @@ describe('INTERNAL-AWARE CARRIAGE (2026-07-25 fix)', () => {
         },
       ],
       behaviours: [],
-      examples: [],
     };
     const row = await runCodeSpecCarriage({
       projectId: 'p-1',
@@ -546,11 +483,9 @@ describe('INTERNAL-AWARE CARRIAGE (2026-07-25 fix)', () => {
 
 describe('spec text structure', () => {
   it('starts with the required shape-spec prefix and titles every section', () => {
-    const canonical = new Map([['e-1', selectCanonicalExamples(facts().examples, 'e-1')]]);
     const text = buildCodeSpecText({
       story: story(),
       facts: facts(),
-      examplesByEndpoint: canonical,
       behaviours: facts().behaviours,
       omissions: [],
     });
@@ -561,6 +496,7 @@ describe('spec text structure', () => {
     expect(text).toContain('### Data effects (1)');
     expect(text).toContain('## Behaviour blocks on the data-effect paths (1)');
     expect(text).toContain('## Parity obligation');
+    expect(text).not.toContain('Captured examples');
   });
 });
 

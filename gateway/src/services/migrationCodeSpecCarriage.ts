@@ -15,14 +15,21 @@
  *   5. data effects: access mode, transactional flag, hop path, and the
  *      VERBATIM query_text with its query_kind
  *   6. behaviour blocks of the business_logics on those data-effect paths
- *   7. captured request/response examples from the ACTIVE current baseline —
- *      one canonical example per DISTINCT captured response status
- *      (approximation of the rubric canonical set until Spec K persists
- *      per-dimension scores), happy-path statuses first
- *   8. attached findings
- *   9. the parity obligation (byte-equivalent responses; state deltas for
- *      mutating endpoints once Spec N lands — explicitly marked
- *      "not captured" until then; NOTHING silent)
+ *   7. attached findings
+ *   8. the parity obligation (byte-equivalent responses proven by the
+ *      reconcile replay; state deltas for mutating endpoints once Spec N
+ *      lands — explicitly marked "not captured" until then; NOTHING silent)
+ *
+ * CAPTURED EXAMPLES ARE REMOVED FROM SPEC CONSTRUCTION ENTIRELY (SCL pipeline
+ * round-3 ruling, 2026-08-18: capture leaves the construction contract —
+ * captures live ONLY in the reconcile oracle, the aggregate wire-facts miner,
+ * and the extraction-time contradiction pass). This carriage previously
+ * embedded per-endpoint captured request/response examples (a canonical set
+ * per distinct response status) and blocked unflagged stories that had zero
+ * captures (`no_baseline_examples`); both behaviours are deleted — the
+ * committed model facts are the construction truth, and behavioural parity is
+ * verified by the reconcile replay against the pinned baseline, never by
+ * transcribed captures.
  *
  * The LLM is NEVER called on any carriage path. Manual-gate stories
  * (baseline-capture / closure sweeps) get deterministic PROCEDURE text so
@@ -32,13 +39,9 @@
  * Honesty rules (Spec C idiom):
  *   - No committed contracts on ANY endpoint  -> `insufficient_context`
  *     (`no_committed_contracts`).
- *   - Unflagged story with zero baseline examples -> `insufficient_context`
- *     (`no_baseline_examples`) — flagged `missing_baseline` stories proceed
- *     (their JOB is to exist before capture completes).
- *   - Over budget -> deterministic trim ladder (extra examples first, then
- *     read-only non-transactional behaviour blocks; NEVER contracts, SQL, or
- *     protocol metadata), every drop listed in an omission manifest ->
- *     `generated_with_warnings`.
+ *   - Over budget -> deterministic trim ladder (read-only non-transactional
+ *     behaviour blocks; NEVER contracts, SQL, or protocol metadata), every
+ *     drop listed in an omission manifest -> `generated_with_warnings`.
  */
 
 import { getConfig } from '../config';
@@ -241,28 +244,16 @@ export interface CarriageBehaviourBlock {
   behavior: unknown;
 }
 
-export interface CarriageBaselineExample {
-  endpointId: string;
-  scenarioName: string;
-  method: string;
-  path: string;
-  requestJson: unknown;
-  responseStatus: number | null;
-  responseJson: unknown;
-}
-
 export interface CodeSpecFacts {
   endpoints: CarriageEndpointFacts[];
   dataEffects: CarriageDataEffect[];
   behaviours: CarriageBehaviourBlock[];
-  examples: CarriageBaselineExample[];
 }
 
 export type FetchCodeSpecFactsFn = (args: {
   projectId: string;
   currentArchitectureId: string;
   endpointIds: string[];
-  baselineIds: string[];
 }) => Promise<CodeSpecFacts>;
 
 interface RawModelEndpoint {
@@ -306,16 +297,14 @@ export function pathMatchesTemplate(concrete: string, template: string): boolean
  * model-side: endpoints (the DTOs carry the contract JSONB blobs), interfaces,
  * business logics (with `behavior`), AND `relationships.endpoint_data_effects`
  * (verified: `ModelService` maps `findByModelFileId` into the model DTO).
- * Baseline examples come from the EXISTING
- * `/api-behaviour/baseline-items?baselineId=` read, matched to endpoints by
- * method + path template. Behaviour blocks are selected by
- * `behavior.method_id` membership in the data-effect hop method ids.
+ * Behaviour blocks are selected by `behavior.method_id` membership in the
+ * data-effect hop method ids. Captured baseline examples are NO LONGER read —
+ * captures left spec construction entirely (round-3 ruling, 2026-08-18).
  */
 export const defaultFetchCodeSpecFacts: FetchCodeSpecFactsFn = async ({
   projectId,
   currentArchitectureId,
   endpointIds,
-  baselineIds,
 }) => {
   const baseUrl = getConfig().architectureModelServiceBaseUrl;
   const wanted = new Set(endpointIds);
@@ -392,70 +381,8 @@ export const defaultFetchCodeSpecFacts: FetchCodeSpecFactsFn = async ({
     }
   }
 
-  // 4) Baseline examples (one read per distinct baseline id).
-  const examples: CarriageBaselineExample[] = [];
-  const distinctBaselines = [...new Set(baselineIds.filter((b) => b && b.length > 0))];
-  for (const baselineId of distinctBaselines) {
-    const items = await amsGetJson<Array<Record<string, unknown>>>(
-      `${baseUrl}/api/projects/${encodeURIComponent(projectId)}` +
-        `/api-behaviour/baseline-items?baselineId=${encodeURIComponent(baselineId)}`,
-      'AMS baseline-items read'
-    );
-    for (const item of items ?? []) {
-      const method = String(item.method ?? '').toUpperCase();
-      const path = String(item.path ?? '');
-      const endpoint = endpoints.find(
-        (e) =>
-          (e.verb ?? '').toUpperCase() === method &&
-          e.path !== null &&
-          pathMatchesTemplate(path, e.path)
-      );
-      if (!endpoint) continue;
-      const status = item.response_status ?? item.responseStatus;
-      examples.push({
-        endpointId: endpoint.id,
-        scenarioName: String(item.scenario_name ?? item.scenarioName ?? ''),
-        method,
-        path,
-        requestJson: item.request_json ?? item.requestJson ?? null,
-        responseStatus: typeof status === 'number' ? status : null,
-        responseJson: item.response_json ?? item.responseJson ?? null,
-      });
-    }
-  }
-
-  return { endpoints, dataEffects, behaviours, examples };
+  return { endpoints, dataEffects, behaviours };
 };
-
-// ---------------------------------------------------------------------------
-// Example selection: one canonical example per distinct response status
-// ---------------------------------------------------------------------------
-
-/**
- * Canonical-set approximation (build-log decision H-4): one example per
- * DISTINCT captured response status per endpoint, 2xx statuses first, then
- * ascending; within a status the first by (scenarioName, insertion) order.
- * Spec K upgrades this to the persisted rubric-dimension set.
- */
-export function selectCanonicalExamples(
-  all: CarriageBaselineExample[],
-  endpointId: string
-): CarriageBaselineExample[] {
-  const mine = all
-    .filter((e) => e.endpointId === endpointId)
-    .sort((a, b) => a.scenarioName.localeCompare(b.scenarioName));
-  const byStatus = new Map<number, CarriageBaselineExample>();
-  for (const example of mine) {
-    const status = example.responseStatus ?? -1;
-    if (!byStatus.has(status)) byStatus.set(status, example);
-  }
-  const statuses = [...byStatus.keys()].sort((a, b) => {
-    const aHappy = a >= 200 && a < 300 ? 0 : 1;
-    const bHappy = b >= 200 && b < 300 ? 0 : 1;
-    return aHappy - bHappy || a - b;
-  });
-  return statuses.map((s) => byStatus.get(s) as CarriageBaselineExample);
-}
 
 // ---------------------------------------------------------------------------
 // Spec text assembly (pure, deterministic)
@@ -479,15 +406,13 @@ function fencedText(lines: string[], label: string, body: string): void {
 export interface BuildCodeSpecTextArgs {
   story: CarriedStory;
   facts: CodeSpecFacts;
-  /** endpointId -> canonical examples INCLUDED after the trim ladder. */
-  examplesByEndpoint: Map<string, CarriageBaselineExample[]>;
   /** Behaviour blocks INCLUDED after the trim ladder. */
   behaviours: CarriageBehaviourBlock[];
   omissions: string[];
 }
 
 export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
-  const { story, facts, examplesByEndpoint, behaviours, omissions } = args;
+  const { story, facts, behaviours, omissions } = args;
   const lines: string[] = [];
   lines.push(`${SPEC_TEXT_REQUIRED_PREFIX} ${story.title}`);
   lines.push('');
@@ -495,11 +420,12 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
   lines.push('');
   lines.push(
     'This spec was assembled DETERMINISTICALLY from the committed architecture ' +
-      'model and the captured current-state API behaviour baseline. Every fact ' +
-      'below is authoritative — reproduce it, never re-derive or improve it. ' +
-      'The implementation goal is LIKE-FOR-LIKE: the same request to the new ' +
-      'implementation must produce the exact same response the current system ' +
-      'produced.'
+      'model. Every fact below is authoritative — reproduce it, never ' +
+      're-derive or improve it. The implementation goal is LIKE-FOR-LIKE: the ' +
+      'same request to the new implementation must produce the exact same ' +
+      'response the current system produced (verified by the reconcile replay ' +
+      'against the pinned current-state baseline — captured examples are ' +
+      'deliberately NOT embedded here).'
   );
   if (story.description) {
     lines.push('');
@@ -508,27 +434,6 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
   if (story.flagReason) {
     lines.push('');
     lines.push(`**Flagged endpoint** — reason: \`${story.flagReason}\`.`);
-  }
-
-  // Baseline-grounded story (2026-08-09): no endpoint carries a committed
-  // formal contract (capture-reconciled endpoints never do) — say so ONCE and
-  // point at the authoritative grounding, the captured behaviour below.
-  const anyCommittedContract = facts.endpoints.some(
-    (e) =>
-      e.requestContract != null ||
-      e.responseContract != null ||
-      (isInternalEndpointFact(e) && e.protocolMetadata != null)
-  );
-  const exampleCount = [...examplesByEndpoint.values()].reduce((n, v) => n + v.length, 0);
-  if (!anyCommittedContract && exampleCount > 0) {
-    lines.push('');
-    lines.push(
-      `**Contract source: captured baseline behaviour.** No committed formal ` +
-        `request/response contract exists for this story's endpoint(s) — the ` +
-        `${exampleCount} accepted baseline capture(s) below ARE the contract. ` +
-        `Reproduce the observed request/response shapes exactly; behavioural ` +
-        `parity with those captures is the acceptance bar.`
-    );
   }
 
   for (const endpoint of facts.endpoints) {
@@ -641,24 +546,6 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
       }
     }
 
-    const examples = examplesByEndpoint.get(endpoint.id) ?? [];
-    lines.push('');
-    lines.push(`### Captured examples from the current system (${examples.length})`);
-    for (const example of examples) {
-      lines.push('');
-      lines.push(
-        `#### ${example.method} ${example.path} → ${example.responseStatus ?? 'n/a'} ` +
-          `(scenario: ${example.scenarioName || 'unnamed'})`
-      );
-      lines.push('');
-      lines.push('Request (as captured, redacted):');
-      fencedJson(lines, example.requestJson);
-      lines.push('');
-      lines.push('Response body (as captured — the target must reproduce this):');
-      fencedJson(lines, example.responseJson);
-      lines.push('');
-      lines.push('State delta: not captured (Spec N pending).');
-    }
   }
 
   if (behaviours.length > 0) {
@@ -683,9 +570,11 @@ export function buildCodeSpecText(args: BuildCodeSpecTextArgs): string {
   lines.push('## Parity obligation');
   lines.push('');
   lines.push(
-    '1. For every captured example above, the SAME request against the new ' +
-      'implementation must produce a byte-equivalent response (status, ' +
-      'declared headers, body) — verified by the parity replay loop.'
+    '1. For every request in the pinned current-state baseline covering these ' +
+      'endpoints, the SAME request against the new implementation must produce ' +
+      'a byte-equivalent response (status, declared headers, body) — verified ' +
+      'by the parity replay loop at reconcile time (captures are the ' +
+      'verification oracle, never a construction input).'
   );
   lines.push(
     '2. Honour every committed contract fact verbatim: parameter names and ' +
@@ -903,9 +792,6 @@ export async function runCodeSpecCarriage(args: {
   }
 
   const endpointIds = story.apiEndpointIds ?? [];
-  const baselineIds = Object.values(story.baselineByEndpointId ?? {}).filter(
-    (b): b is string => typeof b === 'string' && b.length > 0
-  );
 
   let facts: CodeSpecFacts;
   try {
@@ -913,7 +799,6 @@ export async function runCodeSpecCarriage(args: {
       projectId,
       currentArchitectureId,
       endpointIds,
-      baselineIds,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -983,31 +868,19 @@ export async function runCodeSpecCarriage(args: {
     };
   }
 
-  const canonicalByEndpoint = new Map<string, CarriageBaselineExample[]>();
-  for (const endpoint of facts.endpoints) {
-    canonicalByEndpoint.set(endpoint.id, selectCanonicalExamples(facts.examples, endpoint.id));
-  }
-  const totalExamples = [...canonicalByEndpoint.values()].reduce((n, v) => n + v.length, 0);
-
   // Internal endpoints ground on their committed process metadata instead of
   // HTTP contracts (they can never have contracts — the re-run-contract-
   // capture remedy would be a dead end for a mixed HTTP+internal story).
+  // Captured baseline examples are NO LONGER a contract source (round-3
+  // ruling, 2026-08-18): the committed model is the construction truth; the
+  // captures verify at reconcile time only.
   const anyContract = facts.endpoints.some(
     (e) =>
       e.requestContract != null ||
       e.responseContract != null ||
       (isInternalEndpointFact(e) && e.protocolMetadata != null)
   );
-  // Contract grounding (2026-08-09 fix): accepted BASELINE CAPTURES are a
-  // valid contract source — the story's acceptance criteria ARE behavioural
-  // parity with those captures, and endpoints that entered the model through
-  // capture reconciliation (discovered late, captured in the closure loop)
-  // legitimately carry no code-discovered contract JSON. The old gate fired
-  // before even looking at the examples it had already loaded, blocking
-  // stories on a 100%-covered baseline with a remedy (re-run code discovery)
-  // that could never produce contracts for capture-sourced endpoints. Block
-  // ONLY when a story has NEITHER a committed contract NOR a single capture.
-  if (!anyContract && totalExamples === 0) {
+  if (!anyContract) {
     return {
       ...baseRow,
       status: 'insufficient_context',
@@ -1016,30 +889,9 @@ export async function runCodeSpecCarriage(args: {
           input: 'no_committed_contracts',
           reason:
             'None of this story\'s endpoints carry a committed request/response ' +
-            'contract AND no accepted baseline captures matched them — either ' +
-            're-run code discovery (contract capture) and commit, or capture the ' +
-            'endpoints in the API Behaviour baseline (Retry uncovered APIs), then ' +
-            'regenerate the spec.',
-        },
-      ],
-      errorMessage: null,
-    };
-  }
-  const isFlaggedMissingBaseline = (story.flagReason ?? '').includes('missing_baseline');
-  // No HTTP baseline can exist when every endpoint is internal — the
-  // all-internal case routes to the internal carriage above, but guard here
-  // too so a future routing change can never resurrect the dead end.
-  const anyHttpEndpoint = facts.endpoints.some((e) => !isInternalEndpointFact(e));
-  if (totalExamples === 0 && !isFlaggedMissingBaseline && anyHttpEndpoint) {
-    return {
-      ...baseRow,
-      status: 'insufficient_context',
-      missingInputsJson: [
-        {
-          input: 'no_baseline_examples',
-          reason:
-            'No accepted baseline captures matched this story\'s endpoints — run the ' +
-            'capture story for this interface first, then regenerate the spec.',
+            'contract — re-run code discovery (contract capture) and commit, then ' +
+            'regenerate the spec. (Captured baseline examples no longer substitute ' +
+            'for a committed contract: captures verify at reconcile time only.)',
         },
       ],
       errorMessage: null,
@@ -1053,37 +905,13 @@ export async function runCodeSpecCarriage(args: {
   let specText = buildCodeSpecText({
     story,
     facts,
-    examplesByEndpoint: canonicalByEndpoint,
     behaviours,
     omissions,
   });
 
-  // Rung (a): reduce examples beyond happy + declared error statuses (keep
-  // the first TWO per endpoint: happy-first ordering means [happy, first
-  // error] survive; further variants are named in the manifest).
-  if (specText.length > maxChars) {
-    for (const [endpointId, examples] of canonicalByEndpoint) {
-      if (examples.length > 2) {
-        for (const dropped of examples.slice(2)) {
-          omissions.push(
-            `captured example ${dropped.method} ${dropped.path} → ${dropped.responseStatus} ` +
-              `(endpoint ${endpointId}, scenario ${dropped.scenarioName || 'unnamed'})`
-          );
-        }
-        canonicalByEndpoint.set(endpointId, examples.slice(0, 2));
-      }
-    }
-    specText = buildCodeSpecText({
-      story,
-      facts,
-      examplesByEndpoint: canonicalByEndpoint,
-      behaviours,
-      omissions,
-    });
-  }
-
-  // Rung (b): drop behaviour blocks whose data_effects claim read-only and
-  // no transactional flag (the least response-shaping blocks).
+  // Rung (a): drop behaviour blocks whose data_effects claim read-only and
+  // no transactional flag (the least response-shaping blocks). The former
+  // rung that trimmed captured examples is gone with the examples themselves.
   if (specText.length > maxChars && behaviours.length > 0) {
     const keep: CarriageBehaviourBlock[] = [];
     for (const block of behaviours) {
@@ -1100,7 +928,6 @@ export async function runCodeSpecCarriage(args: {
     specText = buildCodeSpecText({
       story,
       facts,
-      examplesByEndpoint: canonicalByEndpoint,
       behaviours,
       omissions,
     });
@@ -1125,7 +952,7 @@ export async function runCodeSpecCarriage(args: {
   console.log(
     `[diag-gateway] pm_migration_shape_spec_generation code_carriage ` +
       `workItemId=${baseRow.workItemId} endpoints=${facts.endpoints.length} ` +
-      `examples=${totalExamples} behaviours=${behaviours.length} chars=${specText.length}`
+      `behaviours=${behaviours.length} chars=${specText.length}`
   );
 
   // SPEC-stage predicates (predicate run-judging batch) — emission only.
@@ -1134,7 +961,7 @@ export async function runCodeSpecCarriage(args: {
     'SPEC.CARRIAGE.01', 'deterministic carriage engaged (zero-LLM spec) with fact counts',
     facts.endpoints.length > 0,
     'code story spec assembled from model facts; endpoints > 0',
-    `endpoints=${facts.endpoints.length} examples=${totalExamples} ` +
+    `endpoints=${facts.endpoints.length} ` +
       `behaviours=${behaviours.length} chars=${specText.length}`,
     specCorr,
   );
@@ -1173,7 +1000,6 @@ export async function runCodeSpecCarriage(args: {
     focusedContextRefsJson: {
       source: 'committed_model_code_carriage',
       endpointIds,
-      baselineIds,
     },
     generatedAt: new Date().toISOString(),
     errorMessage: null,

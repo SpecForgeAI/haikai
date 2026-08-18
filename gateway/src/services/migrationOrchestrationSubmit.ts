@@ -119,6 +119,15 @@ export interface OrchestrationSubmitInput {
   openMergeRequest?: boolean;
   /** The gateway's build-results URL, sent per-request on every submit (CD-3). */
   callbackUrl: string;
+  /**
+   * SCL first-commit delivery (2026-08-18, spec 10): files IVS writes into the
+   * prepared worktree and commits as ONE commit BEFORE any implementer work —
+   * the generated behaviour suite + its scl-suite-manifest.json. Absent =
+   * no-op (every non-SCL dispatch is byte-identical on the wire).
+   */
+  initialCommitFiles?: Array<{ path: string; content: string }>;
+  /** Commit message for the initial commit (required with initialCommitFiles). */
+  initialCommitMessage?: string;
 }
 
 /** One resolved spec within a batched submit. */
@@ -215,6 +224,94 @@ export async function salvageSpecWorktree(
     return {
       status: 'error',
       message: error instanceof Error ? error.message : 'salvage request failed',
+    };
+  }
+}
+
+/** One shipped-file hash reported by the IVS file-hashes endpoint. */
+export interface JobFileHashEntry {
+  path: string;
+  /** null = the path does not exist on the branch (integrity: missing). */
+  sha256: string | null;
+}
+
+/** GET /api/v2/jobs/{job_id}/file-hashes response (SCL suite integrity). */
+export interface JobFileHashesResult {
+  ok: boolean;
+  branch?: string | null;
+  hashes: JobFileHashEntry[];
+  /** Raw scl-suite-manifest.json content from the branch, when present. */
+  manifest: string | null;
+  /** Raw scl-quarantine.json content from the branch, when present. */
+  quarantine: string | null;
+  error?: string | null;
+}
+
+/**
+ * SCL shipped-suite integrity read (2026-08-18, spec 10): the branch's current
+ * shipped-file sha256s + the SCL sidecar contents, via the IVS
+ * `GET /api/v2/jobs/{job_id}/file-hashes` endpoint (hashes are computed with
+ * `git show <branch>:<path>` against the live repo, so they survive worktree
+ * reclamation). `paths` omitted → IVS derives the set from the branch's
+ * scl-suite-manifest.json. Never throws — failures come back `{ ok: false }`
+ * so the build-results door stays fail-soft.
+ */
+export async function fetchJobFileHashes(
+  jobId: string,
+  paths?: string[]
+): Promise<JobFileHashesResult> {
+  try {
+    const query =
+      paths && paths.length > 0
+        ? `?${paths.map((p) => `paths=${encodeURIComponent(p)}`).join('&')}`
+        : '';
+    const response = await request(
+      `/api/v2/jobs/${encodeURIComponent(jobId)}/file-hashes${query}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json', 'User-Agent': RIVVY_USER_AGENT },
+      }
+    );
+    const body = (await response.json().catch(() => null)) as {
+      hashes?: unknown;
+      manifest?: unknown;
+      quarantine?: unknown;
+      branch?: unknown;
+      detail?: unknown;
+    } | null;
+    if (!response.ok || !body) {
+      return {
+        ok: false,
+        hashes: [],
+        manifest: null,
+        quarantine: null,
+        error: `file-hashes returned HTTP ${response.status}${
+          body?.detail ? ` — ${String(body.detail)}` : ''
+        }`,
+      };
+    }
+    const hashes = Array.isArray(body.hashes)
+      ? (body.hashes as Array<Record<string, unknown>>)
+          .filter((h) => typeof h?.path === 'string')
+          .map((h) => ({
+            path: h.path as string,
+            sha256: typeof h.sha256 === 'string' ? h.sha256 : null,
+          }))
+      : [];
+    return {
+      ok: true,
+      branch: typeof body.branch === 'string' ? body.branch : null,
+      hashes,
+      manifest: typeof body.manifest === 'string' ? body.manifest : null,
+      quarantine: typeof body.quarantine === 'string' ? body.quarantine : null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      hashes: [],
+      manifest: null,
+      quarantine: null,
+      error: error instanceof Error ? error.message : 'file-hashes request failed',
     };
   }
 }
@@ -362,6 +459,17 @@ export async function submitOrchestration(
     ...(input.baseBranch ? { base_branch: input.baseBranch } : {}),
     ...(input.openMergeRequest !== undefined
       ? { open_merge_request: input.openMergeRequest }
+      : {}),
+    // SCL first-commit delivery (2026-08-18): the generated suite files IVS
+    // commits BEFORE the implementer runs. Omitted entirely when absent.
+    ...(input.initialCommitFiles && input.initialCommitFiles.length > 0
+      ? {
+          initial_commit_files: input.initialCommitFiles.map((f) => ({
+            path: f.path,
+            content: f.content,
+          })),
+          initial_commit_message: input.initialCommitMessage ?? '',
+        }
       : {}),
     options: { ...DEFAULT_OPTIONS },
   };

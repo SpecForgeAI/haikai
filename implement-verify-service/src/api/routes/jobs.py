@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import (
     APIRouter,
@@ -441,6 +441,60 @@ async def create_assembly_job(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create assembly job: {str(e)}",
         )
+
+
+@router.get(
+    "/api/v2/jobs/{job_id}/file-hashes",
+    tags=["Git Integration"],
+    summary="sha256 hashes of shipped files on the job's branch (SCL integrity)",
+    responses={
+        401: {"description": "Invalid or missing API key"},
+        404: {"description": "Job not found"},
+        409: {"description": "Job has no run branch / no repo target"},
+    },
+)
+async def get_job_file_hashes(
+    job_id: str,
+    paths: Optional[List[str]] = Query(default=None),
+    authenticated: bool = Depends(verify_api_key),
+):
+    """SCL shipped-suite integrity read (2026-08-18): sha256 hashes of the
+    requested paths ON THE JOB'S BRANCH (``git show <branch>:<path>`` against
+    the live repo — the run worktree is reclaimed after completion, the branch
+    survives), plus the raw contents of the two well-known SCL sidecar files
+    (``scl-suite-manifest.json`` / ``scl-quarantine.json``).
+
+    ``paths`` omitted → the path set is derived from the branch's
+    ``scl-suite-manifest.json`` (one round-trip for the gateway's
+    build-results door). A path absent from the branch reports
+    ``sha256: null``.
+    """
+    from .. import job_queue
+    from ...job_queue.initial_commit import (
+        InitialCommitError,
+        collect_branch_file_hashes,
+    )
+
+    job = job_queue.get_job_status(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} not found",
+        )
+    branch = getattr(job, "run_branch", None)
+    if not branch:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job {job_id} has no run branch recorded (no worktree run?)",
+        )
+    from pathlib import Path as _Path
+    workspace_dir = str(_Path(os.getenv("API_WORKSPACE_DIR", ".")).resolve())
+    product_root = _Path(workspace_dir) / job.company / job.project
+    try:
+        result = collect_branch_file_hashes(product_root, branch, paths)
+    except InitialCommitError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return {"job_id": job_id, **result}
 
 
 @router.get(
