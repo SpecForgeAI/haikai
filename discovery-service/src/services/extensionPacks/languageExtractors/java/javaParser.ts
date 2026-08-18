@@ -53,11 +53,16 @@ export function parseJavaFile(sourceCode: string): Tree | null {
     const p = getParser();
     // Bug 6 fix (2026-04-21): tree-sitter's Node binding defaults to a
     // ~32KB buffer, throwing "Invalid argument" on files larger than that.
-    // Fat services like `ScenarioDetailService` (~50KB) were silently
-    // dropped from the IR. Size the buffer to the source length plus a
-    // 16KB cushion for AST scratch space — cheap for small files, critical
-    // for large ones.
-    const bufferSize = sourceCode.length + 16 * 1024;
+    // 2026-08-18 (SCL determinism): the size must ALSO be CONSTANT across
+    // parses. The Node binding shares one native transfer buffer and
+    // re-registers it whenever the requested size changes; the addon can keep
+    // serving a previously-latched buffer, after which `.text` reads on an
+    // otherwise-valid tree intermittently return garbage/empty and
+    // fields/classes silently vanish from extraction (observed live on the
+    // SCL fixture: same process, run-to-run shape-set divergence). A fixed
+    // 2MB floor keeps ONE stable buffer for every ordinary file; only a
+    // truly enormous source grows it, and then monotonically.
+    const bufferSize = Math.max(2 * 1024 * 1024, sourceCode.length + 16 * 1024);
     const tree = p.parse(sourceCode, null, { bufferSize });
     return tree;
   } catch (error) {

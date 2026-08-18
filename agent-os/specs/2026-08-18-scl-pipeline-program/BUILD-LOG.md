@@ -14,9 +14,9 @@ Thresholds + row budgets = CONFIG values, not hardcoded.
 
 | # | Spec | Branch | Status |
 |---|------|--------|--------|
-| 0 | Commit earlier session fixes (reconcile + spec-gen + wire miner) | fix/reconcile-and-spec-gen-2026-08-17 | in_progress |
-| 1 | SCL core model + AMS persistence | feature/scl-01-core-model | pending |
-| 2 | Deterministic Java slicer + fixture legacy app | feature/scl-02-java-slicer | pending |
+| 0 | Commit earlier session fixes (reconcile + spec-gen + wire miner) | fix/reconcile-and-spec-gen-2026-08-17 | MERGED d60716ba |
+| 1 | SCL core model + AMS persistence | feature/scl-01-core-model | MERGED 3d0dba2a (changeset 224; routes /api/model/projects/{p}/architectures/{a}/scl; 15 tests green) |
+| 2 | Deterministic Java slicer + fixture legacy app | feature/scl-02-java-slicer | in_progress (discovery-service/src/scl/; java-parser npm, pure JS) |
 | 3 | Corpus assembly: roots, dedup, reachability | feature/scl-03-corpus-assembly | pending |
 | 4 | LLM annotation pass | feature/scl-04-annotation | pending |
 | 5 | Modernization decisions: pair ruleset + conversation phase | feature/scl-05-modernization-decisions | pending |
@@ -31,8 +31,9 @@ Thresholds + row budgets = CONFIG values, not hardcoded.
 - SCL contract JSON schema lives as TS types in discovery-service (producer)
   mirrored in gateway (consumer); AMS stores `body_json` OPAQUE — schema
   evolution never needs AMS changes.
-- Java parsing: `java-parser` npm package (pure JS, Chevrotain CST) — NOT
-  tree-sitter — to avoid native node-gyp builds on the offline work machine.
+- Java parsing: tree-sitter + tree-sitter-java — ALREADY dependencies of
+  discovery-service (the existing AST pipeline uses them), so no new native
+  deps; reuse the module's own parser loading.
 
 ## Per-spec notes
 
