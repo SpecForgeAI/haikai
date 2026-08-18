@@ -18,8 +18,8 @@ values, not hardcoded. No client identifiers anywhere.
 
 | # | Spec | Branch | Status |
 |---|------|--------|--------|
-| 0 | Design agreement + build log (docs only) | main | pending |
-| 1 | Compensation engine (core, side-agnostic) | feature/csd-01-compensation-engine | pending |
+| 0 | Design agreement + build log (docs only) | main | DONE 77cbdb53 |
+| 1 | Compensation engine (core, side-agnostic) | feature/csd-01-compensation-engine | built (AMVS compensation/ module: metadata from committed model constraints, full-row keyset imaging w/ CONFIG cap, derived inverse DML + identity wrap + single reseed path, 2-layer guard, PG pool + sidecar /mutate write adapters, bracket runner w/ refused/clean/compensated/residue taxonomy; sidecar MutationSqlGuard + SybaseMutationService + /mutate; 36 jest + 90 maven green) |
 | 2 | S0 snapshot + fingerprint + restore | feature/csd-02-s0-snapshot | pending |
 | 3 | Source capture integration (brackets + credential split) | feature/csd-03-source-capture-integration | pending |
 | 4 | Target replay integration | feature/csd-04-target-replay-integration | pending |
