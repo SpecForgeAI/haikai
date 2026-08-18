@@ -5223,3 +5223,22 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 224: SCL corpus persistence (2026-08-18). Three tables backing the
+  # Structural Contract Language mining store: scl_scan (one row per mining
+  # run), scl_contract (mined contracts, unique per (scan_id, contract_key),
+  # bodies are OPAQUE JSONB never parsed by AMS), scl_reachability_item
+  # (unresolved-reachability worklist per scan).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 223).
+  # ============================================================================
+  - changeSet:
+      id: 224-scl-corpus
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/224-scl-corpus.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true
