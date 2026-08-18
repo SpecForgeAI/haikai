@@ -17,7 +17,7 @@ import { ALL_TOOLS } from './tools';
 import type { ToolExecutionContext, ArchModelToolWriteSurface } from './tools';
 import { discoveryServiceClient as defaultDiscoveryServiceClient } from './discoveryServiceClient';
 import type { DiscoveryServiceClient } from './discoveryServiceClient';
-import type { CaptureSession, ScenarioType } from '../types/captureSession';
+import type { CaptureSession, DiagnosticType, ScenarioType } from '../types/captureSession';
 import type { ParsedOasInventory } from '../types/oas';
 import type { ApiAuthSecret } from '../types/secrets';
 import type { ChatMessage } from '../types/llm';
@@ -44,6 +44,20 @@ import {
 import { executeHttpRequestTool } from './tools/execute_http_request';
 import type { PostmanCapturedRequest } from './postmanDeltaStage1';
 import type { JudgeFn } from './postmanDeltaStage2';
+// Capture-State Discipline Spec 3: per-scenario compensation brackets around
+// mutating captures, the aggregate no-effect-map warning, and the end-of-job
+// S0 fingerprint. The bracket engine itself is Spec 1's module.
+import {
+  buildCaptureCompensationContext,
+  computeWriteEndpointsWithoutEffectMap,
+  createCompensationWriteAdapter,
+  runEndOfJobFingerprint,
+  COMPENSATED_VERBS,
+  type CaptureCompensationContext,
+} from './captureCompensation';
+import { runCompensationBracket } from './compensation/compensationRunner';
+import { fetchCompensationMetadataIndex } from './compensation/compensationMetadata';
+import { effectTablesFor, fetchEffectScopeIndex } from './stateDelta';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -176,6 +190,17 @@ export interface OrchestratorDeps {
    * to Stage-1-only subtraction (every Stage-1 survivor tops up).
    */
   judgeRedundantScenarios?: JudgeFn;
+  /**
+   * Test seams for the compensation context build (Capture-State Discipline
+   * Spec 3): inject a fake metadata/effect-scope fetcher and write-adapter
+   * factory so orchestrator tests can drive the bracket path against the
+   * shared in-memory fakes. Production callers leave this undefined.
+   */
+  compensationSeams?: {
+    metadataFetcher?: typeof fetchCompensationMetadataIndex;
+    effectScopeFetcher?: typeof fetchEffectScopeIndex;
+    writeAdapterFactory?: typeof createCompensationWriteAdapter;
+  };
 }
 
 export interface OrchestratorOutcome {
@@ -1483,6 +1508,10 @@ export async function orchestrateCaptureSession(
   // the provider's per-day token quota is exhausted, so the capture stops early
   // and finalises as `paused_rate_limited` instead of `completed`.
   let dailyLimitHit = false;
+  // CSD Spec 3: set when a compensation bracket reports RESIDUE (the DB is
+  // provably no longer S0) or the end-of-job fingerprint mismatches. Halts
+  // the run and finalises as FAILED with the guided-restore message.
+  let stateResidueError: string | null = null;
   // Per-API response-semantics config (Spec 2026-06-23). null === built-in
   // default vocabulary (the valid empty state). TG4 threads the operator-
   // confirmed per-session config here (mirroring `session.dataTypeDefaultsJson`).
@@ -1519,6 +1548,14 @@ export async function orchestrateCaptureSession(
     defaultHeaders: session.defaultHeadersRedactedJson ?? {},
   });
 
+  // Credential-role split (CSD Spec 3): when a READONLY login rides in the
+  // secrets bundle, the session's OBSERVATIONAL adapter (DB sampling, state
+  // snapshots, compensation imaging, fingerprints) connects with it; the
+  // primary (write-capable) login then exists ONLY inside the compensation
+  // write adapter below. Without the split, the primary serves both roles
+  // and the session carries a visible advisory.
+  const readonlySplit =
+    !!secrets.db?.readonlyUsername && !!secrets.db?.readonlyPassword;
   const dbAdapter = (() => {
     const cfg = session.dbConfigRedactedJson;
     if (!cfg || !cfg.host || !cfg.port || !cfg.database || !cfg.username) return null;
@@ -1536,10 +1573,43 @@ export async function orchestrateCaptureSession(
       port: cfg.port,
       database: cfg.database,
       schema: cfg.schema,
-      username: cfg.username,
-      password: secrets.db.password,
+      username: readonlySplit ? (secrets.db.readonlyUsername as string) : cfg.username,
+      password: readonlySplit ? (secrets.db.readonlyPassword as string) : secrets.db.password,
     });
   })();
+
+  // ---- Compensation context (CSD Spec 3). Engages only when the session
+  // has DB credentials AND the committed model resolves (and the CONFIG mode
+  // is not 'off'). With no context, mutating captures run exactly as before
+  // — plus a LOUD advisory diagnostic, because that posture corrupts state.
+  let compensation: CaptureCompensationContext | null = null;
+  let compensationInactiveReason: string | null = null;
+  if (dbAdapter && secrets.db?.password) {
+    const cfg = session.dbConfigRedactedJson;
+    if (cfg && (cfg.dbType === 'postgres' || cfg.dbType === 'sybase')) {
+      const built = await buildCaptureCompensationContext({
+        projectId: session.projectId,
+        architectureId: session.architectureId,
+        writeConfig: {
+          dbType: cfg.dbType,
+          host: cfg.host as string,
+          port: cfg.port as number,
+          database: cfg.database as string,
+          schema: cfg.schema ?? null,
+          username: cfg.username as string,
+          password: secrets.db.password,
+        },
+        readAdapter: dbAdapter,
+        metadataFetcher: deps.compensationSeams?.metadataFetcher,
+        effectScopeFetcher: deps.compensationSeams?.effectScopeFetcher,
+        writeAdapterFactory: deps.compensationSeams?.writeAdapterFactory,
+      });
+      compensation = built.context;
+      compensationInactiveReason = built.inactiveReason;
+    }
+  } else if (session.mutatingCallsConfirmed === true) {
+    compensationInactiveReason = 'no_db_credentials';
+  }
 
   const operationsByOasId = new Map<string, OperationDto>();
   for (const op of deps.persistedOperations) {
@@ -1564,7 +1634,80 @@ export async function orchestrateCaptureSession(
     // get_operation_payload_context tool can fetch JAXB DTO source.
     discoveryServiceClient: discoveryClient,
     discoveryRunId,
+    // CSD Spec 3: tools suppress mutating-response id harvesting when the
+    // bracket will undo the state those ids reference.
+    compensationActive: compensation !== null,
   };
+
+  // ---- CSD Spec 3 session-start diagnostics (all best-effort): the
+  // aggregate no-effect-map warning list, and the loud advisories for every
+  // way the discipline can be inactive while mutations are confirmed.
+  const writeDiag = async (
+    diagnosticType: DiagnosticType,
+    message: string,
+    detailJson: Record<string, unknown> | null,
+  ): Promise<void> => {
+    try {
+      await archClient.createDiagnostic(session.projectId, {
+        session_id: session.id,
+        diagnostic_type: diagnosticType,
+        message,
+        detail_json: detailJson ?? undefined,
+      });
+    } catch (diagErr) {
+      // eslint-disable-next-line no-console
+      console.warn(`orchestrator: failed to write ${diagnosticType} diagnostic`, diagErr);
+    }
+  };
+
+  if (compensation) {
+    const missingEffectMaps = computeWriteEndpointsWithoutEffectMap(
+      deps.persistedOperations.map((op) => ({
+        method: op.method,
+        path: op.path,
+        included: op.included,
+      })),
+      compensation.effectScope,
+    );
+    if (missingEffectMaps.length > 0) {
+      await writeDiag(
+        'compensation_no_effect_map',
+        `${missingEffectMaps.length} write endpoint(s) have NO effect-table map in the ` +
+          'committed model — their mutating scenarios will be REFUSED (fail-closed). ' +
+          'Remedy: re-scan / save-back the endpoint data effects, then re-run. A long ' +
+          'list means effect-map mining needs attention.',
+        { endpoints: missingEffectMaps },
+      );
+      trace.detail(
+        'capture.compensation.no_effect_map',
+        { count: missingEffectMaps.length, endpoints: missingEffectMaps.slice(0, 20) },
+        corr,
+      );
+    }
+    if (!readonlySplit) {
+      await writeDiag(
+        'compensation_credential_split_recommended',
+        'Compensation is ACTIVE but observation and writes share ONE DB login. ' +
+          'Recommended: supply a read-only login in the secrets step so write ' +
+          'credentials exist only inside the compensation bracket.',
+        null,
+      );
+    }
+  } else if (session.mutatingCallsConfirmed === true) {
+    await writeDiag(
+      'compensation_inactive',
+      compensationInactiveReason === 'no_db_credentials'
+        ? 'Mutating calls are CONFIRMED but the session has NO DB credentials — ' +
+          'mutating captures will run UNCOMPENSATED and corrupt state. Supply the ' +
+          'source DB connection + secrets to activate the state discipline.'
+        : compensationInactiveReason === 'model_unavailable'
+          ? 'Mutating calls are CONFIRMED but the committed model could not be read — ' +
+            'compensation is INACTIVE and mutating captures will corrupt state. ' +
+            'Commit database discovery (physical tables + PKs) and re-run.'
+          : `Compensation is INACTIVE (${compensationInactiveReason ?? 'unknown reason'}).`,
+      { reason: compensationInactiveReason },
+    );
+  }
 
   // ---- Drive scenarios
   try {
@@ -1681,88 +1824,193 @@ export async function orchestrateCaptureSession(
         // negative scenario's mirror must land its 4xx, never a 2xx);
         // anything else falls through to the normal LLM loop with the
         // attempt honestly recorded.
-        let mirrorSatisfied = false;
         const variantInfo = parseFormatVariant(op.operation_id);
-        if (variantInfo) {
-          const proven = provenScenarioRequests.get(
-            provenKey(variantInfo.base, scenario.name),
-          );
-          if (proven && proven.media !== variantInfo.media) {
-            const mirrorArgs = buildMirrorArgs(proven, variantInfo.media, op.operation_id);
-            if (mirrorArgs) {
-              try {
-                await executeHttpRequestTool.handler(
-                  mirrorArgs as unknown as Record<string, unknown>,
-                  ctx,
-                );
-              } catch (mirrorErr) {
+
+        // The whole scenario's HTTP work (mirror attempt + LLM loop) as one
+        // fire callback so a compensation bracket can wrap the SEQUENCE
+        // (CSD Spec 3): before-image -> fire everything -> derived undo ->
+        // verify. Non-mutating scenarios call it directly, unbracketed.
+        const scenarioFire = async (): Promise<{
+          outcome: Awaited<ReturnType<typeof runScenarioLoop>> | null;
+        }> => {
+          let mirrorSatisfied = false;
+          if (variantInfo) {
+            const proven = provenScenarioRequests.get(
+              provenKey(variantInfo.base, scenario.name),
+            );
+            if (proven && proven.media !== variantInfo.media) {
+              const mirrorArgs = buildMirrorArgs(proven, variantInfo.media, op.operation_id);
+              if (mirrorArgs) {
+                try {
+                  await executeHttpRequestTool.handler(
+                    mirrorArgs as unknown as Record<string, unknown>,
+                    ctx,
+                  );
+                } catch (mirrorErr) {
+                  trace.detail(
+                    'capture.format_twin_mirror',
+                    {
+                      operationId: op.operation_id,
+                      scenario: scenario.name,
+                      outcome: 'send_error',
+                      error:
+                        mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr),
+                    },
+                    corr,
+                  );
+                }
+                mirrorSatisfied =
+                  selectCanonicalCapture(
+                    runManager.getScenarioCaptures(session.id).map((c) => ({
+                      captureId: c.captureId,
+                      status: c.status,
+                      body: c.data?.responseBody,
+                    })),
+                    scenario.expectedStatus,
+                    semanticsConfig,
+                  ) !== null;
                 trace.detail(
                   'capture.format_twin_mirror',
                   {
                     operationId: op.operation_id,
                     scenario: scenario.name,
-                    outcome: 'send_error',
-                    error:
-                      mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr),
+                    direction: `${proven.media} -> ${variantInfo.media}`,
+                    outcome: mirrorSatisfied ? 'mirrored_scenario' : 'fell_back_to_llm',
+                  },
+                  corr,
+                );
+              } else {
+                trace.detail(
+                  'capture.format_twin_mirror',
+                  {
+                    operationId: op.operation_id,
+                    scenario: scenario.name,
+                    outcome: 'conversion_unavailable',
                   },
                   corr,
                 );
               }
-              mirrorSatisfied =
-                selectCanonicalCapture(
-                  runManager.getScenarioCaptures(session.id).map((c) => ({
-                    captureId: c.captureId,
-                    status: c.status,
-                    body: c.data?.responseBody,
-                  })),
-                  scenario.expectedStatus,
-                  semanticsConfig,
-                ) !== null;
-              trace.detail(
-                'capture.format_twin_mirror',
-                {
-                  operationId: op.operation_id,
-                  scenario: scenario.name,
-                  direction: `${proven.media} -> ${variantInfo.media}`,
-                  outcome: mirrorSatisfied ? 'mirrored_scenario' : 'fell_back_to_llm',
-                },
-                corr,
-              );
-            } else {
-              trace.detail(
-                'capture.format_twin_mirror',
-                {
-                  operationId: op.operation_id,
-                  scenario: scenario.name,
-                  outcome: 'conversion_unavailable',
-                },
-                corr,
-              );
             }
           }
-        }
+          let fireOutcome: Awaited<ReturnType<typeof runScenarioLoop>> | null = null;
+          if (!mirrorSatisfied) {
+            fireOutcome = await runScenarioLoop({
+              context: ctx,
+              initialMessages: buildScenarioPrompt(
+                session,
+                op.operation_id,
+                scenario.name,
+                op.method,
+                op.path,
+                discoveryContext,
+                seedSet?.seeds?.find((s) => s.scenarioName === scenario.name),
+                runManager.getLearnedFacts(session.id),
+                scenario.directive,
+                session.dataTypeDefaultsJson,
+              ),
+              tools: ALL_TOOLS,
+              gatewayClient: gateway,
+              archModelClient: archClient,
+              abortSignal: runManager.get(session.id)?.abortController.signal,
+            });
+          }
+          return { outcome: fireOutcome };
+        };
 
         let outcome: Awaited<ReturnType<typeof runScenarioLoop>> | null = null;
-        if (!mirrorSatisfied) {
-          outcome = await runScenarioLoop({
-          context: ctx,
-          initialMessages: buildScenarioPrompt(
-            session,
-            op.operation_id,
-            scenario.name,
-            op.method,
-            op.path,
-            discoveryContext,
-            seedSet?.seeds?.find((s) => s.scenarioName === scenario.name),
-            runManager.getLearnedFacts(session.id),
-            scenario.directive,
-            session.dataTypeDefaultsJson,
-          ),
-          tools: ALL_TOOLS,
-          gatewayClient: gateway,
-          archModelClient: archClient,
-          abortSignal: runManager.get(session.id)?.abortController.signal,
+        const isBracketedScenario =
+          compensation !== null && COMPENSATED_VERBS.has(op.method.toLowerCase());
+        if (compensation && isBracketedScenario) {
+          const bracketTables = effectTablesFor(compensation.effectScope, op.method, op.path);
+          if (bracketTables.length === 0) {
+            // FAIL CLOSED (user ruling): an uncompensatable write is never
+            // fired. The scenario is refused with a loud diagnostic; the
+            // session-start aggregate warning already listed this endpoint.
+            scenariosErrored += 1;
+            await writeDiag(
+              'compensation_refused',
+              `Mutating scenario '${scenario.name}' on ${op.method.toUpperCase()} ${op.path} ` +
+                'REFUSED: no effect-table map in the committed model (fail-closed). ' +
+                'Remedy: save-back the endpoint data effects, then re-run.',
+              { operation_id: op.operation_id, scenario: scenario.name, reason: 'no_effect_map' },
+            );
+            trace.detail(
+              'capture.compensation.refused',
+              { op: `${op.method} ${op.path}`, scenario: scenario.name, reason: 'no_effect_map' },
+              corr,
+            );
+            continue;
+          }
+          const bracket = await runCompensationBracket({
+            readAdapter: compensation.readAdapter,
+            writeAdapter: compensation.writeAdapter,
+            engine: compensation.engine,
+            schema: compensation.schema,
+            tables: bracketTables,
+            metadata: compensation.metadata,
+            fire: scenarioFire,
           });
+          if (bracket.outcome.kind === 'refused') {
+            scenariosErrored += 1;
+            await writeDiag(
+              'compensation_refused',
+              `Mutating scenario '${scenario.name}' on ${op.method.toUpperCase()} ${op.path} ` +
+                `REFUSED (fail-closed): ` +
+                bracket.outcome.refusals.map((r) => `${r.table}: ${r.reason} — ${r.detail}`).join('; '),
+              {
+                operation_id: op.operation_id,
+                scenario: scenario.name,
+                refusals: bracket.outcome.refusals as unknown as Record<string, unknown>,
+              },
+            );
+            trace.detail(
+              'capture.compensation.refused',
+              {
+                op: `${op.method} ${op.path}`,
+                scenario: scenario.name,
+                refusals: bracket.outcome.refusals.map((r) => r.reason),
+              },
+              corr,
+            );
+            continue;
+          }
+          outcome = bracket.fireResult?.outcome ?? null;
+          if (bracket.outcome.kind === 'residue') {
+            // HALT (design ruling): the DB is no longer S0. Everything after
+            // this point would sample a corrupted state. Guided restore, then
+            // resume.
+            stateResidueError =
+              `S0 residue after scenario '${scenario.name}' on ` +
+              `${op.method.toUpperCase()} ${op.path}: compensation could not prove ` +
+              `restoration (${bracket.outcome.residue.length} residue item(s)). The DB ` +
+              'is NO LONGER S0 — restore via POST /api/s0-snapshot/restore, then re-run.';
+            await writeDiag('compensation_residue', stateResidueError, {
+              residue: bracket.outcome.residue as unknown as Record<string, unknown>,
+              statements_applied: bracket.outcome.statementsApplied.length,
+            });
+            trace.fail(
+              `compensation residue — halting session (${bracket.outcome.residue.length} items)`,
+              corr,
+            );
+            break;
+          }
+          trace.detail(
+            'capture.compensation.bracket',
+            {
+              op: `${op.method} ${op.path}`,
+              scenario: scenario.name,
+              kind: bracket.outcome.kind,
+              statementsApplied: bracket.outcome.statementsApplied.length,
+              reseeds: bracket.outcome.reseedStatements.length,
+            },
+            corr,
+          );
+          // An infrastructure-level throw from the fire step surfaces AFTER
+          // the bracket completed its undo — same failure semantics as
+          // before, but with the state provably restored first.
+          if (bracket.fireError) throw bracket.fireError;
+        } else {
+          outcome = (await scenarioFire()).outcome;
         }
 
         // Per-DAY provider quota (Spec 2026-07-22): stop the WHOLE capture --
@@ -1990,6 +2238,9 @@ export async function orchestrateCaptureSession(
       // Per-day quota hit mid-run: stop processing further operations. What was
       // scored so far is preserved; the finaliser marks `paused_rate_limited`.
       if (dailyLimitHit) break;
+      // Compensation residue (CSD Spec 3): the DB is no longer S0 — every
+      // further capture would sample a corrupted state. Stop the whole run.
+      if (stateResidueError) break;
     }
 
     // ---- Session-level auth-negative coverage (ONE project dimension). Run
@@ -1999,6 +2250,50 @@ export async function orchestrateCaptureSession(
     // MISSED with an honest reason rather than firing an unsafe call.
     const authCoverage = await runAuthNegativeProbes(httpExecutor, authProbeCandidates);
     coverageSummary = assembleCoverageSummary(perEndpointCoverage, authCoverage);
+
+    // ---- End-of-job S0 fingerprint (CSD Spec 3): with compensation active
+    // and no residue already declared, prove the DB is still S0 before the
+    // run finalises. Mismatch is the HALT signal; a missing snapshot is a
+    // loud advisory, never a silent pass. Runs INSIDE the try so the read
+    // adapter is still alive.
+    if (compensation && !stateResidueError && !dailyLimitHit) {
+      const fingerprint = await runEndOfJobFingerprint({
+        projectId: session.projectId,
+        architectureId: session.architectureId,
+        readAdapter: compensation.readAdapter,
+        metadata: compensation.metadata,
+        schema: compensation.schema,
+      });
+      trace.detail(
+        'capture.s0_fingerprint',
+        {
+          status: fingerprint.status,
+          snapshotId: fingerprint.snapshotId,
+          mismatches: fingerprint.report?.mismatches.length ?? 0,
+        },
+        corr,
+      );
+      if (fingerprint.status === 'mismatch') {
+        stateResidueError =
+          `end-of-job S0 fingerprint MISMATCH vs snapshot ${fingerprint.snapshotId}: ` +
+          (fingerprint.detail ?? 'tables diverged');
+        await writeDiag('s0_fingerprint_mismatch', stateResidueError, {
+          snapshot_id: fingerprint.snapshotId,
+          mismatches: (fingerprint.report?.mismatches ?? []) as unknown as Record<
+            string,
+            unknown
+          >,
+        });
+      } else if (fingerprint.status === 'no_snapshot') {
+        await writeDiag('s0_snapshot_missing', fingerprint.detail ?? 'no S0 snapshot pinned', null);
+      } else if (fingerprint.status === 'check_failed') {
+        await writeDiag(
+          's0_fingerprint_check_failed',
+          `end-of-job S0 fingerprint could not run: ${fingerprint.detail ?? 'unknown'}`,
+          { snapshot_id: fingerprint.snapshotId },
+        );
+      }
+    }
   } catch (err) {
     infraError = err instanceof Error ? err.message : String(err);
   } finally {
@@ -2010,6 +2305,13 @@ export async function orchestrateCaptureSession(
         // ignore -- pool teardown errors must not derail teardown.
       }
     }
+    if (compensation) {
+      try {
+        await compensation.writeAdapter.dispose();
+      } catch {
+        // ignore -- pool teardown errors must not derail teardown.
+      }
+    }
     runManager.end(session.id);
     secretsStore.purge(session.id);
   }
@@ -2017,13 +2319,15 @@ export async function orchestrateCaptureSession(
   // `paused_rate_limited` (Spec 2026-07-22): the provider's per-day token quota
   // was reached mid-run. NOT a failure — everything captured so far is kept and
   // the operator resumes after reset via "Retry uncovered APIs".
-  const finalStatus: 'completed' | 'failed' | 'paused_rate_limited' = infraError
-    ? 'failed'
-    : dailyLimitHit
-      ? 'paused_rate_limited'
-      : 'completed';
+  const finalStatus: 'completed' | 'failed' | 'paused_rate_limited' =
+    infraError || stateResidueError
+      ? 'failed'
+      : dailyLimitHit
+        ? 'paused_rate_limited'
+        : 'completed';
   const finalMessage: string | null =
     infraError ??
+    stateResidueError ??
     (dailyLimitHit
       ? 'stopped: LLM daily token quota reached — resume with "Retry uncovered APIs" after the quota resets'
       : null);
@@ -2109,6 +2413,8 @@ export async function orchestrateCaptureSession(
     scenariosCompleted,
     scenariosErrored,
     finalStatus,
-    errorMessage: infraError,
+    // The SAME terminal message the session row carries — incl. the CSD
+    // Spec 3 residue / fingerprint halt messages, not just infra errors.
+    errorMessage: finalMessage,
   };
 }

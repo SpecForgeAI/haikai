@@ -101,6 +101,14 @@ export interface ToolExecutionContext {
    * -- Task Group 8 (W-17 graceful fallback).
    */
   discoveryRunId?: string | null;
+  /**
+   * TRUE when the orchestrator wraps mutating scenarios in compensation
+   * brackets (Capture-State Discipline Spec 3). Tools use this to keep
+   * cross-scenario knowledge honest: identifiers harvested from a MUTATING
+   * response reference state the bracket will undo, so they are not recorded
+   * as learned facts. Optional so existing tests/contexts are unaffected.
+   */
+  compensationActive?: boolean;
 }
 
 /**

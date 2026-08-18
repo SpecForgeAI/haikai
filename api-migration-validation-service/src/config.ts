@@ -297,3 +297,18 @@ export const S0_FINGERPRINT_CHECKSUM_MAX_ROWS: number =
  */
 export const S0_RESTORE_INSERTS_PER_BATCH: number =
   parseInt(process.env.S0_RESTORE_INSERTS_PER_BATCH || '500', 10);
+
+/**
+ * Capture compensation mode (Capture-State Discipline Spec 3).
+ *   - 'required' (default): when the session has DB credentials AND the
+ *     committed model resolves, every MUTATING scenario runs inside a
+ *     verified compensation bracket; endpoints whose effect map / PK cannot
+ *     support a bracket are REFUSED (fail-closed, loud). Bracket residue
+ *     HALTS the session.
+ *   - 'off': legacy behaviour (state-delta observation only) — an escape
+ *     valve for diagnosis, never the recommended posture.
+ * When the session has NO DB credentials at all, compensation cannot run in
+ * either mode; the session carries a loud advisory instead.
+ */
+export const CAPTURE_COMPENSATION_MODE: 'required' | 'off' =
+  process.env.CAPTURE_COMPENSATION_MODE === 'off' ? 'off' : 'required';

@@ -30,6 +30,9 @@ import type { OpenAPIV3 } from 'openapi-types';
 import { createSessionHttpExecutor } from '../services/httpExecutor';
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
 import { orchestrateCaptureSession } from '../services/captureSessionOrchestrator';
+// CSD Spec 3: pre-start compensation preflight (aggregate no-effect-map list).
+// (`fetchEffectScopeIndex` is already imported below with the state-delta set.)
+import { computeWriteEndpointsWithoutEffectMap } from '../services/captureCompensation';
 import type { PostmanCapturedRequest } from '../services/postmanDeltaStage1';
 // Spec 2026-07-06-j: WSDL 1.1 -> inventory (replaces the SOAP 400 guard).
 import { parseWsdlToInventory } from '../services/wsdlToInventory';
@@ -1550,6 +1553,70 @@ export function buildCaptureSessionActionsRouter(
         const message =
           err instanceof Error ? err.message : 'data-type-defaults-preview failed';
         return fail(res, 500, message);
+      }
+    },
+  );
+
+  // ----------------------------------------------------------------------
+  // GET /api/capture-sessions/:id/compensation-preflight
+  // ----------------------------------------------------------------------
+  // Capture-State Discipline Spec 3: the PRE-START aggregate warning surface.
+  // Returns every INCLUDED write endpoint whose (METHOD, path) resolves NO
+  // write tables in the committed effect map — those mutating scenarios will
+  // be REFUSED at run time (fail-closed), so the operator sees the full list
+  // BEFORE /start, at judgeable scale (a long list = effect-map mining needs
+  // attention). Also reports whether the committed model resolves at all
+  // (compensation cannot engage without it).
+  router.get(
+    '/api/capture-sessions/:id/compensation-preflight',
+    async (req: Request, res: Response) => {
+      const sessionId = req.params.id;
+      const projectId = extractProjectId(req);
+      const architectureId = extractArchitectureId(req);
+      if (!projectId) {
+        return fail(res, 400, 'projectId is required (query param or body field)');
+      }
+      if (!architectureId) {
+        return fail(res, 400, 'architectureId is required (query param or body field)');
+      }
+      try {
+        const [operations, effectScope] = await Promise.all([
+          archModelClient.listOperationsBySession(projectId, sessionId),
+          fetchEffectScopeIndex(projectId, architectureId),
+        ]);
+        if (!effectScope) {
+          return res.status(200).json({
+            session_id: sessionId,
+            model_resolvable: false,
+            write_endpoints_without_effect_map: [],
+            note:
+              'the committed model could not be read — compensation will be INACTIVE ' +
+              'and mutating captures would run uncompensated',
+          });
+        }
+        const missing = computeWriteEndpointsWithoutEffectMap(
+          operations.map((op) => ({
+            method: op.method,
+            path: op.path,
+            included: op.included,
+          })),
+          effectScope,
+        );
+        return res.status(200).json({
+          session_id: sessionId,
+          model_resolvable: true,
+          write_endpoints_without_effect_map: missing,
+          note:
+            missing.length > 0
+              ? `${missing.length} write endpoint(s) will be REFUSED at capture time ` +
+                '(fail-closed): no effect-table map in the committed model. Remedy: ' +
+                'save-back the endpoint data effects, then re-run.'
+              : null,
+        });
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : 'compensation-preflight failed';
+        return fail(res, 502, message);
       }
     },
   );
@@ -3442,7 +3509,11 @@ export function buildCaptureSessionActionsRouter(
     const sessionId = req.params.id;
     const body = (req.body || {}) as Partial<{
       api: ApiAuthSecret;
-      db: { password: string } | null;
+      db: {
+        password: string;
+        readonly_username?: string;
+        readonly_password?: string;
+      } | null;
     }>;
 
     if (!body.api || typeof body.api !== 'object' || typeof body.api.type !== 'string') {
@@ -3463,7 +3534,21 @@ export function buildCaptureSessionActionsRouter(
     const bundle: SecretsBundle = {
       sessionId,
       api: body.api,
-      db: body.db && body.db.password ? { password: body.db.password } : undefined,
+      db:
+        body.db && body.db.password
+          ? {
+              password: body.db.password,
+              // Credential-role split (CSD Spec 3): the readonly login is
+              // honoured only when BOTH fields arrive — a lone username
+              // would silently fall back to the write password.
+              ...(body.db.readonly_username && body.db.readonly_password
+                ? {
+                    readonlyUsername: body.db.readonly_username,
+                    readonlyPassword: body.db.readonly_password,
+                  }
+                : {}),
+            }
+          : undefined,
       loadedAt: Date.now(),
     };
     secretsStore.set(bundle);
@@ -3473,6 +3558,7 @@ export function buildCaptureSessionActionsRouter(
       sessionId,
       loaded: true,
       hasDbSecret: !!bundle.db,
+      hasDbReadonlySecret: !!bundle.db?.readonlyUsername,
     });
   });
 
