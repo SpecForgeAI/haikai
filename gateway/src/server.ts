@@ -15,6 +15,8 @@ import { dbGapProposalsRouter } from './routes/dbGapProposals';
 import { sclAnnotationRouter } from './routes/sclAnnotation';
 // SCL pipeline spec 5 (2026-08-18): modernization decisions review + confirm.
 import { sclModernizationRouter } from './routes/sclModernization';
+// SCL pipeline spec 6 (2026-08-18): Structural Model tab "explain this" LLM affordance.
+import { sclExplainRouter } from './routes/sclExplain';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -155,6 +157,10 @@ app.use('/api/v1', sclAnnotationRouter);
 // /api/v1/projects/:projectId/architectures/:architectureId/scl/modernization/
 // {review,confirm} — observed-idiom review + modernize.* decision persistence.
 app.use('/api/v1', sclModernizationRouter);
+// SCL "explain this" route (SCL pipeline spec 6, 2026-08-18):
+// /api/v1/projects/:projectId/architectures/:architectureId/scl/explain —
+// plain-English LLM explanation of one mined SCL contract (never persisted).
+app.use('/api/v1', sclExplainRouter);
 // OAS Export (direct build 2026-06-11): deterministic OpenAPI contracts for
 // an architecture's interfaces — list / generate / zip download. Sibling of
 // the DB migration pack surface on the Migration Delivery Plan.

@@ -16,7 +16,8 @@ Thresholds + row budgets = CONFIG values, not hardcoded.
 |---|------|--------|--------|
 | 0 | Commit earlier session fixes (reconcile + spec-gen + wire miner) | fix/reconcile-and-spec-gen-2026-08-17 | MERGED d60716ba |
 | 1 | SCL core model + AMS persistence | feature/scl-01-core-model | MERGED 3d0dba2a (changeset 224; routes /api/model/projects/{p}/architectures/{a}/scl; 15 tests green) |
-| 2 | Deterministic Java slicer + fixture legacy app | feature/scl-02-java-slicer | in_progress (discovery-service/src/scl/; java-parser npm, pure JS) |
+| 2 | Deterministic Java slicer + fixture legacy app | feature/scl-02-java-slicer | MERGED 14f33e5e (wasm web-tree-sitter after native nondeterminism hunt; 28 tests incl. determinism soak; slicer API: sliceProject(rootDir) async) |
+| 2n | NOTE: native node-tree-sitter binding proven nondeterministic (member-vanishing node reads); SCL parses via web-tree-sitter 0.22.6 + tree-sitter-wasms 0.1.13; native javaParser got constant-buffer floor fix | — | done |
 | 3 | Corpus assembly: roots, dedup, reachability | feature/scl-03-corpus-assembly | pending |
 | 4 | LLM annotation pass | feature/scl-04-annotation | pending |
 | 5 | Modernization decisions: pair ruleset + conversation phase | feature/scl-05-modernization-decisions | pending |

@@ -97,13 +97,15 @@ describe('runSclScan (mocked AMS http)', () => {
     expect(putIndex).toBeGreaterThan(calls.indexOf(bulkCalls[bulkCalls.length - 1]));
     expect(calls[putIndex].url).toBe(`${SCL_BASE}/scans/scan-123/reachability`);
     const putBody = calls[putIndex].body as {
-      items: Array<{ source_path: string; symbol: string; signals_json: string[] }>;
+      items: Array<{ source_path: string; symbol: string; signals_json: { signals: string[] } }>;
     };
     expect(putBody.items).toHaveLength(corpus.reachability.length);
+    // signals_json is a WRAPPED object — the AMS DTO types it as a JSON
+    // object (Map) and a bare array fails Jackson binding with a 400.
     expect(putBody.items[0]).toEqual({
       source_path: corpus.reachability[0].sourcePath,
       symbol: corpus.reachability[0].symbol,
-      signals_json: corpus.reachability[0].signals,
+      signals_json: { signals: corpus.reachability[0].signals },
     });
 
     // 4. Completed PATCH last, with corpus stats + findings + parse errors.

@@ -136,7 +136,10 @@ const FINDING_ID_QUERY_PARAM = 'findingId';
 const ROOM_QUERY_PARAM = 'room';
 
 function parseTabParam(value: string | null): DiscoveryRunDetailTabId {
-  return value === 'findings' ? 'findings' : 'candidates';
+  if (value === 'findings') return 'findings';
+  // Structural Model tab (SCL pipeline spec 6, 2026-08-18 "UI placement").
+  if (value === 'structural-model') return 'structural-model';
+  return 'candidates';
 }
 
 function parseFindingIdParam(value: string | null): string | null {

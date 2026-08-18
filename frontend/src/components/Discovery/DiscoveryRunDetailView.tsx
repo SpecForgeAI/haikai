@@ -56,6 +56,7 @@ import type {
 } from '../../api/discoveryApi';
 import { DiscoveryCandidateTable } from '../DashboardView/DiscoveryCandidateTable';
 import { FindingsTab } from './FindingsTab';
+import { StructuralModelTab } from './structuralModel/StructuralModelTab';
 import { RightHandPanelShell } from '../common/RightHandPanelShell';
 import { DiscoveryReviewRoom } from './DiscoveryReviewRoom';
 import styles from './DiscoveryRunDetailView.module.css';
@@ -68,7 +69,7 @@ import styles from './DiscoveryRunDetailView.module.css';
  * Identifier set for the tab strip. Adding a new tab is a two-line change:
  * extend this union, then push a new entry to `TABS` below.
  */
-export type DiscoveryRunDetailTabId = 'candidates' | 'findings';
+export type DiscoveryRunDetailTabId = 'candidates' | 'findings' | 'structural-model';
 
 interface TabDefinition {
   id: DiscoveryRunDetailTabId;
@@ -78,6 +79,7 @@ interface TabDefinition {
 const TABS: TabDefinition[] = [
   { id: 'candidates', label: 'Candidates' },
   { id: 'findings', label: 'Findings' },
+  { id: 'structural-model', label: 'Structural Model' },
 ];
 
 // ============================================================================
@@ -507,6 +509,16 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
       >
         {activeTab === 'candidates' && renderCandidatesPanel()}
         {activeTab === 'findings' && renderFindingsPanel()}
+        {/* Structural Model tab (SCL pipeline spec 6, 2026-08-18 design "UI
+            placement" ruling): corpus browser + reachability report +
+            "explain this". Architecture-scoped (the SCL scan is keyed to the
+            architecture, not the discovery run), so it needs no selectedRun. */}
+        {activeTab === 'structural-model' && (
+          <StructuralModelTab
+            projectId={projectId}
+            architectureId={runArchitectureId}
+          />
+        )}
       </div>
 
       {/* Spec 3 (Task Group 4): the Discovery Review Room, mounted in the shared

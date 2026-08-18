@@ -170,7 +170,10 @@ export async function runSclScan(args: RunSclScanArgs, deps?: RunSclScanDeps): P
         items: corpus.reachability.map((item) => ({
           source_path: item.sourcePath,
           symbol: item.symbol,
-          signals_json: item.signals,
+          // WRAPPED object, not a raw array: the AMS DTO types signals_json
+          // as a JSON OBJECT (Map) — a bare array fails Jackson binding with
+          // a 400 (found 2026-08-18 during the Structural Model tab build).
+          signals_json: { signals: item.signals },
         })),
       },
     })) as { replaced?: number } | null;
