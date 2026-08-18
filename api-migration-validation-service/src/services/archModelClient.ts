@@ -489,9 +489,11 @@ export interface BaselineDto {
   notes: string | null;
   /**
    * Kind discriminator added by the Target-Side Capture spec (2026-05-25).
-   * Always `'current'` for legacy rows (DB column default).
+   * Always `'current'` for legacy rows (DB column default). `'log_replay'`
+   * (CSD Spec 7, 2026-08-18) = the reconciliation round-2 current-side
+   * baseline.
    */
-  kind?: 'current' | 'target';
+  kind?: 'current' | 'target' | 'log_replay';
   /**
    * Self-FK at the source current-state baseline this target baseline was
    * replayed from. Null for current-state baselines; non-null for target
@@ -560,8 +562,8 @@ export interface CreateBaselineRequest {
   accepted_capture_count?: number | null;
   operation_count?: number | null;
   notes?: string | null;
-  /** `'current'` (default) or `'target'`. */
-  kind?: 'current' | 'target';
+  /** `'current'` (default), `'target'`, or `'log_replay'` (CSD Spec 7). */
+  kind?: 'current' | 'target' | 'log_replay';
   /** Required when `kind='target'`; MUST be null when `kind='current'`. */
   paired_with_baseline_id?: string | null;
 }

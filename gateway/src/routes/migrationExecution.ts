@@ -93,6 +93,8 @@ import {
   ManualDbBlock,
   startManualReconciliation,
 } from '../services/migrationManualReconcileTriggers';
+// CSD Spec 7 (2026-08-18): log-replay reconciliation round 2.
+import { runLogReplayReconcile } from '../services/migrationLogReplayReconcile';
 import { currentSystemCredentialsStore } from '../services/baselineDriftScheduler';
 import type {
   TargetDbSecret,
@@ -754,6 +756,94 @@ migrationExecutionRouter.post(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       return res.status(502).json({ error: 'Failed to start the reconciliation' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
+// Log-replay reconciliation — ROUND 2 (CSD Spec 7, 2026-08-18): the manual
+// trigger for replaying the staged log corpus against BOTH systems at S0.
+// Phase A (AMVS current-side replay -> log_replay baseline) then phase B
+// (the existing headless target replay + diff, tagged
+// purpose='log_replay_round2'). Synchronous — the caller sees the verdict.
+// Credentials live in function scope only.
+// ---------------------------------------------------------------------------
+
+migrationExecutionRouter.post(
+  '/projects/:projectId/architectures/:architectureId/log-replay-reconcile/run',
+  async (req: Request, res: Response) => {
+    const { projectId, architectureId } = req.params;
+    const body = (req.body ?? {}) as {
+      corpus_id?: string | null;
+      current?: {
+        base_url?: string;
+        api?: Parameters<typeof runLogReplayReconcile>[0]['current']['api'];
+        db?: ManualDbBlock | null;
+      };
+      target?: {
+        base_url?: string;
+        api?: Parameters<typeof runLogReplayReconcile>[0]['target']['api'];
+        db?: ManualDbBlock | null;
+      };
+    };
+    if (!body.current?.base_url || !body.current.api) {
+      return res.status(400).json({ error: 'current { base_url, api } is required' });
+    }
+    if (!body.target?.base_url || !body.target.api) {
+      return res.status(400).json({ error: 'target { base_url, api } is required' });
+    }
+    const toDb = (block: ManualDbBlock | null | undefined) =>
+      block &&
+      (block.dbType === 'postgres' || block.dbType === 'sybase') &&
+      block.host &&
+      block.database &&
+      block.username &&
+      block.password &&
+      typeof block.port === 'number'
+        ? {
+            dbType: block.dbType as 'postgres' | 'sybase',
+            host: block.host,
+            port: block.port,
+            database: block.database,
+            schema: block.schema ?? null,
+            username: block.username,
+            password: block.password,
+          }
+        : null;
+    try {
+      const result = await runLogReplayReconcile({
+        projectId,
+        architectureId,
+        corpusId: body.corpus_id ?? null,
+        current: {
+          baseUrl: body.current.base_url,
+          api: body.current.api,
+          db: toDb(body.current.db),
+        },
+        target: {
+          baseUrl: body.target.base_url,
+          api: body.target.api,
+          db: toDb(body.target.db),
+        },
+      });
+      return res.status(result.ok ? 200 : 502).json({
+        ok: result.ok,
+        error: result.error,
+        corpus_id: result.corpusId,
+        log_replay_baseline_id: result.logReplayBaselineId,
+        current_side: result.currentSide,
+        diff_id: result.diffId,
+        target_baseline_id: result.targetBaselineId,
+        diff_items: result.diffItems,
+        breaks: result.breaks,
+      });
+    } catch (error) {
+      logger.error('[diag-gateway] log_replay_reconcile error', {
+        projectId,
+        architectureId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return res.status(502).json({ error: 'Failed to run the log-replay reconciliation' });
     }
   }
 );

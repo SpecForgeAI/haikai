@@ -92,7 +92,11 @@ public class ApiBehaviourBaselineService {
      */
     private static final HaikaiTrace.Tracer TRACE = HaikaiTrace.forService("ams");
 
-    public static final Set<String> ALLOWED_KINDS = Set.of("current", "target");
+    // "log_replay" (CSD Spec 7, 2026-08-18): the reconciliation round-2
+    // current-side baseline — real logged requests replayed at S0. The
+    // headless target replay accepts it as a SOURCE (it only rejects
+    // kind='target' sources); the pinned CD-A oracle stays kind='current'.
+    public static final Set<String> ALLOWED_KINDS = Set.of("current", "target", "log_replay");
 
     private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
         "draft",    Set.of("active", "archived"),
