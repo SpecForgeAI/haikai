@@ -35,6 +35,18 @@ import {
   TARGET_REPLAY_CONSECUTIVE_FAILURE_ABORT as DEFAULT_TRANSPORT_FAILURE_THRESHOLD,
   LLM_TOOL_CALL_TIMEOUT_MS as DEFAULT_PER_ITEM_TIMEOUT_MS,
 } from '../config';
+// Capture-State Discipline Spec 4: target-side compensation brackets — the
+// SAME engine + context builder the capture side uses, pointed at the target
+// DB, so the target stays the freshly-migrated state through a replay (user
+// ruling: target is NOT disposable).
+import {
+  buildCaptureCompensationContext,
+  createCompensationWriteAdapter,
+  type CaptureCompensationContext,
+} from './captureCompensation';
+import { runCompensationBracket } from './compensation/compensationRunner';
+import { fetchCompensationMetadataIndex } from './compensation/compensationMetadata';
+import type { DbConnectionConfig } from '../types/db';
 import { createTracer } from '../trace';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE
@@ -99,6 +111,25 @@ const trace = createTracer('capture-svc');
  * The route handler catches this and marks the session as
  * `failed` with `error_message='target_unreachable'`.
  */
+/**
+ * Thrown when a target-side compensation bracket reports RESIDUE (CSD Spec
+ * 4): the target DB is provably no longer the freshly-migrated state, so
+ * every further replayed item would sample corrupted state. The outer catch
+ * patches the session FAILED with this message; the remedy is re-running the
+ * data migration load (truncate-and-load reads the live source, which IS S0
+ * under the capture-side discipline).
+ */
+export class CompensationResidueHaltError extends Error {
+  constructor(detail: string) {
+    super(
+      `target compensation residue: ${detail} — the target DB is no longer the ` +
+        'freshly-migrated state. Re-run the data migration (truncate-and-load) ' +
+        'before replaying.',
+    );
+    this.name = 'CompensationResidueHaltError';
+  }
+}
+
 export class TransportFailureThresholdExceededError extends Error {
   public readonly threshold: number;
   public readonly lastErrorCode: string | null;
@@ -124,7 +155,11 @@ export type TargetReplayDiagnosticType =
   | 'sequence_skipped'
   | 'sequence_setup_failed'
   | 'sequence_cleanup_failed'
-  | 'sequence_residual_pollution';
+  | 'sequence_residual_pollution'
+  // CSD Spec 4: target-side compensation diagnostics.
+  | 'compensation_inactive'
+  | 'compensation_refused'
+  | 'compensation_residue';
 
 export interface TargetReplayDiagnostic {
   diagnosticType: TargetReplayDiagnosticType;
@@ -206,6 +241,24 @@ export interface TargetReplayDeps {
    * adapter.
    */
   dbAdapter?: DbAdapter | null;
+  /**
+   * OPTIONAL target-DB connection config WITH password (CSD Spec 4). When
+   * present alongside `dbAdapter`, the runner builds the target-side
+   * compensation context and wraps every mutating replay item in a verified
+   * bracket — the target DB stays the freshly-migrated state through the
+   * whole replay. Absent = no brackets (legacy state-delta observation only)
+   * plus a loud advisory diagnostic.
+   */
+  targetDbConfig?: DbConnectionConfig | null;
+  /**
+   * Test seams for the compensation context build (CSD Spec 4) — mirror the
+   * capture orchestrator's `compensationSeams`.
+   */
+  compensationSeams?: {
+    metadataFetcher?: typeof fetchCompensationMetadataIndex;
+    effectScopeFetcher?: typeof fetchEffectScopeIndex;
+    writeAdapterFactory?: typeof createCompensationWriteAdapter;
+  };
   /**
    * OPTIONAL endpoint scope (Spec 2026-07-06-i): normalised
    * `"METHOD /path/template"` keys. When present, ONLY baseline items whose
@@ -349,6 +402,9 @@ export async function runTargetReplay(
   let items: BaselineItemDto[] = [];
   let targetBaseline: BaselineDto | null = null;
   let executor: SessionHttpExecutor | null = null;
+  // CSD Spec 4: target-side compensation context (write adapter disposed in
+  // the outer finally alongside the executor).
+  let compensation: CaptureCompensationContext | null = null;
   let itemsReplayed = 0;
   let itemsSkipped = 0;
   let itemsFailed = 0;
@@ -367,10 +423,16 @@ export async function runTargetReplay(
       await archModelClient.createDiagnostic(sessionRow.project_id, {
         session_id: sessionRow.id,
         diagnostic_type:
-          diag.diagnosticType === 'mutating_skipped' ||
-          diag.diagnosticType === 'sequence_skipped'
-            ? 'endpoint_skipped'
-            : 'failed_request',
+          // CSD Spec 4: compensation diagnostics persist under their OWN
+          // AMS-allowlisted types (never masked as failed_request).
+          diag.diagnosticType === 'compensation_inactive' ||
+          diag.diagnosticType === 'compensation_refused' ||
+          diag.diagnosticType === 'compensation_residue'
+            ? diag.diagnosticType
+            : diag.diagnosticType === 'mutating_skipped' ||
+                diag.diagnosticType === 'sequence_skipped'
+              ? 'endpoint_skipped'
+              : 'failed_request',
         message: diag.message,
         detail_json: {
           itemId: diag.itemId ?? null,
@@ -517,6 +579,50 @@ export async function runTargetReplay(
       ? await fetchEffectScopeIndex(projectId, session.architecture_id)
       : null;
 
+    // ---- CSD Spec 4: target-side compensation context. Engages when the
+    // run has both the adapter AND the full connection config (password
+    // included) — the same context builder as the capture side, so the
+    // engagement rules (mode CONFIG + committed model resolvable) match.
+    if (dbAdapter && deps.targetDbConfig) {
+      const built = await buildCaptureCompensationContext({
+        projectId,
+        architectureId: session.architecture_id,
+        writeConfig: deps.targetDbConfig,
+        readAdapter: dbAdapter,
+        metadataFetcher: deps.compensationSeams?.metadataFetcher,
+        effectScopeFetcher:
+          deps.compensationSeams?.effectScopeFetcher ??
+          (effectScope ? async () => effectScope : undefined),
+        writeAdapterFactory: deps.compensationSeams?.writeAdapterFactory,
+      });
+      compensation = built.context;
+      if (!compensation) {
+        await emitDiagnostic(
+          {
+            diagnosticType: 'compensation_inactive',
+            message:
+              `Target-side compensation INACTIVE (${built.inactiveReason ?? 'unknown'}) — ` +
+              'mutating replays will leave their writes in the target DB.',
+          },
+          session,
+        );
+      }
+    } else if (
+      session.mutating_calls_confirmed === true &&
+      items.some((i) => MUTATING_METHODS.has((i.method ?? 'GET').toUpperCase()))
+    ) {
+      await emitDiagnostic(
+        {
+          diagnosticType: 'compensation_inactive',
+          message:
+            'Target-side compensation INACTIVE (no target DB credentials on the replay ' +
+            'run) — mutating replays will leave their writes in the target DB. Thread ' +
+            'the target DB config + secrets through the replay start to activate it.',
+        },
+        session,
+      );
+    }
+
     console.log(
       `[targetReplayRunner] op=start session=${sessionId.slice(0, 8)} ` +
         `source_baseline=${session.source_baseline_id.slice(0, 8)} ` +
@@ -642,13 +748,86 @@ export async function runTargetReplay(
           dbAdapter,
           effectScope,
         };
-        const seqResult = await replaySequenceItem(
-          item,
-          session,
-          targetBaseline,
-          executor,
-          seqDeps,
-        );
+        // CSD Spec 4: the WHOLE sequence (setup -> act -> cleanup) is one
+        // bracket unit — cleanup best-effort no longer matters for state
+        // (the bracket undoes whatever the chain left behind, verified).
+        let seqResult: Awaited<ReturnType<typeof replaySequenceItem>>;
+        if (compensation) {
+          const seqTables = effectTablesFor(compensation.effectScope, req.method, req.path);
+          if (seqTables.length === 0) {
+            itemsSkipped += 1;
+            await emitDiagnostic(
+              {
+                diagnosticType: 'compensation_refused',
+                message:
+                  `Sequence item ${req.method} ${req.path} REFUSED (fail-closed): no ` +
+                  'effect-table map in the committed model. Remedy: save-back the ' +
+                  'endpoint data effects, then re-run.',
+                itemId: item.id,
+                method: req.method,
+                path: req.path,
+              },
+              session,
+            );
+            continue;
+          }
+          const bracket = await runCompensationBracket({
+            readAdapter: compensation.readAdapter,
+            writeAdapter: compensation.writeAdapter,
+            engine: compensation.engine,
+            schema: compensation.schema,
+            tables: seqTables,
+            metadata: compensation.metadata,
+            fire: () =>
+              replaySequenceItem(item, session as CaptureSessionDto, targetBaseline as BaselineDto, executor as SessionHttpExecutor, seqDeps),
+          });
+          if (bracket.outcome.kind === 'refused') {
+            itemsSkipped += 1;
+            await emitDiagnostic(
+              {
+                diagnosticType: 'compensation_refused',
+                message:
+                  `Sequence item ${req.method} ${req.path} REFUSED (fail-closed): ` +
+                  bracket.outcome.refusals
+                    .map((r) => `${r.table}: ${r.reason}`)
+                    .join('; '),
+                itemId: item.id,
+                method: req.method,
+                path: req.path,
+              },
+              session,
+            );
+            continue;
+          }
+          if (bracket.outcome.kind === 'residue') {
+            itemsFailed += 1;
+            await emitDiagnostic(
+              {
+                diagnosticType: 'compensation_residue',
+                message:
+                  `Sequence item ${req.method} ${req.path} left RESIDUE the bracket ` +
+                  `could not undo (${bracket.outcome.residue.length} item(s)).`,
+                itemId: item.id,
+                method: req.method,
+                path: req.path,
+              },
+              session,
+            );
+            throw new CompensationResidueHaltError(
+              `${req.method} ${req.path} (${bracket.outcome.residue.length} residue item(s))`,
+            );
+          }
+          if (bracket.fireError) throw bracket.fireError;
+          seqResult = bracket.fireResult as Awaited<ReturnType<typeof replaySequenceItem>>;
+        } else {
+          seqResult = await replaySequenceItem(
+            item,
+            session,
+            targetBaseline,
+            executor,
+            seqDeps,
+          );
+        }
         // Fold the sub-runner diagnostics into the run + persist each one.
         for (const d of seqResult.diagnostics) {
           await emitDiagnostic(d, session);
@@ -688,47 +867,39 @@ export async function runTargetReplay(
         continue;
       }
 
-      // Spec 2026-07-06-n: PRE-call state snapshot for a mutating replay
-      // (target-side arm — mirrors the capture-side hook in
-      // execute_http_request). Best-effort: any failure leaves the delta
-      // null (state_unverified at diff time), never fails the replay.
-      let preStateSnapshot: StateSnapshot | null = null;
-      let stateEffectTables: string[] = [];
-      if (dbAdapter && effectScope && isMutating && mutatingConfirmed) {
-        try {
-          stateEffectTables = effectTablesFor(effectScope, req.method, req.path);
-          if (stateEffectTables.length > 0) {
-            preStateSnapshot = await snapshotEffectTables(dbAdapter, stateEffectTables);
+      // --- Fire the item: pre-snapshot + send + post-snapshot as ONE unit.
+      // The state-delta pair MUST run inside the compensation bracket (CSD
+      // Spec 4): the delta records what the call DID, and the bracket undoes
+      // it immediately after — snapshotting outside would read the already-
+      // restored state and report a zero delta.
+      const fireItem = async (): Promise<{
+        response: Awaited<ReturnType<SessionHttpExecutor['request']>>;
+        stateDeltaJson: Record<string, unknown> | null;
+      }> => {
+        let preStateSnapshot: StateSnapshot | null = null;
+        let stateEffectTables: string[] = [];
+        if (dbAdapter && effectScope && isMutating && mutatingConfirmed) {
+          try {
+            stateEffectTables = effectTablesFor(effectScope, req.method, req.path);
+            if (stateEffectTables.length > 0) {
+              preStateSnapshot = await snapshotEffectTables(dbAdapter, stateEffectTables);
+            }
+          } catch (snapErr) {
+            console.warn(
+              `[targetReplayRunner] pre-replay state snapshot failed for ${req.method} ${req.path}: ${
+                snapErr instanceof Error ? snapErr.message : String(snapErr)
+              } -- state delta left null (state_unverified)`,
+            );
+            preStateSnapshot = null;
           }
-        } catch (snapErr) {
-          console.warn(
-            `[targetReplayRunner] pre-replay state snapshot failed for ${req.method} ${req.path}: ${
-              snapErr instanceof Error ? snapErr.message : String(snapErr)
-            } -- state delta left null (state_unverified)`,
-          );
-          preStateSnapshot = null;
         }
-      }
-
-      // --- Send the request ---
-      const requestStartedAt = now();
-      let capture: CaptureDto | null = null;
-      try {
-        const response = await executor.request({
+        const response = await (executor as SessionHttpExecutor).request({
           method: req.method as never,
           url: transportPath,
           params: req.query,
           headers: req.headers,
           data: req.body,
         });
-        // Successful HTTP response (any status code 100-599 since
-        // validateStatus: () => true). Reset the counter.
-        consecutiveTransportFailures = 0;
-        lastTransportErrorCode = null;
-
-        // Spec 2026-07-06-n: POST-call snapshot + delta (target side). The
-        // keyed rung uses an id-ish value from the target response when one
-        // is exposed. Failures leave the delta null (state_unverified).
         let stateDeltaJson: Record<string, unknown> | null = null;
         if (preStateSnapshot && dbAdapter) {
           try {
@@ -750,6 +921,90 @@ export async function runTargetReplay(
             stateDeltaJson = null;
           }
         }
+        return { response, stateDeltaJson };
+      };
+
+      const requestStartedAt = now();
+      let capture: CaptureDto | null = null;
+      try {
+        let fired: Awaited<ReturnType<typeof fireItem>>;
+        if (compensation && isMutating && mutatingConfirmed) {
+          const bracketTables = effectTablesFor(compensation.effectScope, req.method, req.path);
+          if (bracketTables.length === 0) {
+            itemsSkipped += 1;
+            await emitDiagnostic(
+              {
+                diagnosticType: 'compensation_refused',
+                message:
+                  `Mutating item ${req.method} ${req.path} REFUSED (fail-closed): no ` +
+                  'effect-table map in the committed model. Remedy: save-back the ' +
+                  'endpoint data effects, then re-run.',
+                itemId: item.id,
+                method: req.method,
+                path: req.path,
+              },
+              session,
+            );
+            continue;
+          }
+          const bracket = await runCompensationBracket({
+            readAdapter: compensation.readAdapter,
+            writeAdapter: compensation.writeAdapter,
+            engine: compensation.engine,
+            schema: compensation.schema,
+            tables: bracketTables,
+            metadata: compensation.metadata,
+            fire: fireItem,
+          });
+          if (bracket.outcome.kind === 'refused') {
+            itemsSkipped += 1;
+            await emitDiagnostic(
+              {
+                diagnosticType: 'compensation_refused',
+                message:
+                  `Mutating item ${req.method} ${req.path} REFUSED (fail-closed): ` +
+                  bracket.outcome.refusals
+                    .map((r) => `${r.table}: ${r.reason}`)
+                    .join('; '),
+                itemId: item.id,
+                method: req.method,
+                path: req.path,
+              },
+              session,
+            );
+            continue;
+          }
+          if (bracket.outcome.kind === 'residue') {
+            itemsFailed += 1;
+            await emitDiagnostic(
+              {
+                diagnosticType: 'compensation_residue',
+                message:
+                  `Mutating item ${req.method} ${req.path} left RESIDUE the bracket ` +
+                  `could not undo (${bracket.outcome.residue.length} item(s)).`,
+                itemId: item.id,
+                method: req.method,
+                path: req.path,
+              },
+              session,
+            );
+            throw new CompensationResidueHaltError(
+              `${req.method} ${req.path} (${bracket.outcome.residue.length} residue item(s))`,
+            );
+          }
+          // A transport-level throw from the send surfaces AFTER the bracket
+          // finished its undo — rethrow into the SAME catch so transport
+          // classification + the abort threshold behave exactly as before.
+          if (bracket.fireError) throw bracket.fireError;
+          fired = bracket.fireResult as Awaited<ReturnType<typeof fireItem>>;
+        } else {
+          fired = await fireItem();
+        }
+        const { response, stateDeltaJson } = fired;
+        // Successful HTTP response (any status code 100-599 since
+        // validateStatus: () => true). Reset the counter.
+        consecutiveTransportFailures = 0;
+        lastTransportErrorCode = null;
 
         capture = await archModelClient.createCapture(projectId, {
           session_id: session.id,
@@ -842,6 +1097,9 @@ export async function runTargetReplay(
           );
         }
       } catch (err) {
+        // CSD Spec 4: a residue halt is a RUN-level stop, never a per-item
+        // failure — propagate to the outer catch (failed session + message).
+        if (err instanceof CompensationResidueHaltError) throw err;
         const { isTransportFailure, code } = classifyError(err);
         itemsFailed += 1;
         if (isTransportFailure) {
@@ -1065,6 +1323,13 @@ export async function runTargetReplay(
     if (executor) {
       try {
         executor.dispose();
+      } catch {
+        // Pool teardown errors don't matter.
+      }
+    }
+    if (compensation) {
+      try {
+        await compensation.writeAdapter.dispose();
       } catch {
         // Pool teardown errors don't matter.
       }

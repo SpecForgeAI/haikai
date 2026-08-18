@@ -54,8 +54,26 @@ export function fakeReadAdapter(store: FakeStore): DbAdapter {
     async listMetadata() {
       return [];
     },
-    async runReadonlySelect(): Promise<DbReadResult> {
-      throw new Error('not used by the imagers');
+    async runReadonlySelect(sql: string): Promise<DbReadResult> {
+      // The state-delta snapshot ladder (stateDelta.ts) reads through this
+      // surface: a COUNT per effect table plus an optional keyed-row SELECT.
+      const mCount = sql.match(/^SELECT COUNT\(\*\) AS row_count FROM (\S+)$/i);
+      if (mCount) {
+        return {
+          rows: [{ row_count: (store.tables.get(mCount[1]) ?? []).length }],
+          rowCount: 1,
+          truncated: false,
+        };
+      }
+      const mKeyed = sql.match(/^SELECT \* FROM (\S+) WHERE (\S+) = (.+)$/i);
+      if (mKeyed) {
+        const wanted = parseLiteral(mKeyed[3]);
+        const rows = (store.tables.get(mKeyed[1]) ?? [])
+          .filter((r) => String(r[mKeyed[2]] ?? '') === String(wanted ?? ''))
+          .map((r) => ({ ...r }));
+        return { rows, rowCount: rows.length, truncated: false };
+      }
+      throw new Error(`fake runReadonlySelect cannot interpret: ${sql}`);
     },
     async sampleValues(): Promise<DbReadResult> {
       throw new Error('not used by the imagers');

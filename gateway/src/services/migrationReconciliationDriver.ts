@@ -1644,7 +1644,17 @@ export async function handleBugCallback(
   // Drive a fresh replay+diff (the engine has no per-operation entry point);
   // the JUDGEMENT below is scoped to ONLY the affected source operations.
   const result = await deps.runHeadlessReconcile(
-    { projectId, architectureId, sourceBaselineId: pinnedBaselineId, targetBaseUrl, api },
+    {
+      projectId,
+      architectureId,
+      sourceBaselineId: pinnedBaselineId,
+      targetBaseUrl,
+      api,
+      // CSD Spec 4: the scoped re-reconcile replays mutations too — thread
+      // the target-DB creds so its brackets + state deltas engage exactly
+      // like the full-baseline run above (previously omitted here).
+      db: args.runId ? (deps.getTargetDbCredentials?.(args.runId) ?? null) : null,
+    },
     deps.validationDeps,
     deps.pollOptions ?? {}
   );
