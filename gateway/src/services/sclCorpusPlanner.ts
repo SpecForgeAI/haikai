@@ -613,6 +613,29 @@ export type LoadCorpusPlanFn = (
 ) => Promise<SclCorpusPlan | null>;
 
 /**
+ * The latest scan's FULL contract list (behaviour tables + shapes +
+ * boundaries, include_body=true) — the exact AMS read {@link loadCorpusPlan}
+ * derives its plan from, exported for the SCL spec carriage (spec 8), which
+ * needs the raw contracts rather than the derived plan. Returns null when no
+ * scan exists; read failures THROW (the spec-generation caller owns the
+ * fail-soft catch → SCL stories go insufficient_context, never the LLM path).
+ */
+export async function fetchLatestSclContracts(
+  projectId: string,
+  currentArchitectureId: string,
+  deps?: Partial<SclCorpusPlannerDeps>
+): Promise<SclContractDto[] | null> {
+  const d: SclCorpusPlannerDeps = { ...defaultDeps, ...deps };
+  const scan = await d.fetchScan(projectId, currentArchitectureId);
+  if (!scan?.id) return null;
+  const scanId = scan.id;
+  const tables = await d.fetchContracts(projectId, currentArchitectureId, scanId, 'behaviour_table');
+  const shapes = await d.fetchContracts(projectId, currentArchitectureId, scanId, 'shape');
+  const boundaries = await d.fetchContracts(projectId, currentArchitectureId, scanId, 'boundary');
+  return [...tables, ...shapes, ...boundaries];
+}
+
+/**
  * Load the latest SCL scan's contracts and derive the corpus plan with the
  * config row budget. Returns null (FAIL-SOFT) when no scan exists or the
  * corpus yields ZERO endpoint groups — an empty/rootless corpus must never

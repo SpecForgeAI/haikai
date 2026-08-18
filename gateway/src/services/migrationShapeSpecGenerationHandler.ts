@@ -190,6 +190,16 @@ import {
 // is assembled DETERMINISTICALLY (no LLM) from the verbatim manifest block +
 // the captured target-state decisions.
 import { runScaffoldSpecCarriage } from './migrationScaffoldSpecCarriage';
+// SCL spec carriage (spec 8, 2026-08-18): corpus-derived stories
+// (`provenance:scl_corpus`) are assembled DETERMINISTICALLY from the persisted
+// SCL contracts — verbatim contract blocks + [decision:modernize.*] citations;
+// no context resolver, no LLM.
+import {
+  isSclCorpusStory,
+  runSclSpecCarriage,
+  sclCarriageMarkersFromBlob,
+} from './sclSpecCarriage';
+import { SclContractDto, fetchLatestSclContracts } from './sclCorpusPlanner';
 // Target-stack section (2026-08-14): the deterministic captured-decisions
 // block appended to every service-plane spec (carriage + LLM paths).
 import {
@@ -438,6 +448,17 @@ export interface LoadedBookOfWorkItem {
   flagReason?: string | null;
   findingIds?: string[] | null;
   protocol?: string | null;
+  /**
+   * SCL pipeline spec 8 (2026-08-18): corpus markers stamped on the blob item
+   * by spec 7's corpus-plan expansion (`scl_contract_keys` & co.). A story
+   * tagged `provenance:scl_corpus` runs the FULLY DETERMINISTIC SCL spec
+   * carriage — its spec embeds the persisted contracts verbatim; no context
+   * resolver, no LLM.
+   */
+  sclContractKeys?: string[] | null;
+  sclLayer?: string | null;
+  sclControllerClass?: string | null;
+  sclRowCount?: number | null;
 }
 
 export interface LoadedBookOfWork {
@@ -855,6 +876,19 @@ export interface ShapeSpecGenerationDeps {
     projectId: string,
     targetArchitectureId: string
   ) => Promise<unknown>;
+  /**
+   * SCL spec carriage (spec 8, 2026-08-18): the latest scan's full SCL
+   * contract list, fetched ONCE per batch (only when the eligible set
+   * contains corpus-derived stories) and filtered per story by its
+   * `scl_contract_keys`. Defaults to the SAME AMS read the corpus planner
+   * uses ({@link fetchLatestSclContracts}); null = no scan exists. Fail-soft:
+   * a read failure makes every SCL story in the batch `insufficient_context`
+   * naming `scl_contracts` — never a crashed batch, never the LLM path.
+   */
+  fetchSclContractsForSpecs?: (
+    projectId: string,
+    currentArchitectureId: string
+  ) => Promise<SclContractDto[] | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,6 +1085,9 @@ export const defaultLoadBookOfWork: BookOfWorkLoader = async (projectId, bookOfW
       // deterministic code planner). Pure mapping, unit-tested in the
       // carriage module.
       ...codeCarriageMarkersFromBlob(obj),
+      // SCL pipeline spec 8: corpus markers (stamped by spec 7's corpus-plan
+      // expansion). Pure mapping, unit-tested in the carriage module.
+      ...sclCarriageMarkersFromBlob(obj),
     });
   }
   return {
@@ -2477,6 +2514,47 @@ async function runSinglePassBatch(
     targetSet
   );
 
+  // SCL corpus contracts (spec 8, 2026-08-18): the latest scan's FULL
+  // contract list, fetched ONCE per batch — only when the eligible set
+  // contains corpus-derived stories — then filtered per story by its
+  // `scl_contract_keys`. FAIL-SOFT: a read failure (or no scan) leaves the
+  // map null/empty, so every SCL story resolves ZERO contracts and the
+  // carriage reports honest `insufficient_context` naming `scl_contracts`
+  // (never a crashed batch, never a fall-through to the LLM path).
+  let sclContractsByKey: Map<string, SclContractDto> | null = null;
+  if (eligible.some(isSclCorpusStory)) {
+    try {
+      const fetchSclContracts =
+        deps.fetchSclContractsForSpecs ?? fetchLatestSclContracts;
+      const sclContracts = await fetchSclContracts(
+        projectId,
+        bow.currentArchitectureId
+      );
+      sclContractsByKey = new Map(
+        (sclContracts ?? [])
+          .filter((c): c is SclContractDto & { contract_key: string } =>
+            typeof c.contract_key === 'string' && c.contract_key.length > 0
+          )
+          .map((c) => [c.contract_key, c])
+      );
+      console.log(
+        `[diag-gateway] pm_migration_shape_spec_generation scl_corpus_loaded ` +
+          `projectId=${projectId} contracts=${sclContractsByKey.size}`
+      );
+    } catch (e) {
+      sclContractsByKey = null;
+      logger.warn(
+        'SCL corpus read for spec carriage failed (fail-soft — SCL stories go insufficient_context)',
+        {
+          projectId,
+          bookOfWorkId,
+          currentArchitectureId: bow.currentArchitectureId,
+          error: e instanceof Error ? e.message : String(e),
+        }
+      );
+    }
+  }
+
   // ----- Stage 5: serial per-story loop -----
   const perStoryResults: SpecGenerationResult[] = [];
   for (const story of eligible) {
@@ -2595,6 +2673,33 @@ async function runSinglePassBatch(
         enrichment: seedBuildFilesEnrichment,
         decisions: scaffoldDecisions,
         wireFacts: baselineWireFacts,
+      });
+      perStoryResults.push(row);
+      logStoryResult(row);
+      continue;
+    }
+
+    // SCL corpus stories (spec 8, 2026-08-18): fully DETERMINISTIC carriage.
+    // The story's spec embeds its SCL contracts VERBATIM (behaviour-table
+    // rows, shape fields, boundary SQL) + the relevant confirmed modernize.*
+    // decisions + the TDD acceptance criteria. No context resolver, no
+    // prompt, no LLM — a corpus story NEVER falls through to the LLM path.
+    // Unresolvable contracts / zero modernize decisions -> honest
+    // insufficient_context naming the exact remedy.
+    if (isSclCorpusStory(story)) {
+      const sclKeys = story.sclContractKeys ?? [];
+      const resolvedContracts = sclContractsByKey
+        ? sclKeys
+            .map((k) => sclContractsByKey!.get(k))
+            .filter((c): c is SclContractDto => c !== undefined)
+        : [];
+      const row = runSclSpecCarriage({
+        story,
+        baseRow,
+        contracts: resolvedContracts,
+        decisions: scaffoldDecisions,
+        wireFactsSectionText: wireFidelitySectionText,
+        targetStackSectionText,
       });
       perStoryResults.push(row);
       logStoryResult(row);
