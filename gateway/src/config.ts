@@ -157,6 +157,14 @@ export interface Config {
    * Default: 15 (user-agreed).
    */
   migrationPlanApiClusterMaxEndpoints: number;
+  /**
+   * Behaviour-table ROW budget per corpus-derived endpoint story (SCL
+   * pipeline spec 7 — corpus-derived spec planner). Endpoint groups over the
+   * budget split into consecutive-method slices ("part N"). Read from
+   * SCL_STORY_ROW_BUDGET. Default: 40 (tune on the first real corpus, per
+   * the 2026-08-18 design ruling — thresholds are config-tunable).
+   */
+  sclStoryRowBudget: number;
 
   // Migration Execution Driver Configuration
   // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)
@@ -387,6 +395,10 @@ export function loadConfig(): Config {
       process.env.MIGRATION_PLAN_API_CLUSTER_MAX_ENDPOINTS,
       15
     ),
+    // SCL_STORY_ROW_BUDGET: behaviour-table rows per corpus-derived endpoint
+    // story (SCL pipeline spec 7); a controller group over the budget splits
+    // into consecutive-method "part N" slices. Default 40.
+    sclStoryRowBudget: parseIntEnv(process.env.SCL_STORY_ROW_BUDGET, 40),
 
     // Migration Execution Driver Configuration
     // Spec 2026-06-14: Migrate Button + Migration Execution Driver (Spec 3 of 4)
