@@ -10,6 +10,7 @@ import { techHintsResolveRouter } from './techHintsResolve';
 import { preflightLibraryScanRouter } from './preflightLibraryScan';
 import { databaseRouter } from './database';
 import { vulnerabilityEnrichmentRouter } from './vulnerabilityEnrichment';
+import { sclRouter } from './scl';
 
 /**
  * Discovery Routes Barrel
@@ -97,5 +98,10 @@ discoveryRouter.use('/db', databaseRouter);
 // It runs OSV enrichment through the VulnerabilitySource interface (never
 // OSV.dev directly) and is STRICTLY NON-BLOCKING -- it always resolves.
 discoveryRouter.use('/', vulnerabilityEnrichmentRouter);
+
+// Spec 3 SCL pipeline (2026-08-18) -- corpus assembly. POST /discovery/scl/scans
+// creates the AMS scan row, answers 202 {scan_id}, and runs slice -> corpus ->
+// AMS persistence detached (completion/failure PATCHed onto the scan row).
+discoveryRouter.use('/scl', sclRouter);
 
 export { discoveryRouter };

@@ -2,7 +2,7 @@ package com.legacy.hier.jobs;
 
 import com.legacy.hier.service.NodeService;
 
-public class NightlyRollupJob {
+public class NightlyRollupJob implements Runnable {
 
     private NodeService nodeService;
 

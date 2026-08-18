@@ -10,7 +10,7 @@
  * ("Extraction pipeline", step 1 — deterministic slice).
  */
 
-import { indexJavaProject } from './javaProjectIndex';
+import { indexJavaProject, type JavaProjectIndex } from './javaProjectIndex';
 import { extractShapes } from './shapeExtractor';
 import { extractBehaviour } from './behaviourExtractor';
 import type {
@@ -57,6 +57,14 @@ export interface SclSliceResult {
    */
   keyBySymbol: Map<string, string>;
   stats: SclSliceStats;
+  /**
+   * The full Java project index the slice was extracted from. Carried for the
+   * corpus assembler (root detection needs class-level annotations /
+   * supertypes / config references). NEVER part of any content-hashed
+   * contract body — contracts are hashed inside the extractors over their
+   * canonical bodies only.
+   */
+  index: JavaProjectIndex;
 }
 
 /**
@@ -85,6 +93,7 @@ export async function sliceProject(rootDir: string, options?: SclSliceOptions): 
     inlined: behaviour.inlined,
     parseErrors: index.parseErrors,
     keyBySymbol,
+    index,
     stats: {
       classCount: index.classesByFqn.size,
       tableCount: behaviour.tables.length,

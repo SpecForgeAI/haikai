@@ -584,10 +584,23 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
   // Config-reference reachability signal: resource files that mention a
   // project FQN verbatim (e.g. Spring beans.xml class="com.legacy...Impl").
   const allFqns = Array.from(classesByFqn.keys());
+  // Identifier-boundary match: `a.b.NodeService` must NOT hit inside
+  // `a.b.NodeServiceImpl` (substring false positive would wrongly mark the
+  // interface as config-wired).
+  const mentionsFqn = (text: string, fqn: string): boolean => {
+    let from = 0;
+    for (;;) {
+      const i = text.indexOf(fqn, from);
+      if (i < 0) return false;
+      const next = text.charAt(i + fqn.length);
+      if (!/[\w$.]/.test(next)) return true;
+      from = i + 1;
+    }
+  };
   for (const resPath of resourceXmlFiles) {
     try {
       const text = fs.readFileSync(resPath, 'utf8');
-      const mentioned = allFqns.filter((fqn) => text.includes(fqn));
+      const mentioned = allFqns.filter((fqn) => mentionsFqn(text, fqn));
       if (mentioned.length > 0) configReferences.set(relPath(resPath), mentioned);
     } catch {
       // tolerant: unreadable resources are simply not signals

@@ -594,6 +594,21 @@ export function extractBehaviour(
           };
         }
       }
+      // Loops = map/filter row semantics (design doc): a loop body that
+      // contains a resolvable project call IS a behavioural edge — without it
+      // the corpus closure would silently lose the callee (observed on the
+      // fixture: NightlyRollupJob#run's per-node findNode call). Terminals in
+      // the body still win (they end the enclosing method); otherwise the
+      // first resolvable call/dispatch in the body becomes the loop outcome.
+      if (!outcome && body) {
+        const res = firstResolution(body);
+        if (res && res.kind === 'dispatch') {
+          recordDispatch(res);
+          outcome = { type: 'call', targetKey: null, targetSymbol: res.symbol };
+        } else if (res && res.kind === 'call') {
+          outcome = { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol };
+        }
+      }
       if (!outcome) {
         outcome = { type: 'terminal', verbatim: header, ref: ref(stmt), outcomeLabel: 'value' };
       }
