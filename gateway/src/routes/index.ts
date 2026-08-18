@@ -198,3 +198,8 @@ export { dbGapProposalsRouter } from './dbGapProposals';
 // substring hallucination guards, deterministic contradiction pass vs the
 // captured baseline) + the latest-scan annotation-status proxy.
 export { sclAnnotationRouter } from './sclAnnotation';
+
+// SCL "explain this" route (SCL pipeline spec 6, 2026-08-18): plain-English
+// LLM explanation of one mined SCL contract for the Structural Model tab —
+// read-only prose, never persisted.
+export { sclExplainRouter } from './sclExplain';

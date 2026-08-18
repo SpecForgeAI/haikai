@@ -1,0 +1,532 @@
+/* StructuralModelTab — 2026-08-18 SCL pipeline ("UI placement": corpus
+   browser + reachability report + explain-this; reviewable-not-readable) */
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* --- Scan status card ----------------------------------------------------- */
+
+.statusCard {
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background: var(--surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.statusHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color, #d0d7de);
+  background: var(--surface-muted, #f6f8fa);
+  color: var(--text-muted, #57606a);
+  white-space: nowrap;
+}
+
+.statusCompleted {
+  border-color: #1a7f3766;
+  background: #dafbe1;
+  color: #1a7f37;
+}
+
+.statusFailed {
+  border-color: #cf222e66;
+  background: #ffebe9;
+  color: #82071e;
+}
+
+.scanMeta {
+  font-size: 0.78rem;
+  color: var(--text-muted, #57606a);
+}
+
+.statsRow {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.statCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.statLabel {
+  font-size: 0.72rem;
+  color: var(--text-muted, #57606a);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.statValue {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.annotationSummary {
+  font-size: 0.8rem;
+  color: var(--text-muted, #57606a);
+}
+
+/* LOUD amber completeness warnings — never hidden */
+.warningBanner {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #fff8c5;
+  border: 1px solid #d4a72c;
+  color: #7d4e00;
+}
+
+/* Quiet never-scanned banner */
+.quietBanner {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: var(--surface-muted, #f6f8fa);
+  border: 1px solid var(--border-color, #d0d7de);
+  color: var(--text-muted, #57606a);
+}
+
+.errorBanner {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #ffebe9;
+  border: 1px solid #ff818266;
+  color: #82071e;
+}
+
+/* --- Sections ------------------------------------------------------------- */
+
+.section {
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background: var(--surface, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.sectionHeading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.sectionCount {
+  font-weight: 400;
+  color: var(--text-muted, #57606a);
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.toggleButton {
+  background: none;
+  border: none;
+  color: var(--accent, #1f6feb);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.35rem;
+}
+
+/* --- Contract browser ----------------------------------------------------- */
+
+.browserLayout {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.browserListPane {
+  flex: 1 1 40%;
+  min-width: 18rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detailPane {
+  flex: 1 1 60%;
+  min-width: 0;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.kindSelect {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: var(--surface, #fff);
+}
+
+.sharedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--text-muted, #57606a);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.contractList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 32rem;
+  overflow-y: auto;
+}
+
+.contractRow {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.contractRow:hover {
+  background: var(--surface-muted, #f6f8fa);
+}
+
+.contractRowSelected {
+  border-color: var(--accent, #1f6feb);
+  background: #ddf4ff;
+}
+
+.contractRowUnreachable {
+  opacity: 0.55;
+}
+
+.contractKey {
+  font-family: var(--mono, monospace);
+  white-space: nowrap;
+}
+
+.kindChip {
+  display: inline-block;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  background: var(--surface-muted, #f6f8fa);
+  color: var(--text-muted, #57606a);
+  white-space: nowrap;
+}
+
+.kindBehaviourTable {
+  border-color: #1f6feb66;
+  background: #ddf4ff;
+  color: #0550ae;
+}
+
+.kindShape {
+  border-color: #8250df66;
+  background: #fbefff;
+  color: #6639ba;
+}
+
+.kindBoundary {
+  border-color: #bf8700;
+  background: #fff8c5;
+  color: #7d4e00;
+}
+
+.symbolCell {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fanInBadge {
+  display: inline-block;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #d0d7de);
+  background: var(--surface-muted, #f6f8fa);
+  font-size: 0.7rem;
+  color: var(--text-muted, #57606a);
+  white-space: nowrap;
+}
+
+.unreachableTag {
+  font-size: 0.7rem;
+  color: #82071e;
+  white-space: nowrap;
+}
+
+/* --- Detail panel --------------------------------------------------------- */
+
+.detailCard {
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background: var(--surface-muted, #f6f8fa);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detailHeaderRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.detailSymbol {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: var(--mono, monospace);
+  word-break: break-all;
+}
+
+.detailMeta {
+  font-size: 0.75rem;
+  color: var(--text-muted, #57606a);
+  font-family: var(--mono, monospace);
+}
+
+.intent {
+  margin: 0;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-color, #1f2328);
+}
+
+.detailTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  background: var(--surface, #fff);
+}
+
+.detailTable th {
+  text-align: left;
+  padding: 0.3rem 0.45rem;
+  border-bottom: 2px solid var(--border-color, #d0d7de);
+  font-weight: 600;
+}
+
+.detailTable td {
+  padding: 0.3rem 0.45rem;
+  border-bottom: 1px solid var(--border-color, #eaeef2);
+  vertical-align: top;
+}
+
+.code {
+  font-family: var(--mono, monospace);
+  background: var(--surface-muted, #f6f8fa);
+  border-radius: 3px;
+  padding: 0 0.2rem;
+  word-break: break-all;
+}
+
+.cite {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted, #57606a);
+  font-family: var(--mono, monospace);
+  word-break: break-all;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #1f6feb);
+  cursor: pointer;
+  font-size: inherit;
+  font-family: var(--mono, monospace);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.outcomeLabel {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #d0d7de);
+  background: var(--surface-muted, #f6f8fa);
+  font-size: 0.7rem;
+  color: var(--text-muted, #57606a);
+}
+
+.flagChip {
+  display: inline-block;
+  margin-right: 0.3rem;
+  padding: 0.02rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #bf8700;
+  background: #fff8c5;
+  font-size: 0.72rem;
+  color: #7d4e00;
+}
+
+.sqlBlock {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #eaeef2);
+  border-radius: 4px;
+  font-family: var(--mono, monospace);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.glossCell {
+  font-size: 0.78rem;
+  color: var(--text-muted, #57606a);
+}
+
+/* --- Explain -------------------------------------------------------------- */
+
+.explainButton {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--accent, #1f6feb);
+  border-radius: 6px;
+  background: none;
+  color: var(--accent, #1f6feb);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.explainButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.explanation {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #d0d7de);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
+/* --- Reachability --------------------------------------------------------- */
+
+.signalChip {
+  display: inline-block;
+  margin: 0 0.25rem 0.15rem 0;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #d0d7de);
+  background: var(--surface-muted, #f6f8fa);
+  font-size: 0.7rem;
+  font-family: var(--mono, monospace);
+  color: var(--text-muted, #57606a);
+  word-break: break-all;
+}
+
+.dispositionSelect {
+  padding: 0.2rem 0.3rem;
+  border: 1px solid var(--border-color, #d0d7de);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background: var(--surface, #fff);
+}
+
+.rowError {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  color: #82071e;
+}
+
+/* --- Findings ------------------------------------------------------------- */
+
+.findingList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.findingItem {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+
+.findingSymbol {
+  font-family: var(--mono, monospace);
+  color: var(--text-muted, #57606a);
+  word-break: break-all;
+}
+
+.emptyMessage {
+  font-size: 0.82rem;
+  color: var(--text-muted, #57606a);
+}
