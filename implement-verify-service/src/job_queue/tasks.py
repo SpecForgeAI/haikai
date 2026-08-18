@@ -381,6 +381,31 @@ def _allocate_run_worktrees(job, request: OrchestrationRequest,
     from src.chat.worktree_prep import prepare_worktree
     prepare_worktree(run_product, live_product=live_product)
 
+    # SCL first-commit delivery (2026-08-18): payload-supplied files are
+    # written into the prepared worktree and committed as ONE commit BEFORE
+    # any implementer work (generated behaviour suites are committed by the
+    # TOOL, never transcribed by the implementer). FAIL-CLOSED: a job whose
+    # contract is "the shipped suite is the first commit" must not run
+    # without it — the allocation is unwound and the error reported exactly
+    # like a WorktreeAllocationError.
+    if getattr(request, "initial_commit_files", None):
+        from .initial_commit import InitialCommitError, write_initial_commit_files
+        try:
+            committed = write_initial_commit_files(
+                run_product,
+                request.initial_commit_files,
+                request.initial_commit_message or "",
+            )
+            logger.info(
+                "Job %s: initial commit %s shipped %d file(s) before the "
+                "implementer",
+                job.job_id, committed["commit_sha"][:8], len(committed["files"]),
+            )
+        except InitialCommitError as exc:
+            with suppress(Exception):
+                _reclaim_worktree_set(workspace_dir, request, allocated, run_ws)
+            return None, [], f"initial commit failed: {exc}"
+
     # worktree_root is always the JOB-level root (wt/<id8>) — per-spec mode
     # nests spec roots under it, and the sweeper resolves by this one path.
     job.worktree_root = str(wr.run_root(workspace_dir, job.job_id))
@@ -1420,17 +1445,19 @@ def run_orchestration(job_id: str, storage: JobStorage):
                 raise ValueError(f"worktree allocation failed: {wt_err}")
         elif (getattr(request, "base_spec", None)
               or getattr(request, "integration_base", False)
-              or getattr(request, "base_branch", None)):
+              or getattr(request, "base_branch", None)
+              or getattr(request, "initial_commit_files", None)):
             # Run-branch chaining / integration / explicit-branch base set the
             # worktree base at allocation; the legacy live-tree path branches
             # off the default branch and would SILENTLY drop the chain, the
             # accumulated feature branches, or the MR base — the exact
             # spec-blindness these features exist to remove. Fail loudly.
             raise ValueError(
-                "base_spec/integration_base/base_branch requires worktree runs "
-                "(WORKTREE_RUNS=on); the legacy live-tree path cannot base a "
-                "run off a prior spec's branch, an integration base, or an "
-                "explicit MR branch")
+                "base_spec/integration_base/base_branch/initial_commit_files "
+                "requires worktree runs (WORKTREE_RUNS=on); the legacy "
+                "live-tree path cannot base a run off a prior spec's branch, "
+                "an integration base, an explicit MR branch, or deliver a "
+                "tool-committed initial suite")
         ws_for_run = run_workspace or workspace_dir
         start_step = job.resume_from_step or 1
 

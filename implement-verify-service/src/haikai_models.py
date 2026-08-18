@@ -69,6 +69,20 @@ class SpecIntent(BaseModel):
     )
 
 
+class InitialCommitFile(BaseModel):
+    """One file the service writes + commits BEFORE any implementer work
+    (SCL first-commit delivery, 2026-08-18: generated behaviour suites are
+    committed by the TOOL, never transcribed by the implementer)."""
+    path: str = Field(
+        ...,
+        description="Repo-relative path (e.g. 'src/test/java/.../FooBehaviourTest.java')."
+    )
+    content: str = Field(
+        ...,
+        description="Full text content, written verbatim (UTF-8)."
+    )
+
+
 class OrchestrationRequest(BaseModel):
     """Request model for initiating an Haikai orchestration."""
 
@@ -196,6 +210,26 @@ class OrchestrationRequest(BaseModel):
         description=(
             "False = skip the /git-commit-preparation step entirely for this "
             "request. None/True = run it once, on the request's final spec."
+        ),
+    )
+    # SCL first-commit delivery (2026-08-18): generated TDD suites are written
+    # into the worktree and committed as ONE commit AFTER the branch/workspace
+    # is prepared and BEFORE any implementer work. Absent/empty = no-op (every
+    # existing flow is byte-identical).
+    initial_commit_files: Optional[List[InitialCommitFile]] = Field(
+        default=None,
+        description=(
+            "Files the service writes into the prepared workspace and commits "
+            "as ONE commit (message = initial_commit_message) before the "
+            "implementer runs. Used for tool-committed generated test suites "
+            "(the implementer may never transcribe or modify them)."
+        ),
+    )
+    initial_commit_message: Optional[str] = Field(
+        default=None,
+        description=(
+            "Commit message for the initial_commit_files commit. Required "
+            "when initial_commit_files is non-empty."
         ),
     )
 

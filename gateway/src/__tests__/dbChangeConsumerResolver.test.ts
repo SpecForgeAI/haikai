@@ -263,9 +263,7 @@ test('CARRIAGE: spec text embeds the SQL + construct list + suggested equivalent
         },
       ],
       behaviours: [],
-      examples: [],
     },
-    examplesByEndpoint: new Map(),
     behaviours: [],
     omissions: [],
   });
