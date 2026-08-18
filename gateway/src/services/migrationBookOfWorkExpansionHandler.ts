@@ -104,11 +104,21 @@ import {
 } from './dbMigrationPackEnsure';
 import {
   CODE_DELIVERY_STREAMS,
+  CODE_PROVENANCE_TAG,
   CodeModelView,
   FetchCodeModelViewFn,
   buildCodeEpicStories,
   defaultFetchCodeModelView,
 } from './migrationCodeStreamPlanner';
+// SCL corpus-derived spec planner (SCL pipeline spec 7, 2026-08-18 design).
+// ADDITIVE + FAIL-SOFT: when no corpus plan loads, the legacy expansion below
+// runs byte-identically.
+import {
+  LoadCorpusPlanFn,
+  SclCorpusPlan,
+  SclPlannedStory,
+  loadCorpusPlan as defaultLoadCorpusPlan,
+} from './sclCorpusPlanner';
 import {
   FetchPackViewFn,
   PackView,
@@ -283,6 +293,13 @@ export interface MigrationBookOfWorkExpansionDeps {
    * Injected in tests.
    */
   resolveAffectedConsumers?: typeof resolveAffectedConsumers;
+  /**
+   * SCL corpus-plan loader (SCL pipeline spec 7 — corpus-derived spec
+   * planner). Defaults to the AMS-backed `loadCorpusPlan`; injected in tests.
+   * FAIL-SOFT at the call site: a null plan OR a loader throw leaves the
+   * legacy service-plane expansion byte-identical.
+   */
+  loadCorpusPlan?: LoadCorpusPlanFn;
 }
 
 // ---------------------------------------------------------------------------
@@ -1100,6 +1117,7 @@ async function runEpicPipeline(args: {
     fetchCodeModelView: FetchCodeModelViewFn;
     apiClusterCap: number;
     resolveAffectedConsumers: typeof resolveAffectedConsumers;
+    loadCorpusPlan: LoadCorpusPlanFn;
   };
 }): Promise<MigrationBookOfWorkItem[]> {
   const { projectId, book, epic, features, stream, deps } = args;
@@ -1194,9 +1212,115 @@ async function runEpicPipeline(args: {
         view.dialectAffectedEndpointIds = planTimeAffected;
       }
     }
+    // ----- SCL corpus-derived spec plan (SCL pipeline spec 7) -----
+    //
+    // ADDITIVE + FAIL-SOFT: the corpus plan loads AFTER the legacy inputs are
+    // assembled; when NO plan loads (no SCL scan, empty/rootless corpus, or
+    // any read failure) the legacy deterministic expansion below runs
+    // byte-identically. Only the SERVICE-PLANE stream (`api_migration`)
+    // consults the corpus.
+    //
+    // Prior corpus-generated FEATURES (tagged `provenance:scl_corpus`) are
+    // filtered out of the legacy builder's input: a re-expand fetches them on
+    // the book BEFORE the AMS replace prunes them, and the legacy builder
+    // fails loudly on their unknown `codeFeatureKind`. For books the corpus
+    // never touched, the filter is a no-op — legacy stays byte-identical.
+    const legacyFeatures = features.filter(
+      (f) => !(f.tags ?? []).includes(SCL_CORPUS_PROVENANCE_TAG)
+    );
+    let corpusPlan: SclCorpusPlan | null = null;
+    if (stream === CORPUS_PLAN_STREAM) {
+      try {
+        corpusPlan = await deps.loadCorpusPlan(projectId, book.currentArchitectureId ?? '');
+      } catch (error) {
+        // Loader throw ⇒ WARN + legacy path (never blocks the expansion).
+        logger.warn('SCL corpus plan load failed; expansion takes the legacy path', {
+          projectId,
+          epicId: epic.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        corpusPlan = null;
+      }
+    }
+    if (corpusPlan) {
+      const epicKind =
+        ((epic as MigrationBookOfWorkItem & { codeEpicKind?: string }).codeEpicKind as
+          | string
+          | undefined) ??
+        (legacyFeatures.some(
+          (f) => (f as MigrationBookOfWorkItem & { codeFeatureKind?: string }).codeFeatureKind === 'interface'
+        )
+          ? 'interfaces'
+          : legacyFeatures.some(
+                (f) =>
+                  (f as MigrationBookOfWorkItem & { codeFeatureKind?: string }).codeFeatureKind ===
+                  'foundations'
+              )
+            ? 'foundations'
+            : 'other');
+
+      if (epicKind === 'foundations') {
+        // "Rulings round 2": a NEW SIBLING FEATURE "Corpus-derived
+        // foundations" (6 layer stories) joins the existing cross-cutting
+        // foundations feature under the SAME epic. Legacy foundation stories
+        // are kept — the corpus layers are ADDITIVE here.
+        const legacyStories = buildCodeEpicStories({
+          epic,
+          features: legacyFeatures,
+          stream,
+          view,
+          clusterCap: deps.apiClusterCap,
+          maxSequence,
+        });
+        const seqAfterLegacy = legacyStories.reduce(
+          (m, s) => Math.max(m, s.sequenceOrder ?? 0),
+          maxSequence
+        );
+        const corpusItems = buildCorpusFoundationItems({
+          epic,
+          stream,
+          plan: corpusPlan,
+          startSequence: seqAfterLegacy,
+        });
+        console.log(
+          `[diag-gateway] migration_bow_expansion corpus_plan_used ` +
+            `stories=${corpusItems.filter((i) => i.type === 'story').length} ` +
+            `projectId=${projectId} epicId=${epic.id} epicKind=foundations`
+        );
+        return [...legacyStories, ...corpusItems];
+      }
+      if (epicKind === 'interfaces') {
+        // CLEAN-SLATE ruling (round 2): when a corpus plan EXISTS, the corpus
+        // endpoint groups REPLACE the legacy interface-story expansion for
+        // the service plane — external groups FIRST, then internal groups,
+        // one feature per legacy controller class, 1–n endpoint stories per
+        // controller under the row budget. The legacy model-drift checks are
+        // deliberately NOT run here: the SCL corpus (not the committed
+        // endpoint model) is the construction truth on this path.
+        const corpusItems = buildCorpusEndpointGroupItems({
+          epic,
+          stream,
+          plan: corpusPlan,
+          startSequence: maxSequence,
+        });
+        console.log(
+          `[diag-gateway] migration_bow_expansion corpus_plan_used ` +
+            `stories=${corpusItems.filter((i) => i.type === 'story').length} ` +
+            `projectId=${projectId} epicId=${epic.id} epicKind=interfaces`
+        );
+        return corpusItems;
+      }
+      // Other code epic kinds (capture / exceptional / closure /
+      // prerequisites) are untouched by the corpus plan — legacy path.
+    } else if (stream === CORPUS_PLAN_STREAM) {
+      console.log(
+        `[diag-gateway] migration_bow_expansion corpus_plan_absent legacy_path ` +
+          `projectId=${projectId} epicId=${epic.id}`
+      );
+    }
     return buildCodeEpicStories({
       epic,
-      features,
+      features: legacyFeatures,
       stream,
       view,
       clusterCap: deps.apiClusterCap,
@@ -1873,6 +1997,248 @@ async function buildScaffoldInjectionForEpic(args: {
 
 
 
+// ---------------------------------------------------------------------------
+// SCL corpus-derived plan integration (SCL pipeline spec 7, 2026-08-18 design
+// "Spec plan restructure" + "Rulings round 2"). PURE item builders — the
+// corpus plan (from sclCorpusPlanner) is turned into book-of-work items that
+// follow the exact conventions of the deterministic code planner:
+// full item-json shape, `provenance:plan-deterministic` for downstream
+// routing, extras flattened onto the blob (codeStoryKind / codeFeatureKind),
+// deterministic ids under the epic. Corpus-specific facts ride the blob as
+// `scl_contract_keys` / `scl_row_count` (+ layer/controller markers).
+// ---------------------------------------------------------------------------
+
+/** The service-plane stream the corpus plan applies to. */
+export const CORPUS_PLAN_STREAM = 'api_migration';
+
+/** Provenance tag on every corpus-derived item (feature AND story). */
+export const SCL_CORPUS_PROVENANCE_TAG = 'provenance:scl_corpus';
+
+/** Title of the corpus foundations feature (sibling of the legacy one). */
+export const CORPUS_FOUNDATIONS_FEATURE_TITLE = 'Corpus-derived foundations';
+
+function corpusItem(seed: {
+  id: string;
+  type: MigrationBookOfWorkItem['type'];
+  parentId: string;
+  title: string;
+  description: string;
+  workstream: MigrationBookOfWorkWorkstream;
+  sequenceOrder: number;
+  acceptanceCriteria?: string[];
+  tags: string[];
+  recommendedNextAction?: string;
+  traceabilitySummary: string;
+  extras?: Record<string, unknown>;
+}): MigrationBookOfWorkItem {
+  const item: MigrationBookOfWorkItem = {
+    id: seed.id,
+    type: seed.type,
+    parentId: seed.parentId,
+    title: seed.title,
+    description: seed.description,
+    acceptanceCriteria: seed.acceptanceCriteria ?? [],
+    workstream: seed.workstream,
+    sequenceOrder: seed.sequenceOrder,
+    tags: seed.tags,
+    confidence: 'high',
+    readiness: 'ready_for_spec',
+    readinessReasons: [],
+    missingInputs: [],
+    recommendedNextAction:
+      seed.recommendedNextAction ?? 'Generate the focused shape-spec for this story.',
+    traceabilitySummary: seed.traceabilitySummary,
+  };
+  return { ...item, ...(seed.extras ?? {}) } as MigrationBookOfWorkItem;
+}
+
+function corpusTags(stream: string, planned: SclPlannedStory): string[] {
+  // provenance:plan-deterministic keeps the downstream driver/carriage
+  // routing (isCodeFoundationStory & co.); provenance:scl_corpus is the
+  // corpus marker; the planner's own tags carry the layer/endpoint facet.
+  return Array.from(
+    new Set([CODE_PROVENANCE_TAG, `stream:${stream}`, SCL_CORPUS_PROVENANCE_TAG, ...planned.tags])
+  );
+}
+
+/**
+ * The "Corpus-derived foundations" FEATURE (a NEW SIBLING of the existing
+ * cross-cutting foundations feature, under the SAME epic) + one story per
+ * non-empty foundation layer, in layer order. PURE over its inputs.
+ */
+export function buildCorpusFoundationItems(args: {
+  epic: MigrationBookOfWorkItem;
+  stream: string;
+  plan: SclCorpusPlan;
+  startSequence: number;
+}): MigrationBookOfWorkItem[] {
+  const { epic, stream, plan } = args;
+  const ws = workstreamForEpic(epic);
+  let seq = args.startSequence;
+  const featureId = `${epic.id}-corpus-foundations`;
+  const items: MigrationBookOfWorkItem[] = [];
+
+  items.push(
+    corpusItem({
+      id: featureId,
+      type: 'feature',
+      parentId: epic.id,
+      title: CORPUS_FOUNDATIONS_FEATURE_TITLE,
+      description:
+        `Corpus-derived foundational layers (fan-in >= 2 hoisting) from the SCL scan: ` +
+        `${plan.foundationStories.length} layer(s) over ${plan.stats.sharedContractCount} ` +
+        `shared contract(s). Built in layer order, BEFORE the endpoint stories.`,
+      workstream: ws,
+      sequenceOrder: ++seq,
+      tags: [CODE_PROVENANCE_TAG, `stream:${stream}`, SCL_CORPUS_PROVENANCE_TAG, 'scl'],
+      recommendedNextAction:
+        'Generate the focused shape-spec for each foundation layer story, in layer order.',
+      traceabilitySummary:
+        'Derived deterministically from the SCL corpus (latest scan contracts).',
+      extras: { codeFeatureKind: 'corpus-foundations' },
+    })
+  );
+
+  plan.foundationStories.forEach((planned, i) => {
+    items.push(
+      corpusItem({
+        id: `${featureId}-s-${i + 1}`,
+        type: 'story',
+        parentId: featureId,
+        title: planned.title,
+        description: planned.description,
+        workstream: ws,
+        sequenceOrder: ++seq,
+        tags: corpusTags(stream, planned),
+        traceabilitySummary:
+          `SCL corpus foundation layer '${planned.layer}': ${planned.contractKeys.length} ` +
+          `contract(s), ${planned.rowCount} behaviour row(s).`,
+        extras: {
+          // Routes like the legacy planner-authored foundation stories
+          // (cross-cutting, endpoint-less — description-grounded spec gen).
+          codeStoryKind: 'foundation',
+          scl_layer: planned.layer,
+          scl_contract_keys: planned.contractKeys,
+          scl_row_count: planned.rowCount,
+        },
+      })
+    );
+  });
+  return items;
+}
+
+/**
+ * Corpus endpoint-group items for the interfaces epic: one NEW FEATURE per
+ * legacy controller class with its 1–n endpoint stories (row-budget parts),
+ * EXTERNAL controllers first, then INTERNAL. PURE over its inputs.
+ *
+ * Story blobs mirror the legacy interface-cluster story shape the downstream
+ * carriage reads (apiInterfaceId / apiEndpointIds / baselineByEndpointId /
+ * protocol markers) — with apiEndpointIds EMPTY: corpus stories are keyed by
+ * SCL contract keys (`scl_contract_keys`), not committed endpoint element ids.
+ */
+export function buildCorpusEndpointGroupItems(args: {
+  epic: MigrationBookOfWorkItem;
+  stream: string;
+  plan: SclCorpusPlan;
+  startSequence: number;
+}): MigrationBookOfWorkItem[] {
+  const { epic, stream, plan } = args;
+  const ws = workstreamForEpic(epic);
+  let seq = args.startSequence;
+  const items: MigrationBookOfWorkItem[] = [];
+
+  const emitGroups = (groups: SclPlannedStory[], kind: 'external' | 'internal') => {
+    // One feature per controller; a split controller's parts stay under the
+    // one feature. Insertion order preserves the plan's deterministic
+    // class-sorted order.
+    const byController = new Map<string, SclPlannedStory[]>();
+    for (const planned of groups) {
+      const controller = planned.controllerClass ?? planned.title;
+      const list = byController.get(controller) ?? [];
+      if (list.length === 0) byController.set(controller, list);
+      list.push(planned);
+    }
+    for (const [controller, stories] of byController) {
+      const simple = controller.includes('.')
+        ? controller.slice(controller.lastIndexOf('.') + 1)
+        : controller;
+      const controllerSlug = controller.replace(/[^A-Za-z0-9]+/g, '-');
+      const featureId = `${epic.id}-corpus-${kind}-${controllerSlug}`;
+      const totalRows = stories.reduce((sum, s) => sum + s.rowCount, 0);
+      items.push(
+        corpusItem({
+          id: featureId,
+          type: 'feature',
+          parentId: epic.id,
+          title: `${simple} — corpus endpoint group (${kind})`,
+          description:
+            `${stories.length} corpus-derived stor${stories.length === 1 ? 'y' : 'ies'} ` +
+            `implementing the ${kind} endpoints of ${controller} ` +
+            `(${totalRows} behaviour-table row(s), row budget ${plan.stats.rowBudget}).`,
+          workstream: ws,
+          sequenceOrder: ++seq,
+          tags: [
+            CODE_PROVENANCE_TAG,
+            `stream:${stream}`,
+            SCL_CORPUS_PROVENANCE_TAG,
+            'scl',
+            `scl:endpoint:${kind}`,
+          ],
+          traceabilitySummary:
+            `SCL corpus ${kind} endpoint group for ${controller} (latest scan).`,
+          extras: {
+            codeFeatureKind: 'corpus-endpoint-group',
+            scl_controller_class: controller,
+          },
+        })
+      );
+      stories.forEach((planned, i) => {
+        items.push(
+          corpusItem({
+            id: `${featureId}-s-${i + 1}`,
+            type: 'story',
+            parentId: featureId,
+            title: planned.title,
+            description: planned.description,
+            workstream: ws,
+            sequenceOrder: ++seq,
+            acceptanceCriteria: [
+              `All ${planned.rowCount} behaviour-table row(s) across ` +
+                `${planned.contractKeys.length} SCL contract(s) are implemented and verified ` +
+                `row-by-row (the row is the verification unit, regardless of grouping).`,
+            ],
+            tags: corpusTags(stream, planned),
+            traceabilitySummary:
+              `SCL corpus ${kind} endpoint story for ${controller}: ` +
+              `${planned.contractKeys.length} contract(s), ${planned.rowCount} row(s).`,
+            extras: {
+              codeStoryKind: 'scl-endpoint-group',
+              // Mirror of the legacy interface-cluster marker set the
+              // downstream carriage tolerates; endpoint element ids are NOT
+              // trivially derivable from SCL symbols, so apiEndpointIds
+              // stays EMPTY (per the spec-7 ruling).
+              apiInterfaceId: null,
+              apiEndpointIds: [],
+              baselineByEndpointId: {},
+              protocol: null,
+              scl_layer: planned.layer,
+              scl_contract_keys: planned.contractKeys,
+              scl_row_count: planned.rowCount,
+              scl_controller_class: controller,
+            },
+          })
+        );
+      });
+    }
+  };
+
+  // External endpoint specs FIRST, then internal (design build order).
+  emitGroups(plan.externalEndpointGroups, 'external');
+  emitGroups(plan.internalEndpointGroups, 'internal');
+  return items;
+}
+
 /**
  * Expand ONE epic end-to-end. Pipeline failures (batch/judge/rewrite after
  * retry, referential/coverage failures, hierarchy-validation failures) are
@@ -1917,6 +2283,7 @@ export async function expandMigrationBookOfWorkEpic(
     }
   }
   const fetchCodeModelView = deps.fetchCodeModelView ?? defaultFetchCodeModelView;
+  const loadCorpusPlanFn = deps.loadCorpusPlan ?? defaultLoadCorpusPlan;
   let apiClusterCap = deps.apiClusterCapOverride;
   if (apiClusterCap === undefined) {
     try {
@@ -1985,6 +2352,7 @@ export async function expandMigrationBookOfWorkEpic(
           apiClusterCap,
           resolveAffectedConsumers:
             deps.resolveAffectedConsumers ?? resolveAffectedConsumers,
+          loadCorpusPlan: loadCorpusPlanFn,
         },
       });
 
