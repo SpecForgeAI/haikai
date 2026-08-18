@@ -61,10 +61,15 @@ public class SybaseMutationService {
             final String password,
             final List<String> statements,
             final boolean transactional,
-            final int timeoutSeconds
+            final int timeoutSeconds,
+            final boolean restoreMode
     ) {
         try {
-            MutationSqlGuard.assertCompensationBatch(statements);
+            if (restoreMode) {
+                MutationSqlGuard.assertRestoreBatch(statements);
+            } else {
+                MutationSqlGuard.assertCompensationBatch(statements);
+            }
         } catch (final SidecarSqlGuard.SqlGuardException e) {
             return new MutationResponse(false, "SQL guard rejected: " + e.getMessage(),
                     Collections.emptyList());

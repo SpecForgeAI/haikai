@@ -20,7 +20,7 @@ values, not hardcoded. No client identifiers anywhere.
 |---|------|--------|--------|
 | 0 | Design agreement + build log (docs only) | main | DONE 77cbdb53 |
 | 1 | Compensation engine (core, side-agnostic) | feature/csd-01-compensation-engine | built (AMVS compensation/ module: metadata from committed model constraints, full-row keyset imaging w/ CONFIG cap, derived inverse DML + identity wrap + single reseed path, 2-layer guard, PG pool + sidecar /mutate write adapters, bracket runner w/ refused/clean/compensated/residue taxonomy; sidecar MutationSqlGuard + SybaseMutationService + /mutate; 36 jest + 90 maven green) |
-| 2 | S0 snapshot + fingerprint + restore | feature/csd-02-s0-snapshot | pending |
+| 2 | S0 snapshot + fingerprint + restore | feature/csd-02-s0-snapshot | built (AMVS s0/ module: PK-ordered JSONL dump + manifest w/ streaming sha256 per table, no-PK tables count-only loud skip; fingerprint verify w/ checksum cap CONFIG; restore = TRUNCATE+batched identity-wrapped re-insert+reseed+verify; restore grammar on guard/adapters/sidecar mode=restore; routes /api/s0-snapshot/{run,latest,verify,restore} sync long-run posture; 48 jest + 93 maven green; NOTE pre-existing red baseline on main: config.test, testConnectionAction.test, captureSessionSeeding.test — verified failing on main before merge) |
 | 3 | Source capture integration (brackets + credential split) | feature/csd-03-source-capture-integration | pending |
 | 4 | Target replay integration | feature/csd-04-target-replay-integration | pending |
 | 5 | Log ingestion: replay-corpus extraction | feature/csd-05-log-corpus | pending |

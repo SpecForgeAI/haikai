@@ -72,6 +72,17 @@ public final class MutationSqlGuard {
     );
 
     /**
+     * RESTORE-mode-only form (Spec 2): the S0 restore path truncates each
+     * dumped table before bulk re-insert. Full-anchored — a chained
+     * {@code TRUNCATE TABLE t; DROP ...} does not match and falls through to
+     * refusal.
+     */
+    private static final Pattern RESTORE_TRUNCATE_FORM = Pattern.compile(
+            "^TRUNCATE\\s+TABLE\\s+\\S+$",
+            Pattern.CASE_INSENSITIVE
+    );
+
+    /**
      * Blank single-quoted literal spans (quote-doubling aware) so fragment
      * checks only see the SQL skeleton. Returns {@code null} for an
      * unterminated literal — itself a violation.
@@ -112,12 +123,27 @@ public final class MutationSqlGuard {
      * success.
      */
     public static String assertCompensationStatement(final String rawStatement) {
+        return assertStatement(rawStatement, false);
+    }
+
+    /**
+     * RESTORE-mode admission (Spec 2): the compensation grammar PLUS
+     * {@code TRUNCATE TABLE <t>}. Everything else behaves identically.
+     */
+    public static String assertRestoreStatement(final String rawStatement) {
+        return assertStatement(rawStatement, true);
+    }
+
+    private static String assertStatement(final String rawStatement, final boolean restoreMode) {
         if (rawStatement == null) {
             throw new SidecarSqlGuard.SqlGuardException("Statement is null.", "empty");
         }
         final String statement = rawStatement.trim();
         if (statement.isEmpty()) {
             throw new SidecarSqlGuard.SqlGuardException("Statement is empty.", "empty");
+        }
+        if (restoreMode && RESTORE_TRUNCATE_FORM.matcher(statement).matches()) {
+            return statement;
         }
         final String skeleton = stripQuotedLiterals(statement);
         if (skeleton == null) {
@@ -148,11 +174,20 @@ public final class MutationSqlGuard {
      * Assert a whole batch; fail-closed on the first violation.
      */
     public static void assertCompensationBatch(final List<String> statements) {
+        assertBatch(statements, false);
+    }
+
+    /** Restore-mode batch admission (Spec 2). */
+    public static void assertRestoreBatch(final List<String> statements) {
+        assertBatch(statements, true);
+    }
+
+    private static void assertBatch(final List<String> statements, final boolean restoreMode) {
         if (statements == null || statements.isEmpty()) {
             throw new SidecarSqlGuard.SqlGuardException("Statement batch is empty.", "empty");
         }
         for (final String statement : statements) {
-            assertCompensationStatement(statement);
+            assertStatement(statement, restoreMode);
         }
     }
 }

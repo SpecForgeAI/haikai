@@ -6,6 +6,7 @@ import { testConnectionActionRouter } from './testConnectionAction';
 import { dataParityRunRouter } from './dataParityRun';
 import { dataMigrationRunRouter } from './dataMigrationRun';
 import { schemaApplyRunRouter, schemaDriftRouter } from './schemaApplyRun';
+import { s0SnapshotRouter } from './s0Snapshot';
 
 /**
  * API Migration Validation Routes Barrel
@@ -69,5 +70,10 @@ apiMigrationValidationRouter.use(dataMigrationRunRouter);
 // only; applied ids tracked in haikai_schema_apply_log on the target.
 apiMigrationValidationRouter.use(schemaApplyRunRouter);
 apiMigrationValidationRouter.use(schemaDriftRouter);
+// S0 snapshot / fingerprint / restore (Capture-State Discipline Spec 2):
+// the pinned canonical source state — snapshot doubles as the migration dump
+// artifact; verify is the end-of-job "still S0?" check; restore is the
+// safety-net payout. Credentials request-scoped only.
+apiMigrationValidationRouter.use(s0SnapshotRouter);
 
 export { apiMigrationValidationRouter };

@@ -250,3 +250,50 @@ export const COMPENSATION_IMAGE_PAGE_ROWS: number =
  */
 export const COMPENSATION_STATEMENT_TIMEOUT_SECONDS: number =
   parseInt(process.env.COMPENSATION_STATEMENT_TIMEOUT_SECONDS || '30', 10);
+
+/**
+ * S0 snapshot storage root (Capture-State Discipline Spec 2). Layout:
+ * `<dir>/<projectId>/<architectureId>/<snapshotId>/manifest.json` + one
+ * `<table>.jsonl` per snapshotted table. The snapshot doubles as the
+ * migration dump artifact — the design rule is the data load comes FROM S0,
+ * never from the live post-capture DB.
+ * Default: './s0-snapshots'.
+ */
+export const S0_SNAPSHOT_DIR: string = process.env.S0_SNAPSHOT_DIR || './s0-snapshots';
+
+/**
+ * Keyset page size for S0 snapshot / fingerprint reads. Clamped to the
+ * adapter seam's MAX_SINGLE_FETCH_ROWS.
+ * Default: 5000.
+ */
+export const S0_SNAPSHOT_PAGE_ROWS: number =
+  parseInt(process.env.S0_SNAPSHOT_PAGE_ROWS || '5000', 10);
+
+/**
+ * Per-page query timeout (seconds) for S0 snapshot / fingerprint reads. Deep
+ * keyset pages on big tables are legitimate long engine work (same rationale
+ * as the data-migration read budget).
+ * Default: 21600 (6h).
+ */
+export const S0_SNAPSHOT_QUERY_TIMEOUT_SECONDS: number =
+  parseInt(process.env.S0_SNAPSHOT_QUERY_TIMEOUT_SECONDS || '21600', 10);
+
+/**
+ * Fingerprint VERIFY checksum depth (Spec 2): tables with more live rows
+ * than this cap get a COUNT-ONLY verification with an honest
+ * `checksum_skipped_over_cap` note (recomputing a full-table checksum is a
+ * full scan). Snapshot-time checksums are always recorded — they come free
+ * while streaming the dump.
+ * Default: 500000.
+ */
+export const S0_FINGERPRINT_CHECKSUM_MAX_ROWS: number =
+  parseInt(process.env.S0_FINGERPRINT_CHECKSUM_MAX_ROWS || '500000', 10);
+
+/**
+ * INSERT statements per restore batch (Spec 2). Each batch is one
+ * transactional /mutate (or PG transaction); smaller batches bound sidecar
+ * request sizes, larger ones reduce round-trips on a recovery path.
+ * Default: 500.
+ */
+export const S0_RESTORE_INSERTS_PER_BATCH: number =
+  parseInt(process.env.S0_RESTORE_INSERTS_PER_BATCH || '500', 10);

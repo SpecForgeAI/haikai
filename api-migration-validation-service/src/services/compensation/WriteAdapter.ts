@@ -16,7 +16,7 @@ import { Pool, PoolConfig } from 'pg';
 
 import { COMPENSATION_STATEMENT_TIMEOUT_SECONDS, SYBASE_SIDECAR_URL } from '../../config';
 import type { DbConnectionConfig } from '../../types/db';
-import { assertCompensationBatch } from './compensationSqlGuard';
+import { assertCompensationBatch, assertRestoreBatch } from './compensationSqlGuard';
 
 export interface CompensationBatchOptions {
   /**
@@ -34,6 +34,15 @@ export interface CompensationBatchResult {
 
 export interface CompensationWriteAdapter {
   executeCompensationBatch(
+    statements: string[],
+    options?: CompensationBatchOptions,
+  ): Promise<CompensationBatchResult>;
+  /**
+   * S0 RESTORE surface (Spec 2): compensation grammar + `TRUNCATE TABLE`.
+   * Reached ONLY by the restore runner — the compensation bracket never
+   * truncates.
+   */
+  executeRestoreBatch(
     statements: string[],
     options?: CompensationBatchOptions,
   ): Promise<CompensationBatchResult>;
@@ -65,6 +74,21 @@ export class PostgresCompensationWriteAdapter implements CompensationWriteAdapte
     options?: CompensationBatchOptions,
   ): Promise<CompensationBatchResult> {
     assertCompensationBatch(statements);
+    return this.run(statements, options);
+  }
+
+  async executeRestoreBatch(
+    statements: string[],
+    options?: CompensationBatchOptions,
+  ): Promise<CompensationBatchResult> {
+    assertRestoreBatch(statements);
+    return this.run(statements, options);
+  }
+
+  private async run(
+    statements: string[],
+    options?: CompensationBatchOptions,
+  ): Promise<CompensationBatchResult> {
     const transactional = options?.transactional !== false;
     const client = await this.pool.connect();
     const rowCounts: number[] = [];
@@ -121,6 +145,22 @@ export class SybaseCompensationWriteAdapter implements CompensationWriteAdapter 
     options?: CompensationBatchOptions,
   ): Promise<CompensationBatchResult> {
     assertCompensationBatch(statements);
+    return this.post(statements, 'compensation', options);
+  }
+
+  async executeRestoreBatch(
+    statements: string[],
+    options?: CompensationBatchOptions,
+  ): Promise<CompensationBatchResult> {
+    assertRestoreBatch(statements);
+    return this.post(statements, 'restore', options);
+  }
+
+  private async post(
+    statements: string[],
+    mode: 'compensation' | 'restore',
+    options?: CompensationBatchOptions,
+  ): Promise<CompensationBatchResult> {
     const body = {
       host: this.config.host,
       port: this.config.port,
@@ -128,6 +168,7 @@ export class SybaseCompensationWriteAdapter implements CompensationWriteAdapter 
       username: this.config.username,
       password: this.config.password,
       statements,
+      mode,
       transactional: options?.transactional !== false,
       queryTimeoutSeconds: COMPENSATION_STATEMENT_TIMEOUT_SECONDS,
     };
