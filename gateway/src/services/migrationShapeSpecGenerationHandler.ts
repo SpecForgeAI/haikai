@@ -197,6 +197,18 @@ import {
   buildTargetStackSpecSection,
   isDbPlaneStream,
 } from './migrationTargetStackSpecSection';
+// Baseline wire facts (2026-08-17): mined wire-format contract (dates /
+// identifier widths / negotiation posture) from the captured current-state
+// baseline — feeds the scaffold's app-wide requirements + the wire-fidelity
+// section on every service-plane spec.
+import {
+  BaselineWireFacts,
+  appendWireFidelitySection,
+  buildWireFidelitySpecSection,
+  defaultFetchBaselineWireItems,
+  mineBaselineWireFacts,
+} from './migrationBaselineWireFacts';
+import { ApiBehaviourBaselineItemWire } from './migrationDriverAmsReads';
 import {
   isDbPackReviewStory,
   buildDbPackReviewSpecText,
@@ -819,6 +831,17 @@ export interface ShapeSpecGenerationDeps {
     projectId: string,
     targetArchitectureId: string
   ) => Promise<TargetStateCapturedDecision[]>;
+  /**
+   * Baseline wire-facts source (2026-08-17): the captured items of the ACTIVE
+   * current-state baseline, fetched ONCE per batch and mined for wire-format
+   * facts (legacy date patterns, identifier widths, negotiation posture).
+   * Defaults to the AMS reads; fail-soft — any error degrades to "no wire
+   * section", never a broken batch.
+   */
+  fetchBaselineWireItems?: (
+    projectId: string,
+    currentArchitectureId: string
+  ) => Promise<ApiBehaviourBaselineItemWire[]>;
   /**
    * Decision→manifest auto-apply (2026-08-16): reconcile the latest confirmed
    * manifest against the captured decisions and apply any decision-required
@@ -2415,6 +2438,28 @@ async function runSinglePassBatch(
   // when no decisions are captured (nothing fabricated).
   const targetStackSectionText = buildTargetStackSpecSection(scaffoldDecisions);
 
+  // Baseline wire facts (2026-08-17): mined ONCE per batch from the captured
+  // current-state baseline — legacy date wire formats, >int64 identifier
+  // widths, content-negotiation posture, custom headers. Feeds the scaffold
+  // spec's app-wide wire-format requirements AND the wire-fidelity section
+  // every service-plane spec carries. Fail-soft: any read hiccup degrades to
+  // null (no section, nothing fabricated) — a batch can never break on it.
+  let baselineWireFacts: BaselineWireFacts | null = null;
+  try {
+    const fetchWireItems = deps.fetchBaselineWireItems ?? defaultFetchBaselineWireItems;
+    const wireItems = await fetchWireItems(projectId, bow.currentArchitectureId);
+    if (wireItems.length > 0) {
+      baselineWireFacts = mineBaselineWireFacts(wireItems);
+    }
+  } catch (e) {
+    logger.warn('Baseline wire-facts read failed (fail-soft — specs carry no wire section)', {
+      projectId,
+      bookOfWorkId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+  const wireFidelitySectionText = buildWireFidelitySpecSection(baselineWireFacts);
+
   // ----- Stage 3 + 4: select + filter -----
   const targetSet =
     input.targetWorkItemIds && input.targetWorkItemIds.length > 0
@@ -2549,6 +2594,7 @@ async function runSinglePassBatch(
         baseRow,
         enrichment: seedBuildFilesEnrichment,
         decisions: scaffoldDecisions,
+        wireFacts: baselineWireFacts,
       });
       perStoryResults.push(row);
       logStoryResult(row);
@@ -2886,6 +2932,12 @@ async function runSinglePassBatch(
     // SAME enriched body in both passes.
     if (!isDbPlaneStream(story.tags)) {
       enrichedSpecText = appendTargetStackSection(enrichedSpecText, targetStackSectionText);
+      // Wire-fidelity section (2026-08-17): the mined baseline wire facts
+      // every service-plane spec carries — captured date formats, identifier
+      // widths, negotiation posture, custom headers, plus the wire-replay
+      // acceptance criterion. Same append discipline as the stack section
+      // (before pass-2 comparisons; idempotent).
+      enrichedSpecText = appendWireFidelitySection(enrichedSpecText, wireFidelitySectionText);
     }
 
     // Parser-extracted structured arrays. AMS re-parses at write time as

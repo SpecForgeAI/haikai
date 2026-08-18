@@ -202,6 +202,33 @@ describe('buildScaffoldBootstrapSpecText', () => {
     expect(warnings.every((w) => w.code === 'DECISION_NOT_CAPTURED')).toBe(true);
   });
 
+  it('demands app-wide 404 mapping for unmatched paths in the error skeleton (2026-08-17)', () => {
+    const { text } = buildScaffoldBootstrapSpecText({
+      story: STORY,
+      enrichmentText: ENRICHMENT_TEXT,
+      decisions: FULL_DECISIONS,
+    });
+    // Live failure: a browser's automatic /favicon.ico probe reached the
+    // migrated app's catch-all advice and logged an ERROR "Unhandled error"
+    // stack trace. The error-contract requirement must place the skeleton in
+    // ONE app-wide @RestControllerAdvice and register a specific
+    // NoResourceFoundException handler in that SAME class.
+    expect(text).toContain('@RestControllerAdvice');
+    expect(text).toContain('NoResourceFoundException');
+    expect(text).toContain('/favicon.ico');
+    expect(text).toContain('SAME advice class');
+    expect(text).toContain('MUST NOT swallow');
+    // And the acceptance criteria VERIFY it — an unmatched path returns 404,
+    // never a 500 or an ERROR-level unhandled log.
+    const criteria = text.slice(
+      text.indexOf('## Acceptance criteria'),
+      text.indexOf('> Runtime verification'),
+    );
+    expect(criteria).toContain('unmatched path');
+    expect(criteria).toContain('returns 404');
+    expect(criteria).toContain('never a 500');
+  });
+
   it('cites the operator-chosen target database name in the datasource requirement (2026-08-17)', () => {
     const { text } = buildScaffoldBootstrapSpecText({
       story: STORY,
