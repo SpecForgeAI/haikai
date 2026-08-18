@@ -91,3 +91,32 @@ export function assertCompensationBatch(statements: string[]): void {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// RESTORE grammar (Capture-State Discipline Spec 2): the S0 restore path is
+// the compensation grammar PLUS `TRUNCATE TABLE <t>` — truncate-then-bulk-in
+// mirrors the target loader. DROP/ALTER/SELECT stay refused. Restore batches
+// are admitted ONLY through `executeRestoreBatch` (never the compensation
+// bracket), and the sidecar re-guards with the same mode split.
+// ---------------------------------------------------------------------------
+
+const RESTORE_ONLY_PREFIXES = [/^TRUNCATE\s+TABLE\s+\S+$/i];
+
+export function checkRestoreStatement(statement: string): GuardVerdict {
+  const trimmed = statement.trim();
+  if (RESTORE_ONLY_PREFIXES.some((re) => re.test(trimmed))) {
+    return { allowed: true, reason: null };
+  }
+  return checkCompensationStatement(statement);
+}
+
+export function assertRestoreBatch(statements: string[]): void {
+  for (const statement of statements) {
+    const verdict = checkRestoreStatement(statement);
+    if (!verdict.allowed) {
+      throw new Error(
+        `restore guard refused statement (${verdict.reason}): ${statement.slice(0, 200)}`,
+      );
+    }
+  }
+}

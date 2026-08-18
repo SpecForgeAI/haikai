@@ -1,0 +1,189 @@
+/**
+ * S0 restore runner (Capture-State Discipline Spec 2) — the safety net's
+ * payout path: truncate each dumped table and bulk re-insert the snapshot
+ * rows through the RESTORE write surface (compensation grammar + TRUNCATE),
+ * identity-wrapped and reseeded, then VERIFY the result against the
+ * manifest's fingerprint. A restore that cannot prove it restored reports
+ * `failed` with the mismatch detail — never a silent "probably fine".
+ *
+ * Tables the snapshot skipped (`skipped_no_pk_count_only`) CANNOT be
+ * restored (their content was never dumped) and are reported as such.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import * as readline from 'readline';
+
+import { S0_RESTORE_INSERTS_PER_BATCH } from '../../config';
+import type { DbAdapter } from '../db/DbAdapter';
+import type { CompensationMetadataIndex } from '../compensation/compensationMetadata';
+import { metadataForTable } from '../compensation/compensationMetadata';
+import { buildReseedStatements } from '../compensation/inverseDiff';
+import { renderLiteral } from '../compensation/sqlLiterals';
+import { valueForColumn } from '../compensation/tableImage';
+import type { CompensationEngine, CompensationTableMeta } from '../compensation/types';
+import type { CompensationWriteAdapter } from '../compensation/WriteAdapter';
+import { verifyS0Fingerprint, S0FingerprintReport } from './fingerprint';
+import type { S0Manifest } from './manifest';
+
+export interface S0RestoreArgs {
+  readAdapter: DbAdapter;
+  writeAdapter: CompensationWriteAdapter;
+  metadata: CompensationMetadataIndex;
+  manifest: S0Manifest;
+  dir: string;
+  engine: CompensationEngine;
+  schema?: string | null;
+}
+
+export interface S0RestoreTableResult {
+  table: string;
+  status: 'restored' | 'skipped_not_dumped' | 'failed';
+  rows_inserted: number;
+  detail: string | null;
+}
+
+export interface S0RestoreReport {
+  status: 'restored' | 'failed';
+  tables: S0RestoreTableResult[];
+  verification: S0FingerprintReport | null;
+}
+
+function qualifyForEngine(
+  table: string,
+  schema: string | null | undefined,
+  engine: CompensationEngine,
+): string {
+  if (!schema) return engine === 'postgres' ? `"${table}"` : table;
+  return engine === 'postgres' ? `"${schema}"."${table}"` : `${schema}.${table}`;
+}
+
+function insertFor(
+  row: Record<string, unknown>,
+  meta: CompensationTableMeta,
+  target: string,
+  engine: CompensationEngine,
+): string | null {
+  const cols: string[] = [];
+  const values: string[] = [];
+  for (const col of meta.columns) {
+    const value = valueForColumn(row, col.name);
+    if (value === undefined) continue;
+    cols.push(col.name);
+    values.push(renderLiteral(value, engine, col.sourceType));
+  }
+  if (cols.length === 0) return null;
+  return `INSERT INTO ${target} (${cols.join(', ')}) VALUES (${values.join(', ')})`;
+}
+
+async function readRows(file: string): Promise<Array<Record<string, unknown>>> {
+  const rows: Array<Record<string, unknown>> = [];
+  const rl = readline.createInterface({
+    input: fs.createReadStream(file, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  });
+  for await (const line of rl) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    rows.push(JSON.parse(trimmed) as Record<string, unknown>);
+  }
+  return rows;
+}
+
+export async function runS0Restore(args: S0RestoreArgs): Promise<S0RestoreReport> {
+  const tables: S0RestoreTableResult[] = [];
+
+  for (const entry of args.manifest.tables) {
+    if (!entry.file) {
+      tables.push({
+        table: entry.table,
+        status: 'skipped_not_dumped',
+        rows_inserted: 0,
+        detail: entry.note ?? 'snapshot holds no data file for this table',
+      });
+      continue;
+    }
+    const meta = metadataForTable(args.metadata, entry.table);
+    if (!meta) {
+      tables.push({
+        table: entry.table,
+        status: 'failed',
+        rows_inserted: 0,
+        detail: 'table no longer in the committed model — cannot resolve columns/identity',
+      });
+      continue;
+    }
+
+    const target = qualifyForEngine(meta.table, args.schema ?? null, args.engine);
+    const identity = meta.columns.find((c) => c.isIdentity);
+    let inserted = 0;
+    try {
+      const rows = await readRows(path.join(args.dir, entry.file));
+
+      // Truncate first — its own restore batch so a later insert failure
+      // leaves an OBVIOUSLY empty table, not a half-merged one.
+      await args.writeAdapter.executeRestoreBatch([`TRUNCATE TABLE ${target}`], {
+        transactional: true,
+      });
+
+      for (let i = 0; i < rows.length; i += S0_RESTORE_INSERTS_PER_BATCH) {
+        const chunk = rows.slice(i, i + S0_RESTORE_INSERTS_PER_BATCH);
+        const statements: string[] = [];
+        const wrap = args.engine === 'sybase' && identity !== undefined;
+        if (wrap) statements.push(`SET IDENTITY_INSERT ${target} ON`);
+        for (const row of chunk) {
+          const statement = insertFor(row, meta, target, args.engine);
+          if (statement) statements.push(statement);
+        }
+        if (wrap) statements.push(`SET IDENTITY_INSERT ${target} OFF`);
+        if (statements.length > 0) {
+          await args.writeAdapter.executeRestoreBatch(statements, { transactional: true });
+          inserted += chunk.length;
+        }
+      }
+
+      if (identity) {
+        let max = 0;
+        for (const row of rows) {
+          const v = valueForColumn(row, identity.name);
+          const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+          if (Number.isFinite(n) && n > max) max = n;
+        }
+        const reseed = buildReseedStatements(
+          meta,
+          identity.name,
+          args.engine,
+          args.schema ?? null,
+          max,
+        );
+        await args.writeAdapter.executeRestoreBatch(reseed, { transactional: false });
+      }
+
+      tables.push({ table: entry.table, status: 'restored', rows_inserted: inserted, detail: null });
+    } catch (err) {
+      tables.push({
+        table: entry.table,
+        status: 'failed',
+        rows_inserted: inserted,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const anyFailed = tables.some((t) => t.status === 'failed');
+  let verification: S0FingerprintReport | null = null;
+  if (!anyFailed) {
+    verification = await verifyS0Fingerprint(
+      args.readAdapter,
+      args.metadata,
+      args.manifest,
+      args.schema,
+    );
+  }
+
+  return {
+    status: !anyFailed && verification?.matches === true ? 'restored' : 'failed',
+    tables,
+    verification,
+  };
+}

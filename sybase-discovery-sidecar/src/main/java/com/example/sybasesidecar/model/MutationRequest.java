@@ -47,6 +47,14 @@ public class MutationRequest {
     private Integer queryTimeoutSeconds;
 
     /**
+     * Guard mode: {@code "compensation"} (default) admits only the derived
+     * inverse grammar; {@code "restore"} (Spec 2 — the S0 safety-net payout)
+     * additionally admits {@code TRUNCATE TABLE <t>}. Anything else is
+     * treated as compensation (the stricter mode).
+     */
+    private String mode;
+
+    /**
      * Optional driver preference; defaults to {@link SybaseDriverChoice#AUTO}
      * when null/missing.
      */
@@ -122,5 +130,18 @@ public class MutationRequest {
 
     public void setQueryTimeoutSeconds(final Integer queryTimeoutSeconds) {
         this.queryTimeoutSeconds = queryTimeoutSeconds;
+    }
+
+    /** Normalised: only the exact string {@code "restore"} relaxes the guard. */
+    public boolean isRestoreMode() {
+        return "restore".equalsIgnoreCase(this.mode == null ? "" : this.mode.trim());
+    }
+
+    public String getMode() {
+        return this.mode;
+    }
+
+    public void setMode(final String mode) {
+        this.mode = mode;
     }
 }

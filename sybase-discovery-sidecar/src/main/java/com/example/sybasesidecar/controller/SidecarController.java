@@ -191,12 +191,17 @@ public class SidecarController {
             @Valid @RequestBody final MutationRequest req
     ) {
         final long start = System.currentTimeMillis();
-        LOG.info("[diag-sidecar] op=mutate status=accepted host_set={} driver_choice={} statements={}",
+        LOG.info("[diag-sidecar] op=mutate status=accepted host_set={} driver_choice={} statements={} mode={}",
                 req.getHost() != null && !req.getHost().isEmpty(),
                 req.getDriver(),
-                req.getStatements() == null ? 0 : req.getStatements().size());
+                req.getStatements() == null ? 0 : req.getStatements().size(),
+                req.isRestoreMode() ? "restore" : "compensation");
         try {
-            MutationSqlGuard.assertCompensationBatch(req.getStatements());
+            if (req.isRestoreMode()) {
+                MutationSqlGuard.assertRestoreBatch(req.getStatements());
+            } else {
+                MutationSqlGuard.assertCompensationBatch(req.getStatements());
+            }
         } catch (final SidecarSqlGuard.SqlGuardException e) {
             LOG.warn("Sidecar mutate category=mutate_guard_reject reason={}", e.getReason());
             LOG.warn("[diag-sidecar] op=mutate status=400 reason={} elapsed_ms={}",
@@ -220,7 +225,8 @@ public class SidecarController {
                 req.getPassword(),
                 req.getStatements(),
                 req.getTransactional() == null || req.getTransactional(),
-                timeoutSec
+                timeoutSec,
+                req.isRestoreMode()
         );
         LOG.info("[diag-sidecar] op=mutate status=200 result={} statements={} elapsed_ms={}",
                 body.ok() ? "ok" : "fail",

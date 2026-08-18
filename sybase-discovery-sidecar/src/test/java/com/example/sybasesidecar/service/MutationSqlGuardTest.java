@@ -121,6 +121,38 @@ class MutationSqlGuardTest {
     }
 
     // ------------------------------------------------------------------
+    // Restore mode (Spec 2): compensation grammar + TRUNCATE TABLE
+    // ------------------------------------------------------------------
+
+    @Test
+    void restoreModeAdmitsTruncateAndCompensationForms() {
+        assertDoesNotThrow(() -> MutationSqlGuard.assertRestoreStatement(
+                "TRUNCATE TABLE orders"));
+        assertDoesNotThrow(() -> MutationSqlGuard.assertRestoreStatement(
+                "INSERT INTO orders (id, name) VALUES (1, 'a')"));
+        assertDoesNotThrow(() -> MutationSqlGuard.assertRestoreBatch(List.of(
+                "TRUNCATE TABLE orders",
+                "SET IDENTITY_INSERT orders ON",
+                "INSERT INTO orders (id, name) VALUES (1, 'a')",
+                "SET IDENTITY_INSERT orders OFF")));
+    }
+
+    @Test
+    void compensationModeStillRefusesTruncate() {
+        assertThrows(SidecarSqlGuard.SqlGuardException.class,
+                () -> MutationSqlGuard.assertCompensationStatement("TRUNCATE TABLE orders"));
+    }
+
+    @Test
+    void restoreModeFullAnchorsTruncateAndRefusesDdl() {
+        assertThrows(SidecarSqlGuard.SqlGuardException.class,
+                () -> MutationSqlGuard.assertRestoreStatement(
+                        "TRUNCATE TABLE orders; DROP TABLE orders"));
+        assertThrows(SidecarSqlGuard.SqlGuardException.class,
+                () -> MutationSqlGuard.assertRestoreStatement("DROP TABLE orders"));
+    }
+
+    // ------------------------------------------------------------------
     // Literal stripping primitive
     // ------------------------------------------------------------------
 
