@@ -1,5 +1,58 @@
 # Capture-State Discipline & Log-Replay Program — Build Log
 
+## PROGRAM COMPLETE (2026-08-18)
+
+All 8 specs BUILT + MERGED (--no-ff) + PUSHED, main ending 8ea0603b. Specs
+1–4 = state discipline (S0 invariant live end-to-end: derived compensation
+with byte-parity verification on BOTH capture and target replay, S0
+snapshot/fingerprint/restore, halt-on-residue, credential split, id reseed).
+Specs 5–8 = log-replay reconciliation round 2 (corpus extraction via the
+existing runtime-evidence parsers, wizard source multi-select +
+include-in-initial, the log_replay baseline + second reconciliation through
+the EXISTING headless machinery, clustered triage).
+
+### Work-machine pickup (clone+copy convention — big change => FRESH CLONE)
+
+Every service except IVS changed; a fresh clone becoming the new area is the
+right move. Then:
+
+1. AMS restarts apply changeset 225 (log_replay_corpus tables) on boot;
+   diagnostic-type + baseline-kind allowlists extended (code only).
+2. REBUILD the sybase-discovery-sidecar jar (new /mutate endpoint + guards)
+   and restart it.
+3. Restart AMVS (compensation/s0/log-replay modules + routes; NEW env knobs
+   all optional: COMPENSATION_*, S0_*, CAPTURE_COMPENSATION_MODE default
+   'required').
+4. Restart discovery-service (log-replay-corpus route), gateway (extract
+   proxy + round-2 driver/route + scoped-re-rec db threading), frontend
+   (wizard sources, log sections, drift rollup, reconcile modal).
+5. FIRST OPERATIONAL STEP before any new capture: pin S0 —
+   POST /api/s0-snapshot/run with the source DB block (the SIT DB was
+   refreshed from Prod 2026-08-18, so S0 pins clean). Optionally supply the
+   read-only login in the wizard secrets step (credential split advisory
+   clears).
+
+### Shakedown checklist (live)
+
+- Capture a mutating endpoint with brackets active: verify the
+  capture.compensation.bracket trace, then POST /api/s0-snapshot/verify ->
+  matches: true.
+- Kill-switch works: CAPTURE_COMPENSATION_MODE=off restores legacy behaviour.
+- Upload a real access log in the wizard: funnel + staging + gaps render;
+  round 2 via the Run-reconciliation modal third checkbox; drift tab shows
+  the clustered summary.
+
+### Residual risks / notes (also in Per-spec notes below)
+
+- Manual-capture concrete sends (Postman + checked-mode log pre-fires) are
+  UNCOMPENSATED (pre-existing hole; mutating LOG items never pre-fire).
+- Pre-existing red baselines UNCHANGED: AMVS config/testConnection/
+  captureSessionSeeding tests; frontend whole-repo tsc + two
+  MigrationDeliveryDashboard suites (all verified failing before this
+  program via stash round-trips).
+- Round-2 gateway call is synchronous (minutes on huge corpora) — an async
+  job wrapper is future polish.
+
 Design source of truth:
 `agent-os/planning/2026-08-18-capture-state-discipline-and-log-replay-design.md`.
 Read that FIRST (doctrine: S0 invariant, derived compensation, verified-or-
