@@ -24,7 +24,7 @@ values, not hardcoded. No client identifiers anywhere.
 | 3 | Source capture integration (brackets + credential split) | feature/csd-03-source-capture-integration | built (per-scenario brackets wrap mirror+LLM loop for mutating verbs via captureCompensation context; fail-closed refusals + compensation_refused/residue/inactive diagnostics [AMS allowlist extended]; residue + end-of-job S0 fingerprint mismatch HALT session failed w/ restore remedy; readonly-credential split in secrets bundle/route; mutating id-harvest suppressed under brackets; GET /capture-sessions/:id/compensation-preflight pre-start aggregate warning; CAPTURE_COMPENSATION_MODE config; 4 new orchestrator bracket tests, e2e test advisory-aware; AMVS 746 green + AMS ApiBehaviour* 97 green) |
 | 4 | Target replay integration | feature/csd-04-target-replay-integration | built (targetReplayRunner: per-item brackets for mutating single-shot AND sequence items via same context builder; state-delta pair moved INSIDE the bracket [delta records what the call did, before undo]; refusals fail-closed skip w/ diagnostic; residue = CompensationResidueHaltError -> run failed w/ re-run-data-migration remedy; targetDbConfig threaded through /start route [reuses Tier-1 db plumbing]; gateway scoped re-reconcile now passes target-DB creds like the full run; shared fake gained runReadonlySelect for the delta ladder; 3 new tests, AMVS 749 green, gateway reconciliation 92 green; RESIDUAL noted: surrogate-PK target tables order by source natural key — imaging collisions would surface as residue, never silently) |
 | 5 | Log ingestion: replay-corpus extraction | feature/csd-05-log-corpus | built (discovery corpusExtractor REUSES runtime-evidence parsers: parseClfLine [query preserved — tier 2a], tryKnownFormatFastPathContent [rich JSONL tier 3], recipe seam; usefulness rules per design [body-less=url_only, body-ful need parseable body else loud discard]; placeholder-equivalent endpoint matching vs committed model; exact-dup collapse w/ counts; honest funnel + unmatched-endpoints list; POST /discovery/log-replay-corpus abandons zero-useful sources loudly, else persists ATOMICALLY to AMS changeset 225 [log_replay_corpus + _item, opaque request_json, snake_case wire, create/latest/items/patch]; 9 discovery tests + 5 AMS tests green; discovery full suite 263 green) |
-| 6 | Wizard: source multi-select + include-in-initial | feature/csd-06-wizard-sources | pending |
+| 6 | Wizard: source multi-select + include-in-initial | feature/csd-06-wizard-sources | built (PostmanImportWizardStep 3-way radio -> source CHECKBOXES {LLM, Postman, Application log} deriving the existing PostmanRunMode; LogCorpusSection [upload -> gateway extract -> funnel + grouped staging + unmatched gaps + include-in-initial w/ count]; wizard start gate via deriveSourceSelection [log-only unchecked/abandoned/no-source BLOCK; log-only checked = postmanOnly semantics + honest justification]; checked-mode NON-mutating corpus items pre-fire via manual-capture and merge into the SAME postmanCapturedByOp map [zero backend /start changes]; mutating items held w/ visible note [manual-capture is unbracketed — pre-existing Postman hole, logged residual]; LogCorpusAppendModal parity [stages round 2 + capture-now non-mutating w/ gate-recompute refresh]; gateway /log-replay-corpus/extract proxy; discovery extract response now returns items; 24 vitest [11 support + rewritten selector suite] + ApiBehaviour 83 green in isolation, gateway 277 discovery-suite green) |
 | 7 | Round-2 run: log_replay baseline + second reconciliation | feature/csd-07-log-replay-run | pending |
 | 8 | Clustered triage (signature grouping + rollups) | feature/csd-08-clustered-triage | pending |
 
@@ -36,5 +36,16 @@ values, not hardcoded. No client identifiers anywhere.
 - Rulings from pre-build Q&A: effect-map-missing writes FAIL CLOSED + aggregate warning list; S0 = SIT refreshed from Prod 2026-08-18 (clean); halt-on-residue; snapshot scope = committed physical model tables; credential split back-compat.
 
 ## Per-spec notes
+
+- RESIDUAL (spec 6): manual-capture route sends are UNCOMPENSATED — the
+  concrete-send path (Postman imports AND checked-mode log pre-fires) runs
+  outside the CSD Spec 3 brackets. Mitigated: mutating LOG items never
+  pre-fire (held for round 2 / the bracketed LLM loop); Postman mutating
+  sends retain the pre-existing hole. Bracketing the manual-capture route is
+  future work.
+- RESIDUAL (spec 4): target-side bracket imaging orders by the SOURCE natural
+  key; a surrogate-PK target table with a demoted non-unique natural key
+  could collide in the image map — any real failure surfaces as residue
+  (halt), never silently.
 
 (appended as specs complete)

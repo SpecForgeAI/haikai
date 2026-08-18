@@ -175,7 +175,12 @@ logReplayCorpusRouter.post('/', async (req: Request, res: Response) => {
       });
     }
     const corpus = await response.json();
-    return res.status(200).json({ abandoned: false, corpus, funnel: result.funnel });
+    // Items ride back alongside the persisted corpus (Spec 6): the wizard's
+    // staging table renders them and the checked-mode concrete sends convert
+    // them without a second AMS read.
+    return res
+      .status(200)
+      .json({ abandoned: false, corpus, funnel: result.funnel, items: result.items });
   } catch (err) {
     return res.status(502).json({
       error: {
