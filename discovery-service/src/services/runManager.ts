@@ -2138,6 +2138,11 @@ async function startServiceScopedRun(
     // run-level degraded signal, accumulated across every scanned directory.
     let runDegraded = false;
     const runDegradedReasons: string[] = [];
+    // SCL 2026-08-19: structural-model scan outcome — produced by THIS run
+    // (same clone, same root), recorded on the step payload.
+    let structuralScan:
+      | import('../scl/structuralScanStep').StructuralScanStepOutcome
+      | null = null;
 
     try {
       // -----------------------------------------------------------------------
@@ -2627,6 +2632,34 @@ async function startServiceScopedRun(
       // boundary; never aborts the service-scoped run.
       // -----------------------------------------------------------------------
       await runMavenPackFindingsForRun(repoDir, runId, projectId);
+
+      // -----------------------------------------------------------------------
+      // Step 9.6: Structural (SCL) scan — same clone, same pass (2026-08-19
+      // user ruling: the ONE code scan produces the structural model; no
+      // separate trigger, no second scan). Runs while the clone is still on
+      // disk, against the SAME root directory the LLM analysis scanned.
+      // FAIL-SOFT LOUD: the outcome rides the step payload; a structural
+      // failure never fails the code run.
+      // -----------------------------------------------------------------------
+      const structuralStart = Date.now();
+      structuralScan = await runStructuralScanStep({
+        projectId,
+        architectureId,
+        sourceDir: rootScanDir,
+      });
+      console.log(
+        `[RunManager:service-scoped] Structural scan ${structuralScan.status}` +
+          (structuralScan.scanId ? ` id=${structuralScan.scanId}` : '') +
+          (structuralScan.contractCount !== null ? ` contracts=${structuralScan.contractCount}` : '') +
+          ` in ${Date.now() - structuralStart}ms` +
+          (structuralScan.detail ? ` detail=${structuralScan.detail}` : ''),
+      );
+      if (structuralScan.status === 'failed') {
+        console.warn(
+          `[diag-runs] code_run=${(runId || '').slice(0, 8)} structural_scan_failed ` +
+            `detail=${(structuralScan.detail ?? 'unknown').slice(0, 200)}`,
+        );
+      }
     } finally {
       // -----------------------------------------------------------------------
       // Step 10: Cleanup cloned repo (if applicable)
@@ -2661,6 +2694,9 @@ async function startServiceScopedRun(
       evidenceCount,
       candidatesByType,
       findingsEmit,
+      // SCL 2026-08-19: structural-model scan outcome (completed|failed|skipped
+      // + scan id / contract count / reason) — minted by THIS run.
+      structuralScan,
       stepStartedAt: new Date(stepStartTime).toISOString(),
       stepCompletedAt: new Date(stepEndTime).toISOString(),
       durationMs: stepDurationMs,
@@ -2852,6 +2888,9 @@ function inferLibraryEcosystem(hint: string | null | undefined): 'MAVEN' | 'NPM'
 import { runDatabasePackDiscovery } from './databasePacks/databasePackOrchestrator';
 // CSD auto-S0 (2026-08-19): the DB scan pins the canonical state in one go.
 import { takeS0AutoSnapshot } from './databasePacks/s0AutoSnapshot';
+// SCL 2026-08-19: the CODE scan produces the structural model in the same
+// pass (same clone, same root) — never a separate trigger or second scan.
+import { runStructuralScanStep } from '../scl/structuralScanStep';
 import type { DatabaseCandidatePayload } from './databasePacks/DatabaseDiscoveryPack';
 
 /**
