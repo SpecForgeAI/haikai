@@ -2850,6 +2850,8 @@ function inferLibraryEcosystem(hint: string | null | undefined): 'MAVEN' | 'NPM'
 // =============================================================================
 
 import { runDatabasePackDiscovery } from './databasePacks/databasePackOrchestrator';
+// CSD auto-S0 (2026-08-19): the DB scan pins the canonical state in one go.
+import { takeS0AutoSnapshot } from './databasePacks/s0AutoSnapshot';
 import type { DatabaseCandidatePayload } from './databasePacks/DatabaseDiscoveryPack';
 
 /**
@@ -3024,6 +3026,40 @@ export async function startDatabaseRun(
     }
 
     const status = result.shortCircuited || !result.connectedOk ? 'FAILED' : 'COMPLETED';
+
+    // ---- Automatic S0 snapshot (CSD, 2026-08-19 — user ruling): the DB
+    // scan and the canonical-state pin are ONE action. On a successful scan
+    // the validation service snapshots the source DB IMMEDIATELY, using the
+    // scan's own harvested tables/keys and the same credentials — no
+    // save-back wait, no separate step. FAIL-SOFT + LOUD: a snapshot
+    // failure never fails the scan; the outcome (taken/failed/skipped +
+    // snapshot id + reason) rides the run's steps payload so the scan
+    // results answer "was S0 pinned?" directly.
+    let s0Snapshot: import('./databasePacks/s0AutoSnapshot').S0AutoSnapshotOutcome | null =
+      null;
+    if (status === 'COMPLETED' && result.introspection.tables.length > 0) {
+      const s0Start = Date.now();
+      s0Snapshot = await takeS0AutoSnapshot({
+        projectId,
+        architectureId,
+        config,
+        credentials,
+        introspection: result.introspection,
+      });
+      console.log(
+        `[RunManager:database] S0 auto-snapshot ${s0Snapshot.status}` +
+          (s0Snapshot.snapshotId ? ` id=${s0Snapshot.snapshotId}` : '') +
+          ` tables=${s0Snapshot.tableCount} in ${Date.now() - s0Start}ms` +
+          (s0Snapshot.detail ? ` detail=${s0Snapshot.detail}` : ''),
+      );
+      if (s0Snapshot.status === 'failed') {
+        console.warn(
+          `[diag-runs] db_run=${(runId || '').slice(0, 8)} s0_snapshot_failed ` +
+            `detail=${(s0Snapshot.detail ?? 'unknown').slice(0, 200)}`,
+        );
+      }
+    }
+
     const stepsPayload: Record<string, unknown> = {
       database: {
         status: status === 'COMPLETED' ? 'completed' : 'failed',
@@ -3039,6 +3075,8 @@ export async function startDatabaseRun(
         findingCount: result.emittedFindings.length,
         warningCount: result.warningFindings.length,
         skippedTableCount: result.profile.skippedTables.length,
+        // CSD auto-S0 (2026-08-19): taken | failed | skipped (+ id/reason).
+        s0Snapshot,
       },
     };
 

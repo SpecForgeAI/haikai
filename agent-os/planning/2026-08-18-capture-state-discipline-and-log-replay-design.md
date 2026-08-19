@@ -72,6 +72,15 @@ has exclusive use for the whole migration).
 
 ## Mechanism 2 (safety net): S0 snapshot, fingerprint, restore
 
+**Ruling (2026-08-19): S0 pinning is AUTOMATIC — the DB scan and the S0
+snapshot are ONE user action.** A successful database discovery scan
+triggers the snapshot immediately at completion, using the scan's OWN
+harvested metadata (tables / PKs / identity — no save-back wait) and the
+same credentials the scan just used. The outcome (taken / failed / skipped,
+snapshot id, reason) rides the scan run's steps payload. Fail-soft + loud: a
+snapshot failure never fails the scan. The validation-service route remains
+as the manual/recovery path only; there is deliberately NO separate S0 UI.
+
 - **Logical snapshot, existing machinery**: bulk-read S0 to files via the
   uncapped keyset-paginated reader (data plane); restore = truncate + bulk-in
   (mirrors target load). Dialect-neutral. No native dump/load ops dependency.

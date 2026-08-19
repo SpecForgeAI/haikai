@@ -113,6 +113,42 @@ export async function fetchCompensationMetadataIndex(
   }
 }
 
+/**
+ * Build the index from SCAN-SUPPLIED table specs (CSD auto-S0, 2026-08-19):
+ * the DB scan's own harvest carries tables + PKs + identity flags BEFORE the
+ * model is committed, so the automatic S0 snapshot at scan completion does
+ * not wait for save-back. Same fail-closed posture: a spec without PK
+ * columns lands with `pkColumns: []` (count-only downstream).
+ */
+export interface S0TableSpec {
+  table: string;
+  pk_columns?: string[] | null;
+  columns?: Array<{
+    name?: string;
+    source_type?: string | null;
+    is_identity?: boolean | null;
+  }> | null;
+}
+
+export function buildIndexFromTableSpecs(specs: S0TableSpec[]): CompensationMetadataIndex {
+  const byTable = new Map<string, CompensationTableMeta>();
+  for (const spec of specs) {
+    if (!spec.table || spec.table.trim().length === 0) continue;
+    const columns: CompensationColumnMeta[] = (spec.columns ?? [])
+      .filter((c): c is NonNullable<typeof c> => !!c && !!c.name)
+      .map((c) => ({
+        name: c.name as string,
+        sourceType: c.source_type ?? null,
+        isIdentity: c.is_identity === true,
+      }));
+    const pkColumns = (spec.pk_columns ?? []).filter(
+      (c): c is string => typeof c === 'string' && c.length > 0,
+    );
+    byTable.set(spec.table.toLowerCase(), { table: spec.table, pkColumns, columns });
+  }
+  return { byTable };
+}
+
 /** Lookup helper: case-insensitive, tolerant of `schema.table` callers. */
 export function metadataForTable(
   index: CompensationMetadataIndex,

@@ -261,3 +261,13 @@ export const OSV_CA_CERT_FILE: string =
  */
 export const DISCOVERY_VULN_ENRICH_AUTO: boolean =
   (process.env.DISCOVERY_VULN_ENRICH_AUTO ?? 'true').toLowerCase() !== 'false';
+
+/**
+ * Base URL of the api-migration-validation-service (CSD auto-S0,
+ * 2026-08-19). The DB-scan completion hook posts the automatic S0 snapshot
+ * request here with the scan's own harvested table metadata + credentials —
+ * the DB scan and the S0 pin are ONE user action.
+ * Default: `http://localhost:8092` (the service's own default port).
+ */
+export const API_MIGRATION_VALIDATION_BASE_URL: string =
+  process.env.API_MIGRATION_VALIDATION_BASE_URL || 'http://localhost:8092';
