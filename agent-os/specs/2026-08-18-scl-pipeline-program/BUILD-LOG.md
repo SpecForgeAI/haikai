@@ -37,9 +37,15 @@ Work-machine pickup (big change => FRESH CLONE becomes the new area):
 - Services to restart: AMS, gateway, discovery-service, IVS, frontend.
 - New env knobs (optional, defaults sane): SCL_STORY_ROW_BUDGET=40,
   SCL_CONTEST_SPEC_THRESHOLD=0.2, SCL_CONTEST_RUN_THRESHOLD=0.05.
-- New-migration flow: code scan now needs the SCL scan kicked
-  (POST discovery-service /scl/scans {project_id, architecture_id,
-  source_dir}) -> Structural Model tab populates -> run annotation
+- New-migration flow (AMENDED 2026-08-19, main a41ca58a — user ruling: the
+  ONE code scan produces the structural model; a separate trigger meant
+  scanning the same code twice): the service-scoped CODE SCAN now runs the
+  structural slicer itself as step 9.6 (same clone, same root dir as the LLM
+  analysis; fail-soft loud; outcome completed|failed|skipped in
+  steps_payload['service-scoped-llm-analysis'].structuralScan; no-Java roots
+  skip WITHOUT a scan row so an empty scan never supersedes a real corpus;
+  POST /discovery/scl/scans = recovery path only) -> Structural Model tab
+  populates with the code scan -> run annotation
   (POST gateway .../scl/annotation/run) -> confirm modernization
   decisions on Target State -> expand book of work (corpus plan used
   automatically when a scan exists) -> generate specs -> Migrate.
