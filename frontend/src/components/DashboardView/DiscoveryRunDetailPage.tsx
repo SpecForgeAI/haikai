@@ -709,6 +709,29 @@ export const DiscoveryRunDetailPage: React.FC = () => {
     }
   }
 
+  // CSD auto-S0 (2026-08-19): the DB scan pins the S0 snapshot automatically
+  // at completion and records the outcome in steps_payload.database.s0Snapshot.
+  // Surface it as a readable row — "was S0 pinned?" must be answerable from
+  // the scan results screen, not just the raw phase JSON.
+  const s0Snapshot = ((): {
+    status: string;
+    snapshotId: string | null;
+    tableCount: number | null;
+    detail: string | null;
+  } | null => {
+    const db = selectedRun?.steps_payload?.['database'];
+    if (!db || typeof db !== 'object') return null;
+    const raw = (db as Record<string, unknown>)['s0Snapshot'];
+    if (!raw || typeof raw !== 'object') return null;
+    const rec = raw as Record<string, unknown>;
+    return {
+      status: typeof rec.status === 'string' ? rec.status : 'unknown',
+      snapshotId: typeof rec.snapshotId === 'string' ? rec.snapshotId : null,
+      tableCount: typeof rec.tableCount === 'number' ? rec.tableCount : null,
+      detail: typeof rec.detail === 'string' ? rec.detail : null,
+    };
+  })();
+
   const selectedTier = selectedRun?.tier ?? null;
   const showWarningsBanner =
     (selectedTier === 'B' || selectedTier === 'C') &&
@@ -1104,6 +1127,51 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                   <span data-testid="run-candidate-count">
                     {candidateCount}
                   </span>
+                </div>
+              )}
+
+              {s0Snapshot && (
+                <div
+                  className={styles.runDetailRow}
+                  data-testid="s0-snapshot-row"
+                >
+                  <span className={styles.runDetailLabel}>S0 snapshot:</span>
+                  <span
+                    className={`${styles.statusBadge} ${
+                      s0Snapshot.status === 'taken'
+                        ? styles.statusCompleted
+                        : s0Snapshot.status === 'failed'
+                          ? styles.statusFailed
+                          : styles.statusCancelled
+                    }`}
+                    data-testid={`s0-snapshot-status-${s0Snapshot.status}`}
+                  >
+                    {s0Snapshot.status === 'taken'
+                      ? 'Taken with this scan'
+                      : s0Snapshot.status === 'failed'
+                        ? 'FAILED'
+                        : 'Skipped'}
+                  </span>
+                  {s0Snapshot.status === 'taken' &&
+                    s0Snapshot.tableCount !== null && (
+                      <span className={styles.phaseValue}>
+                        {s0Snapshot.tableCount} table
+                        {s0Snapshot.tableCount === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  {s0Snapshot.detail && (
+                    <span
+                      className={styles.phaseValue}
+                      data-testid="s0-snapshot-detail"
+                      style={
+                        s0Snapshot.status === 'failed'
+                          ? { color: '#c62828' }
+                          : undefined
+                      }
+                    >
+                      {s0Snapshot.detail}
+                    </span>
+                  )}
                 </div>
               )}
 
