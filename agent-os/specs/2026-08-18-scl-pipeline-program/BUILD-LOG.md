@@ -45,10 +45,15 @@ Work-machine pickup (big change => FRESH CLONE becomes the new area):
   steps_payload['service-scoped-llm-analysis'].structuralScan; no-Java roots
   skip WITHOUT a scan row so an empty scan never supersedes a real corpus;
   POST /discovery/scl/scans = recovery path only) -> Structural Model tab
-  populates with the code scan -> run annotation
-  (POST gateway .../scl/annotation/run) -> confirm modernization
-  decisions on Target State -> expand book of work (corpus plan used
-  automatically when a scan exists) -> generate specs -> Migrate.
+  populates with the code scan -> ANNOTATION FIRES AUTOMATICALLY too
+  (2026-08-19 second amendment, main e70b0627 — spec 4's route had ZERO
+  frontend callers; the structural step now POSTs the gateway
+  .../scl/annotation/run after a completed scan [requires the GATEWAY
+  running during code scans]; requested/request_failed rides
+  steps_payload...structuralScan.annotation; manual POST = recovery only)
+  -> confirm modernization decisions on Target State -> expand book of
+  work (corpus plan used automatically when a scan exists) -> generate
+  specs -> Migrate.
 
 ## Key architecture decisions made during build
 
