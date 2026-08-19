@@ -2652,12 +2652,19 @@ async function startServiceScopedRun(
           (structuralScan.scanId ? ` id=${structuralScan.scanId}` : '') +
           (structuralScan.contractCount !== null ? ` contracts=${structuralScan.contractCount}` : '') +
           ` in ${Date.now() - structuralStart}ms` +
+          (structuralScan.annotation ? ` annotation=${structuralScan.annotation.status}` : '') +
           (structuralScan.detail ? ` detail=${structuralScan.detail}` : ''),
       );
       if (structuralScan.status === 'failed') {
         console.warn(
           `[diag-runs] code_run=${(runId || '').slice(0, 8)} structural_scan_failed ` +
             `detail=${(structuralScan.detail ?? 'unknown').slice(0, 200)}`,
+        );
+      }
+      if (structuralScan.annotation?.status === 'request_failed') {
+        console.warn(
+          `[diag-runs] code_run=${(runId || '').slice(0, 8)} scl_annotation_request_failed ` +
+            `detail=${(structuralScan.annotation.detail ?? 'unknown').slice(0, 200)}`,
         );
       }
     } finally {

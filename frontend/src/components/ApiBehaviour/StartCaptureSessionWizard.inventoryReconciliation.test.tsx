@@ -44,6 +44,7 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     listOperations: vi.fn().mockResolvedValue([]),
     reconcileInventory: vi.fn(),
     accountEndpoints: vi.fn(),
+    getCompensationPreflight: vi.fn(),
     // Renumber (Spec 2026-06-20): the Step 4 -> 5 advance now fetches the
     // data-type-format preview. An EMPTY result auto-skips the new step so
     // these flows still land on Start (step 6) after one Next from Step 4.
@@ -64,6 +65,7 @@ import {
   ApiBehaviourApiError,
   accountEndpoints,
   createCaptureSession,
+  getCompensationPreflight,
   listOperations,
   parseOas,
   reconcileInventory,
@@ -260,6 +262,14 @@ beforeEach(() => {
   vi.mocked(reconcileInventory).mockResolvedValue(buildReconciliation());
   vi.mocked(updateCaptureSession).mockResolvedValue(buildSession({ status: 'configured' }));
   vi.mocked(startCaptureSession).mockResolvedValue(buildSession({ status: 'running' }));
+  // CSD Spec 3 (2026-08-19): clean pre-start compensation preflight — the
+  // gate prompts nothing and the start flow proceeds unchanged.
+  vi.mocked(getCompensationPreflight).mockResolvedValue({
+    session_id: SESSION_ID,
+    model_resolvable: true,
+    write_endpoints_without_effect_map: [],
+    note: null,
+  });
   // Empty preview -> the new Data-type step auto-skips to Start (step 6).
   vi.mocked(dataTypeDefaultsPreview).mockResolvedValue({
     sessionId: SESSION_ID,

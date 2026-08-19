@@ -34,21 +34,40 @@ function fakeResult(overrides?: Partial<{ scanId: string; contractCount: number 
   };
 }
 
+/** Minimal fetch fake for the gateway annotation request. */
+function fakeFetch(options?: { status?: number; throwWith?: string }) {
+  const calls: Array<{ url: string; body: unknown }> = [];
+  const fn = (async (url: unknown, init?: { body?: unknown }) => {
+    calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : null });
+    if (options?.throwWith) throw new Error(options.throwWith);
+    const status = options?.status ?? 202;
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: async () => (status >= 300 ? 'annotation route error body' : ''),
+    } as unknown as Response;
+  }) as typeof fetch;
+  return { fn, calls };
+}
+
 describe('runStructuralScanStep', () => {
-  it('maps a successful run to completed + scanId + contractCount', async () => {
+  it('maps a successful run to completed + scanId + contractCount, and requests annotation', async () => {
     const recorded: RunSclScanArgs[] = [];
+    const gateway = fakeFetch();
     const outcome = await runStructuralScanStep(ARGS, {
       hasJava: async () => true,
       runScan: async (a) => {
         recorded.push(a);
         return fakeResult({ scanId: 'scan-77', contractCount: 133 });
       },
+      fetchFn: gateway.fn,
     });
     expect(outcome).toEqual({
       status: 'completed',
       scanId: 'scan-77',
       contractCount: 133,
       detail: null,
+      annotation: { status: 'requested', detail: null },
     });
     expect(recorded).toHaveLength(1);
     expect(recorded[0].sourceDir).toBe('/tmp/some-clone');
@@ -57,33 +76,69 @@ describe('runStructuralScanStep', () => {
     // The AMS base URL comes from config — present, never empty.
     expect(typeof recorded[0].amsBaseUrl).toBe('string');
     expect(recorded[0].amsBaseUrl.length).toBeGreaterThan(0);
+    // The auto-annotation request targets the gateway route with the scan id.
+    expect(gateway.calls).toHaveLength(1);
+    expect(gateway.calls[0].url).toContain('/projects/proj-1/architectures/arch-1/scl/annotation/run');
+    expect(gateway.calls[0].body).toEqual({ scan_id: 'scan-77' });
   });
 
-  it('skips WITHOUT calling the runner when the root has no Java sources', async () => {
+  it('records request_failed (scan still completed) when the gateway is down', async () => {
+    const gateway = fakeFetch({ throwWith: 'connect ECONNREFUSED 127.0.0.1:8081' });
+    const outcome = await runStructuralScanStep(ARGS, {
+      hasJava: async () => true,
+      runScan: async () => fakeResult(),
+      fetchFn: gateway.fn,
+    });
+    expect(outcome.status).toBe('completed');
+    expect(outcome.annotation?.status).toBe('request_failed');
+    expect(outcome.annotation?.detail).toContain('ECONNREFUSED');
+  });
+
+  it('records request_failed with the HTTP status on a non-2xx gateway answer', async () => {
+    const gateway = fakeFetch({ status: 503 });
+    const outcome = await runStructuralScanStep(ARGS, {
+      hasJava: async () => true,
+      runScan: async () => fakeResult(),
+      fetchFn: gateway.fn,
+    });
+    expect(outcome.status).toBe('completed');
+    expect(outcome.annotation?.status).toBe('request_failed');
+    expect(outcome.annotation?.detail).toContain('HTTP 503');
+  });
+
+  it('skips WITHOUT calling the runner or the gateway when the root has no Java sources', async () => {
     let runnerCalled = false;
+    const gateway = fakeFetch();
     const outcome = await runStructuralScanStep(ARGS, {
       hasJava: async () => false,
       runScan: async () => {
         runnerCalled = true;
         return fakeResult();
       },
+      fetchFn: gateway.fn,
     });
     expect(outcome.status).toBe('skipped');
     expect(outcome.scanId).toBeNull();
     expect(outcome.detail).toContain('no Java sources');
+    expect(outcome.annotation).toBeNull();
     expect(runnerCalled).toBe(false);
+    expect(gateway.calls).toHaveLength(0);
   });
 
-  it('never throws: a runner failure becomes a failed outcome with the reason', async () => {
+  it('never throws: a runner failure becomes a failed outcome, no annotation request', async () => {
+    const gateway = fakeFetch();
     const outcome = await runStructuralScanStep(ARGS, {
       hasJava: async () => true,
       runScan: async () => {
         throw new Error('AMS bulk upsert returned 502');
       },
+      fetchFn: gateway.fn,
     });
     expect(outcome.status).toBe('failed');
     expect(outcome.scanId).toBeNull();
     expect(outcome.detail).toContain('AMS bulk upsert returned 502');
+    expect(outcome.annotation).toBeNull();
+    expect(gateway.calls).toHaveLength(0);
   });
 
   it('never throws: a detection failure becomes a failed outcome', async () => {

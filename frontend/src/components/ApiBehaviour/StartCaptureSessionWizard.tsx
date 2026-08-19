@@ -50,6 +50,7 @@ import {
   TestApiConnectionStatelessResponse,
   accountEndpoints,
   createCaptureSession,
+  getCompensationPreflight,
   parseInventoryUnaccountedError,
   parseOas,
   reconcileInventory,
@@ -63,6 +64,10 @@ import {
   ApiBehaviourApiError,
 } from '../../api/apiBehaviourClient';
 import { DataTypeFormatsStep } from './DataTypeFormatsStep';
+import {
+  buildCompensationPreflightWarning,
+  buildPreflightUnavailableWarning,
+} from './compensationPreflightSupport';
 import { BehaviourSemanticsConfigStep } from './BehaviourSemanticsConfigStep';
 import type { ResponseSemanticsConfig } from './behaviourSemanticsConfig';
 import {
@@ -1190,6 +1195,31 @@ export function StartCaptureSessionWizard({
 
     setSubmitting(true);
     try {
+      // CSD Spec 3 gap fix (2026-08-19): PRE-START compensation preflight.
+      // Warns which included write endpoints have NO effect-table map (those
+      // mutating scenarios are REFUSED fail-closed at run time) BEFORE any
+      // send fires. Skipped on the 409-override re-submit — the operator
+      // already confirmed on the first pass. A preflight outage is surfaced
+      // loudly but the operator decides: never a silent skip, never a hard
+      // block on an unreachable check.
+      if (!justification) {
+        let preflightWarning: string | null = null;
+        try {
+          const preflight = await getCompensationPreflight(
+            projectId,
+            architectureId,
+            session.id,
+          );
+          preflightWarning = buildCompensationPreflightWarning(preflight);
+        } catch (preflightErr) {
+          preflightWarning = buildPreflightUnavailableWarning(describeError(preflightErr));
+        }
+        if (preflightWarning && !window.confirm(preflightWarning)) {
+          setSubmitting(false);
+          return;
+        }
+      }
+
       await updateCaptureSession(projectId, architectureId, session.id, {
         status: 'configured',
       });

@@ -582,7 +582,8 @@ const actionUpload = multer({
 async function proxyActionToService(
   req: Request,
   res: Response,
-  action: ApiBehaviourAction,
+  action: ApiBehaviourAction | 'compensation-preflight',
+  method: 'POST' | 'GET' = 'POST',
 ): Promise<void> {
   const requestId = (req as any).requestId || 'unknown';
   const { projectId, architectureId, sessionId } = req.params;
@@ -610,7 +611,10 @@ async function proxyActionToService(
   try {
     let init: RequestInit;
     const files = (req as Request & { files?: Express.Multer.File[] }).files;
-    if (action === 'parse-oas' && Array.isArray(files) && files.length > 0) {
+    if (method === 'GET') {
+      // Read-only action (compensation-preflight): no body on a GET.
+      init = { method: 'GET', headers: { Accept: 'application/json' } };
+    } else if (action === 'parse-oas' && Array.isArray(files) && files.length > 0) {
       // Rebuild the multipart body, forwarding EVERY uploaded part under the
       // same `file` field name (an OAS doc on its own, OR a WADL + its XSD
       // grammar file(s)). We use the global FormData / Blob shipped with
@@ -712,6 +716,16 @@ for (const action of API_BEHAVIOUR_ACTION_PATHS) {
     );
   }
 }
+
+// CSD Spec 3 gap fix (2026-08-19): the PRE-START compensation preflight is a
+// READ (GET) — it lists the included write endpoints with no effect-table map
+// so the wizard can warn BEFORE /start. Registered beside the POST action
+// loop; same downstream URL shape, no body.
+apiMigrationValidationRouter.get(
+  `/projects/:projectId/architectures/:architectureId/` +
+    `api-behaviour/capture-sessions/:sessionId/compensation-preflight`,
+  (req, res) => proxyActionToService(req, res, 'compensation-preflight', 'GET'),
+);
 
 // ============================================================================
 // Target-side capture action proxies -- forward to api-migration-validation-
