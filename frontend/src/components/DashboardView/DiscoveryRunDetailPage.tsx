@@ -31,6 +31,7 @@ import {
   getDiscoveryCandidateCount,
   getDiscoveryCandidates,
   saveApprovedCandidates,
+  deleteDiscoveryRun,
 } from '../../api/discoveryApi';
 import type {
   DiscoveryRunDto,
@@ -463,6 +464,86 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   );
 
   // -----------------------------------------------------------------------
+  // Right-click "Delete" on the Run History rows (2026-08-19). Mirrors the
+  // DiscoveryRunsList context menu exactly (same classes / testids / server
+  // cascade): the AMS delete removes the run and EVERYTHING run-scoped —
+  // candidates, evidence, relationships, clusters, decision tasks, findings,
+  // capabilities — for code AND database scans alike. Deleting the run this
+  // page is currently showing navigates back to the discovery list.
+  // -----------------------------------------------------------------------
+  const [runMenu, setRunMenu] = useState<{ runId: string; x: number; y: number } | null>(
+    null,
+  );
+  const closeRunMenu = useCallback(() => setRunMenu(null), []);
+
+  const handleRunContextMenu = useCallback(
+    (e: React.MouseEvent, contextRunId: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setRunMenu({ runId: contextRunId, x: e.clientX, y: e.clientY });
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!runMenu) return;
+    const onDismiss = () => closeRunMenu();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeRunMenu();
+    };
+    document.addEventListener('click', onDismiss);
+    document.addEventListener('contextmenu', onDismiss);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', onDismiss);
+      document.removeEventListener('contextmenu', onDismiss);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [runMenu, closeRunMenu]);
+
+  const handleDeleteRun = useCallback(
+    async (run: DiscoveryRunDto) => {
+      closeRunMenu();
+      if (!activeProject?.id) return;
+      const runArchitectureId = run.architecture_id ?? activeArchitectureId;
+      if (!runArchitectureId) return;
+      const inProgress = ['RUNNING', 'PENDING'].includes(
+        (run.status ?? '').toUpperCase(),
+      );
+      const message =
+        'Delete this discovery run and all its candidates, evidence, relationships, and findings?\n\n' +
+        'This cannot be undone.' +
+        (inProgress
+          ? '\n\nThis run is still in progress — deleting it now will stop tracking that run.'
+          : '');
+      if (!window.confirm(message)) return;
+      try {
+        await deleteDiscoveryRun(activeProject.id, runArchitectureId, run.id);
+        if (run.id === runId && discoveryListUrl) {
+          // The page is route-bound to the run we just deleted — go back to
+          // the list rather than refetching a dead route.
+          navigate(discoveryListUrl);
+          return;
+        }
+        await fetchRunList();
+      } catch (err) {
+        setRunsError(
+          err instanceof Error ? err.message : 'Failed to delete discovery run',
+        );
+      }
+    },
+    [
+      closeRunMenu,
+      activeProject?.id,
+      activeArchitectureId,
+      runId,
+      discoveryListUrl,
+      navigate,
+      fetchRunList,
+    ],
+  );
+
+  // -----------------------------------------------------------------------
   // Save All Approved -- modal-gated. Uses the run's BOUND architecture_id
   // (safety property (d)) so cross-arch saves still go to the right place.
   // -----------------------------------------------------------------------
@@ -808,6 +889,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                       runId === run.id ? ` ${styles.runListItemSelected}` : ''
                     }`}
                     onClick={() => handleSelectRun(run.id)}
+                    onContextMenu={(e) => handleRunContextMenu(e, run.id)}
                     data-testid="run-list-item"
                   >
                     <span
@@ -847,6 +929,28 @@ export const DiscoveryRunDetailPage: React.FC = () => {
               })}
             </ul>
           )}
+          {runMenu &&
+            (() => {
+              const run = runs.find((r) => r.id === runMenu.runId);
+              if (!run) return null;
+              return (
+                <div
+                  className={styles.runContextMenu}
+                  style={{ top: runMenu.y, left: runMenu.x }}
+                  data-testid="run-context-menu"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className={`${styles.runContextMenuItem} ${styles.runContextMenuItemDanger}`}
+                    onClick={() => void handleDeleteRun(run)}
+                    data-testid="run-context-menu-delete"
+                  >
+                    Delete run
+                  </button>
+                </div>
+              );
+            })()}
         </div>
 
         {/* Run detail panel */}
