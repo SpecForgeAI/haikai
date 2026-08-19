@@ -40,6 +40,7 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     startCaptureSession: vi.fn(),
     updateCaptureSession: vi.fn(),
     updateOperation: vi.fn(),
+    getCompensationPreflight: vi.fn(),
     listOperations: vi.fn().mockResolvedValue([]),
     // Renumber (Spec 2026-06-20): the Step 4 -> 5 advance now fetches the
     // data-type-format preview. An EMPTY result auto-skips the new step so
@@ -63,6 +64,7 @@ import {
   startCaptureSession,
   updateCaptureSession,
   listOperations,
+  getCompensationPreflight,
   type ApiBehaviourCaptureSessionDto,
 } from '../../api/apiBehaviourClient';
 import { fetchMigrationDiscoveryContext } from '../../api/migrationDiscoveryContextApi';
@@ -375,6 +377,14 @@ describe('Discovery Context section -- start payload (Task 4.1 #5, #6)', () => {
     vi.mocked(startCaptureSession).mockResolvedValue(
       buildSession({ status: 'running' }),
     );
+    // CSD Spec 3 (2026-08-19): clean pre-start compensation preflight — the
+    // gate prompts nothing and the start flow proceeds unchanged.
+    vi.mocked(getCompensationPreflight).mockResolvedValue({
+      session_id: 'session-discovery-1',
+      model_resolvable: true,
+      write_endpoints_without_effect_map: [],
+      note: null,
+    });
     // Re-arm the operations list mock. The file-level afterEach runs
     // vi.restoreAllMocks(), which strips the factory default
     // (mockResolvedValue([])) off listOperations after the first test in

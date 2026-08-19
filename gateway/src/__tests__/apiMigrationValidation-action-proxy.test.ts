@@ -248,3 +248,45 @@ test('POST /capture-sessions/:sessionId/parse-oas forwards every multipart file 
     .sort();
   expect(names).toEqual(['demo-types.xsd', 'demo.wadl']);
 });
+
+// ---------------------------------------------------------------------------
+// Test 4: GET .../compensation-preflight forwards as a READ (no body) and
+// returns the validation service's warning payload verbatim.
+//
+// CSD Spec 3 gap fix (2026-08-19): the pre-start compensation preflight is
+// the wizard's warning surface for write endpoints with no effect-table map;
+// unlike the twelve POST actions it proxies as a GET.
+// ---------------------------------------------------------------------------
+test('GET /capture-sessions/:sessionId/compensation-preflight forwards a bodiless GET', async () => {
+  const projectId = 'proj-abc';
+  const architectureId = 'arch-xyz';
+  const sessionId = 'sess-42';
+
+  const preflight = {
+    session_id: sessionId,
+    model_resolvable: true,
+    write_endpoints_without_effect_map: ['DELETE /orders/{id}', 'POST /orders'],
+    note: '2 write endpoint(s) will be REFUSED at capture time',
+  };
+  mockFetch.mockResolvedValueOnce(jsonResponse(200, preflight));
+
+  const app = createTestApp();
+  const res = await request(app).get(
+    `/api/v1/projects/${projectId}/architectures/${architectureId}` +
+      `/api-behaviour/capture-sessions/${sessionId}/compensation-preflight`,
+  );
+
+  expect(res.status).toBe(200);
+  expect(res.body).toEqual(preflight);
+
+  expect(mockFetch).toHaveBeenCalledTimes(1);
+  const [calledUrl, calledInit] = mockFetch.mock.calls[0] as [string, RequestInit];
+  const u = new URL(calledUrl);
+  expect(`${u.origin}${u.pathname}`).toBe(
+    'http://localhost:8092/api-migration-validation/api/capture-sessions/sess-42/compensation-preflight',
+  );
+  expect(u.searchParams.get('projectId')).toBe(projectId);
+  expect(u.searchParams.get('architectureId')).toBe(architectureId);
+  expect(calledInit.method).toBe('GET');
+  expect(calledInit.body).toBeUndefined();
+});

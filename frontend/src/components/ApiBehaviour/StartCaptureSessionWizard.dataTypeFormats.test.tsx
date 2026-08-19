@@ -41,6 +41,7 @@ vi.mock('../../api/apiBehaviourClient', async () => {
     listOperations: vi.fn().mockResolvedValue([]),
     reconcileInventory: vi.fn(),
     accountEndpoints: vi.fn(),
+    getCompensationPreflight: vi.fn(),
     dataTypeDefaultsPreview: vi.fn(),
   };
 });
@@ -56,6 +57,7 @@ vi.mock('../../contexts/ArchitectureContext', () => ({
 import {
   createCaptureSession,
   dataTypeDefaultsPreview,
+  getCompensationPreflight,
   listOperations,
   parseOas,
   reconcileInventory,
@@ -228,6 +230,14 @@ beforeEach(() => {
   vi.mocked(startCaptureSession).mockResolvedValue(
     buildSession({ status: 'running' }),
   );
+  // CSD Spec 3 (2026-08-19): clean pre-start compensation preflight — the
+  // gate prompts nothing and the start flow proceeds unchanged.
+  vi.mocked(getCompensationPreflight).mockResolvedValue({
+    session_id: 'session-dtf-1',
+    model_resolvable: true,
+    write_endpoints_without_effect_map: [],
+    note: null,
+  });
 });
 
 afterEach(() => {

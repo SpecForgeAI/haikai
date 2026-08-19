@@ -1610,6 +1610,32 @@ export async function testDbConnection(
 }
 
 /**
+ * Pre-start compensation preflight (CSD Spec 3 gap fix, 2026-08-19). Read-
+ * only: lists every INCLUDED write endpoint with no effect-table map in the
+ * committed model (`"METHOD /path"` strings) — those mutating scenarios are
+ * REFUSED fail-closed at capture time. The wizard warns off this BEFORE
+ * /start. Shape matches the validation-service route verbatim (snake_case;
+ * the gateway proxies without reshaping).
+ */
+export interface CompensationPreflightResponse {
+  session_id: string;
+  model_resolvable: boolean;
+  write_endpoints_without_effect_map: string[];
+  note: string | null;
+}
+
+export async function getCompensationPreflight(
+  projectId: string,
+  architectureId: string,
+  sessionId: string,
+): Promise<CompensationPreflightResponse> {
+  return jsonRequest<CompensationPreflightResponse>(
+    actionUrl(projectId, architectureId, sessionId, 'compensation-preflight'),
+    { method: 'GET' },
+  );
+}
+
+/**
  * Stateless "Test API connection" probe used by the capture wizard's Step 2
  * (API environment) BEFORE a session row exists. Posts the full connection
  * config (baseUrl + auth + default headers) to the gateway's stateless
