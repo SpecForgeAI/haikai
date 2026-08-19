@@ -68,3 +68,26 @@ describe('buildCompensationMetadataIndex', () => {
     expect(metadataForTable(index, 'not_modelled')).toBeNull();
   });
 });
+
+describe('buildIndexFromTableSpecs (auto-S0, scan-supplied metadata)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { buildIndexFromTableSpecs } = require('../services/compensation/compensationMetadata');
+
+  it('builds the index from scan table specs without a committed model', () => {
+    const index = buildIndexFromTableSpecs([
+      {
+        table: 'orders',
+        pk_columns: ['id'],
+        columns: [
+          { name: 'id', source_type: 'int', is_identity: true },
+          { name: 'name', source_type: 'varchar', is_identity: false },
+        ],
+      },
+      { table: 'audit_log', pk_columns: [], columns: [{ name: 'message', source_type: 'text' }] },
+    ]);
+    expect(metadataForTable(index, 'orders')?.pkColumns).toEqual(['id']);
+    expect(metadataForTable(index, 'orders')?.columns[0].isIdentity).toBe(true);
+    // No PK -> fail-closed empty pkColumns (count-only downstream), never invented.
+    expect(metadataForTable(index, 'audit_log')?.pkColumns).toEqual([]);
+  });
+});

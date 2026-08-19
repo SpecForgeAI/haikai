@@ -18,7 +18,9 @@ import { Router, Request, Response } from 'express';
 import { createDbAdapter } from '../services/db/dbAdapterFactory';
 import type { DbConnectionConfig, DbType } from '../types/db';
 import {
+  buildIndexFromTableSpecs,
   fetchCompensationMetadataIndex,
+  type S0TableSpec,
 } from '../services/compensation/compensationMetadata';
 import {
   PostgresCompensationWriteAdapter,
@@ -49,6 +51,14 @@ interface S0Body {
   source_db?: DbBlock;
   snapshot_id?: string;
   confirm?: boolean;
+  /**
+   * SCAN-SUPPLIED table metadata (CSD auto-S0, 2026-08-19): when the DB
+   * discovery scan triggers the snapshot automatically at completion, it
+   * passes its own harvested tables + PKs + identity flags here — the
+   * snapshot no longer waits for the model to be committed. Absent = the
+   * committed-model read (the manual/recovery path).
+   */
+  tables?: S0TableSpec[] | null;
 }
 
 function dbBlockError(block: DbBlock | undefined): string | null {
@@ -136,11 +146,16 @@ export function buildS0SnapshotRouter(): Router {
     const body = (req.body ?? {}) as S0Body;
     const ctx = await requireContext(body, res);
     if (!ctx) return;
-    const metadata = await fetchCompensationMetadataIndex(ctx.projectId, ctx.architectureId);
+    // Scan-supplied metadata wins (the auto-S0 path); otherwise read the
+    // committed model (the manual/recovery path).
+    const metadata =
+      Array.isArray(body.tables) && body.tables.length > 0
+        ? buildIndexFromTableSpecs(body.tables)
+        : await fetchCompensationMetadataIndex(ctx.projectId, ctx.architectureId);
     if (!metadata || metadata.byTable.size === 0) {
       return res.status(422).json({
         error:
-          'the committed model exposes no physical tables — run/commit database discovery first',
+          'no table metadata available — supply scan tables or run/commit database discovery first',
       });
     }
     const adapter = createDbAdapter(ctx.config);
