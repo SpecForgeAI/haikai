@@ -96,7 +96,10 @@ import {
   minePathParamValues,
   type ExportCapture,
 } from './postmanExport';
-import { retryUncoveredApis, listCaptures, excludeEndpoint, refreshOasCache } from '../../api/apiBehaviourClient';
+import { retryUncoveredApis, listCaptures, excludeEndpoint, refreshOasCache, listDiagnostics } from '../../api/apiBehaviourClient';
+import type { ApiBehaviourDiagnosticDto } from '../../api/apiBehaviourClient';
+import { groupDiagnostics, labelFor, shouldOfferS0Restore } from './captureDiagnosticsSupport';
+import { S0RestorePanel } from './S0RestorePanel';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
 import { loadModelByProjectId } from '../../api/modelApi';
@@ -268,6 +271,27 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
       return null;
     }
   }, [projectId, architectureId, sessionId]);
+
+  // Journey-audit fix (2026-08-20): structural diagnostics (compensation
+  // refusals / residue, S0 advisories, …) were written and even fetched by
+  // the review panel but never rendered on this screen. Fail-soft read;
+  // re-reads on every session poll and on the manual details refresh.
+  const [diagnostics, setDiagnostics] = useState<ApiBehaviourDiagnosticDto[]>([]);
+  useEffect(() => {
+    if (!session) return undefined;
+    let cancelled = false;
+    listDiagnostics(projectId, architectureId, sessionId)
+      .then((rows) => {
+        if (!cancelled) setDiagnostics(rows);
+      })
+      .catch(() => {
+        // fail-soft: the section simply keeps its last-known content
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, architectureId, sessionId, session, detailsRefreshCounter]);
+  const diagGroups = useMemo(() => groupDiagnostics(diagnostics), [diagnostics]);
 
   // Coverage Closure: run the "Retry uncovered APIs" pass, then refresh the
   // session so the patched coverage summary + gate re-render. Closes the modal
@@ -1167,6 +1191,59 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           </div>
         )}
       </div>
+
+      {/* Diagnostics (2026-08-20 journey-audit fix): refusals / residue /
+          S0 advisories were recorded but invisible here. Halts render red,
+          warnings amber, info neutral; five messages per group then a count. */}
+      {diagGroups.length > 0 && (
+        <div
+          className={styles.detailSection}
+          data-testid="capture-diagnostics-section"
+        >
+          <h3>Diagnostics ({diagnostics.length})</h3>
+          {diagGroups.map((g) => {
+            const color =
+              g.severity === 'halt'
+                ? '#c62828'
+                : g.severity === 'warning'
+                  ? '#b26a00'
+                  : '#555';
+            return (
+              <div
+                key={g.type}
+                data-testid={`diag-group-${g.type}`}
+                style={{ marginBottom: 8 }}
+              >
+                <div style={{ fontWeight: 600, color }}>
+                  {labelFor(g.type)} ({g.items.length})
+                </div>
+                <ul style={{ margin: '2px 0 0 18px' }}>
+                  {g.items.slice(0, 5).map((d) => (
+                    <li key={d.id} style={{ color }}>
+                      {d.message ?? '(no message)'}
+                    </li>
+                  ))}
+                </ul>
+                {g.items.length > 5 && (
+                  <div style={{ marginLeft: 18, color }}>
+                    +{g.items.length - 5} more
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* S0 restore (2026-08-20): the halt remedy used to point at a raw
+          backend call — the screen now performs the restore itself. */}
+      {shouldOfferS0Restore(session) && (
+        <S0RestorePanel
+          projectId={projectId}
+          architectureId={architectureId}
+          session={session}
+        />
+      )}
 
       {/* Action footer. Most actions are gated on having in-memory secrets
           loaded for this UI session. Cancel is allowed regardless because

@@ -913,6 +913,104 @@ for (const action of TARGET_CAPTURE_ACTION_PATHS) {
 }
 
 // ============================================================================
+// S0-snapshot proxies (CSD, 2026-08-20 journey-audit fix)
+//
+// The capture halt remedy ("the database is NO LONGER S0 — restore, then
+// re-run") previously pointed at a raw validation-service call; the session
+// screen now offers the restore itself. Thin verbatim pass-throughs, same
+// posture as the target-capture proxies: the incoming query string / JSON
+// body (which carries the DB credentials for the restore — function-scope
+// only, never logged) is forwarded untouched.
+//
+//   GET  /api/v1/api-migration-validation/s0-snapshot/latest?project_id=&architecture_id=
+//   POST /api/v1/api-migration-validation/s0-snapshot/restore   (confirm-gated downstream)
+// ============================================================================
+
+const S0_SNAPSHOT_ACTIONS = ['latest', 'restore'] as const;
+type S0SnapshotAction = (typeof S0_SNAPSHOT_ACTIONS)[number];
+
+async function proxyS0SnapshotToService(
+  req: Request,
+  res: Response,
+  action: S0SnapshotAction,
+): Promise<void> {
+  const requestId = (req as any).requestId || 'unknown';
+  const { apiMigrationValidationServiceBaseUrl } = getConfig();
+  const queryIdx = req.originalUrl.indexOf('?');
+  const queryString = queryIdx >= 0 ? req.originalUrl.substring(queryIdx) : '';
+  const url =
+    `${apiMigrationValidationServiceBaseUrl}` +
+    `/api-migration-validation/api/s0-snapshot/${action}${queryString}`;
+
+  const init: RequestInit = {
+    method: req.method,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+  };
+  if (req.method !== 'GET') {
+    init.body = JSON.stringify(req.body ?? {});
+  }
+
+  logger.debug('S0 snapshot proxy: forwarding request', {
+    requestId,
+    method: req.method,
+    action,
+  });
+
+  try {
+    const upstream = await fetch(url, init);
+    let body: unknown;
+    const contentType = upstream.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        body = await upstream.json();
+      } catch {
+        body = null;
+      }
+    } else {
+      body = await upstream.text();
+    }
+    if (!upstream.ok) {
+      logger.warn('S0 snapshot proxy: upstream returned non-OK', {
+        requestId,
+        action,
+        status: upstream.status,
+      });
+    }
+    res.status(upstream.status);
+    if (body === null || body === undefined) {
+      res.end();
+    } else if (typeof body === 'string') {
+      res.send(body);
+    } else {
+      res.json(body);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error('S0 snapshot proxy: upstream fetch failed', {
+      requestId,
+      action,
+      error: message,
+    });
+    res.status(503).json({
+      error: {
+        code: 503,
+        message: 'API migration validation service unavailable',
+        details: message,
+      },
+    });
+  }
+}
+
+apiMigrationValidationRouter.get(
+  '/api-migration-validation/s0-snapshot/latest',
+  (req, res) => proxyS0SnapshotToService(req, res, 'latest'),
+);
+apiMigrationValidationRouter.post(
+  '/api-migration-validation/s0-snapshot/restore',
+  (req, res) => proxyS0SnapshotToService(req, res, 'restore'),
+);
+
+// ============================================================================
 // AMS-direct proxy for the pairing-read endpoint
 //
 // Spec: 2026-05-25 API Test Harness -- Target-Side Capture -- Task Group 4
