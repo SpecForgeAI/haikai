@@ -71,19 +71,19 @@ describe('wadlParser -- anonymised Jersey fixture', () => {
     expect(result.operations.length).toBeGreaterThanOrEqual(4);
 
     const compositeIds = result.operations.map((o) => o.compositeId);
-    expect(compositeIds).toContain('POST /hierarchynodes/{grdOrgId}');
-    expect(compositeIds).toContain('GET /hierarchynodes/{grdOrgId}');
+    expect(compositeIds).toContain('POST /hierarchynodes/{orgUnitId}');
+    expect(compositeIds).toContain('GET /hierarchynodes/{orgUnitId}');
     expect(compositeIds).toContain('GET /refdata/{lookupKey}');
     expect(compositeIds).toContain('PUT /refdata/{lookupKey}');
 
     // The POST operation should carry the template-param (inherited from the
     // parent <resource>) plus the four header params on the <request>.
     const postOp = result.operations.find(
-      (o) => o.compositeId === 'POST /hierarchynodes/{grdOrgId}',
+      (o) => o.compositeId === 'POST /hierarchynodes/{orgUnitId}',
     );
     expect(postOp).toBeDefined();
     const paramNames = postOp!.params.map((p) => p.name).sort();
-    expect(paramNames).toContain('grdOrgId');
+    expect(paramNames).toContain('orgUnitId');
     expect(paramNames).toContain('system');
     expect(paramNames).toContain('userName');
     expect(postOp!.baseUrl).toBe('http://example.invalid:8080/samplesvc/');

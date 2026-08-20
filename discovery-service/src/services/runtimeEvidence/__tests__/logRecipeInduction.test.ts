@@ -64,7 +64,7 @@ function samplesvcBlock(ids: number[], startLineIndex = 0): SampleBlock {
 }
 
 /** A recipe that correctly reads the SampleSvc shape (method+path load-bearing). */
-const HIFI_RECIPE_JSON = JSON.stringify({
+const LEGACYAPP_RECIPE_JSON = JSON.stringify({
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
   fields: {
     method: { kind: 'regex', pattern: '^\\d+ > ([A-Z]+) ' },
@@ -105,7 +105,7 @@ function makeRelay(contents: string[]): LogRecipeRelay & { calls: number } {
 describe('logRecipeInduction — held-out validation threshold', () => {
   it('accepts a recipe extracting method+path from >=60% of request-like lines', async () => {
     const blocks = [samplesvcBlock([1, 2, 3], 0), samplesvcBlock([4, 5, 6], 100)];
-    const relay = makeRelay([HIFI_RECIPE_JSON]);
+    const relay = makeRelay([LEGACYAPP_RECIPE_JSON]);
 
     const result = await induceAndValidateRecipe({
       blocks,
@@ -143,7 +143,7 @@ describe('logRecipeInduction — held-out validation threshold', () => {
 
   it('validateRecipeAgainstBlock returns the method+path yield fraction directly', () => {
     const held = samplesvcBlock([10, 11, 12, 13, 14]); // 5 request-like lines
-    const goodRecipe = JSON.parse(HIFI_RECIPE_JSON);
+    const goodRecipe = JSON.parse(LEGACYAPP_RECIPE_JSON);
     const yieldGood = validateRecipeAgainstBlock(goodRecipe, held.text);
     expect(yieldGood).toBeGreaterThanOrEqual(HELD_OUT_ACCEPT_FRACTION);
 
@@ -182,7 +182,7 @@ describe('logRecipeInduction — bounded retry budget', () => {
 
   it('accepts on a later attempt without exceeding the cap (first weak, second good)', async () => {
     const blocks = [samplesvcBlock([1, 2], 0), samplesvcBlock([3, 4], 50), samplesvcBlock([5, 6], 100)];
-    const relay = makeRelay([BAD_RECIPE_JSON, HIFI_RECIPE_JSON]);
+    const relay = makeRelay([BAD_RECIPE_JSON, LEGACYAPP_RECIPE_JSON]);
 
     const result = await induceAndValidateRecipe({
       blocks,
@@ -222,7 +222,7 @@ describe('logRecipeInduction — fallback signals', () => {
   });
 
   it('returns a fallback signal when there are no samples to induce from', async () => {
-    const relay = makeRelay([HIFI_RECIPE_JSON]);
+    const relay = makeRelay([LEGACYAPP_RECIPE_JSON]);
     const result = await induceAndValidateRecipe({
       blocks: [],
       relay,
@@ -255,7 +255,7 @@ describe('logRecipeInduction — persistence shape + fingerprint reuse', () => {
 
   it('reuses a persisted recipe by fingerprint on a same-fingerprint re-run WITHOUT another LLM call', async () => {
     const blocks = [samplesvcBlock([1, 2, 3], 0), samplesvcBlock([4, 5, 6], 100)];
-    const relay = makeRelay([HIFI_RECIPE_JSON]);
+    const relay = makeRelay([LEGACYAPP_RECIPE_JSON]);
 
     // First run: induce + persist into an in-memory steps_payload recipe store.
     const first = await induceAndValidateRecipe({

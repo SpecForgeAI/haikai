@@ -294,14 +294,14 @@ class InventoryReconciliationCalculatorTest {
     @Test
     @DisplayName("multi-discriminator suffix (consumes+produces) round-trips endpoint <-> synthesised op")
     void multiDiscriminatorSuffixRoundTrips() {
-        String name = "POST /hierarchynodes/{grdOrgId} "
+        String name = "POST /hierarchynodes/{orgUnitId} "
             + "[consumes=application/json,application/xml;produces=application/json,application/xml]";
-        EndpointEntity ep = namedEndpoint("ep-multi", name, "POST", "/hierarchynodes/{grdOrgId}");
-        ApiBehaviourOperationEntity synthesised = op(name, "POST", "/hierarchynodes/{grdOrgId}");
+        EndpointEntity ep = namedEndpoint("ep-multi", name, "POST", "/hierarchynodes/{orgUnitId}");
+        ApiBehaviourOperationEntity synthesised = op(name, "POST", "/hierarchynodes/{orgUnitId}");
 
         assertThat(InventoryReconciliationCalculator.endpointKey(ep))
             .isEqualTo(InventoryReconciliationCalculator.operationKey(synthesised))
-            .isEqualTo("POST /hierarchynodes/{grdOrgId}"
+            .isEqualTo("POST /hierarchynodes/{orgUnitId}"
                 + "::consumes=application/json,application/xml"
                 + ";produces=application/json,application/xml");
     }
@@ -323,12 +323,12 @@ class InventoryReconciliationCalculatorTest {
     }
 
     @Test
-    @DisplayName("collision-aware matching: template-param NAMES are positional — {grdOrgId} matches {grd_org_id}")
+    @DisplayName("collision-aware matching: template-param NAMES are positional — {orgUnitId} matches {grd_org_id}")
     void templateParamNamesAreNormalised() {
         EndpointEntity ep = namedEndpoint("ep-p",
             "POST /hierarchynodes/{grd_org_id}", "POST", "/hierarchynodes/{grd_org_id}");
         ApiBehaviourOperationEntity opRow =
-            op("getHierarchyForOrgId", "POST", "/hierarchynodes/{grdOrgId}");
+            op("getHierarchyForOrgId", "POST", "/hierarchynodes/{orgUnitId}");
 
         InventoryReconciliationCalculator.Result result =
             InventoryReconciliationCalculator.reconcile(List.of(ep), List.of(opRow));
@@ -373,17 +373,17 @@ class InventoryReconciliationCalculatorTest {
         // flagged missing_baseline despite 100% capture. True twins share an
         // IDENTICAL raw mapping path; lookalikes must not collide.
         EndpointEntity dualFormat = namedEndpoint("ep-dual",
-            "POST /hierarchynodes/{grdOrgId} "
+            "POST /hierarchynodes/{orgUnitId} "
                 + "[consumes=application/json,application/xml"
                 + ";produces=application/json,application/xml]",
-            "POST", "/hierarchynodes/{grdOrgId}");
+            "POST", "/hierarchynodes/{orgUnitId}");
         EndpointEntity lookalike = namedEndpoint("ep-lookalike",
             "POST /hierarchynodes/{grd_org_id}", "POST", "/hierarchynodes/{grd_org_id}");
         // Baseline-side rows key bare (per-format variant op ids like
         // "createNode [format=application/xml]" deliberately fail the
         // discriminator grammar).
         ApiBehaviourOperationEntity variantOp =
-            op("createNode [format=application/xml]", "POST", "/hierarchynodes/{grdOrgId}");
+            op("createNode [format=application/xml]", "POST", "/hierarchynodes/{orgUnitId}");
 
         java.util.Set<String> colliding =
             InventoryReconciliationCalculator.collidingBareEndpointKeys(

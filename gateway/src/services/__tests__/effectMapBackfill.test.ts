@@ -3,7 +3,7 @@
  *
  * Pins: the SQL write-table parser (schema/bracket stripping, temp-table
  * exclusion, UPDATE-requires-SET), root matching (longest-fragment wins —
- * the `/lookup` vs `/lookupFavourite` substring trap), the bounded call
+ * the `/lookup` vs `/lookupStarred` substring trap), the bounded call
  * walk, and the orchestration: deterministic derivations auto-apply via the
  * MCP seam with source 'corpus'; the remainder goes to the LLM whose
  * proposals pass the closed-vocabulary guard (rejects recorded, never
@@ -62,13 +62,13 @@ describe('parseWriteTablesFromSql', () => {
 describe('matchRootsForEndpoint (longest-fragment discipline)', () => {
   const roots = [
     { key: 'T-a', symbol: 'R#lookup', method: 'POST', fragment: 'lookup' },
-    { key: 'T-b', symbol: 'R#lookupFavourite', method: 'POST', fragment: 'lookupFavourite' },
+    { key: 'T-b', symbol: 'R#lookupStarred', method: 'POST', fragment: 'lookupStarred' },
     { key: 'T-c', symbol: 'R#del', method: 'DELETE', fragment: 'delete' },
   ];
 
   it('picks the longest matching fragment (the substring trap)', () => {
     const matched = matchRootsForEndpoint(
-      { method: 'POST', path: '/filters/lookupFavourite' },
+      { method: 'POST', path: '/filters/lookupStarred' },
       roots,
     );
     expect(matched.map((r) => r.key)).toEqual(['T-b']);

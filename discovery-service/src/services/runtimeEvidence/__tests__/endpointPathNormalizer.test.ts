@@ -43,23 +43,23 @@ describe('endpointPathNormalizer.canonicalEndpointPath — malformed-brace colla
 
   it('collapses a missing-OPENING-brace twin to the well-formed canonical path', () => {
     // `businessDate}` is missing its leading `{`.
-    const malformed = canonicalEndpointPath('/hierarchy/businessDate}/{grdOrgId}');
-    const wellFormed = canonicalEndpointPath('/hierarchy/{businessDate}/{grdOrgId}');
+    const malformed = canonicalEndpointPath('/hierarchy/businessDate}/{orgUnitId}');
+    const wellFormed = canonicalEndpointPath('/hierarchy/{businessDate}/{orgUnitId}');
     expect(malformed).toBe(wellFormed);
     expect(malformed).toBe('/hierarchy/{p}/{p}');
   });
 
   it('collapses the /hierarchynodes missing-brace twin with its well-formed form', () => {
-    const malformed = canonicalEndpointPath('/hierarchynodes/businessDate}/{grdOrgId}');
-    const wellFormed = canonicalEndpointPath('/hierarchynodes/{businessDate}/{grdOrgId}');
+    const malformed = canonicalEndpointPath('/hierarchynodes/businessDate}/{orgUnitId}');
+    const wellFormed = canonicalEndpointPath('/hierarchynodes/{businessDate}/{orgUnitId}');
     expect(malformed).toBe(wellFormed);
     expect(malformed).toBe('/hierarchynodes/{p}/{p}');
   });
 
   it('collapses a missing-CLOSING-brace segment too', () => {
     // `{businessDate` is missing its trailing `}`.
-    expect(canonicalEndpointPath('/hierarchy/{businessDate/{grdOrgId}')).toBe(
-      canonicalEndpointPath('/hierarchy/{businessDate}/{grdOrgId}'),
+    expect(canonicalEndpointPath('/hierarchy/{businessDate/{orgUnitId}')).toBe(
+      canonicalEndpointPath('/hierarchy/{businessDate}/{orgUnitId}'),
     );
   });
 
@@ -77,7 +77,7 @@ describe('endpointPathNormalizer.canonicalEndpointPath — malformed-brace colla
     );
     expect(
       canonicalEndpointPath('/hierarchy/lookup/active') ===
-        canonicalEndpointPath('/hierarchy/{businessDate}/{grdOrgId}'),
+        canonicalEndpointPath('/hierarchy/{businessDate}/{orgUnitId}'),
     ).toBe(false);
   });
 });

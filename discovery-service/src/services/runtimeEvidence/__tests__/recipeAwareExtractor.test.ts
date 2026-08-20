@@ -33,7 +33,7 @@ import {
  * start line, headers from `<id> > name: value` lines, request body from the
  * JSON object line. No response rules (the request-only SampleSvc shape).
  */
-const HIFI_REQUEST_RECIPE: ExtractorRecipe = {
+const LEGACYAPP_REQUEST_RECIPE: ExtractorRecipe = {
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
   fields: {
     method: { kind: 'regex', pattern: '^\\d+ > ([A-Z]+) ' },
@@ -48,7 +48,7 @@ const HIFI_REQUEST_RECIPE: ExtractorRecipe = {
 };
 
 /** A SampleSvc recipe that ALSO knows how to read a logged response status + body. */
-const HIFI_WITH_RESPONSE_RECIPE: ExtractorRecipe = {
+const LEGACYAPP_WITH_RESPONSE_RECIPE: ExtractorRecipe = {
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
   fields: {
     method: { kind: 'regex', pattern: '^\\d+ > ([A-Z]+) ' },
@@ -72,7 +72,7 @@ describe('recipeAwareExtractor — multi-line record assembly', () => {
       '7 > {"item":"widget","qty":2}',
     ].join('\n');
 
-    const obs = extractWithRecipeFromContent(HIFI_REQUEST_RECIPE, content, {
+    const obs = extractWithRecipeFromContent(LEGACYAPP_REQUEST_RECIPE, content, {
       sourceArtifactId: 'art-1',
       sourceFileName: 'app.log',
     });
@@ -95,7 +95,7 @@ describe('recipeAwareExtractor — multi-line record assembly', () => {
 
   it('extractRecord directly returns null for a record with no method+path', () => {
     const noise = 'some log4j line with no request at all';
-    expect(extractRecord(HIFI_REQUEST_RECIPE, noise, 1, 1)).toBeNull();
+    expect(extractRecord(LEGACYAPP_REQUEST_RECIPE, noise, 1, 1)).toBeNull();
   });
 
   it('assembles two consecutive SampleSvc records into two observations', () => {
@@ -110,7 +110,7 @@ describe('recipeAwareExtractor — multi-line record assembly', () => {
       '2 > {"x":1}',
     ].join('\n');
 
-    const obs = extractWithRecipeFromContent(HIFI_REQUEST_RECIPE, content);
+    const obs = extractWithRecipeFromContent(LEGACYAPP_REQUEST_RECIPE, content);
     expect(obs).toHaveLength(2);
     expect(obs[0].method).toBe('GET');
     expect(obs[0].rawPath).toBe('/api/users/1');
@@ -133,7 +133,7 @@ describe('recipeAwareExtractor — never invents a response', () => {
     ].join('\n');
 
     // Even with a response-aware recipe, a request-only record yields no status/body.
-    const obs = extractWithRecipeFromContent(HIFI_WITH_RESPONSE_RECIPE, content);
+    const obs = extractWithRecipeFromContent(LEGACYAPP_WITH_RESPONSE_RECIPE, content);
     expect(obs).toHaveLength(1);
     expect(obs[0].status).toBeUndefined();
     expect(obs[0].responseBody).toBeUndefined();
@@ -147,7 +147,7 @@ describe('recipeAwareExtractor — never invents a response', () => {
       '5 < {"status":"UP"}',
     ].join('\n');
 
-    const obs = extractWithRecipeFromContent(HIFI_WITH_RESPONSE_RECIPE, content);
+    const obs = extractWithRecipeFromContent(LEGACYAPP_WITH_RESPONSE_RECIPE, content);
     expect(obs).toHaveLength(1);
     expect(obs[0].method).toBe('GET');
     expect(obs[0].rawPath).toBe('/api/health');
@@ -177,7 +177,7 @@ describe('recipeAwareExtractor — interleaved noise + streaming', () => {
       '2026-06-20 10:00:00.300 [main] [com.acme.Health] INFO ok',
     ].join('\n');
 
-    const obs = extractWithRecipeFromContent(HIFI_REQUEST_RECIPE, content);
+    const obs = extractWithRecipeFromContent(LEGACYAPP_REQUEST_RECIPE, content);
 
     // Exactly the two real requests, despite the interleaved banners.
     expect(obs).toHaveLength(2);
@@ -207,7 +207,7 @@ describe('recipeAwareExtractor — interleaved noise + streaming', () => {
     fs.writeFileSync(file, records.join('\n'), 'utf8');
 
     try {
-      const obs = await extractWithRecipe(file, HIFI_REQUEST_RECIPE, {
+      const obs = await extractWithRecipe(file, LEGACYAPP_REQUEST_RECIPE, {
         sourceArtifactId: 'art-stream',
         sourceFileName: 'samplesvc.log',
       });

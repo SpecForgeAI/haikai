@@ -136,8 +136,8 @@ describe('REST WADL pass -- end-to-end reference fixtures (Group 6)', () => {
     // Each endpoint carries the documented `compositeId` shape
     // (`<METHOD> <path>` -- space-separated).
     const compositeIds = endpointFindings.map((f) => f.title);
-    expect(compositeIds).toContain('POST /hierarchynodes/{grdOrgId}');
-    expect(compositeIds).toContain('GET /hierarchynodes/{grdOrgId}');
+    expect(compositeIds).toContain('POST /hierarchynodes/{orgUnitId}');
+    expect(compositeIds).toContain('GET /hierarchynodes/{orgUnitId}');
     expect(compositeIds).toContain('GET /refdata/{lookupKey}');
     expect(compositeIds).toContain('PUT /refdata/{lookupKey}');
 
@@ -189,11 +189,11 @@ describe('REST WADL pass -- end-to-end reference fixtures (Group 6)', () => {
     }
 
     // Endpoint document order within the file: the first endpoint after
-    // the interface should be the `POST /hierarchynodes/{grdOrgId}` (the
+    // the interface should be the `POST /hierarchynodes/{orgUnitId}` (the
     // canonical fixture's first method element). The remaining order is
     // tested only by presence above, since the spec only mandates
     // document order, not a specific operation sort.
-    expect(result.findings[1].title).toBe('POST /hierarchynodes/{grdOrgId}');
+    expect(result.findings[1].title).toBe('POST /hierarchynodes/{orgUnitId}');
   });
 
   // =========================================================================

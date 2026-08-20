@@ -9,7 +9,7 @@ Working assumptions (already agreed with user, treat as decided):
 1. Pack location: new sibling `discovery-service/src/services/findings/packFindingScanners/restWadl/`. Framework-agnostic name.
 2. WADL version: W3C namespace `http://wadl.dev.java.net/2009/02` (Jersey 1.x/2.x). Other namespaces emit `wadl_unsupported_namespace`.
 3. XSD/grammar resolution: yes, via caller-supplied file map (mirror WSDL parser's `opts.relatedFiles` pattern). Absolute URLs skipped.
-4. Operation identifier: composite `method + ' ' + path` (e.g. `POST /hierarchynodes/{grdOrgId}`). `<method id="...">` retained as secondary identifier.
+4. Operation identifier: composite `method + ' ' + path` (e.g. `POST /hierarchynodes/{orgUnitId}`). `<method id="...">` retained as secondary identifier.
 5. Parameter extraction: all four `<param>` styles (template / query / header / matrix) with `{ name, style, type, required }`.
 6. Representation extraction: per `<request>` / `<response>`, `{ mediaType, schemaElementRef }`. Link to resolved grammar element when possible.
 7. Multi-resource: flatten nested `<resource>` via path concatenation against outer `<resources base>`.

@@ -3,8 +3,8 @@
  *
  * WADL/OAS operation ids come from source method names, and Java method
  * OVERLOADS legally produce the SAME id on DIFFERENT routes (a legacy app had
- * `getHierarchyForOrgId` on both `POST /hierarchynodes/{grdOrgId}` and
- * `POST /hierarchy/{businessDate}/{grdOrgId}`, and `getView` on both
+ * `getHierarchyForOrgId` on both `POST /hierarchynodes/{orgUnitId}` and
+ * `POST /hierarchy/{businessDate}/{orgUnitId}`, and `getView` on both
  * `GET /views/{viewId}` and `GET /views/{businessDate}/{viewId}`).
  *
  * The capture stack keys operations by their operationId STRING in several

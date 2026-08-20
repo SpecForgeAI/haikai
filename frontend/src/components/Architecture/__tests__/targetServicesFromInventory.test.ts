@@ -23,7 +23,7 @@ function inventory(): ElementInventoryResponse {
           {
             name: 'Application Components',
             entityType: 'app_component',
-            instances: [{ id: 'comp-1', name: 'HiFi Service Tier' }],
+            instances: [{ id: 'comp-1', name: 'LegacyApp Service Tier' }],
           },
           {
             name: 'Services',

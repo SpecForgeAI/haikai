@@ -191,8 +191,8 @@ const CANONICAL_PLACEHOLDER_TOKEN = '{p}';
  *   canonicalEndpointPath('/users/{id}')                    => '/users/{p}'
  *   canonicalEndpointPath('/users/{theString}')             => '/users/{p}'
  *   canonicalEndpointPath('/owners/{ownerId}/pets/{petId}') => '/owners/{p}/pets/{p}'
- *   canonicalEndpointPath('/hierarchy/businessDate}/{grdOrgId}') => '/hierarchy/{p}/{p}'  (malformed twin)
- *   canonicalEndpointPath('/hierarchy/{businessDate}/{grdOrgId}') => '/hierarchy/{p}/{p}' (well-formed twin)
+ *   canonicalEndpointPath('/hierarchy/businessDate}/{orgUnitId}') => '/hierarchy/{p}/{p}'  (malformed twin)
+ *   canonicalEndpointPath('/hierarchy/{businessDate}/{orgUnitId}') => '/hierarchy/{p}/{p}' (well-formed twin)
  *   canonicalEndpointPath('/users/me')                      => '/users/me'  (distinct)
  *
  * Note: this canonicalizer deliberately does NOT implement the

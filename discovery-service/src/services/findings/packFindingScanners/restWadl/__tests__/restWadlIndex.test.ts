@@ -129,7 +129,7 @@ describe('runRestWadlPass -- single WADL with sibling XSD', () => {
     });
 
     // One interface + at least four endpoints (the canonical Jersey fixture
-    // ships POST + GET on /hierarchynodes/{grdOrgId} and GET + PUT on
+    // ships POST + GET on /hierarchynodes/{orgUnitId} and GET + PUT on
     // /refdata/{lookupKey}).
     const interfaceFindings = result.findings.filter(
       (f) => f.findingType === 'interface_definition',

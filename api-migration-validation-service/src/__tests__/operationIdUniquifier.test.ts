@@ -33,8 +33,8 @@ describe('uniquifyOperationIds', () => {
   it('renames EVERY member of a cross-route duplicate group (the Java-overload shape)', () => {
     const { inventory, renamed } = uniquifyOperationIds(
       inv([
-        op('getHierarchyForOrgId', 'POST', '/hierarchynodes/{grdOrgId}'),
-        op('getHierarchyForOrgId', 'POST', '/hierarchy/{businessDate}/{grdOrgId}'),
+        op('getHierarchyForOrgId', 'POST', '/hierarchynodes/{orgUnitId}'),
+        op('getHierarchyForOrgId', 'POST', '/hierarchy/{businessDate}/{orgUnitId}'),
         op('getView', 'GET', '/views/{viewId}'),
         op('getView', 'GET', '/views/{businessDate}/{viewId}'),
         op('listFilters', 'GET', '/filters'),
@@ -42,8 +42,8 @@ describe('uniquifyOperationIds', () => {
     );
     const ids = inventory.operations.map((o) => o.operationId);
     expect(ids).toEqual([
-      'getHierarchyForOrgId [route=POST /hierarchynodes/{grdOrgId}]',
-      'getHierarchyForOrgId [route=POST /hierarchy/{businessDate}/{grdOrgId}]',
+      'getHierarchyForOrgId [route=POST /hierarchynodes/{orgUnitId}]',
+      'getHierarchyForOrgId [route=POST /hierarchy/{businessDate}/{orgUnitId}]',
       'getView [route=GET /views/{viewId}]',
       'getView [route=GET /views/{businessDate}/{viewId}]',
       'listFilters', // unique — untouched

@@ -31,7 +31,7 @@ function inv(operations: ParsedOasOperation[]): ParsedOasInventory {
 }
 
 const DUAL_NAME =
-  'POST /hierarchynodes/{grdOrgId} ' +
+  'POST /hierarchynodes/{orgUnitId} ' +
   '[consumes=APPLICATION_JSON,APPLICATION_XML;produces=APPLICATION_JSON,APPLICATION_XML]';
 
 describe('normaliseMediaType', () => {
@@ -66,7 +66,7 @@ describe('expandInventoryOperationsForFormats', () => {
 
   it('ONE dual-format endpoint → TWO steered variant operations', () => {
     const out = expandInventoryOperationsForFormats(
-      inv([op('getHierarchyForOrgId', 'POST', '/hierarchynodes/{grdOrgId}')]),
+      inv([op('getHierarchyForOrgId', 'POST', '/hierarchynodes/{orgUnitId}')]),
       [dualEndpoint],
     );
     expect(out.operations.map((o) => o.operationId)).toEqual([
@@ -91,8 +91,8 @@ describe('expandInventoryOperationsForFormats', () => {
 
   it('GUARD: a route the spec already splits (2 ops) is never multiplied', () => {
     const ops = [
-      op('opJson', 'POST', '/hierarchynodes/{grdOrgId}'),
-      op('opXml', 'POST', '/hierarchynodes/{grdOrgId}'),
+      op('opJson', 'POST', '/hierarchynodes/{orgUnitId}'),
+      op('opXml', 'POST', '/hierarchynodes/{orgUnitId}'),
     ];
     const out = expandInventoryOperationsForFormats(inv(ops), [dualEndpoint]);
     expect(out.operations).toEqual(ops);
@@ -100,7 +100,7 @@ describe('expandInventoryOperationsForFormats', () => {
 
   it('GUARD: ambiguous endpoint matches (2 rows on the route) → untouched', () => {
     const out = expandInventoryOperationsForFormats(
-      inv([op('x', 'POST', '/hierarchynodes/{grdOrgId}')]),
+      inv([op('x', 'POST', '/hierarchynodes/{orgUnitId}')]),
       [dualEndpoint, { ...dualEndpoint }],
     );
     expect(out.operations.map((o) => o.operationId)).toEqual(['x']);

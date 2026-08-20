@@ -32,9 +32,9 @@ function makeCandidate(
 describe('mergeCandidates — attribute union + source precedence', () => {
   it('collapses a MALFORMED-brace endpoint twin into ONE survivor with its well-formed twin (duplicate-endpoint fix)', () => {
     // The HAIKAI duplicate the whole fix targets: the WADL pack emits the
-    // well-formed `POST /hierarchy/{businessDate}/{grdOrgId}` and a non-WADL
+    // well-formed `POST /hierarchy/{businessDate}/{orgUnitId}` and a non-WADL
     // pack emitted the SAME logical endpoint with a MALFORMED path
-    // `POST /hierarchy/businessDate}/{grdOrgId}` (opening `{` lost upstream).
+    // `POST /hierarchy/businessDate}/{orgUnitId}` (opening `{` lost upstream).
     // Pre-fix the identity keys differed and the merge kept BOTH. They must now
     // merge to exactly one survivor.
     const wadlTwin = makeCandidate({
@@ -44,7 +44,7 @@ describe('mergeCandidates — attribute union + source precedence', () => {
       parentCandidateId: 'samplesvc-service-version',
       data: {
         operation_verb: 'POST',
-        path_or_address: '/hierarchy/{businessDate}/{grdOrgId}',
+        path_or_address: '/hierarchy/{businessDate}/{orgUnitId}',
         doc: 'Look up hierarchy',
         _addedBy: 'rest-wadl-pack',
       },
@@ -52,11 +52,11 @@ describe('mergeCandidates — attribute union + source precedence', () => {
     const malformedTwin = makeCandidate({
       id: 'malformed-twin',
       candidateType: 'endpoints',
-      name: 'POST /hierarchy/businessDate}/{grdOrgId}',
+      name: 'POST /hierarchy/businessDate}/{orgUnitId}',
       parentCandidateId: 'hierarchy-lookup-service',
       data: {
         httpMethod: 'POST',
-        fullPath: '/hierarchy/businessDate}/{grdOrgId}',
+        fullPath: '/hierarchy/businessDate}/{orgUnitId}',
         controllerClassName: 'HierarchyLookupService',
         _addedBy: 'spring-classic-jaxrs',
       },

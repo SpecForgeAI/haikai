@@ -119,7 +119,7 @@ public final class InventoryReconciliationCalculator {
         //      two endpoints collide on the RAW verb+path (param names kept:
         //      true twins share an identical mapping path by construction;
         //      positional lookalikes are NOT collisions — see rawRestKey).
-        //   2. Exact-string template params: `{grdOrgId}` (hand-authored OAS)
+        //   2. Exact-string template params: `{orgUnitId}` (hand-authored OAS)
         //      vs `{grd_org_id}` (code-discovered path) can never match, yet
         //      they are the same route. Params are POSITIONAL for identity —
         //      names are normalised away in the bare key.
@@ -178,7 +178,7 @@ public final class InventoryReconciliationCalculator {
     }
 
     /**
-     * Template params are POSITIONAL for identity: `/a/{grdOrgId}` and
+     * Template params are POSITIONAL for identity: `/a/{orgUnitId}` and
      * `/a/{grd_org_id}` are the same route. Normalise every `{...}` segment to
      * `{}` so param NAMES never break matching (Spec 2026-07-24).
      */
