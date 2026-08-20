@@ -38,6 +38,14 @@ import type { DbQueryLimits } from '../types/db';
 export interface EffectScopeIndex {
   /** key `${METHOD} ${pathTemplate}` -> physical table names (deduped). */
   tablesByOperationKey: Map<string, string[]>;
+  /**
+   * Operation keys whose committed effect edges are READ-mode (proven-read
+   * classification, 2026-08-20): a write-verb endpoint mapped ONLY as reads
+   * is a POST-implemented query — it needs no write map, is never refused,
+   * and fires without a bracket. The end-of-job S0 fingerprint remains the
+   * safety net if the proof were ever wrong.
+   */
+  readMappedOperationKeys: Set<string>;
 }
 
 interface RawModel {
@@ -92,22 +100,46 @@ export async function fetchEffectScopeIndex(
     }
 
     const tablesByOperationKey = new Map<string, string[]>();
+    const readMappedOperationKeys = new Set<string>();
     for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
       const mode = (edge.access_mode ?? '').toLowerCase();
-      if (mode !== 'write' && mode !== 'read-write') continue;
       const key = edge.endpoint_id ? endpointKeyById.get(edge.endpoint_id) : undefined;
+      if (!key) continue;
+      if (mode === 'read') {
+        // Proven-read classification (2026-08-20): the edge itself is enough
+        // — the table side matters only for write imaging.
+        readMappedOperationKeys.add(key);
+        continue;
+      }
+      if (mode !== 'write' && mode !== 'read-write') continue;
       const pointId = edge.data_entity_point_id ?? '';
       const entityId = pointId.replace(/^dep_(phy|log)_/, '');
       const table = tableByEntityId.get(entityId);
-      if (!key || !table) continue;
+      if (!table) continue;
       const list = tablesByOperationKey.get(key) ?? [];
       if (!list.includes(table)) list.push(table);
       tablesByOperationKey.set(key, list);
     }
-    return { tablesByOperationKey };
+    return { tablesByOperationKey, readMappedOperationKeys };
   } catch {
     return null;
   }
+}
+
+/** True when the concrete (method, path) call matches a READ-mapped
+ * operation key (template-matched, same discipline as effectTablesFor). */
+export function isReadMappedOperation(
+  index: EffectScopeIndex,
+  method: string,
+  path: string,
+): boolean {
+  const verb = method.toUpperCase();
+  for (const key of index.readMappedOperationKeys) {
+    const spaceAt = key.indexOf(' ');
+    if (key.slice(0, spaceAt) !== verb) continue;
+    if (pathMatchesTemplate(path, key.slice(spaceAt + 1))) return true;
+  }
+  return false;
 }
 
 /** Concrete captured path vs committed template (`/owners/{id}`). */

@@ -89,8 +89,18 @@ export interface EndpointDiagnosis extends UnmappedEndpoint {
   boundaries_reached: string[];
 }
 
+/** Screenshot-friendly rollup (2026-08-20: transfer is screenshots only —
+ *  counts + deduped tops, never per-endpoint repetition). */
+export interface BackfillSummary {
+  unmapped_count: number;
+  by_stage: Record<string, number>;
+  /** `symbol (count)` — deduped unresolved-call targets, worst first. */
+  top_broken_targets: string[];
+}
+
 export interface EffectMapBackfillResult {
   unmapped_count: number;
+  summary: BackfillSummary;
   derived: DerivedEffect[];
   derived_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
   proposals: ProposedEffect[];
@@ -151,8 +161,18 @@ export interface HttpRootTable {
   fragment: string;
 }
 
+/**
+ * A fragment with NO literal characters (`{a}/{b}`) matches ANY path — the
+ * 2026-08-20 diagnosis showed every endpoint "matching" the same two
+ * placeholder-only roots. Never usable.
+ */
+export function fragmentHasLiterals(fragment: string): boolean {
+  return fragment.replace(/\{[^}]*\}/g, '').replace(/\//g, '').trim().length > 0;
+}
+
 /** Behaviour tables whose own annotations declare an HTTP method + path
- * fragment — the corpus's endpoint roots (annotation-pass helpers reused). */
+ * fragment — the corpus's endpoint roots (annotation-pass helpers reused;
+ * placeholder-only fragments excluded). */
 export function collectHttpRootTables(contracts: SclContractDto[]): HttpRootTable[] {
   const roots: HttpRootTable[] = [];
   for (const contract of contracts) {
@@ -161,6 +181,7 @@ export function collectHttpRootTables(contracts: SclContractDto[]): HttpRootTabl
     const method = deriveHttpMethod(body);
     const fragment = derivePathFragment(body);
     if (!method || !fragment || !contract.contract_key) continue;
+    if (!fragmentHasLiterals(fragment)) continue;
     roots.push({
       key: contract.contract_key,
       symbol: contract.source_symbol ?? contract.contract_key,
@@ -169,6 +190,68 @@ export function collectHttpRootTables(contracts: SclContractDto[]): HttpRootTabl
     });
   }
   return roots;
+}
+
+/** Name+arity dispatch-expansion index (mirror of the scan emitter's). */
+export interface DispatchExpansionIndex {
+  tablesByNameArity: Map<string, string[]>;
+  tablesByName: Map<string, string[]>;
+  boundariesByOpName: Map<string, string[]>;
+}
+
+const DISPATCH_EXPANSION_CAP = 5;
+
+export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansionIndex {
+  const tablesByNameArity = new Map<string, string[]>();
+  const tablesByName = new Map<string, string[]>();
+  const boundariesByOpName = new Map<string, string[]>();
+  const push = (map: Map<string, string[]>, key: string, value: string) => {
+    const list = map.get(key) ?? [];
+    if (!list.includes(value)) list.push(value);
+    map.set(key, list);
+  };
+  for (const contract of contracts) {
+    if (!contract.contract_key) continue;
+    const body = (contract.body_json ?? null) as ContractBodyLike | null;
+    if (contract.kind === 'behaviour_table') {
+      const symbol = contract.source_symbol ?? '';
+      const hash = symbol.indexOf('#');
+      if (hash >= 0) {
+        const name = symbol.slice(hash + 1);
+        const arity = Array.isArray(
+          (body as { signatureInputs?: unknown[] } | null)?.signatureInputs,
+        )
+          ? ((body as { signatureInputs: unknown[] }).signatureInputs.length)
+          : 0;
+        push(tablesByNameArity, `${name}/${arity}`, contract.contract_key);
+        push(tablesByName, name, contract.contract_key);
+      }
+    } else if (contract.kind === 'boundary') {
+      for (const operation of body?.operations ?? []) {
+        const opName = (operation as { name?: string })?.name;
+        if (opName) push(boundariesByOpName, opName, contract.contract_key);
+      }
+    }
+  }
+  return { tablesByNameArity, tablesByName, boundariesByOpName };
+}
+
+function expandDispatch(
+  targetSymbol: string,
+  expansion: DispatchExpansionIndex,
+): { tables: string[]; boundaries: string[] } | null {
+  const hash = targetSymbol.indexOf('#');
+  const paren = targetSymbol.indexOf('(', hash);
+  if (hash < 0 || paren < 0) return null;
+  const name = targetSymbol.slice(hash + 1, paren);
+  const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
+  const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
+  let tables = expansion.tablesByNameArity.get(`${name}/${arity}`) ?? [];
+  if (tables.length === 0) tables = expansion.tablesByName.get(name) ?? [];
+  const boundaries = expansion.boundariesByOpName.get(name) ?? [];
+  const total = tables.length + boundaries.length;
+  if (total === 0 || total > DISPATCH_EXPANSION_CAP) return null;
+  return { tables, boundaries };
 }
 
 /**
@@ -210,6 +293,7 @@ export function walkCallGraph(
   rootKey: string,
   bodiesByKey: Map<string, ContractBodyLike>,
   cap = 500,
+  expansion?: DispatchExpansionIndex,
 ): CallWalkResult {
   const boundaries = new Set<string>();
   const brokenCalls: string[] = [];
@@ -227,7 +311,16 @@ export function walkCallGraph(
       })?.outcome;
       if (outcome?.type !== 'call') continue;
       if (typeof outcome.targetKey !== 'string') {
-        if (brokenCalls.length < 10) {
+        // Dispatch expansion (2026-08-20): null-target calls resolve by
+        // name+arity across the corpus — the walk continues instead of
+        // breaking on factory/interface indirection.
+        const expanded = expansion
+          ? expandDispatch(outcome.targetSymbol ?? '', expansion)
+          : null;
+        if (expanded) {
+          for (const t of expanded.tables) if (!visited.has(t)) queue.push(t);
+          for (const b of expanded.boundaries) boundaries.add(b);
+        } else if (brokenCalls.length < 10) {
           brokenCalls.push(
             `${key}: call to ${outcome.targetSymbol ?? '(unknown symbol)'} unresolved`,
           );
@@ -461,6 +554,7 @@ export async function runEffectMapBackfill(
   if (unmapped.length === 0) {
     return {
       unmapped_count: 0,
+      summary: { unmapped_count: 0, by_stage: {}, top_broken_targets: [] },
       derived: [],
       derived_apply: null,
       proposals: [],
@@ -488,6 +582,7 @@ export async function runEffectMapBackfill(
     }
   }
   const httpRoots = collectHttpRootTables(contracts);
+  const dispatchIndex = buildDispatchIndex(contracts);
 
   // ---- Phase 1: deterministic derivation (+ per-endpoint diagnosis).
   const symbolByKey = new Map<string, string>();
@@ -507,7 +602,7 @@ export async function runEffectMapBackfill(
     const brokenCalls: string[] = [];
     const boundariesReached: string[] = [];
     for (const rootKey of rootKeys) {
-      const walk = walkCallGraph(rootKey, bodiesByKey);
+      const walk = walkCallGraph(rootKey, bodiesByKey, 500, dispatchIndex);
       for (const broken of walk.brokenCalls) {
         if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
       }
@@ -660,8 +755,28 @@ export async function runEffectMapBackfill(
     unproposed: unproposed.length,
   });
 
+  // Screenshot-friendly rollup: counts per stage + deduped broken targets.
+  const byStage: Record<string, number> = {};
+  const brokenCounts = new Map<string, number>();
+  for (const entry of trace) {
+    byStage[entry.stage] = (byStage[entry.stage] ?? 0) + 1;
+    for (const broken of entry.broken_calls) {
+      const target = broken.replace(/^.*?call to /, '').replace(/ unresolved$/, '');
+      brokenCounts.set(target, (brokenCounts.get(target) ?? 0) + 1);
+    }
+  }
+  const topBrokenTargets = [...brokenCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([symbol, count]) => `${symbol} (${count})`);
+
   return {
     unmapped_count: unmapped.length,
+    summary: {
+      unmapped_count: unproposed.length,
+      by_stage: byStage,
+      top_broken_targets: topBrokenTargets,
+    },
     derived,
     derived_apply: derivedApply,
     proposals,

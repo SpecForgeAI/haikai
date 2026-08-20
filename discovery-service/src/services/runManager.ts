@@ -2723,12 +2723,16 @@ async function startServiceScopedRun(
           allCandidates.push(...emitted);
           effectCandidates = {
             derived: derivedPhase.candidates.length,
+            provenRead: derivedPhase.provenRead.length,
             proposed: proposalPhase.candidates.length,
             llmCalls: proposalPhase.llmCalls,
+            // Screenshot-friendly rollup FIRST; full unproposed detail after.
+            summary: summarizeEmission(derivedPhase, proposalPhase),
             unproposed: proposalPhase.unproposed,
           };
           console.log(
-            `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived, ` +
+            `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived ` +
+              `(${derivedPhase.provenRead.length} proven-read), ` +
               `${proposalPhase.candidates.length} LLM-proposed (${proposalPhase.llmCalls} call(s)), ` +
               `${proposalPhase.unproposed.length} unproposed in ${Date.now() - emissionStart}ms`,
           );
@@ -2982,6 +2986,7 @@ import {
   deriveCorpusEffectCandidates,
   fetchCommittedTableVocabulary,
   proposeEffectCandidatesViaLlm,
+  summarizeEmission,
 } from '../scl/effectCandidateEmitter';
 import type { DatabaseCandidatePayload } from './databasePacks/DatabaseDiscoveryPack';
 

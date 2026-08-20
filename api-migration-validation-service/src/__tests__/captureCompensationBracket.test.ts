@@ -1,5 +1,5 @@
-/**
- * Capture-side compensation brackets — orchestrator-level tests (Capture-State
+﻿/**
+ * Capture-side compensation brackets â€” orchestrator-level tests (Capture-State
  * Discipline Spec 3). The harness mirrors the dbAdapterGuard test (mocked LLM
  * script, stubbed HTTP executor whose "app" writes into the shared FakeStore,
  * captured AMS surface) with the compensation seams injected so the bracket
@@ -74,7 +74,7 @@ function seededStore() {
 }
 
 function effectScopeWith(entries: Array<[string, string[]]>) {
-  return { tablesByOperationKey: new Map(entries) };
+  return { tablesByOperationKey: new Map(entries), readMappedOperationKeys: new Set<string>() };
 }
 
 function buildSessionDto(): CaptureSessionDto {
@@ -227,7 +227,7 @@ function buildGatewayMock(operationId: string, method: string, opPath: string) {
 
 interface HarnessArgs {
   store: InstanceType<typeof FakeStore>;
-  effectScope: { tablesByOperationKey: Map<string, string[]> };
+  effectScope: { tablesByOperationKey: Map<string, string[]>; readMappedOperationKeys: Set<string> };
   operations?: OperationDto[];
   writeAdapter?: ReturnType<typeof fakeWriteAdapter>;
   /** What the "app" does when the LLM fires the request. */

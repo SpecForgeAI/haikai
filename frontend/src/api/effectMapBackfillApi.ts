@@ -41,8 +41,15 @@ export interface BackfillDiagnosis extends BackfillEndpointRef {
   boundaries_reached: string[];
 }
 
+export interface BackfillSummary {
+  unmapped_count: number;
+  by_stage: Record<string, number>;
+  top_broken_targets: string[];
+}
+
 export interface EffectMapBackfillRunResponse {
   unmapped_count: number;
+  summary: BackfillSummary;
   derived: BackfillDerived[];
   derived_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
   proposals: BackfillProposal[];

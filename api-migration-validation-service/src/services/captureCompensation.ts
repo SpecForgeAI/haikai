@@ -33,7 +33,12 @@ import {
   SybaseCompensationWriteAdapter,
 } from './compensation/WriteAdapter';
 import type { CompensationEngine } from './compensation/types';
-import { EffectScopeIndex, effectTablesFor, fetchEffectScopeIndex } from './stateDelta';
+import {
+  EffectScopeIndex,
+  effectTablesFor,
+  fetchEffectScopeIndex,
+  isReadMappedOperation,
+} from './stateDelta';
 import { verifyS0Fingerprint, S0FingerprintReport } from './s0/fingerprint';
 import { latestSnapshotId, readManifest, snapshotDirFor } from './s0/manifest';
 
@@ -130,6 +135,10 @@ export function computeWriteEndpointsWithoutEffectMap(
     if (op.included === false) continue;
     if (!COMPENSATED_VERBS.has(op.method.toLowerCase())) continue;
     if (effectTablesFor(effectScope, op.method, op.path).length === 0) {
+      // Proven-read classification (2026-08-20): a write-verb endpoint whose
+      // committed effects are READ-only is a POST-implemented query — it is
+      // MAPPED (as reads), needs no write tables, and must not be warned on.
+      if (isReadMappedOperation(effectScope, op.method, op.path)) continue;
       missing.push(`${op.method.toUpperCase()} ${op.path}`);
     }
   }
