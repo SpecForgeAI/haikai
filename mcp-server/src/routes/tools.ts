@@ -23,6 +23,7 @@ import { saveProjectAnchorEntitiesRouter } from './saveProjectAnchorEntitiesRout
 import { saveDiscoveryCandidatesRouter } from './saveDiscoveryCandidatesRoute';
 import { saveApprovedCandidatesRouter } from './saveApprovedCandidatesRoute';
 import { applyGapMetadataRouter } from './applyGapMetadataRoute';
+import { applyEndpointEffectsRouter } from './applyEndpointEffectsRoute';
 import { createProjectArtifactRouter } from './createProjectArtifactRoute';
 
 /**
@@ -78,6 +79,11 @@ toolsRouter.use('/save_approved_candidates', saveApprovedCandidatesRouter);
 // Mount the apply_gap_metadata route (Spec 4 — LLM gap-proposal queue,
 // 2026-08-04: additive fk_columns / primary-key metadata apply on approve)
 toolsRouter.use('/apply_gap_metadata', applyGapMetadataRouter);
+
+// Mount the apply_endpoint_effects route (Effect-map backfill, 2026-08-20:
+// additive endpoint -> write-table effect edges, corpus-derived or approved
+// LLM proposals; the table-name resolution is the hallucination guard)
+toolsRouter.use('/apply_endpoint_effects', applyEndpointEffectsRouter);
 
 // Mount the create_project_artifact route
 toolsRouter.use('/create_project_artifact', createProjectArtifactRouter);
