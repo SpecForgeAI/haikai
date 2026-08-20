@@ -301,6 +301,20 @@ export const StructuralModelTab: React.FC<StructuralModelTabProps> = ({
             rejections · {(annotation.contradictions ?? []).length} contradictions
           </p>
         )}
+        {/* Explicit pending state (2026-08-20): a completed scan with no
+            merged annotation summary must SAY so — silence here previously
+            made "annotation pending" indistinguishable from "never ran". */}
+        {!annotation && scan.status === 'completed' && (
+          <p
+            className={styles.annotationSummary}
+            data-testid="structural-model-annotation-pending"
+          >
+            Annotation: not yet merged — the pass starts automatically with the
+            code scan and its summary appears here when it completes. If it
+            never arrives, the code scan run's structural-scan outcome records
+            whether the annotation request failed.
+          </p>
+        )}
         {/* LOUD completeness warnings — the corpus is a construction input;
             an incomplete corpus must never look complete. */}
         {parseErrorCount > 0 && (

@@ -117,6 +117,7 @@ import MigrationBookOfWorkSaveToBacklogDialog, {
 } from './MigrationBookOfWorkSaveToBacklogDialog';
 import MigrationBookOfWorkPostSaveView from './MigrationBookOfWorkPostSaveView';
 import { computeFindingsCoverage } from '../../../utils/findingsCoverage';
+import { derivePlannerProvenance } from './plannerProvenanceSupport';
 // Execution-class oracle mirror (Spec 2026-08-04-1): manual stories are human
 // work — never spec'ed, never dispatched — so they must not count against the
 // per-plane spec gates.
@@ -453,6 +454,11 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
     () => computeFindingsCoverage(draft?.generationSummary, items),
     [draft?.generationSummary, items],
   );
+
+  // Planner provenance (2026-08-20): expansion silently falls back to the
+  // legacy planner when no structural corpus exists — say which planner
+  // built the stories, derived from the persisted corpus-story tags.
+  const plannerProvenance = useMemo(() => derivePlannerProvenance(items), [items]);
 
   // Per Q-16 saveState lives in frontend state during review. Seeded from
   // the persisted wire value on draft load; deltas vs. seed flag the
@@ -1996,6 +2002,12 @@ export const MigrationBookOfWorkReviewWorkspace: React.FC<
                 {specCounts.stale > 0 && (
                   <> · {specCounts.stale} stale {'↻'}</>
                 )}
+              </span>
+            )}
+            {plannerProvenance && (
+              <span data-testid="review-planner-provenance">
+                {' '}
+                &middot; {plannerProvenance}
               </span>
             )}
           </p>

@@ -264,6 +264,24 @@ it('renders the scan status card with key stats + the annotation summary', async
   // Clean scan (no parse errors, no unresolved calls) → NO amber warnings.
   expect(screen.queryByTestId('warning-parse-errors')).toBeNull();
   expect(screen.queryByTestId('warning-unresolved-calls')).toBeNull();
+  // Annotation summary present → the pending line must NOT render.
+  expect(screen.queryByTestId('structural-model-annotation-pending')).toBeNull();
+});
+
+it('renders an explicit annotation-pending line when a completed scan has no merged summary (2026-08-20)', async () => {
+  const { scl_annotation: _dropped, ...statsWithoutAnnotation } =
+    SCAN.stats_json as Record<string, unknown> & { scl_annotation: unknown };
+  getLatestScanMock.mockResolvedValue({
+    ...SCAN,
+    stats_json: statsWithoutAnnotation,
+  } as SclScan);
+
+  renderTab();
+
+  expect(
+    await screen.findByTestId('structural-model-annotation-pending'),
+  ).toHaveTextContent('Annotation: not yet merged');
+  expect(screen.queryByTestId('structural-model-annotation-summary')).toBeNull();
 });
 
 // ---------------------------------------------------------------------------
