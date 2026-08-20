@@ -26,6 +26,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { ARCHITECTURE_MODEL_SERVICE_BASE_URL, GATEWAY_BASE_URL } from '../config';
 import { runSclScan, type RunSclScanArgs, type RunSclScanResult } from './sclScanRunner';
+import type { SclCorpus } from './corpusAssembler';
 
 /**
  * Annotation request outcome (2026-08-19 user ruling: annotation is
@@ -45,6 +46,16 @@ export interface StructuralScanStepOutcome {
   detail: string | null;
   /** Present only when the scan completed; null on skipped/failed scans. */
   annotation: AnnotationRequestOutcome | null;
+}
+
+/**
+ * Step result: the serializable outcome (steps payload) PLUS the in-memory
+ * corpus for same-run consumers (effect-candidate emission, 2026-08-20 —
+ * one scan, one review, one save). The corpus never rides the payload.
+ */
+export interface StructuralScanStepResult {
+  outcome: StructuralScanStepOutcome;
+  corpus: SclCorpus | null;
 }
 
 /** Directories never containing first-party Java sources; skipped wholesale. */
@@ -133,7 +144,7 @@ async function requestAnnotationPass(
 export async function runStructuralScanStep(
   args: { projectId: string; architectureId: string; sourceDir: string },
   deps?: StructuralScanStepDeps
-): Promise<StructuralScanStepOutcome> {
+): Promise<StructuralScanStepResult> {
   const runScan = deps?.runScan ?? runSclScan;
   const hasJava = deps?.hasJava ?? hasJavaSources;
   const fetchFn = deps?.fetchFn ?? fetch;
@@ -141,20 +152,26 @@ export async function runStructuralScanStep(
   try {
     if (!(await hasJava(args.sourceDir))) {
       return {
-        status: 'skipped',
-        scanId: null,
-        contractCount: null,
-        detail: 'no Java sources under the scanned root — structural corpus not applicable',
-        annotation: null,
+        outcome: {
+          status: 'skipped',
+          scanId: null,
+          contractCount: null,
+          detail: 'no Java sources under the scanned root — structural corpus not applicable',
+          annotation: null,
+        },
+        corpus: null,
       };
     }
   } catch (err) {
     return {
-      status: 'failed',
-      scanId: null,
-      contractCount: null,
-      detail: `Java-source detection failed: ${err instanceof Error ? err.message : String(err)}`,
-      annotation: null,
+      outcome: {
+        status: 'failed',
+        scanId: null,
+        contractCount: null,
+        detail: `Java-source detection failed: ${err instanceof Error ? err.message : String(err)}`,
+        annotation: null,
+      },
+      corpus: null,
     };
   }
 
@@ -173,21 +190,27 @@ export async function runStructuralScanStep(
       fetchFn
     );
     return {
-      status: 'completed',
-      scanId: result.scanId,
-      contractCount: result.corpus.stats.contractCount,
-      detail: null,
-      annotation,
+      outcome: {
+        status: 'completed',
+        scanId: result.scanId,
+        contractCount: result.corpus.stats.contractCount,
+        detail: null,
+        annotation,
+      },
+      corpus: result.corpus,
     };
   } catch (err) {
     // runSclScan has already best-effort PATCHed its scan row `failed`, so
     // the Structural Model tab shows the failure too.
     return {
-      status: 'failed',
-      scanId: null,
-      contractCount: null,
-      detail: err instanceof Error ? err.message : String(err),
-      annotation: null,
+      outcome: {
+        status: 'failed',
+        scanId: null,
+        contractCount: null,
+        detail: err instanceof Error ? err.message : String(err),
+        annotation: null,
+      },
+      corpus: null,
     };
   }
 }
