@@ -1,6 +1,35 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import fs from 'fs'
+import { execSync } from 'child_process'
+
+// Build info (2026-08-20): repo-root VERSION + git short commit + start time,
+// injected as compile-time constants for the Product -> Info modal
+// (src/utils/buildInfo.ts). Evaluated when the dev server / build starts.
+// FAIL-SOFT: a git-less or VERSION-less area (e.g. copied files rather than a
+// clone) yields 'unknown' rather than a startup failure. Note the commit id
+// reflects the CLONE's checked-out commit — files pasted over a clone do not
+// change it.
+function repoVersion(): string {
+  try {
+    return fs.readFileSync(path.resolve(__dirname, '..', 'VERSION'), 'utf8').trim()
+  } catch {
+    return 'unknown'
+  }
+}
+function repoCommitId(): string {
+  try {
+    return execSync('git rev-parse --short HEAD', {
+      cwd: __dirname,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim()
+  } catch {
+    return 'unknown'
+  }
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -13,6 +42,11 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    define: {
+      __APP_VERSION__: JSON.stringify(repoVersion()),
+      __APP_COMMIT__: JSON.stringify(repoCommitId()),
+      __APP_BUILT_AT__: JSON.stringify(new Date().toISOString()),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

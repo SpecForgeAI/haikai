@@ -154,6 +154,12 @@ interface FileMenuProps {
    * has no environments defined (matches the export entry's gate).
    */
   importInfrastructureTerraformDisabled?: boolean;
+  /**
+   * Handler for the "Info" item (2026-08-20): opens the build-info modal
+   * (version / repo commit / build time). Always enabled — build identity
+   * needs no active project.
+   */
+  onInfo?: () => void;
 }
 
 /**
@@ -222,6 +228,8 @@ export function FileMenu({
   // Spec 2026-05-08: Infrastructure Terraform Import (GCP)
   onImportInfrastructureTerraform,
   importInfrastructureTerraformDisabled = false,
+  // 2026-08-20: build-info modal launcher.
+  onInfo,
 }: FileMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   // Spec 2026-01-19: Get includeDatabase toggle for menu gating
@@ -371,6 +379,14 @@ export function FileMenu({
   const handleImportInfrastructureTerraformClick = () => {
     if (!importInfrastructureTerraformDisabled && onImportInfrastructureTerraform) {
       onImportInfrastructureTerraform();
+      onClose();
+    }
+  };
+
+  // 2026-08-20: Info handler — always enabled.
+  const handleInfoClick = () => {
+    if (onInfo) {
+      onInfo();
       onClose();
     }
   };
@@ -532,6 +548,21 @@ export function FileMenu({
       >
         Export Infrastructure as Terraform
       </div>
+
+      {/* 2026-08-20: build-info modal — last item, own separator, always
+          enabled (build identity needs no active project). */}
+      {onInfo && (
+        <>
+          <div className={styles.separator} />
+          <div
+            className={styles.menuItem}
+            onClick={handleInfoClick}
+            data-testid="project-menu-info"
+          >
+            Info
+          </div>
+        </>
+      )}
     </div>
   );
 
