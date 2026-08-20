@@ -8,7 +8,7 @@
  * path fragment from their verbatim annotations — the same derivation the
  * gateway annotation pass uses) are matched to THIS RUN's `endpoints`
  * candidates (longest-fragment discipline kills the /lookup vs
- * /lookupFavourite substring trap); the resolved call graph is walked to
+ * /lookupStarred substring trap); the resolved call graph is walked to
  * boundary contracts; their verbatim SQL yields write tables. Emitted as
  * normal candidates (the `mintProcCallEdgeCandidates` precedent) — the
  * candidate review is the human gate and save-back resolves names to ids,
@@ -75,7 +75,7 @@ export function pathContainsFragment(fragment: string, path: string): boolean {
 }
 
 /**
- * A fragment with NO literal characters (`{businessDate}/{grdOrgId}`) turns
+ * A fragment with NO literal characters (`{businessDate}/{orgUnitId}`) turns
  * into "match any N segments" — it matches EVERYTHING and must never be used
  * as a root fragment (2026-08-20 diagnosis: every endpoint "matched" the
  * same two placeholder-only hierarchy roots).

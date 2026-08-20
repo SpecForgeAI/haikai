@@ -199,7 +199,7 @@ describe('wadlEndpointEmitter -- payload shape', () => {
 
   test('endpoint detailJson carries the documented envelope keys', () => {
     const params = [
-      { name: 'grdOrgId', style: 'template' as const, type: 'xs:string', required: true },
+      { name: 'orgUnitId', style: 'template' as const, type: 'xs:string', required: true },
       { name: 'system', style: 'header' as const, type: 'xs:string', required: false },
     ];
     const requestRep = {
@@ -215,10 +215,10 @@ describe('wadlEndpointEmitter -- payload shape', () => {
     const parseResult = makeParseResult({
       operations: [
         makeOperation({
-          compositeId: 'POST /hierarchynodes/{grdOrgId}',
+          compositeId: 'POST /hierarchynodes/{orgUnitId}',
           methodId: 'getHierarchyForOrgId',
           httpMethod: 'POST',
-          path: '/hierarchynodes/{grdOrgId}',
+          path: '/hierarchynodes/{orgUnitId}',
           baseUrl: 'http://localhost:8080/samplesvc/',
           params,
           request: { representations: [requestRep] },
@@ -232,11 +232,11 @@ describe('wadlEndpointEmitter -- payload shape', () => {
 
     const ep = findings.find((f) => f.findingType === 'endpoint');
     expect(ep).toBeDefined();
-    expect(ep!.title).toBe('POST /hierarchynodes/{grdOrgId}');
+    expect(ep!.title).toBe('POST /hierarchynodes/{orgUnitId}');
     const dj = ep!.detailJson as Record<string, unknown>;
     expect(dj.protocol).toBe('rest');
     expect(dj.method).toBe('POST');
-    expect(dj.path).toBe('/hierarchynodes/{grdOrgId}');
+    expect(dj.path).toBe('/hierarchynodes/{orgUnitId}');
     expect(dj.baseUrl).toBe('http://localhost:8080/samplesvc/');
     expect(dj.methodId).toBe('getHierarchyForOrgId');
     expect(dj.params).toEqual(params);

@@ -97,7 +97,7 @@ function renderReport(dto: MigrationProgressSummaryDto) {
       projectId="proj-1"
       architectureId="arch-1"
       bookId="book-1"
-      productName="HiFi Migration"
+      productName="LegacyApp Migration"
       fetchSummaryFn={fetchSummaryFn}
     />,
   );
@@ -111,7 +111,7 @@ describe('MigrationProgressReport', () => {
     expect(fetchSummaryFn).toHaveBeenCalledWith('proj-1', 'arch-1', 'book-1');
 
     // Identity line.
-    expect(screen.getByText('HiFi Migration')).toBeTruthy();
+    expect(screen.getByText('LegacyApp Migration')).toBeTruthy();
     expect(screen.getByText('Sybase')).toBeTruthy();
     expect(screen.getByText('PostgreSQL 18 / Java 21')).toBeTruthy();
 

@@ -231,10 +231,10 @@ public class PlainPojo {
 
   it('emits a WELL-FORMED {param} fullPath for a method @Path whose value begins AND ends with a path param (malformed-brace source fix)', () => {
     // HAIKAI repro: a JAX-RS method whose @Path is a multi-param template with
-    // NO leading slash -- `{businessDate}/{grdOrgId}`. The path starts with `{`
+    // NO leading slash -- `{businessDate}/{orgUnitId}`. The path starts with `{`
     // and ends with `}`, which the old array-literal unwrapper mistook for a
     // `{"...","..."}` array and stripped, yielding the malformed
-    // `/hierarchy/businessDate}/{grdOrgId` (opening brace lost). That gave the
+    // `/hierarchy/businessDate}/{orgUnitId` (opening brace lost). That gave the
     // same logical endpoint a different canonical path than the WADL packs
     // well-formed twin, defeating the Spec-0 identity-keyed merge.
     const SRC = `package org.example.api;
@@ -243,13 +243,13 @@ import javax.ws.rs.Path;
 @Path("/hierarchy")
 public class HierarchyLookupService {
   @POST
-  @Path("{businessDate}/{grdOrgId}")
-  public String lookup(String businessDate, String grdOrgId) { return ""; }
+  @Path("{businessDate}/{orgUnitId}")
+  public String lookup(String businessDate, String orgUnitId) { return ""; }
 }`;
     const cands = run([{ path: 'api/HierarchyLookupService.java', src: SRC }]);
     const ep = endpoints(cands)[0];
-    expect(ep.data.fullPath).toBe('/hierarchy/{businessDate}/{grdOrgId}');
-    expect(ep.name).toBe('POST /hierarchy/{businessDate}/{grdOrgId}');
+    expect(ep.data.fullPath).toBe('/hierarchy/{businessDate}/{orgUnitId}');
+    expect(ep.name).toBe('POST /hierarchy/{businessDate}/{orgUnitId}');
     // No mangled form leaked: the malformed twin would carry the segment
     // `/businessDate}` (slash immediately before the param name, no opening `{`),
     // which the well-formed `/{businessDate}` never contains.
@@ -261,21 +261,21 @@ public class HierarchyLookupService {
   });
 
   it('emits a balanced {param} for a single bare-param method @Path (brace-less source fix)', () => {
-    // The brace-LESS twin source: a single `{grdOrgId}` param with no slash. The
-    // old unwrapper stripped BOTH braces, leaving `/grdOrgId` (a literal that
-    // looks like a static segment). The fix keeps it as a balanced `{grdOrgId}`.
+    // The brace-LESS twin source: a single `{orgUnitId}` param with no slash. The
+    // old unwrapper stripped BOTH braces, leaving `/orgUnitId` (a literal that
+    // looks like a static segment). The fix keeps it as a balanced `{orgUnitId}`.
     const SRC = `package org.example.api;
 import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 @Path("/hierarchynodes")
 public class HierarchyNodesService {
   @GET
-  @Path("{grdOrgId}")
-  public String node(String grdOrgId) { return ""; }
+  @Path("{orgUnitId}")
+  public String node(String orgUnitId) { return ""; }
 }`;
     const cands = run([{ path: 'api/HierarchyNodesService.java', src: SRC }]);
     const ep = endpoints(cands)[0];
-    expect(ep.data.fullPath).toBe('/hierarchynodes/{grdOrgId}');
+    expect(ep.data.fullPath).toBe('/hierarchynodes/{orgUnitId}');
   });
 
   it('still unwraps a genuine Spring-style @GetMapping array literal to its first member (regression guard)', () => {

@@ -10,8 +10,8 @@
     <resources base="http://example.invalid:8080/samplesvc/">
         <resource path="/hierarchynodes">
             <doc title="Hierarchy Nodes" xml:lang="en">Collection resource for org hierarchy node lookups.</doc>
-            <resource path="{grdOrgId}">
-                <param name="grdOrgId" style="template" type="xs:int"/>
+            <resource path="{orgUnitId}">
+                <param name="orgUnitId" style="template" type="xs:int"/>
                 <method id="getHierarchyForOrgId" name="POST">
                     <doc title="Get hierarchy for org id" xml:lang="en">Returns the filtered hierarchy graph rooted at the supplied org id.</doc>
                     <request>

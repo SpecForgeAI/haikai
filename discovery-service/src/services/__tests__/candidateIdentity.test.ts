@@ -90,27 +90,27 @@ describe('buildIdentityKey', () => {
 
   it('endpoints: a MALFORMED-brace path twin shares the identity key of its well-formed twin (duplicate-endpoint fix)', () => {
     // The HAIKAI duplicate: the WADL pack emits the well-formed
-    // `POST /hierarchy/{businessDate}/{grdOrgId}` while a non-WADL pack emitted
+    // `POST /hierarchy/{businessDate}/{orgUnitId}` while a non-WADL pack emitted
     // the SAME logical endpoint with a MALFORMED path string
-    // `POST /hierarchy/businessDate}/{grdOrgId}` (opening `{` lost upstream).
+    // `POST /hierarchy/businessDate}/{orgUnitId}` (opening `{` lost upstream).
     // Before the canonicalizer hardening these produced different identity keys
     // and the Spec-0 merge kept BOTH rows. They must now share one key.
     const wadlTwin = makeCandidate({
       candidateType: 'endpoints',
-      name: 'POST /hierarchy/{businessDate}/{grdOrgId}',
+      name: 'POST /hierarchy/{businessDate}/{orgUnitId}',
       parentCandidateId: 'samplesvc-service-version-iface',
       data: {
         operation_verb: 'POST',
-        path_or_address: '/hierarchy/{businessDate}/{grdOrgId}',
+        path_or_address: '/hierarchy/{businessDate}/{orgUnitId}',
       },
     });
     const malformedTwin = makeCandidate({
       candidateType: 'endpoints',
-      name: 'POST /hierarchy/businessDate}/{grdOrgId}',
+      name: 'POST /hierarchy/businessDate}/{orgUnitId}',
       parentCandidateId: 'hierarchy-lookup-service-iface',
       data: {
         httpMethod: 'POST',
-        fullPath: '/hierarchy/businessDate}/{grdOrgId}',
+        fullPath: '/hierarchy/businessDate}/{orgUnitId}',
       },
     });
     expect(buildIdentityKey(malformedTwin)).toBe(buildIdentityKey(wadlTwin));
@@ -118,11 +118,11 @@ describe('buildIdentityKey', () => {
     // The /hierarchynodes pair collapses the same way.
     const nodesWadl = makeCandidate({
       candidateType: 'endpoints',
-      data: { operation_verb: 'POST', path_or_address: '/hierarchynodes/{businessDate}/{grdOrgId}' },
+      data: { operation_verb: 'POST', path_or_address: '/hierarchynodes/{businessDate}/{orgUnitId}' },
     });
     const nodesMalformed = makeCandidate({
       candidateType: 'endpoints',
-      data: { httpMethod: 'POST', fullPath: '/hierarchynodes/businessDate}/{grdOrgId}' },
+      data: { httpMethod: 'POST', fullPath: '/hierarchynodes/businessDate}/{orgUnitId}' },
     });
     expect(buildIdentityKey(nodesMalformed)).toBe(buildIdentityKey(nodesWadl));
 

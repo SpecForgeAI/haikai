@@ -22,7 +22,7 @@ import { LoadedBookOfWork } from '../migrationShapeSpecGenerationHandler';
 import { TargetManifestArtifactWire } from '../targetManifestArtifactsClient';
 
 const MANIFEST = {
-  tag: 'hifi-api',
+  tag: 'legacyapp-api',
   ecosystem: 'MAVEN',
   kind: 'maven_pom',
   manifest_path: 'pom.xml',

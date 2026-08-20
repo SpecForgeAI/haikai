@@ -358,7 +358,7 @@ function buildDeps(opts: {
 test('templated item paths replay the concrete captured path; the template stays the item key', async () => {
   const session = buildSession();
   const items = [
-    buildItem(1, 'POST', '/hierarchynodes/{grdOrgId}'),
+    buildItem(1, 'POST', '/hierarchynodes/{orgUnitId}'),
     buildItem(2, 'GET', '/widgets'),
     buildItem(3, 'POST', '/orphans/{id}'), // no matching capture -> template fallback
   ];
@@ -405,7 +405,7 @@ test('templated item paths replay the concrete captured path; the template stays
   // The concrete path is recorded on the target CAPTURE...
   expect(state.capturesCreated[0].body.request_path).toBe('/hierarchynodes/ORG-42');
   // ...while the target baseline ITEM keeps the TEMPLATE (diff join key).
-  expect(state.baselineItemsCreated[0].body.path).toBe('/hierarchynodes/{grdOrgId}');
+  expect(state.baselineItemsCreated[0].body.path).toBe('/hierarchynodes/{orgUnitId}');
 });
 
 // ---------------------------------------------------------------------------

@@ -30,7 +30,7 @@ Common technical constraints applied to every group:
     - Rename app-specific identifiers (org names, project names) to neutral `Sample`-prefixed equivalents
     - Save as `samplesvc.wadl` (filename per the operator override in the user's task prompt; supersedes the originally-planned `sampleSvc-jersey-1.16.wadl` so the canonical sample matches the prompt's `samplesvc.wadl` reference)
     - Preserve: full namespace declarations, all `<resources base="...">` blocks, every `<resource>`/`<method>` nesting depth, every `<param>` style, every `<representation>` with `element=` refs, the `<grammars><include href="xsd0.xsd"/>` declaration
-    - Now carries 4 methods (POST + GET on `/hierarchynodes/{grdOrgId}`; GET + PUT on `/refdata/{lookupKey}`) so the multi-resource flattening test path is exercised end-to-end
+    - Now carries 4 methods (POST + GET on `/hierarchynodes/{orgUnitId}`; GET + PUT on `/refdata/{lookupKey}`) so the multi-resource flattening test path is exercised end-to-end
   - [x] 1.3 Create matching `xsd0.xsd` for the grammar-resolution integration test
     - Minimal `<xs:schema>` with top-level `<xs:element name="X">` declarations matching every `element=` ref used in `samplesvc.wadl` (`filteredHierarchyRequestInfo`, `nodeResponse`, `referenceDataItem`)
     - Saved as `xsd0.xsd` alongside the WADL so the relative-path lookup matches
@@ -89,7 +89,7 @@ Common technical constraints applied to every group:
     - Namespace gate: root must be `<application>` with `xmlns="http://wadl.dev.java.net/2009/02"`; anything else -> `parseError: 'unsupported_wadl_namespace'`
     - Recursive walker: `<resources base="...">` -> `<resource path="...">` (recurses on nested `<resource>`) -> `<method>` -> `<request>` / `<response>` -> `<param>` + `<representation>`
     - Path flattening: joins parent + child path segments collapsing extra slashes; outer `<resources base>` is captured as `baseUrl` only (not prepended to `path`, per the user's prompt)
-    - `compositeId = ${method.toUpperCase()} ${flattenedPath}` (e.g. `POST /hierarchynodes/{grdOrgId}`)
+    - `compositeId = ${method.toUpperCase()} ${flattenedPath}` (e.g. `POST /hierarchynodes/{orgUnitId}`)
     - `methodId` = `<method id="...">` when present, else null
     - `param.type` normalisation: missing/blank -> `"unknown"`; unrecognised XSD-prefixed values stored verbatim
     - `representation.schemaElementRef` = `element=` value with any XML namespace prefix stripped

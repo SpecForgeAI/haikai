@@ -140,8 +140,8 @@ const CORPUS = corpusOf([
   }),
   behaviourTable({
     key: 'T-lookupFav',
-    symbol: 'FilterResource#lookupFavourite',
-    annotations: ['@POST', '@Path("lookupFavourite")'],
+    symbol: 'FilterResource#lookupStarred',
+    annotations: ['@POST', '@Path("lookupStarred")'],
     callTargets: [null],
   }),
   behaviourTable({
@@ -183,11 +183,11 @@ describe('deriveCorpusEffectCandidates', () => {
     expect(result.uncovered).toHaveLength(0);
   });
 
-  it('longest-fragment discipline: /lookupFavourite never matches the /lookup root', () => {
+  it('longest-fragment discipline: /lookupStarred never matches the /lookup root', () => {
     const result = deriveCorpusEffectCandidates({
       corpus: CORPUS,
       runId: 'run-1',
-      runCandidates: [endpointCandidate('lookupFav', 'POST', '/filters/lookupFavourite')],
+      runCandidates: [endpointCandidate('lookupFav', 'POST', '/filters/lookupStarred')],
     });
     // The favourite root has no boundary in its walk -> no tables -> uncovered,
     // and the rootKeys prove the LONGER fragment won.
@@ -197,7 +197,7 @@ describe('deriveCorpusEffectCandidates', () => {
     // Diagnosis: root matched, walk COMPLETE (no calls at all), nothing
     // reached -> the honest complete_walk_no_tables stage.
     expect(result.uncovered[0].diagnosis.stage).toBe('complete_walk_no_tables');
-    expect(result.uncovered[0].diagnosis.matched_roots[0]).toContain('lookupFavourite');
+    expect(result.uncovered[0].diagnosis.matched_roots[0]).toContain('lookupStarred');
   });
 
   it('dispatch expansion: a null-target interface call resolves to a DAO boundary by op name', () => {
@@ -317,7 +317,7 @@ describe('deriveCorpusEffectCandidates', () => {
     const diagnosis = result.uncovered[0].diagnosis;
     expect(diagnosis.stage).toBe('no_root_match');
     expect(diagnosis.same_verb_root_fragments).toEqual(
-      expect.arrayContaining(['lookup', 'lookupFavourite']),
+      expect.arrayContaining(['lookup', 'lookupStarred']),
     );
   });
 

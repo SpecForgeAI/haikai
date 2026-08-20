@@ -147,12 +147,12 @@ class TargetManifestArtifactControllerTest {
     @DisplayName("POST accepts a STRING target_service_element_id (svc-<slug>) — the UUID typing rejected EVERY real element id at deserialization with a body-malformed 400, so no bound manifest ever persisted (2026-08-14)")
     void persistAcceptsStringServiceElementId() throws Exception {
         when(service.persistLatest(eq(PROJECT_ID), eq(TARGET_ARCH_ID), anyList()))
-            .thenReturn(List.of(dto("hifi-api", "<project/>", null)));
+            .thenReturn(List.of(dto("legacyapp-api", "<project/>", null)));
 
         // RAW snake_case wire body — exactly what the gateway posts, including a
         // realistic non-UUID services element id.
         String body = "{\"artifacts\":[{"
-            + "\"tag\":\"hifi-api\",\"kind\":\"maven_pom\",\"ecosystem\":\"MAVEN\","
+            + "\"tag\":\"legacyapp-api\",\"kind\":\"maven_pom\",\"ecosystem\":\"MAVEN\","
             + "\"manifest_path\":\"pom.xml\",\"content\":\"<project/>\","
             + "\"package_lock_content\":null,\"resolved_dependencies\":[],"
             + "\"tier2_facts\":[],"

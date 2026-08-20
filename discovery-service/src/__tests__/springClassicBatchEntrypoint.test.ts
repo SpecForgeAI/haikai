@@ -21,9 +21,9 @@ import type { SourceFileIR } from '../services/extensionPacks/languageIR';
 const BATCH_MAIN_SRC = `
 package com.acme.risk.batch;
 
-public class RiskHierarchyLoader {
+public class RiskTreeRecordLoader {
   public static void main(String[] args) {
-    RiskHierarchyLoader app = new RiskHierarchyLoader();
+    RiskTreeRecordLoader app = new RiskTreeRecordLoader();
     app.execute("-o", "ARCHIVE");
     if ("-o UPDATE".equals(args[0])) {
       app.execute("-o", "UPDATE");
@@ -67,14 +67,14 @@ function jilFileIR(filePath: string): SourceFileIR {
 describe('plain-Java main() batch-entrypoint emission', () => {
   it('POSITIVE: emits the batch class as `class` with a batch_entrypoint marker, child method candidates, and the captured -o flags', () => {
     const files = [
-      extractJavaIR('batch/RiskHierarchyLoader.java', BATCH_MAIN_SRC)!,
+      extractJavaIR('batch/RiskTreeRecordLoader.java', BATCH_MAIN_SRC)!,
       jilFileIR('autosys/risk_hier.jil'),
     ];
     const c = runSpringClassicAdapter(files, 'sc-batch');
 
     // The class is emitted as candidate type `class` (NOT app_component).
     const classCands = c.filter((x) => x.candidateType === 'class');
-    expect(classCands.map((x) => x.name)).toEqual(['RiskHierarchyLoader']);
+    expect(classCands.map((x) => x.name)).toEqual(['RiskTreeRecordLoader']);
     expect(c.some((x) => x.candidateType === 'app_component')).toBe(false);
 
     const cls = classCands[0];
@@ -119,8 +119,8 @@ describe('plain-Java main() batch-entrypoint emission', () => {
     // Same batch class, but NO .jil / .sh in the IR set and the recognition
     // gate is run-scoped: with no batch signals the class must NOT be emitted
     // as a batch entrypoint (avoids promoting every CLI tool on a web run).
-    const files = [extractJavaIR('batch/RiskHierarchyLoader.java', BATCH_MAIN_SRC)!];
-    // RiskHierarchyLoader's package + name ARE a batch signal, so the run-level
+    const files = [extractJavaIR('batch/RiskTreeRecordLoader.java', BATCH_MAIN_SRC)!];
+    // RiskTreeRecordLoader's package + name ARE a batch signal, so the run-level
     // gate is satisfied by the class itself. Use a non-batch-named main() to
     // prove the closed-gate path.
     const PLAIN_MAIN_SRC = `
@@ -138,6 +138,6 @@ public class HelloWorld {
     // Sanity: the batch-named class DOES still emit (self-satisfying gate),
     // proving the negative above is about the gate, not a broken emitter.
     const batchOnly = runSpringClassicAdapter(files, 'sc-batch-self');
-    expect(batchOnly.some((x) => x.candidateType === 'class' && x.name === 'RiskHierarchyLoader')).toBe(true);
+    expect(batchOnly.some((x) => x.candidateType === 'class' && x.name === 'RiskTreeRecordLoader')).toBe(true);
   });
 });

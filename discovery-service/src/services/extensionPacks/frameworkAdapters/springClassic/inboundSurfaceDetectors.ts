@@ -88,10 +88,10 @@ function stripArrayBracesAndQuotes(value: string): string {
   let v = value.trim();
   // Only unwrap a Spring multi-value ARRAY LITERAL — `@RequestMapping({"/a","/b"})`
   // — whose inner content begins with a quote. A path TEMPLATE that merely happens
-  // to begin AND end with a path-param segment (`{businessDate}/{grdOrgId}`, or a
-  // bare single `{grdOrgId}`) is NOT an array literal: stripping its outer braces
-  // would mangle the template into `businessDate}/{grdOrgId` (the malformed twin)
-  // or `grdOrgId` (the brace-less twin), giving the same logical endpoint two
+  // to begin AND end with a path-param segment (`{businessDate}/{orgUnitId}`, or a
+  // bare single `{orgUnitId}`) is NOT an array literal: stripping its outer braces
+  // would mangle the template into `businessDate}/{orgUnitId` (the malformed twin)
+  // or `orgUnitId` (the brace-less twin), giving the same logical endpoint two
   // distinct canonical paths and defeating the Spec-0 identity-keyed merge. The
   // leading-quote guard distinguishes the two: an array literal's first inner char
   // is always `"` or `'`; a template's never is.

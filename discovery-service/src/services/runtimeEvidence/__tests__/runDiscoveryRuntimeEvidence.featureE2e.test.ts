@@ -98,7 +98,7 @@ const FIXTURES_DIR = path.resolve(
  * from the `<id> < ...` lines. Serialized as the relay's `content` (exactly the
  * STRUCTURED-recipe contract the gateway relay forwards verbatim).
  */
-const RICH_HIFI_RECIPE = {
+const RICH_LEGACYAPP_RECIPE = {
   recordDelimiter: { kind: 'start_regex', pattern: '^\\d+ > [A-Z]+ ' },
   fields: {
     method: { kind: 'regex', pattern: '^\\d+ > ([A-Z]+) ' },
@@ -122,7 +122,7 @@ function makeNoPatternRelay(): LogRecipeRelay & { induceLogRecipe: jest.Mock } {
 /** A relay that returns the rich SampleSvc recipe so induction is ACCEPTED. */
 function makeRichRecipeRelay(): LogRecipeRelay & { induceLogRecipe: jest.Mock } {
   return {
-    induceLogRecipe: jest.fn(async () => ({ content: JSON.stringify(RICH_HIFI_RECIPE) })),
+    induceLogRecipe: jest.fn(async () => ({ content: JSON.stringify(RICH_LEGACYAPP_RECIPE) })),
   };
 }
 

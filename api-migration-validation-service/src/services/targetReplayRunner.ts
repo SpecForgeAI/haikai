@@ -542,7 +542,7 @@ export async function runTargetReplay(
     // deliberately: endpoint scopes, state-effect scoping, diagnostics and
     // the source<->target diff all join on it. But the TRANSPORT URL must
     // be the concrete path the item's capture actually exercised: replaying
-    // the template sent literal "{grdOrgId}" over the wire and 4xx/5xx'd
+    // the template sent literal "{orgUnitId}" over the wire and 4xx/5xx'd
     // every parameterised endpoint (live: matched=0 across 470 items).
     // Resolve item.capture_id -> source capture.request_path once per run;
     // fail-soft — an unresolved item replays its template as before.

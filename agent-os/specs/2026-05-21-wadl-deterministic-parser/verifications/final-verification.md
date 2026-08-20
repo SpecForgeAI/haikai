@@ -53,7 +53,7 @@ None.
 | Pack location: `restWadl/` exists with `wadlParser.ts`, `wadlEndpointEmitter.ts`, `wadlEvidenceGaps.ts`, `index.ts` | Passed | Directory listing confirms all four files present (20kB / 9kB / 7kB / 14kB respectively) |
 | Namespace gating returns `parseError: 'unsupported_wadl_namespace'` for wrong-namespace input | Passed | `wadlParser.ts` lines 424-433 (namespace gate); test `unsupportedNamespaceReturnsParseError` |
 | XSD grammar resolution accepts `opts.relatedFiles` map; resolves `<grammars><include href>` against it; absolute URLs skipped | Passed | `wadlParser.ts` lines 456-482; `isAbsoluteUrl` guard at line 203 |
-| Composite identifier `${method} ${path}` (e.g. `POST /hierarchynodes/{grdOrgId}`); `<method id="...">` retained as `methodId` | Passed | `wadlParser.ts` line 523 builds compositeId; parser test asserts the 4 expected compositeIds |
+| Composite identifier `${method} ${path}` (e.g. `POST /hierarchynodes/{orgUnitId}`); `<method id="...">` retained as `methodId` | Passed | `wadlParser.ts` line 523 builds compositeId; parser test asserts the 4 expected compositeIds |
 | All four `<param>` styles parsed with `{ name, style, type, required }` | Passed | `readParams` at `wadlParser.ts` lines 277-297; test `allFourParamStylesParsed` |
 | Representation extraction: `mediaType`, `schemaElementRef`, `resolvedSchemaElementName` populated correctly | Passed | `readRepresentations` lines 303-328; tests `parsesAnonymisedJerseyFixture` + `representationRefMissEmitsMissingSchemaElement` |
 | Multi-resource flattening: nested `<resource>` paths concatenated | Passed | `walkResource` recursion + `joinPath` (lines 264-270, 503-577); test `nestedResourceFlattening` |

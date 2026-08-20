@@ -87,7 +87,7 @@ export interface WadlInterface {
 }
 
 export interface WadlOperation {
-  /** `${httpMethod} ${path}` -- e.g. `POST /hierarchynodes/{grdOrgId}`. */
+  /** `${httpMethod} ${path}` -- e.g. `POST /hierarchynodes/{orgUnitId}`. */
   compositeId: string;
   /** `<method id="...">` attribute (when present); null otherwise. */
   methodId: string | null;

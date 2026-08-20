@@ -257,7 +257,7 @@ function expandDispatch(
 /**
  * The root table(s) matching one endpoint: same method, fragment contained
  * in the endpoint path (template-aware), LONGEST fragment wins (prevents a
- * `/lookup` root swallowing `/lookupFavourite` endpoints); length ties all
+ * `/lookup` root swallowing `/lookupStarred` endpoints); length ties all
  * match (distinct roots, additive union is safe).
  */
 export function matchRootsForEndpoint(

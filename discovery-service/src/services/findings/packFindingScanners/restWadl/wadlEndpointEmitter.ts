@@ -25,7 +25,7 @@
  *                  `<doc>` content was collected).
  *     `detailJson` -- `{ format: 'wadl', version, grammarPaths, sourceFilePath }`.
  *  2. `endpoint` -- one finding per `WadlOperation`.
- *     `title`  -- `compositeId` (e.g. `POST /hierarchynodes/{grdOrgId}`).
+ *     `title`  -- `compositeId` (e.g. `POST /hierarchynodes/{orgUnitId}`).
  *     `summary` -- `WadlOperation.doc` (literal pass-through; null when no
  *                  `<doc>` content was collected).
  *     `detailJson` -- `{ protocol: 'rest', method, path, baseUrl, methodId,
