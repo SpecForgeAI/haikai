@@ -162,6 +162,7 @@ import { ErrorModal } from '../common/Modal';
 // Spec 2026-01-26: Import OpenProjectResult type and type guard from ModelFileDialog
 import { ModelFileDialog, OpenProjectResult, SaveAsResult, isOpenProjectResult } from '../file/ModelFileDialog';
 import { FileMenu } from './FileMenu';
+import { BuildInfoModal } from './BuildInfoModal';
 // Spec 2026-05-02 Multi-Architecture Selector + URL Routing -- Task Group 3
 // New pill/chip + dropdown selector mounted next to the project name in the
 // top bar. Reuses ArchitectureContext.architectures + setActiveArchitecture
@@ -230,6 +231,8 @@ export function TopBar({ children }: TopBarProps) {
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [fileMenuVisible, setFileMenuVisible] = useState(false);
   const [fileMenuPosition, setFileMenuPosition] = useState({ x: 0, y: 0 });
+  // 2026-08-20: Product -> Info build-info modal.
+  const [isBuildInfoModalOpen, setBuildInfoModalOpen] = useState(false);
 
   // Backend file dialog state
   const [isOpenDialogVisible, setOpenDialogVisible] = useState(false);
@@ -1397,6 +1400,13 @@ export function TopBar({ children }: TopBarProps) {
         exportInfrastructureTerraformDisabled={exportInfrastructureTerraformDisabled}
         onImportInfrastructureTerraform={() => setInfrastructureTerraformImportModalOpen(true)}
         importInfrastructureTerraformDisabled={exportInfrastructureTerraformDisabled}
+        onInfo={() => setBuildInfoModalOpen(true)}
+      />
+
+      {/* 2026-08-20: Product -> Info — build version / repo commit / built-at. */}
+      <BuildInfoModal
+        visible={isBuildInfoModalOpen}
+        onClose={() => setBuildInfoModalOpen(false)}
       />
 
       {/* Spec 2026-01-05: Create Project Modal */}
