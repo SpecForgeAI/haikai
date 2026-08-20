@@ -194,6 +194,62 @@ describe('deriveCorpusEffectCandidates', () => {
     expect(result.candidates).toHaveLength(0);
     expect(result.uncovered).toHaveLength(1);
     expect(result.uncovered[0].rootKeys).toEqual(['T-lookupFav']);
+    // Diagnosis: root matched, walk reached nothing -> chain_broken shape
+    // (no calls at all in this fixture, so no broken sites listed).
+    expect(result.uncovered[0].diagnosis.stage).toBe('chain_broken');
+    expect(result.uncovered[0].diagnosis.matched_roots[0]).toContain('lookupFavourite');
+  });
+
+  it('diagnosis names the exact unresolved call site when the chain breaks', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-promote',
+        symbol: 'FilterResource#promote',
+        annotations: ['@POST', '@Path("promote")'],
+        callTargets: ['T-broken'],
+      }),
+      behaviourTable({
+        key: 'T-broken',
+        symbol: 'FilterService#promote',
+        annotations: [],
+        callTargets: [], // will get an UNRESOLVED call row below
+      }),
+    ]);
+    // Inject an unresolved call row (targetKey null) into the service table.
+    const serviceContract = (corpus.contracts[1] as { contract: { rows: unknown[] } }).contract;
+    serviceContract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: null, targetSymbol: 'FilterWorkflowDao#save' },
+    });
+
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('promote', 'POST', '/filters/promote')],
+    });
+    expect(result.uncovered).toHaveLength(1);
+    const diagnosis = result.uncovered[0].diagnosis;
+    expect(diagnosis.stage).toBe('chain_broken');
+    expect(diagnosis.broken_calls[0]).toContain('FilterService#promote');
+    expect(diagnosis.broken_calls[0]).toContain('FilterWorkflowDao#save');
+    expect(diagnosis.broken_calls[0]).toContain('unresolved');
+  });
+
+  it('diagnosis lists same-verb fragments when NO root matches at all', () => {
+    const result = deriveCorpusEffectCandidates({
+      corpus: CORPUS,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('delete', 'POST', '/filters/deleteAll')],
+    });
+    expect(result.uncovered).toHaveLength(1);
+    const diagnosis = result.uncovered[0].diagnosis;
+    expect(diagnosis.stage).toBe('no_root_match');
+    expect(diagnosis.same_verb_root_fragments).toEqual(
+      expect.arrayContaining(['lookup', 'lookupFavourite']),
+    );
   });
 
   it('never competes: endpoints already covered by a mined effect candidate are skipped', () => {
@@ -231,6 +287,13 @@ describe('proposeEffectCandidatesViaLlm', () => {
       method: 'POST',
       path: '/filters/promote',
       rootKeys: ['T-lookup'],
+      diagnosis: {
+        stage: 'chain_broken' as const,
+        matched_roots: ['FilterResource#promote [fragment "promote"]'],
+        same_verb_root_fragments: [],
+        broken_calls: ['FilterService#promote: call to X unresolved'],
+        boundaries_reached: [],
+      },
     },
   ];
 
@@ -283,6 +346,9 @@ describe('proposeEffectCandidatesViaLlm', () => {
     expect(result.candidates).toHaveLength(0);
     expect(result.unproposed).toHaveLength(1);
     expect(result.unproposed[0].reason).toContain('429');
+    // The deterministic diagnosis travels with the unproposed record.
+    expect(result.unproposed[0].diagnosis?.stage).toBe('chain_broken');
+    expect(result.unproposed[0].diagnosis?.broken_calls[0]).toContain('unresolved');
   });
 
   it('every-table-guarded-out lands in unproposed honestly', async () => {

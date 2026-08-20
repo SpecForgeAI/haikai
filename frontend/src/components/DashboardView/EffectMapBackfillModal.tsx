@@ -207,14 +207,71 @@ export const EffectMapBackfillModal: React.FC<EffectMapBackfillModalProps> = ({
                   Still unmapped ({result.unproposed.length}) — these stay
                   refused at capture time
                 </h3>
-                {result.unproposed.map((u) => (
-                  <div key={u.endpoint_id} style={{ color: '#b26a00' }}>
-                    <code>
-                      {u.method} {u.path}
-                    </code>{' '}
-                    — {u.reason}
-                  </div>
-                ))}
+                {result.unproposed.map((u) => {
+                  const diagnosis = result.trace.find(
+                    (t) => t.endpoint_id === u.endpoint_id,
+                  );
+                  return (
+                    <div
+                      key={u.endpoint_id}
+                      style={{ color: '#b26a00', marginBottom: 6 }}
+                      data-testid={`backfill-unmapped-${u.endpoint_id}`}
+                    >
+                      <code>
+                        {u.method} {u.path}
+                      </code>{' '}
+                      — {u.reason}
+                      {diagnosis && (
+                        <div style={{ marginLeft: 16, color: '#555', fontSize: 12 }}>
+                          <div>
+                            Deterministic stage: <strong>{diagnosis.stage}</strong>
+                          </div>
+                          {diagnosis.matched_roots.length > 0 && (
+                            <div>Matched roots: {diagnosis.matched_roots.join('; ')}</div>
+                          )}
+                          {diagnosis.broken_calls.length > 0 && (
+                            <div>
+                              Chain broke at: {diagnosis.broken_calls.join('; ')}
+                            </div>
+                          )}
+                          {diagnosis.boundaries_reached.length > 0 && (
+                            <div>
+                              DAOs reached (no parseable write SQL):{' '}
+                              {diagnosis.boundaries_reached.join(', ')}
+                            </div>
+                          )}
+                          {diagnosis.same_verb_root_fragments.length > 0 && (
+                            <div>
+                              No root matched; same-verb fragments seen:{' '}
+                              {diagnosis.same_verb_root_fragments.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  style={{ marginTop: 6 }}
+                  onClick={() => {
+                    void navigator.clipboard.writeText(
+                      JSON.stringify(
+                        {
+                          unmapped_count: result.unmapped_count,
+                          unproposed: result.unproposed,
+                          trace: result.trace,
+                        },
+                        null,
+                        2,
+                      ),
+                    );
+                  }}
+                  data-testid="effect-map-copy-diagnosis"
+                >
+                  Copy diagnosis JSON
+                </button>
               </>
             )}
 

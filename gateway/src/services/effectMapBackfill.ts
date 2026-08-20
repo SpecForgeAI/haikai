@@ -67,12 +67,36 @@ export interface UnproposedEndpoint extends UnmappedEndpoint {
   reason: string;
 }
 
+/**
+ * Per-endpoint DIAGNOSIS of why the deterministic phase could not map it —
+ * the "bring this back to be fixed" record (2026-08-20 user ruling: a third
+ * of write endpoints outside the migration is not good enough).
+ *
+ * Stages:
+ *   - no_root_match: no http-rooted behaviour table matched the endpoint's
+ *     method+path — `same_verb_root_fragments` lists what WAS available.
+ *   - chain_broken: root(s) matched but every path to the data layer died on
+ *     unresolved calls (DI/dispatch) — `broken_calls` names the exact sites.
+ *   - boundaries_without_write_sql: the walk reached DAO boundaries but none
+ *     of their operations carried parseable write SQL (dynamic SQL, derived
+ *     query names) — `boundaries_reached` names them.
+ */
+export interface EndpointDiagnosis extends UnmappedEndpoint {
+  stage: 'no_root_match' | 'chain_broken' | 'boundaries_without_write_sql';
+  matched_roots: string[];
+  same_verb_root_fragments: string[];
+  broken_calls: string[];
+  boundaries_reached: string[];
+}
+
 export interface EffectMapBackfillResult {
   unmapped_count: number;
   derived: DerivedEffect[];
   derived_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
   proposals: ProposedEffect[];
   unproposed: UnproposedEndpoint[];
+  /** Deterministic-phase diagnosis for every endpoint that needed the LLM. */
+  trace: EndpointDiagnosis[];
 }
 
 // ---------------------------------------------------------------------------
@@ -168,17 +192,27 @@ export function matchRootsForEndpoint(
   return candidates.filter((c) => c.fragment.length === maxLength);
 }
 
+export interface CallWalkResult {
+  /** Boundary contract keys (`Q-…`) reached from the root. */
+  boundaries: string[];
+  /** Call rows whose target never resolved — WHERE the chain broke.
+   *  `"<walked contract key>: call to <target symbol> unresolved"`. */
+  brokenCalls: string[];
+}
+
 /**
  * Transitive call walk from a root behaviour table: follows every row's
  * resolved `call` target across behaviour tables, collecting boundary
- * contract keys (`Q-…`). Bounded + cycle-safe.
+ * contract keys AND recording every unresolved call site (the diagnosis
+ * for "why did the walk find nothing"). Bounded + cycle-safe.
  */
-export function collectBoundaryKeys(
+export function walkCallGraph(
   rootKey: string,
   bodiesByKey: Map<string, ContractBodyLike>,
   cap = 500,
-): string[] {
+): CallWalkResult {
   const boundaries = new Set<string>();
+  const brokenCalls: string[] = [];
   const visited = new Set<string>();
   const queue = [rootKey];
   while (queue.length > 0 && visited.size < cap) {
@@ -188,15 +222,33 @@ export function collectBoundaryKeys(
     const body = bodiesByKey.get(key);
     const rows = Array.isArray(body?.rows) ? body.rows : [];
     for (const row of rows) {
-      const outcome = (row as { outcome?: { type?: string; targetKey?: string | null } })
-        ?.outcome;
-      if (outcome?.type !== 'call' || typeof outcome.targetKey !== 'string') continue;
+      const outcome = (row as {
+        outcome?: { type?: string; targetKey?: string | null; targetSymbol?: string };
+      })?.outcome;
+      if (outcome?.type !== 'call') continue;
+      if (typeof outcome.targetKey !== 'string') {
+        if (brokenCalls.length < 10) {
+          brokenCalls.push(
+            `${key}: call to ${outcome.targetSymbol ?? '(unknown symbol)'} unresolved`,
+          );
+        }
+        continue;
+      }
       const target = outcome.targetKey;
       if (target.startsWith('Q-')) boundaries.add(target);
       else if (target.startsWith('T-') && !visited.has(target)) queue.push(target);
     }
   }
-  return [...boundaries];
+  return { boundaries: [...boundaries], brokenCalls };
+}
+
+/** Back-compat wrapper (boundary keys only). */
+export function collectBoundaryKeys(
+  rootKey: string,
+  bodiesByKey: Map<string, ContractBodyLike>,
+  cap = 500,
+): string[] {
+  return walkCallGraph(rootKey, bodiesByKey, cap).boundaries;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +459,14 @@ export async function runEffectMapBackfill(
   }
 
   if (unmapped.length === 0) {
-    return { unmapped_count: 0, derived: [], derived_apply: null, proposals: [], unproposed: [] };
+    return {
+      unmapped_count: 0,
+      derived: [],
+      derived_apply: null,
+      proposals: [],
+      unproposed: [],
+      trace: [],
+    };
   }
 
   // ---- Corpus read.
@@ -430,16 +489,31 @@ export async function runEffectMapBackfill(
   }
   const httpRoots = collectHttpRootTables(contracts);
 
-  // ---- Phase 1: deterministic derivation.
+  // ---- Phase 1: deterministic derivation (+ per-endpoint diagnosis).
+  const symbolByKey = new Map<string, string>();
+  for (const contract of contracts) {
+    if (contract.contract_key) {
+      symbolByKey.set(contract.contract_key, contract.source_symbol ?? contract.contract_key);
+    }
+  }
   const derived: DerivedEffect[] = [];
+  const trace: EndpointDiagnosis[] = [];
   const needProposal: Array<UnmappedEndpoint & { rootKeys: string[] }> = [];
   for (const endpoint of unmapped) {
     const roots = matchRootsForEndpoint(endpoint, httpRoots);
     const rootKeys = roots.map((r) => r.key);
     const writeTables: string[] = [];
     const unknownTables: string[] = [];
+    const brokenCalls: string[] = [];
+    const boundariesReached: string[] = [];
     for (const rootKey of rootKeys) {
-      for (const boundaryKey of collectBoundaryKeys(rootKey, bodiesByKey)) {
+      const walk = walkCallGraph(rootKey, bodiesByKey);
+      for (const broken of walk.brokenCalls) {
+        if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
+      }
+      for (const boundaryKey of walk.boundaries) {
+        const symbol = symbolByKey.get(boundaryKey) ?? boundaryKey;
+        if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
         for (const table of boundaryTablesByKey.get(boundaryKey) ?? []) {
           const committed = tableByLower.get(table.toLowerCase());
           if (committed) {
@@ -458,6 +532,26 @@ export async function runEffectMapBackfill(
         unknown_tables: unknownTables,
       });
     } else {
+      // Diagnosis: name the exact failure stage + the evidence to fix it.
+      trace.push({
+        ...endpoint,
+        stage:
+          roots.length === 0
+            ? 'no_root_match'
+            : boundariesReached.length === 0
+              ? 'chain_broken'
+              : 'boundaries_without_write_sql',
+        matched_roots: roots.map((r) => `${r.symbol} [fragment "${r.fragment}"]`),
+        same_verb_root_fragments:
+          roots.length === 0
+            ? httpRoots
+                .filter((r) => r.method.toUpperCase() === endpoint.method)
+                .map((r) => r.fragment)
+                .slice(0, 15)
+            : [],
+        broken_calls: brokenCalls,
+        boundaries_reached: boundariesReached,
+      });
       needProposal.push({ ...endpoint, rootKeys });
     }
   }
@@ -572,5 +666,6 @@ export async function runEffectMapBackfill(
     derived_apply: derivedApply,
     proposals,
     unproposed,
+    trace,
   };
 }
