@@ -30,6 +30,7 @@ import { useActiveArchitectureId } from '../../contexts/ArchitectureContext';
 import { CaptureSessionsList } from './CaptureSessionsList';
 import { BaselinesList } from './BaselinesList';
 import { StartTargetReplayWizard } from '../ApiBehaviour/StartTargetReplayWizard';
+import { EffectMapBackfillModal } from './EffectMapBackfillModal';
 import {
   ApiBehaviourCaptureSessionDto,
   listBaselines,
@@ -43,6 +44,8 @@ export const ApiBaselinesListPage: React.FC = () => {
 
   // ---- Target-replay wizard launcher state ---------------------------
   const [targetWizardOpen, setTargetWizardOpen] = useState(false);
+  // ---- Effect-map backfill modal (2026-08-20) ------------------------
+  const [backfillModalOpen, setBackfillModalOpen] = useState(false);
   // Whether at least one `kind='current', status='active'` baseline exists
   // for this project + architecture. Drives the entry-button enabled state.
   const [hasEligibleSource, setHasEligibleSource] = useState<boolean>(false);
@@ -147,6 +150,16 @@ export const ApiBaselinesListPage: React.FC = () => {
         <div className={styles.headerActions}>
           <button
             type="button"
+            className={styles.secondaryButton}
+            onClick={() => setBackfillModalOpen(true)}
+            disabled={!architectureId}
+            title="Derive missing endpoint → write-table effect maps from the structural corpus + guarded LLM proposals"
+            data-testid="api-baselines-list-page-backfill-effect-maps"
+          >
+            Backfill effect maps
+          </button>
+          <button
+            type="button"
             className={styles.primaryButton}
             onClick={() => setTargetWizardOpen(true)}
             disabled={targetButtonDisabled}
@@ -174,6 +187,14 @@ export const ApiBaselinesListPage: React.FC = () => {
           architectureId={architectureId}
           onClose={() => setTargetWizardOpen(false)}
           onStarted={handleTargetStarted}
+        />
+      )}
+      {architectureId && (
+        <EffectMapBackfillModal
+          open={backfillModalOpen}
+          projectId={project.id}
+          architectureId={architectureId}
+          onClose={() => setBackfillModalOpen(false)}
         />
       )}
     </div>

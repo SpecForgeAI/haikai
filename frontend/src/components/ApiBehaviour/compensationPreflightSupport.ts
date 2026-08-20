@@ -41,8 +41,9 @@ export function buildCompensationPreflightWarning(
     '(fail-closed): no effect-table map in the committed model.\n\n' +
     listed.join('\n') +
     (elided > 0 ? `\n(+${elided} more)` : '') +
-    '\n\nRemedy: save-back the endpoint data effects for these endpoints, ' +
-    'then re-run the capture.\n\nStart anyway?'
+    '\n\nRemedy: run "Backfill effect maps" on the API Behaviour Baselines ' +
+    'screen (corpus-derived + reviewed LLM proposals), or save-back the ' +
+    'endpoint data effects for these endpoints, then start again.\n\nStart anyway?'
   );
 }
 

@@ -17,6 +17,7 @@ import { sclAnnotationRouter } from './routes/sclAnnotation';
 import { sclModernizationRouter } from './routes/sclModernization';
 // SCL pipeline spec 6 (2026-08-18): Structural Model tab "explain this" LLM affordance.
 import { sclExplainRouter } from './routes/sclExplain';
+import { effectMapBackfillRouter } from './routes/effectMapBackfill';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -161,6 +162,10 @@ app.use('/api/v1', sclModernizationRouter);
 // /api/v1/projects/:projectId/architectures/:architectureId/scl/explain —
 // plain-English LLM explanation of one mined SCL contract (never persisted).
 app.use('/api/v1', sclExplainRouter);
+// Effect-map backfill (2026-08-20): corpus-derived endpoint->write-table
+// effects (auto-applied additively) + guarded LLM proposals for the rest.
+// /api/v1/projects/:projectId/architectures/:architectureId/effect-map-backfill/{run,apply}
+app.use('/api/v1', effectMapBackfillRouter);
 // OAS Export (direct build 2026-06-11): deterministic OpenAPI contracts for
 // an architecture's interfaces — list / generate / zip download. Sibling of
 // the DB migration pack surface on the Migration Delivery Plan.

@@ -1,0 +1,267 @@
+/**
+ * Effect-map backfill tests (2026-08-20).
+ *
+ * Pins: the SQL write-table parser (schema/bracket stripping, temp-table
+ * exclusion, UPDATE-requires-SET), root matching (longest-fragment wins —
+ * the `/lookup` vs `/lookupFavourite` substring trap), the bounded call
+ * walk, and the orchestration: deterministic derivations auto-apply via the
+ * MCP seam with source 'corpus'; the remainder goes to the LLM whose
+ * proposals pass the closed-vocabulary guard (rejects recorded, never
+ * silently dropped); an LLM outage lands endpoints in `unproposed` loudly.
+ */
+
+jest.mock('../logger', () => ({
+  logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+jest.mock('../../config', () => ({
+  getConfig: () => ({
+    architectureModelServiceBaseUrl: 'http://localhost:8080',
+    mcpBaseUrl: 'http://localhost:3001',
+  }),
+}));
+
+import {
+  collectBoundaryKeys,
+  collectHttpRootTables,
+  matchRootsForEndpoint,
+  parseWriteTablesFromSql,
+  runEffectMapBackfill,
+} from '../effectMapBackfill';
+import type { SclContractDto } from '../sclCorpusPlanner';
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+describe('parseWriteTablesFromSql', () => {
+  it('extracts insert/update/delete/merge targets, stripping schema + brackets', () => {
+    expect(parseWriteTablesFromSql('INSERT INTO dbo.orders (a) VALUES (1)')).toEqual(['orders']);
+    expect(parseWriteTablesFromSql('update [dbo].[order_lines] set qty = 1')).toEqual([
+      'order_lines',
+    ]);
+    expect(parseWriteTablesFromSql('DELETE FROM "audit"."order_audit" WHERE 1=1')).toEqual([
+      'order_audit',
+    ]);
+    expect(parseWriteTablesFromSql('MERGE INTO orders o USING x ON ...')).toEqual(['orders']);
+  });
+
+  it('requires SET after UPDATE (never matches "update" prose) and skips temp tables', () => {
+    expect(parseWriteTablesFromSql('SELECT update_count FROM t')).toEqual([]);
+    expect(parseWriteTablesFromSql('INSERT INTO #tmp_stage SELECT 1')).toEqual([]);
+    expect(parseWriteTablesFromSql(null)).toEqual([]);
+  });
+
+  it('dedupes case-insensitively across statements', () => {
+    const sql = 'INSERT INTO Orders (a) VALUES (1); UPDATE ORDERS SET a = 2';
+    expect(parseWriteTablesFromSql(sql)).toEqual(['Orders']);
+  });
+});
+
+describe('matchRootsForEndpoint (longest-fragment discipline)', () => {
+  const roots = [
+    { key: 'T-a', symbol: 'R#lookup', method: 'POST', fragment: 'lookup' },
+    { key: 'T-b', symbol: 'R#lookupFavourite', method: 'POST', fragment: 'lookupFavourite' },
+    { key: 'T-c', symbol: 'R#del', method: 'DELETE', fragment: 'delete' },
+  ];
+
+  it('picks the longest matching fragment (the substring trap)', () => {
+    const matched = matchRootsForEndpoint(
+      { method: 'POST', path: '/filters/lookupFavourite' },
+      roots,
+    );
+    expect(matched.map((r) => r.key)).toEqual(['T-b']);
+  });
+
+  it('shorter endpoints only match their own fragment', () => {
+    const matched = matchRootsForEndpoint({ method: 'POST', path: '/filters/lookup' }, roots);
+    expect(matched.map((r) => r.key)).toEqual(['T-a']);
+  });
+
+  it('filters by HTTP method', () => {
+    expect(matchRootsForEndpoint({ method: 'DELETE', path: '/filters/lookup' }, roots)).toEqual([]);
+  });
+});
+
+describe('collectBoundaryKeys', () => {
+  it('walks call rows transitively and is cycle-safe', () => {
+    const bodies = new Map<string, { rows?: unknown[] }>([
+      [
+        'T-root',
+        {
+          rows: [
+            { outcome: { type: 'call', targetKey: 'T-mid' } },
+            { outcome: { type: 'terminal', verbatim: 'return x' } },
+          ],
+        },
+      ],
+      [
+        'T-mid',
+        {
+          rows: [
+            { outcome: { type: 'call', targetKey: 'Q-dao1' } },
+            { outcome: { type: 'call', targetKey: 'T-root' } }, // cycle
+            { outcome: { type: 'call', targetKey: null } }, // unresolved
+          ],
+        },
+      ],
+    ]);
+    expect(collectBoundaryKeys('T-root', bodies as never)).toEqual(['Q-dao1']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Orchestration
+// ---------------------------------------------------------------------------
+
+function contract(partial: Partial<SclContractDto>): SclContractDto {
+  return { contract_key: 'K', kind: 'behaviour_table', ...partial } as SclContractDto;
+}
+
+const MODEL = {
+  metaModel: {
+    entities: {
+      endpoints: [
+        { id: 'ep-1', operation_verb: 'POST', path_or_address: '/filters/lookup' },
+        { id: 'ep-2', operation_verb: 'POST', path_or_address: '/filters/promote' },
+        { id: 'ep-3', operation_verb: 'GET', path_or_address: '/filters/list' },
+        { id: 'ep-4', operation_verb: 'DELETE', path_or_address: '/filters/delete' },
+      ],
+      physical_data_entities: [
+        { id: 'phy-1', name: 'filters' },
+        { id: 'phy-2', name: 'filter_audit' },
+      ],
+    },
+    relationships: {
+      endpoint_data_effects: [
+        // ep-4 is already mapped -> never in the unmapped set.
+        { endpoint_id: 'ep-4', access_mode: 'write', data_entity_point_id: 'dep_phy_phy-1' },
+      ],
+    },
+  },
+};
+
+const CONTRACTS: SclContractDto[] = [
+  contract({
+    contract_key: 'T-lookup',
+    kind: 'behaviour_table',
+    source_symbol: 'FilterResource#lookup',
+    body_json: {
+      annotations: ['@POST', '@Path("lookup")'],
+      rows: [{ outcome: { type: 'call', targetKey: 'Q-dao' } }],
+    } as never,
+  }),
+  contract({
+    contract_key: 'Q-dao',
+    kind: 'boundary',
+    source_symbol: 'FilterDao',
+    body_json: {
+      operations: [
+        { sqlVerbatim: 'INSERT INTO filters (a) VALUES (?)' },
+        { sqlVerbatim: 'UPDATE not_in_model SET x = 1' },
+      ],
+    } as never,
+  }),
+];
+
+describe('runEffectMapBackfill', () => {
+  it('derives + auto-applies corpus mappings, sends the remainder to the guarded LLM', async () => {
+    const mcpCalls: unknown[] = [];
+    const llmCalls: string[] = [];
+    const result = await runEffectMapBackfill(
+      { projectId: 'p1', architectureId: 'a1' },
+      {
+        fetchRawModel: async () => MODEL as never,
+        fetchContracts: async () => CONTRACTS,
+        mcpApply: async (_p, _a, effects) => {
+          mcpCalls.push(effects);
+          return { applied: effects.length, skipped: [] };
+        },
+        llm: async ({ userPrompt }) => {
+          llmCalls.push(userPrompt);
+          return {
+            content: JSON.stringify({
+              proposals: [
+                {
+                  method: 'POST',
+                  path: '/filters/promote',
+                  tables: ['filter_audit', 'made_up_table'],
+                  rationale: 'promotion writes the audit trail',
+                },
+              ],
+            }),
+          };
+        },
+      },
+    );
+
+    // GET endpoint + already-mapped endpoint never enter the run.
+    expect(result.unmapped_count).toBe(2);
+
+    // ep-1 derived deterministically: root matched, walk reached the DAO,
+    // 'filters' resolved in the model, 'not_in_model' recorded honestly.
+    expect(result.derived).toHaveLength(1);
+    expect(result.derived[0].endpoint_id).toBe('ep-1');
+    expect(result.derived[0].tables).toEqual(['filters']);
+    expect(result.derived[0].unknown_tables).toEqual(['not_in_model']);
+    expect(result.derived[0].evidence).toContain('FilterResource#lookup');
+
+    // Auto-applied with source 'corpus'.
+    expect(mcpCalls).toHaveLength(1);
+    expect((mcpCalls[0] as Array<{ source: string; endpoint_id: string }>)[0]).toMatchObject({
+      endpoint_id: 'ep-1',
+      table_name: 'filters',
+      source: 'corpus',
+    });
+    expect(result.derived_apply?.applied).toBe(1);
+
+    // ep-2 went to the LLM; the guard kept the committed table and recorded
+    // the invented one.
+    expect(llmCalls).toHaveLength(1);
+    expect(llmCalls[0]).toContain('filter_audit'); // vocabulary present
+    expect(result.proposals).toHaveLength(1);
+    expect(result.proposals[0]).toMatchObject({
+      endpoint_id: 'ep-2',
+      tables: ['filter_audit'],
+      guard_rejected: ['made_up_table'],
+    });
+    expect(result.unproposed).toHaveLength(0);
+  });
+
+  it('an LLM outage lands the batch in unproposed with the reason (never silent)', async () => {
+    const result = await runEffectMapBackfill(
+      { projectId: 'p1', architectureId: 'a1' },
+      {
+        fetchRawModel: async () => MODEL as never,
+        fetchContracts: async () => CONTRACTS,
+        mcpApply: async (_p, _a, effects) => ({ applied: effects.length, skipped: [] }),
+        llm: async () => {
+          throw new Error('HTTP 429 shared cool-down');
+        },
+      },
+    );
+    expect(result.unproposed).toHaveLength(1);
+    expect(result.unproposed[0].endpoint_id).toBe('ep-2');
+    expect(result.unproposed[0].reason).toContain('429');
+  });
+
+  it('no corpus + no proposals = everything honest in unproposed; nothing applied', async () => {
+    let mcpCalled = false;
+    const result = await runEffectMapBackfill(
+      { projectId: 'p1', architectureId: 'a1' },
+      {
+        fetchRawModel: async () => MODEL as never,
+        fetchContracts: async () => null,
+        mcpApply: async () => {
+          mcpCalled = true;
+          return { applied: 0, skipped: [] };
+        },
+        llm: async () => ({ content: JSON.stringify({ proposals: [] }) }),
+      },
+    );
+    expect(result.derived).toHaveLength(0);
+    expect(mcpCalled).toBe(false);
+    expect(result.proposals).toHaveLength(0);
+    expect(result.unproposed).toHaveLength(2);
+  });
+});
