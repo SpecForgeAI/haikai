@@ -54,7 +54,7 @@ describe('runStructuralScanStep', () => {
   it('maps a successful run to completed + scanId + contractCount, and requests annotation', async () => {
     const recorded: RunSclScanArgs[] = [];
     const gateway = fakeFetch();
-    const outcome = await runStructuralScanStep(ARGS, {
+    const result = await runStructuralScanStep(ARGS, {
       hasJava: async () => true,
       runScan: async (a) => {
         recorded.push(a);
@@ -62,13 +62,19 @@ describe('runStructuralScanStep', () => {
       },
       fetchFn: gateway.fn,
     });
-    expect(outcome).toEqual({
+    expect(result.outcome).toEqual({
       status: 'completed',
       scanId: 'scan-77',
       contractCount: 133,
       detail: null,
       annotation: { status: 'requested', detail: null },
     });
+    // The in-memory corpus rides back for same-run consumers (effect
+    // candidates) — never serialized into the payload outcome.
+    expect(result.corpus).not.toBeNull();
+    expect(
+      (result.corpus as { stats: { contractCount: number } }).stats.contractCount,
+    ).toBe(133);
     expect(recorded).toHaveLength(1);
     expect(recorded[0].sourceDir).toBe('/tmp/some-clone');
     expect(recorded[0].projectId).toBe('proj-1');
@@ -84,7 +90,7 @@ describe('runStructuralScanStep', () => {
 
   it('records request_failed (scan still completed) when the gateway is down', async () => {
     const gateway = fakeFetch({ throwWith: 'connect ECONNREFUSED 127.0.0.1:8081' });
-    const outcome = await runStructuralScanStep(ARGS, {
+    const { outcome } = await runStructuralScanStep(ARGS, {
       hasJava: async () => true,
       runScan: async () => fakeResult(),
       fetchFn: gateway.fn,
@@ -96,7 +102,7 @@ describe('runStructuralScanStep', () => {
 
   it('records request_failed with the HTTP status on a non-2xx gateway answer', async () => {
     const gateway = fakeFetch({ status: 503 });
-    const outcome = await runStructuralScanStep(ARGS, {
+    const { outcome } = await runStructuralScanStep(ARGS, {
       hasJava: async () => true,
       runScan: async () => fakeResult(),
       fetchFn: gateway.fn,
@@ -109,7 +115,7 @@ describe('runStructuralScanStep', () => {
   it('skips WITHOUT calling the runner or the gateway when the root has no Java sources', async () => {
     let runnerCalled = false;
     const gateway = fakeFetch();
-    const outcome = await runStructuralScanStep(ARGS, {
+    const result = await runStructuralScanStep(ARGS, {
       hasJava: async () => false,
       runScan: async () => {
         runnerCalled = true;
@@ -117,32 +123,34 @@ describe('runStructuralScanStep', () => {
       },
       fetchFn: gateway.fn,
     });
-    expect(outcome.status).toBe('skipped');
-    expect(outcome.scanId).toBeNull();
-    expect(outcome.detail).toContain('no Java sources');
-    expect(outcome.annotation).toBeNull();
+    expect(result.outcome.status).toBe('skipped');
+    expect(result.outcome.scanId).toBeNull();
+    expect(result.outcome.detail).toContain('no Java sources');
+    expect(result.outcome.annotation).toBeNull();
+    expect(result.corpus).toBeNull();
     expect(runnerCalled).toBe(false);
     expect(gateway.calls).toHaveLength(0);
   });
 
   it('never throws: a runner failure becomes a failed outcome, no annotation request', async () => {
     const gateway = fakeFetch();
-    const outcome = await runStructuralScanStep(ARGS, {
+    const result = await runStructuralScanStep(ARGS, {
       hasJava: async () => true,
       runScan: async () => {
         throw new Error('AMS bulk upsert returned 502');
       },
       fetchFn: gateway.fn,
     });
-    expect(outcome.status).toBe('failed');
-    expect(outcome.scanId).toBeNull();
-    expect(outcome.detail).toContain('AMS bulk upsert returned 502');
-    expect(outcome.annotation).toBeNull();
+    expect(result.outcome.status).toBe('failed');
+    expect(result.outcome.scanId).toBeNull();
+    expect(result.outcome.detail).toContain('AMS bulk upsert returned 502');
+    expect(result.outcome.annotation).toBeNull();
+    expect(result.corpus).toBeNull();
     expect(gateway.calls).toHaveLength(0);
   });
 
   it('never throws: a detection failure becomes a failed outcome', async () => {
-    const outcome = await runStructuralScanStep(ARGS, {
+    const { outcome, corpus } = await runStructuralScanStep(ARGS, {
       hasJava: async () => {
         throw new Error('EACCES: permission denied');
       },
@@ -151,6 +159,7 @@ describe('runStructuralScanStep', () => {
     expect(outcome.status).toBe('failed');
     expect(outcome.detail).toContain('Java-source detection failed');
     expect(outcome.detail).toContain('EACCES');
+    expect(corpus).toBeNull();
   });
 });
 

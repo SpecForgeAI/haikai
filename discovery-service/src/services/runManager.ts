@@ -2143,6 +2143,9 @@ async function startServiceScopedRun(
     let structuralScan:
       | import('../scl/structuralScanStep').StructuralScanStepOutcome
       | null = null;
+    // SCL 2026-08-20: effect-candidate emission summary (one scan, one
+    // review, one save) — counts + honest unproposed tail on the payload.
+    let effectCandidates: Record<string, unknown> | null = null;
 
     try {
       // -----------------------------------------------------------------------
@@ -2642,11 +2645,12 @@ async function startServiceScopedRun(
       // failure never fails the code run.
       // -----------------------------------------------------------------------
       const structuralStart = Date.now();
-      structuralScan = await runStructuralScanStep({
+      const structural = await runStructuralScanStep({
         projectId,
         architectureId,
         sourceDir: rootScanDir,
       });
+      structuralScan = structural.outcome;
       console.log(
         `[RunManager:service-scoped] Structural scan ${structuralScan.status}` +
           (structuralScan.scanId ? ` id=${structuralScan.scanId}` : '') +
@@ -2666,6 +2670,76 @@ async function startServiceScopedRun(
           `[diag-runs] code_run=${(runId || '').slice(0, 8)} scl_annotation_request_failed ` +
             `detail=${(structuralScan.annotation.detail ?? 'unknown').slice(0, 200)}`,
         );
+      }
+
+      // -----------------------------------------------------------------------
+      // Step 9.7: Effect-candidate emission (2026-08-20 user ruling: "truly
+      // one scan, one review, one save"). The scan's own corpus yields
+      // endpoint_data_effects candidates for THIS RUN's write endpoints that
+      // discovery's own mining left bare: deterministic corpus derivations
+      // (0.9) + vocabulary-guarded LLM proposals (0.65) — both land in the
+      // NORMAL candidate review; save-back resolves names to ids. FAIL-SOFT
+      // LOUD: an emission failure never fails the run. The gateway backfill
+      // button remains the recovery path.
+      // -----------------------------------------------------------------------
+      if (structural.corpus) {
+        try {
+          const emissionStart = Date.now();
+          const derivedPhase = deriveCorpusEffectCandidates({
+            corpus: structural.corpus,
+            runId,
+            runCandidates: allCandidates,
+          });
+          let proposalPhase: {
+            candidates: DiscoveryCandidate[];
+            unproposed: Array<{ method: string; path: string; reason: string }>;
+            llmCalls: number;
+          } = { candidates: [], unproposed: [], llmCalls: 0 };
+          if (derivedPhase.uncovered.length > 0) {
+            const vocabulary = await fetchCommittedTableVocabulary(projectId, architectureId);
+            if (vocabulary && vocabulary.length > 0) {
+              proposalPhase = await proposeEffectCandidatesViaLlm({
+                runId,
+                uncovered: derivedPhase.uncovered,
+                corpus: structural.corpus,
+                vocabulary,
+                relay: (prompt, tag, r) => gatewayClient.gapFill(prompt, tag, r),
+              });
+            } else {
+              proposalPhase.unproposed = derivedPhase.uncovered.map((u) => ({
+                method: u.method,
+                path: u.path,
+                reason:
+                  'no committed table vocabulary — save the database scan candidates first, ' +
+                  'then use "Backfill effect maps" (recovery path)',
+              }));
+            }
+          }
+          const emitted = [...derivedPhase.candidates, ...proposalPhase.candidates];
+          for (let i = 0; i < emitted.length; i += 100) {
+            await archModelClient.bulkSaveCandidates(projectId, runId, emitted.slice(i, i + 100));
+          }
+          allCandidates.push(...emitted);
+          effectCandidates = {
+            derived: derivedPhase.candidates.length,
+            proposed: proposalPhase.candidates.length,
+            llmCalls: proposalPhase.llmCalls,
+            unproposed: proposalPhase.unproposed,
+          };
+          console.log(
+            `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived, ` +
+              `${proposalPhase.candidates.length} LLM-proposed (${proposalPhase.llmCalls} call(s)), ` +
+              `${proposalPhase.unproposed.length} unproposed in ${Date.now() - emissionStart}ms`,
+          );
+        } catch (emissionErr) {
+          const message =
+            emissionErr instanceof Error ? emissionErr.message : String(emissionErr);
+          console.warn(
+            `[diag-runs] code_run=${(runId || '').slice(0, 8)} effect_candidate_emission_failed ` +
+              `detail=${message.slice(0, 200)}`,
+          );
+          effectCandidates = { error: message.slice(0, 300) };
+        }
       }
     } finally {
       // -----------------------------------------------------------------------
@@ -2704,6 +2778,8 @@ async function startServiceScopedRun(
       // SCL 2026-08-19: structural-model scan outcome (completed|failed|skipped
       // + scan id / contract count / reason) — minted by THIS run.
       structuralScan,
+      // SCL 2026-08-20: corpus/LLM effect-candidate emission summary.
+      effectCandidates,
       stepStartedAt: new Date(stepStartTime).toISOString(),
       stepCompletedAt: new Date(stepEndTime).toISOString(),
       durationMs: stepDurationMs,
@@ -2898,6 +2974,14 @@ import { takeS0AutoSnapshot } from './databasePacks/s0AutoSnapshot';
 // SCL 2026-08-19: the CODE scan produces the structural model in the same
 // pass (same clone, same root) — never a separate trigger or second scan.
 import { runStructuralScanStep } from '../scl/structuralScanStep';
+// SCL 2026-08-20: the scan also emits endpoint_data_effects candidates from
+// its own corpus (deterministic + vocabulary-guarded LLM) — one scan, one
+// review, one save.
+import {
+  deriveCorpusEffectCandidates,
+  fetchCommittedTableVocabulary,
+  proposeEffectCandidatesViaLlm,
+} from '../scl/effectCandidateEmitter';
 import type { DatabaseCandidatePayload } from './databasePacks/DatabaseDiscoveryPack';
 
 /**
