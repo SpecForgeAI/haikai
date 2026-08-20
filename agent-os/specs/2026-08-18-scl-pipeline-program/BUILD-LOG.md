@@ -55,6 +55,16 @@ Work-machine pickup (big change => FRESH CLONE becomes the new area):
   work (corpus plan used automatically when a scan exists) -> generate
   specs -> Migrate.
 
+- Journey-audit round 2 (2026-08-20, main 6664a792): Structural Model tab
+  now renders an explicit "Annotation: not yet merged" line for a completed
+  scan without a summary (pending was previously indistinguishable from
+  never-ran; verified: the modernization review 404s ONLY on no-scan —
+  annotation is NOT a precondition, its banner was accurate); book-of-work
+  review header appends the planner-provenance line ("structural corpus
+  (N corpus stories)" vs "legacy (no structural corpus at expansion time)")
+  derived from persisted provenance:scl_corpus story tags. Capture-side
+  siblings (diagnostics section, S0 restore UI) in the CSD BUILD-LOG.
+
 ## Key architecture decisions made during build
 
 - SCL contract JSON schema lives as TS types in discovery-service (producer)
