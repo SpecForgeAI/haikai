@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Log-replay round-2 CURRENT-side runner tests (Capture-State Discipline &
  * Log-Replay program, Spec 7, 2026-08-18): corpus items replay against the
  * live current system with full AMS plumbing (session -> operations ->
@@ -168,7 +168,7 @@ function runArgs(store: FakeStore, opts?: {
       compensationSeams: {
         metadataFetcher: (async () => buildCompensationMetadataIndex(MODEL)) as never,
         effectScopeFetcher: (async () => ({
-          tablesByOperationKey: new Map([['POST /pets', ['pets']]]),
+          tablesByOperationKey: new Map([['POST /pets', ['pets']]]), readMappedOperationKeys: new Set<string>(),
         })) as never,
         writeAdapterFactory: (() => writeAdapter) as never,
       },

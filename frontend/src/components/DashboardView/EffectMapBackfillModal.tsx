@@ -140,6 +140,39 @@ export const EffectMapBackfillModal: React.FC<EffectMapBackfillModalProps> = ({
 
         {result && (
           <>
+            {/* Screenshot-friendly rollup FIRST (2026-08-20): one box that
+                carries the whole diagnosis in a single capture. */}
+            <div
+              style={{
+                border: '1px solid #ddd',
+                borderRadius: 6,
+                padding: '8px 10px',
+                background: '#fafafa',
+                fontSize: 13,
+              }}
+              data-testid="effect-map-summary"
+            >
+              <div>
+                <strong>Summary:</strong> {result.derived_apply?.applied ?? 0} derived
+                edge(s) applied · {result.proposals.length} LLM proposal(s) ·{' '}
+                {result.unproposed.length} still unmapped
+              </div>
+              {Object.keys(result.summary?.by_stage ?? {}).length > 0 && (
+                <div>
+                  Stages:{' '}
+                  {Object.entries(result.summary.by_stage)
+                    .map(([stage, count]) => `${stage}: ${count}`)
+                    .join(' · ')}
+                </div>
+              )}
+              {(result.summary?.top_broken_targets ?? []).length > 0 && (
+                <div>
+                  Top unresolved call targets:{' '}
+                  {result.summary.top_broken_targets.join('; ')}
+                </div>
+              )}
+            </div>
+
             <h3 style={{ margin: '10px 0 4px', fontSize: 14 }}>
               Derived from the corpus — already applied (
               {result.derived_apply?.applied ?? 0} edge(s))

@@ -27,6 +27,7 @@ import {
   computeStateDelta,
   effectTablesFor,
   fetchEffectScopeIndex,
+  isReadMappedOperation,
   keyHintFromResponse,
   snapshotEffectTables,
   type StateSnapshot,
@@ -159,7 +160,9 @@ export type TargetReplayDiagnosticType =
   // CSD Spec 4: target-side compensation diagnostics.
   | 'compensation_inactive'
   | 'compensation_refused'
-  | 'compensation_residue';
+  | 'compensation_residue'
+  // Proven-read classification (2026-08-20): unbracketed corpus-proven query.
+  | 'proven_read_only';
 
 export interface TargetReplayDiagnostic {
   diagnosticType: TargetReplayDiagnosticType;
@@ -752,7 +755,28 @@ export async function runTargetReplay(
         // bracket unit — cleanup best-effort no longer matters for state
         // (the bracket undoes whatever the chain left behind, verified).
         let seqResult: Awaited<ReturnType<typeof replaySequenceItem>>;
-        if (compensation) {
+        // Proven-read classification (2026-08-20): READ-only committed
+        // effects = corpus-proven query — replay WITHOUT a bracket instead
+        // of refusing (the end-of-run fingerprint stays the safety net).
+        const seqProvenRead =
+          compensation !== null &&
+          effectTablesFor(compensation.effectScope, req.method, req.path).length === 0 &&
+          isReadMappedOperation(compensation.effectScope, req.method, req.path);
+        if (seqProvenRead) {
+          await emitDiagnostic(
+            {
+              diagnosticType: 'proven_read_only',
+              message:
+                `Sequence item ${req.method} ${req.path} replays WITHOUT a bracket: ` +
+                'committed effect edges are READ-only (corpus-proven query).',
+              itemId: item.id,
+              method: req.method,
+              path: req.path,
+            },
+            session,
+          );
+        }
+        if (compensation && !seqProvenRead) {
           const seqTables = effectTablesFor(compensation.effectScope, req.method, req.path);
           if (seqTables.length === 0) {
             itemsSkipped += 1;
@@ -928,7 +952,30 @@ export async function runTargetReplay(
       let capture: CaptureDto | null = null;
       try {
         let fired: Awaited<ReturnType<typeof fireItem>>;
-        if (compensation && isMutating && mutatingConfirmed) {
+        // Proven-read classification (2026-08-20): READ-only committed
+        // effects = corpus-proven query — fire WITHOUT a bracket, never
+        // refuse (the end-of-run fingerprint stays the safety net).
+        const itemProvenRead =
+          compensation !== null &&
+          isMutating &&
+          mutatingConfirmed &&
+          effectTablesFor(compensation.effectScope, req.method, req.path).length === 0 &&
+          isReadMappedOperation(compensation.effectScope, req.method, req.path);
+        if (itemProvenRead) {
+          await emitDiagnostic(
+            {
+              diagnosticType: 'proven_read_only',
+              message:
+                `Mutating-verb item ${req.method} ${req.path} fires WITHOUT a bracket: ` +
+                'committed effect edges are READ-only (corpus-proven query).',
+              itemId: item.id,
+              method: req.method,
+              path: req.path,
+            },
+            session,
+          );
+        }
+        if (compensation && isMutating && mutatingConfirmed && !itemProvenRead) {
           const bracketTables = effectTablesFor(compensation.effectScope, req.method, req.path);
           if (bracketTables.length === 0) {
             itemsSkipped += 1;

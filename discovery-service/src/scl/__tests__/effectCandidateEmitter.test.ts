@@ -194,10 +194,79 @@ describe('deriveCorpusEffectCandidates', () => {
     expect(result.candidates).toHaveLength(0);
     expect(result.uncovered).toHaveLength(1);
     expect(result.uncovered[0].rootKeys).toEqual(['T-lookupFav']);
-    // Diagnosis: root matched, walk reached nothing -> chain_broken shape
-    // (no calls at all in this fixture, so no broken sites listed).
-    expect(result.uncovered[0].diagnosis.stage).toBe('chain_broken');
+    // Diagnosis: root matched, walk COMPLETE (no calls at all), nothing
+    // reached -> the honest complete_walk_no_tables stage.
+    expect(result.uncovered[0].diagnosis.stage).toBe('complete_walk_no_tables');
     expect(result.uncovered[0].diagnosis.matched_roots[0]).toContain('lookupFavourite');
+  });
+
+  it('dispatch expansion: a null-target interface call resolves to a DAO boundary by op name', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-promote',
+        symbol: 'FilterResource#promote',
+        annotations: ['@POST', '@Path("promote")'],
+        callTargets: [],
+      }),
+      boundary({
+        key: 'Q-loaderImpl',
+        symbol: 'FilterLoaderJdbc',
+        sql: ['UPDATE filters SET status = ?'],
+      }),
+    ]);
+    // The root calls the INTERFACE method — unresolved targetKey, but the
+    // boundary has an operation of the same name: expansion bridges it.
+    const rootContract = (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract;
+    rootContract.rows.push({
+      index: 0,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: {
+        type: 'call',
+        targetKey: null,
+        targetSymbol: 'FilterLoader#op0(Integer)',
+      },
+    });
+    // Boundary op names come from the fixture builder as op0/op1/...
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('promote', 'POST', '/filters/promote')],
+    });
+    expect(result.uncovered).toHaveLength(0);
+    expect(result.candidates).toHaveLength(1);
+    expect((result.candidates[0].data as Record<string, unknown>).dataEntityName).toBe('filters');
+  });
+
+  it('proven-read: a COMPLETE walk reaching only SELECT SQL emits read edges, not uncovered', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-lookup',
+        symbol: 'FilterResource#lookup',
+        annotations: ['@POST', '@Path("lookup")'],
+        callTargets: ['Q-readDao'],
+      }),
+      boundary({
+        key: 'Q-readDao',
+        symbol: 'FilterReadDao',
+        sql: ['SELECT * FROM filters f JOIN filter_audit a ON f.id = a.fid'],
+      }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('lookupFilters', 'POST', '/filters/lookup')],
+    });
+    expect(result.uncovered).toHaveLength(0);
+    expect(result.provenRead).toHaveLength(1);
+    expect(result.provenRead[0].readTables).toEqual(['filters', 'filter_audit']);
+    expect(result.candidates).toHaveLength(2);
+    const data = result.candidates[0].data as Record<string, unknown>;
+    expect(data.access_mode).toBe('read');
+    expect(
+      (data.path_metadata_json as Record<string, unknown>).derivation,
+    ).toBe('scl_corpus_read_proof');
   });
 
   it('diagnosis names the exact unresolved call site when the chain breaks', () => {

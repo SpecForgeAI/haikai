@@ -45,7 +45,10 @@ public class ApiBehaviourDiagnosticService {
         "compensation_residue", "compensation_inactive",
         "compensation_credential_split_recommended",
         "s0_fingerprint_mismatch", "s0_snapshot_missing",
-        "s0_fingerprint_check_failed"
+        "s0_fingerprint_check_failed",
+        // Proven-read classification (2026-08-20): write-verb endpoint with
+        // READ-only committed effects fires unbracketed (info diagnostic).
+        "proven_read_only"
     );
 
     private final ApiBehaviourDiagnosticRepository repository;

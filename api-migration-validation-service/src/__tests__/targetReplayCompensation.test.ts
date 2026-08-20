@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Target-side compensation brackets (Capture-State Discipline Spec 4).
  * Harness mirrors targetReplayRunner.test.ts (mocked AMS surface, scripted
  * executor) with the compensation seams pointed at the shared in-memory
@@ -7,7 +7,7 @@
  *   - a mutating replay's writes are UNDONE + verified (store byte-parity)
  *     while the state_delta_json still records what the call DID (the
  *     snapshot pair runs INSIDE the bracket, before the undo);
- *   - a mutating item with NO effect map is REFUSED — never sent;
+ *   - a mutating item with NO effect map is REFUSED â€” never sent;
  *   - sabotaged undo -> RESIDUE fails the whole run with the
  *     re-run-the-data-migration remedy.
  */
@@ -248,7 +248,7 @@ function buildDeps(opts: {
     compensationSeams: {
       metadataFetcher: async () => buildCompensationMetadataIndex(MODEL),
       effectScopeFetcher: async () => ({
-        tablesByOperationKey: new Map(opts.effectScopeEntries ?? [['POST /pets', ['pets']]]),
+        tablesByOperationKey: new Map(opts.effectScopeEntries ?? [['POST /pets', ['pets']]]), readMappedOperationKeys: new Set<string>(),
       }),
       writeAdapterFactory: () => writeAdapter,
     },
@@ -258,7 +258,7 @@ function buildDeps(opts: {
 
 beforeEach(() => {
   // The runner's OWN state-delta effect scope reads the committed model over
-  // HTTP — serve the wire model so deltas engage (the bracket scope comes
+  // HTTP â€” serve the wire model so deltas engage (the bracket scope comes
   // from the seams above, independently).
   jest.spyOn(global, 'fetch').mockResolvedValue({
     ok: true,
@@ -302,7 +302,7 @@ test('bracketed mutating replay: writes undone to byte-parity, state_delta recor
   expect(itemDelta).toBeTruthy();
 });
 
-test('mutating item with NO effect map is REFUSED — never sent', async () => {
+test('mutating item with NO effect map is REFUSED â€” never sent', async () => {
   const store = seededStore();
   const pristine = store.snapshotJson();
   let fired = 0;

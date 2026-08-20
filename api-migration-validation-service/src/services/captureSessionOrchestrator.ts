@@ -57,7 +57,7 @@ import {
 } from './captureCompensation';
 import { runCompensationBracket } from './compensation/compensationRunner';
 import { fetchCompensationMetadataIndex } from './compensation/compensationMetadata';
-import { effectTablesFor, fetchEffectScopeIndex } from './stateDelta';
+import { effectTablesFor, fetchEffectScopeIndex, isReadMappedOperation } from './stateDelta';
 
 // Haikai workflow trace logger (OFF by default; no-op unless HAIKAI_TRACE is
 // set). See docs/trace-logging.md. The corr bag always carries project + arch
@@ -1920,7 +1920,25 @@ export async function orchestrateCaptureSession(
         let outcome: Awaited<ReturnType<typeof runScenarioLoop>> | null = null;
         const isBracketedScenario =
           compensation !== null && COMPENSATED_VERBS.has(op.method.toLowerCase());
-        if (compensation && isBracketedScenario) {
+        // Proven-read classification (2026-08-20): a write-verb endpoint whose
+        // committed effect edges are READ-only is a corpus-proven query — it
+        // fires WITHOUT a bracket (nothing to compensate) instead of being
+        // refused. The end-of-job S0 fingerprint remains the safety net.
+        const provenReadOnly =
+          compensation !== null &&
+          isBracketedScenario &&
+          effectTablesFor(compensation.effectScope, op.method, op.path).length === 0 &&
+          isReadMappedOperation(compensation.effectScope, op.method, op.path);
+        if (provenReadOnly) {
+          await writeDiag(
+            'proven_read_only',
+            `Mutating-verb scenario '${scenario.name}' on ${op.method.toUpperCase()} ${op.path} ` +
+              'fires WITHOUT a bracket: the committed effect edges are READ-only ' +
+              '(corpus-proven query); the end-of-run S0 fingerprint is the safety net.',
+            { operation_id: op.operation_id, scenario: scenario.name },
+          );
+        }
+        if (compensation && isBracketedScenario && !provenReadOnly) {
           const bracketTables = effectTablesFor(compensation.effectScope, op.method, op.path);
           if (bracketTables.length === 0) {
             // FAIL CLOSED (user ruling): an uncompensatable write is never
