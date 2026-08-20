@@ -2690,11 +2690,11 @@ async function startServiceScopedRun(
             runId,
             runCandidates: allCandidates,
           });
-          let proposalPhase: {
-            candidates: DiscoveryCandidate[];
-            unproposed: Array<{ method: string; path: string; reason: string }>;
-            llmCalls: number;
-          } = { candidates: [], unproposed: [], llmCalls: 0 };
+          let proposalPhase: import('../scl/effectCandidateEmitter').ProposeResult = {
+            candidates: [],
+            unproposed: [],
+            llmCalls: 0,
+          };
           if (derivedPhase.uncovered.length > 0) {
             const vocabulary = await fetchCommittedTableVocabulary(projectId, architectureId);
             if (vocabulary && vocabulary.length > 0) {
@@ -2712,6 +2712,7 @@ async function startServiceScopedRun(
                 reason:
                   'no committed table vocabulary — save the database scan candidates first, ' +
                   'then use "Backfill effect maps" (recovery path)',
+                diagnosis: u.diagnosis,
               }));
             }
           }

@@ -107,12 +107,14 @@ export function parseWriteTablesFromSql(sql: string | null | undefined): string[
 interface CorpusIndex {
   tablesByKey: Map<string, SclBehaviourTable>;
   boundaryWritesByKey: Map<string, string[]>;
+  boundarySymbolByKey: Map<string, string>;
   httpRoots: Array<{ key: string; symbol: string; method: string; fragment: string }>;
 }
 
 export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const tablesByKey = new Map<string, SclBehaviourTable>();
   const boundaryWritesByKey = new Map<string, string[]>();
+  const boundarySymbolByKey = new Map<string, string>();
   const httpRoots: CorpusIndex['httpRoots'] = [];
   for (const entry of corpus.contracts) {
     const contract: SclContract = entry.contract;
@@ -132,18 +134,27 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
         }
       }
       boundaryWritesByKey.set(contract.key, tables);
+      boundarySymbolByKey.set(contract.key, boundary.symbol);
     }
   }
-  return { tablesByKey, boundaryWritesByKey, httpRoots };
+  return { tablesByKey, boundaryWritesByKey, boundarySymbolByKey, httpRoots };
 }
 
-/** Transitive call walk from a root table to boundary keys (bounded, cycle-safe). */
-export function collectBoundaryKeys(
+export interface CallWalkResult {
+  boundaries: string[];
+  /** Unresolved call sites — WHERE the chain broke (diagnosis, capped 10). */
+  brokenCalls: string[];
+}
+
+/** Transitive call walk from a root table to boundary keys, recording every
+ * unresolved call site along the way (bounded, cycle-safe). */
+export function walkCallGraph(
   rootKey: string,
   tablesByKey: Map<string, SclBehaviourTable>,
   cap = 500,
-): string[] {
+): CallWalkResult {
   const boundaries = new Set<string>();
+  const brokenCalls: string[] = [];
   const visited = new Set<string>();
   const queue = [rootKey];
   while (queue.length > 0 && visited.size < cap) {
@@ -152,13 +163,30 @@ export function collectBoundaryKeys(
     visited.add(key);
     const table = tablesByKey.get(key);
     for (const row of table?.rows ?? []) {
-      if (row.outcome.type !== 'call' || typeof row.outcome.targetKey !== 'string') continue;
+      if (row.outcome.type !== 'call') continue;
+      if (typeof row.outcome.targetKey !== 'string') {
+        if (brokenCalls.length < 10) {
+          brokenCalls.push(
+            `${table?.symbol ?? key}: call to ${row.outcome.targetSymbol} unresolved`,
+          );
+        }
+        continue;
+      }
       const target = row.outcome.targetKey;
       if (target.startsWith('Q-')) boundaries.add(target);
       else if (target.startsWith('T-') && !visited.has(target)) queue.push(target);
     }
   }
-  return [...boundaries];
+  return { boundaries: [...boundaries], brokenCalls };
+}
+
+/** Back-compat wrapper (boundary keys only). */
+export function collectBoundaryKeys(
+  rootKey: string,
+  tablesByKey: Map<string, SclBehaviourTable>,
+  cap = 500,
+): string[] {
+  return walkCallGraph(rootKey, tablesByKey, cap).boundaries;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +200,15 @@ export interface UncoveredWriteEndpoint {
   path: string;
   /** Matched http-root table keys (evidence source for the LLM phase). */
   rootKeys: string[];
+  /** WHY the deterministic phase found nothing — the diagnosis record
+   *  (2026-08-20: unmapped endpoints must self-document). */
+  diagnosis: {
+    stage: 'no_root_match' | 'chain_broken' | 'boundaries_without_write_sql';
+    matched_roots: string[];
+    same_verb_root_fragments: string[];
+    broken_calls: string[];
+    boundaries_reached: string[];
+  };
 }
 
 export interface DeriveResult {
@@ -249,8 +286,16 @@ export function deriveCorpusEffectCandidates(args: {
     const roots = matched.filter((r) => r.fragment.length === maxLength);
 
     const tables: string[] = [];
+    const brokenCalls: string[] = [];
+    const boundariesReached: string[] = [];
     for (const root of roots) {
-      for (const boundaryKey of collectBoundaryKeys(root.key, index.tablesByKey)) {
+      const walk = walkCallGraph(root.key, index.tablesByKey);
+      for (const broken of walk.brokenCalls) {
+        if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
+      }
+      for (const boundaryKey of walk.boundaries) {
+        const symbol = index.boundarySymbolByKey.get(boundaryKey) ?? boundaryKey;
+        if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
         for (const table of index.boundaryWritesByKey.get(boundaryKey) ?? []) {
           if (!tables.some((t) => t.toLowerCase() === table.toLowerCase())) tables.push(table);
         }
@@ -276,6 +321,24 @@ export function deriveCorpusEffectCandidates(args: {
         method,
         path,
         rootKeys: roots.map((r) => r.key),
+        diagnosis: {
+          stage:
+            roots.length === 0
+              ? 'no_root_match'
+              : boundariesReached.length === 0
+                ? 'chain_broken'
+                : 'boundaries_without_write_sql',
+          matched_roots: roots.map((r) => `${r.symbol} [fragment "${r.fragment}"]`),
+          same_verb_root_fragments:
+            roots.length === 0
+              ? index.httpRoots
+                  .filter((r) => r.method.toUpperCase() === method)
+                  .map((r) => r.fragment)
+                  .slice(0, 15)
+              : [],
+          broken_calls: brokenCalls,
+          boundaries_reached: boundariesReached,
+        },
       });
     }
   }
@@ -296,6 +359,8 @@ export interface UnproposedEndpoint {
   method: string;
   path: string;
   reason: string;
+  /** The deterministic-phase diagnosis (why the corpus could not map it). */
+  diagnosis?: UncoveredWriteEndpoint['diagnosis'];
 }
 
 export interface ProposeResult {
@@ -404,6 +469,7 @@ export async function proposeEffectCandidatesViaLlm(args: {
             method: endpoint.method,
             path: endpoint.path,
             reason: 'the LLM declined to propose tables',
+            diagnosis: endpoint.diagnosis,
           });
           continue;
         }
@@ -422,6 +488,7 @@ export async function proposeEffectCandidatesViaLlm(args: {
               rejected.length > 0
                 ? `every proposed table failed the vocabulary guard: ${rejected.join(', ')}`
                 : 'the LLM proposed no tables',
+            diagnosis: endpoint.diagnosis,
           });
           continue;
         }
@@ -448,6 +515,7 @@ export async function proposeEffectCandidatesViaLlm(args: {
           method: endpoint.method,
           path: endpoint.path,
           reason: `LLM drafting failed: ${message.slice(0, 200)}`,
+          diagnosis: endpoint.diagnosis,
         });
       }
     }

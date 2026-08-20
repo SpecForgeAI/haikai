@@ -33,12 +33,21 @@ export interface BackfillUnproposed extends BackfillEndpointRef {
   reason: string;
 }
 
+export interface BackfillDiagnosis extends BackfillEndpointRef {
+  stage: 'no_root_match' | 'chain_broken' | 'boundaries_without_write_sql';
+  matched_roots: string[];
+  same_verb_root_fragments: string[];
+  broken_calls: string[];
+  boundaries_reached: string[];
+}
+
 export interface EffectMapBackfillRunResponse {
   unmapped_count: number;
   derived: BackfillDerived[];
   derived_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
   proposals: BackfillProposal[];
   unproposed: BackfillUnproposed[];
+  trace: BackfillDiagnosis[];
 }
 
 export interface EffectMapApplyResponse {

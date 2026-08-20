@@ -27,6 +27,7 @@ import {
   matchRootsForEndpoint,
   parseWriteTablesFromSql,
   runEffectMapBackfill,
+  walkCallGraph,
 } from '../effectMapBackfill';
 import type { SclContractDto } from '../sclCorpusPlanner';
 
@@ -107,6 +108,26 @@ describe('collectBoundaryKeys', () => {
       ],
     ]);
     expect(collectBoundaryKeys('T-root', bodies as never)).toEqual(['Q-dao1']);
+  });
+
+  it('walkCallGraph records WHERE the chain broke (unresolved call sites)', () => {
+    const bodies = new Map<string, { rows?: unknown[] }>([
+      [
+        'T-root',
+        {
+          rows: [
+            {
+              outcome: { type: 'call', targetKey: null, targetSymbol: 'WorkflowDao#save' },
+            },
+          ],
+        },
+      ],
+    ]);
+    const walk = walkCallGraph('T-root', bodies as never);
+    expect(walk.boundaries).toEqual([]);
+    expect(walk.brokenCalls).toHaveLength(1);
+    expect(walk.brokenCalls[0]).toContain('WorkflowDao#save');
+    expect(walk.brokenCalls[0]).toContain('unresolved');
   });
 });
 
@@ -226,6 +247,15 @@ describe('runEffectMapBackfill', () => {
       guard_rejected: ['made_up_table'],
     });
     expect(result.unproposed).toHaveLength(0);
+
+    // Diagnosis trace: ep-2 had NO matching root — the trace says so and
+    // lists the same-verb fragments that WERE available.
+    expect(result.trace).toHaveLength(1);
+    expect(result.trace[0]).toMatchObject({
+      endpoint_id: 'ep-2',
+      stage: 'no_root_match',
+    });
+    expect(result.trace[0].same_verb_root_fragments).toContain('lookup');
   });
 
   it('an LLM outage lands the batch in unproposed with the reason (never silent)', async () => {
