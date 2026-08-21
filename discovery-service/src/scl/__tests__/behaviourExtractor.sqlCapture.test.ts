@@ -100,3 +100,96 @@ describe('boundary SQL capture idioms (2026-08-21)', () => {
     expect(opsByName.get('logOnly')?.sqlVerbatim).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// DAO-interface + Impl idiom (2026-08-21 live diagnosis)
+// ---------------------------------------------------------------------------
+
+const CATALOG_IFACE = `package com.x;
+
+public interface UnitCatalogDao {
+  java.util.List<String> loadUnits(String date);
+  void syncCatalog(String date);
+}
+`;
+
+const CATALOG_IMPL = `package com.x;
+
+public class UnitCatalogDaoImpl implements UnitCatalogDao {
+  public java.util.List<String> loadUnits(String date) {
+    final String sql = "select * from unit_catalog " + "where ValidFrom <= ? and ValidTo > ?";
+    log("loading units");
+    return run(sql);
+  }
+
+  public void syncCatalog(String date) {
+    exec("insert into unit_catalog_audit (d) values (?)");
+  }
+
+  private java.util.List<String> run(String sql) { return null; }
+  private void exec(String sql) { }
+  private void log(String m) { }
+}
+`;
+
+const CATALOG_SERVICE = `package com.x;
+
+public class CatalogService {
+  private UnitCatalogDao dao;
+
+  public java.util.List<String> fetch(String date) {
+    if (date == null) {
+      throw new IllegalArgumentException("date");
+    }
+    return dao.loadUnits(date);
+  }
+}
+`;
+
+describe('DAO-interface + Impl idiom (2026-08-21)', () => {
+  let dir: string;
+  let result: ReturnType<typeof extractBehaviour>;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scl-daoimpl-'));
+    fs.mkdirSync(path.join(dir, 'com', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'UnitCatalogDao.java'), CATALOG_IFACE);
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'UnitCatalogDaoImpl.java'), CATALOG_IMPL);
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'CatalogService.java'), CATALOG_SERVICE);
+    const index = await indexJavaProject(dir);
+    expect(index.parseErrors).toEqual([]);
+    result = extractBehaviour(index, new Map());
+  });
+
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('the INTERFACE boundary mines its SQL from the implementing class', () => {
+    const iface = result.boundaries.find((b) => b.symbol === 'com.x.UnitCatalogDao');
+    expect(iface).toBeDefined();
+    const load = iface!.operations.find((o) => o.name === 'loadUnits');
+    expect(load?.sqlVerbatim).toContain('from unit_catalog');
+    expect(load?.sqlVerbatim).toContain('ValidTo > ?'); // concat fragment survived
+    const sync = iface!.operations.find((o) => o.name === 'syncCatalog');
+    expect(sync?.sqlVerbatim).toContain('insert into unit_catalog_audit');
+  });
+
+  it('the Impl class is boundary-classified too (its methods never become tables)', () => {
+    const impl = result.boundaries.find((b) => b.symbol === 'com.x.UnitCatalogDaoImpl');
+    expect(impl).toBeDefined();
+    expect(result.tables.some((t) => t.symbol.startsWith('com.x.UnitCatalogDaoImpl#'))).toBe(
+      false,
+    );
+  });
+
+  it('a call through the interface-typed field routes to the interface BOUNDARY, not a table', () => {
+    const service = result.tables.find((t) => t.symbol.startsWith('com.x.CatalogService#fetch'));
+    expect(service).toBeDefined();
+    const ifaceKey = result.boundaries.find((b) => b.symbol === 'com.x.UnitCatalogDao')!.key;
+    const callRow = service!.rows.find(
+      (r) => r.outcome.type === 'call' && r.outcome.targetKey === ifaceKey,
+    );
+    expect(callRow).toBeDefined();
+  });
+});

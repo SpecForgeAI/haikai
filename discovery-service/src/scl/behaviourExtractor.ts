@@ -263,10 +263,27 @@ interface TableDraft {
   key: string;
 }
 
+const BOUNDARY_NAME_RE = /(?:Dao|Repository)$/;
+
+function lastTypeSegment(t: string): string {
+  const s = t.replace(/<.*>$/, '').trim();
+  return s.includes('.') ? s.slice(s.lastIndexOf('.') + 1) : s;
+}
+
 function isBoundaryClass(cls: JavaClassInfo): boolean {
   if (cls.kind === 'enum') return false;
-  if (/(?:Dao|Repository)$/.test(cls.simpleName)) return true;
-  return cls.annotations.some((a) => /^@Repository(\(|$)/.test(a));
+  if (BOUNDARY_NAME_RE.test(cls.simpleName)) return true;
+  if (cls.annotations.some((a) => /^@Repository(\(|$)/.test(a))) return true;
+  // The DAO-interface + Impl idiom (2026-08-21 live diagnosis): the
+  // INTERFACE matches the name rule but is bodyless, while the class with
+  // the actual SQL is `XxxDaoImpl implements XxxDao` (or extends an
+  // abstract `XxxDao`) — previously never boundary-classified, so its SQL
+  // was invisible and every walk ended on the blind interface contract.
+  if (cls.kind === 'class') {
+    if (cls.interfaces.some((i) => BOUNDARY_NAME_RE.test(lastTypeSegment(i)))) return true;
+    if (cls.superClass && BOUNDARY_NAME_RE.test(lastTypeSegment(cls.superClass))) return true;
+  }
+  return false;
 }
 
 /**
@@ -309,54 +326,77 @@ export function extractBehaviour(
   const isStringConstField = (f: JavaFieldInfo): boolean =>
     f.type === 'String' && f.initializer !== null && f.initializer.startsWith('"');
 
+  // Gather EVERY string source one method body touches (2026-08-21):
+  //   (a) same-class String constants referenced by identifier;
+  //   (b) CROSS-CLASS constants (`SqlConstants.GET_VIEWS` field access);
+  //   (c) all in-body string literals, so concatenated fragments
+  //       ("SELECT a " + "FROM t") reassemble instead of losing the
+  //       FROM clause.
+  // The pieces are space-joined; SQL is claimed only when the joined text
+  // is SQL-ish, so log-message-only methods stay null.
+  const mineSqlFromMethod = (
+    owner: JavaClassInfo,
+    m: JavaMethodInfo
+  ): { sqlVerbatim: string; ref: SclSourceRef } | null => {
+    if (!m.bodyNode) return null;
+    const ownerConsts = owner.fields.filter(isStringConstField);
+    const pieces: Array<{ text: string; path: string; line: number }> = [];
+    const seenPiece = new Set<string>();
+    const push = (text: string, path: string, line: number): void => {
+      if (seenPiece.has(text)) return;
+      seenPiece.add(text);
+      pieces.push({ text, path, line });
+    };
+    const ids = new Set(collectNodesOfType(m.bodyNode, 'identifier').map((n) => n.text));
+    for (const f of ownerConsts) {
+      if (ids.has(f.name)) push(f.initializer as string, owner.filePath, f.line);
+    }
+    for (const fa of collectNodesOfType(m.bodyNode, 'field_access')) {
+      const obj = fa.childForFieldName('object');
+      const fld = fa.childForFieldName('field');
+      if (!obj || !fld || obj.type !== 'identifier') continue;
+      const target = resolveProjectType(obj.text, owner, index);
+      const constant = target?.fields.find((f) => f.name === fld.text && isStringConstField(f));
+      if (constant) push(constant.initializer as string, target!.filePath, constant.line);
+    }
+    for (const lit of collectNodesOfType(m.bodyNode, 'string_literal')) {
+      push(lit.text, owner.filePath, lit.startPosition.row + 1);
+    }
+    const joined = pieces.map((p) => p.text).join(' ');
+    if (!SQL_TEXT_RE.test(joined)) return null;
+    const first = pieces.find((p) => SQL_TEXT_RE.test(p.text)) ?? pieces[0];
+    return { sqlVerbatim: joined, ref: { path: first.path, line: first.line } };
+  };
+
   const buildBoundary = (cls: JavaClassInfo): SclBoundaryContract => {
-    const stringConsts = cls.fields.filter(isStringConstField);
+    // Bodyless ops (interface methods / abstract methods) mine their SQL
+    // from the IMPLEMENTING classes' matching methods (2026-08-21: the
+    // DAO-interface + Impl idiom left interface boundaries blind).
+    const implementors =
+      cls.kind === 'interface'
+        ? index.implementationsOf(cls.fqn)
+        : index.subclassesOf(cls.fqn);
     const operations: SclBoundaryOperation[] = [];
     for (const m of cls.methods) {
       if (!isPublicMethod(m)) continue;
-      let sqlVerbatim: string | null = null;
-      let ref: SclSourceRef | null = null;
-      if (m.bodyNode) {
-        // Gather EVERY string source the operation touches (2026-08-21):
-        //   (a) same-class String constants referenced by identifier;
-        //   (b) CROSS-CLASS constants (`SqlConstants.GET_VIEWS` field access);
-        //   (c) all in-body string literals, so concatenated fragments
-        //       ("SELECT a " + "FROM t") reassemble instead of losing the
-        //       FROM clause.
-        // The pieces are space-joined; the op carries SQL only when the
-        // joined text is SQL-ish, so log-message-only methods stay null.
-        const pieces: Array<{ text: string; path: string; line: number }> = [];
-        const seenPiece = new Set<string>();
-        const push = (text: string, path: string, line: number): void => {
-          if (seenPiece.has(text)) return;
-          seenPiece.add(text);
-          pieces.push({ text, path, line });
-        };
-        const ids = new Set(collectNodesOfType(m.bodyNode, 'identifier').map((n) => n.text));
-        for (const f of stringConsts) {
-          if (ids.has(f.name)) push(f.initializer as string, cls.filePath, f.line);
-        }
-        for (const fa of collectNodesOfType(m.bodyNode, 'field_access')) {
-          const obj = fa.childForFieldName('object');
-          const fld = fa.childForFieldName('field');
-          if (!obj || !fld || obj.type !== 'identifier') continue;
-          const target = resolveProjectType(obj.text, cls, index);
-          const constant = target?.fields.find(
-            (f) => f.name === fld.text && isStringConstField(f)
-          );
-          if (constant) push(constant.initializer as string, target!.filePath, constant.line);
-        }
-        for (const lit of collectNodesOfType(m.bodyNode, 'string_literal')) {
-          push(lit.text, cls.filePath, lit.startPosition.row + 1);
-        }
-        const joined = pieces.map((p) => p.text).join(' ');
-        if (SQL_TEXT_RE.test(joined)) {
-          sqlVerbatim = joined;
-          const first = pieces.find((p) => SQL_TEXT_RE.test(p.text)) ?? pieces[0];
-          ref = { path: first.path, line: first.line };
+      let mined = mineSqlFromMethod(cls, m);
+      if (!mined && !m.bodyNode) {
+        for (const impl of implementors) {
+          const im = findMethod(impl, m.name, m.paramTypes.length);
+          const implMined = im ? mineSqlFromMethod(impl, im) : null;
+          if (implMined) {
+            mined = mined
+              ? { sqlVerbatim: `${mined.sqlVerbatim} ${implMined.sqlVerbatim}`, ref: mined.ref }
+              : implMined;
+          }
         }
       }
-      operations.push({ name: m.name, sqlVerbatim, ref, resultShape: resolveResultShape(m, cls) });
+      operations.push({
+        name: m.name,
+        sqlVerbatim: mined?.sqlVerbatim ?? null,
+        ref: mined?.ref ?? null,
+        resultShape: resolveResultShape(m, cls),
+      });
     }
     const canonical = {
       kind: 'boundary' as const,
@@ -492,6 +532,21 @@ export function extractBehaviour(
       if (!targetClass) return null;
       const argsNode = inv.childForFieldName('arguments');
       const argCount = argsNode ? namedNonComment(argsNode).length : 0;
+
+      // A call whose DECLARED type is a boundary class (interface, abstract
+      // base, or concrete DAO) is the data layer — route it straight to that
+      // boundary contract (2026-08-21: interface dispatch used to resolve to
+      // the Impl's behaviour TABLE, a dead end that hid the DAO entirely).
+      if (boundaryClassFqns.has(targetClass.fqn)) {
+        const bm = findMethod(targetClass, nameNode.text, argCount);
+        const sym = bm ? methodSymbol(bm) : `${targetClass.fqn}#${nameNode.text}(?)`;
+        return {
+          kind: 'call',
+          symbol: sym,
+          targetKey:
+            boundaryKeyBySymbol.get(sym) ?? boundaryKeyBySymbol.get(targetClass.fqn) ?? null,
+        };
+      }
 
       if (targetClass.kind === 'interface') {
         const ifaceMethod = findMethod(targetClass, nameNode.text, argCount);
