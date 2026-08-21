@@ -168,6 +168,25 @@ const READ_SQL_PATTERNS: RegExp[] = [
   /\bjoin\s+([A-Za-z0-9_."\[\]$#]+)/gi,
 ];
 
+const PROC_CALL_RE =
+  /\{\s*call\s+([A-Za-z0-9_."\[\]$#]+)|\bexec(?:ute)?\s+([A-Za-z0-9_."\[\]$#]+)/gi;
+
+/** Stored-proc names referenced by one verbatim SQL string — surfaced in
+ *  the boundary stats so proc-mediated writes are screenshot-identifiable
+ *  (mirror of the scan emitter's). */
+export function parseProcCallsFromSql(sql: string | null | undefined): string[] {
+  if (!sql) return [];
+  const found: string[] = [];
+  PROC_CALL_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PROC_CALL_RE.exec(sql)) !== null) {
+    const token = bareTableToken((match[1] ?? match[2] ?? '').replace(/\(.*$/, ''));
+    if (!token) continue;
+    if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
+  }
+  return found;
+}
+
 /** Distinct READ-table tokens (FROM/JOIN; `DELETE FROM` excluded — that's a
  *  write). Mirror of the scan emitter's — powers the backfill's proven-read
  *  classification (2026-08-21). */
@@ -673,8 +692,12 @@ export async function runEffectMapBackfill(
   const boundaryReadTablesByKey = new Map<string, string[]>();
   /** Per-boundary SQL visibility (2026-08-21 diagnosis: distinguishes a
    *  genuinely read-only DAO from one whose SQL is INVISIBLE to the corpus —
-   *  dynamic SQL / external JDBC — where nothing can be proven). */
-  const boundaryStatsByKey = new Map<string, { ops: number; withSql: number }>();
+   *  dynamic SQL / external JDBC — where nothing can be proven). `opNames`
+   *  names the blind ops so a screenshot identifies the idiom. */
+  const boundaryStatsByKey = new Map<
+    string,
+    { ops: number; withSql: number; opNames: string[]; procs: string[] }
+  >();
   for (const contract of contracts) {
     if (!contract.contract_key) continue;
     const body = (contract.body_json ?? null) as ContractBodyLike | null;
@@ -684,9 +707,16 @@ export async function runEffectMapBackfill(
       const readTables: string[] = [];
       let ops = 0;
       let withSql = 0;
+      const opNames: string[] = [];
+      const procs: string[] = [];
       for (const operation of body?.operations ?? []) {
         ops++;
         if (operation?.sqlVerbatim) withSql++;
+        const opName = (operation as { name?: string })?.name;
+        if (opName && opNames.length < 6) opNames.push(opName);
+        for (const proc of parseProcCallsFromSql(operation?.sqlVerbatim)) {
+          if (!procs.some((p) => p.toLowerCase() === proc.toLowerCase())) procs.push(proc);
+        }
         for (const table of parseWriteTablesFromSql(operation?.sqlVerbatim)) {
           if (!tables.some((t) => t.toLowerCase() === table.toLowerCase())) tables.push(table);
         }
@@ -698,7 +728,7 @@ export async function runEffectMapBackfill(
       }
       boundaryTablesByKey.set(contract.contract_key, tables);
       boundaryReadTablesByKey.set(contract.contract_key, readTables);
-      boundaryStatsByKey.set(contract.contract_key, { ops, withSql });
+      boundaryStatsByKey.set(contract.contract_key, { ops, withSql, opNames, procs });
     }
   }
   const httpRoots = collectHttpRootTables(contracts);
@@ -723,6 +753,11 @@ export async function runEffectMapBackfill(
     const readTables: string[] = [];
     const brokenCalls: string[] = [];
     const boundariesReached: string[] = [];
+    // Proven-read demands FULL visibility: every reached boundary op carries
+    // SQL and none of it calls a stored procedure (a blind op or a proc
+    // could write — fail-closed).
+    let boundariesFullyVisible = true;
+    let procSeen = false;
     for (const rootKey of rootKeys) {
       const walk = walkCallGraph(rootKey, bodiesByKey, 500, dispatchIndex);
       for (const broken of walk.brokenCalls) {
@@ -730,12 +765,20 @@ export async function runEffectMapBackfill(
       }
       for (const boundaryKey of walk.boundaries) {
         const stats = boundaryStatsByKey.get(boundaryKey);
+        if (!stats || stats.withSql < stats.ops) boundariesFullyVisible = false;
+        if (stats && stats.procs.length > 0) procSeen = true;
         const reads = boundaryReadTablesByKey.get(boundaryKey) ?? [];
         const writes = boundaryTablesByKey.get(boundaryKey) ?? [];
+        const blindOps =
+          stats && stats.withSql === 0 && stats.opNames.length > 0
+            ? `; blind ops: ${stats.opNames.join(', ')}`
+            : '';
+        const procNote =
+          stats && stats.procs.length > 0 ? `; procs: ${stats.procs.join(', ')}` : '';
         const symbol =
           (symbolByKey.get(boundaryKey) ?? boundaryKey) +
           (stats
-            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${reads.length}, writes ${writes.length})`
+            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${reads.length}, writes ${writes.length}${blindOps}${procNote})`
             : '');
         if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
         for (const table of writes) {
@@ -764,7 +807,9 @@ export async function runEffectMapBackfill(
       roots.length > 0 &&
       brokenCalls.length === 0 &&
       unknownTables.length === 0 &&
-      readTables.length > 0
+      readTables.length > 0 &&
+      boundariesFullyVisible &&
+      !procSeen
     ) {
       // PROVEN READ-ONLY (2026-08-21 mirror of the scan emitter): the walk is
       // COMPLETE, no write SQL anywhere (committed or not), and the data

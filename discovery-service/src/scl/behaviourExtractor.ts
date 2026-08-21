@@ -35,6 +35,7 @@
 import {
   collectNodesOfType,
   type JavaClassInfo,
+  type JavaFieldInfo,
   type JavaMethodInfo,
   type JavaProjectIndex,
   type SyntaxNode,
@@ -297,29 +298,62 @@ export function extractBehaviour(
     return sKey ?? m.returnType;
   };
 
+  // SQL-ish text detector (2026-08-21 widened): SELECT-family verbs PLUS the
+  // stored-procedure idioms legacy Sybase DAOs actually use —
+  // CallableStatement "{call dbo.sp_x(?)}" and raw "exec sp_x" — which the
+  // old verb-only regex missed entirely (live diagnosis: every DAO op showed
+  // sql 0 although the walks completed).
+  const SQL_TEXT_RE =
+    /\b(select|insert|update|delete|exec|execute|merge|truncate)\b|\{\s*call\s/i;
+
+  const isStringConstField = (f: JavaFieldInfo): boolean =>
+    f.type === 'String' && f.initializer !== null && f.initializer.startsWith('"');
+
   const buildBoundary = (cls: JavaClassInfo): SclBoundaryContract => {
-    const stringConsts = cls.fields.filter(
-      (f) => f.type === 'String' && f.initializer !== null && f.initializer.startsWith('"')
-    );
+    const stringConsts = cls.fields.filter(isStringConstField);
     const operations: SclBoundaryOperation[] = [];
     for (const m of cls.methods) {
       if (!isPublicMethod(m)) continue;
       let sqlVerbatim: string | null = null;
       let ref: SclSourceRef | null = null;
       if (m.bodyNode) {
+        // Gather EVERY string source the operation touches (2026-08-21):
+        //   (a) same-class String constants referenced by identifier;
+        //   (b) CROSS-CLASS constants (`SqlConstants.GET_VIEWS` field access);
+        //   (c) all in-body string literals, so concatenated fragments
+        //       ("SELECT a " + "FROM t") reassemble instead of losing the
+        //       FROM clause.
+        // The pieces are space-joined; the op carries SQL only when the
+        // joined text is SQL-ish, so log-message-only methods stay null.
+        const pieces: Array<{ text: string; path: string; line: number }> = [];
+        const seenPiece = new Set<string>();
+        const push = (text: string, path: string, line: number): void => {
+          if (seenPiece.has(text)) return;
+          seenPiece.add(text);
+          pieces.push({ text, path, line });
+        };
         const ids = new Set(collectNodesOfType(m.bodyNode, 'identifier').map((n) => n.text));
-        const constant = stringConsts.find((f) => ids.has(f.name));
-        if (constant) {
-          sqlVerbatim = constant.initializer;
-          ref = { path: cls.filePath, line: constant.line };
-        } else {
-          const literal = collectNodesOfType(m.bodyNode, 'string_literal').find((n) =>
-            /\b(select|insert|update|delete)\b/i.test(n.text)
+        for (const f of stringConsts) {
+          if (ids.has(f.name)) push(f.initializer as string, cls.filePath, f.line);
+        }
+        for (const fa of collectNodesOfType(m.bodyNode, 'field_access')) {
+          const obj = fa.childForFieldName('object');
+          const fld = fa.childForFieldName('field');
+          if (!obj || !fld || obj.type !== 'identifier') continue;
+          const target = resolveProjectType(obj.text, cls, index);
+          const constant = target?.fields.find(
+            (f) => f.name === fld.text && isStringConstField(f)
           );
-          if (literal) {
-            sqlVerbatim = literal.text;
-            ref = { path: cls.filePath, line: literal.startPosition.row + 1 };
-          }
+          if (constant) push(constant.initializer as string, target!.filePath, constant.line);
+        }
+        for (const lit of collectNodesOfType(m.bodyNode, 'string_literal')) {
+          push(lit.text, cls.filePath, lit.startPosition.row + 1);
+        }
+        const joined = pieces.map((p) => p.text).join(' ');
+        if (SQL_TEXT_RE.test(joined)) {
+          sqlVerbatim = joined;
+          const first = pieces.find((p) => SQL_TEXT_RE.test(p.text)) ?? pieces[0];
+          ref = { path: first.path, line: first.line };
         }
       }
       operations.push({ name: m.name, sqlVerbatim, ref, resultShape: resolveResultShape(m, cls) });

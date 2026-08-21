@@ -602,7 +602,7 @@ describe('boundary SQL-visibility stats (2026-08-21)', () => {
     });
     expect(result.uncovered).toHaveLength(1);
     expect(result.uncovered[0].diagnosis.boundaries_reached).toEqual([
-      'BlindDao (ops 1, sql 0, reads 0, writes 0)',
+      'BlindDao (ops 1, sql 0, reads 0, writes 0; blind ops: run)',
     ]);
   });
 });

@@ -101,6 +101,24 @@ function bareTableToken(raw: string): string {
   return (cleaned.split('.').pop() ?? cleaned).trim();
 }
 
+const PROC_CALL_RE = /\{\s*call\s+([A-Za-z0-9_."\[\]$#]+)|\bexec(?:ute)?\s+([A-Za-z0-9_."\[\]$#]+)/gi;
+
+/** Stored-proc names referenced by one verbatim SQL string
+ *  (`{call dbo.sp_x(?)}` / `exec sp_x`) — surfaced in the boundary stats so
+ *  proc-mediated writes are identifiable from a screenshot. */
+export function parseProcCallsFromSql(sql: string | null | undefined): string[] {
+  if (!sql) return [];
+  const found: string[] = [];
+  PROC_CALL_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PROC_CALL_RE.exec(sql)) !== null) {
+    const token = bareTableToken((match[1] ?? match[2] ?? '').replace(/\(.*$/, ''));
+    if (!token) continue;
+    if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
+  }
+  return found;
+}
+
 const WRITE_SQL_PATTERNS: RegExp[] = [
   /\binsert\s+into\s+([A-Za-z0-9_."\[\]$#]+)/gi,
   /\bupdate\s+([A-Za-z0-9_."\[\]$#]+)\s+set\b/gi,
@@ -160,8 +178,11 @@ interface CorpusIndex {
   boundarySymbolByKey: Map<string, string>;
   /** Per-boundary SQL visibility (2026-08-21 diagnosis: a DAO with ops but
    *  no verbatim SQL means the SQL is INVISIBLE — dynamic / external JDBC —
-   *  and nothing can be proven from it). */
-  boundaryStatsByKey: Map<string, { ops: number; withSql: number }>;
+   *  and nothing can be proven from it). `opNames` names the blind ops. */
+  boundaryStatsByKey: Map<
+    string,
+    { ops: number; withSql: number; opNames: string[]; procs: string[] }
+  >;
   /** Behaviour-table keys by `${methodName}/${arity}` (dispatch expansion). */
   tablesByNameArity: Map<string, string[]>;
   /** Behaviour-table keys by method name alone (arity fallback). */
@@ -180,7 +201,10 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const boundaryWritesByKey = new Map<string, string[]>();
   const boundaryReadsByKey = new Map<string, string[]>();
   const boundarySymbolByKey = new Map<string, string>();
-  const boundaryStatsByKey = new Map<string, { ops: number; withSql: number }>();
+  const boundaryStatsByKey = new Map<
+    string,
+    { ops: number; withSql: number; opNames: string[]; procs: string[] }
+  >();
   const tablesByNameArity = new Map<string, string[]>();
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
@@ -220,9 +244,15 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       const reads: string[] = [];
       let ops = 0;
       let withSql = 0;
+      const opNames: string[] = [];
+      const procs: string[] = [];
       for (const operation of boundary.operations ?? []) {
         ops++;
         if (operation.sqlVerbatim) withSql++;
+        if (operation.name && opNames.length < 6) opNames.push(operation.name);
+        for (const proc of parseProcCallsFromSql(operation.sqlVerbatim)) {
+          if (!procs.some((p) => p.toLowerCase() === proc.toLowerCase())) procs.push(proc);
+        }
         for (const table of parseWriteTablesFromSql(operation.sqlVerbatim)) {
           if (!writes.some((t) => t.toLowerCase() === table.toLowerCase())) writes.push(table);
         }
@@ -233,7 +263,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       }
       boundaryWritesByKey.set(contract.key, writes);
       boundaryReadsByKey.set(contract.key, reads);
-      boundaryStatsByKey.set(contract.key, { ops, withSql });
+      boundaryStatsByKey.set(contract.key, { ops, withSql, opNames, procs });
       boundarySymbolByKey.set(contract.key, boundary.symbol);
       const boundaryHash = boundary.symbol.indexOf('#');
       classFqnsInCorpus.add(boundaryHash >= 0 ? boundary.symbol.slice(0, boundaryHash) : boundary.symbol);
@@ -503,6 +533,11 @@ export function deriveCorpusEffectCandidates(args: {
     const readTables: string[] = [];
     const brokenCalls: string[] = [];
     const boundariesReached: string[] = [];
+    // Proven-read demands FULL visibility: every reached boundary op carries
+    // SQL and none of it calls a stored procedure (a blind op or a proc
+    // could write — fail-closed).
+    let boundariesFullyVisible = true;
+    let procSeen = false;
     for (const root of roots) {
       const walk = walkCallGraph(root.key, index);
       for (const broken of walk.brokenCalls) {
@@ -510,12 +545,20 @@ export function deriveCorpusEffectCandidates(args: {
       }
       for (const boundaryKey of walk.boundaries) {
         const stats = index.boundaryStatsByKey.get(boundaryKey);
+        if (!stats || stats.withSql < stats.ops) boundariesFullyVisible = false;
+        if (stats && stats.procs.length > 0) procSeen = true;
         const boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
         const boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+        const blindOps =
+          stats && stats.withSql === 0 && stats.opNames.length > 0
+            ? `; blind ops: ${stats.opNames.join(', ')}`
+            : '';
+        const procNote =
+          stats && stats.procs.length > 0 ? `; procs: ${stats.procs.join(', ')}` : '';
         const symbol =
           (index.boundarySymbolByKey.get(boundaryKey) ?? boundaryKey) +
           (stats
-            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${boundaryReads.length}, writes ${boundaryWrites.length})`
+            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${boundaryReads.length}, writes ${boundaryWrites.length}${blindOps}${procNote})`
             : '');
         if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
         for (const table of index.boundaryWritesByKey.get(boundaryKey) ?? []) {
@@ -542,7 +585,13 @@ export function deriveCorpusEffectCandidates(args: {
           }),
         );
       }
-    } else if (roots.length > 0 && brokenCalls.length === 0 && readTables.length > 0) {
+    } else if (
+      roots.length > 0 &&
+      brokenCalls.length === 0 &&
+      readTables.length > 0 &&
+      boundariesFullyVisible &&
+      !procSeen
+    ) {
       // PROVEN READ-ONLY: the walk is COMPLETE (every call resolved) and the
       // data layer it reaches only reads. This is a POST-implemented query —
       // emit access_mode 'read' edges so the model KNOWS its effects and the
