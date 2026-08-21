@@ -206,10 +206,14 @@ function isPublicMethod(m: JavaMethodInfo): boolean {
   return true;
 }
 
-/** Declared-type lookup for an identifier: params, then locals, then class fields. */
+/** Declared-type lookup for an identifier: params, then locals, then class
+ *  fields — INCLUDING fields inherited from project superclasses when an
+ *  index is supplied (2026-08-21: `protected OrgDao dao;` on a base class
+ *  used from a subclass method silently resolved external). */
 function buildDeclaredTypeLookup(
   cls: JavaClassInfo,
-  method: JavaMethodInfo
+  method: JavaMethodInfo,
+  index?: JavaProjectIndex
 ): (identifier: string) => string | null {
   const localTypes = new Map<string, string>();
   if (method.bodyNode) {
@@ -229,8 +233,16 @@ function buildDeclaredTypeLookup(
     if (paramIdx >= 0) return method.paramTypes[paramIdx];
     const local = localTypes.get(identifier);
     if (local) return local;
-    const field = cls.fields.find((f) => f.name === identifier);
-    return field ? field.type : null;
+    let owner: JavaClassInfo | null = cls;
+    const seen = new Set<string>();
+    while (owner && !seen.has(owner.fqn)) {
+      seen.add(owner.fqn);
+      const field = owner.fields.find((f) => f.name === identifier);
+      if (field) return field.type;
+      owner =
+        index && owner.superClass ? resolveProjectType(owner.superClass, owner, index) : null;
+    }
+    return null;
   };
 }
 
@@ -240,6 +252,38 @@ function findMethod(cls: JavaClassInfo, name: string, argCount: number): JavaMet
   if (byName.length === 0) return null;
   if (byName.length === 1) return byName[0];
   return byName.find((m) => m.paramTypes.length === argCount) ?? byName[0];
+}
+
+/**
+ * Method lookup across the PROJECT type hierarchy: the class itself, then
+ * its transitive project superclasses and (parent) interfaces, BFS order —
+ * Java shadowing semantics (2026-08-21: `sub.commonThing()` declared only
+ * on the base class used to resolve to nothing, silently).
+ */
+function findMethodInHierarchy(
+  start: JavaClassInfo,
+  name: string,
+  argCount: number,
+  index: JavaProjectIndex
+): { owner: JavaClassInfo; method: JavaMethodInfo } | null {
+  const queue: JavaClassInfo[] = [start];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const c = queue.shift() as JavaClassInfo;
+    if (seen.has(c.fqn)) continue;
+    seen.add(c.fqn);
+    const m = findMethod(c, name, argCount);
+    if (m) return { owner: c, method: m };
+    if (c.superClass) {
+      const parent = resolveProjectType(c.superClass, c, index);
+      if (parent) queue.push(parent);
+    }
+    for (const i of c.interfaces) {
+      const parent = resolveProjectType(i, c, index);
+      if (parent) queue.push(parent);
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,8 +429,8 @@ export function extractBehaviour(
       let mined = mineSqlFromMethod(cls, m);
       if (!mined && !m.bodyNode) {
         for (const impl of implementors) {
-          const im = findMethod(impl, m.name, m.paramTypes.length);
-          const implMined = im ? mineSqlFromMethod(impl, im) : null;
+          const found = findMethodInHierarchy(impl, m.name, m.paramTypes.length, index);
+          const implMined = found ? mineSqlFromMethod(found.owner, found.method) : null;
           if (implMined) {
             mined = mined
               ? { sqlVerbatim: `${mined.sqlVerbatim} ${implMined.sqlVerbatim}`, ref: mined.ref }
@@ -442,7 +486,7 @@ export function extractBehaviour(
    * possible project call) and ROW BUILDING.
    */
   const receiverResolverFor = (cls: JavaClassInfo, method: JavaMethodInfo) => {
-    const declaredTypeOf = buildDeclaredTypeLookup(cls, method);
+    const declaredTypeOf = buildDeclaredTypeLookup(cls, method, index);
 
     /** Static-import call resolution: `import static com.x.SqlUtil.build;`
      *  (importsOf strips the `static` keyword - entries read
@@ -527,8 +571,10 @@ export function extractBehaviour(
           const resolved = resolveProjectType(returnType, inner.owner, index);
           return resolved ? { cls: resolved } : 'external';
         }
-        case 'super':
-          return 'unknown'; // hierarchy lookup lands in the next item - LOUD.
+        case 'super': {
+          const parent = cls.superClass ? resolveProjectType(cls.superClass, cls, index) : null;
+          return parent ? { cls: parent } : 'external';
+        }
         default:
           return 'unknown';
       }
@@ -558,8 +604,8 @@ export function extractBehaviour(
         if (receiver === 'external' || receiver === 'unknown') return receiver;
         owner = receiver.cls;
       }
-      const m = findMethod(owner, nameNode.text, argCount);
-      return m ? { owner, method: m } : 'external';
+      const found = findMethodInHierarchy(owner, nameNode.text, argCount, index);
+      return found ?? 'external';
     };
 
     return { resolveReceiver, resolveStaticImport };
@@ -582,6 +628,16 @@ export function extractBehaviour(
       // was inlined, deleting the loud unresolved row before it could
       // exist). External-rooted receivers stay inline-eligible.
       const receiver = resolveReceiver(objectNode, 0);
+      if (receiver !== 'external') return true;
+    }
+    // Method references (`store::record`) are calls too — a project-typed
+    // or untypeable ref receiver blocks inlining exactly like a call
+    // (2026-08-21: a forEach(store::record) method was inline-suppressed,
+    // deleting the ref row before it could exist).
+    for (const refNode of collectNodesOfType(method.bodyNode, 'method_reference')) {
+      const named = namedNonComment(refNode);
+      if (named.length === 0) continue;
+      const receiver = resolveReceiver(named[0], 0);
       if (receiver !== 'external') return true;
     }
     return false;
@@ -685,8 +741,8 @@ export function extractBehaviour(
       // boundary contract (2026-08-21: interface dispatch used to resolve to
       // the Impl's behaviour TABLE, a dead end that hid the DAO entirely).
       if (boundaryClassFqns.has(targetClass.fqn)) {
-        const bm = findMethod(targetClass, nameNode.text, argCount);
-        const sym = bm ? methodSymbol(bm) : `${targetClass.fqn}#${nameNode.text}(?)`;
+        const bm = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
+        const sym = bm ? methodSymbol(bm.method) : `${targetClass.fqn}#${nameNode.text}(?)`;
         return {
           kind: 'call',
           symbol: sym,
@@ -696,22 +752,25 @@ export function extractBehaviour(
       }
 
       if (targetClass.kind === 'interface') {
-        const ifaceMethod = findMethod(targetClass, nameNode.text, argCount);
+        // Hierarchy-aware: the method may be declared on a PARENT interface
+        // and the impl's body may be inherited from an abstract base.
+        const ifaceMethod = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
         if (!ifaceMethod) return null;
         const impls = index.implementationsOf(targetClass.fqn);
         if (impls.length === 0) return null;
         if (impls.length === 1) {
-          const implMethod = findMethod(impls[0], nameNode.text, argCount);
-          return implMethod ? classResolution(impls[0], implMethod) : null;
+          const implMethod = findMethodInHierarchy(impls[0], nameNode.text, argCount, index);
+          return implMethod ? classResolution(implMethod.owner, implMethod.method) : null;
         }
         const candidates = impls.map((impl) => {
-          const m = findMethod(impl, nameNode.text, argCount);
-          return m ? methodSymbol(m) : `${impl.fqn}#${nameNode.text}(?)`;
+          const m = findMethodInHierarchy(impl, nameNode.text, argCount, index);
+          return m ? methodSymbol(m.method) : `${impl.fqn}#${nameNode.text}(?)`;
         });
-        return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod), candidates };
+        return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod.method), candidates };
       }
-      const target = findMethod(targetClass, nameNode.text, argCount);
-      if (target && target.bodyNode) return classResolution(targetClass, target);
+      const found = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
+      if (found && found.method.bodyNode) return classResolution(found.owner, found.method);
+      const target = found?.method ?? null;
       // Abstract-class dispatch (2026-08-21): the declared type is a CLASS but
       // the matched method has no body (abstract) or is absent — the
       // factory/loader pattern (abstract base, concrete subclasses picked at
@@ -723,8 +782,10 @@ export function extractBehaviour(
       if (subs.length > 0) {
         const overrides: Array<{ cls: JavaClassInfo; method: JavaMethodInfo }> = [];
         for (const sub of subs) {
-          const m = findMethod(sub, nameNode.text, argCount);
-          if (m && m.bodyNode) overrides.push({ cls: sub, method: m });
+          const m = findMethodInHierarchy(sub, nameNode.text, argCount, index)?.method ?? null;
+          if (m && m.bodyNode && !overrides.some((o) => o.method === m)) {
+            overrides.push({ cls: sub, method: m });
+          }
         }
         if (overrides.length === 1) {
           return classResolution(overrides[0].cls, overrides[0].method);
@@ -739,7 +800,36 @@ export function extractBehaviour(
           };
         }
       }
-      return target ? classResolution(targetClass, target) : null;
+      return found ? classResolution(found.owner, found.method) : null;
+    };
+
+    /** `dao::save` / `AuditStore::log` / `this::helper` — resolved like a
+     *  call with unknown arity; constructor refs (`Foo::new`) and
+     *  external-rooted receivers stay silent; untypeable receivers go LOUD
+     *  (2026-08-21: method references previously vanished entirely). */
+    const resolveMethodReference = (refNode: SyntaxNode): CallResolution | null => {
+      const named = namedNonComment(refNode);
+      if (named.length === 0) return null;
+      const receiverNode = named[0];
+      const nameNode = named[named.length - 1];
+      if (!nameNode || nameNode.type !== 'identifier' || nameNode.text === 'new') return null;
+      const receiver = resolveReceiver(receiverNode, 0);
+      if (receiver === 'external') return null;
+      if (receiver === 'unknown') {
+        return { kind: 'call', symbol: unresolvedSymbol(nameNode.text, 0), targetKey: null };
+      }
+      if (boundaryClassFqns.has(receiver.cls.fqn)) {
+        const bm = findMethodInHierarchy(receiver.cls, nameNode.text, -1, index);
+        const sym = bm ? methodSymbol(bm.method) : `${receiver.cls.fqn}#${nameNode.text}(?)`;
+        return {
+          kind: 'call',
+          symbol: sym,
+          targetKey:
+            boundaryKeyBySymbol.get(sym) ?? boundaryKeyBySymbol.get(receiver.cls.fqn) ?? null,
+        };
+      }
+      const target = findMethodInHierarchy(receiver.cls, nameNode.text, -1, index);
+      return target ? classResolution(target.owner, target.method) : null;
     };
 
     /**
@@ -751,11 +841,17 @@ export function extractBehaviour(
     const allResolutions = (stmt: SyntaxNode): CallResolution[] => {
       const out: CallResolution[] = [];
       const seen = new Set<string>();
-      const nodes = collectNodesOfType(stmt, 'method_invocation').sort(
+      const nodes = [
+        ...collectNodesOfType(stmt, 'method_invocation'),
+        ...collectNodesOfType(stmt, 'method_reference'),
+      ].sort(
         (a, b) => a.startIndex - b.startIndex
       );
       for (const node of nodes) {
-        const r = resolveInvocation(node);
+        const r =
+          node.type === 'method_reference'
+            ? resolveMethodReference(node)
+            : resolveInvocation(node);
         if (!r) continue;
         const key = `${r.kind}|${r.symbol}`;
         if (seen.has(key)) continue;
