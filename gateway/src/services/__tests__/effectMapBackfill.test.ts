@@ -511,3 +511,26 @@ describe('proven-read + read-mapped parity (2026-08-21)', () => {
     );
   });
 });
+
+describe('class-aware dispatch ladder (2026-08-21 Item 4, gateway mirror)', () => {
+  it('exact class map exists and blind name-only is reserved for ?-class symbols', () => {
+    const index = buildDispatchIndex([
+      contract({
+        contract_key: 'T-a',
+        kind: 'behaviour_table',
+        source_symbol: 'com.a.OrgSaver#save(String)',
+        body_json: { signatureInputs: [{ name: 'k', typeRef: 'String' }], rows: [] } as never,
+      }),
+    ]);
+    expect(index.tablesByClassNameArity.get('com.a.OrgSaver#save/1')).toEqual(['T-a']);
+    // Known class, wrong arity -> broken (reason names the miss), never a
+    // blind name union.
+    expect(unresolvedReason('com.a.OrgSaver#save(String,int)', index)).toContain(
+      'no method named save/2',
+    );
+    // Unknown receiver -> the dedicated reason.
+    expect(unresolvedReason('?#vanish(?)', index)).toContain(
+      'receiver type could not be determined at scan time',
+    );
+  });
+});

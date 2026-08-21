@@ -185,6 +185,11 @@ interface CorpusIndex {
   >;
   /** Behaviour-table keys by `${methodName}/${arity}` (dispatch expansion). */
   tablesByNameArity: Map<string, string[]>;
+  /** Behaviour-table keys by `${clsFqn}#${methodName}/${arity}` — the
+   *  EXACT-class step of dispatch expansion (2026-08-21 Item 4: blind
+   *  name matching could union unrelated classes that share a method
+   *  name, polluting the effect map the specs are built from). */
+  tablesByClassNameArity: Map<string, string[]>;
   /** Behaviour-table keys by method name alone (arity fallback). */
   tablesByName: Map<string, string[]>;
   /** Boundary keys by operation NAME (DAO methods; arity unknown on ops). */
@@ -206,6 +211,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     { ops: number; withSql: number; opNames: string[]; procs: string[] }
   >();
   const tablesByNameArity = new Map<string, string[]>();
+  const tablesByClassNameArity = new Map<string, string[]>();
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
   const classFqnsInCorpus = new Set<string>();
@@ -230,6 +236,11 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
         const methodName = paren >= 0 ? afterHash.slice(0, paren) : afterHash;
         classFqnsInCorpus.add(contract.symbol.slice(0, hash));
         push(tablesByNameArity, `${methodName}/${contract.signatureInputs.length}`, contract.key);
+        push(
+          tablesByClassNameArity,
+          `${contract.symbol.slice(0, hash)}#${methodName}/${contract.signatureInputs.length}`,
+          contract.key,
+        );
         push(tablesByName, methodName, contract.key);
       }
       const method = deriveHttpMethod(contract.annotations);
@@ -276,6 +287,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     boundarySymbolByKey,
     boundaryStatsByKey,
     tablesByNameArity,
+    tablesByClassNameArity,
     tablesByName,
     boundariesByOpName,
     classFqnsInCorpus,
@@ -291,8 +303,10 @@ export interface CallWalkResult {
   expandedCalls: string[];
 }
 
-/** Too many name-matched implementations = genuinely ambiguous dispatch. */
-const DISPATCH_EXPANSION_CAP = 5;
+/** Too many name-matched implementations = genuinely ambiguous dispatch.
+ *  12 aligns with the gateway mirror (2026-08-21 Item 4 — the extractor
+ *  and assembler are uncapped; they carry real type info). */
+const DISPATCH_EXPANSION_CAP = 12;
 
 /**
  * Resolve a null-target call symbol (`Cls#method(A,B)`) by name+arity across
@@ -308,12 +322,19 @@ function expandDispatch(
   const hash = targetSymbol.indexOf('#');
   const paren = targetSymbol.indexOf('(', hash);
   if (hash < 0 || paren < 0) return null;
+  const clsFqn = targetSymbol.slice(0, hash);
   const name = targetSymbol.slice(hash + 1, paren);
   const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
   const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
 
-  let tables = index.tablesByNameArity.get(`${name}/${arity}`) ?? [];
-  if (tables.length === 0) tables = index.tablesByName.get(name) ?? [];
+  // Class-aware fallback ladder (2026-08-21 Item 4): EXACT class+name+arity
+  // first; then name+arity across the corpus; blind NAME-ONLY matching is
+  // reserved for `?`-class symbols (receiver unknown at scan time) — for a
+  // KNOWN class an arity mismatch stays broken (loud) instead of unioning
+  // unrelated classes into the effect map.
+  let tables = index.tablesByClassNameArity.get(`${clsFqn}#${name}/${arity}`) ?? [];
+  if (tables.length === 0) tables = index.tablesByNameArity.get(`${name}/${arity}`) ?? [];
+  if (tables.length === 0 && clsFqn === '?') tables = index.tablesByName.get(name) ?? [];
   const boundaries = index.boundariesByOpName.get(name) ?? [];
   const total = tables.length + boundaries.length;
   if (total === 0 || total > DISPATCH_EXPANSION_CAP) return null;
@@ -338,6 +359,9 @@ export function unresolvedReason(targetSymbol: string, index: CorpusIndex): stri
     (index.tablesByName.get(name) ?? []).length + (index.boundariesByOpName.get(name) ?? []).length;
   if (total > DISPATCH_EXPANSION_CAP) {
     return `${total} name-matched candidates exceed the expansion cap ${DISPATCH_EXPANSION_CAP}`;
+  }
+  if (clsFqn === '?') {
+    return 'receiver type could not be determined at scan time (chained/ternary/array receiver)';
   }
   return index.classFqnsInCorpus.has(clsFqn)
     ? `class in corpus but no method named ${name}/${arity}`

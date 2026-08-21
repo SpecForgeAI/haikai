@@ -606,3 +606,87 @@ describe('boundary SQL-visibility stats (2026-08-21)', () => {
     ]);
   });
 });
+
+describe('class-aware dispatch ladder (2026-08-21 Item 4)', () => {
+  function nullCallTable(key: string, symbol: string, path: string, targetSymbol: string) {
+    const t = behaviourTable({ key, symbol, annotations: ['@POST', `@Path("${path}")`], callTargets: [] });
+    (t.contract as { rows: unknown[] }).rows = [
+      {
+        index: 0,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: { type: 'call', targetKey: null, targetSymbol },
+      },
+    ];
+    return t;
+  }
+
+  function implTable(key: string, symbol: string, boundaryKey: string) {
+    const t = behaviourTable({ key, symbol, annotations: [], callTargets: [boundaryKey] });
+    (t.contract as { signatureInputs: unknown[] }).signatureInputs = [
+      { name: 'k', typeRef: 'String' },
+    ];
+    return t;
+  }
+
+  it('exact class+name+arity wins over a same-named method on an unrelated class', () => {
+    const corpus = corpusOf([
+      nullCallTable('T-root', 'R#go', 'go', 'com.a.OrgSaver#save(String)'),
+      implTable('T-a', 'com.a.OrgSaver#save(String)', 'Q-a'),
+      implTable('T-b', 'com.b.UnrelatedSaver#save(String)', 'Q-b'),
+      boundary({ key: 'Q-a', symbol: 'ADao', sql: ['INSERT INTO org_saved (a) VALUES (1)'] }),
+      boundary({ key: 'Q-b', symbol: 'BDao', sql: ['INSERT INTO unrelated_tbl (a) VALUES (1)'] }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('g', 'POST', '/go')],
+    });
+    const tables = result.candidates.map((c) => c.name);
+    expect(tables).toEqual(['g → org_saved (write)']);
+    expect(JSON.stringify(tables)).not.toContain('unrelated_tbl');
+  });
+
+  it('a KNOWN class with an arity mismatch stays broken (no blind name-only union)', () => {
+    const corpus = corpusOf([
+      nullCallTable('T-root', 'R#go', 'go', 'com.a.OrgSaver#save(String,int)'),
+      implTable('T-b', 'com.b.UnrelatedSaver#save(String)', 'Q-b'),
+      boundary({ key: 'Q-b', symbol: 'BDao', sql: ['INSERT INTO unrelated_tbl (a) VALUES (1)'] }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('g', 'POST', '/go')],
+    });
+    expect(result.candidates).toHaveLength(0);
+    expect(result.uncovered).toHaveLength(1);
+    expect(result.uncovered[0].diagnosis.broken_calls[0]).toContain('save');
+  });
+
+  it('a ?-class symbol (unknown receiver) still resolves via name-only as last resort', () => {
+    const corpus = corpusOf([
+      nullCallTable('T-root', 'R#go', 'go', '?#persistThing(?)'),
+      implTable('T-a', 'com.a.ThingWriter#persistThing(Item)', 'Q-a'),
+      boundary({ key: 'Q-a', symbol: 'ADao', sql: ['INSERT INTO thing_store (a) VALUES (1)'] }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('g', 'POST', '/go')],
+    });
+    expect(result.candidates.map((c) => c.name)).toEqual(['g → thing_store (write)']);
+  });
+
+  it('?-class broken calls carry the receiver-unknown reason', () => {
+    const corpus = corpusOf([nullCallTable('T-root', 'R#go', 'go', '?#vanish(?)')]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('g', 'POST', '/go')],
+    });
+    expect(result.uncovered[0].diagnosis.broken_calls[0]).toContain(
+      'receiver type could not be determined at scan time',
+    );
+  });
+});
