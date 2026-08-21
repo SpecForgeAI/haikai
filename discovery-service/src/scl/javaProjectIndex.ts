@@ -274,7 +274,11 @@ function interfacesOf(classNode: SyntaxNode): string[] {
   const names: string[] = [];
   for (let i = 0; i < classNode.childCount; i++) {
     const child = classNode.child(i);
-    if (child && child.type === 'super_interfaces') {
+    // `super_interfaces` = a class's `implements` list;
+    // `extends_interfaces` = an INTERFACE's `extends` list (2026-08-21:
+    // previously dropped, so methods declared on parent interfaces were
+    // invisible to hierarchy lookup).
+    if (child && (child.type === 'super_interfaces' || child.type === 'extends_interfaces')) {
       for (const typeList of collectNodesOfType(child, 'type_list')) {
         for (let j = 0; j < typeList.namedChildCount; j++) {
           const t = typeList.namedChild(j);
@@ -529,7 +533,9 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
               kind,
               filePath,
               superClass: kind === 'class' ? superClassOf(declNode) : null,
-              interfaces: kind === 'interface' ? [] : interfacesOf(declNode),
+              // For interfaces this is the `extends` list (parent
+              // interfaces); for classes the `implements` list.
+              interfaces: interfacesOf(declNode),
               annotations: verbatimAnnotations(declNode),
               fields: fieldsOf(declNode),
               methods: methodsOf(declNode, fqn, filePath, sourceText),

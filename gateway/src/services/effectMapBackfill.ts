@@ -255,6 +255,9 @@ export function collectHttpRootTables(contracts: SclContractDto[]): HttpRootTabl
 /** Name+arity dispatch-expansion index (mirror of the scan emitter's). */
 export interface DispatchExpansionIndex {
   tablesByNameArity: Map<string, string[]>;
+  /** `${clsFqn}#${name}/${arity}` — the EXACT-class expansion step
+   *  (2026-08-21 Item 4). */
+  tablesByClassNameArity: Map<string, string[]>;
   tablesByName: Map<string, string[]>;
   boundariesByOpName: Map<string, string[]>;
   /** Class FQNs with ANY corpus presence — powers the unresolved-call
@@ -262,10 +265,12 @@ export interface DispatchExpansionIndex {
   classFqnsInCorpus: Set<string>;
 }
 
-const DISPATCH_EXPANSION_CAP = 5;
+/** Aligned with the scan emitter (2026-08-21 Item 4). */
+const DISPATCH_EXPANSION_CAP = 12;
 
 export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansionIndex {
   const tablesByNameArity = new Map<string, string[]>();
+  const tablesByClassNameArity = new Map<string, string[]>();
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
   const classFqnsInCorpus = new Set<string>();
@@ -295,6 +300,11 @@ export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansi
           ? ((body as { signatureInputs: unknown[] }).signatureInputs.length)
           : 0;
         push(tablesByNameArity, `${name}/${arity}`, contract.contract_key);
+        push(
+          tablesByClassNameArity,
+          `${symbol.slice(0, hash)}#${name}/${arity}`,
+          contract.contract_key,
+        );
         push(tablesByName, name, contract.contract_key);
       }
     } else if (contract.kind === 'boundary') {
@@ -309,7 +319,7 @@ export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansi
       }
     }
   }
-  return { tablesByNameArity, tablesByName, boundariesByOpName, classFqnsInCorpus };
+  return { tablesByNameArity, tablesByClassNameArity, tablesByName, boundariesByOpName, classFqnsInCorpus };
 }
 
 function expandDispatch(
@@ -319,11 +329,17 @@ function expandDispatch(
   const hash = targetSymbol.indexOf('#');
   const paren = targetSymbol.indexOf('(', hash);
   if (hash < 0 || paren < 0) return null;
+  const clsFqn = targetSymbol.slice(0, hash);
   const name = targetSymbol.slice(hash + 1, paren);
   const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
   const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
-  let tables = expansion.tablesByNameArity.get(`${name}/${arity}`) ?? [];
-  if (tables.length === 0) tables = expansion.tablesByName.get(name) ?? [];
+  // Class-aware ladder (2026-08-21 Item 4): exact class+name+arity, then
+  // name+arity; blind NAME-ONLY matching only for `?`-class symbols
+  // (receiver unknown at scan time) — a KNOWN class with an arity
+  // mismatch stays broken (loud) instead of unioning unrelated classes.
+  let tables = expansion.tablesByClassNameArity.get(`${clsFqn}#${name}/${arity}`) ?? [];
+  if (tables.length === 0) tables = expansion.tablesByNameArity.get(`${name}/${arity}`) ?? [];
+  if (tables.length === 0 && clsFqn === '?') tables = expansion.tablesByName.get(name) ?? [];
   const boundaries = expansion.boundariesByOpName.get(name) ?? [];
   const total = tables.length + boundaries.length;
   if (total === 0 || total > DISPATCH_EXPANSION_CAP) return null;
@@ -349,6 +365,9 @@ export function unresolvedReason(
       (expansion.boundariesByOpName.get(name) ?? []).length;
   if (total > DISPATCH_EXPANSION_CAP) {
     return `${total} name-matched candidates exceed the expansion cap ${DISPATCH_EXPANSION_CAP}`;
+  }
+  if (clsFqn === '?') {
+    return 'receiver type could not be determined at scan time (chained/ternary/array receiver)';
   }
   return expansion.classFqnsInCorpus.has(clsFqn)
     ? `class in corpus but no method named ${name}/${arity}`

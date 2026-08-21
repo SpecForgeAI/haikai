@@ -191,6 +191,9 @@ function methodSymbol(m: JavaMethodInfo): string {
   return `${m.classFqn}#${m.name}(${m.paramTypes.join(',')})`;
 }
 
+/** Receiver-typing verdict shared by classification and row building. */
+type ReceiverResolution = { cls: JavaClassInfo } | 'external' | 'unknown';
+
 /** Non-private/protected. Interface (body-less) methods count as public. */
 function isPublicMethod(m: JavaMethodInfo): boolean {
   if (!m.bodyNode) return true;
@@ -203,10 +206,14 @@ function isPublicMethod(m: JavaMethodInfo): boolean {
   return true;
 }
 
-/** Declared-type lookup for an identifier: params, then locals, then class fields. */
+/** Declared-type lookup for an identifier: params, then locals, then class
+ *  fields — INCLUDING fields inherited from project superclasses when an
+ *  index is supplied (2026-08-21: `protected OrgDao dao;` on a base class
+ *  used from a subclass method silently resolved external). */
 function buildDeclaredTypeLookup(
   cls: JavaClassInfo,
-  method: JavaMethodInfo
+  method: JavaMethodInfo,
+  index?: JavaProjectIndex
 ): (identifier: string) => string | null {
   const localTypes = new Map<string, string>();
   if (method.bodyNode) {
@@ -226,8 +233,16 @@ function buildDeclaredTypeLookup(
     if (paramIdx >= 0) return method.paramTypes[paramIdx];
     const local = localTypes.get(identifier);
     if (local) return local;
-    const field = cls.fields.find((f) => f.name === identifier);
-    return field ? field.type : null;
+    let owner: JavaClassInfo | null = cls;
+    const seen = new Set<string>();
+    while (owner && !seen.has(owner.fqn)) {
+      seen.add(owner.fqn);
+      const field = owner.fields.find((f) => f.name === identifier);
+      if (field) return field.type;
+      owner =
+        index && owner.superClass ? resolveProjectType(owner.superClass, owner, index) : null;
+    }
+    return null;
   };
 }
 
@@ -237,6 +252,38 @@ function findMethod(cls: JavaClassInfo, name: string, argCount: number): JavaMet
   if (byName.length === 0) return null;
   if (byName.length === 1) return byName[0];
   return byName.find((m) => m.paramTypes.length === argCount) ?? byName[0];
+}
+
+/**
+ * Method lookup across the PROJECT type hierarchy: the class itself, then
+ * its transitive project superclasses and (parent) interfaces, BFS order —
+ * Java shadowing semantics (2026-08-21: `sub.commonThing()` declared only
+ * on the base class used to resolve to nothing, silently).
+ */
+function findMethodInHierarchy(
+  start: JavaClassInfo,
+  name: string,
+  argCount: number,
+  index: JavaProjectIndex
+): { owner: JavaClassInfo; method: JavaMethodInfo } | null {
+  const queue: JavaClassInfo[] = [start];
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const c = queue.shift() as JavaClassInfo;
+    if (seen.has(c.fqn)) continue;
+    seen.add(c.fqn);
+    const m = findMethod(c, name, argCount);
+    if (m) return { owner: c, method: m };
+    if (c.superClass) {
+      const parent = resolveProjectType(c.superClass, c, index);
+      if (parent) queue.push(parent);
+    }
+    for (const i of c.interfaces) {
+      const parent = resolveProjectType(i, c, index);
+      if (parent) queue.push(parent);
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,8 +429,8 @@ export function extractBehaviour(
       let mined = mineSqlFromMethod(cls, m);
       if (!mined && !m.bodyNode) {
         for (const impl of implementors) {
-          const im = findMethod(impl, m.name, m.paramTypes.length);
-          const implMined = im ? mineSqlFromMethod(impl, im) : null;
+          const found = findMethodInHierarchy(impl, m.name, m.paramTypes.length, index);
+          const implMined = found ? mineSqlFromMethod(found.owner, found.method) : null;
           if (implMined) {
             mined = mined
               ? { sqlVerbatim: `${mined.sqlVerbatim} ${implMined.sqlVerbatim}`, ref: mined.ref }
@@ -426,9 +473,147 @@ export function extractBehaviour(
   // 2. Method classification: accessor skip, inline-trivial skip, or table.
   // -------------------------------------------------------------------------
 
+  /**
+   * Receiver typing (2026-08-21 sweep). Three-way verdict:
+   *   {cls}      - receiver statically types to a project class;
+   *   'external' - receiver is KNOWN and not a project type (JDK /
+   *                framework calls stay silent by design);
+   *   'unknown'  - the shape defeated static typing. Callers MUST go LOUD:
+   *                silent losses made walks look complete and let
+   *                proven-read fail open (verified live: chained and
+   *                ternary receivers vanished without a trace).
+   * Shared by CLASSIFICATION (inline suppression must never swallow a
+   * possible project call) and ROW BUILDING.
+   */
+  const receiverResolverFor = (cls: JavaClassInfo, method: JavaMethodInfo) => {
+    const declaredTypeOf = buildDeclaredTypeLookup(cls, method, index);
+
+    /** Static-import call resolution: `import static com.x.SqlUtil.build;`
+     *  (importsOf strips the `static` keyword - entries read
+     *  `com.x.SqlUtil.build` / `com.x.SqlUtil.*`). External static imports
+     *  (String.format) resolve to nothing here and stay silent. */
+    const resolveStaticImport = (name: string): JavaClassInfo | null => {
+      for (const imp of cls.imports) {
+        const clsPart = imp.endsWith(`.${name}`)
+          ? imp.slice(0, imp.length - name.length - 1)
+          : imp.endsWith('.*')
+            ? imp.slice(0, imp.length - 2)
+            : null;
+        if (!clsPart) continue;
+        const resolved = index.classesByFqn.get(clsPart);
+        if (resolved && resolved.methods.some((m) => m.name === name)) return resolved;
+      }
+      return null;
+    };
+
+    const resolveReceiver = (node: SyntaxNode, depth: number): ReceiverResolution => {
+      if (depth > 4) return 'unknown';
+      switch (node.type) {
+        case 'this':
+          return { cls };
+        case 'identifier': {
+          const declared = declaredTypeOf(node.text);
+          const resolved = declared
+            ? resolveProjectType(declared, cls, index)
+            : // Static `Cls.m(...)` call resolved by class name.
+              resolveProjectType(node.text, cls, index);
+          return resolved ? { cls: resolved } : 'external';
+        }
+        case 'field_access': {
+          // Fully-qualified static call (`com.x.Util.m(...)`): the whole
+          // receiver text IS a type.
+          const asType = resolveProjectType(node.text, cls, index);
+          if (asType) return { cls: asType };
+          const fo = node.childForFieldName('object');
+          const fieldNode = node.childForFieldName('field');
+          if (!fo || !fieldNode) return 'unknown';
+          const owner = resolveReceiver(fo, depth + 1);
+          if (owner === 'external' || owner === 'unknown') return owner;
+          const field = owner.cls.fields.find((f) => f.name === fieldNode.text);
+          if (!field) return 'external'; // inherited-from-framework field
+          const fieldType = resolveProjectType(field.type, owner.cls, index);
+          return fieldType ? { cls: fieldType } : 'external';
+        }
+        case 'cast_expression': {
+          const typeNode = node.childForFieldName('type');
+          const resolved = typeNode ? resolveProjectType(typeNode.text, cls, index) : null;
+          return resolved ? { cls: resolved } : 'external';
+        }
+        case 'parenthesized_expression': {
+          const inner = namedNonComment(node)[0] ?? null;
+          return inner ? resolveReceiver(inner, depth + 1) : 'unknown';
+        }
+        case 'object_creation_expression': {
+          const typeNode = node.childForFieldName('type');
+          const resolved = typeNode ? resolveProjectType(typeNode.text, cls, index) : null;
+          return resolved ? { cls: resolved } : 'external';
+        }
+        case 'array_access': {
+          const arrayNode = node.childForFieldName('array');
+          if (arrayNode && arrayNode.type === 'identifier') {
+            const declared = declaredTypeOf(arrayNode.text);
+            if (declared) {
+              const element = resolveProjectType(declared.replace(/\[\s*\]/g, ''), cls, index);
+              return element ? { cls: element } : 'external';
+            }
+          }
+          return 'unknown';
+        }
+        case 'method_invocation': {
+          // Return-type chaining: `Factory.make().run()` and the singleton
+          // idiom `X.getInstance().save()` type the receiver as the INNER
+          // call's declared return type. Fluent chains rooted in an
+          // EXTERNAL type (Response.status(...).entity(...).build()) stay
+          // silent; only a genuinely untypeable root goes loud.
+          const inner = resolveCallTargetMethod(node, depth + 1);
+          if (inner === 'external' || inner === 'unknown') return inner;
+          const returnType = stripGenerics(inner.method.returnType);
+          const resolved = resolveProjectType(returnType, inner.owner, index);
+          return resolved ? { cls: resolved } : 'external';
+        }
+        case 'super': {
+          const parent = cls.superClass ? resolveProjectType(cls.superClass, cls, index) : null;
+          return parent ? { cls: parent } : 'external';
+        }
+        default:
+          return 'unknown';
+      }
+    };
+
+    /** The project method one invocation statically targets (receiver typed
+     *  via resolveReceiver) - the chaining primitive. A project receiver
+     *  whose method is not declared in the project resolves 'external'
+     *  (inherited from a framework base), never loud. */
+    const resolveCallTargetMethod = (
+      inv: SyntaxNode,
+      depth: number
+    ): { owner: JavaClassInfo; method: JavaMethodInfo } | 'external' | 'unknown' => {
+      const nameNode = inv.childForFieldName('name');
+      if (!nameNode) return 'unknown';
+      const argsNode = inv.childForFieldName('arguments');
+      const argCount = argsNode ? namedNonComment(argsNode).length : 0;
+      const objectNode = inv.childForFieldName('object');
+      let owner: JavaClassInfo | null = null;
+      if (!objectNode) {
+        owner = cls.methods.some((m) => m.name === nameNode.text)
+          ? cls
+          : resolveStaticImport(nameNode.text);
+        if (!owner) return 'external';
+      } else {
+        const receiver = resolveReceiver(objectNode, depth);
+        if (receiver === 'external' || receiver === 'unknown') return receiver;
+        owner = receiver.cls;
+      }
+      const found = findMethodInHierarchy(owner, nameNode.text, argCount, index);
+      return found ?? 'external';
+    };
+
+    return { resolveReceiver, resolveStaticImport };
+  };
+
   const hasProjectCall = (cls: JavaClassInfo, method: JavaMethodInfo): boolean => {
     if (!method.bodyNode) return false;
-    const declaredTypeOf = buildDeclaredTypeLookup(cls, method);
+    const { resolveReceiver } = receiverResolverFor(cls, method);
     for (const inv of collectNodesOfType(method.bodyNode, 'method_invocation')) {
       const nameNode = inv.childForFieldName('name');
       if (!nameNode) continue;
@@ -437,13 +622,23 @@ export function extractBehaviour(
         if (cls.methods.some((m) => m !== method && m.name === nameNode.text)) return true;
         continue;
       }
-      if (objectNode.type === 'identifier') {
-        const declared = declaredTypeOf(objectNode.text);
-        const target = declared
-          ? resolveProjectType(declared, cls, index)
-          : resolveProjectType(objectNode.text, cls, index);
-        if (target) return true;
-      }
+      // Full receiver typing (2026-08-21): a project-typed OR untypeable
+      // receiver means this might be a project call - never inline it away
+      // (a trivial-looking method whose only call had a ternary receiver
+      // was inlined, deleting the loud unresolved row before it could
+      // exist). External-rooted receivers stay inline-eligible.
+      const receiver = resolveReceiver(objectNode, 0);
+      if (receiver !== 'external') return true;
+    }
+    // Method references (`store::record`) are calls too — a project-typed
+    // or untypeable ref receiver blocks inlining exactly like a call
+    // (2026-08-21: a forEach(store::record) method was inline-suppressed,
+    // deleting the ref row before it could exist).
+    for (const refNode of collectNodesOfType(method.bodyNode, 'method_reference')) {
+      const named = namedNonComment(refNode);
+      if (named.length === 0) continue;
+      const receiver = resolveReceiver(named[0], 0);
+      if (receiver !== 'external') return true;
     }
     return false;
   };
@@ -507,39 +702,47 @@ export function extractBehaviour(
       line: node.startPosition.row + 1,
     });
 
+    const { resolveReceiver, resolveStaticImport } = receiverResolverFor(cls, method);
+
+    /** Synthetic symbol for a LOUD unresolved call: `?#name(?,?)` — the
+     *  arity survives, so the corpus-side name+arity dispatch expansion can
+     *  still resolve it downstream; failing that it lands in broken_calls. */
+    const unresolvedSymbol = (name: string, argCount: number): string =>
+      `?#${name}(${Array.from({ length: argCount }, () => '?').join(',')})`;
+
     const resolveInvocation = (inv: SyntaxNode): CallResolution | null => {
       const nameNode = inv.childForFieldName('name');
       if (!nameNode) return null;
-      const objectNode = inv.childForFieldName('object');
-      let targetClass: JavaClassInfo | null = null;
-      if (!objectNode || objectNode.type === 'this') {
-        targetClass = cls.methods.some((m) => m.name === nameNode.text) ? cls : null;
-      } else if (objectNode.type === 'identifier') {
-        const declared = declaredTypeOf(objectNode.text);
-        // Field/param/local receiver by declared type; otherwise a static
-        // `Cls.m(...)` call resolved by class name.
-        targetClass = declared
-          ? resolveProjectType(declared, cls, index)
-          : resolveProjectType(objectNode.text, cls, index);
-      } else if (objectNode.type === 'field_access') {
-        const fo = objectNode.childForFieldName('object');
-        const fieldNode = objectNode.childForFieldName('field');
-        if (fo && fieldNode && fo.type === 'this') {
-          const declared = declaredTypeOf(fieldNode.text);
-          if (declared) targetClass = resolveProjectType(declared, cls, index);
-        }
-      }
-      if (!targetClass) return null;
       const argsNode = inv.childForFieldName('arguments');
       const argCount = argsNode ? namedNonComment(argsNode).length : 0;
+      const objectNode = inv.childForFieldName('object');
+
+      let targetClass: JavaClassInfo | null = null;
+      if (!objectNode) {
+        targetClass = cls.methods.some((m) => m.name === nameNode.text)
+          ? cls
+          : resolveStaticImport(nameNode.text);
+        if (!targetClass) return null; // implicit/external — silent by design
+      } else {
+        const receiver = resolveReceiver(objectNode, 0);
+        if (receiver === 'external') return null;
+        if (receiver === 'unknown') {
+          return {
+            kind: 'call',
+            symbol: unresolvedSymbol(nameNode.text, argCount),
+            targetKey: null,
+          };
+        }
+        targetClass = receiver.cls;
+      }
 
       // A call whose DECLARED type is a boundary class (interface, abstract
       // base, or concrete DAO) is the data layer — route it straight to that
       // boundary contract (2026-08-21: interface dispatch used to resolve to
       // the Impl's behaviour TABLE, a dead end that hid the DAO entirely).
       if (boundaryClassFqns.has(targetClass.fqn)) {
-        const bm = findMethod(targetClass, nameNode.text, argCount);
-        const sym = bm ? methodSymbol(bm) : `${targetClass.fqn}#${nameNode.text}(?)`;
+        const bm = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
+        const sym = bm ? methodSymbol(bm.method) : `${targetClass.fqn}#${nameNode.text}(?)`;
         return {
           kind: 'call',
           symbol: sym,
@@ -549,22 +752,25 @@ export function extractBehaviour(
       }
 
       if (targetClass.kind === 'interface') {
-        const ifaceMethod = findMethod(targetClass, nameNode.text, argCount);
+        // Hierarchy-aware: the method may be declared on a PARENT interface
+        // and the impl's body may be inherited from an abstract base.
+        const ifaceMethod = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
         if (!ifaceMethod) return null;
         const impls = index.implementationsOf(targetClass.fqn);
         if (impls.length === 0) return null;
         if (impls.length === 1) {
-          const implMethod = findMethod(impls[0], nameNode.text, argCount);
-          return implMethod ? classResolution(impls[0], implMethod) : null;
+          const implMethod = findMethodInHierarchy(impls[0], nameNode.text, argCount, index);
+          return implMethod ? classResolution(implMethod.owner, implMethod.method) : null;
         }
         const candidates = impls.map((impl) => {
-          const m = findMethod(impl, nameNode.text, argCount);
-          return m ? methodSymbol(m) : `${impl.fqn}#${nameNode.text}(?)`;
+          const m = findMethodInHierarchy(impl, nameNode.text, argCount, index);
+          return m ? methodSymbol(m.method) : `${impl.fqn}#${nameNode.text}(?)`;
         });
-        return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod), candidates };
+        return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod.method), candidates };
       }
-      const target = findMethod(targetClass, nameNode.text, argCount);
-      if (target && target.bodyNode) return classResolution(targetClass, target);
+      const found = findMethodInHierarchy(targetClass, nameNode.text, argCount, index);
+      if (found && found.method.bodyNode) return classResolution(found.owner, found.method);
+      const target = found?.method ?? null;
       // Abstract-class dispatch (2026-08-21): the declared type is a CLASS but
       // the matched method has no body (abstract) or is absent — the
       // factory/loader pattern (abstract base, concrete subclasses picked at
@@ -576,8 +782,10 @@ export function extractBehaviour(
       if (subs.length > 0) {
         const overrides: Array<{ cls: JavaClassInfo; method: JavaMethodInfo }> = [];
         for (const sub of subs) {
-          const m = findMethod(sub, nameNode.text, argCount);
-          if (m && m.bodyNode) overrides.push({ cls: sub, method: m });
+          const m = findMethodInHierarchy(sub, nameNode.text, argCount, index)?.method ?? null;
+          if (m && m.bodyNode && !overrides.some((o) => o.method === m)) {
+            overrides.push({ cls: sub, method: m });
+          }
         }
         if (overrides.length === 1) {
           return classResolution(overrides[0].cls, overrides[0].method);
@@ -592,16 +800,69 @@ export function extractBehaviour(
           };
         }
       }
-      return target ? classResolution(targetClass, target) : null;
+      return found ? classResolution(found.owner, found.method) : null;
     };
 
-    const firstResolution = (stmt: SyntaxNode): CallResolution | null => {
-      for (const inv of collectNodesOfType(stmt, 'method_invocation')) {
-        const r = resolveInvocation(inv);
-        if (r) return r;
+    /** `dao::save` / `AuditStore::log` / `this::helper` — resolved like a
+     *  call with unknown arity; constructor refs (`Foo::new`) and
+     *  external-rooted receivers stay silent; untypeable receivers go LOUD
+     *  (2026-08-21: method references previously vanished entirely). */
+    const resolveMethodReference = (refNode: SyntaxNode): CallResolution | null => {
+      const named = namedNonComment(refNode);
+      if (named.length === 0) return null;
+      const receiverNode = named[0];
+      const nameNode = named[named.length - 1];
+      if (!nameNode || nameNode.type !== 'identifier' || nameNode.text === 'new') return null;
+      const receiver = resolveReceiver(receiverNode, 0);
+      if (receiver === 'external') return null;
+      if (receiver === 'unknown') {
+        return { kind: 'call', symbol: unresolvedSymbol(nameNode.text, 0), targetKey: null };
       }
-      return null;
+      if (boundaryClassFqns.has(receiver.cls.fqn)) {
+        const bm = findMethodInHierarchy(receiver.cls, nameNode.text, -1, index);
+        const sym = bm ? methodSymbol(bm.method) : `${receiver.cls.fqn}#${nameNode.text}(?)`;
+        return {
+          kind: 'call',
+          symbol: sym,
+          targetKey:
+            boundaryKeyBySymbol.get(sym) ?? boundaryKeyBySymbol.get(receiver.cls.fqn) ?? null,
+        };
+      }
+      const target = findMethodInHierarchy(receiver.cls, nameNode.text, -1, index);
+      return target ? classResolution(target.owner, target.method) : null;
     };
+
+    /**
+     * EVERY resolvable (or loud-unresolved) invocation in one statement, in
+     * source order, deduped (2026-08-21 sweep: first-resolution-wins lost
+     * every nested project call — `mapper.wrap(dao.load(x))` dropped the DAO
+     * read without a trace).
+     */
+    const allResolutions = (stmt: SyntaxNode): CallResolution[] => {
+      const out: CallResolution[] = [];
+      const seen = new Set<string>();
+      const nodes = [
+        ...collectNodesOfType(stmt, 'method_invocation'),
+        ...collectNodesOfType(stmt, 'method_reference'),
+      ].sort(
+        (a, b) => a.startIndex - b.startIndex
+      );
+      for (const node of nodes) {
+        const r =
+          node.type === 'method_reference'
+            ? resolveMethodReference(node)
+            : resolveInvocation(node);
+        if (!r) continue;
+        const key = `${r.kind}|${r.symbol}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(r);
+      }
+      return out;
+    };
+
+    const firstResolution = (stmt: SyntaxNode): CallResolution | null =>
+      allResolutions(stmt)[0] ?? null;
 
     const recordDispatch = (res: Extract<CallResolution, { kind: 'dispatch' }>): void => {
       findings.push({
@@ -612,10 +873,9 @@ export function extractBehaviour(
       });
     };
 
-    /** Row for a plain statement that contains a resolvable project call. */
-    function statementRow(stmt: SyntaxNode): RowDraft | null {
-      const res = firstResolution(stmt);
-      if (!res) return null;
+    /** One row per resolution — the shared mapper for statement/return/loop
+     *  extras. Dispatch resolutions record their ambiguity finding. */
+    function callRowOf(res: Extract<CallResolution, { kind: 'call' | 'dispatch' }>, stmt: SyntaxNode): RowDraft {
       if (res.kind === 'dispatch') {
         recordDispatch(res);
         return {
@@ -623,15 +883,6 @@ export function extractBehaviour(
           conditionVerbatim: null,
           conditionRef: ref(stmt),
           outcome: { type: 'call', targetKey: null, targetSymbol: res.symbol },
-        };
-      }
-      if (res.kind === 'inline') {
-        // Inline-trivial / accessor callee: the call stays verbatim.
-        return {
-          kind: 'branch',
-          conditionVerbatim: null,
-          conditionRef: ref(stmt),
-          outcome: { type: 'terminal', verbatim: stmt.text, ref: ref(stmt), outcomeLabel: 'effect' },
         };
       }
       return {
@@ -642,37 +893,75 @@ export function extractBehaviour(
       };
     }
 
-    function returnRow(stmt: SyntaxNode): RowDraft {
-      const res = firstResolution(stmt);
-      if (res && res.kind === 'dispatch') {
-        recordDispatch(res);
-        return {
-          kind: 'dispatch',
-          conditionVerbatim: null,
-          conditionRef: ref(stmt),
-          outcome: { type: 'call', targetKey: null, targetSymbol: res.symbol },
-        };
+    /** Rows for a plain statement: ONE row per resolvable project call
+     *  (2026-08-21 — previously first-resolution-wins). Inline-only
+     *  statements keep the single verbatim 'effect' row. */
+    function statementRows(stmt: SyntaxNode): RowDraft[] {
+      const resolutions = allResolutions(stmt);
+      const calls = resolutions.filter(
+        (r): r is Extract<CallResolution, { kind: 'call' | 'dispatch' }> => r.kind !== 'inline'
+      );
+      if (calls.length > 0) return calls.map((r) => callRowOf(r, stmt));
+      if (resolutions.length > 0) {
+        // Inline-trivial / accessor callee(s): the call stays verbatim.
+        return [
+          {
+            kind: 'branch',
+            conditionVerbatim: null,
+            conditionRef: ref(stmt),
+            outcome: { type: 'terminal', verbatim: stmt.text, ref: ref(stmt), outcomeLabel: 'effect' },
+          },
+        ];
       }
-      if (res && res.kind === 'call') {
-        return {
+      return [];
+    }
+
+    function returnRows(stmt: SyntaxNode): RowDraft[] {
+      const calls = allResolutions(stmt).filter(
+        (r): r is Extract<CallResolution, { kind: 'call' | 'dispatch' }> => r.kind !== 'inline'
+      );
+      if (calls.length === 0) {
+        // Inline resolutions keep the call inside the verbatim return.
+        return [
+          {
+            kind: 'terminal',
+            conditionVerbatim: null,
+            conditionRef: null,
+            outcome: {
+              type: 'terminal',
+              verbatim: stmt.text,
+              ref: ref(stmt),
+              outcomeLabel: `value:${method.returnType}`,
+            },
+          },
+        ];
+      }
+      // First (outermost) resolution keeps the terminal position it always
+      // had; the REST — previously silently lost nested calls — become
+      // ordinary call rows before it (2026-08-21).
+      const [first, ...rest] = calls;
+      const extras = rest.map((r) => callRowOf(r, stmt));
+      if (first.kind === 'dispatch') {
+        recordDispatch(first);
+        return [
+          ...extras,
+          {
+            kind: 'dispatch',
+            conditionVerbatim: null,
+            conditionRef: ref(stmt),
+            outcome: { type: 'call', targetKey: null, targetSymbol: first.symbol },
+          },
+        ];
+      }
+      return [
+        ...extras,
+        {
           kind: 'terminal',
           conditionVerbatim: null,
           conditionRef: null,
-          outcome: { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol },
-        };
-      }
-      // Inline resolutions keep the call inside the verbatim return.
-      return {
-        kind: 'terminal',
-        conditionVerbatim: null,
-        conditionRef: null,
-        outcome: {
-          type: 'terminal',
-          verbatim: stmt.text,
-          ref: ref(stmt),
-          outcomeLabel: `value:${method.returnType}`,
+          outcome: { type: 'call', targetKey: first.targetKey, targetSymbol: first.symbol },
         },
-      };
+      ];
     }
 
     function throwRow(stmt: SyntaxNode): RowDraft {
@@ -689,7 +978,7 @@ export function extractBehaviour(
       };
     }
 
-    function loopRow(stmt: SyntaxNode): RowDraft {
+    function loopRows(stmt: SyntaxNode): RowDraft[] {
       const body = stmt.childForFieldName('body');
       const header = body
         ? method.sourceText.slice(stmt.startIndex, body.startIndex).trim()
@@ -716,20 +1005,39 @@ export function extractBehaviour(
       // the corpus closure would silently lose the callee (observed on the
       // fixture: NightlyRollupJob#run's per-node findNode call). Terminals in
       // the body still win (they end the enclosing method); otherwise the
-      // first resolvable call/dispatch in the body becomes the loop outcome.
-      if (!outcome && body) {
-        const res = firstResolution(body);
-        if (res && res.kind === 'dispatch') {
+      // first resolvable call/dispatch in the body becomes the loop outcome —
+      // and EVERY remaining body call rides along as its own row
+      // (2026-08-21: a loop body writing via a second call lost that write).
+      const bodyCalls = body
+        ? allResolutions(body).filter(
+            (r): r is Extract<CallResolution, { kind: 'call' | 'dispatch' }> =>
+              r.kind !== 'inline'
+          )
+        : [];
+      let usedIndex = -1;
+      if (!outcome && bodyCalls.length > 0) {
+        const res = bodyCalls[0];
+        usedIndex = 0;
+        if (res.kind === 'dispatch') {
           recordDispatch(res);
           outcome = { type: 'call', targetKey: null, targetSymbol: res.symbol };
-        } else if (res && res.kind === 'call') {
+        } else {
           outcome = { type: 'call', targetKey: res.targetKey, targetSymbol: res.symbol };
         }
       }
       if (!outcome) {
         outcome = { type: 'terminal', verbatim: header, ref: ref(stmt), outcomeLabel: 'value' };
       }
-      return { kind: 'loop', conditionVerbatim: header, conditionRef: ref(stmt), outcome };
+      const loop: RowDraft = {
+        kind: 'loop',
+        conditionVerbatim: header,
+        conditionRef: ref(stmt),
+        outcome,
+      };
+      const extras = bodyCalls
+        .filter((_, i) => i !== usedIndex)
+        .map((r) => callRowOf(r, stmt));
+      return [loop, ...extras];
     }
 
     function catchRow(clause: SyntaxNode): RowDraft {
@@ -853,6 +1161,14 @@ export function extractBehaviour(
               if (!c) continue;
               if (c.type === 'catch_clause') {
                 rows.push(catchRow(c));
+                // Catch-body project calls (compensating/audit writes in
+                // handlers) ride along as rows too (2026-08-21).
+                const cb = c.childForFieldName('body');
+                if (cb) {
+                  for (const r of allResolutions(cb)) {
+                    if (r.kind !== 'inline') rows.push(callRowOf(r, c));
+                  }
+                }
               } else if (c.type === 'finally_clause') {
                 const fb = namedNonComment(c).find((n) => n.type === 'block');
                 if (fb) rows.push(...processStatements(namedNonComment(fb), depth + 1));
@@ -864,17 +1180,16 @@ export function extractBehaviour(
           case 'enhanced_for_statement':
           case 'while_statement':
           case 'do_statement':
-            rows.push(loopRow(stmt));
+            rows.push(...loopRows(stmt));
             break;
           case 'return_statement':
-            rows.push(returnRow(stmt));
+            rows.push(...returnRows(stmt));
             break;
           case 'throw_statement':
             rows.push(throwRow(stmt));
             break;
           default: {
-            const r = statementRow(stmt);
-            if (r) rows.push(r);
+            rows.push(...statementRows(stmt));
             break;
           }
         }
