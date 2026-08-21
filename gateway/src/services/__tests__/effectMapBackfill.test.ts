@@ -507,7 +507,7 @@ describe('proven-read + read-mapped parity (2026-08-21)', () => {
     expect(result.proven_read).toHaveLength(0);
     expect(result.trace).toHaveLength(1);
     expect(result.trace[0].boundaries_reached[0]).toBe(
-      'BlindDao (ops 1, sql 0, reads 0, writes 0)',
+      'BlindDao (ops 1, sql 0, reads 0, writes 0; blind ops: run)',
     );
   });
 });
