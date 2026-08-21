@@ -197,6 +197,9 @@ export interface DispatchExpansionIndex {
   tablesByNameArity: Map<string, string[]>;
   tablesByName: Map<string, string[]>;
   boundariesByOpName: Map<string, string[]>;
+  /** Class FQNs with ANY corpus presence — powers the unresolved-call
+   *  diagnosis clause ("class absent from corpus" vs "no method match"). */
+  classFqnsInCorpus: Set<string>;
 }
 
 const DISPATCH_EXPANSION_CAP = 5;
@@ -205,6 +208,7 @@ export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansi
   const tablesByNameArity = new Map<string, string[]>();
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
+  const classFqnsInCorpus = new Set<string>();
   const push = (map: Map<string, string[]>, key: string, value: string) => {
     const list = map.get(key) ?? [];
     if (!list.includes(value)) list.push(value);
@@ -217,7 +221,14 @@ export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansi
       const symbol = contract.source_symbol ?? '';
       const hash = symbol.indexOf('#');
       if (hash >= 0) {
-        const name = symbol.slice(hash + 1);
+        // Symbols are `Cls#method(ParamTypes)` — strip the parameter list so
+        // the key matches expandDispatch's bare `name/arity` lookup
+        // (2026-08-21 fix: unstripped keys made the expansion inert on real
+        // corpora; paren-less fixture symbols masked it).
+        const afterHash = symbol.slice(hash + 1);
+        const paren = afterHash.indexOf('(');
+        const name = paren >= 0 ? afterHash.slice(0, paren) : afterHash;
+        classFqnsInCorpus.add(symbol.slice(0, hash));
         const arity = Array.isArray(
           (body as { signatureInputs?: unknown[] } | null)?.signatureInputs,
         )
@@ -227,13 +238,18 @@ export function buildDispatchIndex(contracts: SclContractDto[]): DispatchExpansi
         push(tablesByName, name, contract.contract_key);
       }
     } else if (contract.kind === 'boundary') {
+      const symbol = contract.source_symbol ?? '';
+      if (symbol) {
+        const hash = symbol.indexOf('#');
+        classFqnsInCorpus.add(hash >= 0 ? symbol.slice(0, hash) : symbol);
+      }
       for (const operation of body?.operations ?? []) {
         const opName = (operation as { name?: string })?.name;
         if (opName) push(boundariesByOpName, opName, contract.contract_key);
       }
     }
   }
-  return { tablesByNameArity, tablesByName, boundariesByOpName };
+  return { tablesByNameArity, tablesByName, boundariesByOpName, classFqnsInCorpus };
 }
 
 function expandDispatch(
@@ -252,6 +268,31 @@ function expandDispatch(
   const total = tables.length + boundaries.length;
   if (total === 0 || total > DISPATCH_EXPANSION_CAP) return null;
   return { tables, boundaries };
+}
+
+/** WHY a call could not be expanded — one clause for the broken-call line
+ *  (mirror of the scan emitter's `unresolvedReason`). */
+export function unresolvedReason(
+  targetSymbol: string,
+  expansion: DispatchExpansionIndex,
+): string {
+  const hash = targetSymbol.indexOf('#');
+  const paren = targetSymbol.indexOf('(', hash);
+  if (hash < 0 || paren < 0) return 'unparseable target symbol';
+  const clsFqn = targetSymbol.slice(0, hash);
+  const name = targetSymbol.slice(hash + 1, paren);
+  const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
+  const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
+  const total =
+    (expansion.tablesByNameArity.get(`${name}/${arity}`) ?? []).length ||
+    (expansion.tablesByName.get(name) ?? []).length +
+      (expansion.boundariesByOpName.get(name) ?? []).length;
+  if (total > DISPATCH_EXPANSION_CAP) {
+    return `${total} name-matched candidates exceed the expansion cap ${DISPATCH_EXPANSION_CAP}`;
+  }
+  return expansion.classFqnsInCorpus.has(clsFqn)
+    ? `class in corpus but no method named ${name}/${arity}`
+    : 'target class has NO corpus presence (never sliced/reached)';
 }
 
 /**
@@ -321,8 +362,11 @@ export function walkCallGraph(
           for (const t of expanded.tables) if (!visited.has(t)) queue.push(t);
           for (const b of expanded.boundaries) boundaries.add(b);
         } else if (brokenCalls.length < 10) {
+          const reason = expansion
+            ? ` (${unresolvedReason(outcome.targetSymbol ?? '', expansion)})`
+            : '';
           brokenCalls.push(
-            `${key}: call to ${outcome.targetSymbol ?? '(unknown symbol)'} unresolved`,
+            `${key}: call to ${outcome.targetSymbol ?? '(unknown symbol)'} unresolved${reason}`,
           );
         }
         continue;
@@ -761,7 +805,7 @@ export async function runEffectMapBackfill(
   for (const entry of trace) {
     byStage[entry.stage] = (byStage[entry.stage] ?? 0) + 1;
     for (const broken of entry.broken_calls) {
-      const target = broken.replace(/^.*?call to /, '').replace(/ unresolved$/, '');
+      const target = broken.replace(/^.*?call to /, '').replace(/ unresolved.*$/, '');
       brokenCounts.set(target, (brokenCounts.get(target) ?? 0) + 1);
     }
   }

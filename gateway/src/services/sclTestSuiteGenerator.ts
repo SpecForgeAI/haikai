@@ -624,7 +624,10 @@ function goldenOutcomesOf(rootTables: SclContractDto[]): GoldenOutcome[] {
   );
   for (const table of sorted) {
     const httpMethod = (deriveHttpMethod(table.body_json) ?? 'GET').toLowerCase();
-    const fragment = derivePathFragment(table.body_json) ?? '/';
+    // derivePathFragment trims slashes (composition, 2026-08-21) — a MockMvc
+    // request path must be root-relative, so restore the leading slash here.
+    const rawFragment = derivePathFragment(table.body_json) ?? '/';
+    const fragment = rawFragment.startsWith('/') ? rawFragment : `/${rawFragment}`;
     const pathParamCount = (fragment.match(/\{[^}]*\}/g) ?? []).length;
     for (const row of rowsOf(table)) {
       const label = asString(row.outcome.outcomeLabel);

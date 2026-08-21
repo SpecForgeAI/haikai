@@ -605,7 +605,13 @@ export function StartCaptureSessionWizard({
       schema: step3.schema || null,
       username: step3.username,
       password: '[REDACTED]',
+      // Legacy key kept for older readers; `allowlistTables`/`allowlistSchemas`
+      // are the canonical keys the capture tools read (2026-08-21 wire-key
+      // fix: `allowlist` alone never reached `list_db_metadata`, which
+      // fail-closed to zero tables on EVERY session).
       allowlist: parseAllowlist(step3.allowlistText),
+      allowlistTables: parseAllowlist(step3.allowlistText),
+      allowlistSchemas: step3.schema.trim() ? [step3.schema.trim()] : null,
     };
   }, [step3]);
 
@@ -1902,6 +1908,26 @@ export function StartCaptureSessionWizard({
                       }
                     />
                   </div>
+                  {parseAllowlist(step3.allowlistText).length === 0 &&
+                    step3.schema.trim().length === 0 && (
+                      <div
+                        data-testid="start-capture-session-wizard-allowlist-warning"
+                        style={{
+                          color: '#8a6d3b',
+                          background: '#fcf8e3',
+                          border: '1px solid #faebcc',
+                          borderRadius: 4,
+                          padding: '8px 10px',
+                          marginBottom: 8,
+                        }}
+                      >
+                        <strong>DB metadata will be EMPTY.</strong> With no
+                        schema and no allowlist, metadata listing fail-closes to
+                        zero tables — the capture LLM cannot sample real ids and
+                        many scenarios will be skipped. Enter the schema (e.g.
+                        the owner of your tables) or list table names.
+                      </div>
+                    )}
                 </>
               )}
             </>

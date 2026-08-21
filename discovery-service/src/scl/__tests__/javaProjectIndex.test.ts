@@ -136,3 +136,21 @@ describe('indexJavaProject (fixture legacy app)', () => {
     expect(index.rootDir).toBe(FIXTURE_ROOT);
   });
 });
+
+describe('subclassesOf (2026-08-21 abstract-class dispatch expansion)', () => {
+  let index: JavaProjectIndex;
+  beforeAll(async () => {
+    index = await indexJavaProject(FIXTURE_ROOT);
+  });
+
+  it('finds project classes extending a named base (simple or FQN form)', () => {
+    const subs = index.subclassesOf('Exception').map((c) => c.simpleName);
+    expect(subs).toEqual(['NoDataFoundException', 'ViewNotFoundException']);
+  });
+
+  it('returns [] for a base nothing extends, sorted deterministic otherwise', () => {
+    expect(index.subclassesOf('com.legacy.hier.dao.ViewDao')).toEqual([]);
+    const twice = index.subclassesOf('Exception').map((c) => c.fqn);
+    expect(twice).toEqual([...twice].sort());
+  });
+});

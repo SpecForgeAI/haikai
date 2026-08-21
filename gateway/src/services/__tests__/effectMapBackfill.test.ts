@@ -295,3 +295,68 @@ describe('runEffectMapBackfill', () => {
     expect(result.unproposed).toHaveLength(2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-08-21 fixes: real-symbol dispatch keys + unresolved-reason clause
+// ---------------------------------------------------------------------------
+
+import { buildDispatchIndex, unresolvedReason } from '../effectMapBackfill';
+
+describe('dispatch fixes (2026-08-21)', () => {
+  const contractsWithRealSymbols: SclContractDto[] = [
+    contract({
+      contract_key: 'T-impl',
+      kind: 'behaviour_table',
+      source_symbol: 'com.example.factory.DbNodeLoader#load(LocalDate)',
+      body_json: { signatureInputs: [{ name: 'd', typeRef: 'LocalDate' }], rows: [] } as never,
+    }),
+    contract({
+      contract_key: 'Q-dao',
+      kind: 'boundary',
+      source_symbol: 'com.example.dao.NodeDao',
+      body_json: { operations: [{ name: 'save', sqlVerbatim: 'UPDATE t SET x=1' }] } as never,
+    }),
+  ];
+
+  it('buildDispatchIndex strips the parameter list from REAL symbols (paren fix)', () => {
+    const index = buildDispatchIndex(contractsWithRealSymbols);
+    expect(index.tablesByNameArity.get('load/1')).toEqual(['T-impl']);
+    expect(index.tablesByName.get('load')).toEqual(['T-impl']);
+    // The broken pre-fix key must NOT exist.
+    expect(index.tablesByNameArity.has('load(LocalDate)/1')).toBe(false);
+    expect(index.classFqnsInCorpus.has('com.example.factory.DbNodeLoader')).toBe(true);
+    expect(index.classFqnsInCorpus.has('com.example.dao.NodeDao')).toBe(true);
+  });
+
+  it('unresolvedReason distinguishes absent classes from missing methods', () => {
+    const index = buildDispatchIndex(contractsWithRealSymbols);
+    expect(unresolvedReason('com.x.Gone#fetch(LocalDate)', index)).toContain(
+      'NO corpus presence',
+    );
+    expect(
+      unresolvedReason('com.example.factory.DbNodeLoader#fetch(LocalDate)', index),
+    ).toContain('no method named fetch/1');
+  });
+
+  it('walkCallGraph broken-call lines carry the reason when an expansion index is supplied', () => {
+    const bodies = new Map<string, { rows?: unknown[] }>([
+      [
+        'T-root',
+        {
+          rows: [
+            {
+              outcome: {
+                type: 'call',
+                targetKey: null,
+                targetSymbol: 'com.x.Gone#fetch(LocalDate)',
+              },
+            },
+          ],
+        },
+      ],
+    ]);
+    const index = buildDispatchIndex(contractsWithRealSymbols);
+    const walk = walkCallGraph('T-root', bodies as never, 500, index);
+    expect(walk.brokenCalls[0]).toContain('unresolved (target class has NO corpus presence');
+  });
+});

@@ -194,9 +194,11 @@ describe('CaptureSessionDetailView -- idle session secret-loss prompt (Task 8.1 
       />,
     );
 
-    // Wait for the initial load to flush.
-    await screen.findByTestId('capture-session-detail-view');
-    // The inline re-enter prompt must be present.
+    // Wait for the initial load to flush. NOTE: the Loading early-return
+    // carries the same `capture-session-detail-view` testid, so waiting on
+    // the container is a race against the fetch microtasks (observed flaky
+    // 2026-08-21) — wait for the prompt itself.
+    await screen.findByTestId('capture-session-detail-reenter-secrets-prompt');
     expect(
       screen.getByTestId('capture-session-detail-reenter-secrets-prompt'),
     ).toBeInTheDocument();

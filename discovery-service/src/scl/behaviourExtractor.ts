@@ -475,6 +475,34 @@ export function extractBehaviour(
         return { kind: 'dispatch', symbol: methodSymbol(ifaceMethod), candidates };
       }
       const target = findMethod(targetClass, nameNode.text, argCount);
+      if (target && target.bodyNode) return classResolution(targetClass, target);
+      // Abstract-class dispatch (2026-08-21): the declared type is a CLASS but
+      // the matched method has no body (abstract) or is absent — the
+      // factory/loader pattern (abstract base, concrete subclasses picked at
+      // runtime). Devirtualize exactly like interface dispatch, over the
+      // transitive subclasses. Previously these calls stayed unresolved
+      // forever, so the whole downstream chain (assembler closure, effect
+      // walk) broke at every factory call site.
+      const subs = index.subclassesOf(targetClass.fqn);
+      if (subs.length > 0) {
+        const overrides: Array<{ cls: JavaClassInfo; method: JavaMethodInfo }> = [];
+        for (const sub of subs) {
+          const m = findMethod(sub, nameNode.text, argCount);
+          if (m && m.bodyNode) overrides.push({ cls: sub, method: m });
+        }
+        if (overrides.length === 1) {
+          return classResolution(overrides[0].cls, overrides[0].method);
+        }
+        if (overrides.length > 1) {
+          return {
+            kind: 'dispatch',
+            symbol: target
+              ? methodSymbol(target)
+              : `${targetClass.fqn}#${nameNode.text}(?)`,
+            candidates: overrides.map((o) => methodSymbol(o.method)),
+          };
+        }
+      }
       return target ? classResolution(targetClass, target) : null;
     };
 
@@ -772,9 +800,19 @@ export function extractBehaviour(
   // 4. Draft tables (rows + signature), complexity budget applied per table.
   // -------------------------------------------------------------------------
 
+  // Class-level routing annotations (@Path / @RequestMapping on the TYPE)
+  // are prepended to each table's annotations (2026-08-21): a handler whose
+  // method-level @Path is placeholders-only ("{date}/{id}") carries its
+  // literal route prefix at class level, and without it such handlers have
+  // no usable root fragment at all (the no_root_match diagnosis). Consumers
+  // (`derivePathFragment` in the emitter + gateway) compose ALL @Path values
+  // in order into one fragment.
+  const CLASS_ROUTING_RE = /@(?:Path|RequestMapping)\s*\(/;
+
   const drafts: TableDraft[] = [];
   for (const cls of index.classesByFqn.values()) {
     if (cls.kind === 'interface' || boundaryClassFqns.has(cls.fqn)) continue;
+    const classRoutingAnnotations = cls.annotations.filter((a) => CLASS_ROUTING_RE.test(a));
     for (const method of cls.methods) {
       if (!method.bodyNode || classificationByMethod.get(method) !== 'table') continue;
       const symbol = methodSymbol(method);
@@ -831,7 +869,7 @@ export function extractBehaviour(
         startLine: method.startLine,
         signatureInputs,
         outcomeSignature,
-        annotations: method.annotations,
+        annotations: [...classRoutingAnnotations, ...method.annotations],
         rows,
         key: '',
       });

@@ -217,15 +217,23 @@ export function deriveHttpMethod(body: SclContractBody | null | undefined): stri
   return null;
 }
 
-/** Best-effort path fragment from the METHOD-LEVEL annotations (@Path /
- * @RequestMapping-family value). When the body cannot resolve a full path the
- * method-level fragment alone is used — per design, best-effort. */
+/** Best-effort path fragment from the table's annotations: ALL @Path /
+ * @RequestMapping-family values COMPOSED in order (2026-08-21 — the
+ * extractor prepends the CLASS-level routing annotation, so a handler whose
+ * method-level @Path is placeholders-only still yields a literal-bearing
+ * fragment like `hierarchy/{date}/{id}`). Single-annotation tables behave
+ * exactly as before. */
 export function derivePathFragment(body: SclContractBody | null | undefined): string | null {
   const text = annotationText(body);
-  const m = text.match(
-    /@(?:Path|RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\s*\(\s*(?:value\s*=\s*)?"([^"]+)"/
-  );
-  return m ? m[1] : null;
+  const re =
+    /@(?:Path|RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\s*\(\s*(?:value\s*=\s*)?"([^"]+)"/g;
+  const parts: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const part = m[1].replace(/^\/+|\/+$/g, '');
+    if (part.length > 0) parts.push(part);
+  }
+  return parts.length > 0 ? parts.join('/') : null;
 }
 
 /** "Captured path CONTAINS the fragment", template-aware: `{param}` segments in

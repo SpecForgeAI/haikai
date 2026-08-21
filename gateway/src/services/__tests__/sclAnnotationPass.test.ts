@@ -20,6 +20,7 @@ jest.mock('../logger', () => ({
 }));
 
 import {
+  derivePathFragment,
   runSclAnnotationPass,
   SclAnnotationDeps,
   SclContractWire,
@@ -393,5 +394,22 @@ describe('stableStringify', () => {
     expect(stableStringify({ b: 1, a: { d: 2, c: [3, null] } })).toBe(
       '{"a":{"c":[3,null],"d":2},"b":1}'
     );
+  });
+});
+
+describe('derivePathFragment composition (2026-08-21)', () => {
+  it('composes class-level + method-level @Path values in order', () => {
+    expect(
+      derivePathFragment({
+        annotations: ['@Path("hierarchy")', '@POST', '@Path("{date}/{id}")'],
+      } as never),
+    ).toBe('hierarchy/{date}/{id}');
+  });
+
+  it('single @Path unchanged apart from slash trimming', () => {
+    expect(derivePathFragment({ annotations: ['@GET', '@Path("/views/{viewId}")'] } as never)).toBe(
+      'views/{viewId}',
+    );
+    expect(derivePathFragment({ annotations: ['@GET'] } as never)).toBeNull();
   });
 });

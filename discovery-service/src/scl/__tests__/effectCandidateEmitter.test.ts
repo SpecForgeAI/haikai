@@ -11,9 +11,12 @@ import { DiscoveryCandidate } from '../../types/candidate';
 import type { SclCorpus } from '../corpusAssembler';
 import {
   deriveCorpusEffectCandidates,
+  derivePathFragment,
+  indexCorpus,
   parseProposalContent,
   parseWriteTablesFromSql,
   proposeEffectCandidatesViaLlm,
+  unresolvedReason,
 } from '../effectCandidateEmitter';
 
 // ---------------------------------------------------------------------------
@@ -456,5 +459,126 @@ describe('helpers', () => {
     );
     expect(proposals).toHaveLength(1);
     expect(proposals[0].path).toBe('/x');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2026-08-21 fixes: composed fragments, real-symbol dispatch expansion,
+// unresolved-call diagnosis reasons
+// ---------------------------------------------------------------------------
+
+describe('composed path fragments + dispatch fixes (2026-08-21)', () => {
+  it('derivePathFragment composes class-level + method-level @Path in order', () => {
+    expect(
+      derivePathFragment(['@Path("hierarchy")', '@POST', '@Path("{date}/{id}")']),
+    ).toBe('hierarchy/{date}/{id}');
+    expect(derivePathFragment(['@POST', '@Path("/lookup/")'])).toBe('lookup');
+    expect(derivePathFragment(['@POST'])).toBeNull();
+  });
+
+  it('a placeholder-only METHOD fragment becomes a usable root via the class prefix', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-h',
+        symbol: 'HierarchyResource#byDate',
+        annotations: ['@Path("hierarchy")', '@POST', '@Path("{date}/{id}")'],
+        callTargets: ['Q-hdao'],
+      }),
+      boundary({ key: 'Q-hdao', symbol: 'HierarchyDao', sql: ['INSERT INTO hier_node (a) VALUES (1)'] }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('h', 'POST', '/hierarchy/{businessDate}/{orgUnitId}')],
+    });
+    expect(result.uncovered).toHaveLength(0);
+    expect(result.candidates.map((c) => c.name)).toEqual(['h → hier_node (write)']);
+  });
+
+  it('dispatch expansion resolves REAL `Cls#method(Type)` symbols (paren-strip fix)', () => {
+    // Root's call row is null-target with a real-style abstract symbol; the
+    // concrete override's table is found by bare name+arity and the walk
+    // continues to its boundary write.
+    const root = behaviourTable({
+      key: 'T-root',
+      symbol: 'NodeResource#save',
+      annotations: ['@POST', '@Path("save")'],
+      callTargets: [],
+    });
+    (root.contract as { rows: unknown[] }).rows = [
+      {
+        index: 0,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: {
+          type: 'call',
+          targetKey: null,
+          targetSymbol: 'com.example.factory.NodeLoader#load(LocalDate)',
+        },
+      },
+    ];
+    const impl = behaviourTable({
+      key: 'T-impl',
+      symbol: 'com.example.factory.DbNodeLoader#load(LocalDate)',
+      annotations: [],
+      callTargets: ['Q-ndao'],
+    });
+    (impl.contract as { signatureInputs: unknown[] }).signatureInputs = [
+      { name: 'date', typeRef: 'LocalDate' },
+    ];
+    const corpus = corpusOf([
+      root,
+      impl,
+      boundary({ key: 'Q-ndao', symbol: 'NodeDao', sql: ['UPDATE node_state SET x = 1'] }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('n', 'POST', '/nodes/save')],
+    });
+    expect(result.uncovered).toHaveLength(0);
+    expect(result.candidates.map((c) => c.name)).toEqual(['n → node_state (write)']);
+  });
+
+  it('unresolvedReason distinguishes absent classes from missing methods', () => {
+    const index = indexCorpus(CORPUS);
+    expect(unresolvedReason('com.x.Missing#nope(LocalDate)', index)).toContain(
+      'NO corpus presence',
+    );
+    expect(unresolvedReason('FilterResource#nope(LocalDate)', index)).toContain(
+      'no method named nope/1',
+    );
+  });
+
+  it('broken-call lines carry the reason clause', () => {
+    const root = behaviourTable({
+      key: 'T-r',
+      symbol: 'R#go',
+      annotations: ['@POST', '@Path("go")'],
+      callTargets: [],
+    });
+    (root.contract as { rows: unknown[] }).rows = [
+      {
+        index: 0,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: {
+          type: 'call',
+          targetKey: null,
+          targetSymbol: 'com.x.GoneLoader#fetch(LocalDate)',
+        },
+      },
+    ];
+    const result = deriveCorpusEffectCandidates({
+      corpus: corpusOf([root]),
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('g', 'POST', '/go')],
+    });
+    expect(result.uncovered).toHaveLength(1);
+    expect(result.uncovered[0].diagnosis.broken_calls[0]).toContain(
+      'target class has NO corpus presence',
+    );
   });
 });
