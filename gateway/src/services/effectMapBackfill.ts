@@ -89,6 +89,15 @@ export interface EndpointDiagnosis extends UnmappedEndpoint {
   boundaries_reached: string[];
 }
 
+/** A write-verb endpoint whose COMPLETE walk proved it only READS — the
+ *  POST-implemented-lookup case (2026-08-21 mirror of the scan emitter's
+ *  proven-read classification; read edges are applied so the preflight
+ *  stops demanding write maps for it). */
+export interface ProvenReadEndpoint extends UnmappedEndpoint {
+  read_tables: string[];
+  evidence: string;
+}
+
 /** Screenshot-friendly rollup (2026-08-20: transfer is screenshots only —
  *  counts + deduped tops, never per-endpoint repetition). */
 export interface BackfillSummary {
@@ -96,6 +105,11 @@ export interface BackfillSummary {
   by_stage: Record<string, number>;
   /** `symbol (count)` — deduped unresolved-call targets, worst first. */
   top_broken_targets: string[];
+  /** Endpoints EXCLUDED up front because the model already carries read
+   *  effect edges for them (the preflight does not block those). */
+  read_mapped_count: number;
+  /** Endpoints classified proven-read THIS run (read edges applied). */
+  proven_read_count: number;
 }
 
 export interface EffectMapBackfillResult {
@@ -103,6 +117,8 @@ export interface EffectMapBackfillResult {
   summary: BackfillSummary;
   derived: DerivedEffect[];
   derived_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
+  proven_read: ProvenReadEndpoint[];
+  proven_read_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
   proposals: ProposedEffect[];
   unproposed: UnproposedEndpoint[];
   /** Deterministic-phase diagnosis for every endpoint that needed the LLM. */
@@ -140,6 +156,31 @@ export function parseWriteTablesFromSql(sql: string | null | undefined): string[
     while ((match = pattern.exec(sql)) !== null) {
       const token = bareTableToken(match[1]);
       // Temp tables (#t) and variables (@t) are never committed entities.
+      if (!token || token.startsWith('#') || token.startsWith('@')) continue;
+      if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
+    }
+  }
+  return found;
+}
+
+const READ_SQL_PATTERNS: RegExp[] = [
+  /\bfrom\s+([A-Za-z0-9_."\[\]$#]+)/gi,
+  /\bjoin\s+([A-Za-z0-9_."\[\]$#]+)/gi,
+];
+
+/** Distinct READ-table tokens (FROM/JOIN; `DELETE FROM` excluded — that's a
+ *  write). Mirror of the scan emitter's — powers the backfill's proven-read
+ *  classification (2026-08-21). */
+export function parseReadTablesFromSql(sql: string | null | undefined): string[] {
+  if (!sql) return [];
+  const found: string[] = [];
+  for (const pattern of READ_SQL_PATTERNS) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(sql)) !== null) {
+      const before = sql.slice(Math.max(0, match.index - 12), match.index);
+      if (/delete\s*$/i.test(before)) continue;
+      const token = bareTableToken(match[1]);
       if (!token || token.startsWith('#') || token.startsWith('@')) continue;
       if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
     }
@@ -457,6 +498,8 @@ export interface McpApplyEffect {
   table_name: string;
   source: 'corpus' | 'llm';
   evidence?: string | null;
+  /** Omitted = 'write' (back-compat). 'read' = proven-read edges. */
+  access_mode?: 'write' | 'read';
 }
 
 export type McpApplyCaller = (
@@ -580,27 +623,43 @@ export async function runEffectMapBackfill(
   }
 
   const mappedEndpointIds = new Set<string>();
+  const readMappedEndpointIds = new Set<string>();
   for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
     const mode = (edge.access_mode ?? '').toLowerCase();
-    if ((mode === 'write' || mode === 'read-write') && edge.endpoint_id) {
-      mappedEndpointIds.add(edge.endpoint_id);
-    }
+    if (!edge.endpoint_id) continue;
+    if (mode === 'write' || mode === 'read-write') mappedEndpointIds.add(edge.endpoint_id);
+    else if (mode === 'read') readMappedEndpointIds.add(edge.endpoint_id);
   }
 
   const unmapped: UnmappedEndpoint[] = [];
+  let readMappedCount = 0;
   for (const endpoint of model.metaModel?.entities?.endpoints ?? []) {
     const verb = (endpoint.operation_verb ?? '').toUpperCase();
     if (!endpoint.id || !MUTATING_VERBS.has(verb)) continue;
     if (mappedEndpointIds.has(endpoint.id)) continue;
+    if (readMappedEndpointIds.has(endpoint.id)) {
+      // Preflight parity (2026-08-21): a read-mapped endpoint does NOT block
+      // capture — listing it as "unmapped" here was a false alarm.
+      readMappedCount++;
+      continue;
+    }
     unmapped.push({ endpoint_id: endpoint.id, method: verb, path: endpoint.path_or_address ?? '' });
   }
 
   if (unmapped.length === 0) {
     return {
       unmapped_count: 0,
-      summary: { unmapped_count: 0, by_stage: {}, top_broken_targets: [] },
+      summary: {
+        unmapped_count: 0,
+        by_stage: {},
+        top_broken_targets: [],
+        read_mapped_count: readMappedCount,
+        proven_read_count: 0,
+      },
       derived: [],
       derived_apply: null,
+      proven_read: [],
+      proven_read_apply: null,
       proposals: [],
       unproposed: [],
       trace: [],
@@ -611,18 +670,35 @@ export async function runEffectMapBackfill(
   const contracts = (await d.fetchContracts(projectId, architectureId)) ?? [];
   const bodiesByKey = new Map<string, ContractBodyLike>();
   const boundaryTablesByKey = new Map<string, string[]>();
+  const boundaryReadTablesByKey = new Map<string, string[]>();
+  /** Per-boundary SQL visibility (2026-08-21 diagnosis: distinguishes a
+   *  genuinely read-only DAO from one whose SQL is INVISIBLE to the corpus —
+   *  dynamic SQL / external JDBC — where nothing can be proven). */
+  const boundaryStatsByKey = new Map<string, { ops: number; withSql: number }>();
   for (const contract of contracts) {
     if (!contract.contract_key) continue;
     const body = (contract.body_json ?? null) as ContractBodyLike | null;
     if (body) bodiesByKey.set(contract.contract_key, body);
     if (contract.kind === 'boundary') {
       const tables: string[] = [];
+      const readTables: string[] = [];
+      let ops = 0;
+      let withSql = 0;
       for (const operation of body?.operations ?? []) {
+        ops++;
+        if (operation?.sqlVerbatim) withSql++;
         for (const table of parseWriteTablesFromSql(operation?.sqlVerbatim)) {
           if (!tables.some((t) => t.toLowerCase() === table.toLowerCase())) tables.push(table);
         }
+        for (const table of parseReadTablesFromSql(operation?.sqlVerbatim)) {
+          if (!readTables.some((t) => t.toLowerCase() === table.toLowerCase())) {
+            readTables.push(table);
+          }
+        }
       }
       boundaryTablesByKey.set(contract.contract_key, tables);
+      boundaryReadTablesByKey.set(contract.contract_key, readTables);
+      boundaryStatsByKey.set(contract.contract_key, { ops, withSql });
     }
   }
   const httpRoots = collectHttpRootTables(contracts);
@@ -636,6 +712,7 @@ export async function runEffectMapBackfill(
     }
   }
   const derived: DerivedEffect[] = [];
+  const provenRead: ProvenReadEndpoint[] = [];
   const trace: EndpointDiagnosis[] = [];
   const needProposal: Array<UnmappedEndpoint & { rootKeys: string[] }> = [];
   for (const endpoint of unmapped) {
@@ -643,6 +720,7 @@ export async function runEffectMapBackfill(
     const rootKeys = roots.map((r) => r.key);
     const writeTables: string[] = [];
     const unknownTables: string[] = [];
+    const readTables: string[] = [];
     const brokenCalls: string[] = [];
     const boundariesReached: string[] = [];
     for (const rootKey of rootKeys) {
@@ -651,14 +729,26 @@ export async function runEffectMapBackfill(
         if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
       }
       for (const boundaryKey of walk.boundaries) {
-        const symbol = symbolByKey.get(boundaryKey) ?? boundaryKey;
+        const stats = boundaryStatsByKey.get(boundaryKey);
+        const reads = boundaryReadTablesByKey.get(boundaryKey) ?? [];
+        const writes = boundaryTablesByKey.get(boundaryKey) ?? [];
+        const symbol =
+          (symbolByKey.get(boundaryKey) ?? boundaryKey) +
+          (stats
+            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${reads.length}, writes ${writes.length})`
+            : '');
         if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
-        for (const table of boundaryTablesByKey.get(boundaryKey) ?? []) {
+        for (const table of writes) {
           const committed = tableByLower.get(table.toLowerCase());
           if (committed) {
             if (!writeTables.includes(committed)) writeTables.push(committed);
           } else if (!unknownTables.includes(table)) {
             unknownTables.push(table);
+          }
+        }
+        for (const table of reads) {
+          if (!readTables.some((t) => t.toLowerCase() === table.toLowerCase())) {
+            readTables.push(table);
           }
         }
       }
@@ -669,6 +759,22 @@ export async function runEffectMapBackfill(
         tables: writeTables,
         evidence: `corpus roots: ${roots.map((r) => r.symbol).join(', ')}`,
         unknown_tables: unknownTables,
+      });
+    } else if (
+      roots.length > 0 &&
+      brokenCalls.length === 0 &&
+      unknownTables.length === 0 &&
+      readTables.length > 0
+    ) {
+      // PROVEN READ-ONLY (2026-08-21 mirror of the scan emitter): the walk is
+      // COMPLETE, no write SQL anywhere (committed or not), and the data
+      // layer it reaches carries actual read SQL. Apply read edges so the
+      // compensation preflight stops demanding a write map for this
+      // POST-implemented lookup.
+      provenRead.push({
+        ...endpoint,
+        read_tables: readTables,
+        evidence: `corpus roots: ${roots.map((r) => r.symbol).join(', ')}`,
       });
     } else {
       // Diagnosis: name the exact failure stage + the evidence to fix it.
@@ -707,6 +813,21 @@ export async function runEffectMapBackfill(
       })),
     );
     derivedApply = await d.mcpApply(projectId, architectureId, effects);
+  }
+
+  // ---- Apply proven-read edges (additive, access_mode 'read').
+  let provenReadApply: EffectMapBackfillResult['proven_read_apply'] = null;
+  if (provenRead.length > 0) {
+    const effects: McpApplyEffect[] = provenRead.flatMap((entry) =>
+      entry.read_tables.map((table) => ({
+        endpoint_id: entry.endpoint_id,
+        table_name: table,
+        source: 'corpus' as const,
+        evidence: entry.evidence,
+        access_mode: 'read' as const,
+      })),
+    );
+    provenReadApply = await d.mcpApply(projectId, architectureId, effects);
   }
 
   // ---- Phase 2: guarded LLM proposals for the remainder.
@@ -793,8 +914,11 @@ export async function runEffectMapBackfill(
     projectId,
     architectureId,
     unmapped: unmapped.length,
+    readMappedSkipped: readMappedCount,
     derived: derived.length,
     derivedApplied: derivedApply?.applied ?? 0,
+    provenRead: provenRead.length,
+    provenReadApplied: provenReadApply?.applied ?? 0,
     proposals: proposals.length,
     unproposed: unproposed.length,
   });
@@ -820,9 +944,13 @@ export async function runEffectMapBackfill(
       unmapped_count: unproposed.length,
       by_stage: byStage,
       top_broken_targets: topBrokenTargets,
+      read_mapped_count: readMappedCount,
+      proven_read_count: provenRead.length,
     },
     derived,
     derived_apply: derivedApply,
+    proven_read: provenRead,
+    proven_read_apply: provenReadApply,
     proposals,
     unproposed,
     trace,

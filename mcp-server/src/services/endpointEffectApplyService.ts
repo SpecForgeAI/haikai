@@ -33,6 +33,10 @@ export interface EndpointEffectDelta {
   source: 'corpus' | 'llm';
   /** Optional human-readable evidence (root symbol / boundary cite). */
   evidence?: string | null;
+  /** Omitted = 'write' (back-compat). 'read' = proven-read edges
+   *  (2026-08-21) — a complete corpus walk showed the endpoint only reads,
+   *  so the compensation preflight stops demanding a write map for it. */
+  access_mode?: 'write' | 'read';
 }
 
 export interface SkippedEffectDelta {
@@ -104,20 +108,25 @@ export async function applyEndpointEffects(
   }
   const edges: any[] = model.metaModel.relationships.endpoint_data_effects;
 
-  /** Existing WRITE coverage: `${endpointId}|${bareEntityId}` for write /
-   *  read-write edges — the additive skip predicate. */
+  /** Existing coverage per mode: `${endpointId}|${bareEntityId}` — the
+   *  additive skip predicates. Write deltas skip against write/read-write
+   *  edges; read deltas skip when the pair ALREADY has any edge (a write
+   *  edge subsumes a read one for the preflight's purposes). */
   const writeEdgeKeys = new Set<string>();
+  const anyEdgeKeys = new Set<string>();
   for (const edge of edges) {
-    const mode = String(edge?.access_mode ?? '').toLowerCase();
-    if (mode !== 'write' && mode !== 'read-write') continue;
     if (!edge?.endpoint_id || !edge?.data_entity_point_id) continue;
-    writeEdgeKeys.add(`${edge.endpoint_id}|${bareEntityId(edge.data_entity_point_id)}`);
+    const key = `${edge.endpoint_id}|${bareEntityId(edge.data_entity_point_id)}`;
+    anyEdgeKeys.add(key);
+    const mode = String(edge?.access_mode ?? '').toLowerCase();
+    if (mode === 'write' || mode === 'read-write') writeEdgeKeys.add(key);
   }
 
   const skipped: SkippedEffectDelta[] = [];
   let applied = 0;
 
   for (const delta of deltas) {
+    const mode = delta.access_mode === 'read' ? 'read' : 'write';
     const endpoint = endpointById.get(String(delta.endpoint_id));
     if (!endpoint) {
       skipped.push({
@@ -137,12 +146,12 @@ export async function applyEndpointEffects(
       continue;
     }
     const key = `${endpoint.id}|${physical.id}`;
-    if (writeEdgeKeys.has(key)) {
+    if (mode === 'write' ? writeEdgeKeys.has(key) : anyEdgeKeys.has(key)) {
       skipped.push({
         delta,
         reason:
-          `endpoint "${endpoint.id}" already has a write effect edge to ` +
-          `"${physical.name}" — additive apply never duplicates`,
+          `endpoint "${endpoint.id}" already has a${mode === 'write' ? ' write' : 'n'} ` +
+          `effect edge to "${physical.name}" — additive apply never duplicates`,
       });
       continue;
     }
@@ -151,17 +160,18 @@ export async function applyEndpointEffects(
       id: `ede-bf-${randomUUID()}`,
       endpoint_id: endpoint.id,
       data_entity_point_id: `dep_phy_${physical.id}`,
-      access_mode: 'write',
+      access_mode: mode,
       path_metadata_json: null,
       confidence: delta.source === 'corpus' ? 0.9 : 0.7,
       description:
-        `effect-map backfill (${delta.source})` +
+        `effect-map backfill (${delta.source}${mode === 'read' ? ', proven-read' : ''})` +
         (delta.evidence ? `: ${String(delta.evidence).slice(0, 300)}` : ''),
       tags: 'effect_map_backfill',
       valid_from: null,
       valid_to: null,
     });
-    writeEdgeKeys.add(key);
+    anyEdgeKeys.add(key);
+    if (mode === 'write') writeEdgeKeys.add(key);
     applied++;
   }
 

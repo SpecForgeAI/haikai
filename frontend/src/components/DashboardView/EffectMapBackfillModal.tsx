@@ -154,7 +154,9 @@ export const EffectMapBackfillModal: React.FC<EffectMapBackfillModalProps> = ({
             >
               <div>
                 <strong>Summary:</strong> {result.derived_apply?.applied ?? 0} derived
-                edge(s) applied · {result.proposals.length} LLM proposal(s) ·{' '}
+                edge(s) applied · {result.summary?.proven_read_count ?? 0} proven
+                read-only · {result.summary?.read_mapped_count ?? 0} already
+                read-mapped · {result.proposals.length} LLM proposal(s) ·{' '}
                 {result.unproposed.length} still unmapped
               </div>
               {Object.keys(result.summary?.by_stage ?? {}).length > 0 && (
@@ -194,6 +196,24 @@ export const EffectMapBackfillModal: React.FC<EffectMapBackfillModalProps> = ({
                 )}
               </div>
             ))}
+
+            {(result.proven_read ?? []).length > 0 && (
+              <>
+                <h3 style={{ margin: '14px 0 4px', fontSize: 14, color: '#1b5e20' }}>
+                  Proven read-only — read edges applied (
+                  {result.proven_read_apply?.applied ?? 0} edge(s)); the
+                  preflight no longer blocks these
+                </h3>
+                {result.proven_read.map((r) => (
+                  <div key={r.endpoint_id} data-testid={`backfill-proven-read-${r.endpoint_id}`}>
+                    <code>
+                      {r.method} {r.path}
+                    </code>{' '}
+                    → reads {r.read_tables.join(', ')}
+                  </div>
+                ))}
+              </>
+            )}
 
             <h3 style={{ margin: '14px 0 4px', fontSize: 14 }}>
               LLM proposals — review, then apply ({approvedCount} of{' '}

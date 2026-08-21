@@ -360,3 +360,154 @@ describe('dispatch fixes (2026-08-21)', () => {
     expect(walk.brokenCalls[0]).toContain('unresolved (target class has NO corpus presence');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 2026-08-21 round 2: preflight parity (read-mapped skip) + proven-read
+// ---------------------------------------------------------------------------
+
+describe('proven-read + read-mapped parity (2026-08-21)', () => {
+  const READ_ONLY_CONTRACTS: SclContractDto[] = [
+    contract({
+      contract_key: 'T-lookup',
+      kind: 'behaviour_table',
+      source_symbol: 'FilterResource#lookup',
+      body_json: {
+        annotations: ['@POST', '@Path("lookup")'],
+        rows: [{ outcome: { type: 'call', targetKey: 'Q-dao' } }],
+      } as never,
+    }),
+    contract({
+      contract_key: 'Q-dao',
+      kind: 'boundary',
+      source_symbol: 'FilterDao',
+      body_json: {
+        operations: [{ name: 'find', sqlVerbatim: 'SELECT a FROM filters WHERE x = ?' }],
+      } as never,
+    }),
+  ];
+
+  it('a COMPLETE read-only walk is proven-read: read edges applied, never sent to the LLM', async () => {
+    const mcpCalls: unknown[][] = [];
+    let llmCalled = false;
+    const result = await runEffectMapBackfill(
+      { projectId: 'p1', architectureId: 'a1' },
+      {
+        fetchRawModel: async () =>
+          ({
+            metaModel: {
+              entities: {
+                endpoints: [
+                  { id: 'ep-1', operation_verb: 'POST', path_or_address: '/filters/lookup' },
+                ],
+                physical_data_entities: [{ id: 'phy-1', name: 'filters' }],
+              },
+              relationships: { endpoint_data_effects: [] },
+            },
+          }) as never,
+        fetchContracts: async () => READ_ONLY_CONTRACTS,
+        mcpApply: async (_p, _a, effects) => {
+          mcpCalls.push(effects as unknown[]);
+          return { applied: effects.length, skipped: [] };
+        },
+        llm: async () => {
+          llmCalled = true;
+          return { content: JSON.stringify({ proposals: [] }) };
+        },
+      },
+    );
+
+    expect(result.proven_read).toHaveLength(1);
+    expect(result.proven_read[0]).toMatchObject({
+      endpoint_id: 'ep-1',
+      read_tables: ['filters'],
+    });
+    expect(result.summary.proven_read_count).toBe(1);
+    expect(result.proven_read_apply?.applied).toBe(1);
+    // The ONE mcp call is the proven-read apply, access_mode 'read'.
+    expect(mcpCalls).toHaveLength(1);
+    expect((mcpCalls[0][0] as { access_mode?: string }).access_mode).toBe('read');
+    expect(llmCalled).toBe(false);
+    expect(result.unproposed).toHaveLength(0);
+    expect(result.trace).toHaveLength(0);
+  });
+
+  it('read-mapped endpoints are excluded up front (preflight parity) and counted', async () => {
+    const result = await runEffectMapBackfill(
+      { projectId: 'p1', architectureId: 'a1' },
+      {
+        fetchRawModel: async () =>
+          ({
+            metaModel: {
+              entities: {
+                endpoints: [
+                  { id: 'ep-1', operation_verb: 'POST', path_or_address: '/filters/lookup' },
+                ],
+                physical_data_entities: [{ id: 'phy-1', name: 'filters' }],
+              },
+              relationships: {
+                endpoint_data_effects: [
+                  {
+                    endpoint_id: 'ep-1',
+                    access_mode: 'read',
+                    data_entity_point_id: 'dep_phy_phy-1',
+                  },
+                ],
+              },
+            },
+          }) as never,
+        fetchContracts: async () => READ_ONLY_CONTRACTS,
+        mcpApply: async (_p, _a, effects) => ({ applied: effects.length, skipped: [] }),
+        llm: async () => ({ content: JSON.stringify({ proposals: [] }) }),
+      },
+    );
+    expect(result.unmapped_count).toBe(0);
+    expect(result.summary.read_mapped_count).toBe(1);
+    expect(result.proven_read).toHaveLength(0);
+  });
+
+  it('boundary lines in the trace carry SQL-visibility stats', async () => {
+    const NO_SQL_CONTRACTS: SclContractDto[] = [
+      contract({
+        contract_key: 'T-save',
+        kind: 'behaviour_table',
+        source_symbol: 'R#save',
+        body_json: {
+          annotations: ['@POST', '@Path("save")'],
+          rows: [{ outcome: { type: 'call', targetKey: 'Q-blind' } }],
+        } as never,
+      }),
+      contract({
+        contract_key: 'Q-blind',
+        kind: 'boundary',
+        source_symbol: 'BlindDao',
+        body_json: {
+          operations: [{ name: 'run', sqlVerbatim: null }],
+        } as never,
+      }),
+    ];
+    const result = await runEffectMapBackfill(
+      { projectId: 'p1', architectureId: 'a1' },
+      {
+        fetchRawModel: async () =>
+          ({
+            metaModel: {
+              entities: {
+                endpoints: [{ id: 'ep-1', operation_verb: 'POST', path_or_address: '/x/save' }],
+                physical_data_entities: [{ id: 'phy-1', name: 'filters' }],
+              },
+              relationships: { endpoint_data_effects: [] },
+            },
+          }) as never,
+        fetchContracts: async () => NO_SQL_CONTRACTS,
+        mcpApply: async (_p, _a, effects) => ({ applied: effects.length, skipped: [] }),
+        llm: async () => ({ content: JSON.stringify({ proposals: [] }) }),
+      },
+    );
+    // No SQL anywhere -> NOT proven read; the stats say WHY.
+    expect(result.proven_read).toHaveLength(0);
+    expect(result.trace).toHaveLength(1);
+    expect(result.trace[0].boundaries_reached[0]).toBe(
+      'BlindDao (ops 1, sql 0, reads 0, writes 0)',
+    );
+  });
+});

@@ -41,10 +41,20 @@ export interface BackfillDiagnosis extends BackfillEndpointRef {
   boundaries_reached: string[];
 }
 
+export interface BackfillProvenRead extends BackfillEndpointRef {
+  read_tables: string[];
+  evidence: string;
+}
+
 export interface BackfillSummary {
   unmapped_count: number;
   by_stage: Record<string, number>;
   top_broken_targets: string[];
+  /** Endpoints excluded up front: the model already carries read effect
+   *  edges for them — the capture preflight does not block those. */
+  read_mapped_count: number;
+  /** Endpoints proven read-only THIS run (read edges auto-applied). */
+  proven_read_count: number;
 }
 
 export interface EffectMapBackfillRunResponse {
@@ -52,6 +62,8 @@ export interface EffectMapBackfillRunResponse {
   summary: BackfillSummary;
   derived: BackfillDerived[];
   derived_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
+  proven_read: BackfillProvenRead[];
+  proven_read_apply: { applied: number; skipped: Array<{ reason: string }> } | null;
   proposals: BackfillProposal[];
   unproposed: BackfillUnproposed[];
   trace: BackfillDiagnosis[];

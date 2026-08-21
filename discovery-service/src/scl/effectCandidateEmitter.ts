@@ -158,6 +158,10 @@ interface CorpusIndex {
   boundaryWritesByKey: Map<string, string[]>;
   boundaryReadsByKey: Map<string, string[]>;
   boundarySymbolByKey: Map<string, string>;
+  /** Per-boundary SQL visibility (2026-08-21 diagnosis: a DAO with ops but
+   *  no verbatim SQL means the SQL is INVISIBLE — dynamic / external JDBC —
+   *  and nothing can be proven from it). */
+  boundaryStatsByKey: Map<string, { ops: number; withSql: number }>;
   /** Behaviour-table keys by `${methodName}/${arity}` (dispatch expansion). */
   tablesByNameArity: Map<string, string[]>;
   /** Behaviour-table keys by method name alone (arity fallback). */
@@ -176,6 +180,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const boundaryWritesByKey = new Map<string, string[]>();
   const boundaryReadsByKey = new Map<string, string[]>();
   const boundarySymbolByKey = new Map<string, string>();
+  const boundaryStatsByKey = new Map<string, { ops: number; withSql: number }>();
   const tablesByNameArity = new Map<string, string[]>();
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
@@ -213,7 +218,11 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       const boundary = contract as SclBoundaryContract;
       const writes: string[] = [];
       const reads: string[] = [];
+      let ops = 0;
+      let withSql = 0;
       for (const operation of boundary.operations ?? []) {
+        ops++;
+        if (operation.sqlVerbatim) withSql++;
         for (const table of parseWriteTablesFromSql(operation.sqlVerbatim)) {
           if (!writes.some((t) => t.toLowerCase() === table.toLowerCase())) writes.push(table);
         }
@@ -224,6 +233,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       }
       boundaryWritesByKey.set(contract.key, writes);
       boundaryReadsByKey.set(contract.key, reads);
+      boundaryStatsByKey.set(contract.key, { ops, withSql });
       boundarySymbolByKey.set(contract.key, boundary.symbol);
       const boundaryHash = boundary.symbol.indexOf('#');
       classFqnsInCorpus.add(boundaryHash >= 0 ? boundary.symbol.slice(0, boundaryHash) : boundary.symbol);
@@ -234,6 +244,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     boundaryWritesByKey,
     boundaryReadsByKey,
     boundarySymbolByKey,
+    boundaryStatsByKey,
     tablesByNameArity,
     tablesByName,
     boundariesByOpName,
@@ -498,7 +509,14 @@ export function deriveCorpusEffectCandidates(args: {
         if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
       }
       for (const boundaryKey of walk.boundaries) {
-        const symbol = index.boundarySymbolByKey.get(boundaryKey) ?? boundaryKey;
+        const stats = index.boundaryStatsByKey.get(boundaryKey);
+        const boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
+        const boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+        const symbol =
+          (index.boundarySymbolByKey.get(boundaryKey) ?? boundaryKey) +
+          (stats
+            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${boundaryReads.length}, writes ${boundaryWrites.length})`
+            : '');
         if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
         for (const table of index.boundaryWritesByKey.get(boundaryKey) ?? []) {
           if (!tables.some((t) => t.toLowerCase() === table.toLowerCase())) tables.push(table);
