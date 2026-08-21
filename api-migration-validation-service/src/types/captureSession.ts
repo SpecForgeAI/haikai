@@ -47,8 +47,35 @@ export interface RedactedDbConfig {
   username?: string | null;
   allowlistTables?: string[] | null;
   allowlistSchemas?: string[] | null;
+  /** LEGACY wizard wire key — the Step-3 form persisted its table allowlist
+   *  as flat `allowlist` while the tools read `allowlistTables`, so the
+   *  session allowlist was ALWAYS empty at the reader and `list_db_metadata`
+   *  fail-closed to zero rows (2026-08-21 diagnosis — the same wire-key bug
+   *  class as `dbType` vs `type`). Read via {@link effectiveDbAllowlist}. */
+  allowlist?: string[] | null;
   maxRowsPerQuery?: number | null;
   queryTimeoutSeconds?: number | null;
+}
+
+/**
+ * THE session DB allowlist, wire-key tolerant: tables from `allowlistTables`
+ * (canonical) falling back to the legacy wizard key `allowlist`; schemas
+ * from `allowlistSchemas` falling back to the single `schema` connection
+ * field (the operator naming a schema plainly intends it as the metadata
+ * scope). Every allowlist consumer MUST read through this helper.
+ */
+export function effectiveDbAllowlist(config: RedactedDbConfig | null | undefined): {
+  schemas: string[] | null;
+  tables: string[] | null;
+} {
+  const tables = config?.allowlistTables ?? config?.allowlist ?? null;
+  const schemas =
+    config?.allowlistSchemas ??
+    (config?.schema && config.schema.trim().length > 0 ? [config.schema.trim()] : null);
+  return {
+    schemas: schemas && schemas.length > 0 ? schemas : null,
+    tables: tables && tables.length > 0 ? tables : null,
+  };
 }
 
 export interface CaptureSession {

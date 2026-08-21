@@ -378,8 +378,16 @@ function expandDispatchTarget(targetSymbol: string, slice: SclSliceResult): Disp
   const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
 
   const cls = slice.index.classesByFqn.get(clsFqn);
-  if (!cls || cls.kind !== 'interface') return { keys: [], classFqns: [] };
-  const impls = slice.index.implementationsOf(cls.fqn);
+  if (!cls || cls.kind === 'enum') return { keys: [], classFqns: [] };
+  // Interface dispatch expands over `implements`; abstract-class (factory /
+  // loader) dispatch expands over transitive `extends` subclasses PLUS the
+  // base class's own method when it is concrete (2026-08-21 — previously
+  // only interfaces expanded, so factory-pattern call chains never pulled
+  // their concrete loader bodies into the corpus).
+  const impls =
+    cls.kind === 'interface'
+      ? slice.index.implementationsOf(cls.fqn)
+      : [cls, ...slice.index.subclassesOf(cls.fqn)];
   if (impls.length === 0) return { keys: [], classFqns: [] };
 
   const keys: string[] = [];

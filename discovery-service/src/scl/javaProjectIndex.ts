@@ -114,6 +114,16 @@ export interface JavaProjectIndex {
    * interface = the dispatch-ambiguity case the slicer surfaces as a finding.
    */
   implementationsOf(interfaceSimpleOrFqn: string): JavaClassInfo[];
+  /**
+   * Project classes that `extends` the given class, TRANSITIVELY (simple or
+   * fully-qualified form accepted; matched by last segment, mirroring
+   * `implementationsOf`). Sorted by FQN. Powers abstract-class dispatch
+   * expansion (2026-08-21: the factory/loader pattern — an abstract base
+   * whose concrete subclasses the factory picks — resolved like interface
+   * dispatch; previously only `implements` was devirtualized, so those
+   * call chains broke and their endpoints could never be effect-mapped).
+   */
+  subclassesOf(classSimpleOrFqn: string): JavaClassInfo[];
   parseErrors: Array<{ path: string; message: string }>;
   /**
    * INTERNAL — parsed Trees pinned for the index's lifetime. Extractors hold
@@ -629,6 +639,28 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
       }
       impls.sort((a, b) => (a.fqn < b.fqn ? -1 : a.fqn > b.fqn ? 1 : 0));
       return impls;
+    },
+    subclassesOf(classSimpleOrFqn: string): JavaClassInfo[] {
+      // Transitive BFS over the direct extends-relation; cycle-safe via the
+      // seen set (a superclass cycle is invalid Java but hostile input is
+      // tolerated everywhere in this index).
+      const out: JavaClassInfo[] = [];
+      const seen = new Set<string>();
+      let wanted = [lastSegment(classSimpleOrFqn)];
+      while (wanted.length > 0) {
+        const next: string[] = [];
+        for (const cls of classesByFqn.values()) {
+          if (cls.kind !== 'class' || !cls.superClass || seen.has(cls.fqn)) continue;
+          if (wanted.includes(lastSegment(cls.superClass))) {
+            seen.add(cls.fqn);
+            out.push(cls);
+            next.push(cls.simpleName);
+          }
+        }
+        wanted = next;
+      }
+      out.sort((a, b) => (a.fqn < b.fqn ? -1 : a.fqn > b.fqn ? 1 : 0));
+      return out;
     },
   };
 }

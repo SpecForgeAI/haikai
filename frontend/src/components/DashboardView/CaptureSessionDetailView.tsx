@@ -225,6 +225,10 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
   const [refreshingDetails, setRefreshingDetails] = useState(false);
   const [detailsRefreshCounter, setDetailsRefreshCounter] = useState(0);
 
+  // Diagnostics "Show all" per-group expansion (2026-08-21): the "+N more"
+  // tail is screenshotable once expanded — there is no other way to see it.
+  const [expandedDiagTypes, setExpandedDiagTypes] = useState<Set<string>>(new Set());
+
   // Re-enter secrets prompt visible/hidden + transient form state.
   //
   // Fix A (2026-06-03): the API-secret field(s) are auth-type-aware. The form
@@ -1194,7 +1198,9 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
 
       {/* Diagnostics (2026-08-20 journey-audit fix): refusals / residue /
           S0 advisories were recorded but invisible here. Halts render red,
-          warnings amber, info neutral; five messages per group then a count. */}
+          warnings amber, info neutral; five messages per group then a
+          "Show all" toggle (2026-08-21 — the "+N more" tail was previously
+          unreachable). */}
       {diagGroups.length > 0 && (
         <div
           className={styles.detailSection}
@@ -1208,6 +1214,8 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                 : g.severity === 'warning'
                   ? '#b26a00'
                   : '#555';
+            const expanded = expandedDiagTypes.has(g.type);
+            const visibleItems = expanded ? g.items : g.items.slice(0, 5);
             return (
               <div
                 key={g.type}
@@ -1218,16 +1226,38 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                   {labelFor(g.type)} ({g.items.length})
                 </div>
                 <ul style={{ margin: '2px 0 0 18px' }}>
-                  {g.items.slice(0, 5).map((d) => (
+                  {visibleItems.map((d) => (
                     <li key={d.id} style={{ color }}>
                       {d.message ?? '(no message)'}
                     </li>
                   ))}
                 </ul>
                 {g.items.length > 5 && (
-                  <div style={{ marginLeft: 18, color }}>
-                    +{g.items.length - 5} more
-                  </div>
+                  <button
+                    type="button"
+                    data-testid={`diag-group-${g.type}-toggle`}
+                    onClick={() =>
+                      setExpandedDiagTypes((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(g.type)) next.delete(g.type);
+                        else next.add(g.type);
+                        return next;
+                      })
+                    }
+                    style={{
+                      marginLeft: 18,
+                      color,
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    {expanded
+                      ? 'Show less'
+                      : `Show all ${g.items.length} (+${g.items.length - 5} more)`}
+                  </button>
                 )}
               </div>
             );

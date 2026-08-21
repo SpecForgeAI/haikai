@@ -55,13 +55,24 @@ export function deriveHttpMethod(annotations: string[] | undefined): string | nu
   return null;
 }
 
-/** Method-level @Path / @RequestMapping-family value, or null (best-effort). */
+/**
+ * Path fragment from the table's annotations — ALL @Path /
+ * @RequestMapping-family values COMPOSED in order (2026-08-21: the extractor
+ * prepends the class-level routing annotation, so a handler whose
+ * method-level @Path is placeholders-only still yields a literal-bearing
+ * fragment like `hierarchy/{date}/{id}` instead of no fragment at all).
+ */
 export function derivePathFragment(annotations: string[] | undefined): string | null {
   const text = annotationText(annotations);
-  const m = text.match(
-    /@(?:Path|RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\s*\(\s*(?:value\s*=\s*)?"([^"]+)"/,
-  );
-  return m ? m[1] : null;
+  const re =
+    /@(?:Path|RequestMapping|GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping)\s*\(\s*(?:value\s*=\s*)?"([^"]+)"/g;
+  const parts: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const part = m[1].replace(/^\/+|\/+$/g, '');
+    if (part.length > 0) parts.push(part);
+  }
+  return parts.length > 0 ? parts.join('/') : null;
 }
 
 function escapeRegExp(text: string): string {
@@ -153,6 +164,10 @@ interface CorpusIndex {
   tablesByName: Map<string, string[]>;
   /** Boundary keys by operation NAME (DAO methods; arity unknown on ops). */
   boundariesByOpName: Map<string, string[]>;
+  /** Class FQNs with ANY corpus presence (table or boundary) — powers the
+   *  unresolved-call diagnosis ("class absent from corpus" vs "no matching
+   *  method on a present class"). */
+  classFqnsInCorpus: Set<string>;
   httpRoots: Array<{ key: string; symbol: string; method: string; fragment: string }>;
 }
 
@@ -164,6 +179,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const tablesByNameArity = new Map<string, string[]>();
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
+  const classFqnsInCorpus = new Set<string>();
   const httpRoots: CorpusIndex['httpRoots'] = [];
   const push = (map: Map<string, string[]>, key: string, value: string) => {
     const list = map.get(key) ?? [];
@@ -176,7 +192,14 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       tablesByKey.set(contract.key, contract);
       const hash = contract.symbol.indexOf('#');
       if (hash >= 0) {
-        const methodName = contract.symbol.slice(hash + 1);
+        // Symbols are `Cls#method(ParamTypes)` — strip the parameter list so
+        // the index key matches expandDispatch's bare `name/arity` lookup
+        // (2026-08-21 fix: the unstripped key made the expansion inert on
+        // real corpora; fixture symbols without parens masked it).
+        const afterHash = contract.symbol.slice(hash + 1);
+        const paren = afterHash.indexOf('(');
+        const methodName = paren >= 0 ? afterHash.slice(0, paren) : afterHash;
+        classFqnsInCorpus.add(contract.symbol.slice(0, hash));
         push(tablesByNameArity, `${methodName}/${contract.signatureInputs.length}`, contract.key);
         push(tablesByName, methodName, contract.key);
       }
@@ -202,6 +225,8 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
       boundaryWritesByKey.set(contract.key, writes);
       boundaryReadsByKey.set(contract.key, reads);
       boundarySymbolByKey.set(contract.key, boundary.symbol);
+      const boundaryHash = boundary.symbol.indexOf('#');
+      classFqnsInCorpus.add(boundaryHash >= 0 ? boundary.symbol.slice(0, boundaryHash) : boundary.symbol);
     }
   }
   return {
@@ -212,6 +237,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     tablesByNameArity,
     tablesByName,
     boundariesByOpName,
+    classFqnsInCorpus,
     httpRoots,
   };
 }
@@ -253,6 +279,30 @@ function expandDispatch(
   return { tables, boundaries };
 }
 
+/**
+ * WHY a call could not be resolved OR expanded — one short clause appended
+ * to the broken-call line (2026-08-21: the screenshot-diagnosis loop needs
+ * the failure mode, not just the symbol).
+ */
+export function unresolvedReason(targetSymbol: string, index: CorpusIndex): string {
+  const hash = targetSymbol.indexOf('#');
+  const paren = targetSymbol.indexOf('(', hash);
+  if (hash < 0 || paren < 0) return 'unparseable target symbol';
+  const clsFqn = targetSymbol.slice(0, hash);
+  const name = targetSymbol.slice(hash + 1, paren);
+  const argsText = targetSymbol.slice(paren + 1, targetSymbol.lastIndexOf(')'));
+  const arity = argsText.trim() === '' ? 0 : argsText.split(',').length;
+  const total =
+    (index.tablesByNameArity.get(`${name}/${arity}`) ?? []).length ||
+    (index.tablesByName.get(name) ?? []).length + (index.boundariesByOpName.get(name) ?? []).length;
+  if (total > DISPATCH_EXPANSION_CAP) {
+    return `${total} name-matched candidates exceed the expansion cap ${DISPATCH_EXPANSION_CAP}`;
+  }
+  return index.classFqnsInCorpus.has(clsFqn)
+    ? `class in corpus but no method named ${name}/${arity}`
+    : 'target class has NO corpus presence (never sliced/reached)';
+}
+
 /** Transitive call walk from a root table to boundary keys: resolved targets
  * are followed directly; null targets go through dispatch expansion; only
  * calls NEITHER path resolves are recorded as broken (bounded, cycle-safe). */
@@ -286,7 +336,8 @@ export function walkCallGraph(
           for (const b of expansion.boundaries) boundaries.add(b);
         } else if (brokenCalls.length < 10) {
           brokenCalls.push(
-            `${table?.symbol ?? key}: call to ${row.outcome.targetSymbol} unresolved`,
+            `${table?.symbol ?? key}: call to ${row.outcome.targetSymbol} unresolved ` +
+              `(${unresolvedReason(row.outcome.targetSymbol, index)})`,
           );
         }
         continue;

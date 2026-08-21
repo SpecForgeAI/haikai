@@ -1,3 +1,4 @@
+import { effectiveDbAllowlist } from '../../types/captureSession';
 import { ToolHandler, ToolRegistryEntry, ToolValidationError } from './toolTypes';
 
 /**
@@ -34,12 +35,15 @@ const handler: ToolHandler = async (args, ctx) => {
     );
   }
 
-  // Allowlist enforcement -- table must appear in session allowlistTables
-  // when set. Schema same. Empty allowlists are treated as "no constraint"
-  // (the wizard would not have collected DB config in that case).
+  // Allowlist enforcement -- table must appear in the session table
+  // allowlist when set. Schema same. Empty allowlists are treated as "no
+  // constraint" (the wizard would not have collected DB config in that
+  // case). Wire-key tolerant read (2026-08-21): legacy `allowlist` +
+  // `schema` keys count — see `effectiveDbAllowlist`.
   const sessionDbConfig = ctx.session.dbConfigRedactedJson;
-  const allowedTables = sessionDbConfig?.allowlistTables ?? null;
-  const allowedSchemas = sessionDbConfig?.allowlistSchemas ?? null;
+  const sessionAllowlist = effectiveDbAllowlist(sessionDbConfig);
+  const allowedTables = sessionAllowlist.tables;
+  const allowedSchemas = sessionAllowlist.schemas;
   if (allowedTables && allowedTables.length > 0 && !allowedTables.includes(table)) {
     throw new ToolValidationError(
       'sample_db_values',
