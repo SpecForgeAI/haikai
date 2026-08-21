@@ -582,3 +582,27 @@ describe('composed path fragments + dispatch fixes (2026-08-21)', () => {
     );
   });
 });
+
+describe('boundary SQL-visibility stats (2026-08-21)', () => {
+  it('annotates boundaries_reached with ops/sql/reads/writes counts', () => {
+    const root = behaviourTable({
+      key: 'T-b',
+      symbol: 'R#blind',
+      annotations: ['@POST', '@Path("blind")'],
+      callTargets: ['Q-blind'],
+    });
+    const blind = boundary({ key: 'Q-blind', symbol: 'BlindDao', sql: [] });
+    (blind.contract as { operations: unknown[] }).operations = [
+      { name: 'run', sqlVerbatim: null, ref: { path: 'x', line: 1 }, resultShape: null },
+    ];
+    const result = deriveCorpusEffectCandidates({
+      corpus: corpusOf([root, blind]),
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('b', 'POST', '/blind')],
+    });
+    expect(result.uncovered).toHaveLength(1);
+    expect(result.uncovered[0].diagnosis.boundaries_reached).toEqual([
+      'BlindDao (ops 1, sql 0, reads 0, writes 0)',
+    ]);
+  });
+});
