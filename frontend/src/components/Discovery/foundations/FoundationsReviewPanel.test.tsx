@@ -55,7 +55,7 @@ describe('FoundationsReviewPanel', () => {
     });
   });
 
-  it('renders derived cards and applies answers with scope, payload and evidence hash', async () => {
+  it('a pending exclude suppresses dependent questions; flipping the answer reveals them; apply sends only visible', async () => {
     render(
       <FoundationsReviewPanel
         projectId="p1"
@@ -64,29 +64,40 @@ describe('FoundationsReviewPanel', () => {
       />,
     );
 
-    // backup_copy card (orders_bak vs orders) + key_posture for orders_bak
-    // (keyless — no PK, no unique index).
+    // backup_copy default (exclude_all) covers orders_bak — its key_posture
+    // card is HIDDEN (no conflicting questions) with the honest note.
     await screen.findByTestId('foundation-q-FQ-backup_copy');
-    expect(screen.getByTestId('foundation-q-FQ-key_posture-orders_bak')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('foundation-q-FQ-key_posture-orders_bak'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('foundations-hidden-note')).toBeInTheDocument();
 
+    // Flip backup_copy to keep_all — the key question REAPPEARS.
+    await userEvent.click(screen.getByLabelText(/Keep all in migration/));
+    expect(
+      await screen.findByTestId('foundation-q-FQ-key_posture-orders_bak'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('foundations-hidden-note')).not.toBeInTheDocument();
+
+    // Flip back to exclude — hidden again; apply sends ONLY the visible card.
+    await userEvent.click(screen.getByLabelText(/Exclude all from migration/));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('foundation-q-FQ-key_posture-orders_bak'),
+      ).not.toBeInTheDocument(),
+    );
     await userEvent.click(screen.getByTestId('foundations-apply'));
-
     await waitFor(() =>
       expect(foundationsApi.applyFoundationDecisions).toHaveBeenCalledTimes(1),
     );
     const [, , inputs] = vi.mocked(foundationsApi.applyFoundationDecisions).mock.calls[0];
-    const backup = inputs.find((i) => i.rule_key === 'backup_copy')!;
-    expect(backup).toMatchObject({
+    expect(inputs.map((i) => i.rule_key)).toEqual(['backup_copy']);
+    expect(inputs[0]).toMatchObject({
       answer: 'exclude_all',
       scope: 'excluded',
       target_entity_names: ['orders_bak'],
     });
-    expect(backup.evidence_hash).toMatch(/^[0-9a-f]{8}$/);
-    const keyless = inputs.find((i) => i.rule_key === 'key_posture')!;
-    expect(keyless).toMatchObject({
-      answer: 'keyless_multiset',
-      payload_json: { key_policy: 'keyless_multiset' },
-    });
+    expect(inputs[0].evidence_hash).toMatch(/^[0-9a-f]{8}$/);
     await screen.findByTestId('foundations-apply-note');
   });
 
@@ -132,9 +143,13 @@ describe('FoundationsReviewPanel', () => {
         container.querySelector('[data-testid="foundation-q-FQ-backup_copy"]'),
       ).toBeNull(),
     );
-    // The keyless question is still open (different rule) — panel visible.
+    // Derive-time suppression: the STORED excluded decision covers
+    // orders_bak, so its key question never derives either — all settled.
     expect(
       container.querySelector('[data-testid="foundation-q-FQ-key_posture-orders_bak"]'),
+    ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="foundations-all-settled"]'),
     ).not.toBeNull();
   });
 });
