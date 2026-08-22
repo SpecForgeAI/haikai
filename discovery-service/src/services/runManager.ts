@@ -2731,10 +2731,12 @@ async function startServiceScopedRun(
             // Screenshot-friendly rollup FIRST; full unproposed detail after.
             summary: summarizeEmission(derivedPhase, proposalPhase),
             unproposed: proposalPhase.unproposed,
+            readUnderived: derivedPhase.readUnderived,
           };
           console.log(
             `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived ` +
               `(${derivedPhase.readMapped} read-mapped endpoint(s), ` +
+              `${derivedPhase.readUnderived.length} read-underived, ` +
               `${derivedPhase.internalWalked.length} internal chain(s), ` +
               `${derivedPhase.provenRead.length} proven-read), ` +
               `${proposalPhase.candidates.length} LLM-proposed (${proposalPhase.llmCalls} call(s)), ` +
