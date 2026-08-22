@@ -145,6 +145,52 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
     [excludedTargets],
   );
 
+  // LIVE suppression (Spec 2 follow-up, 2026-08-22): a table covered by a
+  // PENDING exclude/volatile answer in one card asks no questions in any
+  // OTHER card — conflicting questions are forbidden. Changing the answer
+  // back reveals the dependents again (pure recompute, nothing is lost).
+  const pendingScopeByTable = useMemo(() => {
+    const map = new Map<string, string>(); // lowercase table -> question_key
+    for (const q of questions) {
+      const answer = selectedAnswer(q);
+      const option = q.options.find((o) => o.answer === answer);
+      const scope = option?.scope;
+      if (scope !== 'excluded' && scope !== 'volatile') continue;
+      const userExcluded = excludedTargets[q.question_key] ?? new Set<string>();
+      for (const target of q.targets) {
+        if (userExcluded.has(target.entity_name)) continue;
+        const key = target.entity_name.toLowerCase();
+        if (!map.has(key)) map.set(key, q.question_key);
+      }
+    }
+    return map;
+  }, [questions, selectedAnswer, excludedTargets]);
+
+  /** Targets of `q` NOT covered by a pending exclusion from ANOTHER card. */
+  const remainingTargets = useCallback(
+    (q: FoundationQuestion) =>
+      q.targets.filter((t) => {
+        const coveredBy = pendingScopeByTable.get(t.entity_name.toLowerCase());
+        return !coveredBy || coveredBy === q.question_key;
+      }),
+    [pendingScopeByTable],
+  );
+
+  const visibleQuestions = useMemo(
+    () => questions.filter((q) => remainingTargets(q).length > 0),
+    [questions, remainingTargets],
+  );
+  const hiddenCount = questions.length - visibleQuestions.length;
+
+  /** Apply-time targets: user-included MINUS pending-covered-elsewhere. */
+  const effectiveTargets = useCallback(
+    (q: FoundationQuestion): string[] => {
+      const remaining = new Set(remainingTargets(q).map((t) => t.entity_name));
+      return includedTargets(q).filter((n) => remaining.has(n));
+    },
+    [includedTargets, remainingTargets],
+  );
+
   const nextDecisionKey = useCallback(
     (offset: number): string => {
       const used = new Set(decisions.map((d) => d.decision_key));
@@ -159,10 +205,10 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
     if (applying) return;
     const inputs: ApplyFoundationDecisionInput[] = [];
     let fresh = 0;
-    for (const q of questions) {
+    for (const q of visibleQuestions) {
       const answer = selectedAnswer(q);
       const option = q.options.find((o) => o.answer === answer);
-      const targets = includedTargets(q);
+      const targets = effectiveTargets(q);
       if (!option || targets.length === 0) continue;
       const decisionKey = q.stale_decision?.decision_key ?? nextDecisionKey(fresh);
       if (!q.stale_decision) fresh += 1;
@@ -207,8 +253,8 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         Foundations review{' '}
         {decisionsLoaded && (
           <span style={{ fontWeight: 400, color: '#555' }}>
-            — {questions.length} open question{questions.length === 1 ? '' : 's'} ·{' '}
-            {decisions.length} decided
+            — {visibleQuestions.length} open question
+            {visibleQuestions.length === 1 ? '' : 's'} · {decisions.length} decided
           </span>
         )}
       </h3>
@@ -217,6 +263,16 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         (capture, S0, pack, reconciliation). Unanswered questions use safe defaults — include
         everything, keys fail-closed — and never block the save.
       </p>
+      {hiddenCount > 0 && (
+        <p
+          style={{ color: '#777', fontSize: 13, margin: '0 0 8px' }}
+          data-testid="foundations-hidden-note"
+        >
+          {hiddenCount} question{hiddenCount === 1 ? '' : 's'} hidden — their tables are
+          covered by a pending exclude/volatile answer above. Change that answer to bring
+          them back.
+        </p>
+      )}
       {loadError && (
         <p style={{ color: '#b26a00' }} data-testid="foundations-load-error">
           Decisions could not be loaded ({loadError}) — questions shown without settled-state
@@ -224,11 +280,12 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         </p>
       )}
 
-      {questions.map((q) => {
+      {visibleQuestions.map((q) => {
         const answer = selectedAnswer(q);
         const excluded = excludedTargets[q.question_key] ?? new Set<string>();
-        const included = includedTargets(q);
-        const attributeCount = q.targets
+        const cardTargets = remainingTargets(q);
+        const included = effectiveTargets(q);
+        const attributeCount = cardTargets
           .filter((t) => !excluded.has(t.entity_name))
           .reduce((sum, t) => sum + t.attribute_count, 0);
         return (
@@ -251,13 +308,13 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
               )}
             </div>
             <div style={{ color: '#555', fontSize: 13, margin: '2px 0 6px' }}>{q.detail}</div>
-            {q.targets.length > 1 ? (
+            {cardTargets.length > 1 ? (
               <details style={{ marginBottom: 6 }}>
                 <summary style={{ cursor: 'pointer', fontSize: 13 }}>
-                  {included.length} of {q.targets.length} table(s) selected
+                  {included.length} of {cardTargets.length} table(s) selected
                 </summary>
                 <ul style={{ margin: '4px 0 0 18px', fontSize: 13 }}>
-                  {q.targets.map((t) => (
+                  {cardTargets.map((t) => (
                     <li key={t.entity_name}>
                       <label>
                         <input
@@ -280,9 +337,9 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
                 </ul>
               </details>
             ) : (
-              q.targets[0]?.note && (
+              cardTargets[0]?.note && (
                 <div style={{ fontSize: 13, color: '#777', marginBottom: 6 }}>
-                  {q.targets[0].note}
+                  {cardTargets[0].note}
                 </div>
               )
             )}
@@ -307,13 +364,13 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         );
       })}
 
-      {questions.length === 0 && decisionsLoaded && (
+      {visibleQuestions.length === 0 && decisionsLoaded && (
         <p style={{ color: '#1b5e20', fontSize: 13 }} data-testid="foundations-all-settled">
           No open foundation questions — all settled for the current evidence.
         </p>
       )}
 
-      {questions.length > 0 && (
+      {visibleQuestions.length > 0 && (
         <button
           type="button"
           onClick={handleApply}
@@ -321,7 +378,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
           data-testid="foundations-apply"
           style={{ padding: '6px 14px', cursor: 'pointer' }}
         >
-          {applying ? 'Applying…' : `Apply ${questions.length} answer(s)`}
+          {applying ? 'Applying…' : `Apply ${visibleQuestions.length} answer(s)`}
         </button>
       )}
       {applyNote && (

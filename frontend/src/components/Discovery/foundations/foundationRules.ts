@@ -301,11 +301,33 @@ function decisionFor(
   return null;
 }
 
+/** Lowercase table names a STORED (non-stale) decision already scoped
+ *  excluded/volatile — no further questions are asked about them (Spec 2
+ *  follow-up, 2026-08-22: conflicting questions are forbidden; changing the
+ *  decision later reopens the dependents via the evidence-hash mechanism). */
+export function tablesScopedOutByDecisions(
+  decisions: StoredFoundationDecision[],
+): Set<string> {
+  const out = new Set<string>();
+  for (const d of decisions) {
+    if (d.stale) continue;
+    const scope = (d.scope ?? '').toLowerCase();
+    if (scope !== 'excluded' && scope !== 'volatile') continue;
+    for (const target of d.targets_json ?? []) {
+      const name = (target.entity_name ?? '').toLowerCase();
+      if (name) out.add(name);
+    }
+  }
+  return out;
+}
+
 export function deriveFoundationQuestions(
   tables: EntityFacts[],
   decisions: StoredFoundationDecision[],
 ): FoundationQuestion[] {
   const questions: FoundationQuestion[] = [];
+  const scopedOut = tablesScopedOutByDecisions(decisions);
+  const isScopedOut = (name: string): boolean => scopedOut.has(name.toLowerCase());
 
   const reconcile = (
     question: Omit<FoundationQuestion, 'stale_decision'>,
@@ -329,7 +351,7 @@ export function deriveFoundationQuestions(
   };
 
   // ---- backup_copy (one bulk question)
-  const copies = backupCopyTargets(tables);
+  const copies = backupCopyTargets(tables).filter((c) => !isScopedOut(c.entity.name));
   if (copies.length > 0) {
     const targets = copies.map((c) =>
       target(
@@ -358,7 +380,7 @@ export function deriveFoundationQuestions(
 
   // ---- temp_working (one bulk question)
   const temps = tempWorkingTargets(tables).filter(
-    (t) => !copies.some((c) => c.entity === t),
+    (t) => !copies.some((c) => c.entity === t) && !isScopedOut(t.name),
   );
   if (temps.length > 0) {
     const targets = temps.map((t) => target(t));
@@ -383,6 +405,9 @@ export function deriveFoundationQuestions(
   // ---- key_posture (one question PER table without a declared PK)
   for (const t of tables) {
     if (t.kind !== 'table') continue;
+    // A table a decision already excluded (or marked volatile) asks no key
+    // question — its keys are irrelevant while it is out of the migration.
+    if (isScopedOut(t.name)) continue;
     const posture = keyPostureOf(t);
     if (posture.posture === 'declared_pk') continue;
     const targets = [target(t)];
@@ -443,7 +468,7 @@ export function deriveFoundationQuestions(
   }
 
   // ---- engine_hazard (one bulk informational question)
-  const hazards = engineHazardTargets(tables);
+  const hazards = engineHazardTargets(tables).filter((h) => !isScopedOut(h.entity.name));
   if (hazards.length > 0) {
     const targets = hazards.map((h) =>
       target(h.entity, h.columns.map((c) => `${c.name} ${c.dataType}`).join(', ')),

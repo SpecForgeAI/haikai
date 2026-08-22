@@ -220,3 +220,41 @@ describe('joint CRUD-matrix rules (Spec 5)', () => {
     expect(after.some((q) => q.question_key === 'FQ-crud_never')).toBe(false);
   });
 });
+
+describe('derive-time suppression by stored decisions (no conflicting questions)', () => {
+  it('a stored excluded/volatile decision silences key/hazard/backup questions for its tables', () => {
+    const facts = entityFactsFromCandidates(CANDIDATES);
+    const decisions: StoredFoundationDecision[] = [
+      {
+        decision_key: 'F-3',
+        rule_key: 'temp_working',
+        answer: 'mark_volatile',
+        scope: 'volatile',
+        targets_json: [{ entity_name: 'load_orders' }],
+        evidence_hash: 'whatever',
+        stale: false,
+      },
+      {
+        decision_key: 'F-1',
+        rule_key: 'backup_copy',
+        answer: 'exclude_all',
+        scope: 'excluded',
+        targets_json: [{ entity_name: 'orders_bak_2018' }],
+        evidence_hash: 'whatever',
+        stale: false,
+      },
+    ];
+    const questions = deriveFoundationQuestions(facts, decisions);
+    const keys = questions.map((q) => q.question_key);
+    // No key-posture question for scoped-out tables; no re-listing in
+    // backup/temp; engine hazards drop them too.
+    expect(keys.some((k) => k.includes('load_orders'))).toBe(false);
+    expect(keys.some((k) => k.includes('orders_bak_2018'))).toBe(false);
+    expect(keys).not.toContain('FQ-temp_working'); // its only target is decided
+    expect(keys).not.toContain('FQ-backup_copy');
+    const hazard = questions.find((q) => q.question_key === 'FQ-engine_hazard');
+    if (hazard) {
+      expect(hazard.targets.some((t) => t.entity_name === 'orders_bak_2018')).toBe(false);
+    }
+  });
+});
