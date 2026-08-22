@@ -153,6 +153,24 @@ export function evidenceHash(payload: unknown): string {
   return hash.toString(16).padStart(8, '0');
 }
 
+/**
+ * The evidence-hash INPUT convention per bulk rule (Spec 2 follow-up,
+ * 2026-08-22). Exposed so the panel can compute the hash a FUTURE
+ * re-derived question over a target SUBSET will carry — the mechanism
+ * behind "a deselected remainder is decided as kept": the remainder
+ * decision stores exactly the hash the residual question would have, so
+ * it settles instead of re-posing.
+ */
+export function bulkTargetsEvidenceHash(
+  ruleKey: FoundationQuestion['rule_key'],
+  targets: FoundationQuestionTarget[],
+): string {
+  if (ruleKey === 'temp_working' || ruleKey === 'crud_never') {
+    return evidenceHash(targets.map((t) => t.entity_name));
+  }
+  return evidenceHash(targets.map((t) => [t.entity_name, t.note]));
+}
+
 // ---------------------------------------------------------------------------
 // Individual rules
 // ---------------------------------------------------------------------------
@@ -373,7 +391,7 @@ export function deriveFoundationQuestions(
         { answer: 'exclude_all', label: 'Exclude all from migration', scope: 'excluded', recommended: true },
         { answer: 'keep_all', label: 'Keep all in migration', scope: 'in_scope' },
       ],
-      evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+      evidence_hash: bulkTargetsEvidenceHash('backup_copy', targets),
     });
     if (q) questions.push(q);
   }
@@ -397,7 +415,7 @@ export function deriveFoundationQuestions(
         { answer: 'mark_volatile', label: 'Mark volatile (S0-tolerated) + exclude from target', scope: 'volatile', recommended: true },
         { answer: 'keep_all', label: 'Keep all in migration', scope: 'in_scope' },
       ],
-      evidence_hash: evidenceHash(targets.map((t) => t.entity_name)),
+      evidence_hash: bulkTargetsEvidenceHash('temp_working', targets),
     });
     if (q) questions.push(q);
   }
@@ -484,7 +502,7 @@ export function deriveFoundationQuestions(
       options: [
         { answer: 'acknowledge_default_mappings', label: 'Acknowledge — use default target mappings', recommended: true },
       ],
-      evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+      evidence_hash: bulkTargetsEvidenceHash('engine_hazard', targets),
     });
     if (q) questions.push(q);
   }
@@ -618,7 +636,7 @@ export function deriveJointFoundationQuestions(
         { answer: 'data_only_all', label: 'Migrate data-only (reference data — no behaviour expectations)', scope: 'data_only' },
         { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
       ],
-      evidence_hash: evidenceHash(targets.map((t) => t.entity_name)),
+      evidence_hash: bulkTargetsEvidenceHash('crud_never', targets),
     });
     if (q) questions.push(q);
   }
@@ -641,7 +659,7 @@ export function deriveJointFoundationQuestions(
         { answer: 'keep_all', label: 'Keep in migration (acknowledged as audit sinks)', scope: 'in_scope', recommended: true },
         { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
       ],
-      evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+      evidence_hash: bulkTargetsEvidenceHash('crud_write_only', targets),
     });
     if (q) questions.push(q);
   }
@@ -665,7 +683,7 @@ export function deriveJointFoundationQuestions(
         { answer: 'keep_all', label: 'Keep in migration', scope: 'in_scope', recommended: true },
         { answer: 'data_only_all', label: 'Migrate data-only (reference data)', scope: 'data_only' },
       ],
-      evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+      evidence_hash: bulkTargetsEvidenceHash('crud_read_only', targets),
     });
     if (q) questions.push(q);
   }

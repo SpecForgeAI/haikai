@@ -153,3 +153,109 @@ describe('FoundationsReviewPanel', () => {
     ).not.toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Partial-exclusion remainder (2026-08-22 user ruling): deselecting tables
+// from an exclude/volatile answer MEANS keeping them — one apply settles the
+// WHOLE set and the residual question never re-poses.
+// ---------------------------------------------------------------------------
+
+const TEMP_CANDIDATES: DiscoveryCandidateDto[] = [
+  cand({
+    candidate_type: 'physical_data_entities',
+    name: 'temp_alpha',
+    data: { objectType: 'table', schemaName: 'dbo' },
+  }),
+  cand({
+    candidate_type: 'physical_data_attributes',
+    name: 'a',
+    data: { tableName: 'temp_alpha', dataType: 'int', isNullable: false, isPrimaryKey: true },
+  }),
+  cand({
+    candidate_type: 'physical_data_entities',
+    name: 'temp_beta',
+    data: { objectType: 'table', schemaName: 'dbo' },
+  }),
+  cand({
+    candidate_type: 'physical_data_attributes',
+    name: 'b',
+    data: { tableName: 'temp_beta', dataType: 'int', isNullable: false, isPrimaryKey: true },
+  }),
+];
+
+describe('partial exclusion decides the remainder (one apply, no residual question)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(foundationsApi.listFoundationDecisions).mockResolvedValue([]);
+    vi.mocked(foundationsApi.applyFoundationDecisions).mockResolvedValue({
+      entities_updated: 0,
+      decisions_upserted: 2,
+      skipped: [],
+    });
+  });
+
+  it('sends the volatile decision for the selected set AND a keep decision for the rest, whose hash settles the residual question', async () => {
+    render(
+      <FoundationsReviewPanel projectId="p1" architectureId="a1" candidates={TEMP_CANDIDATES} />,
+    );
+    await screen.findByTestId('foundation-q-FQ-temp_working');
+
+    // Deselect temp_beta from the volatile answer (keep it).
+    await userEvent.click(screen.getByText('2 of 2 table(s) selected'));
+    await userEvent.click(screen.getByRole('checkbox', { name: /temp_beta/ }));
+    await userEvent.click(screen.getByTestId('foundations-apply'));
+
+    await waitFor(() =>
+      expect(foundationsApi.applyFoundationDecisions).toHaveBeenCalledTimes(1),
+    );
+    const [, , inputs] = vi.mocked(foundationsApi.applyFoundationDecisions).mock.calls[0];
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toMatchObject({
+      rule_key: 'temp_working',
+      answer: 'mark_volatile',
+      scope: 'volatile',
+      target_entity_names: ['temp_alpha'],
+    });
+    expect(inputs[1]).toMatchObject({
+      rule_key: 'temp_working',
+      answer: 'keep_all',
+      scope: 'in_scope',
+      target_entity_names: ['temp_beta'],
+    });
+
+    // Store both decisions and re-render: temp_alpha is scoped out, the
+    // residual (temp_beta) question is SETTLED by the keep decision's hash
+    // — nothing re-poses.
+    vi.mocked(foundationsApi.listFoundationDecisions).mockResolvedValue(
+      inputs.map((i, n) => ({
+        id: `fd-${n}`,
+        project_id: 'p1',
+        architecture_id: 'a1',
+        decision_key: i.decision_key,
+        rule_key: i.rule_key,
+        question_text: null,
+        answer: i.answer,
+        scope: i.scope ?? null,
+        targets_json: i.target_entity_names.map((name) => ({ entity_name: name })),
+        payload_json: null,
+        rationale: null,
+        evidence_hash: i.evidence_hash ?? null,
+        stale: false,
+        decided_at: null,
+        created_at: null,
+        updated_at: null,
+      })),
+    );
+    const { container } = render(
+      <FoundationsReviewPanel projectId="p1" architectureId="a1" candidates={TEMP_CANDIDATES} />,
+    );
+    await waitFor(() =>
+      expect(
+        container.querySelector('[data-testid="foundations-all-settled"]'),
+      ).not.toBeNull(),
+    );
+    expect(
+      container.querySelector('[data-testid="foundation-q-FQ-temp_working"]'),
+    ).toBeNull();
+  });
+});

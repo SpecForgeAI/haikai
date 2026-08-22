@@ -11,7 +11,7 @@
  * previous answer chip.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DiscoveryCandidateDto } from '../../../api/discoveryApi';
 import {
   applyFoundationDecisions,
@@ -21,6 +21,7 @@ import {
   type FoundationDecisionDto,
 } from '../../../api/foundationsApi';
 import {
+  bulkTargetsEvidenceHash,
   deriveFoundationQuestions,
   deriveJointFoundationQuestions,
   entityFactsFromCandidates,
@@ -83,6 +84,13 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
 
   const facts = useMemo(() => entityFactsFromCandidates(candidates), [candidates]);
 
+  // Heal stale per-target unchecks (Spec 2 follow-up, 2026-08-22): the
+  // uncheck state is keyed by question_key, but a re-derived question can
+  // carry a DIFFERENT target set (e.g. the residual of a partial answer) —
+  // carrying the old unchecks over produced an unanswerable 0-of-N card.
+  // When a question's target signature changes, its unchecks reset.
+  const targetSignaturesRef = useRef<Record<string, string>>({});
+
   // JOINT mode (Spec 5): the committed model is the evidence source.
   const [rawModel, setRawModel] = useState<RawModelLike | null>(null);
   useEffect(() => {
@@ -127,6 +135,23 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
       })),
     );
   }, [facts, decisions, decisionsLoaded, mode, rawModel]);
+
+  useEffect(() => {
+    const stale: string[] = [];
+    for (const q of questions) {
+      const signature = q.targets.map((t) => t.entity_name).join('|');
+      const previous = targetSignaturesRef.current[q.question_key];
+      if (previous !== undefined && previous !== signature) stale.push(q.question_key);
+      targetSignaturesRef.current[q.question_key] = signature;
+    }
+    if (stale.length > 0) {
+      setExcludedTargets((prev) => {
+        const next = { ...prev };
+        for (const key of stale) delete next[key];
+        return next;
+      });
+    }
+  }, [questions]);
 
   const selectedAnswer = useCallback(
     (q: FoundationQuestion): string =>
@@ -223,6 +248,33 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         rationale: 'answered in the DB-scan foundations review',
         evidence_hash: q.evidence_hash,
       });
+      // Partial EXCLUSION decides the remainder too (2026-08-22 user
+      // ruling: deselecting tables from an exclude/volatile answer MEANS
+      // keeping them). The remainder decision stores exactly the hash the
+      // residual question would carry, so it SETTLES instead of re-posing.
+      if (option.scope === 'excluded' || option.scope === 'volatile') {
+        const selected = new Set(targets);
+        const remainderTargets = remainingTargets(q).filter(
+          (t) => !selected.has(t.entity_name),
+        );
+        if (remainderTargets.length > 0) {
+          const keepOption =
+            q.options.find((o) => o.scope === 'in_scope') ?? null;
+          inputs.push({
+            decision_key: nextDecisionKey(fresh),
+            rule_key: q.rule_key,
+            question_text: `${q.title} — deselected remainder KEPT`,
+            answer: keepOption?.answer ?? 'keep_all',
+            scope: 'in_scope',
+            target_entity_names: remainderTargets.map((t) => t.entity_name),
+            payload_json: null,
+            rationale:
+              'deselected remainder of a partial exclusion — kept in migration',
+            evidence_hash: bulkTargetsEvidenceHash(q.rule_key, remainderTargets),
+          });
+          fresh += 1;
+        }
+      }
     }
     if (inputs.length === 0) return;
     setApplying(true);
