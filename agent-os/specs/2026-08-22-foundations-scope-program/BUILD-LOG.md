@@ -12,7 +12,7 @@ state record — update after EVERY spec merge.
 | 2 — DB-scan foundations review | DONE | feature/spec2-foundations-review | 67b573a7 | save-back = decisions reconciler (fresh-project ordering) |
 | 3 — Capture + S0 readers | DONE | feature/spec3-capture-s0-readers | 6e2b576d | keyless detect-only + volatile S0 tolerance + scope conflicts |
 | 4 — Target & rec readers | DONE | (direct main commit — convention slip) | eccf9b13 | pack choke-point filter + receipts + surrogate-for-policy |
-| 5 — Joint layer + estate entry | IN PROGRESS | feature/spec5-joint-layer | | |
+| 5 — Joint layer + estate entry | DONE | feature/spec5-joint-layer | 565446a1 | ALL SPECS COMPLETE |
 
 ## As-built notes
 
@@ -39,4 +39,14 @@ state record — update after EVERY spec merge.
 ### Spec 4 (eccf9b13 — DIRECT main commit, branch convention slipped; content tested)
 - applyScopeToModelBundle at the pack model-fetch choke point (+ receipt on IR + manifest.scope_receipt); attributes filtered with entities; surrogate rung honors per-table keyless_multiset without the global pack decision; reconcile trace cites the receipt; progress DB section scope_receipt line; pack view receipt line. Baseline-verified pre-existing failures: engineNameGuard(migrationExecution 7>5)/azureOpenaiClient/llmClient — untouched.
 
-(append per spec)
+### Spec 5 (merged 565446a1) — PROGRAM COMPLETE
+- Joint CRUD rules over the committed model (crud_never/write_only/read_only + scope_code_conflict citing F-refs; views skipped); panel mode='code' on code-run reviews (raw model AMS-direct); estate continuation banner on completed DB runs (deliberate divergence: no combined-engine one-click — per-scan credential wizards made the guided two-step banner the right shape). Auto-apply-to-future-matches = evidence-hash REOPEN pre-answered (one-click re-confirm, never silent).
+
+## WORK-MACHINE PICKUP (whole program, clone+copy)
+- **AMS: FULL REBUILD required** (`mvn package`): changeset 226 (scope columns + foundation_decisions table — applies on boot), status machine (paused_auth_expired), diagnostics allowlist (scope_conflict/keyless_write_recorded), FoundationDecision entity/repo/service/controller, PhysicalDataEntityDto/Entity/Mapper.
+- discovery-service: src/types/candidate.ts, src/services/modelScope.ts (new) → restart.
+- gateway: src/routes/foundationDecisions.ts (new), src/server.ts, src/services/modelScope.ts (new), src/services/dbMigrationPack/{inputs,types}.ts, src/services/dbMigrationPackHandler.ts, src/services/migrationDataParityReconcile.ts, src/services/migrationProgressSummary.ts → restart.
+- mcp-server: src/services/{foundationDecisionApplyService (new), candidateSaveBackService, archModelClient, modelScope (new)}.ts, src/routes/{applyFoundationDecisionsRoute (new), tools}.ts → restart.
+- AMVS: src/types/captureSession.ts, src/services/{captureCompensation, captureSessionOrchestrator, stateDelta, modelScope (new)}.ts, src/services/compensation/{compensationMetadata, compensationRunner, types}.ts, src/services/s0/fingerprint.ts → restart.
+- frontend: src/api/{foundationsApi (new), apiBehaviourClient, dbMigrationPackApi, migrationProgressReportApi}.ts, src/utils/modelScope.ts (new), src/components/Discovery/foundations/* (new), src/components/DashboardView/{DiscoveryRunDetailPage, CaptureSessionDetailView, captureDiagnosticsSupport}.tsx/ts, src/components/ProductManager/MigrationDeliveryPlan/DbMigrationPackView.tsx, src/components/ProductManager/MigrationProgressReport/MigrationProgressReport.tsx → restart.
+- SHAKEDOWN ORDER: DB scan → Foundations panel (answer backup/temp/key questions) → save → code scan → joint questions → save → capture (expect: promoted-PK tables bracket, keyless detect-only, volatile tolerated in S0, scope conflicts cited).
