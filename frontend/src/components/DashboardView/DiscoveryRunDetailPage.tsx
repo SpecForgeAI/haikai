@@ -849,6 +849,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
             candidates={candidates}
             mode={selectedRun.discovery_kind === 'code' ? 'code' : 'database'}
             onApplied={() => setLastSaveTimestamp(Date.now())}
+            modelRefreshKey={lastSaveTimestamp}
           />
         )}
       {/* Estate continuation (Spec 5): after the DB scan lands, guide the

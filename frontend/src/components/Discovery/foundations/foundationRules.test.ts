@@ -307,3 +307,43 @@ describe('evidence hashes are fetch-order independent', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Absent evidence is not negative evidence (2026-08-22 live-shakedown
+// regression): the joint panel derived "45 in-scope tables are never touched
+// by ANY code path" the moment the code scan STARTED — the code candidates
+// were not saved yet, so the model held zero endpoints/effect edges and
+// crud_never fired vacuously over the whole estate.
+// ---------------------------------------------------------------------------
+
+describe('joint rules refuse to fire without committed code evidence', () => {
+  it('a model with tables but NO endpoints/effects derives NO joint questions', () => {
+    const preCodeSaveModel = {
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            { id: 'e1', name: 'orders' },
+            { id: 'e2', name: 'ref_rates' },
+          ],
+        },
+        relationships: { endpoint_data_effects: [] },
+      },
+    };
+    expect(deriveJointFoundationQuestions(preCodeSaveModel, [])).toEqual([]);
+  });
+
+  it('endpoints WITHOUT edges are real (negative) evidence — crud_never fires', () => {
+    const savedButNoEffects = {
+      metaModel: {
+        entities: {
+          physical_data_entities: [{ id: 'e1', name: 'orders' }],
+          endpoints: [{ id: 'ep1' }],
+        },
+        relationships: { endpoint_data_effects: [] },
+      },
+    };
+    const questions = deriveJointFoundationQuestions(savedButNoEffects, []);
+    const never = questions.find((q) => q.question_key === 'FQ-crud_never');
+    expect(never?.targets.map((t) => t.entity_name)).toEqual(['orders']);
+  });
+});

@@ -25,6 +25,7 @@ import {
   deriveFoundationQuestions,
   deriveJointFoundationQuestions,
   entityFactsFromCandidates,
+  modelHasCodeEvidence,
   type FoundationQuestion,
   type RawModelLike,
 } from './foundationRules';
@@ -39,6 +40,10 @@ export interface FoundationsReviewPanelProps {
   mode?: 'database' | 'code';
   /** Fired after answers were applied (the page refetches candidates). */
   onApplied?: () => void;
+  /** Bump to refetch the committed model in 'code' mode — the page passes
+   *  its save timestamp so the joint questions materialize right after the
+   *  code run's candidates are saved (no reload needed). */
+  modelRefreshKey?: number;
 }
 
 const cardStyle: React.CSSProperties = {
@@ -55,6 +60,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   candidates,
   mode = 'database',
   onApplied,
+  modelRefreshKey,
 }) => {
   const [decisions, setDecisions] = useState<FoundationDecisionDto[]>([]);
   const [decisionsLoaded, setDecisionsLoaded] = useState(false);
@@ -102,7 +108,14 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [mode, projectId, architectureId]);
+  }, [mode, projectId, architectureId, modelRefreshKey]);
+
+  // Absent evidence is not negative evidence: until the code candidates are
+  // SAVED the model holds no endpoints/effect edges, and the joint rules
+  // refuse to fire (deriveJointFoundationQuestions returns []). Surface WHY
+  // instead of a silent empty panel.
+  const jointEvidencePending =
+    mode === 'code' && rawModel !== null && !modelHasCodeEvidence(rawModel);
 
   const questions: FoundationQuestion[] = useMemo(() => {
     if (!decisionsLoaded) return [];
@@ -301,7 +314,8 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   };
 
   if (mode === 'database' && facts.length === 0) return null;
-  if (mode === 'code' && questions.length === 0 && decisions.length === 0) return null;
+  if (mode === 'code' && questions.length === 0 && decisions.length === 0 && !jointEvidencePending)
+    return null;
 
   return (
     <div data-testid="foundations-review-panel" style={{ marginBottom: 16 }}>
@@ -319,6 +333,16 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         (capture, S0, pack, reconciliation). Unanswered questions use safe defaults — include
         everything, keys fail-closed — and never block the save.
       </p>
+      {jointEvidencePending && (
+        <p
+          style={{ color: '#8a6d3b', fontSize: 13, margin: '0 0 8px' }}
+          data-testid="foundations-joint-pending-note"
+        >
+          Joint CRUD questions (tables no code touches, write-only sinks, scope conflicts)
+          appear after this run&apos;s candidates are <strong>saved</strong> — they read the
+          committed model, which holds no code evidence yet.
+        </p>
+      )}
       {hiddenCount > 0 && (
         <p
           style={{ color: '#777', fontSize: 13, margin: '0 0 8px' }}
