@@ -324,20 +324,27 @@ describe('deriveCorpusEffectCandidates', () => {
     );
   });
 
-  it('never competes: endpoints already covered by a mined effect candidate are skipped', () => {
+  it('mined coverage: corpus edges are ADDITIVE, exact duplicates suppressed, never uncovered', () => {
+    // 2026-08-22 ruling change ("chains are truth, mining is a head start"):
+    // a mined effect no longer suppresses the walk — it only exempts the
+    // endpoint from `uncovered` and dedupes exact (endpoint, table, mode)
+    // edges. The walk's ADDITIONAL writes still emit.
     const result = deriveCorpusEffectCandidates({
       corpus: CORPUS,
       runId: 'run-1',
       runCandidates: [
         endpointCandidate('lookupFilters', 'POST', '/filters/lookup'),
-        effectCandidateFor('lookupFilters'),
+        effectCandidateFor('lookupFilters'), // mined write on table `x`
       ],
     });
-    expect(result.candidates).toHaveLength(0);
     expect(result.uncovered).toHaveLength(0);
+    const tables = result.candidates.map(
+      (c) => (c.data as Record<string, unknown>).dataEntityName,
+    );
+    expect(tables.sort()).toEqual(['filter_audit', 'filters']); // additive, no dup of `x`
   });
 
-  it('ignores read endpoints and non-endpoint candidates', () => {
+  it('a GET with no same-verb root emits nothing and NEVER enters uncovered', () => {
     const result = deriveCorpusEffectCandidates({
       corpus: CORPUS,
       runId: 'run-1',
@@ -345,6 +352,171 @@ describe('deriveCorpusEffectCandidates', () => {
     });
     expect(result.candidates).toHaveLength(0);
     expect(result.uncovered).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Verb-agnostic chains (2026-08-22 user ruling: "old codebases don't obey
+// REST and HTTP verb principles ... we just want the full path from endpoint
+// to database"). Live-shakedown origin: 0 read edges estate-wide made the
+// CRUD matrix claim "no table is ever read".
+// ---------------------------------------------------------------------------
+
+describe('verb-agnostic effect chains (2026-08-22)', () => {
+  const READ_WRITE_CORPUS = corpusOf([
+    behaviourTable({
+      key: 'T-list',
+      symbol: 'FilterResource#list',
+      annotations: ['@GET', '@Path("filters")'],
+      callTargets: ['Q-readDao'],
+    }),
+    behaviourTable({
+      key: 'T-touch',
+      symbol: 'AuditResource#touch',
+      annotations: ['@GET', '@Path("touch")'],
+      callTargets: ['Q-auditDao'],
+    }),
+    behaviourTable({
+      key: 'T-save',
+      symbol: 'FilterResource#save',
+      annotations: ['@POST', '@Path("save")'],
+      callTargets: ['Q-mixedDao'],
+    }),
+    boundary({
+      key: 'Q-readDao',
+      symbol: 'FilterReadDao',
+      sql: ['SELECT * FROM filters f JOIN filter_tags ft ON f.id = ft.fid'],
+    }),
+    boundary({
+      key: 'Q-auditDao',
+      symbol: 'AccessAuditDao',
+      sql: ['INSERT INTO access_audit (who) VALUES (?)'],
+    }),
+    boundary({
+      key: 'Q-mixedDao',
+      symbol: 'FilterWriteDao',
+      sql: ['SELECT rate FROM ref_rates WHERE id = ?', 'INSERT INTO filters (a) VALUES (?)'],
+    }),
+  ]);
+
+  it('a GET whose chain reaches SELECTs emits READ edges (scl_corpus_read)', () => {
+    const result = deriveCorpusEffectCandidates({
+      corpus: READ_WRITE_CORPUS,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listFilters', 'GET', '/api/filters')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${data.dataEntityName}`;
+    });
+    expect(edges.sort()).toEqual(['read:filter_tags', 'read:filters']);
+    const detail = (result.candidates[0].data as Record<string, unknown>)
+      .path_metadata_json as Record<string, unknown>;
+    // Proof strength is VERB-INDEPENDENT: a complete clean walk earns
+    // read_proof even on a GET; partial walks get plain scl_corpus_read.
+    expect(detail.derivation).toBe('scl_corpus_read_proof');
+    expect(result.readMapped).toBe(1);
+    expect(result.uncovered).toHaveLength(0); // GETs never demand write maps
+  });
+
+  it('a legacy WRITING GET emits a real write edge (verbs are hints, chains are truth)', () => {
+    const result = deriveCorpusEffectCandidates({
+      corpus: READ_WRITE_CORPUS,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('touchAudit', 'GET', '/api/touch')],
+    });
+    expect(result.candidates).toHaveLength(1);
+    const data = result.candidates[0].data as Record<string, unknown>;
+    expect(data.access_mode).toBe('write');
+    expect(data.dataEntityName).toBe('access_audit');
+    expect(result.uncovered).toHaveLength(0);
+  });
+
+  it('a mutating endpoint that writes A and reads B emits write:A AND read:B', () => {
+    const result = deriveCorpusEffectCandidates({
+      corpus: READ_WRITE_CORPUS,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('saveFilter', 'POST', '/api/save')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${data.dataEntityName}`;
+    });
+    expect(edges.sort()).toEqual(['read:ref_rates', 'write:filters']);
+    // A writing chain is not read-PROVEN — its observed reads carry the
+    // plain tag.
+    const readEdge = result.candidates.find(
+      (c) => (c.data as Record<string, unknown>).access_mode === 'read',
+    )!;
+    expect(
+      ((readEdge.data as Record<string, unknown>).path_metadata_json as Record<string, unknown>)
+        .derivation,
+    ).toBe('scl_corpus_read');
+  });
+
+  it('an INTERNAL entrypoint (className/methodName) walks its chain and emits edges', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-job',
+        symbol: 'com.example.NightlyJob#run',
+        annotations: [],
+        callTargets: ['Q-jobDao'],
+      }),
+      boundary({
+        key: 'Q-jobDao',
+        symbol: 'SnapshotDao',
+        sql: ['SELECT id FROM work_queue', 'INSERT INTO event_sink (x) VALUES (?)'],
+      }),
+    ]);
+    const internal = {
+      id: 'ep-job',
+      runId: 'run-1',
+      candidateType: 'endpoints',
+      name: 'INTERNAL nightly-job',
+      confidence: 0.9,
+      status: 'proposed',
+      sourceClusterIds: [],
+      data: {
+        httpMethod: 'INTERNAL_PROCESS',
+        fullPath: 'nightly-job',
+        className: 'com.example.NightlyJob',
+        methodName: 'run',
+      },
+    } as unknown as DiscoveryCandidate;
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [internal],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${data.dataEntityName}`;
+    });
+    expect(edges.sort()).toEqual(['read:work_queue', 'write:event_sink']);
+    expect(result.internalWalked).toEqual(['INTERNAL nightly-job']);
+    const detail = (result.candidates[0].data as Record<string, unknown>)
+      .path_metadata_json as Record<string, unknown>;
+    expect(detail.internal_entry).toBe('com.example.NightlyJob#run');
+  });
+
+  it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {
+    const internal = {
+      id: 'ep-ghost',
+      runId: 'run-1',
+      candidateType: 'endpoints',
+      name: 'INTERNAL ghost-job',
+      confidence: 0.9,
+      status: 'proposed',
+      sourceClusterIds: [],
+      data: { httpMethod: 'INTERNAL_PROCESS', className: 'com.example.Ghost', methodName: 'run' },
+    } as unknown as DiscoveryCandidate;
+    const result = deriveCorpusEffectCandidates({
+      corpus: CORPUS,
+      runId: 'run-1',
+      runCandidates: [internal],
+    });
+    expect(result.candidates).toHaveLength(0);
+    expect(result.internalUnmatched).toEqual(['com.example.Ghost#run']);
   });
 });
 

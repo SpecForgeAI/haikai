@@ -322,14 +322,39 @@ describe('code mode gates joint questions on committed code evidence', () => {
     expect(screen.queryByTestId('foundation-q-FQ-crud_never')).not.toBeInTheDocument();
   });
 
-  it('once the model carries code evidence the joint questions derive normally', async () => {
+  it('code evidence WITHOUT read edges shows the read-pending note (read-axis suppressed)', async () => {
     vi.mocked(foundationsApi.fetchRawModelForFoundations).mockResolvedValue({
       metaModel: {
         entities: {
           physical_data_entities: [{ id: 'e1', name: 'orders' }],
           endpoints: [{ id: 'ep1' }],
         },
-        relationships: { endpoint_data_effects: [] },
+        relationships: {
+          endpoint_data_effects: [{ access_mode: 'write', data_entity_point_id: 'dep_phy_e1' }],
+        },
+      },
+    } as never);
+    render(
+      <FoundationsReviewPanel projectId="p1" architectureId="a1" candidates={[]} mode="code" />,
+    );
+    expect(await screen.findByTestId('foundations-read-pending-note')).toBeInTheDocument();
+    expect(screen.queryByTestId('foundation-q-FQ-crud_never')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('foundation-q-FQ-crud_write_only')).not.toBeInTheDocument();
+  });
+
+  it('once the model carries code evidence the joint questions derive normally', async () => {
+    vi.mocked(foundationsApi.fetchRawModelForFoundations).mockResolvedValue({
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            { id: 'e1', name: 'orders' },
+            { id: 'e2', name: 'ref_rates' },
+          ],
+          endpoints: [{ id: 'ep1' }],
+        },
+        relationships: {
+          endpoint_data_effects: [{ access_mode: 'read', data_entity_point_id: 'dep_phy_e2' }],
+        },
       },
     } as never);
     render(
@@ -337,5 +362,6 @@ describe('code mode gates joint questions on committed code evidence', () => {
     );
     expect(await screen.findByTestId('foundation-q-FQ-crud_never')).toBeInTheDocument();
     expect(screen.queryByTestId('foundations-joint-pending-note')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('foundations-read-pending-note')).not.toBeInTheDocument();
   });
 });

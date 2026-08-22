@@ -26,6 +26,7 @@ import {
   deriveJointFoundationQuestions,
   entityFactsFromCandidates,
   modelHasCodeEvidence,
+  modelHasReadEvidence,
   type FoundationQuestion,
   type RawModelLike,
 } from './foundationRules';
@@ -116,6 +117,14 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   // instead of a silent empty panel.
   const jointEvidencePending =
     mode === 'code' && rawModel !== null && !modelHasCodeEvidence(rawModel);
+  // Code evidence exists but ZERO read edges: the read-axis questions
+  // (never-touched / write-only) are suppressed — absent read derivation
+  // must not read as "never read" (2026-08-22 shakedown).
+  const jointReadPending =
+    mode === 'code' &&
+    rawModel !== null &&
+    modelHasCodeEvidence(rawModel) &&
+    !modelHasReadEvidence(rawModel);
 
   const questions: FoundationQuestion[] = useMemo(() => {
     if (!decisionsLoaded) return [];
@@ -314,7 +323,13 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   };
 
   if (mode === 'database' && facts.length === 0) return null;
-  if (mode === 'code' && questions.length === 0 && decisions.length === 0 && !jointEvidencePending)
+  if (
+    mode === 'code' &&
+    questions.length === 0 &&
+    decisions.length === 0 &&
+    !jointEvidencePending &&
+    !jointReadPending
+  )
     return null;
 
   return (
@@ -341,6 +356,17 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
           Joint CRUD questions (tables no code touches, write-only sinks, scope conflicts)
           appear after this run&apos;s candidates are <strong>saved</strong> — they read the
           committed model, which holds no code evidence yet.
+        </p>
+      )}
+      {jointReadPending && (
+        <p
+          style={{ color: '#8a6d3b', fontSize: 13, margin: '0 0 8px' }}
+          data-testid="foundations-read-pending-note"
+        >
+          The committed model holds <strong>no read edges</strong> — the never-touched /
+          write-only questions are suppressed (absent read derivation must not read as
+          &quot;never read&quot;). Re-run the code scan on the current build and save to
+          derive read chains.
         </p>
       )}
       {hiddenCount > 0 && (

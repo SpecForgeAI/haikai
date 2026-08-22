@@ -332,18 +332,51 @@ describe('joint rules refuse to fire without committed code evidence', () => {
     expect(deriveJointFoundationQuestions(preCodeSaveModel, [])).toEqual([]);
   });
 
-  it('endpoints WITHOUT edges are real (negative) evidence — crud_never fires', () => {
-    const savedButNoEffects = {
+  it('with read evidence present, an edge-less table IS real negative evidence — crud_never fires', () => {
+    const model = {
       metaModel: {
         entities: {
-          physical_data_entities: [{ id: 'e1', name: 'orders' }],
+          physical_data_entities: [
+            { id: 'e1', name: 'orders' },
+            { id: 'e2', name: 'ref_rates' },
+          ],
           endpoints: [{ id: 'ep1' }],
         },
-        relationships: { endpoint_data_effects: [] },
+        relationships: {
+          endpoint_data_effects: [{ access_mode: 'read', data_entity_point_id: 'dep_phy_e2' }],
+        },
       },
     };
-    const questions = deriveJointFoundationQuestions(savedButNoEffects, []);
+    const questions = deriveJointFoundationQuestions(model, []);
     const never = questions.find((q) => q.question_key === 'FQ-crud_never');
     expect(never?.targets.map((t) => t.entity_name)).toEqual(['orders']);
+  });
+
+  it('ZERO read edges estate-wide suppresses the read-axis questions (writes-only model)', () => {
+    // The 2026-08-22 live estate: 120 write edges, 0 reads — the matrix
+    // claimed "no table is ever read". Read-axis rules now refuse to fire;
+    // scope conflicts (write-founded) still do.
+    const writesOnly = {
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            { id: 'e1', name: 'orders' },
+            { id: 'e2', name: 'audit_log' },
+            { id: 'e3', name: 'orders_bak', migration_scope: 'excluded', scope_decision_ref: 'F-1' },
+          ],
+          endpoints: [{ id: 'ep1' }],
+        },
+        relationships: {
+          endpoint_data_effects: [
+            { access_mode: 'write', data_entity_point_id: 'dep_phy_e2' },
+            { access_mode: 'write', data_entity_point_id: 'dep_phy_e3' },
+          ],
+        },
+      },
+    };
+    const keys = deriveJointFoundationQuestions(writesOnly, []).map((q) => q.question_key);
+    expect(keys).not.toContain('FQ-crud_never');
+    expect(keys).not.toContain('FQ-crud_write_only');
+    expect(keys).toContain('FQ-scope_code_conflict-orders_bak');
   });
 });

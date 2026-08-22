@@ -2723,6 +2723,8 @@ async function startServiceScopedRun(
           allCandidates.push(...emitted);
           effectCandidates = {
             derived: derivedPhase.candidates.length,
+            readMapped: derivedPhase.readMapped,
+            internalWalked: derivedPhase.internalWalked.length,
             provenRead: derivedPhase.provenRead.length,
             proposed: proposalPhase.candidates.length,
             llmCalls: proposalPhase.llmCalls,
@@ -2732,7 +2734,9 @@ async function startServiceScopedRun(
           };
           console.log(
             `[RunManager:service-scoped] Effect candidates: ${derivedPhase.candidates.length} corpus-derived ` +
-              `(${derivedPhase.provenRead.length} proven-read), ` +
+              `(${derivedPhase.readMapped} read-mapped endpoint(s), ` +
+              `${derivedPhase.internalWalked.length} internal chain(s), ` +
+              `${derivedPhase.provenRead.length} proven-read), ` +
               `${proposalPhase.candidates.length} LLM-proposed (${proposalPhase.llmCalls} call(s)), ` +
               `${proposalPhase.unproposed.length} unproposed in ${Date.now() - emissionStart}ms`,
           );
