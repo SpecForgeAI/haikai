@@ -107,6 +107,71 @@ function resolveDefaultUpserter(): DecisionsUpserter {
 
 const VALID_SCOPES = new Set(['in_scope', 'excluded', 'volatile', 'data_only']);
 
+/**
+ * PURE core: apply decisions to a list of model physical entities (scope
+ * tags + receipts + additive PK promotion). Shared by the MCP apply tool
+ * (entities already exist) AND candidateSaveBackService (fresh-project
+ * ordering: the review answers land BEFORE the first save, so save-back
+ * reconciles stored decisions onto the entities it just created).
+ */
+export function applyDecisionsToEntities(
+  entities: any[],
+  decisions: FoundationDecisionInput[],
+): { updated: number; skipped: SkippedTarget[] } {
+  const byLowerName = new Map<string, any>(
+    entities.filter((e: any) => e?.name).map((e: any) => [String(e.name).toLowerCase(), e]),
+  );
+  const skipped: SkippedTarget[] = [];
+  let updated = 0;
+  for (const decision of decisions) {
+    for (const name of decision.target_entity_names ?? []) {
+      const entity = byLowerName.get(String(name).toLowerCase());
+      if (!entity) {
+        skipped.push({
+          decision_key: decision.decision_key,
+          entity_name: name,
+          reason: 'entity not found in the committed model',
+        });
+        continue;
+      }
+      let touched = false;
+      if (decision.scope != null) {
+        if (
+          entity.migration_scope !== decision.scope ||
+          entity.scope_decision_ref !== decision.decision_key
+        ) {
+          entity.migration_scope = decision.scope;
+          entity.scope_decision_ref = decision.decision_key;
+          touched = true;
+        }
+      }
+      const promote = decision.payload_json?.promote_pk_columns;
+      if (Array.isArray(promote) && promote.length > 0) {
+        const constraints = (entity.constraints_metadata ??= {});
+        const existing = constraints.primary_key;
+        const existingColumns = Array.isArray(existing?.columns) ? existing.columns : [];
+        if (existingColumns.length > 0) {
+          skipped.push({
+            decision_key: decision.decision_key,
+            entity_name: name,
+            reason: 'entity already has a declared primary key — promotion skipped (additive)',
+          });
+        } else {
+          constraints.primary_key = {
+            name: `${decision.decision_key.toLowerCase()}_promoted_pk`,
+            columns: promote.map((c) => String(c)),
+            provenance: 'foundation_promoted',
+            decision_ref: decision.decision_key,
+          };
+          touched = true;
+        }
+      }
+      if (touched) updated += 1;
+    }
+  }
+  return { updated, skipped };
+}
+
 export interface ApplyFoundationDecisionsArgs {
   projectId: string;
   architectureId: string;
@@ -146,65 +211,9 @@ export async function applyFoundationDecisions(
   }
 
   const entities: any[] = model?.metaModel?.entities?.physical_data_entities ?? [];
-  const byLowerName = new Map<string, any>(
-    entities
-      .filter((e: any) => e?.name)
-      .map((e: any) => [String(e.name).toLowerCase(), e]),
-  );
-
-  const skipped: SkippedTarget[] = [];
-  let entitiesUpdated = 0;
-
-  for (const decision of decisions) {
-    for (const name of decision.target_entity_names ?? []) {
-      const entity = byLowerName.get(String(name).toLowerCase());
-      if (!entity) {
-        skipped.push({
-          decision_key: decision.decision_key,
-          entity_name: name,
-          reason: 'entity not found in the committed model',
-        });
-        continue;
-      }
-      let touched = false;
-      if (decision.scope != null) {
-        if (
-          entity.migration_scope !== decision.scope ||
-          entity.scope_decision_ref !== decision.decision_key
-        ) {
-          entity.migration_scope = decision.scope;
-          entity.scope_decision_ref = decision.decision_key;
-          touched = true;
-        }
-      }
-      // Key-policy materialization: promote a verified unique index into
-      // constraints_metadata.primary_key so the compensation reader works
-      // unchanged. ADDITIVE: an existing declared primary key is never
-      // overwritten.
-      const promote = decision.payload_json?.promote_pk_columns;
-      if (Array.isArray(promote) && promote.length > 0) {
-        const constraints = (entity.constraints_metadata ??= {});
-        const existing = constraints.primary_key;
-        const existingColumns = Array.isArray(existing?.columns) ? existing.columns : [];
-        if (existingColumns.length > 0) {
-          skipped.push({
-            decision_key: decision.decision_key,
-            entity_name: name,
-            reason: 'entity already has a declared primary key — promotion skipped (additive)',
-          });
-        } else {
-          constraints.primary_key = {
-            name: `${decision.decision_key.toLowerCase()}_promoted_pk`,
-            columns: promote.map((c) => String(c)),
-            provenance: 'foundation_promoted',
-            decision_ref: decision.decision_key,
-          };
-          touched = true;
-        }
-      }
-      if (touched) entitiesUpdated += 1;
-    }
-  }
+  const applied = applyDecisionsToEntities(entities, decisions);
+  const skipped = applied.skipped;
+  const entitiesUpdated = applied.updated;
 
   if (entitiesUpdated > 0) {
     await client.putModel(projectId, architectureId, filename, model);

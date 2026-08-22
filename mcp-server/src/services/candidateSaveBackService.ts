@@ -53,6 +53,7 @@
  */
 
 import { generateId } from '../utils/generateId';
+import { applyDecisionsToEntities } from './foundationDecisionApplyService';
 import {
   DiscoveryCandidateDto,
   CandidateEntityMappingDto,
@@ -4082,6 +4083,46 @@ export async function saveDiscoveryCandidatesToModel(
       );
   }
 
+  // Foundations Spec 2 (2026-08-22): reconcile STORED foundation decisions
+  // onto the entities this save just created/reused. Fresh-project ordering
+  // means the review's answers land BEFORE the first save (the MCP apply
+  // tool honestly skipped names that did not exist yet) — save-back is the
+  // reconciler that makes decisions-first/entities-later work, and it keeps
+  // re-scans converged. FAIL-SOFT: a decisions-read error applies nothing.
+  try {
+    const storedDecisions = await archModelClient.getFoundationDecisions(projectId, architectureId);
+    const applicable = storedDecisions
+      .filter((d: any) => d && d.stale !== true && typeof d.decision_key === 'string')
+      .map((d: any) => ({
+        decision_key: d.decision_key,
+        rule_key: String(d.rule_key ?? ''),
+        answer: String(d.answer ?? ''),
+        scope: d.scope ?? null,
+        target_entity_names: Array.isArray(d.targets_json)
+          ? d.targets_json
+              .map((x: any) => String(x?.entity_name ?? ''))
+              .filter((n: string) => n.length > 0)
+          : [],
+        payload_json: d.payload_json ?? null,
+      }));
+    if (applicable.length > 0) {
+      const scopeResult = applyDecisionsToEntities(
+        model?.metaModel?.entities?.physical_data_entities ?? [],
+        applicable as any,
+      );
+      if (scopeResult.updated > 0) {
+        console.log(
+          `[save-back] Foundation decisions reconciled onto ${scopeResult.updated} ` +
+            'entit(y/ies) (scope tags / PK promotions).',
+        );
+      }
+    }
+  } catch (foundationErr: any) {
+    console.warn(
+      `[save-back] Foundation-decision reconciliation skipped: ${foundationErr?.message ?? foundationErr}`,
+    );
+  }
+
   try {
     if (commit) await archModelClient.putModel(projectId, architectureId, filename, model);
   } catch (phaseOneErr: any) {
@@ -4148,6 +4189,15 @@ export async function saveDiscoveryCandidatesToModel(
   // ===========================================================================
   // Step 11: Update each promoted candidate's status and review_status to 'committed'
   // ===========================================================================
+  // Foundations Spec 2 (2026-08-22): a candidate whose model entity carries
+  // migration_scope='excluded' commits as `committed_excluded` — reviewed and
+  // in CURRENT state as documentation, deliberately out of the migration.
+  // The review lifecycle field stays 'committed' (the review DID happen).
+  const excludedEntityIds = new Set<string>(
+    ((model?.metaModel?.entities?.physical_data_entities ?? []) as any[])
+      .filter((e: any) => String(e?.migration_scope ?? '').toLowerCase() === 'excluded')
+      .map((e: any) => String(e?.id)),
+  );
   const candidatesCommitted = candidateActions.length;
 
   for (const action of candidateActions) {
@@ -4161,7 +4211,9 @@ export async function saveDiscoveryCandidatesToModel(
       // up in the save-back set without an explicit prior review.
       const previousReviewStatus = candidate.review_status ?? 'pending_review';
       if (commit) await archModelClient.updateCandidate(projectId, architectureId, runId, action.candidateId, {
-        status: 'committed',
+        status: excludedEntityIds.has(String(action.entityId))
+          ? 'committed_excluded'
+          : 'committed',
         review_status: 'committed',
         reviewed_by: 'save-back',
         reviewed_at: new Date().toISOString(),
