@@ -544,6 +544,7 @@ export interface RawModelLike {
         migration_scope?: string | null;
         scope_decision_ref?: string | null;
       }>;
+      endpoints?: Array<{ id?: string }>;
     };
     relationships?: {
       endpoint_data_effects?: Array<{
@@ -552,6 +553,20 @@ export interface RawModelLike {
       }>;
     };
   };
+}
+
+/**
+ * TRUE once the committed model actually holds code-plane evidence
+ * (endpoints and/or effect edges). Until the code run's candidates are
+ * SAVED, the model has neither — and ABSENT evidence must not read as
+ * NEGATIVE evidence ("no code path touches these 45 tables" moments after
+ * the scan started). The joint rules refuse to fire before this is true.
+ */
+export function modelHasCodeEvidence(model: RawModelLike): boolean {
+  return (
+    (model.metaModel?.entities?.endpoints ?? []).length > 0 ||
+    (model.metaModel?.relationships?.endpoint_data_effects ?? []).length > 0
+  );
 }
 
 interface CrudFacts {
@@ -602,6 +617,10 @@ export function deriveJointFoundationQuestions(
   model: RawModelLike,
   decisions: StoredFoundationDecision[],
 ): FoundationQuestion[] {
+  // No committed code evidence -> no joint questions. Every rule below
+  // reasons over effect edges; without the code save they are all vacuous
+  // (crud_never would list the ENTIRE estate as "never touched").
+  if (!modelHasCodeEvidence(model)) return [];
   const facts = crudFactsFromModel(model);
   const questions: FoundationQuestion[] = [];
 

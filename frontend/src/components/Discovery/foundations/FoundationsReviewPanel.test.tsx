@@ -15,6 +15,7 @@ import * as foundationsApi from '../../../api/foundationsApi';
 vi.mock('../../../api/foundationsApi', () => ({
   listFoundationDecisions: vi.fn(),
   applyFoundationDecisions: vi.fn(),
+  fetchRawModelForFoundations: vi.fn(),
 }));
 
 function cand(partial: Record<string, unknown>): DiscoveryCandidateDto {
@@ -298,5 +299,43 @@ describe('stale reopen preselects the PREVIOUS answer (2026-08-22 regression)', 
       screen.getByTestId('foundation-q-FQ-key_posture-orders_bak'),
     ).toBeInTheDocument();
     expect(screen.queryByTestId('foundations-hidden-note')).not.toBeInTheDocument();
+  });
+});
+
+describe('code mode gates joint questions on committed code evidence', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(foundationsApi.listFoundationDecisions).mockResolvedValue([]);
+  });
+
+  it('a model with NO endpoints/effects shows the pending note and NO crud_never card', async () => {
+    vi.mocked(foundationsApi.fetchRawModelForFoundations).mockResolvedValue({
+      metaModel: {
+        entities: { physical_data_entities: [{ id: 'e1', name: 'orders' }] },
+        relationships: { endpoint_data_effects: [] },
+      },
+    } as never);
+    render(
+      <FoundationsReviewPanel projectId="p1" architectureId="a1" candidates={[]} mode="code" />,
+    );
+    expect(await screen.findByTestId('foundations-joint-pending-note')).toBeInTheDocument();
+    expect(screen.queryByTestId('foundation-q-FQ-crud_never')).not.toBeInTheDocument();
+  });
+
+  it('once the model carries code evidence the joint questions derive normally', async () => {
+    vi.mocked(foundationsApi.fetchRawModelForFoundations).mockResolvedValue({
+      metaModel: {
+        entities: {
+          physical_data_entities: [{ id: 'e1', name: 'orders' }],
+          endpoints: [{ id: 'ep1' }],
+        },
+        relationships: { endpoint_data_effects: [] },
+      },
+    } as never);
+    render(
+      <FoundationsReviewPanel projectId="p1" architectureId="a1" candidates={[]} mode="code" />,
+    );
+    expect(await screen.findByTestId('foundation-q-FQ-crud_never')).toBeInTheDocument();
+    expect(screen.queryByTestId('foundations-joint-pending-note')).not.toBeInTheDocument();
   });
 });
