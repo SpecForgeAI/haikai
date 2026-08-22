@@ -139,10 +139,49 @@ export function computeWriteEndpointsWithoutEffectMap(
       // committed effects are READ-only is a POST-implemented query — it is
       // MAPPED (as reads), needs no write tables, and must not be warned on.
       if (isReadMappedOperation(effectScope, op.method, op.path)) continue;
+      // Foundations Spec 3 (2026-08-22): an endpoint whose ENTIRE effect map
+      // was removed by migration scope is a SCOPE CONFLICT, not a missing
+      // map — it is reported separately with the decision receipts.
+      if (scopeConflictFor(effectScope, op.method, op.path).length > 0) continue;
       missing.push(`${op.method.toUpperCase()} ${op.path}`);
     }
   }
   return [...new Set(missing)].sort();
+}
+
+/** The scope-removed effect tables for one operation (empty = no conflict).
+ *  Only meaningful when the REMAINING write map is empty. */
+export function scopeConflictFor(
+  effectScope: EffectScopeIndex,
+  method: string,
+  path: string,
+): Array<{ table: string; scope: string; decision_ref: string | null }> {
+  const key = `${method.toUpperCase()} ${path}`;
+  const removed = effectScope.scopeExcludedByOperationKey?.get(key) ?? [];
+  if (removed.length === 0) return [];
+  if (effectTablesFor(effectScope, method, path).length > 0) return [];
+  return removed;
+}
+
+/** Preflight list (Spec 3): operations whose whole effect map was scoped
+ *  away, each with its receipts — `"POST /x — orders_bak excluded (F-1)"`. */
+export function computeScopeConflictEndpoints(
+  operations: Array<{ method: string; path: string; included?: boolean | null }>,
+  effectScope: EffectScopeIndex,
+): string[] {
+  const out: string[] = [];
+  for (const op of operations) {
+    if (op.included === false) continue;
+    if (!COMPENSATED_VERBS.has(op.method.toLowerCase())) continue;
+    if (isReadMappedOperation(effectScope, op.method, op.path)) continue;
+    const removed = scopeConflictFor(effectScope, op.method, op.path);
+    if (removed.length === 0) continue;
+    const detail = removed
+      .map((r) => `${r.table} ${r.scope}${r.decision_ref ? ` (${r.decision_ref})` : ''}`)
+      .join(', ');
+    out.push(`${op.method.toUpperCase()} ${op.path} — ${detail}`);
+  }
+  return [...new Set(out)].sort();
 }
 
 // ---------------------------------------------------------------------------
@@ -162,6 +201,9 @@ export async function runEndOfJobFingerprint(args: {
   readAdapter: DbAdapter;
   metadata: CompensationMetadataIndex;
   schema: string | null;
+  /** Lowercase names of tables written under keyless_multiset THIS run
+   *  (Foundations Spec 3) — tolerated alongside `volatile`-scoped tables. */
+  keylessWrittenTables?: Set<string>;
 }): Promise<EndOfJobFingerprintResult> {
   let snapshotId: string | null = null;
   try {
@@ -187,17 +229,32 @@ export async function runEndOfJobFingerprint(args: {
         detail: `snapshot ${snapshotId} has no readable manifest`,
       };
     }
+    const tolerated = new Set<string>(args.metadata.volatileTables ?? []);
+    for (const table of args.keylessWrittenTables ?? []) tolerated.add(table.toLowerCase());
     const report = await verifyS0Fingerprint(
       args.readAdapter,
       args.metadata,
       manifest,
       args.schema,
+      tolerated,
     );
+    const toleratedNote =
+      report.tolerated_mismatches.length > 0
+        ? ` — ${report.tolerated_mismatches.length} tolerated ` +
+          `(volatile/keyless: ${report.tolerated_mismatches
+            .slice(0, 6)
+            .map((m) => m.table)
+            .join(', ')}${report.tolerated_mismatches.length > 6 ? ', …' : ''})`
+        : '';
     return {
       status: report.matches ? 'verified' : 'mismatch',
       snapshotId,
       report,
-      detail: report.matches ? null : fingerprintMismatchDetail(report.mismatches),
+      detail: report.matches
+        ? toleratedNote.length > 0
+          ? `all non-tolerated tables match S0${toleratedNote}`
+          : null
+        : fingerprintMismatchDetail(report.mismatches) + toleratedNote,
     };
   } catch (err) {
     return {

@@ -38,6 +38,14 @@ import type { DbQueryLimits } from '../types/db';
 export interface EffectScopeIndex {
   /** key `${METHOD} ${pathTemplate}` -> physical table names (deduped). */
   tablesByOperationKey: Map<string, string[]>;
+  /** Foundations Spec 3 (2026-08-22): per-operation effect tables REMOVED by
+   *  migration scope (excluded/volatile), with the decision receipt — the
+   *  preflight surfaces operations whose entire map was scoped away as
+   *  explicit conflicts instead of generic no_effect_map refusals. */
+  scopeExcludedByOperationKey?: Map<
+    string,
+    Array<{ table: string; scope: string; decision_ref: string | null }>
+  >;
   /**
    * Operation keys whose committed effect edges are READ-mode (proven-read
    * classification, 2026-08-20): a write-verb endpoint mapped ONLY as reads
@@ -74,6 +82,69 @@ interface RawModel {
  * state to delta. Returns null on any read failure (callers degrade to
  * no-snapshot, which the diff surfaces as `state_unverified`).
  */
+/** PURE builder (exported for tests; Foundations Spec 3 added the scope
+ *  filter): excluded/volatile tables never enter the write maps — the
+ *  removals are RECORDED per operation with the decision receipt so the
+ *  preflight can cite them. */
+export function buildEffectScopeIndexFromModel(model: RawModel): EffectScopeIndex {
+  const tableByEntityId = new Map<string, string>();
+  const scopeByEntityId = new Map<string, { scope: string; decision_ref: string | null }>();
+  for (const entity of model.metaModel?.entities?.physical_data_entities ?? []) {
+    if (!entity.id || !entity.name) continue;
+    tableByEntityId.set(entity.id, entity.name);
+    const raw = ((entity as { migration_scope?: string | null }).migration_scope ?? '')
+      .toString()
+      .toLowerCase();
+    if (raw === 'excluded' || raw === 'volatile') {
+      scopeByEntityId.set(entity.id, {
+        scope: raw,
+        decision_ref:
+          ((entity as { scope_decision_ref?: string | null }).scope_decision_ref ?? null) as
+            | string
+            | null,
+      });
+    }
+  }
+  const endpointKeyById = new Map<string, string>();
+  for (const endpoint of model.metaModel?.entities?.endpoints ?? []) {
+    if (!endpoint.id) continue;
+    const verb = (endpoint.operation_verb ?? '').toUpperCase();
+    const path = endpoint.path_or_address ?? '';
+    if (verb && path) endpointKeyById.set(endpoint.id, `${verb} ${path}`);
+  }
+
+  const tablesByOperationKey = new Map<string, string[]>();
+  const scopeExcludedByOperationKey: EffectScopeIndex['scopeExcludedByOperationKey'] = new Map();
+  const readMappedOperationKeys = new Set<string>();
+  for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
+    const mode = (edge.access_mode ?? '').toLowerCase();
+    const key = edge.endpoint_id ? endpointKeyById.get(edge.endpoint_id) : undefined;
+    if (!key) continue;
+    if (mode === 'read') {
+      // Proven-read classification (2026-08-20): the edge itself is enough
+      // — the table side matters only for write imaging.
+      readMappedOperationKeys.add(key);
+      continue;
+    }
+    if (mode !== 'write' && mode !== 'read-write') continue;
+    const pointId = edge.data_entity_point_id ?? '';
+    const entityId = pointId.replace(/^dep_(phy|log)_/, '');
+    const table = tableByEntityId.get(entityId);
+    if (!table) continue;
+    const scoped = scopeByEntityId.get(entityId);
+    if (scoped) {
+      const removals = scopeExcludedByOperationKey.get(key) ?? [];
+      removals.push({ table, scope: scoped.scope, decision_ref: scoped.decision_ref });
+      scopeExcludedByOperationKey.set(key, removals);
+      continue;
+    }
+    const list = tablesByOperationKey.get(key) ?? [];
+    if (!list.includes(table)) list.push(table);
+    tablesByOperationKey.set(key, list);
+  }
+  return { tablesByOperationKey, scopeExcludedByOperationKey, readMappedOperationKeys };
+}
+
 export async function fetchEffectScopeIndex(
   projectId: string,
   architectureId: string,
@@ -87,40 +158,7 @@ export async function fetchEffectScopeIndex(
     if (!response.ok) return null;
     const model = (await response.json()) as RawModel;
 
-    const tableByEntityId = new Map<string, string>();
-    for (const entity of model.metaModel?.entities?.physical_data_entities ?? []) {
-      if (entity.id && entity.name) tableByEntityId.set(entity.id, entity.name);
-    }
-    const endpointKeyById = new Map<string, string>();
-    for (const endpoint of model.metaModel?.entities?.endpoints ?? []) {
-      if (!endpoint.id) continue;
-      const verb = (endpoint.operation_verb ?? '').toUpperCase();
-      const path = endpoint.path_or_address ?? '';
-      if (verb && path) endpointKeyById.set(endpoint.id, `${verb} ${path}`);
-    }
-
-    const tablesByOperationKey = new Map<string, string[]>();
-    const readMappedOperationKeys = new Set<string>();
-    for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
-      const mode = (edge.access_mode ?? '').toLowerCase();
-      const key = edge.endpoint_id ? endpointKeyById.get(edge.endpoint_id) : undefined;
-      if (!key) continue;
-      if (mode === 'read') {
-        // Proven-read classification (2026-08-20): the edge itself is enough
-        // — the table side matters only for write imaging.
-        readMappedOperationKeys.add(key);
-        continue;
-      }
-      if (mode !== 'write' && mode !== 'read-write') continue;
-      const pointId = edge.data_entity_point_id ?? '';
-      const entityId = pointId.replace(/^dep_(phy|log)_/, '');
-      const table = tableByEntityId.get(entityId);
-      if (!table) continue;
-      const list = tablesByOperationKey.get(key) ?? [];
-      if (!list.includes(table)) list.push(table);
-      tablesByOperationKey.set(key, list);
-    }
-    return { tablesByOperationKey, readMappedOperationKeys };
+    return buildEffectScopeIndexFromModel(model);
   } catch {
     return null;
   }

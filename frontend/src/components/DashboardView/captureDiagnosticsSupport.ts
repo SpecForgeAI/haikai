@@ -28,6 +28,9 @@ const WARNING_TYPES = new Set([
   's0_snapshot_missing',
   's0_fingerprint_check_failed',
   'endpoint_skipped',
+  // Foundations Spec 3 (2026-08-22): whole effect map removed by scope
+  // decisions — a ruling to revisit, not a failure.
+  'scope_conflict',
 ]);
 
 export function severityFor(diagnosticType: string | null): DiagnosticSeverity {

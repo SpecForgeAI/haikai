@@ -145,6 +145,18 @@ export function applyDecisionsToEntities(
           touched = true;
         }
       }
+      // Key policy materialization (Spec 3): keyless_multiset rides the
+      // entity's constraints metadata so the capture compensation reader
+      // resolves the DETECT-ONLY bracket policy per table.
+      const keyPolicy = decision.payload_json?.key_policy;
+      if (keyPolicy === 'keyless_multiset') {
+        const constraints = (entity.constraints_metadata ??= {});
+        if (constraints.key_policy !== 'keyless_multiset') {
+          constraints.key_policy = 'keyless_multiset';
+          constraints.key_policy_decision_ref = decision.decision_key;
+          touched = true;
+        }
+      }
       const promote = decision.payload_json?.promote_pk_columns;
       if (Array.isArray(promote) && promote.length > 0) {
         const constraints = (entity.constraints_metadata ??= {});

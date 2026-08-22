@@ -48,7 +48,7 @@ public class ApiBehaviourDiagnosticService {
         "s0_fingerprint_check_failed",
         // Proven-read classification (2026-08-20): write-verb endpoint with
         // READ-only committed effects fires unbracketed (info diagnostic).
-        "proven_read_only"
+        "proven_read_only", "scope_conflict", "keyless_write_recorded"
     );
 
     private final ApiBehaviourDiagnosticRepository repository;
