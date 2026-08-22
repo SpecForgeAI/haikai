@@ -447,17 +447,29 @@ export interface UncoveredWriteEndpoint {
   rootKeys: string[];
   /** WHY the deterministic phase found nothing — the diagnosis record
    *  (2026-08-20: unmapped endpoints must self-document). */
-  diagnosis: {
-    stage:
-      | 'no_root_match'
-      | 'chain_broken'
-      | 'boundaries_without_write_sql'
-      | 'complete_walk_no_tables';
-    matched_roots: string[];
-    same_verb_root_fragments: string[];
-    broken_calls: string[];
-    boundaries_reached: string[];
-  };
+  diagnosis: WalkDiagnosis;
+}
+
+export interface WalkDiagnosis {
+  stage:
+    | 'no_root_match'
+    | 'chain_broken'
+    | 'boundaries_without_write_sql'
+    | 'boundaries_without_read_sql'
+    | 'complete_walk_no_tables';
+  matched_roots: string[];
+  same_verb_root_fragments: string[];
+  broken_calls: string[];
+  boundaries_reached: string[];
+}
+
+/** A read-verb endpoint whose walk derived NO edges at all — the read-side
+ *  mirror of `uncovered` (2026-08-22: GETs failed silently; "why did this
+ *  GET derive nothing" must be answerable from the run JSON). */
+export interface ReadUnderivedEndpoint {
+  method: string;
+  path: string;
+  diagnosis: WalkDiagnosis;
 }
 
 /** A write-verb endpoint whose COMPLETE walk proved it only reads. */
@@ -479,6 +491,9 @@ export interface DeriveResult {
   /** Internal entrypoints whose class#method has NO corpus presence
    *  (capped 10) — visible so batch chains never vanish silently. */
   internalUnmatched: string[];
+  /** Read-verb endpoints that derived NOTHING, each with the staged walk
+   *  diagnosis (capped 100). */
+  readUnderived: ReadUnderivedEndpoint[];
 }
 
 function normName(value: unknown): string {
@@ -638,6 +653,33 @@ export function deriveCorpusEffectCandidates(args: {
   const readMappedEndpoints = new Set<string>();
   const internalWalked: string[] = [];
   const internalUnmatched: string[] = [];
+  const readUnderived: ReadUnderivedEndpoint[] = [];
+
+  const walkDiagnosis = (
+    roots: Array<{ symbol: string; fragment: string }>,
+    collected: ReturnType<typeof collectFromRootKeys>,
+    method: string,
+    sqlStage: 'boundaries_without_write_sql' | 'boundaries_without_read_sql',
+  ): WalkDiagnosis => ({
+    stage:
+      roots.length === 0
+        ? 'no_root_match'
+        : collected.brokenCalls.length > 0 && collected.boundariesReached.length === 0
+          ? 'chain_broken'
+          : collected.boundariesReached.length > 0
+            ? sqlStage
+            : 'complete_walk_no_tables',
+    matched_roots: roots.map((r) => `${r.symbol} [fragment "${r.fragment}"]`),
+    same_verb_root_fragments:
+      roots.length === 0
+        ? index.httpRoots
+            .filter((r) => r.method.toUpperCase() === method)
+            .map((r) => r.fragment)
+            .slice(0, 15)
+        : [],
+    broken_calls: collected.brokenCalls,
+    boundaries_reached: collected.boundariesReached,
+  });
 
   const emitWrite = (endpointName: string, table: string, detail: Record<string, unknown>) => {
     const edge = `${normName(endpointName)}|${normName(table)}|write`;
@@ -705,8 +747,23 @@ export function deriveCorpusEffectCandidates(args: {
       }
 
       // Capture-preflight bookkeeping — verb-scoped by DESIGN (write maps
-      // are demanded for mutating verbs; a GET is never "uncovered").
-      if (!MUTATING_VERBS.has(method)) continue;
+      // are demanded for mutating verbs; a GET is never "uncovered"). A
+      // read-verb endpoint that derived NOTHING records the same staged
+      // diagnosis under `readUnderived` instead of failing silently.
+      if (!MUTATING_VERBS.has(method)) {
+        if (
+          collected.writeTables.length === 0 &&
+          collected.readTables.length === 0 &&
+          readUnderived.length < 100
+        ) {
+          readUnderived.push({
+            method,
+            path,
+            diagnosis: walkDiagnosis(roots, collected, method, 'boundaries_without_read_sql'),
+          });
+        }
+        continue;
+      }
       if (minedWriteCovered.has(normName(endpointCandidate.name))) continue;
       if (collected.writeTables.length > 0) continue;
       if (provenReadOnly) {
@@ -718,26 +775,7 @@ export function deriveCorpusEffectCandidates(args: {
         method,
         path,
         rootKeys: roots.map((r) => r.key),
-        diagnosis: {
-          stage:
-            roots.length === 0
-              ? 'no_root_match'
-              : collected.brokenCalls.length > 0 && collected.boundariesReached.length === 0
-                ? 'chain_broken'
-                : collected.boundariesReached.length > 0
-                  ? 'boundaries_without_write_sql'
-                  : 'complete_walk_no_tables',
-          matched_roots: roots.map((r) => `${r.symbol} [fragment "${r.fragment}"]`),
-          same_verb_root_fragments:
-            roots.length === 0
-              ? index.httpRoots
-                  .filter((r) => r.method.toUpperCase() === method)
-                  .map((r) => r.fragment)
-                  .slice(0, 15)
-              : [],
-          broken_calls: collected.brokenCalls,
-          boundaries_reached: collected.boundariesReached,
-        },
+        diagnosis: walkDiagnosis(roots, collected, method, 'boundaries_without_write_sql'),
       });
       continue;
     }
@@ -775,6 +813,7 @@ export function deriveCorpusEffectCandidates(args: {
     readMapped: readMappedEndpoints.size,
     internalWalked,
     internalUnmatched,
+    readUnderived,
   };
 }
 
@@ -966,15 +1005,24 @@ export function summarizeEmission(
   propose: ProposeResult,
 ): Record<string, unknown> {
   const byStage: Record<string, number> = {};
+  const readUnderivedByStage: Record<string, number> = {};
   const brokenCounts = new Map<string, number>();
-  for (const item of propose.unproposed) {
-    const stage = item.diagnosis?.stage ?? 'unknown';
-    byStage[stage] = (byStage[stage] ?? 0) + 1;
-    for (const broken of item.diagnosis?.broken_calls ?? []) {
+  const countBroken = (calls: string[] | undefined) => {
+    for (const broken of calls ?? []) {
       // Aggregate by the TARGET symbol (after 'call to '), not the caller.
       const target = broken.replace(/^.*?call to /, '').replace(/ unresolved$/, '');
       brokenCounts.set(target, (brokenCounts.get(target) ?? 0) + 1);
     }
+  };
+  for (const item of propose.unproposed) {
+    const stage = item.diagnosis?.stage ?? 'unknown';
+    byStage[stage] = (byStage[stage] ?? 0) + 1;
+    countBroken(item.diagnosis?.broken_calls);
+  }
+  for (const item of derive.readUnderived) {
+    readUnderivedByStage[item.diagnosis.stage] =
+      (readUnderivedByStage[item.diagnosis.stage] ?? 0) + 1;
+    countBroken(item.diagnosis.broken_calls);
   }
   const topBrokenTargets = [...brokenCounts.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -988,6 +1036,8 @@ export function summarizeEmission(
       (c) => (c.data as Record<string, unknown>).access_mode === 'read',
     ).length,
     readMappedEndpointCount: derive.readMapped,
+    readUnderivedCount: derive.readUnderived.length,
+    readUnderivedByStage,
     internalWalkedCount: derive.internalWalked.length,
     internalUnmatched: derive.internalUnmatched,
     provenReadEndpoints: derive.provenRead.map((p) => `${p.method} ${p.path}`),

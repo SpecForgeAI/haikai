@@ -193,3 +193,58 @@ describe('DAO-interface + Impl idiom (2026-08-21)', () => {
     expect(callRow).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// DAO suffix CASING (2026-08-22 live diagnosis): the same estate mixes
+// `BookDaoImpl` and `BookAttributeMetaDataDAOImpl` — the upper-cased `DAO`
+// suffix never boundary-classified, so `select * from hir_book_attr_name`
+// was invisible and chains through the DAO died silently.
+// ---------------------------------------------------------------------------
+
+const ATTR_IFACE = `package com.x;
+
+public interface BookAttrDAO {
+  java.util.List<String> loadAttrNames(String date);
+}
+`;
+
+const ATTR_IMPL = `package com.x;
+
+public class BookAttrDAOImpl implements BookAttrDAO {
+  public java.util.List<String> loadAttrNames(String date) {
+    return run("select * from book_attr_name where valid_from <= ? and valid_to > ?");
+  }
+
+  private java.util.List<String> run(String sql) { return null; }
+}
+`;
+
+describe('DAO suffix casing (2026-08-22)', () => {
+  let dir: string;
+  let result: ReturnType<typeof extractBehaviour>;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scl-daocase-'));
+    fs.mkdirSync(path.join(dir, 'com', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'BookAttrDAO.java'), ATTR_IFACE);
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'BookAttrDAOImpl.java'), ATTR_IMPL);
+    const index = await indexJavaProject(dir);
+    expect(index.parseErrors).toEqual([]);
+    result = extractBehaviour(index, new Map());
+  });
+
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('an upper-cased DAO interface is boundary-classified and mines SQL from its Impl', () => {
+    const iface = result.boundaries.find((b) => b.symbol === 'com.x.BookAttrDAO');
+    expect(iface).toBeDefined();
+    expect(iface!.operations[0].sqlVerbatim).toContain('from book_attr_name');
+  });
+
+  it('the DAOImpl class is boundary-classified too (never a behaviour table)', () => {
+    expect(result.boundaries.some((b) => b.symbol === 'com.x.BookAttrDAOImpl')).toBe(true);
+    expect(result.tables.some((t) => t.symbol.startsWith('com.x.BookAttrDAOImpl#'))).toBe(false);
+  });
+});

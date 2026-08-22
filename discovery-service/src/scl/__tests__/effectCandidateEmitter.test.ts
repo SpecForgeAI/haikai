@@ -344,7 +344,7 @@ describe('deriveCorpusEffectCandidates', () => {
     expect(tables.sort()).toEqual(['filter_audit', 'filters']); // additive, no dup of `x`
   });
 
-  it('a GET with no same-verb root emits nothing and NEVER enters uncovered', () => {
+  it('a GET with no same-verb root emits nothing, never enters uncovered, and self-diagnoses', () => {
     const result = deriveCorpusEffectCandidates({
       corpus: CORPUS,
       runId: 'run-1',
@@ -352,6 +352,14 @@ describe('deriveCorpusEffectCandidates', () => {
     });
     expect(result.candidates).toHaveLength(0);
     expect(result.uncovered).toHaveLength(0);
+    // 2026-08-22: GETs no longer fail silently — the read-side diagnosis
+    // mirror records WHY nothing derived.
+    expect(result.readUnderived).toHaveLength(1);
+    expect(result.readUnderived[0]).toMatchObject({
+      method: 'GET',
+      path: '/filters/lookup',
+    });
+    expect(result.readUnderived[0].diagnosis.stage).toBe('no_root_match');
   });
 });
 
@@ -497,6 +505,65 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     const detail = (result.candidates[0].data as Record<string, unknown>)
       .path_metadata_json as Record<string, unknown>;
     expect(detail.internal_entry).toBe('com.example.NightlyJob#run');
+  });
+
+  it('a GET whose chain BREAKS records chain_broken with the exact unresolved call', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-broken',
+        symbol: 'BookResource#list',
+        annotations: ['@GET', '@Path("books")'],
+        callTargets: ['T-ghost'], // target key never exists in the corpus
+      }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listBooks', 'GET', '/api/books')],
+    });
+    expect(result.candidates).toHaveLength(0);
+    expect(result.readUnderived).toHaveLength(1);
+    // T-ghost is queued but has no table -> walk ends without boundaries;
+    // nothing derived and no boundary reached = complete_walk_no_tables
+    // (a broken CALL SYMBOL would land chain_broken — pinned below).
+    expect(['chain_broken', 'complete_walk_no_tables']).toContain(
+      result.readUnderived[0].diagnosis.stage,
+    );
+  });
+
+  it('a GET reaching a boundary whose SQL parses no tables records boundaries_without_read_sql', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-ping',
+        symbol: 'PingResource#ping',
+        annotations: ['@GET', '@Path("ping")'],
+        callTargets: ['Q-pingDao'],
+      }),
+      boundary({
+        key: 'Q-pingDao',
+        symbol: 'PingDao',
+        sql: ['exec sp_ping'], // SQL-ish but yields neither reads nor writes
+      }),
+    ]);
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('ping', 'GET', '/api/ping')],
+    });
+    expect(result.candidates).toHaveLength(0);
+    expect(result.readUnderived).toHaveLength(1);
+    expect(result.readUnderived[0].diagnosis.stage).toBe('boundaries_without_read_sql');
+    expect(result.readUnderived[0].diagnosis.boundaries_reached[0]).toContain('PingDao');
+  });
+
+  it('a GET that derives read edges is NOT read-underived', () => {
+    const result = deriveCorpusEffectCandidates({
+      corpus: READ_WRITE_CORPUS,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listFilters', 'GET', '/api/filters')],
+    });
+    expect(result.candidates.length).toBeGreaterThan(0);
+    expect(result.readUnderived).toHaveLength(0);
   });
 
   it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {
