@@ -35,6 +35,12 @@ const BASELINE = new Set<string>([
   'src/components/Discovery/BulkCandidateActionConfirmModal.tsx',
   'src/components/Discovery/DiscoveryReviewRoom.tsx',
   'src/components/Discovery/batchResolveConflictsSupport.ts',
+  // Conscious adds (2026-08-22, foundations receipts): both compare
+  // DiscoveryCandidateDto.candidate_type === 'physical_data_entities' on the
+  // CANDIDATE plane — neither reads the raw model collection this ratchet
+  // protects. foundationRules.ts predates this PR as an unnoticed offender.
+  'src/components/Discovery/foundations/foundationRules.ts',
+  'src/components/DashboardView/DiscoveryCandidateTable.tsx',
   'src/components/Discovery/resolveBulkActionSet.ts',
   'src/components/Grid/Grid.tsx',
   'src/components/Grid/GridCell.tsx',
