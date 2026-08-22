@@ -259,3 +259,44 @@ describe('partial exclusion decides the remainder (one apply, no residual questi
     ).toBeNull();
   });
 });
+
+describe('stale reopen preselects the PREVIOUS answer (2026-08-22 regression)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(foundationsApi.applyFoundationDecisions).mockResolvedValue({
+      entities_updated: 1,
+      decisions_upserted: 1,
+      skipped: [],
+    });
+  });
+
+  it('a keep_all decision reopening stale shows keep_all selected, not the recommended exclude', async () => {
+    vi.mocked(foundationsApi.listFoundationDecisions).mockResolvedValue([
+      {
+        decision_key: 'F-7',
+        rule_key: 'backup_copy',
+        answer: 'keep_all',
+        scope: 'in_scope',
+        targets_json: [{ entity_name: 'orders_bak' }],
+        evidence_hash: 'pre-save-order-hash',
+        stale: false,
+      } as never,
+    ]);
+    render(
+      <FoundationsReviewPanel projectId="p1" architectureId="a1" candidates={CANDIDATES} />,
+    );
+
+    await screen.findByTestId('foundation-q-FQ-backup_copy');
+    expect(screen.getByText(/previously F-7: keep_all/)).toBeInTheDocument();
+    expect((screen.getByLabelText(/Keep all in migration/) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    // With keep_all honored there is NO pending exclusion — the dependent
+    // key-posture card must be VISIBLE (the default-exclude preselect used
+    // to hide it and silently flip scope on re-apply).
+    expect(
+      screen.getByTestId('foundation-q-FQ-key_posture-orders_bak'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('foundations-hidden-note')).not.toBeInTheDocument();
+  });
+});
