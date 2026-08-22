@@ -150,6 +150,6 @@ public class DataEntityPointBackfillRunner implements ApplicationRunner {
             entity.getValidFrom(),
             entity.getValidTo(),
             entity.getConstraintsMetadata()
-        );
+        , null, null);
     }
 }

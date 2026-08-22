@@ -94,7 +94,7 @@ class DataEntityPointEnsureServiceTest {
             null,
             null,
             null
-        );
+        , null, null);
 
         when(dataEntityPointRepository.findByModelFileIdAndPhysicalEntityId(MODEL_FILE_ID, "physical-entity-orders"))
             .thenReturn(Optional.empty());
@@ -280,7 +280,7 @@ class DataEntityPointEnsureServiceTest {
         );
         PhysicalDataEntityDto physical1 = new PhysicalDataEntityDto(
             "phy-1", "Table1", "Desc 1", "TABLE", "db", null, null, null, null
-        );
+        , null, null);
 
         when(dataEntityPointRepository.findByModelFileIdAndLogicalEntityId(any(), any()))
             .thenReturn(Optional.empty());

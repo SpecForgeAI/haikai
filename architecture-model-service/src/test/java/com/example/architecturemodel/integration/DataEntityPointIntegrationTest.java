@@ -109,7 +109,7 @@ class DataEntityPointIntegrationTest {
             null,
             null,
             null
-        );
+        , null, null);
 
         ArchitectureModelDto model = createModelWithPhysicalEntities(List.of(physicalEntity));
 
@@ -231,7 +231,7 @@ class DataEntityPointIntegrationTest {
         );
         PhysicalDataEntityDto physical1 = new PhysicalDataEntityDto(
             "phy-multi-1", "Table1", "Desc 1", "TABLE", "db", null, null, null, null
-        );
+        , null, null);
 
         ArchitectureModelDto model = createModelWithBothEntityTypes(
             List.of(logical1, logical2),

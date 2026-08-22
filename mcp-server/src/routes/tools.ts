@@ -24,6 +24,7 @@ import { saveDiscoveryCandidatesRouter } from './saveDiscoveryCandidatesRoute';
 import { saveApprovedCandidatesRouter } from './saveApprovedCandidatesRoute';
 import { applyGapMetadataRouter } from './applyGapMetadataRoute';
 import { applyEndpointEffectsRouter } from './applyEndpointEffectsRoute';
+import { applyFoundationDecisionsRouter } from './applyFoundationDecisionsRoute';
 import { createProjectArtifactRouter } from './createProjectArtifactRoute';
 
 /**
@@ -84,6 +85,7 @@ toolsRouter.use('/apply_gap_metadata', applyGapMetadataRouter);
 // additive endpoint -> write-table effect edges, corpus-derived or approved
 // LLM proposals; the table-name resolution is the hallucination guard)
 toolsRouter.use('/apply_endpoint_effects', applyEndpointEffectsRouter);
+toolsRouter.use('/apply_foundation_decisions', applyFoundationDecisionsRouter);
 
 // Mount the create_project_artifact route
 toolsRouter.use('/create_project_artifact', createProjectArtifactRouter);

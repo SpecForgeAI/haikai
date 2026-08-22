@@ -5262,3 +5262,23 @@ databaseChangeLog:
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: true
+
+  # ============================================================================
+  # 226: Foundations & Scope program, Spec 1 (2026-08-22). Scope data plane:
+  # migration_scope + scope_decision_ref on physical_data_entities (exclusion
+  # is a TAG, never a deletion — current state keeps excluded entities; the
+  # accessor pair filters target-side reads) + the foundation_decisions table
+  # (durable adjudication facts with evidence hashes; re-scans reopen
+  # questions ONLY on evidence change).
+  #
+  # NEW changeset only -- never edit applied changesets (<= 225).
+  # ============================================================================
+  - changeSet:
+      id: 226-foundation-scope
+      author: architecture-tool
+      changes:
+        - sqlFile:
+            path: db/changelog/sql/226-foundation-scope.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: true

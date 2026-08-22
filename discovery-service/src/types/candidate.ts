@@ -122,6 +122,11 @@ export type CandidateStatus =
   | 'rejected'
   | 'merged'
   | 'committed'
+  // Foundations Spec 1 (2026-08-22): committed to CURRENT state as
+  // documentation, excluded from the migration by a foundation decision.
+  // Distinct terminal status so nothing downstream can confuse "reviewed
+  // and in the migration" with "reviewed and deliberately out".
+  | 'committed_excluded'
   | 'pending_review'
   | 'deferred';
 
