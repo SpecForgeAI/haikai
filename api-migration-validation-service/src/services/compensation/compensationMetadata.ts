@@ -29,8 +29,11 @@ interface RawAttribute {
 interface RawPhysicalEntity {
   id?: string;
   name?: string;
+  migration_scope?: string | null;
+  scope_decision_ref?: string | null;
   constraints_metadata?: {
     primary_key?: { name?: string; columns?: string[] } | null;
+    key_policy?: string | null;
   } | null;
 }
 
@@ -46,6 +49,10 @@ interface RawModel {
 export interface CompensationMetadataIndex {
   /** lowercase table name -> metadata. */
   byTable: Map<string, CompensationTableMeta>;
+  /** Lowercase names of `volatile`-scoped tables (Foundations Spec 3) —
+   *  the S0 fingerprint tolerance list. Absent/empty when the index was
+   *  built from scan-supplied specs (auto-S0 path). */
+  volatileTables?: Set<string>;
 }
 
 /** Test seam: build the index from an already-fetched raw model object. */
@@ -86,9 +93,27 @@ export function buildCompensationMetadataIndex(model: unknown): CompensationMeta
             .filter((a) => a.is_primary_key === true && (a.name ?? '').length > 0)
             .map((a) => a.name as string);
 
-    byTable.set(table.toLowerCase(), { table, pkColumns, columns });
+    // Foundations Spec 3 (2026-08-22): scope + key policy ride the entity —
+    // a FOUNDATION-PROMOTED primary key lands in constraints_metadata and is
+    // consumed here with zero special-casing (the decision materialized the
+    // fact).
+    const rawScope = (entity.migration_scope ?? '').toLowerCase();
+    const scope =
+      rawScope === 'excluded' || rawScope === 'volatile' || rawScope === 'data_only'
+        ? (rawScope as 'excluded' | 'volatile' | 'data_only')
+        : 'in_scope';
+    const keyPolicy =
+      (entity.constraints_metadata?.key_policy ?? '') === 'keyless_multiset'
+        ? ('keyless_multiset' as const)
+        : null;
+
+    byTable.set(table.toLowerCase(), { table, pkColumns, columns, keyPolicy, scope });
   }
-  return { byTable };
+  const volatileTables = new Set<string>();
+  for (const [lower, meta] of byTable) {
+    if (meta.scope === 'volatile') volatileTables.add(lower);
+  }
+  return { byTable, volatileTables };
 }
 
 /**

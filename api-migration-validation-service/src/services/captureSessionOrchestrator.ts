@@ -49,7 +49,9 @@ import type { JudgeFn } from './postmanDeltaStage2';
 // S0 fingerprint. The bracket engine itself is Spec 1's module.
 import {
   buildCaptureCompensationContext,
+  computeScopeConflictEndpoints,
   computeWriteEndpointsWithoutEffectMap,
+  scopeConflictFor,
   createCompensationWriteAdapter,
   runEndOfJobFingerprint,
   COMPENSATED_VERBS,
@@ -1532,6 +1534,10 @@ export async function orchestrateCaptureSession(
   // finalise as `paused_auth_expired`.
   let authExpiryHit = false;
   let authExpiredStreak = 0;
+  // Foundations Spec 3 (2026-08-22): keyless_multiset tables written this
+  // run — tolerated by the end-of-job S0 fingerprint (the S0 restore is the
+  // reset lever; a keyless write cannot be undone row-wise).
+  const keylessWrittenTables = new Set<string>();
   // CSD Spec 3: set when a compensation bracket reports RESIDUE (the DB is
   // provably no longer S0) or the end-of-job fingerprint mismatches. Halts
   // the run and finalises as FAILED with the guided-restore message.
@@ -1706,6 +1712,26 @@ export async function orchestrateCaptureSession(
         'capture.compensation.no_effect_map',
         { count: missingEffectMaps.length, endpoints: missingEffectMaps.slice(0, 20) },
         corr,
+      );
+    }
+    // Foundations Spec 3 (2026-08-22): endpoints whose ENTIRE effect map was
+    // removed by migration scope — refused with the decision receipts, and
+    // reported SEPARATELY from missing maps (a decision, not a gap).
+    const scopeConflicts = computeScopeConflictEndpoints(
+      deps.persistedOperations.map((op) => ({
+        method: op.method,
+        path: op.path,
+        included: op.included,
+      })),
+      compensation.effectScope,
+    );
+    if (scopeConflicts.length > 0) {
+      await writeDiag(
+        'scope_conflict',
+        `${scopeConflicts.length} write endpoint(s) target ONLY tables excluded by ` +
+          'foundation decisions — their mutating scenarios are refused, per your ' +
+          'scope rulings. Revisit the cited decision(s) to re-include.',
+        { endpoints: scopeConflicts },
       );
     }
     if (!readonlySplit) {
@@ -1965,6 +1991,24 @@ export async function orchestrateCaptureSession(
         if (compensation && isBracketedScenario && !provenReadOnly) {
           const bracketTables = effectTablesFor(compensation.effectScope, op.method, op.path);
           if (bracketTables.length === 0) {
+            // Foundations Spec 3 (2026-08-22): the whole map was scoped away
+            // by foundation decisions — refuse WITH the receipts (a decision,
+            // not a gap), separately from missing maps.
+            const scopeRemoved = scopeConflictFor(compensation.effectScope, op.method, op.path);
+            if (scopeRemoved.length > 0) {
+              scenariosErrored += 1;
+              const receipts = scopeRemoved
+                .map((r) => `${r.table} ${r.scope}${r.decision_ref ? ` (${r.decision_ref})` : ''}`)
+                .join(', ');
+              await writeDiag(
+                'scope_conflict',
+                `Mutating scenario '${scenario.name}' on ${op.method.toUpperCase()} ${op.path} ` +
+                  `refused: every effect table is out of migration scope — ${receipts}. ` +
+                  'Revisit the cited decision(s) to re-include.',
+                { operation_id: op.operation_id, scenario: scenario.name, reason: 'scope_conflict' },
+              );
+              continue;
+            }
             // FAIL CLOSED (user ruling): an uncompensatable write is never
             // fired. The scenario is refused with a loud diagnostic; the
             // session-start aggregate warning already listed this endpoint.
@@ -2047,6 +2091,21 @@ export async function orchestrateCaptureSession(
             },
             corr,
           );
+          // Foundations Spec 3 (2026-08-22): keyless_multiset tables fire
+          // under a DETECT-ONLY bracket — record the observation (count
+          // delta; updates are not detectable without a key) and tolerate
+          // the table in the end-of-job fingerprint. S0 restore resets.
+          for (const obs of bracket.outcome.keylessObservations ?? []) {
+            keylessWrittenTables.add(obs.table.toLowerCase());
+            await writeDiag(
+              'keyless_write_recorded',
+              `Keyless table ${obs.table}: detect-only bracket on scenario ` +
+                `'${scenario.name}' (${op.method.toUpperCase()} ${op.path}) — rows ` +
+                `${obs.countBefore ?? '?'} -> ${obs.countAfter ?? '?'} (count_only; ` +
+                'no undo possible without a key; restore S0 to reset).',
+              { operation_id: op.operation_id, scenario: scenario.name, table: obs.table },
+            );
+          }
           // An infrastructure-level throw from the fire step surfaces AFTER
           // the bracket completed its undo — same failure semantics as
           // before, but with the state provably restored first.
@@ -2336,6 +2395,7 @@ export async function orchestrateCaptureSession(
         readAdapter: compensation.readAdapter,
         metadata: compensation.metadata,
         schema: compensation.schema,
+        keylessWrittenTables,
       });
       trace.detail(
         'capture.s0_fingerprint',

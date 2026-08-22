@@ -24,6 +24,20 @@ export interface CompensationTableMeta {
   /** Primary-key column names, in declared order. NEVER empty (fail-closed upstream). */
   pkColumns: string[];
   columns: CompensationColumnMeta[];
+  /** Foundations Spec 3 (2026-08-22): key policy decided for keyless tables
+   *  ('keyless_multiset' => DETECT-ONLY bracket, no undo possible). */
+  keyPolicy?: 'keyless_multiset' | null;
+  /** Foundations migration scope of the entity (null/absent = in_scope). */
+  scope?: 'in_scope' | 'excluded' | 'volatile' | 'data_only' | null;
+}
+
+/** DETECT-ONLY observation for a keyless_multiset table (Spec 3): the
+ *  scenario fired; the row-count delta is RECORDED (updates inside the
+ *  table are not detectable without a key — count_only honesty). */
+export interface KeylessObservation {
+  table: string;
+  countBefore: number | null;
+  countAfter: number | null;
 }
 
 /** One imaged table: full rows keyed by their PK tuple. */
@@ -95,6 +109,9 @@ export interface BracketOutcome {
   residue: ResidueDetail[];
   /** Identity reseed statements applied after undoing inserts (informational). */
   reseedStatements: string[];
+  /** Foundations Spec 3 (2026-08-22): detect-only observations for
+   *  keyless_multiset tables in this bracket (no undo possible). */
+  keylessObservations?: KeylessObservation[];
 }
 
 /** Engine flavour for literal / statement rendering. */

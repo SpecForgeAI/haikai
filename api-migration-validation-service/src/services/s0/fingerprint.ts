@@ -35,6 +35,10 @@ export interface S0FingerprintReport {
   checked_tables: number;
   count_only_tables: string[];
   mismatches: S0FingerprintMismatch[];
+  /** Foundations Spec 3 (2026-08-22): divergences on TOLERATED tables
+   *  (volatile scope / keyless-written this run) — reported, never failing.
+   *  `matches` considers non-tolerated mismatches only. */
+  tolerated_mismatches: S0FingerprintMismatch[];
 }
 
 export async function verifyS0Fingerprint(
@@ -42,18 +46,34 @@ export async function verifyS0Fingerprint(
   metadata: CompensationMetadataIndex,
   manifest: S0Manifest,
   schema?: string | null,
+  /** Lowercase table names whose divergence is EXPECTED (volatile scope /
+   *  keyless writes) — split into `tolerated_mismatches`, never failing. */
+  tolerated?: Set<string>,
 ): Promise<S0FingerprintReport> {
   const limits = {
     maxRows: Math.min(S0_SNAPSHOT_PAGE_ROWS, MAX_SINGLE_FETCH_ROWS),
     timeoutSeconds: S0_SNAPSHOT_QUERY_TIMEOUT_SECONDS,
   };
   const mismatches: S0FingerprintMismatch[] = [];
+  const toleratedMismatches: S0FingerprintMismatch[] = [];
   const countOnly: string[] = [];
+  const isTolerated = (table: string): boolean =>
+    tolerated?.has(table.toLowerCase()) ?? false;
+  const record = (m: S0FingerprintMismatch): void => {
+    if (isTolerated(m.table)) {
+      toleratedMismatches.push({
+        ...m,
+        note: (m.note ? `${m.note}; ` : '') + 'tolerated (volatile/keyless scope)',
+      });
+    } else {
+      mismatches.push(m);
+    }
+  };
 
   for (const entry of manifest.tables) {
     const meta = metadataForTable(metadata, entry.table);
     if (!meta) {
-      mismatches.push({
+      record({
         table: entry.table,
         kind: 'table_not_in_model',
         expected: entry.row_count,
@@ -67,7 +87,7 @@ export async function verifyS0Fingerprint(
     try {
       liveCount = await adapter.countRows({ schema: schema ?? null, table: entry.table, limits });
     } catch (err) {
-      mismatches.push({
+      record({
         table: entry.table,
         kind: 'read_failed',
         expected: entry.row_count,
@@ -77,7 +97,7 @@ export async function verifyS0Fingerprint(
       continue;
     }
     if (liveCount !== entry.row_count) {
-      mismatches.push({
+      record({
         table: entry.table,
         kind: 'count_mismatch',
         expected: entry.row_count,
@@ -123,7 +143,7 @@ export async function verifyS0Fingerprint(
       after = entry.pk_columns.map((c) => valueForColumn(last, c) ?? null);
     }
     if (readError) {
-      mismatches.push({
+      record({
         table: entry.table,
         kind: 'read_failed',
         expected: entry.checksum,
@@ -134,7 +154,7 @@ export async function verifyS0Fingerprint(
     }
     const liveChecksum = hasher.digest();
     if (liveChecksum !== entry.checksum) {
-      mismatches.push({
+      record({
         table: entry.table,
         kind: 'checksum_mismatch',
         expected: entry.checksum,
@@ -149,5 +169,6 @@ export async function verifyS0Fingerprint(
     checked_tables: manifest.tables.length,
     count_only_tables: countOnly,
     mismatches,
+    tolerated_mismatches: toleratedMismatches,
   };
 }

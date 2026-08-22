@@ -156,6 +156,11 @@ export type GenerationSource =
 export type DiagnosticType =
   | 'failed_request'
   | 'auth_failure'
+  // Foundations Spec 3 (2026-08-22): an endpoint refused because its ENTIRE
+  // effect map was removed by migration-scope decisions (receipts cited).
+  | 'scope_conflict'
+  // Foundations Spec 3: detect-only keyless_multiset bracket observation.
+  | 'keyless_write_recorded'
   | 'db_sample_failure'
   | 'llm_generation_failure'
   | 'redaction_warning'

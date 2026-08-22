@@ -35,6 +35,7 @@ import type {
   ResidueDetail,
   TableImage,
   TableRowDiff,
+  KeylessObservation,
 } from './types';
 
 export interface CompensationBracketArgs<T> {
@@ -63,6 +64,12 @@ export async function runCompensationBracket<T>(
 ): Promise<CompensationBracketRun<T>> {
   const refusals: CompensationRefusal[] = [];
   const metas: CompensationTableMeta[] = [];
+  // Foundations Spec 3 (2026-08-22): keyless_multiset tables get a
+  // DETECT-ONLY bracket — no imaging, no undo (impossible without a key);
+  // the row-count delta is observed and recorded. Updates inside the table
+  // are not detectable without a key (count_only honesty); the S0 restore
+  // is the reset lever.
+  const keylessMetas: CompensationTableMeta[] = [];
   for (const table of args.tables) {
     const meta = metadataForTable(args.metadata, table);
     if (!meta) {
@@ -75,8 +82,24 @@ export async function runCompensationBracket<T>(
       });
       continue;
     }
+    if (meta.pkColumns.length === 0 && meta.keyPolicy === 'keyless_multiset') {
+      keylessMetas.push(meta);
+      continue;
+    }
     metas.push(meta);
   }
+
+  const keylessCount = async (meta: CompensationTableMeta): Promise<number | null> => {
+    try {
+      return await args.readAdapter.countRows({
+        schema: args.schema ?? null,
+        table: meta.table,
+        limits: { maxRows: 1, timeoutSeconds: 30 },
+      });
+    } catch {
+      return null;
+    }
+  };
 
   const refuse = (extra: CompensationRefusal[]): CompensationBracketRun<T> => ({
     outcome: {
@@ -94,6 +117,11 @@ export async function runCompensationBracket<T>(
 
   if (refusals.length > 0) return refuse([]);
 
+  const keylessBefore = new Map<string, number | null>();
+  for (const meta of keylessMetas) {
+    keylessBefore.set(meta.table, await keylessCount(meta));
+  }
+
   // --- 2) before-images (fail-closed: any refusal aborts BEFORE firing) ----
   const beforeImages = new Map<string, TableImage>();
   for (const meta of metas) {
@@ -109,6 +137,15 @@ export async function runCompensationBracket<T>(
     fireResult = await args.fire();
   } catch (err) {
     fireError = err;
+  }
+
+  const keylessObservations: KeylessObservation[] = [];
+  for (const meta of keylessMetas) {
+    keylessObservations.push({
+      table: meta.table,
+      countBefore: keylessBefore.get(meta.table) ?? null,
+      countAfter: await keylessCount(meta),
+    });
   }
 
   const residue: ResidueDetail[] = [];
@@ -153,7 +190,7 @@ export async function runCompensationBracket<T>(
 
   if (residue.length > 0) {
     return {
-      outcome: { kind: 'residue', refusals: [], diffs, statementsApplied, residue, reseedStatements: [] },
+      outcome: { kind: 'residue', refusals: [], diffs, statementsApplied, residue, reseedStatements: [], keylessObservations },
       fired: true,
       fireResult,
       fireError,
@@ -162,7 +199,7 @@ export async function runCompensationBracket<T>(
 
   if (diffs.length === 0) {
     return {
-      outcome: { kind: 'clean', refusals: [], diffs: [], statementsApplied: [], residue: [], reseedStatements: [] },
+      outcome: { kind: 'clean', refusals: [], diffs: [], statementsApplied: [], residue: [], reseedStatements: [], keylessObservations },
       fired: true,
       fireResult,
       fireError,
@@ -189,7 +226,7 @@ export async function runCompensationBracket<T>(
           `${asMessage(firstErr)} / ${asMessage(secondErr)}`,
       });
       return {
-        outcome: { kind: 'residue', refusals: [], diffs, statementsApplied: [], residue, reseedStatements: [] },
+        outcome: { kind: 'residue', refusals: [], diffs, statementsApplied: [], residue, reseedStatements: [], keylessObservations },
         fired: true,
         fireResult,
         fireError,
@@ -252,6 +289,7 @@ export async function runCompensationBracket<T>(
       statementsApplied,
       residue,
       reseedStatements,
+      keylessObservations,
     },
     fired: true,
     fireResult,
