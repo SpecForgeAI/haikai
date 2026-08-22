@@ -45,6 +45,9 @@ state record — update after EVERY spec merge.
 ### Follow-up (merged 6ed0cacf) — dynamic question set
 Live-shakedown finding: pending exclude/volatile answers left conflicting questions below. Fixed both layers: derive-time (stored non-stale excluded/volatile decisions silence backup/temp/key/hazard questions for their tables — tablesScopedOutByDecisions) + live panel (pending selections hide covered cards with an honest hidden-count note; flipping the answer reveals them; bulk cards shrink to remaining targets; Apply sends only visible/effective). PICKUP DELTA: frontend `src/components/Discovery/foundations/{foundationRules,FoundationsReviewPanel}.tsx` (restart frontend only).
 
+### Follow-up 2 (merged 0f9e8195) — partial exclusion decides the remainder
+User ruling: deselecting tables from an exclude/volatile bulk answer MEANS keeping them. One apply now emits the scope decision (selected set) + a keep/in_scope decision (deselected remainder) whose evidence hash equals the residual question's hash (bulkTargetsEvidenceHash shared by derive+panel) — so the residual SETTLES, never re-poses. Plus healing: per-question uncheck state resets when the target signature changes (kills the unanswerable 0-of-N card). PICKUP DELTA: same two frontend files (foundationRules.ts + FoundationsReviewPanel.tsx), frontend restart; the stuck residual card becomes answerable immediately (checkboxes reset to all-selected — answer "Keep all" once and it settles).
+
 ## WORK-MACHINE PICKUP (whole program, clone+copy)
 - **AMS: FULL REBUILD required** (`mvn package`): changeset 226 (scope columns + foundation_decisions table — applies on boot), status machine (paused_auth_expired), diagnostics allowlist (scope_conflict/keyless_write_recorded), FoundationDecision entity/repo/service/controller, PhysicalDataEntityDto/Entity/Mapper.
 - discovery-service: src/types/candidate.ts, src/services/modelScope.ts (new) → restart.
