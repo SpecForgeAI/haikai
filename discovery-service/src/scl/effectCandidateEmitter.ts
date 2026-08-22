@@ -4,15 +4,22 @@
  * `endpoint_data_effects` candidates that close the compensation preflight's
  * effect-map gaps; the gateway backfill button remains the recovery path).
  *
- * Phase 1 — DETERMINISTIC (free): http-rooted behaviour tables (method +
- * path fragment from their verbatim annotations — the same derivation the
- * gateway annotation pass uses) are matched to THIS RUN's `endpoints`
- * candidates (longest-fragment discipline kills the /lookup vs
- * /lookupStarred substring trap); the resolved call graph is walked to
- * boundary contracts; their verbatim SQL yields write tables. Emitted as
- * normal candidates (the `mintProcCallEdgeCandidates` precedent) — the
- * candidate review is the human gate and save-back resolves names to ids,
- * skipping honestly when a name has no committed entity.
+ * Phase 1 — DETERMINISTIC (free), VERB-AGNOSTIC (2026-08-22 user ruling:
+ * "old codebases don't obey REST and HTTP verb principles ... we just want
+ * the full path from endpoint to database"): EVERY http-rooted endpoint
+ * (any verb, GET included) and every internal entrypoint candidate carrying
+ * `data.className`/`data.methodName` is matched to corpus roots
+ * (longest-fragment discipline kills the /lookup vs /lookupStarred
+ * substring trap; internal entries join by class#method) and its call
+ * graph walked to boundary contracts. Edges are emitted from what the
+ * reached SQL PROVES, never from the verb: write tables -> access_mode
+ * 'write' (a writing GET gets a real effect map), read tables the same
+ * endpoint does not write -> access_mode 'read'. Emitted as normal
+ * candidates (the `mintProcCallEdgeCandidates` precedent) — the candidate
+ * review is the human gate and save-back resolves names to ids, skipping
+ * honestly when a name has no committed entity. Verbs remain an input ONLY
+ * to the capture-preflight bookkeeping below (write maps are DEMANDED for
+ * mutating verbs — fail-closed stays verb-scoped).
  *
  * Phase 2 — LLM, GUARDED: write-verb endpoint candidates still uncovered
  * (no discovery-mined AND no corpus-derived effect candidate) get batched
@@ -38,6 +45,7 @@ import type { SclBehaviourTable, SclBoundaryContract, SclContract } from './sclT
 // ---------------------------------------------------------------------------
 
 const MUTATING_VERBS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const HTTP_VERBS = new Set(['GET', 'HEAD', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
 function annotationText(annotations: string[] | undefined): string {
   return (annotations ?? []).join('\n');
@@ -198,6 +206,9 @@ interface CorpusIndex {
    *  unresolved-call diagnosis ("class absent from corpus" vs "no matching
    *  method on a present class"). */
   classFqnsInCorpus: Set<string>;
+  /** Behaviour-table keys by `Cls#method` (FQN AND simple-name forms) — the
+   *  internal-entrypoint join (candidates carry className/methodName). */
+  tableKeysByClassMethod: Map<string, string[]>;
   httpRoots: Array<{ key: string; symbol: string; method: string; fragment: string }>;
 }
 
@@ -215,6 +226,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
   const tablesByName = new Map<string, string[]>();
   const boundariesByOpName = new Map<string, string[]>();
   const classFqnsInCorpus = new Set<string>();
+  const tableKeysByClassMethod = new Map<string, string[]>();
   const httpRoots: CorpusIndex['httpRoots'] = [];
   const push = (map: Map<string, string[]>, key: string, value: string) => {
     const list = map.get(key) ?? [];
@@ -242,6 +254,12 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
           contract.key,
         );
         push(tablesByName, methodName, contract.key);
+        const clsFqn = contract.symbol.slice(0, hash);
+        push(tableKeysByClassMethod, `${clsFqn}#${methodName}`, contract.key);
+        const simple = clsFqn.split('.').pop() ?? clsFqn;
+        if (simple !== clsFqn) {
+          push(tableKeysByClassMethod, `${simple}#${methodName}`, contract.key);
+        }
       }
       const method = deriveHttpMethod(contract.annotations);
       const fragment = derivePathFragment(contract.annotations);
@@ -291,6 +309,7 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     tablesByName,
     boundariesByOpName,
     classFqnsInCorpus,
+    tableKeysByClassMethod,
     httpRoots,
   };
 }
@@ -453,6 +472,13 @@ export interface DeriveResult {
   uncovered: UncoveredWriteEndpoint[];
   /** POST-implemented queries proven read-only by a complete walk. */
   provenRead: ProvenReadEndpoint[];
+  /** Distinct endpoints that emitted at least one READ edge. */
+  readMapped: number;
+  /** Internal entrypoints walked by class#method (names, capped 20). */
+  internalWalked: string[];
+  /** Internal entrypoints whose class#method has NO corpus presence
+   *  (capped 10) — visible so batch chains never vanish silently. */
+  internalUnmatched: string[];
 }
 
 function normName(value: unknown): string {
@@ -493,6 +519,8 @@ function buildReadEffectCandidate(args: {
   runId: string;
   endpointName: string;
   table: string;
+  /** 'scl_corpus_read_proof' (strict proven-read) or 'scl_corpus_read'. */
+  derivation: string;
   detail: Record<string, unknown>;
 }): DiscoveryCandidate {
   return {
@@ -508,7 +536,7 @@ function buildReadEffectCandidate(args: {
       dataEntityName: args.table,
       access_mode: 'read',
       confidence: 0.9,
-      path_metadata_json: { derivation: 'scl_corpus_read_proof', ...args.detail },
+      path_metadata_json: { derivation: args.derivation, ...args.detail },
       relationshipType: 'uses_data',
       usesData: { accessType: 'read', dataIdentifier: args.table },
       _addedBy: 'scl-effect-candidate-emitter',
@@ -517,10 +545,72 @@ function buildReadEffectCandidate(args: {
   } as DiscoveryCandidate;
 }
 
+/** Everything one set of walked roots proves — shared by the HTTP and
+ *  internal branches (identical boundary bookkeeping either way). */
+function collectFromRootKeys(
+  rootKeys: string[],
+  index: CorpusIndex,
+): {
+  writeTables: string[];
+  readTables: string[];
+  brokenCalls: string[];
+  boundariesReached: string[];
+  boundariesFullyVisible: boolean;
+  procSeen: boolean;
+} {
+  const writeTables: string[] = [];
+  const readTables: string[] = [];
+  const brokenCalls: string[] = [];
+  const boundariesReached: string[] = [];
+  let boundariesFullyVisible = true;
+  let procSeen = false;
+  for (const rootKey of rootKeys) {
+    const walk = walkCallGraph(rootKey, index);
+    for (const broken of walk.brokenCalls) {
+      if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
+    }
+    for (const boundaryKey of walk.boundaries) {
+      const stats = index.boundaryStatsByKey.get(boundaryKey);
+      if (!stats || stats.withSql < stats.ops) boundariesFullyVisible = false;
+      if (stats && stats.procs.length > 0) procSeen = true;
+      const boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
+      const boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
+      const blindOps =
+        stats && stats.withSql === 0 && stats.opNames.length > 0
+          ? `; blind ops: ${stats.opNames.join(', ')}`
+          : '';
+      const procNote =
+        stats && stats.procs.length > 0 ? `; procs: ${stats.procs.join(', ')}` : '';
+      const symbol =
+        (index.boundarySymbolByKey.get(boundaryKey) ?? boundaryKey) +
+        (stats
+          ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${boundaryReads.length}, writes ${boundaryWrites.length}${blindOps}${procNote})`
+          : '');
+      if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
+      for (const table of boundaryWrites) {
+        if (!writeTables.some((w) => w.toLowerCase() === table.toLowerCase())) {
+          writeTables.push(table);
+        }
+      }
+      for (const table of boundaryReads) {
+        if (!readTables.some((r) => r.toLowerCase() === table.toLowerCase())) {
+          readTables.push(table);
+        }
+      }
+    }
+  }
+  return { writeTables, readTables, brokenCalls, boundariesReached, boundariesFullyVisible, procSeen };
+}
+
 /**
- * Derives corpus-backed effect candidates for THIS RUN's write endpoints.
- * Endpoints that already carry an effect candidate (discovery's own mining)
- * are left alone — this fills gaps, it never competes.
+ * Derives corpus-backed effect candidates for THIS RUN's endpoints —
+ * VERB-AGNOSTIC (2026-08-22): every HTTP endpoint (any verb) and every
+ * internal entrypoint with `data.className`/`data.methodName` is walked;
+ * edges come from what the reached SQL proves. Mined effect candidates are
+ * never DUPLICATED (per-edge dedup) but the corpus ADDS edges alongside
+ * them — chains are truth, mining is a head start. Verbs still rule the
+ * capture-preflight bookkeeping only: `uncovered` (write maps demanded)
+ * and `provenRead` (write-verb exemptions) stay mutating-verb-scoped.
  */
 export function deriveCorpusEffectCandidates(args: {
   corpus: SclCorpus;
@@ -529,110 +619,100 @@ export function deriveCorpusEffectCandidates(args: {
 }): DeriveResult {
   const index = indexCorpus(args.corpus);
 
-  const coveredEndpointNames = new Set<string>();
+  const existingEdges = new Set<string>(); // `${endpoint}|${table}|${mode}`
+  const minedWriteCovered = new Set<string>();
   for (const candidate of args.runCandidates) {
     if (candidate.candidateType !== 'endpoint_data_effects') continue;
-    const name = normName((candidate.data as Record<string, unknown> | undefined)?.endpointName);
-    if (name) coveredEndpointNames.add(name);
+    const data = candidate.data as Record<string, unknown> | undefined;
+    const name = normName(data?.endpointName);
+    if (!name) continue;
+    const table = normName(data?.dataEntityName);
+    const mode = normName(data?.access_mode) || 'write';
+    if (mode === 'write') minedWriteCovered.add(name);
+    if (table) existingEdges.add(`${name}|${table}|${mode}`);
   }
 
   const candidates: DiscoveryCandidate[] = [];
   const uncovered: UncoveredWriteEndpoint[] = [];
   const provenRead: ProvenReadEndpoint[] = [];
+  const readMappedEndpoints = new Set<string>();
+  const internalWalked: string[] = [];
+  const internalUnmatched: string[] = [];
+
+  const emitWrite = (endpointName: string, table: string, detail: Record<string, unknown>) => {
+    const edge = `${normName(endpointName)}|${normName(table)}|write`;
+    if (existingEdges.has(edge)) return;
+    existingEdges.add(edge);
+    candidates.push(
+      buildEffectCandidate({
+        runId: args.runId,
+        endpointName,
+        table,
+        confidence: 0.9,
+        source: 'scl_corpus',
+        detail,
+      }),
+    );
+  };
+  const emitRead = (
+    endpointName: string,
+    table: string,
+    derivation: string,
+    detail: Record<string, unknown>,
+  ) => {
+    const edge = `${normName(endpointName)}|${normName(table)}|read`;
+    if (existingEdges.has(edge)) return;
+    existingEdges.add(edge);
+    readMappedEndpoints.add(normName(endpointName));
+    candidates.push(
+      buildReadEffectCandidate({ runId: args.runId, endpointName, table, derivation, detail }),
+    );
+  };
 
   for (const endpointCandidate of args.runCandidates) {
     if (endpointCandidate.candidateType !== 'endpoints') continue;
+    const data = endpointCandidate.data as Record<string, unknown> | undefined;
     const method = readMethod(endpointCandidate);
     const path = readPathTemplate(endpointCandidate);
-    if (!method || !path || !MUTATING_VERBS.has(method)) continue;
-    if (coveredEndpointNames.has(normName(endpointCandidate.name))) continue;
 
-    const matched = index.httpRoots.filter(
-      (root) => root.method.toUpperCase() === method && pathContainsFragment(root.fragment, path),
-    );
-    const maxLength = matched.reduce((max, r) => Math.max(max, r.fragment.length), 0);
-    const roots = matched.filter((r) => r.fragment.length === maxLength);
+    if (method && path && HTTP_VERBS.has(method)) {
+      const matched = index.httpRoots.filter(
+        (root) => root.method.toUpperCase() === method && pathContainsFragment(root.fragment, path),
+      );
+      const maxLength = matched.reduce((max, r) => Math.max(max, r.fragment.length), 0);
+      const roots = matched.filter((r) => r.fragment.length === maxLength);
+      const collected = collectFromRootKeys(roots.map((r) => r.key), index);
+      const detail = { roots: roots.map((r) => r.symbol).slice(0, 3) };
 
-    const tables: string[] = [];
-    const readTables: string[] = [];
-    const brokenCalls: string[] = [];
-    const boundariesReached: string[] = [];
-    // Proven-read demands FULL visibility: every reached boundary op carries
-    // SQL and none of it calls a stored procedure (a blind op or a proc
-    // could write — fail-closed).
-    let boundariesFullyVisible = true;
-    let procSeen = false;
-    for (const root of roots) {
-      const walk = walkCallGraph(root.key, index);
-      for (const broken of walk.brokenCalls) {
-        if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
+      for (const table of collected.writeTables) {
+        emitWrite(endpointCandidate.name, table, detail);
       }
-      for (const boundaryKey of walk.boundaries) {
-        const stats = index.boundaryStatsByKey.get(boundaryKey);
-        if (!stats || stats.withSql < stats.ops) boundariesFullyVisible = false;
-        if (stats && stats.procs.length > 0) procSeen = true;
-        const boundaryReads = index.boundaryReadsByKey.get(boundaryKey) ?? [];
-        const boundaryWrites = index.boundaryWritesByKey.get(boundaryKey) ?? [];
-        const blindOps =
-          stats && stats.withSql === 0 && stats.opNames.length > 0
-            ? `; blind ops: ${stats.opNames.join(', ')}`
-            : '';
-        const procNote =
-          stats && stats.procs.length > 0 ? `; procs: ${stats.procs.join(', ')}` : '';
-        const symbol =
-          (index.boundarySymbolByKey.get(boundaryKey) ?? boundaryKey) +
-          (stats
-            ? ` (ops ${stats.ops}, sql ${stats.withSql}, reads ${boundaryReads.length}, writes ${boundaryWrites.length}${blindOps}${procNote})`
-            : '');
-        if (!boundariesReached.includes(symbol)) boundariesReached.push(symbol);
-        for (const table of index.boundaryWritesByKey.get(boundaryKey) ?? []) {
-          if (!tables.some((t) => t.toLowerCase() === table.toLowerCase())) tables.push(table);
-        }
-        for (const table of index.boundaryReadsByKey.get(boundaryKey) ?? []) {
-          if (!readTables.some((t) => t.toLowerCase() === table.toLowerCase())) {
-            readTables.push(table);
-          }
-        }
-      }
-    }
-
-    if (tables.length > 0) {
-      for (const table of tables) {
-        candidates.push(
-          buildEffectCandidate({
-            runId: args.runId,
-            endpointName: endpointCandidate.name,
-            table,
-            confidence: 0.9,
-            source: 'scl_corpus',
-            detail: { roots: roots.map((r) => r.symbol).slice(0, 3) },
-          }),
+      const provenReadOnly =
+        collected.writeTables.length === 0 &&
+        roots.length > 0 &&
+        collected.brokenCalls.length === 0 &&
+        collected.readTables.length > 0 &&
+        collected.boundariesFullyVisible &&
+        !collected.procSeen;
+      for (const table of collected.readTables) {
+        if (collected.writeTables.some((w) => w.toLowerCase() === table.toLowerCase())) continue;
+        emitRead(
+          endpointCandidate.name,
+          table,
+          provenReadOnly ? 'scl_corpus_read_proof' : 'scl_corpus_read',
+          detail,
         );
       }
-    } else if (
-      roots.length > 0 &&
-      brokenCalls.length === 0 &&
-      readTables.length > 0 &&
-      boundariesFullyVisible &&
-      !procSeen
-    ) {
-      // PROVEN READ-ONLY: the walk is COMPLETE (every call resolved) and the
-      // data layer it reaches only reads. This is a POST-implemented query —
-      // emit access_mode 'read' edges so the model KNOWS its effects and the
-      // compensation preflight stops demanding write maps for it. The
-      // end-of-run S0 fingerprint remains the safety net.
-      for (const table of readTables) {
-        candidates.push(
-          buildReadEffectCandidate({
-            runId: args.runId,
-            endpointName: endpointCandidate.name,
-            table,
-            detail: { roots: roots.map((r) => r.symbol).slice(0, 3) },
-          }),
-        );
+
+      // Capture-preflight bookkeeping — verb-scoped by DESIGN (write maps
+      // are demanded for mutating verbs; a GET is never "uncovered").
+      if (!MUTATING_VERBS.has(method)) continue;
+      if (minedWriteCovered.has(normName(endpointCandidate.name))) continue;
+      if (collected.writeTables.length > 0) continue;
+      if (provenReadOnly) {
+        provenRead.push({ method, path, readTables: collected.readTables });
+        continue;
       }
-      provenRead.push({ method, path, readTables });
-    } else {
       uncovered.push({
         endpointCandidate,
         method,
@@ -642,9 +722,9 @@ export function deriveCorpusEffectCandidates(args: {
           stage:
             roots.length === 0
               ? 'no_root_match'
-              : brokenCalls.length > 0 && boundariesReached.length === 0
+              : collected.brokenCalls.length > 0 && collected.boundariesReached.length === 0
                 ? 'chain_broken'
-                : boundariesReached.length > 0
+                : collected.boundariesReached.length > 0
                   ? 'boundaries_without_write_sql'
                   : 'complete_walk_no_tables',
           matched_roots: roots.map((r) => `${r.symbol} [fragment "${r.fragment}"]`),
@@ -655,14 +735,47 @@ export function deriveCorpusEffectCandidates(args: {
                   .map((r) => r.fragment)
                   .slice(0, 15)
               : [],
-          broken_calls: brokenCalls,
-          boundaries_reached: boundariesReached,
+          broken_calls: collected.brokenCalls,
+          boundaries_reached: collected.boundariesReached,
         },
       });
+      continue;
+    }
+
+    // INTERNAL entrypoint (no usable HTTP verb): join by class#method —
+    // batch mains / scheduled / listener candidates carry className +
+    // methodName; their chains reach the SAME boundary analysis.
+    const className = typeof data?.className === 'string' ? data.className : '';
+    const methodName = typeof data?.methodName === 'string' ? data.methodName : '';
+    if (!className || !methodName) continue;
+    const keys = index.tableKeysByClassMethod.get(`${className}#${methodName}`) ?? [];
+    if (keys.length === 0) {
+      if (internalUnmatched.length < 10) internalUnmatched.push(`${className}#${methodName}`);
+      continue;
+    }
+    if (internalWalked.length < 20) internalWalked.push(endpointCandidate.name);
+    const collected = collectFromRootKeys(keys, index);
+    const detail = {
+      roots: keys.slice(0, 3),
+      internal_entry: `${className}#${methodName}`,
+    };
+    for (const table of collected.writeTables) {
+      emitWrite(endpointCandidate.name, table, detail);
+    }
+    for (const table of collected.readTables) {
+      if (collected.writeTables.some((w) => w.toLowerCase() === table.toLowerCase())) continue;
+      emitRead(endpointCandidate.name, table, 'scl_corpus_read', detail);
     }
   }
 
-  return { candidates, uncovered, provenRead };
+  return {
+    candidates,
+    uncovered,
+    provenRead,
+    readMapped: readMappedEndpoints.size,
+    internalWalked,
+    internalUnmatched,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -871,6 +984,12 @@ export function summarizeEmission(
     derivedWriteCandidates: derive.candidates.filter(
       (c) => (c.data as Record<string, unknown>).access_mode === 'write',
     ).length,
+    derivedReadCandidates: derive.candidates.filter(
+      (c) => (c.data as Record<string, unknown>).access_mode === 'read',
+    ).length,
+    readMappedEndpointCount: derive.readMapped,
+    internalWalkedCount: derive.internalWalked.length,
+    internalUnmatched: derive.internalUnmatched,
     provenReadEndpoints: derive.provenRead.map((p) => `${p.method} ${p.path}`),
     llmProposed: propose.candidates.length,
     llmCalls: propose.llmCalls,

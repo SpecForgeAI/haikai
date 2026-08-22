@@ -569,6 +569,19 @@ export function modelHasCodeEvidence(model: RawModelLike): boolean {
   );
 }
 
+/**
+ * TRUE once the model carries at least one READ edge. A model whose effect
+ * derivation produced zero reads estate-wide (the pre-2026-08-22 verb-gated
+ * scan) makes every "never read" claim unfoundable — the read-axis joint
+ * questions (never-touched / write-only) refuse to fire without this.
+ */
+export function modelHasReadEvidence(model: RawModelLike): boolean {
+  return (model.metaModel?.relationships?.endpoint_data_effects ?? []).some((edge) => {
+    const mode = (edge.access_mode ?? '').toLowerCase();
+    return mode === 'read' || mode === 'read-write';
+  });
+}
+
 interface CrudFacts {
   name: string;
   scope: string;
@@ -621,6 +634,11 @@ export function deriveJointFoundationQuestions(
   // reasons over effect edges; without the code save they are all vacuous
   // (crud_never would list the ENTIRE estate as "never touched").
   if (!modelHasCodeEvidence(model)) return [];
+  // Zero read edges estate-wide -> the READ-AXIS rules are unfoundable
+  // (2026-08-22 shakedown: a verb-gated scan derived only writes and the
+  // matrix claimed "no table is ever read"). Write-independent rules
+  // (scope_code_conflict) still run.
+  const hasReadEvidence = modelHasReadEvidence(model);
   const facts = crudFactsFromModel(model);
   const questions: FoundationQuestion[] = [];
 
@@ -656,7 +674,7 @@ export function deriveJointFoundationQuestions(
   const never = facts.filter(
     (f) => f.scope === 'in_scope' && f.reads + f.writes + f.executes === 0,
   );
-  if (never.length > 0) {
+  if (never.length > 0 && hasReadEvidence) {
     const targets = never.map((f) =>
       jointTarget(f, 'no discovered endpoint reads or writes this table'),
     );
@@ -683,7 +701,7 @@ export function deriveJointFoundationQuestions(
   const writeOnly = facts.filter(
     (f) => f.scope === 'in_scope' && f.writes > 0 && f.reads === 0 && f.executes === 0,
   );
-  if (writeOnly.length > 0) {
+  if (writeOnly.length > 0 && hasReadEvidence) {
     const targets = writeOnly.map((f) => jointTarget(f, `${f.writes} write edge(s), never read`));
     const q = reconcile({
       question_key: 'FQ-crud_write_only',
