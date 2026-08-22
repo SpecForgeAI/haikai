@@ -121,4 +121,34 @@ describe('DiscoveryCandidateTable — foundation scope receipts', () => {
     expect(screen.queryByTestId('foundation-scope-chip')).toBeNull();
     expect(screen.queryByTestId('foundation-scope-count')).toBeNull();
   });
+
+  it('a saved committed_excluded candidate shows that status as VISIBLE text', () => {
+    mockGetReviewModel.mockResolvedValue(null);
+    render(
+      <DiscoveryCandidateTable
+        projectId="proj-1"
+        architectureId="arch-1"
+        runId="run-1"
+        candidates={[
+          makeCandidate({
+            id: 'e-saved-bak',
+            name: 'orders_bak',
+            status: 'committed_excluded',
+            review_status: 'committed',
+          }),
+          makeCandidate({
+            id: 'e-saved-live',
+            name: 'orders',
+            status: 'committed',
+            review_status: 'committed',
+          }),
+        ]}
+        onCandidatesChange={() => undefined}
+      />,
+    );
+    const excluded = screen.getByTestId('candidate-status-committed-excluded');
+    expect(excluded.textContent).toBe('committed_excluded');
+    // The kept row still renders its review_status text.
+    expect(screen.getAllByTestId('candidate-status-committed-excluded')).toHaveLength(1);
+  });
 });
