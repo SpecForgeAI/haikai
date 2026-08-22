@@ -42,6 +42,9 @@ state record — update after EVERY spec merge.
 ### Spec 5 (merged 565446a1) — PROGRAM COMPLETE
 - Joint CRUD rules over the committed model (crud_never/write_only/read_only + scope_code_conflict citing F-refs; views skipped); panel mode='code' on code-run reviews (raw model AMS-direct); estate continuation banner on completed DB runs (deliberate divergence: no combined-engine one-click — per-scan credential wizards made the guided two-step banner the right shape). Auto-apply-to-future-matches = evidence-hash REOPEN pre-answered (one-click re-confirm, never silent).
 
+### Follow-up (merged 6ed0cacf) — dynamic question set
+Live-shakedown finding: pending exclude/volatile answers left conflicting questions below. Fixed both layers: derive-time (stored non-stale excluded/volatile decisions silence backup/temp/key/hazard questions for their tables — tablesScopedOutByDecisions) + live panel (pending selections hide covered cards with an honest hidden-count note; flipping the answer reveals them; bulk cards shrink to remaining targets; Apply sends only visible/effective). PICKUP DELTA: frontend `src/components/Discovery/foundations/{foundationRules,FoundationsReviewPanel}.tsx` (restart frontend only).
+
 ## WORK-MACHINE PICKUP (whole program, clone+copy)
 - **AMS: FULL REBUILD required** (`mvn package`): changeset 226 (scope columns + foundation_decisions table — applies on boot), status machine (paused_auth_expired), diagnostics allowlist (scope_conflict/keyless_write_recorded), FoundationDecision entity/repo/service/controller, PhysicalDataEntityDto/Entity/Mapper.
 - discovery-service: src/types/candidate.ts, src/services/modelScope.ts (new) → restart.
