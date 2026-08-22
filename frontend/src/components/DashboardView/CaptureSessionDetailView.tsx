@@ -98,7 +98,7 @@ import {
 } from './postmanExport';
 import { retryUncoveredApis, listCaptures, excludeEndpoint, refreshOasCache, listDiagnostics } from '../../api/apiBehaviourClient';
 import type { ApiBehaviourDiagnosticDto } from '../../api/apiBehaviourClient';
-import { groupDiagnostics, labelFor, shouldOfferS0Restore } from './captureDiagnosticsSupport';
+import { groupDiagnostics, groupIdenticalMessages, labelFor, shouldOfferS0Restore } from './captureDiagnosticsSupport';
 import { S0RestorePanel } from './S0RestorePanel';
 import { useArchitectureDispatch } from '../../contexts/ArchitectureContext';
 import { useProject } from '../../contexts/ProjectContext';
@@ -154,6 +154,7 @@ function statusClass(status: string | null | undefined): string {
     case 'failed':
       return styles.statusFailed;
     case 'paused_rate_limited':
+    case 'paused_auth_expired':
       // A resumable pause, not a failure — reuse the neutral "running" badge.
       return styles.statusRunning;
     case 'cancelled':
@@ -167,6 +168,9 @@ function statusClass(status: string | null | undefined): string {
 function statusLabel(status: string | null | undefined): string {
   if ((status ?? '').toLowerCase() === 'paused_rate_limited') {
     return 'Paused — LLM daily limit';
+  }
+  if ((status ?? '').toLowerCase() === 'paused_auth_expired') {
+    return 'Paused — credential expired';
   }
   return status ?? '';
 }
@@ -913,7 +917,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
           as "coverage not recorded" -- never an error. Reuses the existing
           banner/badge styling (secretsPrompt + statusBadge) -- no charting
           widget. */}
-      {(session.status === 'completed' || session.status === 'paused_rate_limited') && (
+      {(session.status === 'completed' || session.status === 'paused_rate_limited' || session.status === 'paused_auth_expired') && (
         <CoverageSummaryPanel
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-summary"
@@ -946,11 +950,30 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
         </div>
       )}
 
+      {/* Auth-expiry pause banner (Foundations Spec 0, 2026-08-22): the
+          session credential expired mid-run and the breaker stopped the
+          burn. Re-enter secrets, then resume via "Retry uncovered APIs". */}
+      {session.status === 'paused_auth_expired' && (
+        <div
+          className={styles.secretsPrompt}
+          role="status"
+          data-testid="capture-session-auth-expired-banner"
+        >
+          <strong>Paused — session credential expired.</strong>
+          <span>
+            Consecutive scenarios returned only 401, so the capture paused
+            instead of burning the remaining endpoints. Everything captured so
+            far is saved. Re-enter secrets above, then use &ldquo;Retry
+            uncovered APIs&rdquo; below to finish the remaining endpoints.
+          </span>
+        </div>
+      )}
+
       {/* Happy-path coverage GATE banner (Spec 2026-07-20 Coverage Closure --
           CC1). The user must not leave the capture screen until every included
           endpoint has its happy-path baseline. "Retry uncovered APIs" opens the
           closure modal; the deterministic + LLM run is wired in CC3. */}
-      {(session.status === 'completed' || session.status === 'paused_rate_limited') && (
+      {(session.status === 'completed' || session.status === 'paused_rate_limited' || session.status === 'paused_auth_expired') && (
         <CoverageGateBanner
           raw={session.coverage_summary_json}
           testId="capture-session-coverage-gate"
@@ -1215,7 +1238,11 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                   ? '#b26a00'
                   : '#555';
             const expanded = expandedDiagTypes.has(g.type);
-            const visibleItems = expanded ? g.items : g.items.slice(0, 5);
+            // Identical messages collapse to one line with a xN count
+            // (Spec 0, 2026-08-22) — a per-scenario repeat wall becomes a
+            // screenshotable handful; underlying rows stay in AMS.
+            const grouped = groupIdenticalMessages(g.items);
+            const visibleLines = expanded ? grouped : grouped.slice(0, 5);
             return (
               <div
                 key={g.type}
@@ -1226,13 +1253,16 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                   {labelFor(g.type)} ({g.items.length})
                 </div>
                 <ul style={{ margin: '2px 0 0 18px' }}>
-                  {visibleItems.map((d) => (
-                    <li key={d.id} style={{ color }}>
-                      {d.message ?? '(no message)'}
+                  {visibleLines.map((line) => (
+                    <li key={line.id} style={{ color }}>
+                      {line.message}
+                      {line.count > 1 && (
+                        <span style={{ fontWeight: 600 }}> ×{line.count}</span>
+                      )}
                     </li>
                   ))}
                 </ul>
-                {g.items.length > 5 && (
+                {grouped.length > 5 && (
                   <button
                     type="button"
                     data-testid={`diag-group-${g.type}-toggle`}
@@ -1256,7 +1286,7 @@ export const CaptureSessionDetailView: React.FC<CaptureSessionDetailViewProps> =
                   >
                     {expanded
                       ? 'Show less'
-                      : `Show all ${g.items.length} (+${g.items.length - 5} more)`}
+                      : `Show all ${grouped.length} distinct (+${grouped.length - 5} more)`}
                   </button>
                 )}
               </div>

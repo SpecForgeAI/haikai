@@ -208,7 +208,7 @@ export interface OrchestratorOutcome {
   scenariosAttempted: number;
   scenariosCompleted: number;
   scenariosErrored: number;
-  finalStatus: 'completed' | 'failed' | 'paused_rate_limited';
+  finalStatus: 'completed' | 'failed' | 'paused_rate_limited' | 'paused_auth_expired';
   errorMessage: string | null;
 }
 
@@ -1095,6 +1095,25 @@ export async function runAuthNegativeProbes(
 /** Coverage caps so a param-rich endpoint gets thorough -- but bounded -- coverage. */
 const MAX_SCENARIOS_PER_OP = 12;
 const MAX_ENUM_VALUES_PER_PARAM = 4;
+/** Consecutive all-401 scenarios (intended class != 'auth') that trip the
+ *  auth-expiry circuit breaker (Spec 0, 2026-08-22). */
+export const AUTH_EXPIRY_STREAK_THRESHOLD = 3;
+
+/**
+ * Auth-expiry streak transition (pure; Spec 0, 2026-08-22). A scenario
+ * advances the streak iff it produced captures and EVERY capture is a 401 —
+ * except scenarios whose intended class IS 'auth' (they legitimately 401)
+ * and zero-capture scenarios (no auth signal), both of which leave the
+ * streak unchanged. Any non-401 capture resets it.
+ */
+export function nextAuthExpiryStreak(
+  previous: number,
+  expectedStatus: string,
+  captureStatuses: ReadonlyArray<number | null>,
+): number {
+  if (expectedStatus === 'auth' || captureStatuses.length === 0) return previous;
+  return captureStatuses.every((s) => s === 401) ? previous + 1 : 0;
+}
 
 /** Classify a discovery-seed scenario name into an expected-outcome class. */
 function classifyExpectedFromName(name: string): ScenarioExpectedStatus {
@@ -1508,6 +1527,11 @@ export async function orchestrateCaptureSession(
   // the provider's per-day token quota is exhausted, so the capture stops early
   // and finalises as `paused_rate_limited` instead of `completed`.
   let dailyLimitHit = false;
+  // Auth-expiry circuit breaker (Spec 0, 2026-08-22): consecutive
+  // all-401 scenarios (intended class != 'auth') trip the breaker and
+  // finalise as `paused_auth_expired`.
+  let authExpiryHit = false;
+  let authExpiredStreak = 0;
   // CSD Spec 3: set when a compensation bracket reports RESIDUE (the DB is
   // provably no longer S0) or the end-of-job fingerprint mismatches. Halts
   // the run and finalises as FAILED with the guided-restore message.
@@ -2059,6 +2083,35 @@ export async function orchestrateCaptureSession(
         const scenarioCaptures = runManager.getScenarioCaptures(session.id);
         const capturesPersisted = scenarioCaptures.length;
 
+        // Auth-expiry circuit breaker (Foundations program Spec 0,
+        // 2026-08-22): a session credential that expires mid-run turns every
+        // further scenario into a doomed 401 (observed live: 57 scenarios
+        // burned). When {AUTH_EXPIRY_STREAK_THRESHOLD} CONSECUTIVE scenarios
+        // produce captures that are ALL 401s — excluding scenarios whose
+        // intended class IS 'auth' (they legitimately 401) — stop the whole
+        // run and finalise as `paused_auth_expired`: the operator re-enters
+        // secrets and resumes via "Retry uncovered APIs". Zero-capture
+        // scenarios (refused/skipped pre-HTTP) carry no auth signal and
+        // leave the streak unchanged.
+        {
+          authExpiredStreak = nextAuthExpiryStreak(
+            authExpiredStreak,
+            scenario.expectedStatus,
+            scenarioCaptures.map((c) => c.status),
+          );
+          if (authExpiredStreak >= AUTH_EXPIRY_STREAK_THRESHOLD) {
+            authExpiryHit = true;
+            await writeDiag(
+              'auth_failure',
+              `Session credential appears EXPIRED: ${authExpiredStreak} consecutive ` +
+                'scenarios returned only 401 — capture paused. Re-enter secrets, ' +
+                'then resume with "Retry uncovered APIs".',
+              { operation_id: op.operation_id, scenario: scenario.name },
+            );
+            break;
+          }
+        }
+
         // ---- Stateful sequence assembly (Spec D, 2026-06-18). When the LLM
         // pinned a sequence for this scenario (via the terminal `pin_sequence`
         // tool), assemble the R1 `sequence_json` from the pin declaration +
@@ -2256,6 +2309,8 @@ export async function orchestrateCaptureSession(
       // Per-day quota hit mid-run: stop processing further operations. What was
       // scored so far is preserved; the finaliser marks `paused_rate_limited`.
       if (dailyLimitHit) break;
+      // Auth-expiry breaker tripped: every further scenario is a doomed 401.
+      if (authExpiryHit) break;
       // Compensation residue (CSD Spec 3): the DB is no longer S0 — every
       // further capture would sample a corrupted state. Stop the whole run.
       if (stateResidueError) break;
@@ -2274,7 +2329,7 @@ export async function orchestrateCaptureSession(
     // run finalises. Mismatch is the HALT signal; a missing snapshot is a
     // loud advisory, never a silent pass. Runs INSIDE the try so the read
     // adapter is still alive.
-    if (compensation && !stateResidueError && !dailyLimitHit) {
+    if (compensation && !stateResidueError && !dailyLimitHit && !authExpiryHit) {
       const fingerprint = await runEndOfJobFingerprint({
         projectId: session.projectId,
         architectureId: session.architectureId,
@@ -2337,18 +2392,22 @@ export async function orchestrateCaptureSession(
   // `paused_rate_limited` (Spec 2026-07-22): the provider's per-day token quota
   // was reached mid-run. NOT a failure — everything captured so far is kept and
   // the operator resumes after reset via "Retry uncovered APIs".
-  const finalStatus: 'completed' | 'failed' | 'paused_rate_limited' =
+  const finalStatus: 'completed' | 'failed' | 'paused_rate_limited' | 'paused_auth_expired' =
     infraError || stateResidueError
       ? 'failed'
       : dailyLimitHit
         ? 'paused_rate_limited'
-        : 'completed';
+        : authExpiryHit
+          ? 'paused_auth_expired'
+          : 'completed';
   const finalMessage: string | null =
     infraError ??
     stateResidueError ??
     (dailyLimitHit
       ? 'stopped: LLM daily token quota reached — resume with "Retry uncovered APIs" after the quota resets'
-      : null);
+      : authExpiryHit
+        ? 'paused: session credential appears expired (consecutive all-401 scenarios) — re-enter secrets, then resume with "Retry uncovered APIs"'
+        : null);
   // Persist the per-run scenario tallies alongside the terminal status
   // (misleading-COMPLETED fix): `completed` only means "no INFRASTRUCTURE
   // error" — every scenario can have errored. `scenarios_completed` now

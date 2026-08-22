@@ -93,3 +93,29 @@ export function shouldOfferS0Restore(session: {
 }): boolean {
   return session.status === 'failed' && /\bS0\b/.test(session.error_message ?? '');
 }
+
+export interface GroupedDiagnosticLine {
+  message: string;
+  count: number;
+  /** First underlying diagnostic id (stable render key). */
+  id: string;
+}
+
+/**
+ * Collapse IDENTICAL messages within one severity group to a single line
+ * with a xN count (Foundations Spec 0, 2026-08-22): a 300-row wall of
+ * per-scenario repeats of the same refusal reason is screenshot-hostile;
+ * the per-scenario rows remain in AMS untouched — this is display-only.
+ */
+export function groupIdenticalMessages(
+  items: readonly ApiBehaviourDiagnosticDto[],
+): GroupedDiagnosticLine[] {
+  const byMessage = new Map<string, GroupedDiagnosticLine>();
+  for (const d of items) {
+    const message = d.message ?? '(no message)';
+    const existing = byMessage.get(message);
+    if (existing) existing.count += 1;
+    else byMessage.set(message, { message, count: 1, id: d.id });
+  }
+  return [...byMessage.values()];
+}

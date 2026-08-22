@@ -104,6 +104,10 @@ export type CaptureSessionStatus =
   // (Spec 2026-07-22). Captured data is intact — resume via "Retry uncovered
   // APIs" after the quota resets.
   | 'paused_rate_limited'
+  // Terminal: the session credential expired mid-run (consecutive all-401
+  // scenarios; Foundations Spec 0, 2026-08-22). Re-enter secrets, then
+  // resume via "Retry uncovered APIs".
+  | 'paused_auth_expired'
   | 'cancelled';
 
 export interface ApiBehaviourCaptureSessionDto {

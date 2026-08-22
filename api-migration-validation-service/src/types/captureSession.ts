@@ -20,6 +20,10 @@ export type CaptureSessionStatus =
   // (Spec 2026-07-22). Not a failure — captured data is intact; resume after
   // reset via "Retry uncovered APIs".
   | 'paused_rate_limited'
+  // Auth-expiry circuit breaker (Spec 0, 2026-08-22): consecutive all-401
+  // scenarios mid-run — resume after re-entering secrets via "Retry
+  // uncovered APIs".
+  | 'paused_auth_expired'
   | 'cancelled';
 
 export type AuthType =
