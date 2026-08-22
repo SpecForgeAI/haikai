@@ -165,6 +165,22 @@ describe('candidateSaveBackService — foundation scope (Spec 2, 2026-08-22)', (
         name: 'orders',
         data: { schemaName: 'dbo', objectType: 'table' },
       }),
+      // Attributes of the excluded table follow it ("associated things"):
+      // the flip joins through the model's physical_entity_id FK.
+      makeCandidate({
+        id: 'cand-bak-attr',
+        candidate_type: 'physical_data_attributes',
+        name: 'note',
+        parent_candidate_id: 'cand-fresh',
+        data: { tableName: 'orders_bak', columnName: 'note', dataType: 'varchar' },
+      }),
+      makeCandidate({
+        id: 'cand-keep-attr',
+        candidate_type: 'physical_data_attributes',
+        name: 'id',
+        parent_candidate_id: 'cand-keep',
+        data: { tableName: 'orders', columnName: 'id', dataType: 'int' },
+      }),
     ];
     const decisions = [
       {
@@ -203,7 +219,15 @@ describe('candidateSaveBackService — foundation scope (Spec 2, 2026-08-22)', (
 
     const bakPatch = candidatePatches.find((p) => p.url.includes('cand-fresh'));
     expect(bakPatch?.body.status).toBe('committed_excluded');
-    const keepPatch = candidatePatches.find((p) => p.url.includes('cand-keep'));
+    const keepPatch = candidatePatches.find(
+      (p) => p.url.includes('cand-keep') && !p.url.includes('cand-keep-attr'),
+    );
     expect(keepPatch?.body.status).toBe('committed');
+
+    const bakAttrPatch = candidatePatches.find((p) => p.url.includes('cand-bak-attr'));
+    expect(bakAttrPatch?.body.status).toBe('committed_excluded');
+    expect(bakAttrPatch?.body.review_status).toBe('committed');
+    const keepAttrPatch = candidatePatches.find((p) => p.url.includes('cand-keep-attr'));
+    expect(keepAttrPatch?.body.status).toBe('committed');
   });
 });

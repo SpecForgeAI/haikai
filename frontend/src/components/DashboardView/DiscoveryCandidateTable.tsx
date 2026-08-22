@@ -1679,7 +1679,21 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
                     )}
                   </td>
                   <td title={`Pipeline status: ${candidate.status}`}>
-                    {reviewStatus}
+                    {/* The exclusion receipt must be VISIBLE text, not just
+                        the pipeline-status tooltip — review_status stays
+                        'committed' by design (the review DID happen), so
+                        the saved-as-excluded state renders in its place. */}
+                    {candidate.status === 'committed_excluded' ? (
+                      <span
+                        data-testid="candidate-status-committed-excluded"
+                        title="Saved as documentation only — excluded from the migration by a foundation decision"
+                        style={{ color: '#c62828', fontWeight: 600 }}
+                      >
+                        committed_excluded
+                      </span>
+                    ) : (
+                      reviewStatus
+                    )}
                     {/* Spec 0 (2026-06-02) Task Group 7.2: per-row conflict
                         badge alongside the Review Status. Rendered ONLY when
                         the candidate has a live (unresolved) conflict.

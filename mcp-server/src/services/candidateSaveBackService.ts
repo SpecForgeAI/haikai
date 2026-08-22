@@ -4198,6 +4198,21 @@ export async function saveDiscoveryCandidatesToModel(
       .filter((e: any) => String(e?.migration_scope ?? '').toLowerCase() === 'excluded')
       .map((e: any) => String(e?.id)),
   );
+  // An ATTRIBUTE of an excluded table commits excluded too ("associated
+  // things follow") — joined through the model's physical_entity_id FK, the
+  // same linkage the pack-side scope filter drops attributes by.
+  const attributeParentById = new Map<string, string>(
+    ((model?.metaModel?.entities?.physical_data_attributes ?? []) as any[])
+      .filter((a: any) => a?.id != null && a?.physical_entity_id != null)
+      .map((a: any) => [String(a.id), String(a.physical_entity_id)] as [string, string]),
+  );
+  const commitsExcluded = (entityId: unknown): boolean => {
+    const id = String(entityId);
+    return (
+      excludedEntityIds.has(id) ||
+      excludedEntityIds.has(attributeParentById.get(id) ?? '')
+    );
+  };
   const candidatesCommitted = candidateActions.length;
 
   for (const action of candidateActions) {
@@ -4211,9 +4226,7 @@ export async function saveDiscoveryCandidatesToModel(
       // up in the save-back set without an explicit prior review.
       const previousReviewStatus = candidate.review_status ?? 'pending_review';
       if (commit) await archModelClient.updateCandidate(projectId, architectureId, runId, action.candidateId, {
-        status: excludedEntityIds.has(String(action.entityId))
-          ? 'committed_excluded'
-          : 'committed',
+        status: commitsExcluded(action.entityId) ? 'committed_excluded' : 'committed',
         review_status: 'committed',
         reviewed_by: 'save-back',
         reviewed_at: new Date().toISOString(),
