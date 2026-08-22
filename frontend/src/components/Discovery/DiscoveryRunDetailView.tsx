@@ -211,6 +211,8 @@ export interface DiscoveryRunDetailViewProps {
    * view's prop wiring.
    */
   lastSaveTimestamp?: number;
+  /** Foundations receipts map threaded to the candidate table (2026-08-22). */
+  scopeByEntityName?: Map<string, { scope: string; decisionRef: string | null }>;
   /**
    * Spec 2 (2026-06-02) Task Group 5.5 -- bulk Save in the grid toolbar.
    * Threaded straight through to `DiscoveryCandidateTable`. The page wires
@@ -261,6 +263,7 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
   candidatesTabHeader,
   onOpenLinkedTarget,
   lastSaveTimestamp,
+  scopeByEntityName,
   onBulkSave,
   bulkSaveInFlight,
   bulkSaveLabel,
@@ -361,6 +364,7 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
           candidates={candidates}
           onCandidatesChange={onCandidatesChange}
           lastSaveTimestamp={lastSaveTimestamp}
+          scopeByEntityName={scopeByEntityName}
           onBulkSave={onBulkSave}
           bulkSaveInFlight={bulkSaveInFlight}
           bulkSaveLabel={bulkSaveLabel}
@@ -376,6 +380,7 @@ export const DiscoveryRunDetailView: React.FC<DiscoveryRunDetailViewProps> = ({
     runArchitectureId,
     onCandidatesChange,
     lastSaveTimestamp,
+    scopeByEntityName,
     candidatesTabHeader,
     onBulkSave,
     bulkSaveInFlight,

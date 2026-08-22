@@ -25,6 +25,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import FoundationsReviewPanel from '../Discovery/foundations/FoundationsReviewPanel';
+import { listFoundationDecisions } from '../../api/foundationsApi';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getDiscoveryRuns,
@@ -222,6 +223,12 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   // Save All Approved state + lastSaveTimestamp (Bug 3 hotfix counter).
   // -----------------------------------------------------------------------
   const [saveLoading, setSaveLoading] = useState<boolean>(false);
+  // Foundations receipts (2026-08-22): stored decisions -> per-table scope
+  // map so candidate rows carry EXCLUDED/VOLATILE chips. Refreshed whenever
+  // the panel applies answers or a save completes (lastSaveTimestamp bumps).
+  const [scopeByEntityName, setScopeByEntityName] = useState<
+    Map<string, { scope: string; decisionRef: string | null }>
+  >(new Map());
   // The legacy outcome string is no longer rendered directly -- the breakdown
   // chip (TG6) reproduces the summary line from saveResult. The setter is kept
   // so the existing reset sites stay valid; the value binding is dropped to
@@ -249,6 +256,37 @@ export const DiscoveryRunDetailPage: React.FC = () => {
   const handleClosePanel = useCallback(() => {
     setPanelOpen(false);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const projectId = activeProject?.id;
+    const architectureId = selectedRun?.architecture_id ?? activeArchitectureId;
+    if (!projectId || !architectureId) {
+      setScopeByEntityName(new Map());
+      return;
+    }
+    void listFoundationDecisions(projectId, architectureId)
+      .then((decisions) => {
+        if (cancelled) return;
+        const map = new Map<string, { scope: string; decisionRef: string | null }>();
+        for (const d of decisions) {
+          if (d.stale) continue;
+          const scope = (d.scope ?? '').toLowerCase();
+          if (scope !== 'excluded' && scope !== 'volatile') continue;
+          for (const target of d.targets_json ?? []) {
+            const name = (target.entity_name ?? '').toLowerCase();
+            if (name) map.set(name, { scope, decisionRef: d.decision_key });
+          }
+        }
+        setScopeByEntityName(map);
+      })
+      .catch(() => {
+        if (!cancelled) setScopeByEntityName(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProject?.id, selectedRun?.architecture_id, activeArchitectureId, lastSaveTimestamp]);
 
   const discoveryListUrl = useMemo(() => {
     if (!activeProject?.id || !activeArchitectureId) return null;
@@ -1365,6 +1403,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
                 initialFindingId={initialFindingId}
                 initialReviewRoomOpen={initialReviewRoomOpen}
                 candidatesTabHeader={candidatesTabHeader}
+                scopeByEntityName={scopeByEntityName}
                 lastSaveTimestamp={lastSaveTimestamp}
                 onBulkSave={handleSaveApprovedClick}
                 bulkSaveInFlight={saveLoading}

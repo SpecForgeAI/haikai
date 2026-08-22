@@ -248,6 +248,15 @@ export interface DiscoveryCandidateTableProps {
    */
   lastSaveTimestamp?: number;
   /**
+   * Foundations receipts (2026-08-22): lowercase table name -> the scope a
+   * stored foundation decision applied ('excluded' | 'volatile') + its
+   * decision ref. Entity rows AND their attribute rows render the chip —
+   * the "obvious at every following stage" contract. Rows still review and
+   * save normally; save-back commits excluded entities as
+   * `committed_excluded` (current-state documentation, out of the target).
+   */
+  scopeByEntityName?: Map<string, { scope: string; decisionRef: string | null }>;
+  /**
    * Spec 2 (2026-06-02) Task Group 5.5 -- bulk Save. Optional click handler the
    * grid's toolbar Save button invokes. The parent (the run-detail page) wires
    * this to its EXISTING `save-approved` flow (the `SaveBackConfirmModal` ->
@@ -503,8 +512,60 @@ function getRowTintClass(reviewStatus: string): string {
 }
 
 
+/** The covering foundation scope for a candidate row (entity rows by name,
+ *  attribute rows by their parent tableName), or null. */
+function foundationScopeFor(
+  candidate: { candidate_type?: string; name?: string | null; data?: Record<string, unknown> | null },
+  scopeByEntityName?: Map<string, { scope: string; decisionRef: string | null }>,
+): { scope: string; decisionRef: string | null } | null {
+  if (!scopeByEntityName || scopeByEntityName.size === 0) return null;
+  const type = candidate.candidate_type ?? '';
+  let key: string | null = null;
+  if (type === 'physical_data_entities') key = candidate.name ?? null;
+  else if (type === 'physical_data_attributes') {
+    key = (candidate.data?.tableName as string | undefined) ?? null;
+  }
+  if (!key) return null;
+  return scopeByEntityName.get(key.toLowerCase()) ?? null;
+}
+
+function FoundationScopeChip({
+  entry,
+}: {
+  entry: { scope: string; decisionRef: string | null } | null;
+}) {
+  if (!entry) return null;
+  const isExcluded = entry.scope === 'excluded';
+  return (
+    <span
+      data-testid="foundation-scope-chip"
+      title={
+        isExcluded
+          ? 'Excluded from the migration by a foundation decision — commits as ' +
+            'documentation only (committed_excluded); out of target + reconciliation.'
+          : 'Volatile by a foundation decision — stays in the migration; S0 ' +
+            'fingerprint divergence on this table is tolerated.'
+      }
+      style={{
+        marginLeft: 6,
+        padding: '1px 6px',
+        borderRadius: 8,
+        fontSize: 11,
+        fontWeight: 600,
+        background: isExcluded ? '#fdecea' : '#fff8e1',
+        color: isExcluded ? '#c62828' : '#8a6d3b',
+        border: `1px solid ${isExcluded ? '#f5c6c2' : '#faebcc'}`,
+      }}
+    >
+      {entry.scope.toUpperCase()}
+      {entry.decisionRef ? ` (${entry.decisionRef})` : ''}
+    </span>
+  );
+}
+
 export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = ({
   projectId,
+  scopeByEntityName,
   architectureId,
   runId,
   candidates,
@@ -1238,6 +1299,27 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
           {hasActiveFilters
             ? `Showing ${filteredCandidates.length} of ${candidates.length} candidates`
             : `${candidates.length} candidates`}
+          {(() => {
+            if (!scopeByEntityName || scopeByEntityName.size === 0) return null;
+            const scopes = candidates
+              .map((c) => foundationScopeFor(c, scopeByEntityName)?.scope)
+              .filter(Boolean);
+            const excluded = scopes.filter((s) => s === 'excluded').length;
+            const volatileCount = scopes.filter((s) => s === 'volatile').length;
+            if (excluded === 0 && volatileCount === 0) return null;
+            return (
+              <span
+                data-testid="foundation-scope-count"
+                style={{ marginLeft: 10, color: '#8a6d3b', fontWeight: 600 }}
+              >
+                {excluded > 0 &&
+                  `${excluded} excluded by foundation decisions — commit as ` +
+                    'documentation only (committed_excluded) on save'}
+                {excluded > 0 && volatileCount > 0 && ' · '}
+                {volatileCount > 0 && `${volatileCount} volatile (S0-tolerated)`}
+              </span>
+            );
+          })()}
         </span>
         {hasActiveFilters && (
           <button className={styles.clearFiltersButton} onClick={clearAllFilters} data-testid="clear-filters">
@@ -1525,6 +1607,9 @@ export const DiscoveryCandidateTable: React.FC<DiscoveryCandidateTableProps> = (
                 >
                   <td>
                     {candidate.name}
+                    <FoundationScopeChip
+                      entry={foundationScopeFor(candidate, scopeByEntityName)}
+                    />
                     {/*
                       Phase 2 Group 3 (spec 2026-05-17-soap-llm-extraction-
                       and-payload-enrichment-phase-2): "discovered-via"
