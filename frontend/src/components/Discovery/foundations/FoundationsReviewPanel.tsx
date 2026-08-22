@@ -154,11 +154,15 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   }, [questions]);
 
   const selectedAnswer = useCallback(
-    (q: FoundationQuestion): string =>
-      selected[q.question_key] ??
-      q.options.find((o) => o.recommended)?.answer ??
-      q.options[0]?.answer ??
-      '',
+    (q: FoundationQuestion): string => {
+      if (selected[q.question_key] !== undefined) return selected[q.question_key];
+      // A stale REOPEN is pre-answered with the user's PREVIOUS answer —
+      // never the recommended default (a keep_all reopening as volatile
+      // would silently flip scope AND hide dependent questions).
+      const previous = q.stale_decision?.previous_answer;
+      if (previous && q.options.some((o) => o.answer === previous)) return previous;
+      return q.options.find((o) => o.recommended)?.answer ?? q.options[0]?.answer ?? '';
+    },
     [selected],
   );
 

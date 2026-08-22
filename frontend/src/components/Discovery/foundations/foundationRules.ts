@@ -135,7 +135,16 @@ export function entityFactsFromCandidates(candidates: CandidateLike[]): EntityFa
       isPrimaryKey: data.isPrimaryKey === true || data.is_primary_key === true,
     });
   }
-  return [...tables.values()];
+  // CANONICAL ORDER: facts (and everything hashed from them) must not
+  // depend on candidate fetch order — saving flips review_status on every
+  // row and the refetch can come back reordered, which must NOT read as
+  // "evidence changed". Code-unit compare, deliberately locale-free.
+  const out = [...tables.values()];
+  for (const t of out) {
+    t.attributes.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  }
+  out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,10 +174,16 @@ export function bulkTargetsEvidenceHash(
   ruleKey: FoundationQuestion['rule_key'],
   targets: FoundationQuestionTarget[],
 ): string {
+  // Inputs are sorted so the hash is a function of the evidence SET, never
+  // of assembly order (fetch order changes on save; that is not evidence).
   if (ruleKey === 'temp_working' || ruleKey === 'crud_never') {
-    return evidenceHash(targets.map((t) => t.entity_name));
+    return evidenceHash(targets.map((t) => t.entity_name).sort());
   }
-  return evidenceHash(targets.map((t) => [t.entity_name, t.note]));
+  return evidenceHash(
+    targets
+      .map((t) => [t.entity_name, t.note] as const)
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -479,7 +494,9 @@ export function deriveFoundationQuestions(
         table: t.name.toLowerCase(),
         posture: posture.posture,
         columns: posture.uniqueColumns,
-        attrs: t.attributes.map((a) => [a.name.toLowerCase(), a.isNullable, a.isPrimaryKey]),
+        attrs: t.attributes
+          .map((a) => [a.name.toLowerCase(), a.isNullable, a.isPrimaryKey] as const)
+          .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
       }),
     });
     if (q) questions.push(q);
@@ -573,7 +590,9 @@ export function crudFactsFromModel(model: RawModelLike): CrudFacts[] {
     else if (mode === 'read') facts.reads += 1;
     else if (mode === 'execute') facts.executes += 1;
   }
-  return [...byId.values()];
+  // Same canonical-order rule as entityFactsFromCandidates: model entity
+  // array order shifts on save-back PUTs and is not evidence.
+  return [...byId.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /** Joint (code+DB) questions. The same stored-decision reconciliation as

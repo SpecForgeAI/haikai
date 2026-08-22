@@ -258,3 +258,52 @@ describe('derive-time suppression by stored decisions (no conflicting questions)
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Order canonicalization (2026-08-22 live-shakedown regression): saving
+// candidates flips review_status on every row and the refetch can return
+// them REORDERED. That must never read as "evidence changed" — 11 settled
+// questions mass-reopened stale on the user's estate.
+// ---------------------------------------------------------------------------
+
+describe('evidence hashes are fetch-order independent', () => {
+  it('a reordered candidate refetch yields identical hashes; settled stays settled', () => {
+    const shuffled = [...CANDIDATES].reverse();
+    const before = deriveFoundationQuestions(entityFactsFromCandidates(CANDIDATES), []);
+    const after = deriveFoundationQuestions(entityFactsFromCandidates(shuffled), []);
+
+    const hashByKey = (qs: typeof before) =>
+      new Map(qs.map((q) => [q.question_key, q.evidence_hash]));
+    expect(hashByKey(after)).toEqual(hashByKey(before));
+
+    // The save-reorder scenario end-to-end: decisions stored from the
+    // pre-save order settle every question against the post-save order.
+    const decisions: StoredFoundationDecision[] = before.map((q, i) => ({
+      decision_key: `F-${i + 1}`,
+      rule_key: q.rule_key,
+      answer: q.options[0].answer,
+      targets_json: q.targets.map((t) => ({ entity_name: t.entity_name })),
+      evidence_hash: q.evidence_hash,
+      stale: false,
+    }));
+    expect(deriveFoundationQuestions(entityFactsFromCandidates(shuffled), decisions)).toEqual([]);
+  });
+
+  it('joint questions tolerate a reordered model entity array the same way', () => {
+    const reordered = {
+      metaModel: {
+        entities: {
+          physical_data_entities: [
+            ...JOINT_MODEL.metaModel.entities.physical_data_entities,
+          ].reverse(),
+        },
+        relationships: JOINT_MODEL.metaModel.relationships,
+      },
+    };
+    const before = deriveJointFoundationQuestions(JOINT_MODEL, []);
+    const after = deriveJointFoundationQuestions(reordered, []);
+    expect(new Map(after.map((q) => [q.question_key, q.evidence_hash]))).toEqual(
+      new Map(before.map((q) => [q.question_key, q.evidence_hash])),
+    );
+  });
+});
