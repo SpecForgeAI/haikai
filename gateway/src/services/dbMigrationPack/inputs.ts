@@ -58,6 +58,9 @@ export interface RawPhysicalEntity {
   database?: string | null;
   tags?: string | null;
   constraints_metadata?: Record<string, unknown> | null;
+  /** Foundations scope tag (Spec 4, 2026-08-22): null/absent = in_scope. */
+  migration_scope?: string | null;
+  scope_decision_ref?: string | null;
 }
 
 export interface RawPhysicalAttribute {
@@ -95,12 +98,67 @@ export interface RawDataEntityRelationship {
   } | null;
 }
 
+/** Scope receipt (Foundations Spec 4, 2026-08-22): what the model fetch
+ *  removed from TARGET-side generation, with decision receipts — rendered
+ *  on the pack manifest and cited by reconciliation. */
+export interface PackScopeReceipt {
+  total_entities: number;
+  in_scope: number;
+  data_only: number;
+  excluded: Array<{ name: string; decision_ref: string | null }>;
+  volatile: Array<{ name: string; decision_ref: string | null }>;
+}
+
 /** The slice of the committed architecture model the generator consumes. */
 export interface CommittedPhysicalModel {
   physicalDataEntities: RawPhysicalEntity[];
   physicalDataAttributes: RawPhysicalAttribute[];
   dataEntityPoints: RawDataEntityPoint[];
   dataEntityRelationships: RawDataEntityRelationship[];
+  /** Populated by the scope-filtering fetch (absent in older callers). */
+  scopeReceipt?: PackScopeReceipt;
+}
+
+/**
+ * Foundations Spec 4: apply migration scope to a fetched model bundle —
+ * `excluded` and `volatile` entities (and their attributes) never reach
+ * TARGET-side generation (`data_only` stays; behaviour-level consumers
+ * refine via tags). Pure + exported for tests; the receipt carries the
+ * decision refs for every removal.
+ */
+export function applyScopeToModelBundle(model: CommittedPhysicalModel): CommittedPhysicalModel {
+  const excluded: PackScopeReceipt['excluded'] = [];
+  const volatileList: PackScopeReceipt['volatile'] = [];
+  let dataOnly = 0;
+  const kept: RawPhysicalEntity[] = [];
+  for (const entity of model.physicalDataEntities) {
+    const scope = (entity.migration_scope ?? '').toLowerCase();
+    if (scope === 'excluded') {
+      excluded.push({ name: entity.name, decision_ref: entity.scope_decision_ref ?? null });
+      continue;
+    }
+    if (scope === 'volatile') {
+      volatileList.push({ name: entity.name, decision_ref: entity.scope_decision_ref ?? null });
+      continue;
+    }
+    if (scope === 'data_only') dataOnly += 1;
+    kept.push(entity);
+  }
+  const keptIds = new Set(kept.map((e) => e.id));
+  return {
+    ...model,
+    physicalDataEntities: kept,
+    physicalDataAttributes: model.physicalDataAttributes.filter((a) =>
+      keptIds.has(a.physical_entity_id),
+    ),
+    scopeReceipt: {
+      total_entities: model.physicalDataEntities.length,
+      in_scope: kept.length - dataOnly,
+      data_only: dataOnly,
+      excluded: excluded.sort((a, b) => a.name.localeCompare(b.name)),
+      volatile: volatileList.sort((a, b) => a.name.localeCompare(b.name)),
+    },
+  };
 }
 
 /** Persisted discovery finding (AMS snake_case wire). */
@@ -335,6 +393,10 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
       objectType: isView ? 'view' : 'table',
       columns: [],
       primaryKey: cm.primary_key ?? null,
+      keyPolicy:
+        ((cm as { key_policy?: string | null }).key_policy ?? null) === 'keyless_multiset'
+          ? 'keyless_multiset'
+          : null,
       uniqueConstraints: cm.unique_constraints ?? [],
       checkConstraints: cm.check_constraints ?? [],
       indexes: (cm.indexes ?? []).map((i) => ({
@@ -575,6 +637,7 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
   applySurrogatePkDecision(tables, resolvedDecisions);
 
   const ir: SourceSchemaIr = {
+    scopeReceipt: inputs.model.scopeReceipt ?? null,
     sourceEngine,
     targetEngine,
     tables,
@@ -647,15 +710,23 @@ export function applySurrogatePkDecision(
   const skipped: string[] = [];
   const demoted: string[] = [];
   const resolution = resolvedDecisions[SURROGATE_PK_DECISION_KEY];
-  if (!resolution || resolution['option'] !== 'add_surrogate_identity_pk') {
+  const globalOn = !!resolution && resolution['option'] === 'add_surrogate_identity_pk';
+  // Foundations Spec 4 (2026-08-22): a table whose foundation key policy is
+  // keyless_multiset ALWAYS takes a surrogate identity PK on the target —
+  // the decision was already made at the foundations review; the pack-level
+  // surrogate decision is not required for those tables.
+  const hasPolicyTables = tables.some(
+    (t) => t.objectType === 'table' && !t.primaryKey && t.keyPolicy === 'keyless_multiset',
+  );
+  if (!globalOn && !hasPolicyTables) {
     return { added, skipped, demoted };
   }
 
-  // --- demotions first: the demoted tables become no-PK tables and the ---
-  // --- surrogate loop below picks them up like any other.              ---
+  // --- demotions first (GLOBAL decision only): the demoted tables become ---
+  // --- no-PK tables and the surrogate loop below picks them up.          ---
   // Accept an ARRAY of "schema.table" names or a comma-separated STRING
   // (belt-and-braces for hand-entered resolutions).
-  const rawDemote = resolution['demote_tables'];
+  const rawDemote = globalOn ? resolution?.['demote_tables'] : undefined;
   const demoteList = Array.isArray(rawDemote)
     ? rawDemote
     : typeof rawDemote === 'string'
@@ -687,6 +758,8 @@ export function applySurrogatePkDecision(
 
   for (const table of tables) {
     if (table.objectType !== 'table' || table.primaryKey) continue;
+    // Global decision OFF: only foundation keyless-policy tables surrogate.
+    if (!globalOn && table.keyPolicy !== 'keyless_multiset') continue;
     const taken = new Set(table.columns.map((c) => c.columnName.toLowerCase()));
     const columnName = SURROGATE_COLUMN_CANDIDATES.find((n) => !taken.has(n));
     const qn = `${table.schemaName}.${table.tableName}`;
@@ -1007,13 +1080,15 @@ export const defaultFetchModel: InputFetchDeps['fetchModel'] = async (
       };
     };
   }>(url, 'architecture model');
-  return {
+  // Foundations Spec 4: excluded/volatile entities never reach TARGET-side
+  // generation — filtered here at the single fetch choke point, receipted.
+  return applyScopeToModelBundle({
     physicalDataEntities: model.metaModel?.entities?.physical_data_entities ?? [],
     physicalDataAttributes: model.metaModel?.entities?.physical_data_attributes ?? [],
     dataEntityPoints: model.metaModel?.entities?.data_entity_points ?? [],
     dataEntityRelationships:
       model.metaModel?.relationships?.logical_data_entity_relationships ?? [],
-  };
+  });
 };
 
 export const defaultFetchFindings: InputFetchDeps['fetchFindings'] = async (

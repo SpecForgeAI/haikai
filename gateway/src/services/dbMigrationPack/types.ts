@@ -99,6 +99,9 @@ export interface IrTable {
   columns: IrColumn[];
   /** `isSurrogate` marks a target-only surrogate identity PK (2026-08-08). */
   primaryKey: { name: string; columns: string[]; isSurrogate?: boolean } | null;
+  /** Foundations key policy (Spec 4): keyless_multiset tables ALWAYS take a
+   *  surrogate identity PK on the target, decision or no pack decision. */
+  keyPolicy?: 'keyless_multiset' | null;
   uniqueConstraints: Array<{ name: string; columns: string[] }>;
   checkConstraints: Array<{ name: string; expression: string | null }>;
   indexes: IrIndex[];
@@ -158,6 +161,8 @@ export interface IrDbDecision {
 
 /** The full source-schema IR the translator consumes. */
 export interface SourceSchemaIr {
+  /** Foundations Spec 4: carried from the scope-filtering model fetch. */
+  scopeReceipt?: import('./inputs').PackScopeReceipt | null;
   sourceEngine: string;
   targetEngine: string;
   tables: IrTable[];
@@ -364,6 +369,17 @@ export interface DeltaStrategy {
 }
 
 export interface PackManifest {
+  /** Foundations Spec 4 (2026-08-22): the migration-scope receipt — what
+   *  the model fetch removed from target generation, with decision refs.
+   *  Reconciliation cites this so excluded tables are an EXPLICIT slice,
+   *  never a silent absence. */
+  scope_receipt?: {
+    total_entities: number;
+    in_scope: number;
+    data_only: number;
+    excluded: Array<{ name: string; decision_ref: string | null }>;
+    volatile: Array<{ name: string; decision_ref: string | null }>;
+  } | null;
   manifest_version: 1;
   source_engine: string;
   target_engine: string;

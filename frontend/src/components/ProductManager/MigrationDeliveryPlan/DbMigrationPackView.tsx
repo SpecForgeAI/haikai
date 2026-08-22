@@ -315,6 +315,23 @@ export const DbMigrationPackView: React.FC<DbMigrationPackViewProps> = ({
             generated {pack.generated_at ?? '—'}
           </p>
         </div>
+        {manifest?.scope_receipt &&
+          (manifest.scope_receipt.excluded.length > 0 ||
+            manifest.scope_receipt.volatile.length > 0) && (
+            <div
+              data-testid="db-pack-scope-receipt"
+              style={{ color: '#555', fontSize: 13, margin: '4px 0' }}
+            >
+              Scope: {manifest.scope_receipt.total_entities} discovered ·{' '}
+              {manifest.scope_receipt.in_scope + manifest.scope_receipt.data_only} in scope ·{' '}
+              {manifest.scope_receipt.excluded.length} excluded ·{' '}
+              {manifest.scope_receipt.volatile.length} volatile — per foundation decisions{' '}
+              {[...manifest.scope_receipt.excluded, ...manifest.scope_receipt.volatile]
+                .map((e) => e.decision_ref)
+                .filter((r, i, all) => r && all.indexOf(r) === i)
+                .join(', ')}
+            </div>
+          )}
         <div className={styles.coverageChips} data-testid="db-pack-coverage-summary">
           <span
             className={`${styles.coverageChip} ${styles.coverageChipTranslated}`}

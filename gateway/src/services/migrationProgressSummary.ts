@@ -109,6 +109,15 @@ export interface DbSectionTotals {
 }
 
 export interface DbSection {
+  /** Foundations Spec 4 (2026-08-22): the EXPLICIT excluded-from-
+   *  reconciliation slice — excluded tables count in neither numerator nor
+   *  denominator, but are never silently absent. Null when the pack has no
+   *  receipt (pre-foundations packs). */
+  scope_receipt?: {
+    excluded_count: number;
+    volatile_count: number;
+    note: string;
+  } | null;
   current: DbSectionTotals;
   /** Null until execution produced reports — the frontend renders TBC. */
   target: DbSectionTotals | null;
@@ -821,9 +830,25 @@ function buildDbSection(
     procs: capturedProcs,
   };
 
+  const receipt = packView?.manifest?.scope_receipt ?? null;
+  const scopeReceipt = receipt
+    ? {
+        excluded_count: receipt.excluded.length,
+        volatile_count: receipt.volatile.length,
+        note:
+          `${receipt.excluded.length} excluded / ${receipt.volatile.length} volatile table(s) ` +
+          'are OUT of migration + reconciliation by foundation decision ' +
+          `(${[...receipt.excluded, ...receipt.volatile]
+            .map((e) => e.decision_ref)
+            .filter((r, i, all) => r && all.indexOf(r) === i)
+            .join(', ') || 'no refs'})`,
+      }
+    : null;
+
   const anyReport = !!loadReport || !!parityReport;
   if (!anyReport) {
     return {
+      scope_receipt: scopeReceipt,
       current,
       target: null,
       buckets: null,
@@ -899,6 +924,7 @@ function buildDbSection(
   }
 
   return {
+    scope_receipt: scopeReceipt,
     current,
     target,
     buckets,

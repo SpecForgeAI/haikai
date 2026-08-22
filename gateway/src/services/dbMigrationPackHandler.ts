@@ -928,6 +928,7 @@ export function buildDbMigrationPackArtifacts(
 
   const manifest: PackManifest = {
     manifest_version: 1,
+    scope_receipt: ir.scopeReceipt ?? null,
     source_engine: ir.sourceEngine,
     target_engine: ir.targetEngine,
     type_mapping_version: TYPE_MAPPING_VERSION,

@@ -116,6 +116,14 @@ export interface DbMigrationPackDeltaStrategy {
  * is persisted verbatim as JSONB — it never passes through Jackson renaming).
  */
 export interface DbMigrationPackManifest {
+  /** Foundations Spec 4 (2026-08-22): migration-scope receipt. */
+  scope_receipt?: {
+    total_entities: number;
+    in_scope: number;
+    data_only: number;
+    excluded: Array<{ name: string; decision_ref: string | null }>;
+    volatile: Array<{ name: string; decision_ref: string | null }>;
+  } | null;
   manifest_version: number;
   source_engine: string;
   target_engine: string;

@@ -225,8 +225,22 @@ export function createDataParityReconcileTrigger(
         return;
       }
 
+      // Foundations Spec 4: cite the scope receipt so excluded tables are an
+      // EXPLICIT slice of the reconcile story, never a silent absence.
+      let receiptNote = '';
+      try {
+        const pv = await defaultFetchPackView(scope.projectId, architectureId as string);
+        const receipt = pv?.manifest?.scope_receipt;
+        if (receipt && (receipt.excluded.length > 0 || receipt.volatile.length > 0)) {
+          receiptNote =
+            ` — ${receipt.excluded.length} excluded / ${receipt.volatile.length} volatile ` +
+            'table(s) out of reconciliation per foundation decisions';
+        }
+      } catch {
+        // receipt is informational — never blocks the reconcile
+      }
       trace.step(
-        `data-parity reconcile (DB plane) — ${tables.length} table(s) via AMVS`,
+        `data-parity reconcile (DB plane) — ${tables.length} table(s) via AMVS${receiptNote}`,
         corr,
       );
       const result = await runReconcile({

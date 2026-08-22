@@ -379,6 +379,18 @@ function DbSectionView({ db }: { db: DbSectionDto }) {
   return (
     <section className={styles.section} data-testid="mpr-db-section">
       <div className={styles.sectionTitle}>DATABASE RECONCILIATION</div>
+      {/* Foundations Spec 4 (2026-08-22): excluded tables are an EXPLICIT
+          slice — counted in neither numerator nor denominator, never
+          silently absent. */}
+      {db.scope_receipt &&
+        (db.scope_receipt.excluded_count > 0 || db.scope_receipt.volatile_count > 0) && (
+          <div
+            data-testid="mpr-db-scope-receipt"
+            style={{ color: '#555', fontSize: 13, margin: '2px 0 6px' }}
+          >
+            {db.scope_receipt.note}
+          </div>
+        )}
       <FactsPanel rows={rows} testIdPrefix="mpr-db" />
       <div className={styles.stripTitle}>
         Tables — worst to best{total !== null ? ` (sums to the ${formatNumber(total)} current-state tables)` : ''}

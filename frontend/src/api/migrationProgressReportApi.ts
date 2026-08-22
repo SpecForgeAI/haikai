@@ -58,6 +58,12 @@ export interface DbSectionTotalsDto {
 }
 
 export interface DbSectionDto {
+  /** Foundations Spec 4: explicit excluded-from-reconciliation slice. */
+  scope_receipt?: {
+    excluded_count: number;
+    volatile_count: number;
+    note: string;
+  } | null;
   current: DbSectionTotalsDto;
   /** Null until execution produced reports — render TBC. */
   target: DbSectionTotalsDto | null;
