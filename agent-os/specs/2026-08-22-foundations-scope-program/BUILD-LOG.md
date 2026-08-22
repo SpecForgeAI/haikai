@@ -9,10 +9,10 @@ state record — update after EVERY spec merge.
 |---|---|---|---|---|
 | 0 — Capture resilience | DONE | feature/spec0-capture-resilience | cb2b3219 (+319e8fad test restore) | AMS REBUILD needed on pickup (status machine) |
 | 1 — Scope & decisions data plane | DONE | feature/spec1-scope-data-plane | 91205203 | AMS changeset 226 + Java (REBUILD on pickup) |
-| 2 — DB-scan foundations review | IN PROGRESS | feature/spec2-foundations-review | | |
-| 3 — Capture + S0 readers | pending | | | |
-| 4 — Target & rec readers | pending | | | |
-| 5 — Joint layer + estate entry | pending | | | |
+| 2 — DB-scan foundations review | DONE | feature/spec2-foundations-review | 67b573a7 | save-back = decisions reconciler (fresh-project ordering) |
+| 3 — Capture + S0 readers | DONE | feature/spec3-capture-s0-readers | 6e2b576d | keyless detect-only + volatile S0 tolerance + scope conflicts |
+| 4 — Target & rec readers | DONE | (direct main commit — convention slip) | eccf9b13 | pack choke-point filter + receipts + surrogate-for-policy |
+| 5 — Joint layer + estate entry | IN PROGRESS | feature/spec5-joint-layer | | |
 
 ## As-built notes
 
@@ -28,5 +28,15 @@ state record — update after EVERY spec merge.
 - MCP apply_foundation_decisions: scope tags + receipts on NAMED entities (unknown skipped honestly), ADDITIVE PK promotion into constraints_metadata.primary_key (provenance foundation_promoted, never over a declared PK), decisions upserted to AMS; mounted at /mcp/tools/apply_foundation_decisions.
 - committed_excluded added to discovery CandidateStatus union (frontend status is string-typed; AMS lifecycle status is passthrough).
 - DESIGN NOTE for Spec 2: foundation QUESTIONS are DERIVED at review time (pure rules over candidates + stored decisions — accretion/staleness free); DECISIONS are the stored artifact. Questions never enter the candidate stream.
+
+### Spec 2 (merged 67b573a7)
+- frontend foundationRules (pure): backup_copy/temp_working/key_posture/engine_hazard; derived questions + evidence-hash settlement/staleness; FoundationsReviewPanel on the DB-run review; foundationsApi via gateway routes (GET list + POST apply).
+- MCP: applyDecisionsToEntities pure core shared by the apply tool AND candidateSaveBackService (save-back reconciles stored decisions onto freshly created entities — fresh-project ordering fix); committed_excluded status flip at step 11; scope PRESERVATION on re-save pinned (suppressed exact duplicates never commit — pre-existing semantics).
+- Spec 3 notes: promotion already consumable (compensationMetadata reads constraints_metadata.primary_key); materialize payload key_policy onto constraints_metadata.key_policy in the pure core; keyless_multiset = DETECT-ONLY bracket (no undo possible) + end-of-run fingerprint counts keyless-written tables as expected; volatile tolerance = verify-time split, never a re-dump.
+
+### Spec 3 (merged 6e2b576d)
+- compensationMetadata: keyPolicy/scope/volatileTables; promoted PK consumed unchanged. Keyless detect-only bracket (count observations; keyless_write_recorded diag; tables tolerated in end-of-job fingerprint). verifyS0Fingerprint tolerance split (tolerated_mismatches). Effect scope filters excluded/volatile with per-op receipts; scope_conflict aggregate + per-scenario refusal citing F-refs. Diag types scope_conflict/keyless_write_recorded in AMVS+AMS+frontend. Bug caught by suite: bare array in condition silenced the no_effect_map aggregate — fixed with .length check.
+### Spec 4 (eccf9b13 — DIRECT main commit, branch convention slipped; content tested)
+- applyScopeToModelBundle at the pack model-fetch choke point (+ receipt on IR + manifest.scope_receipt); attributes filtered with entities; surrogate rung honors per-table keyless_multiset without the global pack decision; reconcile trace cites the receipt; progress DB section scope_receipt line; pack view receipt line. Baseline-verified pre-existing failures: engineNameGuard(migrationExecution 7>5)/azureOpenaiClient/llmClient — untouched.
 
 (append per spec)
