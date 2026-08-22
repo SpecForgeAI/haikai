@@ -606,7 +606,9 @@ public class EntityMapper {
             entity.getTags(),
             entity.getValidFrom(),
             entity.getValidTo(),
-            entity.getConstraintsMetadata()
+            entity.getConstraintsMetadata(),
+            entity.getMigrationScope(),
+            entity.getScopeDecisionRef()
         );
     }
 
@@ -622,6 +624,8 @@ public class EntityMapper {
             .validFrom(dto.validFrom())
             .validTo(dto.validTo())
             .constraintsMetadata(dto.constraintsMetadata())
+            .migrationScope(dto.migrationScope())
+            .scopeDecisionRef(dto.scopeDecisionRef())
             .build();
     }
 

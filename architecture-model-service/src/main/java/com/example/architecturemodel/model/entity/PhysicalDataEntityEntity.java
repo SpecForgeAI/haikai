@@ -44,6 +44,13 @@ public class PhysicalDataEntityEntity {
     @Column(name = "valid_to")
     private String validTo;
 
+    // Foundations Spec 1 (2026-08-22): scope tag + decision receipt.
+    @Column(name = "migration_scope")
+    private String migrationScope;
+
+    @Column(name = "scope_decision_ref")
+    private String scopeDecisionRef;
+
     /**
      * Structured constraint/index metadata captured for the table by the
      * discovery DB scan -- METADATA ON THE ENTITY, NOT separate entity types.

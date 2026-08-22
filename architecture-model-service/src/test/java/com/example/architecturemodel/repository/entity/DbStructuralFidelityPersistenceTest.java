@@ -320,7 +320,7 @@ class DbStructuralFidelityPersistenceTest {
 
         PhysicalDataEntityDto entityDto = new PhysicalDataEntityDto(
             "pe-1", "orders", "Orders table", "Table", "salesdb",
-            "discovery", "2026-Q2", "2026-Q4", sampleConstraintsMetadata());
+            "discovery", "2026-Q2", "2026-Q4", sampleConstraintsMetadata(), null, null);
         String entityJson = objectMapper.writeValueAsString(entityDto);
         assertThat(entityJson).contains("\"constraints_metadata\"");
         assertThat(entityJson).contains("\"primary_key\"");

@@ -52,5 +52,17 @@ public record PhysicalDataEntityDto(
      * snake_case wire key {@code "constraints_metadata"}.
      */
     @JsonProperty("constraints_metadata")
-    Map<String, Object> constraintsMetadata
+    Map<String, Object> constraintsMetadata,
+
+    /**
+     * Migration scope (Foundations Spec 1, 2026-08-22): 'in_scope' |
+     * 'excluded' | 'volatile' | 'data_only'. NULL means in_scope (safe
+     * default). Exclusion is a TAG — the entity stays in current state.
+     */
+    @JsonProperty("migration_scope")
+    String migrationScope,
+
+    /** Foundation decision key ('F-1') that set the scope — the receipt. */
+    @JsonProperty("scope_decision_ref")
+    String scopeDecisionRef
 ) {}

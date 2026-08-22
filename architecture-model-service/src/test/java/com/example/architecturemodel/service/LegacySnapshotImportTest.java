@@ -167,7 +167,7 @@ class LegacySnapshotImportTest {
         );
         PhysicalDataEntityDto physicalEntity = new PhysicalDataEntityDto(
             "phy-001", "customers_table", "Customers table", null, null, null, null, null, null
-        );
+        , null, null);
 
         MetaModelEntitiesDto entities = createEntitiesWithData(
             List.of(logicalEntity),
@@ -387,7 +387,7 @@ class LegacySnapshotImportTest {
         );
         PhysicalDataEntityDto physicalEntity = new PhysicalDataEntityDto(
             "phy-legacy", "products_table", "Products table", null, null, null, null, null, null
-        );
+        , null, null);
 
         return createEntitiesWithData(
             List.of(logicalEntity),
