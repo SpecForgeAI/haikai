@@ -472,6 +472,20 @@ export interface ReadUnderivedEndpoint {
   diagnosis: WalkDiagnosis;
 }
 
+/** ANY entrypoint whose walk hit unresolved calls — INCLUDING ones that
+ *  still derived edges (2026-08-22 live diagnosis: every GET derived the
+ *  shared boilerplate reads, then broke on its DOMAIN hop; zero-edge
+ *  instruments saw nothing while 1338/1742 contracts sat unreachable).
+ *  `emitted` = edges this endpoint DID derive, so partial-vs-total is
+ *  visible at a glance. */
+export interface ChainBreakEndpoint {
+  endpointName: string;
+  method: string;
+  path: string;
+  emitted: number;
+  broken_calls: string[];
+}
+
 /** A write-verb endpoint whose COMPLETE walk proved it only reads. */
 export interface ProvenReadEndpoint {
   method: string;
@@ -494,6 +508,11 @@ export interface DeriveResult {
   /** Read-verb endpoints that derived NOTHING, each with the staged walk
    *  diagnosis (capped 100). */
   readUnderived: ReadUnderivedEndpoint[];
+  /** Every entrypoint (any verb, internal included) whose walk hit
+   *  unresolved calls — even when edges still derived (capped 150). The
+   *  summary's topBrokenTargets ranks these; this carries the per-endpoint
+   *  detail. */
+  chainBreaks: ChainBreakEndpoint[];
 }
 
 function normName(value: unknown): string {
@@ -654,6 +673,18 @@ export function deriveCorpusEffectCandidates(args: {
   const internalWalked: string[] = [];
   const internalUnmatched: string[] = [];
   const readUnderived: ReadUnderivedEndpoint[] = [];
+  const chainBreaks: ChainBreakEndpoint[] = [];
+
+  const recordChainBreaks = (
+    endpointName: string,
+    method: string,
+    path: string,
+    emitted: number,
+    brokenCalls: string[],
+  ) => {
+    if (brokenCalls.length === 0 || chainBreaks.length >= 150) return;
+    chainBreaks.push({ endpointName, method, path, emitted, broken_calls: brokenCalls });
+  };
 
   const walkDiagnosis = (
     roots: Array<{ symbol: string; fragment: string }>,
@@ -726,6 +757,7 @@ export function deriveCorpusEffectCandidates(args: {
       const collected = collectFromRootKeys(roots.map((r) => r.key), index);
       const detail = { roots: roots.map((r) => r.symbol).slice(0, 3) };
 
+      const emittedBefore = candidates.length;
       for (const table of collected.writeTables) {
         emitWrite(endpointCandidate.name, table, detail);
       }
@@ -745,6 +777,14 @@ export function deriveCorpusEffectCandidates(args: {
           detail,
         );
       }
+
+      recordChainBreaks(
+        endpointCandidate.name,
+        method,
+        path,
+        candidates.length - emittedBefore,
+        collected.brokenCalls,
+      );
 
       // Capture-preflight bookkeeping — verb-scoped by DESIGN (write maps
       // are demanded for mutating verbs; a GET is never "uncovered"). A
@@ -797,6 +837,7 @@ export function deriveCorpusEffectCandidates(args: {
       roots: keys.slice(0, 3),
       internal_entry: `${className}#${methodName}`,
     };
+    const emittedBefore = candidates.length;
     for (const table of collected.writeTables) {
       emitWrite(endpointCandidate.name, table, detail);
     }
@@ -804,6 +845,13 @@ export function deriveCorpusEffectCandidates(args: {
       if (collected.writeTables.some((w) => w.toLowerCase() === table.toLowerCase())) continue;
       emitRead(endpointCandidate.name, table, 'scl_corpus_read', detail);
     }
+    recordChainBreaks(
+      endpointCandidate.name,
+      'INTERNAL',
+      `${className}#${methodName}`,
+      candidates.length - emittedBefore,
+      collected.brokenCalls,
+    );
   }
 
   return {
@@ -814,6 +862,7 @@ export function deriveCorpusEffectCandidates(args: {
     internalWalked,
     internalUnmatched,
     readUnderived,
+    chainBreaks,
   };
 }
 
@@ -1017,12 +1066,16 @@ export function summarizeEmission(
   for (const item of propose.unproposed) {
     const stage = item.diagnosis?.stage ?? 'unknown';
     byStage[stage] = (byStage[stage] ?? 0) + 1;
-    countBroken(item.diagnosis?.broken_calls);
   }
   for (const item of derive.readUnderived) {
     readUnderivedByStage[item.diagnosis.stage] =
       (readUnderivedByStage[item.diagnosis.stage] ?? 0) + 1;
-    countBroken(item.diagnosis.broken_calls);
+  }
+  // chainBreaks covers EVERY walked entrypoint with unresolved calls —
+  // including partially-derived ones — so it is the single ranking source
+  // (aggregating unproposed/readUnderived too would double-count them).
+  for (const item of derive.chainBreaks) {
+    countBroken(item.broken_calls);
   }
   const topBrokenTargets = [...brokenCounts.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -1038,6 +1091,8 @@ export function summarizeEmission(
     readMappedEndpointCount: derive.readMapped,
     readUnderivedCount: derive.readUnderived.length,
     readUnderivedByStage,
+    chainBreakCount: derive.chainBreaks.length,
+    partialChainCount: derive.chainBreaks.filter((c) => c.emitted > 0).length,
     internalWalkedCount: derive.internalWalked.length,
     internalUnmatched: derive.internalUnmatched,
     provenReadEndpoints: derive.provenRead.map((p) => `${p.method} ${p.path}`),

@@ -16,6 +16,7 @@ import {
   parseProposalContent,
   parseWriteTablesFromSql,
   proposeEffectCandidatesViaLlm,
+  summarizeEmission,
   unresolvedReason,
 } from '../effectCandidateEmitter';
 
@@ -564,6 +565,95 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     });
     expect(result.candidates.length).toBeGreaterThan(0);
     expect(result.readUnderived).toHaveLength(0);
+  });
+
+  it('a PARTIALLY-derived endpoint still records its broken calls (chainBreaks)', () => {
+    // The 2026-08-22 live shape: every GET derives the shared boilerplate
+    // read, then its DOMAIN hop breaks — zero-edge instruments saw nothing.
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-book',
+        symbol: 'BookResource#list',
+        annotations: ['@GET', '@Path("books")'],
+        callTargets: ['Q-statusDao'], // boilerplate DAO; unresolved call injected below
+      }),
+      boundary({
+        key: 'Q-statusDao',
+        symbol: 'SystemStatusDao',
+        sql: ['SELECT d FROM business_date'],
+      }),
+    ]);
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 9,
+      kind: 'terminal',
+      conditionVerbatim: null,
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: null, targetSymbol: 'HierarchyLoaderFactory#load' },
+    });
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listBooks', 'GET', '/api/books')],
+    });
+    // Derived the boilerplate read...
+    expect(
+      result.candidates.map((c) => (c.data as Record<string, unknown>).dataEntityName),
+    ).toEqual(['business_date']);
+    // ...and is NOT read-underived (it derived something)...
+    expect(result.readUnderived).toHaveLength(0);
+    // ...but the break is RECORDED with the emitted count.
+    expect(result.chainBreaks).toHaveLength(1);
+    expect(result.chainBreaks[0]).toMatchObject({
+      endpointName: 'listBooks',
+      method: 'GET',
+      emitted: 1,
+    });
+    expect(result.chainBreaks[0].broken_calls[0]).toContain('unresolved');
+  });
+
+  it('summarizeEmission ranks topBrokenTargets from chainBreaks (partial included)', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-a',
+        symbol: 'ResA#get',
+        annotations: ['@GET', '@Path("alpha")'],
+        callTargets: ['Q-statusDao'],
+      }),
+      behaviourTable({
+        key: 'T-b',
+        symbol: 'ResB#get',
+        annotations: ['@GET', '@Path("beta")'],
+        callTargets: ['Q-statusDao'],
+      }),
+      boundary({
+        key: 'Q-statusDao',
+        symbol: 'SystemStatusDao',
+        sql: ['SELECT d FROM business_date'],
+      }),
+    ]);
+    for (const i of [0, 1]) {
+      (corpus.contracts[i] as { contract: { rows: unknown[] } }).contract.rows.push({
+        index: 9,
+        kind: 'terminal',
+        conditionVerbatim: null,
+        conditionRef: null,
+        outcome: { type: 'call', targetKey: null, targetSymbol: 'HierarchyLoaderFactory#load' },
+      });
+    }
+    const derive = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [
+        endpointCandidate('getA', 'GET', '/api/alpha'),
+        endpointCandidate('getB', 'GET', '/api/beta'),
+      ],
+    });
+    const summary = summarizeEmission(derive, { candidates: [], unproposed: [], llmCalls: 0 });
+    expect(summary.chainBreakCount).toBe(2);
+    expect(summary.partialChainCount).toBe(2);
+    const tops = summary.topBrokenTargets as string[];
+    expect(tops).toHaveLength(1);
+    expect(tops[0]).toMatch(/\(2\)$/); // the shared broken target counted from BOTH endpoints
   });
 
   it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {
