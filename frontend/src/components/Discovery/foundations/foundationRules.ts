@@ -41,7 +41,15 @@ export interface StaleDecisionRef {
 export interface FoundationQuestion {
   /** Stable key: `FQ-<rule>` or `FQ-<rule>-<table>` for per-table rules. */
   question_key: string;
-  rule_key: 'backup_copy' | 'temp_working' | 'key_posture' | 'engine_hazard';
+  rule_key:
+    | 'backup_copy'
+    | 'temp_working'
+    | 'key_posture'
+    | 'engine_hazard'
+    | 'crud_never'
+    | 'crud_write_only'
+    | 'crud_read_only'
+    | 'scope_code_conflict';
   title: string;
   detail: string;
   targets: FoundationQuestionTarget[];
@@ -452,6 +460,222 @@ export function deriveFoundationQuestions(
         { answer: 'acknowledge_default_mappings', label: 'Acknowledge — use default target mappings', recommended: true },
       ],
       evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+    });
+    if (q) questions.push(q);
+  }
+
+  return questions;
+}
+
+
+// ---------------------------------------------------------------------------
+// JOINT rules (Spec 5, 2026-08-22): the CRUD matrix — code + DB evidence.
+// Derived from the COMMITTED MODEL (post both scans): entities with scope
+// fields + endpoint_data_effects edges (write / read / execute).
+// ---------------------------------------------------------------------------
+
+export interface RawModelLike {
+  metaModel?: {
+    entities?: {
+      physical_data_entities?: Array<{
+        id?: string;
+        name?: string;
+        physical_type?: string | null;
+        migration_scope?: string | null;
+        scope_decision_ref?: string | null;
+      }>;
+    };
+    relationships?: {
+      endpoint_data_effects?: Array<{
+        access_mode?: string | null;
+        data_entity_point_id?: string | null;
+      }>;
+    };
+  };
+}
+
+interface CrudFacts {
+  name: string;
+  scope: string;
+  decisionRef: string | null;
+  reads: number;
+  writes: number;
+  executes: number;
+}
+
+export function crudFactsFromModel(model: RawModelLike): CrudFacts[] {
+  const entities = model.metaModel?.entities?.physical_data_entities ?? [];
+  const byId = new Map<string, CrudFacts>();
+  for (const e of entities) {
+    if (!e.id || !e.name) continue;
+    const isView = /view/i.test(e.physical_type ?? '');
+    if (isView) continue; // views are derived — CRUD questions target tables
+    const raw = (e.migration_scope ?? '').toLowerCase();
+    byId.set(e.id, {
+      name: e.name,
+      scope:
+        raw === 'excluded' || raw === 'volatile' || raw === 'data_only' ? raw : 'in_scope',
+      decisionRef: e.scope_decision_ref ?? null,
+      reads: 0,
+      writes: 0,
+      executes: 0,
+    });
+  }
+  for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
+    const id = (edge.data_entity_point_id ?? '').replace(/^dep_(phy|log)_/, '');
+    const facts = byId.get(id);
+    if (!facts) continue;
+    const mode = (edge.access_mode ?? '').toLowerCase();
+    if (mode === 'write' || mode === 'read-write') facts.writes += 1;
+    else if (mode === 'read') facts.reads += 1;
+    else if (mode === 'execute') facts.executes += 1;
+  }
+  return [...byId.values()];
+}
+
+/** Joint (code+DB) questions. The same stored-decision reconciliation as
+ *  the DB-side rules: settled questions disappear, changed evidence
+ *  reopens them stale-chipped. */
+export function deriveJointFoundationQuestions(
+  model: RawModelLike,
+  decisions: StoredFoundationDecision[],
+): FoundationQuestion[] {
+  const facts = crudFactsFromModel(model);
+  const questions: FoundationQuestion[] = [];
+
+  const reconcile = (
+    question: Omit<FoundationQuestion, 'stale_decision'>,
+  ): FoundationQuestion | null => {
+    const wanted = new Set(question.targets.map((t) => t.entity_name.toLowerCase()));
+    for (const d of decisions) {
+      if (d.rule_key !== question.rule_key) continue;
+      const covered = new Set(
+        (d.targets_json ?? [])
+          .map((x) => (x.entity_name ?? '').toLowerCase())
+          .filter((n) => n.length > 0),
+      );
+      if (covered.size > 0 && [...wanted].every((n) => covered.has(n))) {
+        if ((d.evidence_hash ?? '') === question.evidence_hash && !d.stale) return null;
+        return {
+          ...question,
+          stale_decision: { decision_key: d.decision_key, previous_answer: d.answer },
+        };
+      }
+    }
+    return { ...question, stale_decision: null };
+  };
+
+  const jointTarget = (f: CrudFacts, note: string): FoundationQuestionTarget => ({
+    entity_name: f.name,
+    note,
+    attribute_count: 0,
+  });
+
+  // --- never CRUDed (in-scope tables no code path touches)
+  const never = facts.filter(
+    (f) => f.scope === 'in_scope' && f.reads + f.writes + f.executes === 0,
+  );
+  if (never.length > 0) {
+    const targets = never.map((f) =>
+      jointTarget(f, 'no discovered endpoint reads or writes this table'),
+    );
+    const q = reconcile({
+      question_key: 'FQ-crud_never',
+      rule_key: 'crud_never',
+      title: `${never.length} in-scope table(s) are never touched by ANY code path`,
+      detail:
+        'No effect edges of any kind. They may be reference data fed by another system, ' +
+        'dead weight, or touched only by paths discovery cannot see (jobs outside the ' +
+        'scanned code). Keeping them is the safe default.',
+      targets,
+      options: [
+        { answer: 'keep_all', label: 'Keep in migration (safe default)', scope: 'in_scope', recommended: true },
+        { answer: 'data_only_all', label: 'Migrate data-only (reference data — no behaviour expectations)', scope: 'data_only' },
+        { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
+      ],
+      evidence_hash: evidenceHash(targets.map((t) => t.entity_name)),
+    });
+    if (q) questions.push(q);
+  }
+
+  // --- write-only (audit sinks)
+  const writeOnly = facts.filter(
+    (f) => f.scope === 'in_scope' && f.writes > 0 && f.reads === 0 && f.executes === 0,
+  );
+  if (writeOnly.length > 0) {
+    const targets = writeOnly.map((f) => jointTarget(f, `${f.writes} write edge(s), never read`));
+    const q = reconcile({
+      question_key: 'FQ-crud_write_only',
+      rule_key: 'crud_write_only',
+      title: `${writeOnly.length} table(s) are WRITE-ONLY (audit-sink shape)`,
+      detail:
+        'Code writes them but nothing reads them back — classic audit/journal tables. ' +
+        'Acknowledging records the shape; excluding removes them from the target.',
+      targets,
+      options: [
+        { answer: 'keep_all', label: 'Keep in migration (acknowledged as audit sinks)', scope: 'in_scope', recommended: true },
+        { answer: 'exclude_all', label: 'Exclude from migration', scope: 'excluded' },
+      ],
+      evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+    });
+    if (q) questions.push(q);
+  }
+
+  // --- read-only (reference data)
+  const readOnly = facts.filter(
+    (f) => f.scope === 'in_scope' && f.reads > 0 && f.writes === 0 && f.executes === 0,
+  );
+  if (readOnly.length > 0) {
+    const targets = readOnly.map((f) => jointTarget(f, `${f.reads} read edge(s), never written`));
+    const q = reconcile({
+      question_key: 'FQ-crud_read_only',
+      rule_key: 'crud_read_only',
+      title: `${readOnly.length} table(s) are READ-ONLY to the code (reference-data shape)`,
+      detail:
+        'Read but never written by any discovered path — likely reference data seeded or ' +
+        'maintained elsewhere. data_only migrates schema + data without behaviour ' +
+        'expectations.',
+      targets,
+      options: [
+        { answer: 'keep_all', label: 'Keep in migration', scope: 'in_scope', recommended: true },
+        { answer: 'data_only_all', label: 'Migrate data-only (reference data)', scope: 'data_only' },
+      ],
+      evidence_hash: evidenceHash(targets.map((t) => [t.entity_name, t.note])),
+    });
+    if (q) questions.push(q);
+  }
+
+  // --- CONFLICT: excluded/volatile but code touches it (one per table)
+  for (const f of facts) {
+    if (f.scope !== 'excluded' && f.scope !== 'volatile') continue;
+    const touches = f.reads + f.writes + f.executes;
+    if (touches === 0) continue;
+    const targets = [
+      jointTarget(
+        f,
+        `${f.writes} write / ${f.reads} read edge(s) despite ${f.scope}` +
+          (f.decisionRef ? ` (${f.decisionRef})` : ''),
+      ),
+    ];
+    const q = reconcile({
+      question_key: `FQ-scope_code_conflict-${f.name.toLowerCase()}`,
+      rule_key: 'scope_code_conflict',
+      title: `CONFLICT: ${f.name} is ${f.scope}${f.decisionRef ? ` (${f.decisionRef})` : ''} but code touches it`,
+      detail:
+        'The scope ruling says this table is out of the migration, yet discovered code ' +
+        'reads/writes it. Either the code path is dead (keep the exclusion) or the ' +
+        'ruling needs revisiting.',
+      targets,
+      options: [
+        { answer: 'keep_excluded', label: 'Keep the exclusion — the code path is dead', scope: f.scope as QuestionScope, recommended: true },
+        { answer: 're_include', label: 'Re-include the table in the migration', scope: 'in_scope' },
+      ],
+      evidence_hash: evidenceHash({
+        table: f.name.toLowerCase(),
+        scope: f.scope,
+        reads: f.reads,
+        writes: f.writes,
+      }),
     });
     if (q) questions.push(q);
   }

@@ -145,3 +145,78 @@ describe('rules', () => {
     expect(evidenceHash({ a: 1 })).not.toBe(evidenceHash({ a: 2 }));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 5: JOINT CRUD-matrix rules (code + DB evidence over the model)
+// ---------------------------------------------------------------------------
+
+import { crudFactsFromModel, deriveJointFoundationQuestions } from './foundationRules';
+
+const JOINT_MODEL = {
+  metaModel: {
+    entities: {
+      physical_data_entities: [
+        { id: 'e1', name: 'orders' },
+        { id: 'e2', name: 'ref_rates' },
+        { id: 'e3', name: 'audit_log' },
+        { id: 'e4', name: 'ghost_table' },
+        { id: 'e5', name: 'orders_bak', migration_scope: 'excluded', scope_decision_ref: 'F-1' },
+        { id: 'e6', name: 'a_view', physical_type: 'View' },
+      ],
+    },
+    relationships: {
+      endpoint_data_effects: [
+        { access_mode: 'write', data_entity_point_id: 'dep_phy_e1' },
+        { access_mode: 'read', data_entity_point_id: 'dep_phy_e1' },
+        { access_mode: 'read', data_entity_point_id: 'dep_phy_e2' },
+        { access_mode: 'write', data_entity_point_id: 'dep_phy_e3' },
+        { access_mode: 'write', data_entity_point_id: 'dep_phy_e5' },
+      ],
+    },
+  },
+};
+
+describe('joint CRUD-matrix rules (Spec 5)', () => {
+  it('classifies the CRUD shapes (views skipped)', () => {
+    const facts = crudFactsFromModel(JOINT_MODEL);
+    expect(facts.map((f) => f.name)).not.toContain('a_view');
+    const byName = new Map(facts.map((f) => [f.name, f]));
+    expect(byName.get('orders')).toMatchObject({ reads: 1, writes: 1 });
+    expect(byName.get('ghost_table')).toMatchObject({ reads: 0, writes: 0 });
+  });
+
+  it('derives never-CRUDed, write-only, read-only and the scope conflict', () => {
+    const questions = deriveJointFoundationQuestions(JOINT_MODEL, []);
+    const keys = questions.map((q) => q.question_key);
+    expect(keys).toContain('FQ-crud_never');
+    expect(keys).toContain('FQ-crud_write_only');
+    expect(keys).toContain('FQ-crud_read_only');
+    expect(keys).toContain('FQ-scope_code_conflict-orders_bak');
+
+    const never = questions.find((q) => q.question_key === 'FQ-crud_never')!;
+    expect(never.targets.map((t) => t.entity_name)).toEqual(['ghost_table']);
+    expect(never.options[0]).toMatchObject({ answer: 'keep_all', recommended: true });
+
+    const conflict = questions.find(
+      (q) => q.question_key === 'FQ-scope_code_conflict-orders_bak',
+    )!;
+    expect(conflict.title).toContain('F-1');
+    expect(conflict.options[0]).toMatchObject({ answer: 'keep_excluded', recommended: true });
+  });
+
+  it('a settled joint decision with unchanged evidence stays silent', () => {
+    const open = deriveJointFoundationQuestions(JOINT_MODEL, []);
+    const never = open.find((q) => q.question_key === 'FQ-crud_never')!;
+    const after = deriveJointFoundationQuestions(JOINT_MODEL, [
+      {
+        decision_key: 'F-9',
+        rule_key: 'crud_never',
+        answer: 'keep_all',
+        targets_json: [{ entity_name: 'ghost_table' }],
+        evidence_hash: never.evidence_hash,
+        stale: false,
+      },
+    ]);
+    expect(after.some((q) => q.question_key === 'FQ-crud_never')).toBe(false);
+  });
+});

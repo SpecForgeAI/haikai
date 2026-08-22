@@ -801,7 +801,7 @@ export const DiscoveryRunDetailPage: React.FC = () => {
           from this run's candidates + stored decisions; applying tags model
           entities (scope + receipt) through the MCP model-write owner. */}
       {selectedRun &&
-        selectedRun.discovery_kind === 'database' &&
+        (selectedRun.discovery_kind === 'database' || selectedRun.discovery_kind === 'code') &&
         !candidatesLoading &&
         !candidatesError &&
         activeProject?.id && (
@@ -809,8 +809,33 @@ export const DiscoveryRunDetailPage: React.FC = () => {
             projectId={activeProject.id}
             architectureId={selectedRun.architecture_id ?? activeArchitectureId ?? ''}
             candidates={candidates}
+            mode={selectedRun.discovery_kind === 'code' ? 'code' : 'database'}
             onApplied={() => setLastSaveTimestamp(Date.now())}
           />
+        )}
+      {/* Estate continuation (Spec 5): after the DB scan lands, guide the
+          user straight into the code scan — the joint CRUD questions only
+          exist once both evidence sets do. */}
+      {selectedRun &&
+        selectedRun.discovery_kind === 'database' &&
+        (selectedRun.status ?? '').toUpperCase() === 'COMPLETED' &&
+        discoveryListUrl && (
+          <div
+            data-testid="estate-continuation-banner"
+            style={{
+              border: '1px solid #cfe3cf',
+              background: '#f2f9f2',
+              borderRadius: 6,
+              padding: '8px 12px',
+              margin: '0 0 10px',
+              fontSize: 13,
+            }}
+          >
+            <strong>Estate scan — next step:</strong> review &amp; save this DB scan, then{' '}
+            <a href={discoveryListUrl}>run the code scan</a>. The joint foundation questions
+            (tables no code touches, write-only audit sinks, scope conflicts) appear on the
+            code scan&apos;s review once both evidence sets exist.
+          </div>
         )}
       {candidatesLoading && (
         <div
