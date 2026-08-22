@@ -92,3 +92,23 @@ export async function applyFoundationDecisions(
   });
   return parse<ApplyFoundationDecisionsResponse>(response);
 }
+
+
+/** Raw committed model (snake_case, unnormalized) for the JOINT foundation
+ *  rules (Spec 5) — AMS-direct via the vite catch-all proxy. */
+export async function fetchRawModelForFoundations(
+  projectId: string,
+  architectureId: string,
+): Promise<unknown | null> {
+  try {
+    const response = await fetch(
+      `/api/model/projects/${encodeURIComponent(projectId)}` +
+        `/architectures/${encodeURIComponent(architectureId)}`,
+      { headers: { Accept: 'application/json' } },
+    );
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}

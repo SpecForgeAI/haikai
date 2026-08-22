@@ -15,20 +15,27 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DiscoveryCandidateDto } from '../../../api/discoveryApi';
 import {
   applyFoundationDecisions,
+  fetchRawModelForFoundations,
   listFoundationDecisions,
   type ApplyFoundationDecisionInput,
   type FoundationDecisionDto,
 } from '../../../api/foundationsApi';
 import {
   deriveFoundationQuestions,
+  deriveJointFoundationQuestions,
   entityFactsFromCandidates,
   type FoundationQuestion,
+  type RawModelLike,
 } from './foundationRules';
 
 export interface FoundationsReviewPanelProps {
   projectId: string;
   architectureId: string;
   candidates: DiscoveryCandidateDto[];
+  /** 'database' (default): DB-side rules over this run's candidates.
+   *  'code' (Spec 5): JOINT CRUD-matrix rules over the committed model
+   *  (never-CRUDed / write-only / read-only / excluded-but-code-touches). */
+  mode?: 'database' | 'code';
   /** Fired after answers were applied (the page refetches candidates). */
   onApplied?: () => void;
 }
@@ -45,6 +52,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
   projectId,
   architectureId,
   candidates,
+  mode = 'database',
   onApplied,
 }) => {
   const [decisions, setDecisions] = useState<FoundationDecisionDto[]>([]);
@@ -75,8 +83,37 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
 
   const facts = useMemo(() => entityFactsFromCandidates(candidates), [candidates]);
 
+  // JOINT mode (Spec 5): the committed model is the evidence source.
+  const [rawModel, setRawModel] = useState<RawModelLike | null>(null);
+  useEffect(() => {
+    if (mode !== 'code') return;
+    let cancelled = false;
+    void fetchRawModelForFoundations(projectId, architectureId).then((m) => {
+      if (!cancelled) setRawModel((m as RawModelLike) ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, projectId, architectureId]);
+
   const questions: FoundationQuestion[] = useMemo(() => {
-    if (!decisionsLoaded || facts.length === 0) return [];
+    if (!decisionsLoaded) return [];
+    if (mode === 'code') {
+      if (!rawModel) return [];
+      return deriveJointFoundationQuestions(
+        rawModel,
+        decisions.map((d) => ({
+          decision_key: d.decision_key,
+          rule_key: d.rule_key,
+          answer: d.answer,
+          scope: d.scope,
+          targets_json: d.targets_json ?? [],
+          evidence_hash: d.evidence_hash,
+          stale: d.stale,
+        })),
+      );
+    }
+    if (facts.length === 0) return [];
     return deriveFoundationQuestions(
       facts,
       decisions.map((d) => ({
@@ -89,7 +126,7 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
         stale: d.stale,
       })),
     );
-  }, [facts, decisions, decisionsLoaded]);
+  }, [facts, decisions, decisionsLoaded, mode, rawModel]);
 
   const selectedAnswer = useCallback(
     (q: FoundationQuestion): string =>
@@ -161,7 +198,8 @@ export const FoundationsReviewPanel: React.FC<FoundationsReviewPanelProps> = ({
     }
   };
 
-  if (facts.length === 0) return null;
+  if (mode === 'database' && facts.length === 0) return null;
+  if (mode === 'code' && questions.length === 0 && decisions.length === 0) return null;
 
   return (
     <div data-testid="foundations-review-panel" style={{ marginBottom: 16 }}>
