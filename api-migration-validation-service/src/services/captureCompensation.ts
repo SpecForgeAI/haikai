@@ -197,10 +197,7 @@ export async function runEndOfJobFingerprint(args: {
       status: report.matches ? 'verified' : 'mismatch',
       snapshotId,
       report,
-      detail: report.matches
-        ? null
-        : `${report.mismatches.length} table(s) diverged from S0 — restore via ` +
-          'POST /api/s0-snapshot/restore before further captures',
+      detail: report.matches ? null : fingerprintMismatchDetail(report.mismatches),
     };
   } catch (err) {
     return {
@@ -210,4 +207,32 @@ export async function runEndOfJobFingerprint(args: {
       detail: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+/**
+ * Human detail line NAMING the diverged tables (Spec 0, 2026-08-22):
+ * "26 table(s) diverged" with no names left the operator unable to triage
+ * expected churn vs true residue. Screenshot-brief: top 10 + a +N tail.
+ */
+export function fingerprintMismatchDetail(
+  mismatches: ReadonlyArray<{
+    table: string;
+    kind: string;
+    expected: string | number | null;
+    actual: string | number | null;
+  }>,
+): string {
+  const shown = mismatches
+    .slice(0, 10)
+    .map((m) =>
+      m.kind === 'count_mismatch'
+        ? `${m.table} rows ${m.expected}->${m.actual}`
+        : `${m.table} ${m.kind}`,
+    )
+    .join('; ');
+  const tail = mismatches.length > 10 ? `; +${mismatches.length - 10} more` : '';
+  return (
+    `${mismatches.length} table(s) diverged from S0 [${shown}${tail}] — ` +
+    'restore via POST /api/s0-snapshot/restore before further captures'
+  );
 }

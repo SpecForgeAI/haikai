@@ -84,13 +84,17 @@ public class ApiBehaviourCaptureSessionService {
     // `failed` — the capture stopped because the LLM provider's per-DAY token
     // quota was reached, NOT because anything went wrong. Everything captured so
     // far is intact; the operator resumes after reset via "Retry uncovered APIs".
+    // `paused_auth_expired` (Foundations Spec 0, 2026-08-22): the session
+    // credential expired mid-run (consecutive all-401 scenarios). Same
+    // resume semantics as `paused_rate_limited`: re-enter secrets, then
+    // "Retry uncovered APIs".
     public static final Set<String> ALLOWED_STATUSES = Set.of(
         "draft", "configured", "running", "completed", "failed", "cancelled",
-        "paused_rate_limited"
+        "paused_rate_limited", "paused_auth_expired"
     );
     public static final Set<String> ALLOWED_KINDS = Set.of("current", "target");
     private static final Set<String> TERMINAL_STATUSES = Set.of(
-        "completed", "failed", "cancelled", "paused_rate_limited"
+        "completed", "failed", "cancelled", "paused_rate_limited", "paused_auth_expired"
     );
 
     /**
@@ -100,7 +104,8 @@ public class ApiBehaviourCaptureSessionService {
     private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
         "draft",      Set.of("configured", "cancelled"),
         "configured", Set.of("running", "cancelled", "draft"),
-        "running",    Set.of("completed", "failed", "cancelled", "paused_rate_limited")
+        "running",    Set.of("completed", "failed", "cancelled", "paused_rate_limited",
+                              "paused_auth_expired")
     );
 
     private final ApiBehaviourCaptureSessionRepository repository;

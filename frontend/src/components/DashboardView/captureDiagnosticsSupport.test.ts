@@ -1,99 +1,29 @@
-/**
- * Capture-diagnostics grouping helpers (2026-08-20). Pins the severity
- * taxonomy (halt/warning/info), the group ordering (halt first, then count,
- * then name), the humanized labels, and the S0-restore offer gate.
- */
+/** Spec 0 (2026-08-22): identical-message grouping — display-only collapse
+ *  of per-scenario repeat walls into xN lines. */
 
-import { describe, it, expect } from 'vitest';
 import type { ApiBehaviourDiagnosticDto } from '../../api/apiBehaviourClient';
-import {
-  groupDiagnostics,
-  labelFor,
-  severityFor,
-  shouldOfferS0Restore,
-} from './captureDiagnosticsSupport';
+import { groupIdenticalMessages } from './captureDiagnosticsSupport';
 
-function diag(type: string | null, message = 'm'): ApiBehaviourDiagnosticDto {
-  return {
-    id: `d-${Math.abs(
-      [...(type ?? 'x')].reduce((h, c) => h + c.charCodeAt(0), 0),
-    )}-${message}`,
-    session_id: 's-1',
-    operation_id: null,
-    scenario_id: null,
-    diagnostic_type: type,
-    message,
-    detail_json: null,
-    created_at: '2026-08-20T10:00:00Z',
-  };
+function diag(id: string, message: string | null): ApiBehaviourDiagnosticDto {
+  return { id, diagnostic_type: 'compensation_refused', message } as ApiBehaviourDiagnosticDto;
 }
 
-describe('severityFor', () => {
-  it('classifies residue + fingerprint mismatch as halt', () => {
-    expect(severityFor('compensation_residue')).toBe('halt');
-    expect(severityFor('state_residue')).toBe('halt');
-    expect(severityFor('s0_fingerprint_mismatch')).toBe('halt');
-  });
-  it('classifies refusals + S0 advisories as warning', () => {
-    expect(severityFor('compensation_refused')).toBe('warning');
-    expect(severityFor('compensation_no_effect_map')).toBe('warning');
-    expect(severityFor('compensation_inactive')).toBe('warning');
-    expect(severityFor('s0_snapshot_missing')).toBe('warning');
-  });
-  it('classifies unknown / null / sequence_pinned as info', () => {
-    expect(severityFor('sequence_pinned')).toBe('info');
-    expect(severityFor(null)).toBe('info');
-    expect(severityFor('never_heard_of_it')).toBe('info');
-  });
-});
-
-describe('groupDiagnostics', () => {
-  it('orders halt -> warning -> info, then by count desc', () => {
-    const groups = groupDiagnostics([
-      diag('sequence_pinned', 'a'),
-      diag('compensation_refused', 'b'),
-      diag('compensation_refused', 'c'),
-      diag('compensation_residue', 'd'),
-      diag('s0_snapshot_missing', 'e'),
+describe('groupIdenticalMessages', () => {
+  it('collapses identical messages with a count, preserving first-seen order', () => {
+    const grouped = groupIdenticalMessages([
+      diag('a', 'table x: missing_pk'),
+      diag('b', 'table y: missing_pk'),
+      diag('c', 'table x: missing_pk'),
+      diag('d', 'table x: missing_pk'),
     ]);
-    expect(groups.map((g) => g.type)).toEqual([
-      'compensation_residue',
-      'compensation_refused',
-      's0_snapshot_missing',
-      'sequence_pinned',
+    expect(grouped).toEqual([
+      { message: 'table x: missing_pk', count: 3, id: 'a' },
+      { message: 'table y: missing_pk', count: 1, id: 'b' },
     ]);
-    expect(groups[1].items).toHaveLength(2);
   });
 
-  it('buckets null types under "other" (info)', () => {
-    const groups = groupDiagnostics([diag(null, 'x')]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].type).toBe('other');
-    expect(groups[0].severity).toBe('info');
-  });
-});
-
-describe('labelFor', () => {
-  it('humanizes underscores', () => {
-    expect(labelFor('compensation_no_effect_map')).toBe('compensation no effect map');
-    expect(labelFor(null)).toBe('other');
-  });
-});
-
-describe('shouldOfferS0Restore', () => {
-  it('offers only for FAILED sessions whose error names S0', () => {
-    expect(
-      shouldOfferS0Restore({
-        status: 'failed',
-        error_message: 'the database is NO LONGER S0 — restore, then re-run.',
-      }),
-    ).toBe(true);
-    expect(
-      shouldOfferS0Restore({ status: 'completed', error_message: 'S0 fine' }),
-    ).toBe(false);
-    expect(
-      shouldOfferS0Restore({ status: 'failed', error_message: 'timeout talking to API' }),
-    ).toBe(false);
-    expect(shouldOfferS0Restore({ status: 'failed', error_message: null })).toBe(false);
+  it('null messages group under the placeholder', () => {
+    const grouped = groupIdenticalMessages([diag('a', null), diag('b', null)]);
+    expect(grouped).toEqual([{ message: '(no message)', count: 2, id: 'a' }]);
   });
 });
