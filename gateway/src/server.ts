@@ -18,6 +18,7 @@ import { sclModernizationRouter } from './routes/sclModernization';
 // SCL pipeline spec 6 (2026-08-18): Structural Model tab "explain this" LLM affordance.
 import { sclExplainRouter } from './routes/sclExplain';
 import { effectMapBackfillRouter } from './routes/effectMapBackfill';
+import { foundationDecisionsRouter } from './routes/foundationDecisions';
 import {
   createCorsMiddleware,
   createRateLimitMiddleware,
@@ -166,6 +167,7 @@ app.use('/api/v1', sclExplainRouter);
 // effects (auto-applied additively) + guarded LLM proposals for the rest.
 // /api/v1/projects/:projectId/architectures/:architectureId/effect-map-backfill/{run,apply}
 app.use('/api/v1', effectMapBackfillRouter);
+app.use('/api/v1', foundationDecisionsRouter);
 // OAS Export (direct build 2026-06-11): deterministic OpenAPI contracts for
 // an architecture's interfaces — list / generate / zip download. Sibling of
 // the DB migration pack surface on the Migration Delivery Plan.

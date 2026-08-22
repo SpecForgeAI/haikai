@@ -24,6 +24,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import FoundationsReviewPanel from '../Discovery/foundations/FoundationsReviewPanel';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getDiscoveryRuns,
@@ -795,6 +796,22 @@ export const DiscoveryRunDetailPage: React.FC = () => {
 
   const candidatesTabHeader = (
     <>
+      {/* Foundations review (Spec 2, 2026-08-22): estate triage ON the
+          DB-scan review — one scan, one review, one save. Questions derive
+          from this run's candidates + stored decisions; applying tags model
+          entities (scope + receipt) through the MCP model-write owner. */}
+      {selectedRun &&
+        selectedRun.discovery_kind === 'database' &&
+        !candidatesLoading &&
+        !candidatesError &&
+        activeProject?.id && (
+          <FoundationsReviewPanel
+            projectId={activeProject.id}
+            architectureId={selectedRun.architecture_id ?? activeArchitectureId ?? ''}
+            candidates={candidates}
+            onApplied={() => setLastSaveTimestamp(Date.now())}
+          />
+        )}
       {candidatesLoading && (
         <div
           className={styles.loadingState}

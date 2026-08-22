@@ -425,6 +425,22 @@ class ArchModelClient {
    * @throws Error if architectureId is missing
    * @throws AxiosError for non-404 errors, preserved for caller handling
    */
+  /**
+   * Foundation decisions for an architecture (Foundations Spec 2,
+   * 2026-08-22). FAIL-SOFT: any error returns [] — save-back must never be
+   * blocked by the decisions read (unanswered questions default safe).
+   */
+  async getFoundationDecisions(projectId: string, architectureId: string): Promise<any[]> {
+    try {
+      const response = await this.client.get(
+        `/api/projects/${encodeURIComponent(projectId)}/architectures/${encodeURIComponent(architectureId)}/foundation-decisions`
+      );
+      return Array.isArray(response.data) ? response.data : [];
+    } catch {
+      return [];
+    }
+  }
+
   async getModel(projectId: string, architectureId: string, filename: string): Promise<any | null> {
     requireArchitectureId(architectureId, 'getModel');
     try {
