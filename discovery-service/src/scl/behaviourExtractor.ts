@@ -1318,6 +1318,44 @@ export function extractBehaviour(
       const symbol = methodSymbol(method);
 
       let rowDrafts = buildRowsForMethod(cls, method);
+      // Config-SQL rows (2026-08-23): proc names assembled from FIELD
+      // initializers (static dispatch maps — `"hierarchy" ->
+      // "updateHierarchy_hir '...'"`). String-typed constants are already
+      // mined for boundaries, but table classes executing config-held SQL
+      // lost the name entirely. A referenced field whose initializer holds
+      // long identifier-bearing literals contributes a terminal row the
+      // effect walk scans against the proc catalog.
+      {
+        const ids = new Set(
+          collectNodesOfType(method.bodyNode, 'identifier').map((n) => n.text),
+        );
+        const configPieces: string[] = [];
+        for (const f of cls.fields) {
+          if (!f.initializer || !ids.has(f.name)) continue;
+          if (f.type === 'String') continue; // boundary mining owns these
+          const literals = f.initializer.match(/"((?:[^"\\]|\\.)*)"/g) ?? [];
+          for (const lit of literals) {
+            const inner = lit.slice(1, -1);
+            if (/[A-Za-z_][A-Za-z0-9_]{9,}/.test(inner)) configPieces.push(inner);
+          }
+        }
+        if (configPieces.length > 0) {
+          rowDrafts = [
+            ...rowDrafts,
+            {
+              kind: 'terminal',
+              conditionVerbatim: 'config-held SQL (field initializer)',
+              conditionRef: null,
+              outcome: {
+                type: 'terminal',
+                verbatim: configPieces.join(' ').slice(0, 500),
+                ref: { path: method.filePath, line: method.startLine },
+                outcomeLabel: 'config-sql',
+              },
+            },
+          ];
+        }
+      }
       if (
         method.name !== 'load' &&
         method.name !== 'loadAll' &&

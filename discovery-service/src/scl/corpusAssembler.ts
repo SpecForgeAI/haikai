@@ -114,6 +114,10 @@ export interface SclCorpus {
   /** Slice findings + assembler findings, deduplicated + sorted. */
   findings: SclFinding[];
   stats: SclCorpusStats;
+  /** Repo-resident stored-proc bodies (2026-08-23) — proc -> tables, for
+   *  effect-walk expansion through `exec`/`{call}` boundaries. Optional so
+   *  pre-existing corpora/fixtures stay valid. */
+  procCatalog?: import('./sqlProcHarvester').ProcCatalogEntry[];
 }
 
 /**
@@ -713,5 +717,5 @@ export function assembleCorpus(slice: SclSliceResult, options?: AssembleCorpusOp
     findingCounts,
   };
 
-  return { roots, contracts, reachability, findings: sortedFindings, stats };
+  return { roots, contracts, reachability, findings: sortedFindings, stats, procCatalog: slice.procCatalog ?? [] };
 }

@@ -37,6 +37,7 @@ import {
   readPathTemplate,
 } from '../services/runtimeEvidence/endpointRuntimeMatcher';
 import type { SclCorpus } from './corpusAssembler';
+import { closeProcCatalog } from './sqlProcHarvester';
 import type { SclBehaviourTable, SclBoundaryContract, SclContract } from './sclTypes';
 
 // ---------------------------------------------------------------------------
@@ -209,10 +210,22 @@ interface CorpusIndex {
   /** Behaviour-table keys by `Cls#method` (FQN AND simple-name forms) — the
    *  internal-entrypoint join (candidates carry className/methodName). */
   tableKeysByClassMethod: Map<string, string[]>;
+  /** Repo proc name -> transitively-closed tables (2026-08-23 harvest). */
+  procTablesByName: Map<string, { writes: string[]; reads: string[] }>;
+  /** Repo proc name -> nested proc calls (for transitive referenced-marking). */
+  procCallsByName: Map<string, string[]>;
+  /** Catalog size + which harvested procs no walked SQL ever referenced —
+   *  manually-run procs (importVNodes) surface here instead of vanishing. */
+  procCatalogCount: number;
   httpRoots: Array<{ key: string; symbol: string; method: string; fragment: string }>;
 }
 
 export function indexCorpus(corpus: SclCorpus): CorpusIndex {
+  const procTablesByName = closeProcCatalog(corpus.procCatalog ?? []);
+  const procCallsByName = new Map<string, string[]>();
+  for (const entry of corpus.procCatalog ?? []) {
+    if (!procCallsByName.has(entry.name)) procCallsByName.set(entry.name, entry.procCalls);
+  }
   const tablesByKey = new Map<string, SclBehaviourTable>();
   const boundaryWritesByKey = new Map<string, string[]>();
   const boundaryReadsByKey = new Map<string, string[]>();
@@ -290,6 +303,18 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
         }
         if (operation.name) push(boundariesByOpName, operation.name, contract.key);
       }
+      // Proc-body expansion (2026-08-23): the op SQL names the proc; the
+      // harvested body names the tables (transitively closed).
+      for (const proc of procs) {
+        const closed = procTablesByName.get(proc.toLowerCase());
+        if (!closed) continue;
+        for (const table of closed.writes) {
+          if (!writes.some((w) => w.toLowerCase() === table.toLowerCase())) writes.push(table);
+        }
+        for (const table of closed.reads) {
+          if (!reads.some((r) => r.toLowerCase() === table.toLowerCase())) reads.push(table);
+        }
+      }
       boundaryWritesByKey.set(contract.key, writes);
       boundaryReadsByKey.set(contract.key, reads);
       boundaryStatsByKey.set(contract.key, { ops, withSql, opNames, procs });
@@ -310,12 +335,39 @@ export function indexCorpus(corpus: SclCorpus): CorpusIndex {
     boundariesByOpName,
     classFqnsInCorpus,
     tableKeysByClassMethod,
+    procTablesByName,
+    procCallsByName,
+    procCatalogCount: (corpus.procCatalog ?? []).length,
     httpRoots,
   };
 }
 
+/** Word-boundary scan of a text for harvested proc names — catches proc
+ *  dispatch assembled from constants/config where no `exec`/`{call}` syntax
+ *  survives adjacent to the name. Catalog names are repo-specific, so the
+ *  false-positive surface is tiny. */
+export function procNamesReferenced(
+  text: string,
+  procTablesByName: Map<string, { writes: string[]; reads: string[] }>,
+): string[] {
+  if (procTablesByName.size === 0 || !text) return [];
+  const lower = text.toLowerCase();
+  const out: string[] = [];
+  for (const name of procTablesByName.keys()) {
+    const at = lower.indexOf(name);
+    if (at < 0) continue;
+    const before = at === 0 ? '' : lower[at - 1];
+    const after = at + name.length >= lower.length ? '' : lower[at + name.length];
+    const boundary = (c: string) => c === '' || !/[a-z0-9_]/.test(c);
+    if (boundary(before) && boundary(after)) out.push(name);
+  }
+  return out;
+}
+
 export interface CallWalkResult {
   boundaries: string[];
+  /** Behaviour-table keys the walk visited (for verbatim-row SQL scanning). */
+  visitedTables: string[];
   /** Call sites NOTHING could resolve — where the chain truly broke. */
   brokenCalls: string[];
   /** Null-target calls resolved via name+arity dispatch expansion. */
@@ -446,7 +498,7 @@ export function walkCallGraph(
       else if (target.startsWith('T-') && !visited.has(target)) queue.push(target);
     }
   }
-  return { boundaries: [...boundaries], brokenCalls, expandedCalls, cacheBridgeCrossed };
+  return { boundaries: [...boundaries], visitedTables: [...visited], brokenCalls, expandedCalls, cacheBridgeCrossed };
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +580,11 @@ export interface DeriveResult {
    *  summary's topBrokenTargets ranks these; this carries the per-endpoint
    *  detail. */
   chainBreaks: ChainBreakEndpoint[];
+  /** Harvested repo procs (CREATE PROC bodies in `.sql` files). */
+  procCatalogCount: number;
+  /** Harvested procs NO walked SQL referenced — manually-run procs
+   *  (importVNodes) stay VISIBLE instead of vanishing (capped 15). */
+  procsUnreferenced: string[];
 }
 
 function normName(value: unknown): string {
@@ -615,9 +672,32 @@ function collectFromRootKeys(
   let boundariesFullyVisible = true;
   let procSeen = false;
   let cacheBridgeCrossed = false;
+  const pushTable = (into: string[], table: string) => {
+    if (!into.some((x) => x.toLowerCase() === table.toLowerCase())) into.push(table);
+  };
   for (const rootKey of rootKeys) {
     const walk = walkCallGraph(rootKey, index);
     if (walk.cacheBridgeCrossed) cacheBridgeCrossed = true;
+    // Inline-SQL + proc-dispatch scan (2026-08-23): terminal row verbatims of
+    // WALKED tables can carry SQL the boundary plane never sees — inline
+    // JDBC in service classes, and proc names assembled from constants
+    // (config-sql rows). Tables parse directly; proc references expand
+    // through the harvested catalog.
+    for (const walkedKey of walk.visitedTables) {
+      const table = index.tablesByKey.get(walkedKey);
+      for (const row of table?.rows ?? []) {
+        if (row.outcome.type !== 'terminal') continue;
+        const verbatim = row.outcome.verbatim ?? '';
+        for (const w of parseWriteTablesFromSql(verbatim)) pushTable(writeTables, w);
+        for (const r of parseReadTablesFromSql(verbatim)) pushTable(readTables, r);
+        for (const proc of procNamesReferenced(verbatim, index.procTablesByName)) {
+          const closed = index.procTablesByName.get(proc);
+          if (!closed) continue;
+          for (const w of closed.writes) pushTable(writeTables, w);
+          for (const r of closed.reads) pushTable(readTables, r);
+        }
+      }
+    }
     for (const broken of walk.brokenCalls) {
       if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
     }
@@ -692,6 +772,19 @@ export function deriveCorpusEffectCandidates(args: {
   const internalUnmatched: string[] = [];
   const readUnderived: ReadUnderivedEndpoint[] = [];
   const chainBreaks: ChainBreakEndpoint[] = [];
+  // A proc is "referenced" when walked SQL names it OR a referenced proc
+  // execs it (transitively) — only genuinely orphaned procs (importVNodes)
+  // stay on the unreferenced list.
+  const referencedProcs = new Set<string>();
+  const markReferenced = (name: string): void => {
+    const lower = name.toLowerCase();
+    if (referencedProcs.has(lower) || !index.procTablesByName.has(lower)) return;
+    referencedProcs.add(lower);
+    for (const nested of index.procCallsByName.get(lower) ?? []) markReferenced(nested);
+  };
+  for (const [, stats] of index.boundaryStatsByKey) {
+    for (const proc of stats.procs) markReferenced(proc);
+  }
 
   const recordChainBreaks = (
     endpointName: string,
@@ -876,6 +969,10 @@ export function deriveCorpusEffectCandidates(args: {
     );
   }
 
+  const procsUnreferenced = [...index.procTablesByName.keys()]
+    .filter((name) => !referencedProcs.has(name))
+    .sort()
+    .slice(0, 15);
   return {
     candidates,
     uncovered,
@@ -885,6 +982,8 @@ export function deriveCorpusEffectCandidates(args: {
     internalUnmatched,
     readUnderived,
     chainBreaks,
+    procCatalogCount: index.procCatalogCount,
+    procsUnreferenced,
   };
 }
 
@@ -1117,6 +1216,8 @@ export function summarizeEmission(
     partialChainCount: derive.chainBreaks.filter((c) => c.emitted > 0).length,
     internalWalkedCount: derive.internalWalked.length,
     internalUnmatched: derive.internalUnmatched,
+    procCatalogCount: derive.procCatalogCount,
+    procsUnreferenced: derive.procsUnreferenced,
     provenReadEndpoints: derive.provenRead.map((p) => `${p.method} ${p.path}`),
     llmProposed: propose.candidates.length,
     llmCalls: propose.llmCalls,

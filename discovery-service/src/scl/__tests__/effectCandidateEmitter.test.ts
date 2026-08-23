@@ -765,6 +765,113 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(directDetail.via_legacy_cache).toBeUndefined();
   });
 
+  it('a boundary op naming a harvested proc derives the proc BODY tables, transitively', () => {
+    const corpus = {
+      ...corpusOf([
+        behaviourTable({
+          key: 'T-xfer',
+          symbol: 'XferResource#roll',
+          annotations: ['@POST', '@Path("roll")'],
+          callTargets: ['Q-xferDao'],
+        }),
+        boundary({
+          key: 'Q-xferDao',
+          symbol: 'XferDao',
+          sql: ["exec updateHierarchy_hir '20240101', 'Y'"],
+        }),
+      ]),
+      procCatalog: [
+        {
+          name: 'updatehierarchy_hir',
+          sourcePath: 'db/procs/005.sql',
+          writes: ['hir_business_date', 'hir_load_date'],
+          reads: ['load_hir_book'],
+          procCalls: ['updatebook_hir'],
+        },
+        {
+          name: 'updatebook_hir',
+          sourcePath: 'db/procs/001.sql',
+          writes: ['hir_book', 'hir_all_node'],
+          reads: ['load_hir_book'],
+          procCalls: [],
+        },
+        {
+          name: 'importvnodes',
+          sourcePath: 'db/procs/importVNodes.sql',
+          writes: ['hir_all_node'],
+          reads: ['ven_hierarchy_node'],
+          procCalls: [],
+        },
+      ],
+    };
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('roll', 'POST', '/api/roll')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges.sort()).toEqual([
+      'read:load_hir_book',
+      'write:hir_all_node',
+      'write:hir_book',
+      'write:hir_business_date',
+      'write:hir_load_date',
+    ]);
+    // The manually-run proc nothing references stays VISIBLE.
+    expect(result.procCatalogCount).toBe(3);
+    expect(result.procsUnreferenced).toEqual(['importvnodes']);
+  });
+
+  it('config-held proc dispatch (field-initializer map) derives via the walked config-sql row', () => {
+    // The XferToHiFiTablesImpl idiom: the proc name lives in a static Map
+    // initializer; the extractor emits a config-sql terminal row, and the
+    // walk scans it against the catalog by NAME (no exec syntax adjacent).
+    const corpus = {
+      ...corpusOf([
+        behaviourTable({
+          key: 'T-dispatch',
+          symbol: 'XferService#run',
+          annotations: ['@POST', '@Path("xfer")'],
+          callTargets: [],
+        }),
+      ]),
+      procCatalog: [
+        {
+          name: 'updatehierarchy_hir',
+          sourcePath: 'db/procs/005.sql',
+          writes: ['hir_business_date'],
+          reads: ['load_hir_book'],
+          procCalls: [],
+        },
+      ],
+    };
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 9,
+      kind: 'terminal',
+      conditionVerbatim: 'config-held SQL (field initializer)',
+      conditionRef: null,
+      outcome: {
+        type: 'terminal',
+        verbatim: "updateHierarchy_hir ' + DATE_TOKEN + ', 'Y'",
+        ref: { path: 'x', line: 1 },
+        outcomeLabel: 'config-sql',
+      },
+    });
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('runXfer', 'POST', '/api/xfer')],
+    });
+    const edges = result.candidates.map((c) => {
+      const data = c.data as Record<string, unknown>;
+      return `${data.access_mode}:${String(data.dataEntityName).toLowerCase()}`;
+    });
+    expect(edges.sort()).toEqual(['read:load_hir_book', 'write:hir_business_date']);
+  });
+
   it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {
     const internal = {
       id: 'ep-ghost',

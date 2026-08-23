@@ -248,3 +248,59 @@ describe('DAO suffix casing (2026-08-22)', () => {
     expect(result.tables.some((t) => t.symbol.startsWith('com.x.BookAttrDAOImpl#'))).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Config-held SQL (2026-08-23): the static-dispatch-map idiom — proc names
+// live in FIELD initializers (`"hierarchy" -> "updateHierarchy_hir '...'"`),
+// invisible to method-body mining. Referenced fields with identifier-bearing
+// literals contribute a `config-sql` terminal row the effect walk scans
+// against the harvested proc catalog.
+// ---------------------------------------------------------------------------
+
+const XFER_IMPL = `package com.x;
+
+public class XferToTablesImpl {
+  private static final java.util.Map<String, String> updateProcedure =
+      java.util.Map.of("hierarchy", "updateHierarchy_hir '" + DATE_TOKEN + "', 'Y'");
+  private static final String DATE_TOKEN = "@@DATE@@";
+
+  public void runUpdate(String unit, String date) {
+    if (unit == null) {
+      throw new IllegalArgumentException("unit");
+    }
+    execute(updateProcedure.get(unit).replace(DATE_TOKEN, date));
+  }
+
+  private void execute(String sql) { }
+}
+`;
+
+describe('config-held SQL rows (2026-08-23)', () => {
+  let dir: string;
+  let result: ReturnType<typeof extractBehaviour>;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scl-configsql-'));
+    fs.mkdirSync(path.join(dir, 'com', 'x'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'XferToTablesImpl.java'), XFER_IMPL);
+    const index = await indexJavaProject(dir);
+    expect(index.parseErrors).toEqual([]);
+    result = extractBehaviour(index, new Map());
+  });
+
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('a referenced dispatch-map field contributes a config-sql row carrying the proc name', () => {
+    const table = result.tables.find((t) => t.symbol.startsWith('com.x.XferToTablesImpl#runUpdate'));
+    expect(table).toBeDefined();
+    const configRow = table!.rows.find(
+      (r) => r.outcome.type === 'terminal' && r.outcome.outcomeLabel === 'config-sql',
+    );
+    expect(configRow).toBeDefined();
+    expect(
+      (configRow!.outcome as { verbatim: string }).verbatim,
+    ).toContain('updateHierarchy_hir');
+  });
+});
