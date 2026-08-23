@@ -187,3 +187,61 @@ describe('Guava cache-transparency bridge (2026-08-23)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// web.xml handler detection end-to-end (Oracle Nine item 6): the bean-mapped
+// HttpRequestHandler becomes an EXTERNAL corpus root with its url-pattern.
+// ---------------------------------------------------------------------------
+
+const REFRESH_HANDLER = `package com.x;
+
+public class RefreshHandler implements org.springframework.web.HttpRequestHandler {
+  private FilterDBLoader dbLoader;
+
+  public void handleRequest(Object request, Object response) {
+    if (request == null) {
+      throw new IllegalArgumentException("request");
+    }
+    dbLoader.loadFilters("all");
+  }
+}
+`;
+
+const WEB_XML = `<?xml version="1.0"?>
+<web-app>
+  <servlet>
+    <servlet-name>refreshHandler</servlet-name>
+    <servlet-class>org.springframework.web.context.support.HttpRequestHandlerServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>refreshHandler</servlet-name>
+    <url-pattern>/refreshCache</url-pattern>
+  </servlet-mapping>
+</web-app>
+`;
+
+describe('web.xml handler roots (Oracle Nine item 6)', () => {
+  it('a bean-mapped HttpRequestHandler becomes an external web_xml root', async () => {
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'scl-webxml-'));
+    fs.mkdirSync(path.join(dir2, 'com', 'x'), { recursive: true });
+    fs.mkdirSync(path.join(dir2, 'WEB-INF'), { recursive: true });
+    fs.writeFileSync(path.join(dir2, 'com', 'x', 'RefreshHandler.java'), REFRESH_HANDLER);
+    fs.writeFileSync(path.join(dir2, 'com', 'x', 'FilterDBLoader.java'), DB_LOADER);
+    fs.writeFileSync(path.join(dir2, 'com', 'x', 'FilterDao.java'), DAO_IFACE);
+    fs.writeFileSync(path.join(dir2, 'com', 'x', 'FilterDaoImpl.java'), DAO_IMPL);
+    fs.writeFileSync(path.join(dir2, 'WEB-INF', 'web.xml'), WEB_XML);
+    try {
+      const { sliceProject } = await import('../slicer');
+      const { assembleCorpus } = await import('../corpusAssembler');
+      const slice = await sliceProject(dir2);
+      expect(slice.index.webXmlHandlerMappings).toHaveLength(1);
+      const corpus = assembleCorpus(slice);
+      const root = corpus.roots.find((r) => r.detail === 'web_xml:/refreshCache');
+      expect(root).toBeDefined();
+      expect(root!.kind).toBe('external');
+      expect(root!.symbol).toContain('RefreshHandler#handleRequest');
+    } finally {
+      fs.rmSync(dir2, { recursive: true, force: true });
+    }
+  });
+});

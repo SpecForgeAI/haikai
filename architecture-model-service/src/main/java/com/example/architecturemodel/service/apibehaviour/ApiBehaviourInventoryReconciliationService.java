@@ -89,7 +89,12 @@ public class ApiBehaviourInventoryReconciliationService {
      * INTERNAL_PROCESS; the formalised value is INTERNAL_PROCESSING.
      */
     private static final Set<String> INTERNAL_INTERFACE_TYPES =
-        Set.of("INTERNAL_PROCESSING", "INTERNAL_PROCESS");
+        Set.of("INTERNAL_PROCESSING", "INTERNAL_PROCESS",
+                // Oracle Nine item 6 (2026-08-23): web.xml-mapped operational
+                // handlers (cache refresh etc.) are HTTP-reachable but
+                // state-mutating operational surface — capturable only by
+                // deliberate opt-in.
+                "OPERATIONAL_HTTP");
 
     @Transactional
     public InventoryReconciliationResponse reconcile(

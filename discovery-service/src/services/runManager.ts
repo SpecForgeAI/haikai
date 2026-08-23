@@ -2692,6 +2692,25 @@ async function startServiceScopedRun(
         sourceDir: rootScanDir,
         liveProcSources,
       });
+      // Item 6 (2026-08-23): web.xml-mapped handlers become REAL endpoint
+      // candidates under an OPERATIONAL_HTTP interface — inventoried and
+      // capturable DELIBERATELY (AMS auto-classifies the interface type out
+      // of capture scope by default; a cache-rebuild endpoint firing
+      // mid-capture is exactly what the quiet rule forbids).
+      if (structural.corpus) {
+        const minted = mintOperationalHttpCandidates(
+          structural.corpus.roots ?? [],
+          runId,
+          allCandidates,
+        );
+        if (minted.length > 0) {
+          await archModelClient.bulkSaveCandidates(projectId, runId, minted);
+          allCandidates.push(...minted);
+          console.log(
+            `[RunManager:service-scoped] Operational web.xml endpoints minted: ${minted.length - 1} endpoint(s)`,
+          );
+        }
+      }
       structuralScan = structural.outcome;
       console.log(
         `[RunManager:service-scoped] Structural scan ${structuralScan.status}` +
@@ -3085,6 +3104,80 @@ function convertDatabasePayloadsToCandidates(
       parentCandidateId,
     } as DiscoveryCandidate;
   });
+}
+
+/**
+ * Item 6 (2026-08-23): mint an OPERATIONAL_HTTP interface + one endpoint
+ * candidate per corpus `web_xml:` root. Pure + deduped against existing
+ * candidate names so re-scans stay additive.
+ */
+export function mintOperationalHttpCandidates(
+  roots: Array<{ kind?: string; symbol?: string; detail?: string }>,
+  runId: string,
+  existing: Array<{ name?: string | null }>,
+): DiscoveryCandidate[] {
+  const webRoots = roots.filter(
+    (r) => typeof r.detail === 'string' && r.detail.startsWith('web_xml:'),
+  );
+  if (webRoots.length === 0) return [];
+  const existingNames = new Set(
+    existing.map((c) => String(c.name ?? '').toLowerCase()).filter((n) => n.length > 0),
+  );
+  const synthesizedAt = new Date().toISOString();
+  const interfaceName = 'Operational endpoints (web.xml)';
+  const out: DiscoveryCandidate[] = [];
+  const interfaceId = uuidv4();
+  let mintedAny = false;
+  for (const root of webRoots) {
+    const urlPattern = String(root.detail).slice('web_xml:'.length);
+    const symbol = String(root.symbol ?? '');
+    const hash = symbol.indexOf('#');
+    const className = hash > 0 ? symbol.slice(0, hash) : symbol;
+    const methodName =
+      hash > 0 ? symbol.slice(hash + 1).replace(/\(.*$/, '') : 'handleRequest';
+    const name = `POST ${urlPattern}`;
+    if (existingNames.has(name.toLowerCase())) continue;
+    mintedAny = true;
+    out.push({
+      id: uuidv4(),
+      runId,
+      candidateType: 'endpoints',
+      name,
+      confidence: 0.9,
+      status: 'proposed',
+      sourceClusterIds: [],
+      parentCandidateId: interfaceId,
+      data: {
+        method: 'POST',
+        path: urlPattern,
+        className,
+        methodName,
+        endpoint_subtype: 'webxml_handler',
+        operational_note:
+          'web.xml-mapped operational endpoint (state-mutating handler) — auto-classified ' +
+          'OUT of capture scope by default; opt in deliberately.',
+        _addedBy: 'webxml-handler-detector',
+      },
+      synthesizedAt,
+    } as DiscoveryCandidate);
+  }
+  if (!mintedAny) return [];
+  out.unshift({
+    id: interfaceId,
+    runId,
+    candidateType: 'interfaces',
+    name: interfaceName,
+    confidence: 0.9,
+    status: 'proposed',
+    sourceClusterIds: [],
+    data: {
+      interface_type: 'OPERATIONAL_HTTP',
+      protocol: 'rest',
+      _addedBy: 'webxml-handler-detector',
+    },
+    synthesizedAt,
+  } as DiscoveryCandidate);
+  return out;
 }
 
 export async function startDatabaseRun(
