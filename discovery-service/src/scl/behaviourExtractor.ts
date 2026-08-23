@@ -372,7 +372,7 @@ export function extractBehaviour(
   // old verb-only regex missed entirely (live diagnosis: every DAO op showed
   // sql 0 although the walks completed).
   const SQL_TEXT_RE =
-    /\b(select|insert|update|delete|exec|execute|merge|truncate)\b|\{\s*call\s/i;
+    /\b(select|insert|update|delete|exec|execute|merge|truncate)\b|\{\s*(?:\?\s*=\s*)?call\s/i;
 
   const isStringConstField = (f: JavaFieldInfo): boolean =>
     f.type === 'String' && f.initializer !== null && f.initializer.startsWith('"');
@@ -1337,6 +1337,22 @@ export function extractBehaviour(
           for (const lit of literals) {
             const inner = lit.slice(1, -1);
             if (/[A-Za-z_][A-Za-z0-9_]{9,}/.test(inner)) configPieces.push(inner);
+          }
+        }
+        // Spring bean-property hints (item 7): SQL-ish property values ride
+        // verbatim (proc-call strings parse downstream); `*table?name*`
+        // properties with bare-identifier values attribute the loader's
+        // runtime INSERT target. Unioned across bean instances, appended to
+        // every table method of the class (loaders are small classes; the
+        // walk dedups by symbol).
+        for (const hint of index.beanPropertyHints?.get(cls.fqn) ?? []) {
+          if (SQL_TEXT_RE.test(hint.value)) {
+            configPieces.push(hint.value);
+          } else if (
+            /table.?name/i.test(hint.name) &&
+            /^[A-Za-z_][A-Za-z0-9_]*$/.test(hint.value)
+          ) {
+            configPieces.push(`insert into ${hint.value}`);
           }
         }
         if (configPieces.length > 0) {

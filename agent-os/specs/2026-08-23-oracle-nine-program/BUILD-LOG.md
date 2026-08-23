@@ -56,7 +56,7 @@ charset config, sequence rows, uniqueness probes).
    parsed per class; `*table?name*` properties with identifier values
    attribute the runtime-INSERT loader's writes (per-class union across
    bean instances); SQL-ish property values join effect walks verbatim.
-   STATUS: pending.
+   STATUS: MERGED.
 8. **.jil scheduler adapter** — parse in-repo Autosys jil (job → command →
    shell → Java main resolved by scanning the named script); schedule/box/
    conditions attached to internal endpoint candidates; loud finding for
@@ -68,6 +68,12 @@ charset config, sequence rows, uniqueness probes).
    fallback. STATUS: pending.
 
 ## Per-item as-built notes
+
+### Item 7 (as-built)
+- javaProjectIndex.beanPropertyHints: `<bean class=X>` blocks joined to project classes; `<property name value/>` pairs unioned across bean instances, sorted.
+- behaviourExtractor: hints join the config-sql synthetic row — SQL-ish values verbatim; `*table?name*` properties with bare-identifier values synthesize `insert into <value>` (runtime-INSERT target attribution).
+- Pattern widening found by the pin: the `{? = call f(...)}` RETURN-VALUE form defeated both SQL_TEXT_RE and the emitter's PROC_CALL_RE — both now accept `{? = call ...}`, so config-held delete-proc strings parse AND expand through the proc catalog.
+- Tests: bean parse + union + proc-string pin; discovery 15/152.
 
 ### Item 6 (as-built)
 - javaProjectIndex.webXmlHandlerMappings (regex servlet + servlet-mapping join by servlet-name, sorted).

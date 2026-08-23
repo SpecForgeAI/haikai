@@ -153,6 +153,11 @@ export interface JavaProjectIndex {
     servletClass: string;
     sourcePath: string;
   }>;
+  /** Spring-XML bean `<property name value>` pairs per PROJECT class
+   *  (Oracle Nine item 7): config-driven loaders build their SQL at
+   *  runtime from these — table names and proc-call strings live here,
+   *  never next to a SQL verb in Java. Unioned across bean instances. */
+  beanPropertyHints: Map<string, Array<{ name: string; value: string; sourcePath: string }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -700,6 +705,37 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
   }
   webXmlHandlerMappings.sort((a, b) => (a.urlPattern < b.urlPattern ? -1 : 1));
 
+  // Spring bean-property hints (item 7): regex-level bean blocks joined to
+  // their class; only classes present in THIS index are kept.
+  const beanPropertyHints: JavaProjectIndex['beanPropertyHints'] = new Map();
+  for (const resPath of resourceXmlFiles) {
+    if (!/\.xml$/i.test(resPath)) continue;
+    let text: string;
+    try {
+      text = fs.readFileSync(resPath, 'utf8');
+    } catch {
+      continue;
+    }
+    if (!text.includes('<bean')) continue;
+    const beanRe = /<bean\b[^>]*class="([^"]+)"[^>]*>([\s\S]*?)<\/bean>/g;
+    let bm: RegExpExecArray | null;
+    while ((bm = beanRe.exec(text)) !== null) {
+      const clsFqn = bm[1].trim();
+      if (!classesByFqn.has(clsFqn)) continue;
+      const body = bm[2];
+      const propRe = /<property\s+name="([^"]+)"\s+value="([^"]*)"\s*\/>/g;
+      let pm: RegExpExecArray | null;
+      while ((pm = propRe.exec(body)) !== null) {
+        const list = beanPropertyHints.get(clsFqn) ?? [];
+        list.push({ name: pm[1], value: pm[2], sourcePath: relPath(resPath) });
+        beanPropertyHints.set(clsFqn, list);
+      }
+    }
+  }
+  for (const list of beanPropertyHints.values()) {
+    list.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.value < b.value ? -1 : 1));
+  }
+
   const stripGenerics = (t: string): string => t.replace(/<.*>$/, '').trim();
   const lastSegment = (t: string): string => {
     const s = stripGenerics(t);
@@ -713,6 +749,7 @@ export async function indexJavaProject(rootDir: string): Promise<JavaProjectInde
     parseErrors,
     configReferences,
     webXmlHandlerMappings,
+    beanPropertyHints,
     __pinnedTrees: pinnedTrees,
     implementationsOf(interfaceSimpleOrFqn: string): JavaClassInfo[] {
       const wanted = lastSegment(interfaceSimpleOrFqn);

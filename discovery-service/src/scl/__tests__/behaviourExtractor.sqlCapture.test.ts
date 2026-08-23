@@ -304,3 +304,76 @@ describe('config-held SQL rows (2026-08-23)', () => {
     ).toContain('updateTree_roll');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spring bean-property attribution (Oracle Nine item 7): the config-driven
+// loader idiom — `<property name="loadTableName" value="load_stage_x"/>` is
+// the ONLY place the runtime INSERT's target table is named.
+// ---------------------------------------------------------------------------
+
+const BATCH_LOADER = `package com.x;
+
+public class BatchLoaderImpl {
+  private String loadTableName;
+
+  public static void main(String[] args) {
+    new BatchLoaderImpl().run(args[0]);
+  }
+
+  public void run(String file) {
+    if (file == null) {
+      throw new IllegalArgumentException("file");
+    }
+    execute(buildTemplate(loadTableName));
+  }
+
+  private String buildTemplate(String table) { return table; }
+  private void execute(String sql) { }
+}
+`;
+
+const LOADER_BEANS_XML = `<?xml version="1.0"?>
+<beans>
+  <bean id="loadStageUnits" class="com.x.BatchLoaderImpl">
+    <property name="loadTableName" value="load_stage_units"/>
+    <property name="deleteLoadTableSql" value="{? = call clearLoadTable('loadStageUnits')}"/>
+  </bean>
+  <bean id="loadStageDeals" class="com.x.BatchLoaderImpl">
+    <property name="loadTableName" value="load_stage_deals"/>
+  </bean>
+</beans>
+`;
+
+describe('bean-property attribution (Oracle Nine item 7)', () => {
+  let dir: string;
+  let result: ReturnType<typeof extractBehaviour>;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scl-beanhints-'));
+    fs.mkdirSync(path.join(dir, 'com', 'x'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'META-INF', 'spring'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'com', 'x', 'BatchLoaderImpl.java'), BATCH_LOADER);
+    fs.writeFileSync(path.join(dir, 'META-INF', 'spring', 'loaders.xml'), LOADER_BEANS_XML);
+    const index = await indexJavaProject(dir);
+    expect(index.parseErrors).toEqual([]);
+    expect(index.beanPropertyHints.get('com.x.BatchLoaderImpl')).toHaveLength(3);
+    result = extractBehaviour(index, new Map());
+  });
+
+  afterAll(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('table-name properties synthesize the runtime INSERT target; proc-call strings ride verbatim', () => {
+    const run = result.tables.find((t) => t.symbol.startsWith('com.x.BatchLoaderImpl#run'));
+    expect(run).toBeDefined();
+    const configRow = run!.rows.find(
+      (r) => r.outcome.type === 'terminal' && r.outcome.outcomeLabel === 'config-sql',
+    );
+    expect(configRow).toBeDefined();
+    const verbatim = (configRow!.outcome as { verbatim: string }).verbatim;
+    expect(verbatim).toContain('insert into load_stage_units');
+    expect(verbatim).toContain('insert into load_stage_deals'); // union across beans
+    expect(verbatim).toContain("call clearLoadTable('loadStageUnits')");
+  });
+});
