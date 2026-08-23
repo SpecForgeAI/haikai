@@ -723,6 +723,48 @@ describe('verb-agnostic effect chains (2026-08-22)', () => {
     expect(blindResult.chainBreaks[0].broken_calls[0]).toContain('exceed the expansion cap 12');
   });
 
+  it('reads derived through a cache-bridge row carry via_legacy_cache (decision evidence)', () => {
+    const corpus = corpusOf([
+      behaviourTable({
+        key: 'T-front',
+        symbol: 'FilterCacheFront#getFilters',
+        annotations: ['@GET', '@Path("cached")'],
+        callTargets: [],
+      }),
+      boundary({
+        key: 'Q-dao',
+        symbol: 'FilterDao',
+        sql: ['select * from hir_filter where ValidFrom <= ?'],
+      }),
+    ]);
+    (corpus.contracts[0] as { contract: { rows: unknown[] } }).contract.rows.push({
+      index: 9,
+      kind: 'branch',
+      conditionVerbatim: 'cache miss -> loader',
+      conditionRef: null,
+      outcome: { type: 'call', targetKey: 'Q-dao', targetSymbol: 'FilterDao#getAllFilters' },
+    });
+    const result = deriveCorpusEffectCandidates({
+      corpus,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('cachedFilters', 'GET', '/api/cached')],
+    });
+    expect(result.candidates).toHaveLength(1);
+    const detail = (result.candidates[0].data as Record<string, unknown>)
+      .path_metadata_json as Record<string, unknown>;
+    expect(detail.via_legacy_cache).toBe(true);
+
+    // A DIRECT (non-bridged) read carries NO tag.
+    const direct = deriveCorpusEffectCandidates({
+      corpus: READ_WRITE_CORPUS,
+      runId: 'run-1',
+      runCandidates: [endpointCandidate('listFilters', 'GET', '/api/filters')],
+    });
+    const directDetail = (direct.candidates[0].data as Record<string, unknown>)
+      .path_metadata_json as Record<string, unknown>;
+    expect(directDetail.via_legacy_cache).toBeUndefined();
+  });
+
   it('an internal entrypoint with NO corpus presence lands in internalUnmatched, loudly', () => {
     const internal = {
       id: 'ep-ghost',

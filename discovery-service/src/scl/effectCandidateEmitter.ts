@@ -320,6 +320,10 @@ export interface CallWalkResult {
   brokenCalls: string[];
   /** Null-target calls resolved via name+arity dispatch expansion. */
   expandedCalls: string[];
+  /** TRUE when the walk followed a `cache miss -> loader` bridge row —
+   *  the read is cache-fronted in the legacy service (2026-08-23; feeds
+   *  the `legacy_cache_strategy` foundations decision). */
+  cacheBridgeCrossed: boolean;
 }
 
 /** Too many name-matched implementations = genuinely ambiguous dispatch.
@@ -407,6 +411,7 @@ export function walkCallGraph(
   const boundaries = new Set<string>();
   const brokenCalls: string[] = [];
   const expandedCalls: string[] = [];
+  let cacheBridgeCrossed = false;
   const visited = new Set<string>();
   const queue = [rootKey];
   while (queue.length > 0 && visited.size < cap) {
@@ -416,6 +421,7 @@ export function walkCallGraph(
     const table = index.tablesByKey.get(key);
     for (const row of table?.rows ?? []) {
       if (row.outcome.type !== 'call') continue;
+      if (row.conditionVerbatim === 'cache miss -> loader') cacheBridgeCrossed = true;
       if (typeof row.outcome.targetKey !== 'string') {
         const expansion = expandDispatch(row.outcome.targetSymbol, index);
         if (expansion) {
@@ -440,7 +446,7 @@ export function walkCallGraph(
       else if (target.startsWith('T-') && !visited.has(target)) queue.push(target);
     }
   }
-  return { boundaries: [...boundaries], brokenCalls, expandedCalls };
+  return { boundaries: [...boundaries], brokenCalls, expandedCalls, cacheBridgeCrossed };
 }
 
 // ---------------------------------------------------------------------------
@@ -600,6 +606,7 @@ function collectFromRootKeys(
   boundariesReached: string[];
   boundariesFullyVisible: boolean;
   procSeen: boolean;
+  cacheBridgeCrossed: boolean;
 } {
   const writeTables: string[] = [];
   const readTables: string[] = [];
@@ -607,8 +614,10 @@ function collectFromRootKeys(
   const boundariesReached: string[] = [];
   let boundariesFullyVisible = true;
   let procSeen = false;
+  let cacheBridgeCrossed = false;
   for (const rootKey of rootKeys) {
     const walk = walkCallGraph(rootKey, index);
+    if (walk.cacheBridgeCrossed) cacheBridgeCrossed = true;
     for (const broken of walk.brokenCalls) {
       if (brokenCalls.length < 10 && !brokenCalls.includes(broken)) brokenCalls.push(broken);
     }
@@ -642,7 +651,7 @@ function collectFromRootKeys(
       }
     }
   }
-  return { writeTables, readTables, brokenCalls, boundariesReached, boundariesFullyVisible, procSeen };
+  return { writeTables, readTables, brokenCalls, boundariesReached, boundariesFullyVisible, procSeen, cacheBridgeCrossed };
 }
 
 /**
@@ -764,7 +773,10 @@ export function deriveCorpusEffectCandidates(args: {
       const maxLength = matched.reduce((max, r) => Math.max(max, r.fragment.length), 0);
       const roots = matched.filter((r) => r.fragment.length === maxLength);
       const collected = collectFromRootKeys(roots.map((r) => r.key), index);
-      const detail = { roots: roots.map((r) => r.symbol).slice(0, 3) };
+      const detail = {
+        roots: roots.map((r) => r.symbol).slice(0, 3),
+        ...(collected.cacheBridgeCrossed ? { via_legacy_cache: true } : {}),
+      };
 
       const emittedBefore = candidates.length;
       for (const table of collected.writeTables) {
@@ -845,6 +857,7 @@ export function deriveCorpusEffectCandidates(args: {
     const detail = {
       roots: keys.slice(0, 3),
       internal_entry: `${className}#${methodName}`,
+      ...(collected.cacheBridgeCrossed ? { via_legacy_cache: true } : {}),
     };
     const emittedBefore = candidates.length;
     for (const table of collected.writeTables) {
