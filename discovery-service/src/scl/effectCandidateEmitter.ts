@@ -152,30 +152,80 @@ export function parseWriteTablesFromSql(sql: string | null | undefined): string[
   return found;
 }
 
-const READ_SQL_PATTERNS: RegExp[] = [
-  /\bfrom\s+([A-Za-z0-9_."\[\]$#]+)/gi,
-  /\bjoin\s+([A-Za-z0-9_."\[\]$#]+)/gi,
-];
+const FROM_KEYWORD_RE = /\bfrom\s+/gi;
+const JOIN_READ_RE = /\bjoin\s+([A-Za-z0-9_."\[\]$#]+)/gi;
+
+/** Words that can follow a FROM-list table/alias and are never aliases. */
+const FROM_LIST_STOP_WORDS = new Set([
+  'where', 'group', 'order', 'having', 'union', 'join', 'inner', 'left',
+  'right', 'outer', 'cross', 'full', 'on', 'set', 'select', 'and', 'or',
+  'not', 'exists', 'when', 'then', 'else', 'end', 'for', 'while', 'if',
+  'begin', 'insert', 'update', 'delete', 'values', 'into', 'from', 'with',
+  'option', 'compute', 'at', 'holdlock', 'noholdlock', 'readpast',
+  'readuncommitted', 'shared', 'return', 'goto', 'open', 'fetch', 'close',
+  'deallocate', 'declare', 'print', 'raiserror', 'exec', 'execute', 'go',
+]);
+
+const FROM_TABLE_TOKEN_RE = /^[A-Za-z0-9_."\[\]$#@]+/;
+const FROM_ALIAS_TOKEN_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
 
 /**
  * Distinct READ-table tokens (FROM/JOIN targets, `DELETE FROM` excluded —
  * that's a write). Feeds the proven-read classification: a COMPLETE walk
  * whose boundaries only read is a POST-implemented query, not a mutation.
+ *
+ * The FROM clause is walked as a COMMA-SEPARATED LIST with optional aliases
+ * (2026-08-23 shakedown: `from rule_fields f, rule_config r` — the classic
+ * Sybase comma join — previously yielded only the first table, leaving
+ * genuinely-read config tables looking untouched). The walk is conservative:
+ * it stops at the first token that is not `<table> [alias] [,]`, so
+ * subselects, hints, and clause keywords never get captured as tables.
  */
 export function parseReadTablesFromSql(sql: string | null | undefined): string[] {
   if (!sql) return [];
   const found: string[] = [];
-  for (const pattern of READ_SQL_PATTERNS) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(sql)) !== null) {
-      // `DELETE FROM x` is a write, not a read.
-      const before = sql.slice(Math.max(0, match.index - 12), match.index);
-      if (/delete\s*$/i.test(before)) continue;
-      const token = bareTableToken(match[1]);
-      if (!token || token.startsWith('#') || token.startsWith('@')) continue;
-      if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
+  const push = (raw: string) => {
+    const token = bareTableToken(raw);
+    if (!token || token.startsWith('#') || token.startsWith('@')) return;
+    if (!found.some((t) => t.toLowerCase() === token.toLowerCase())) found.push(token);
+  };
+
+  FROM_KEYWORD_RE.lastIndex = 0;
+  let fromMatch: RegExpExecArray | null;
+  while ((fromMatch = FROM_KEYWORD_RE.exec(sql)) !== null) {
+    // `DELETE FROM x` is a write, not a read.
+    const before = sql.slice(Math.max(0, fromMatch.index - 12), fromMatch.index);
+    if (/delete\s*$/i.test(before)) continue;
+    let pos = fromMatch.index + fromMatch[0].length;
+    // Walk `<table> [as] [alias] , <table> ...` until the list ends.
+    for (;;) {
+      const tableMatch = FROM_TABLE_TOKEN_RE.exec(sql.slice(pos));
+      if (!tableMatch) break;
+      const rawTable = tableMatch[0];
+      if (FROM_LIST_STOP_WORDS.has(rawTable.toLowerCase())) break;
+      push(rawTable);
+      pos += rawTable.length;
+      pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
+      // Optional `as` keyword, then optional alias identifier.
+      for (let aliasTurn = 0; aliasTurn < 2; aliasTurn += 1) {
+        const aliasMatch = FROM_ALIAS_TOKEN_RE.exec(sql.slice(pos));
+        if (!aliasMatch) break;
+        const word = aliasMatch[0].toLowerCase();
+        if (word !== 'as' && FROM_LIST_STOP_WORDS.has(word)) break;
+        pos += aliasMatch[0].length;
+        pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
+        if (word !== 'as') break;
+      }
+      if (sql[pos] !== ',') break;
+      pos += 1;
+      pos += (/^\s*/.exec(sql.slice(pos)) as RegExpExecArray)[0].length;
     }
+  }
+
+  JOIN_READ_RE.lastIndex = 0;
+  let joinMatch: RegExpExecArray | null;
+  while ((joinMatch = JOIN_READ_RE.exec(sql)) !== null) {
+    push(joinMatch[1]);
   }
   return found;
 }
