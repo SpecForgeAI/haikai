@@ -447,23 +447,44 @@ function renderBehaviourBlock(
   const rows = Array.isArray(body.rows) ? body.rows : [];
   lines.push('| # | Kind | Condition (verbatim) | Outcome | Gloss |');
   lines.push('| --- | --- | --- | --- | --- |');
+  let hadCacheBridge = false;
   rows.forEach((raw, i) => {
     const row = (raw ?? {}) as Rec;
     const index = typeof row.index === 'number' ? row.index : i;
     const kind = asString(row.kind) ?? '';
     const conditionVerbatim = asString(row.conditionVerbatim);
     const conditionCite = citeOf(row.conditionRef);
-    const condition = conditionVerbatim
-      ? `\`${conditionVerbatim}\`` + (conditionCite ? ` (${conditionCite})` : '')
-      : '—';
+    // Cache-bridge rows (2026-08-23): the extractor's sentinel documents HOW
+    // the legacy service served the read (in-process cache in front of the
+    // DB loader). Normalize it so implementers read a DATA requirement, not
+    // a caching instruction — the note below carries the ruling.
+    const isCacheBridge = conditionVerbatim === 'cache miss -> loader';
+    if (isCacheBridge) hadCacheBridge = true;
+    const condition = isCacheBridge
+      ? '`on legacy cache miss`' + (conditionCite ? ` (${conditionCite})` : '')
+      : conditionVerbatim
+        ? `\`${conditionVerbatim}\`` + (conditionCite ? ` (${conditionCite})` : '')
+        : '—';
     const outcome = renderOutcome(row.outcome, key, state);
     const rowGloss =
-      asString(row.gloss) ?? asString(rowGlosses[String(index)]) ?? '';
+      asString(row.gloss) ??
+      asString(rowGlosses[String(index)]) ??
+      (isCacheBridge ? 'Data effect is the requirement; the legacy cache is NOT.' : '');
     lines.push(
       `| ${index} | ${cell(kind)} | ${cell(condition)} | ${cell(outcome)} | ${cell(rowGloss)} |`
     );
   });
   lines.push('');
+  if (hadCacheBridge) {
+    lines.push(
+      '**Legacy cache note:** the `on legacy cache miss` row(s) above document how the ' +
+        'legacy service served these reads — an in-process cache in front of the DB ' +
+        'loader. The DATA EFFECTS are the behavioural requirement; replicating the ' +
+        'cache is a target-architecture choice recorded as the `legacy_cache_strategy` ' +
+        'foundations decision. Do NOT add caching to satisfy this spec.'
+    );
+    lines.push('');
+  }
   const outcomeSignature = Array.isArray(body.outcomeSignature)
     ? body.outcomeSignature
     : [];

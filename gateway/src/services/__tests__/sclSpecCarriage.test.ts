@@ -339,6 +339,38 @@ describe('runSclSpecCarriage — endpoint-group assembly', () => {
     expect(text).toContain('References: `T-VAL`');
   });
 
+  it('normalizes cache-bridge rows and appends the anti-imitation legacy cache note', () => {
+    const cached = getOrderTable();
+    (cached.body_json as { rows: unknown[] }).rows = [
+      ...((cached.body_json as { rows: unknown[] }).rows as unknown[]),
+      {
+        index: 9,
+        kind: 'branch',
+        conditionVerbatim: 'cache miss -> loader',
+        conditionRef: { path: 'src/com/app/FilterCacheFront.java', line: 21 },
+        outcome: { type: 'call', targetKey: 'T-VAL', targetSymbol: VALIDATE },
+      },
+    ];
+    const cachedRow = runSclSpecCarriage({
+      story: endpointStory(),
+      baseRow: BASE_ROW,
+      contracts: [cached, validateTable()],
+      decisions: [HTTP_DECISION, DATES_DECISION, DATA_ACCESS_DECISION],
+      wireFactsSectionText: WIRE_SECTION,
+      targetStackSectionText: STACK_SECTION,
+    });
+    const cachedText = cachedRow.generatedSpecText as string;
+    // The sentinel never reaches the spec verbatim — normalized wording +
+    // the ruling note replace it.
+    expect(cachedText).not.toContain('`cache miss -> loader`');
+    expect(cachedText).toContain('`on legacy cache miss` (src/com/app/FilterCacheFront.java:21)');
+    expect(cachedText).toContain('Data effect is the requirement; the legacy cache is NOT.');
+    expect(cachedText).toContain('**Legacy cache note:**');
+    expect(cachedText).toContain('Do NOT add caching to satisfy this spec.');
+    // A carriage run WITHOUT bridge rows carries no note.
+    expect(text).not.toContain('**Legacy cache note:**');
+  });
+
   it('cites only the RELEVANT modernize.* decisions (http + dates in; dataaccess out)', () => {
     const section = text.slice(
       text.indexOf('## Modernization decisions'),

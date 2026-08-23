@@ -380,3 +380,49 @@ describe('joint rules refuse to fire without committed code evidence', () => {
     expect(keys).toContain('FQ-scope_code_conflict-orders_bak');
   });
 });
+
+describe('legacy cache strategy decision (2026-08-23)', () => {
+  it('cache-fronted read edges surface the strategy question with endpoint targets', () => {
+    const model = {
+      metaModel: {
+        entities: {
+          physical_data_entities: [{ id: 'e1', name: 'hir_filter' }],
+          endpoints: [
+            { id: 'ep1', name: 'GET /filters/{filterId}' },
+            { id: 'ep2', name: 'GET /views' },
+          ],
+        },
+        relationships: {
+          endpoint_data_effects: [
+            {
+              access_mode: 'read',
+              data_entity_point_id: 'dep_phy_e1',
+              endpoint_id: 'ep1',
+              path_metadata_json: { via_legacy_cache: true },
+            },
+            {
+              access_mode: 'read',
+              data_entity_point_id: 'dep_phy_e1',
+              endpoint_id: 'ep2',
+              path_metadata_json: null, // direct read — not cache-fronted
+            },
+          ],
+        },
+      },
+    };
+    const questions = deriveJointFoundationQuestions(model, []);
+    const q = questions.find((x) => x.question_key === 'FQ-legacy_cache_strategy');
+    expect(q).toBeDefined();
+    expect(q!.targets.map((t) => t.entity_name)).toEqual(['GET /filters/{filterId}']);
+    expect(q!.options[0]).toMatchObject({
+      answer: 'no_target_cache',
+      recommended: true,
+      payload: { cache_strategy: 'none' },
+    });
+  });
+
+  it('no cache-fronted edges -> no question', () => {
+    const questions = deriveJointFoundationQuestions(JOINT_MODEL, []);
+    expect(questions.some((x) => x.question_key === 'FQ-legacy_cache_strategy')).toBe(false);
+  });
+});

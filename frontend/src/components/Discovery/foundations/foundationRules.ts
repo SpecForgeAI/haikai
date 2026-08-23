@@ -49,7 +49,8 @@ export interface FoundationQuestion {
     | 'crud_never'
     | 'crud_write_only'
     | 'crud_read_only'
-    | 'scope_code_conflict';
+    | 'scope_code_conflict'
+    | 'legacy_cache_strategy';
   title: string;
   detail: string;
   targets: FoundationQuestionTarget[];
@@ -544,12 +545,14 @@ export interface RawModelLike {
         migration_scope?: string | null;
         scope_decision_ref?: string | null;
       }>;
-      endpoints?: Array<{ id?: string }>;
+      endpoints?: Array<{ id?: string; name?: string }>;
     };
     relationships?: {
       endpoint_data_effects?: Array<{
         access_mode?: string | null;
         data_entity_point_id?: string | null;
+        endpoint_id?: string | null;
+        path_metadata_json?: { via_legacy_cache?: boolean } | null;
       }>;
     };
   };
@@ -740,6 +743,62 @@ export function deriveJointFoundationQuestions(
         { answer: 'data_only_all', label: 'Migrate data-only (reference data)', scope: 'data_only' },
       ],
       evidence_hash: bulkTargetsEvidenceHash('crud_read_only', targets),
+    });
+    if (q) questions.push(q);
+  }
+
+  // --- legacy cache strategy (2026-08-23): reads derived through the
+  // Guava cache-transparency bridge carry via_legacy_cache. The data
+  // effects are the requirement; the cache is an implementation choice —
+  // record it HERE so specs cite a decision instead of imitating the
+  // legacy mechanics.
+  const endpointNameById = new Map<string, string>();
+  for (const ep of model.metaModel?.entities?.endpoints ?? []) {
+    if (ep.id) endpointNameById.set(ep.id, ep.name ?? `endpoint ${ep.id}`);
+  }
+  const cacheFronted = new Map<string, string>();
+  for (const edge of model.metaModel?.relationships?.endpoint_data_effects ?? []) {
+    if (!edge.path_metadata_json?.via_legacy_cache) continue;
+    const name = endpointNameById.get(edge.endpoint_id ?? '') ?? edge.endpoint_id ?? '';
+    if (name) cacheFronted.set(name, 'read path fronted by a legacy in-process cache');
+  }
+  if (cacheFronted.size > 0) {
+    const targets = [...cacheFronted.entries()].map(([name, note]) => ({
+      entity_name: name,
+      note,
+      attribute_count: 0,
+    }));
+    const q = reconcile({
+      question_key: 'FQ-legacy_cache_strategy',
+      rule_key: 'legacy_cache_strategy',
+      title: `${targets.length} read path(s) are cache-fronted in the legacy service`,
+      detail:
+        'The legacy service fronts these reads with in-process caches (whole-business-date ' +
+        'granularity, node-local write-through). The DATA EFFECTS are the behavioural ' +
+        'requirement carried into specs; the cache itself is an implementation choice. ' +
+        'Recording the target strategy here lets specs cite a decision instead of ' +
+        'imitating the legacy mechanics.',
+      targets,
+      options: [
+        {
+          answer: 'no_target_cache',
+          label:
+            'No in-process cache in the target — rely on the database; add caching only on measured need (recommended)',
+          recommended: true,
+          payload: { cache_strategy: 'none' },
+        },
+        {
+          answer: 'local_cache',
+          label: 'Replicate node-local in-process caching',
+          payload: { cache_strategy: 'local' },
+        },
+        {
+          answer: 'distributed_cache',
+          label: 'Plan a shared/distributed cache',
+          payload: { cache_strategy: 'distributed' },
+        },
+      ],
+      evidence_hash: bulkTargetsEvidenceHash('legacy_cache_strategy', targets),
     });
     if (q) questions.push(q);
   }
