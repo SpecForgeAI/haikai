@@ -426,3 +426,51 @@ describe('legacy cache strategy decision (2026-08-23)', () => {
     expect(questions.some((x) => x.question_key === 'FQ-legacy_cache_strategy')).toBe(false);
   });
 });
+
+describe('sequence_generator decision (Oracle Nine item 2)', () => {
+  it('a sequence-idiom table surfaces the strategy card with proposed mappings', () => {
+    const facts = entityFactsFromCandidates([
+      {
+        candidate_type: 'physical_data_entities',
+        name: 'seq_registry',
+        data: {
+          objectType: 'table',
+          sequence_generator_idiom: {
+            procName: 'getnextnumber',
+            numberColumn: 'SequenceNumber',
+            nameColumn: 'SequenceName',
+            rows: [{ name: 'WidgetId', value: 4592 }],
+            proposedMappings: [
+              {
+                sequenceName: 'WidgetId',
+                currentValue: 4592,
+                proposals: [{ table: 'screen_filter', column: 'WidgetId', exact: true }],
+              },
+            ],
+          },
+        },
+      },
+      { candidate_type: 'physical_data_attributes', name: 'n', data: { tableName: 'seq_registry' } },
+    ]);
+    const questions = deriveFoundationQuestions(facts, []);
+    const q = questions.find((x) => x.question_key === 'FQ-sequence_generator-seq_registry');
+    expect(q).toBeDefined();
+    expect(q!.targets[0].note).toContain('WidgetId(4592) -> screen_filter.WidgetId');
+    expect(q!.options[0]).toMatchObject({ answer: 'native_sequences', recommended: true });
+    expect(q!.options.map((o) => o.answer)).toEqual([
+      'native_sequences',
+      'native_with_view',
+      'table_emulation',
+    ]);
+    expect((q!.options[0].payload as Record<string, unknown>).sequence_strategy).toBe('native');
+  });
+
+  it('no idiom -> no card; scoped-out sequence table -> no card', () => {
+    const plain = entityFactsFromCandidates([
+      { candidate_type: 'physical_data_entities', name: 'orders', data: { objectType: 'table' } },
+    ]);
+    expect(
+      deriveFoundationQuestions(plain, []).some((x) => x.rule_key === 'sequence_generator'),
+    ).toBe(false);
+  });
+});

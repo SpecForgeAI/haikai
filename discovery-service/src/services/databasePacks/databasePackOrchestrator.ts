@@ -89,6 +89,8 @@ const EMPTY_PROFILE: ProfileResult = {
  * enough detail for the caller (runManager / tests) to log a run summary
  * and persist the candidate batch.
  */
+import { detectSequenceGeneratorIdioms } from '../../scl/sqlProcHarvester';
+
 export interface DatabasePackOrchestratorResult {
   /** Engine key that ran (or `'unknown'` when the factory returned null). */
   engineKey: DbFindingEngineKey;
@@ -111,6 +113,12 @@ export interface DatabasePackOrchestratorResult {
   /** LIVE stored proc/function/trigger sources (2026-08-23; empty when the
    *  engine pack lacks the capability or the harvest soft-failed). */
   procSources: import('../../scl/sqlProcHarvester').LiveProcSource[];
+  /** Detected sequence-generator idioms with their live rows (item 2). */
+  sequenceIdioms: Array<
+    import('../../scl/sqlProcHarvester').SequenceGeneratorIdiom & {
+      rows: Array<{ name: string | null; value: number | null }>;
+    }
+  >;
 }
 
 /**
@@ -208,6 +216,7 @@ export async function runDatabasePackDiscovery(
     warningFindings,
     shortCircuited: false,
     procSources: [],
+    sequenceIdioms: [],
   };
 
   try {
@@ -379,6 +388,36 @@ export async function runDatabasePackDiscovery(
           `objects=${result.procSources.length} ` +
           `elapsed_ms=${Date.now() - procStart}`,
       );
+
+      // -------------------------------------------------- Phase 4c (item 2)
+      // Sequence-generator idiom detection + live row probe: the legacy
+      // "sequence table + increment proc" replaces identity columns; the
+      // target needs an explicit generator, so the rows (names + current
+      // values) become decision-card evidence.
+      const idioms = detectSequenceGeneratorIdioms(result.procSources);
+      for (const idiom of idioms) {
+        let rows: Array<{ name: string | null; value: number | null }> = [];
+        if (typeof pack.probeSequenceRows === 'function') {
+          const probed = await withDbPackSoftFail(
+            `probeSequenceRows.${idiom.seqTable}`,
+            () =>
+              (pack.probeSequenceRows as NonNullable<typeof pack.probeSequenceRows>)(
+                packCtx,
+                idiom,
+              ),
+            onWarning,
+            pack.engineKey,
+          );
+          rows = probed ?? [];
+        }
+        result.sequenceIdioms.push({ ...idiom, rows });
+      }
+      if (result.sequenceIdioms.length > 0) {
+        console.log(
+          `[diag-pack] db_engine=${pack.engineKey} stage=sequence_idioms ` +
+            `detected=${result.sequenceIdioms.length}`,
+        );
+      }
     }
 
     // ------------------------------------------------------------- Phase 5

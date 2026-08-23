@@ -149,3 +149,44 @@ describe('mergeProcCatalogs', () => {
     expect(result.summary.repoDuplicateCount).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Sequence-generator idiom (Oracle Nine item 2): the legacy "sequence table
+// + increment proc" pattern that replaces identity columns.
+// ---------------------------------------------------------------------------
+
+import { detectSequenceGeneratorIdioms } from '../sqlProcHarvester';
+
+describe('detectSequenceGeneratorIdioms', () => {
+  it('detects the named-row generator (update +1 where name = @param; select)', () => {
+    const idioms = detectSequenceGeneratorIdioms([
+      {
+        name: 'getNextNumber',
+        text:
+          'create procedure getNextNumber @SequenceName varchar(30) as begin transaction ' +
+          'update seq_registry set SequenceNumber = SequenceNumber + 1 where SequenceName = @SequenceName ' +
+          'select @seq = SequenceNumber - 1 from seq_registry where SequenceName = @SequenceName commit',
+      },
+      {
+        name: 'roll_dates',
+        text: 'create proc roll_dates as update biz_date_ctrl set d = getdate()',
+      },
+    ]);
+    expect(idioms).toEqual([
+      {
+        procName: 'getnextnumber',
+        seqTable: 'seq_registry',
+        numberColumn: 'SequenceNumber',
+        nameColumn: 'SequenceName',
+      },
+    ]);
+  });
+
+  it('a self-increment WITHOUT a select is not a generator (no value returned)', () => {
+    expect(
+      detectSequenceGeneratorIdioms([
+        { name: 'bump', text: 'create proc bump as update counters set n = n + 1' },
+      ]),
+    ).toEqual([]);
+  });
+});

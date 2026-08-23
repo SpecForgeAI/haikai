@@ -59,6 +59,7 @@ import {
   buildConstraintsMetadata,
 } from '../candidateStructuralFidelity';
 import { harvestLiveProcSources } from './sybaseProcHarvest';
+import { callSidecarQuery } from './sybaseSidecarClient';
 import {
   callSidecarIntrospect,
   callSidecarTestConnection,
@@ -197,6 +198,37 @@ export class SybaseDiscoveryPack implements DatabaseDiscoveryPack {
         `objects=${sources.length} elapsed_ms=${Date.now() - start}`,
     );
     return sources;
+  }
+
+  /** Sequence-table row probe (2026-08-23) — read-only via /query. */
+  async probeSequenceRows(
+    ctx: DatabaseDiscoveryPackContext,
+    idiom: import('../../../scl/sqlProcHarvester').SequenceGeneratorIdiom,
+  ): Promise<Array<{ name: string | null; value: number | null }>> {
+    const creds = this.requireCreds();
+    const safe = (ident: string): string => {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(ident)) {
+        throw new Error(`unsafe identifier in sequence idiom: ${ident}`);
+      }
+      return ident;
+    };
+    const nameSel = idiom.nameColumn ? `${safe(idiom.nameColumn)} AS seq_name, ` : '';
+    const sql =
+      `SELECT ${nameSel}${safe(idiom.numberColumn)} AS seq_value ` +
+      `FROM ${safe(idiom.seqTable)}`;
+    const r = await callSidecarQuery(creds, {
+      sql,
+      queryTimeoutSeconds: ctx.config.queryTimeoutSeconds ?? 60,
+      maxRows: 200,
+    });
+    return (r.rows ?? []).map((row) => {
+      const rec = row as Record<string, unknown>;
+      const value = Number(rec.seq_value);
+      return {
+        name: idiom.nameColumn ? String(rec.seq_name ?? '') : null,
+        value: Number.isFinite(value) ? value : null,
+      };
+    });
   }
 
   async introspectSchemas(

@@ -397,6 +397,9 @@ export function buildSourceSchemaIr(inputs: GenerationInputs): SourceSchemaIr {
         ((cm as { key_policy?: string | null }).key_policy ?? null) === 'keyless_multiset'
           ? 'keyless_multiset'
           : null,
+      sequenceGenerator:
+        ((cm as { sequence_generator?: IrTable['sequenceGenerator'] }).sequence_generator ??
+          null),
       uniqueConstraints: cm.unique_constraints ?? [],
       checkConstraints: cm.check_constraints ?? [],
       indexes: (cm.indexes ?? []).map((i) => ({

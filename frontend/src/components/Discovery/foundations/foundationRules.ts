@@ -50,7 +50,8 @@ export interface FoundationQuestion {
     | 'crud_write_only'
     | 'crud_read_only'
     | 'scope_code_conflict'
-    | 'legacy_cache_strategy';
+    | 'legacy_cache_strategy'
+    | 'sequence_generator';
   title: string;
   detail: string;
   targets: FoundationQuestionTarget[];
@@ -92,6 +93,20 @@ export interface EntityFacts {
     unique_constraints?: Array<{ name?: string; columns?: string[] }> | null;
     indexes?: Array<{ name?: string; columns?: string[]; is_unique?: boolean }> | null;
   } | null;
+  /** DB-scan enrichment (Oracle Nine item 2): the table IS a legacy
+   *  sequence-generator (increment proc + rows), with live values and
+   *  proposed name -> table.column mappings. */
+  sequenceGeneratorIdiom?: {
+    procName?: string;
+    numberColumn?: string;
+    nameColumn?: string | null;
+    rows?: Array<{ name: string | null; value: number | null }>;
+    proposedMappings?: Array<{
+      sequenceName: string;
+      currentValue: number | null;
+      proposals: Array<{ table: string; column: string; exact: boolean }>;
+    }>;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +136,8 @@ export function entityFactsFromCandidates(candidates: CandidateLike[]): EntityFa
         (data.constraints_metadata as EntityFacts['constraints'] | undefined) ??
         (data.constraintsMetadata as EntityFacts['constraints'] | undefined) ??
         null,
+      sequenceGeneratorIdiom:
+        (data.sequence_generator_idiom as EntityFacts['sequenceGeneratorIdiom']) ?? null,
     });
   }
   for (const c of candidates) {
@@ -499,6 +516,84 @@ export function deriveFoundationQuestions(
           .map((a) => [a.name.toLowerCase(), a.isNullable, a.isPrimaryKey] as const)
           .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)),
       }),
+    });
+    if (q) questions.push(q);
+  }
+
+  // ---- sequence_generator (Oracle Nine item 2): a legacy sequence TABLE +
+  // increment proc replaces identity columns; the target needs an explicit
+  // generator, so the strategy + name->column mappings become a decision.
+  for (const t of tables) {
+    const idiom = t.sequenceGeneratorIdiom;
+    if (!idiom || isScopedOut(t.name)) continue;
+    const mappings = (idiom.proposedMappings ?? []).map((m) => ({
+      sequence_name: m.sequenceName,
+      current_value: m.currentValue,
+      table: m.proposals[0]?.table ?? null,
+      column: m.proposals[0]?.column ?? null,
+      exact: m.proposals[0]?.exact ?? false,
+      ambiguous: m.proposals.length > 1,
+    }));
+    const mappingNote = mappings
+      .map(
+        (m) =>
+          `${m.sequence_name}(${m.current_value ?? '?'})` +
+          (m.table ? ` -> ${m.table}.${m.column}${m.exact ? '' : ' (suffix match)'}` : ' -> NO COLUMN MATCH'),
+      )
+      .sort()
+      .join('; ');
+    const targets = [
+      {
+        entity_name: t.name,
+        note: mappingNote || 'no named rows sampled',
+        attribute_count: t.attributes.length,
+      },
+    ];
+    const q = reconcile({
+      question_key: `FQ-sequence_generator-${t.name.toLowerCase()}`,
+      rule_key: 'sequence_generator',
+      title: `${t.name} is a legacy SEQUENCE GENERATOR (proc ${idiom.procName ?? '?'}) — choose the target identity strategy`,
+      detail:
+        'Create paths get their ids from this table via an increment proc; there are no ' +
+        'identity columns to translate, so without a decision the target has NO id ' +
+        'generator. Native sequences are seeded from the LOADED data (setval max+1) — ' +
+        'deterministic at cutover. A read-only grant exists on the legacy table, so a ' +
+        'compatibility view is offered for external readers ("permitted but unobserved").',
+      targets,
+      options: [
+        {
+          answer: 'native_sequences',
+          label: 'Native PostgreSQL sequences per name; seed from loaded data (recommended)',
+          recommended: true,
+          payload: {
+            sequence_strategy: 'native',
+            name_column: idiom.nameColumn ?? null,
+            number_column: idiom.numberColumn ?? null,
+            mappings,
+          },
+        },
+        {
+          answer: 'native_with_view',
+          label: 'Native sequences + read-compatibility VIEW shaped like the legacy table',
+          payload: {
+            sequence_strategy: 'native_with_view',
+            name_column: idiom.nameColumn ?? null,
+            number_column: idiom.numberColumn ?? null,
+            mappings,
+          },
+        },
+        {
+          answer: 'table_emulation',
+          label: 'Keep the sequence TABLE + increment semantics on the target',
+          payload: {
+            sequence_strategy: 'table_emulation',
+            name_column: idiom.nameColumn ?? null,
+            number_column: idiom.numberColumn ?? null,
+            mappings,
+          },
+        },
+      ],
+      evidence_hash: bulkTargetsEvidenceHash('sequence_generator', targets),
     });
     if (q) questions.push(q);
   }
